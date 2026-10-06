@@ -45,12 +45,11 @@
 #
 # - **Differential Operator** $D$: Fundamental matrix (n_bins × n_edges)
 # - **Gradient**: $\nabla f = D^T f$ (scalar field → edge field)
-# - **Divergence**: $\text{div}(g) = D \cdot g$ (edge field → scalar field)
-# - **Laplacian**: $L f = D \cdot D^T f = \text{div}(\text{grad}(f))$
+# - **Divergence**: $\text{div}(g) = -M^{-1}D\,\mathrm{diag}(Ad)g$ (edge field → scalar field)
+# - **Laplacian**: $\text{div}(\text{grad}(f)) = -M^{-1}(\mathrm{Deg}-W)f$, with $W=A/d$
 
 # %%
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 
 from neurospatial import Environment
@@ -126,7 +125,7 @@ print(
 #
 # $$\nabla f = D^T f$$
 #
-# where $D$ is the differential operator matrix and $f$ is a scalar field.
+# where $D$ has coefficients $-1/d$ and $+1/d$ on each oriented edge. The gradient is $(f_j-f_i)/d$, in field units per cm here.
 #
 # ### Physical Interpretation
 #
@@ -243,9 +242,9 @@ plt.show()
 #
 # ### Mathematical Definition
 #
-# $$\text{div}(g) = D \cdot g$$
+# $$\text{div}(g) = -M^{-1}D\,\mathrm{diag}(Ad)g$$
 #
-# where $g$ is an edge field.
+# where $g$ is an edge flux density, $A$ is the shared-face measure, and $M$ is the cell volume.
 #
 # ### Physical Interpretation
 #
@@ -323,7 +322,7 @@ plt.show()
 #
 # The **Laplacian operator** is the composition of divergence and gradient:
 #
-# $$L f = \text{div}(\text{grad}(f)) = D \cdot D^T \cdot f$$
+# $$\nabla^2 f \approx \text{div}(\text{grad}(f)) = -M^{-1}(\mathrm{Deg}-W)f$$
 #
 # ### Physical Interpretation
 #
@@ -334,7 +333,7 @@ plt.show()
 #
 # ### Application: Graph-Based Smoothing
 #
-# Iteratively applying $f \leftarrow f - \alpha \cdot L f$ smooths a field via heat diffusion on the graph. This is an alternative to Gaussian smoothing.
+# Iteratively applying $f \leftarrow f + \alpha\,\text{div}(\text{grad}(f))$ smooths a field via heat diffusion on the graph. The step $\alpha$ is in cm² and must be below $2/\lambda_{max}$ (a conservative bound is $h^2/4$ on a uniform 2-D grid).
 
 # %%
 # Create a noisy field
@@ -351,8 +350,8 @@ def laplacian_smooth(field, env, alpha=0.05, n_iterations=20):
         grad_field = gradient(env, smoothed)
         laplacian = divergence(env, grad_field)
 
-        # Heat equation: f_new = f - alpha * L(f)
-        smoothed = smoothed - alpha * laplacian
+        # Heat equation: f_new = f + alpha * div(grad(f))
+        smoothed = smoothed + alpha * laplacian
 
     return smoothed
 
@@ -425,32 +424,18 @@ plt.show()
 # %% [markdown]
 # ### Verification: Mathematical Correctness
 #
-# We verify that `div(grad(f))` equals NetworkX's Laplacian matrix. This confirms our gradient and divergence operators are mathematically correct.
-#
-# **Note**: NetworkX provides the Laplacian directly, but it does NOT provide gradient or divergence operators for edge fields. Those are the real value of this infrastructure for RL and neuroscience analyses.
+# Verify the continuum identity ∇²(x² + y²) = 4 in interior bins.
+# The physical Laplacian is the negative of the finite-volume diffusion generator.
 
 # %%
-# Verify that div(grad(f)) equals NetworkX Laplacian matrix
-# This confirms our gradient and divergence implementations are correct
-test_field = np.random.randn(env.n_bins)
-
-# Our implementation: div(grad(f))
-grad_test = gradient(env, test_field)
-laplacian_ours = divergence(env, grad_test)
-
-# NetworkX Laplacian (weighted by edge distances)
-# Note: We use weight='distance' to match our weighted differential operator
-L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
-laplacian_nx = L_nx @ test_field
-
-# Compare
-max_diff = np.abs(laplacian_ours - laplacian_nx).max()
-print(f"Max difference between implementations: {max_diff:.2e}")
-print(
-    "✓ Verified: div(grad(f)) == NetworkX Laplacian"
-    if max_diff < 1e-10
-    else "✗ Mismatch!"
-)
+edges = np.arange(21, dtype=float)
+check_env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
+test_field = np.sum(check_env.bin_centers**2, axis=1)
+laplacian_ours = divergence(check_env, gradient(check_env, test_field))
+interior = np.array([degree == 8 for _, degree in check_env.connectivity.degree()])
+np.testing.assert_allclose(laplacian_ours[interior], 4.0, atol=1e-12)
+print(f"Interior ∇²(x² + y²): {np.mean(laplacian_ours[interior]):.6f} (expected 4)")
+assert laplacian_smoothed.var() < noisy_field.var()
 
 # %% [markdown]
 # ## Part 4: RL Successor Representation Analysis
@@ -532,7 +517,7 @@ print(f"Flow field range: [{normalized_flow.min():.3f}, {normalized_flow.max():.
 div_policy = divergence(env, normalized_flow)
 
 print(
-    f"Divergence at start bin: {div_policy[start_bin]:.3f}  (should be positive - source)"
+    f"Divergence at selected start bin: {div_policy[start_bin]:.3f}"
 )
 print(
     f"Divergence at goal bin: {div_policy[goal_bin]:.3f}  (should be negative - sink)"
@@ -570,7 +555,7 @@ ax.scatter(
     c="lime",
     edgecolors="black",
     linewidths=2,
-    label="Start (Source)",
+    label="Selected Start",
     zorder=10,
 )
 
@@ -597,7 +582,7 @@ plt.show()
 # %% [markdown]
 # **Interpretation**:
 # - **Goal bin (gold star)**: Strong sink (negative divergence) - flow terminates here
-# - **Start region (green circle)**: Source (positive divergence) - flow originates here
+# - **Selected start (green circle)**: Its measured divergence determines whether it is a source or sink; selecting a bin does not guarantee its sign.
 # - **Intermediate bins**: Near-zero divergence (conservation) - flow passes through
 # - This pattern reflects the goal-directed policy bias toward the goal location
 #
@@ -616,8 +601,8 @@ plt.show()
 # ### Key Concepts
 #
 # 1. **Gradient** ($\nabla f = D^T f$): Scalar field → edge field (rate of change along edges)
-# 2. **Divergence** ($\text{div}(g) = D \cdot g$): Edge field → scalar field (net outflow from nodes)
-# 3. **Laplacian** ($L f = D \cdot D^T f$): Smoothness measure (difference from neighbors)
+# 2. **Divergence** ($\text{div}(g) = -M^{-1}D\,\mathrm{diag}(Ad)g$): Edge field → scalar field (net outflow from nodes)
+# 3. **Laplacian** ($\nabla^2 f \approx -M^{-1}(\mathrm{Deg}-W)f$): Smoothness measure (difference from neighbors)
 #
 # ### Applications
 #

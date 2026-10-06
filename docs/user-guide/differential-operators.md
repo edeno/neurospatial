@@ -7,8 +7,8 @@ This guide covers the differential operator infrastructure for graph signal proc
 Neurospatial provides differential operators that extend classical calculus to graph-structured spatial environments:
 
 - **`compute_differential_operator(env)`** - Builds the fundamental differential operator matrix **D**
-- **`gradient(field, env)`** - Computes gradient of scalar fields (node values → edge values)
-- **`divergence(edge_field, env)`** - Computes divergence of edge fields (edge values → node values)
+- **`gradient(env, field)`** - Computes gradient of scalar fields (node values → edge values)
+- **`divergence(env, edge_field)`** - Computes divergence of edge fields (edge values → node values)
 - **Laplacian** - Composition of divergence and gradient: `div(grad(f))`
 
 These operators respect the **graph connectivity** of your environment, making them suitable for irregular spatial structures, mazes, and track-based environments where Euclidean calculus doesn't apply.
@@ -31,25 +31,30 @@ Classical calculus defines:
 - **Divergence**: Net outflow from a point in a vector field
 - **Laplacian**: Second derivative operator (smoothness measure)
 
-Graph signal processing extends these concepts to discrete, graph-structured domains (Shuman et al., 2013). Neurospatial implements the **weighted differential operator** framework following PyGSP conventions.
+Graph signal processing extends these concepts to discrete, graph-structured domains (Shuman et al., 2013). Neurospatial uses a **finite-volume pair** with the same cell geometry as `env.smooth()`. Edge lengths, shared-face measures, and cell volumes set the physical units.
 
 ## The Differential Operator Matrix **D**
 
 The fundamental object is the **differential operator matrix** **D**, which has shape `(n_bins, n_edges)`:
 
+For edge $e = (i \to j)$ with length $d_e$, let $B$ be the oriented incidence matrix (negative at the source, positive at the destination). The returned matrix is $D = B\,\mathrm{diag}(1/d)$:
+
 $$
 D_{i,e} = \begin{cases}
--\sqrt{w_e} & \text{if bin } i \text{ is the source of edge } e \\
-+\sqrt{w_e} & \text{if bin } i \text{ is the destination of edge } e \\
-0 & \text{otherwise}
+-1/d_e & \text{at the source bin} \\
++1/d_e & \text{at the destination bin} \\
+0 & \text{otherwise}.
 \end{cases}
 $$
 
-where $w_e$ is the edge weight (distance between bin centers).
+The gradient is $(f_j-f_i)/d_e$, in field units per length unit. Divergence uses the shared-face measure $A_e$ and cell volumes $M_i$:
 
-### Why Square Root Weighting?
+$$
+\mathrm{div}(q) = -M^{-1} B\,\mathrm{diag}(A)\,q
+               = -M^{-1} D\,\mathrm{diag}(A d)\,q.
+$$
 
-The square root weighting $\sqrt{w_e}$ ensures that the graph Laplacian $L = D \cdot D^T$ matches the standard NetworkX Laplacian matrix. This is the convention in graph signal processing (Shuman et al., 2013; Perraudin et al., 2014).
+These operators need finite-volume geometry. Factory-built grids, hexagonal layouts, tracks, and supported meshes provide it. NWB-reconstructed layouts currently do not: `gradient`, `divergence`, and `compute_differential_operator` raise `NotImplementedError` with a `Fix:` line, as `env.smooth` does.
 
 ### Accessing the Differential Operator
 
@@ -98,7 +103,8 @@ For each edge connecting bins $i$ and $j$:
 Compute the gradient of a distance field from a goal location:
 
 ```python
-from neurospatial import Environment, distance_field, gradient
+from neurospatial import Environment
+from neurospatial.ops import distance_field, gradient
 import numpy as np
 
 # Create environment
@@ -111,7 +117,7 @@ goal_bin = 42
 distances = distance_field(env.connectivity, sources=[goal_bin])
 
 # Compute gradient (edge field pointing toward/away from goal)
-grad_distances = gradient(distances, env)
+grad_distances = gradient(env, distances)
 
 print(f"Input shape (nodes): {distances.shape}")  # (n_bins,)
 print(f"Output shape (edges): {grad_distances.shape}")  # (n_edges,)
@@ -129,7 +135,7 @@ print(f"Output shape (edges): {grad_distances.shape}")  # (n_edges,)
 constant_field = np.ones(env.n_bins)
 
 # Gradient should be zero everywhere
-grad_constant = gradient(constant_field, env)
+grad_constant = gradient(env, constant_field)
 
 print(f"Max gradient magnitude: {np.abs(grad_constant).max()}")  # ~0.0 (numerical precision)
 ```
@@ -139,7 +145,7 @@ print(f"Max gradient magnitude: {np.abs(grad_constant).max()}")  # ~0.0 (numeric
 The **divergence** transforms an **edge field** (values on edges) into a **scalar field** (values at nodes):
 
 $$
-\text{div}(g) = D \cdot g
+\text{div}(g) = -M^{-1} D\,\mathrm{diag}(A d)\,g
 $$
 
 where $g$ is an edge field with shape `(n_edges,)` and the result has shape `(n_bins,)`.
@@ -156,7 +162,7 @@ For each node (bin):
 In reinforcement learning, the successor representation defines flow fields. The divergence identifies source and sink states:
 
 ```python
-from neurospatial import divergence
+from neurospatial.ops import divergence
 import numpy as np
 
 # Example: edge field representing transition probabilities
@@ -164,7 +170,7 @@ import numpy as np
 edge_flow = np.random.randn(env.connectivity.number_of_edges())
 
 # Compute divergence (net outflow from each bin)
-div_flow = divergence(edge_flow, env)
+div_flow = divergence(env, edge_flow)
 
 print(f"Input shape (edges): {edge_flow.shape}")  # (n_edges,)
 print(f"Output shape (nodes): {div_flow.shape}")  # (n_bins,)
@@ -185,38 +191,31 @@ print(f"Sink bins: {sinks}")
 The **Laplacian operator** is the composition of divergence and gradient:
 
 $$
-L = D \cdot D^T
+\mathrm{div}\,\mathrm{grad} = -L, \qquad L = M^{-1}(\mathrm{Deg} - W), \quad W_{ij} = A_{ij}/d_{ij}
 $$
 
 Applied to a field $f$:
 
 $$
-Lf = \text{div}(\text{grad}(f))
+\nabla^2 f \approx \text{div}(\text{grad}(f)) = -Lf
 $$
 
 This measures the **smoothness** of a field - how much a field value differs from its neighbors.
 
 ```python
-from neurospatial import gradient, divergence
-import networkx as nx
+from neurospatial import Environment
+from neurospatial.ops import gradient, divergence
 import numpy as np
 
-# Arbitrary scalar field
-field = np.random.randn(env.n_bins)
-
-# Compute Laplacian via composition
-grad_field = gradient(field, env)
-laplacian_field = divergence(grad_field, env)
-
-# Compare with NetworkX Laplacian
-L_nx = nx.laplacian_matrix(env.connectivity).toarray()
-laplacian_field_nx = L_nx @ field
-
-# Should match (within numerical precision)
-print(f"Max difference: {np.abs(laplacian_field - laplacian_field_nx).max()}")  # ~0.0
+edges = np.arange(21, dtype=float)
+check_env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
+field = np.sum(check_env.bin_centers**2, axis=1)
+laplacian_field = divergence(check_env, gradient(check_env, field))
+interior = np.array([degree == 8 for _, degree in check_env.connectivity.degree()])
+print(np.mean(laplacian_field[interior]))  # 4.0: ∇²(x² + y²)
 ```
 
-**Use Case**: Laplacian smoothing - iteratively applying $f \leftarrow f - \alpha \cdot L f$ smooths a field while respecting graph structure.
+**Use case**: Heat diffusion steps `f ← f + α·div(grad(f))`. The positive diffusion generator `L` and the continuum-sign Laplacian `-L` have opposite signs.
 
 ## When to Use Differential Operators
 
@@ -245,7 +244,8 @@ print(f"Max difference: {np.abs(laplacian_field - laplacian_field_nx).max()}")  
 Combine distance fields, gradients, and divergence to analyze goal-directed navigation:
 
 ```python
-from neurospatial import Environment, distance_field, gradient, divergence
+from neurospatial import Environment
+from neurospatial.ops import distance_field, gradient, divergence
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -260,13 +260,13 @@ goal_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
 distances = distance_field(env.connectivity, sources=[goal_bin])
 
 # Step 2: Compute gradient (direction to goal)
-grad_distances = gradient(distances, env)
+grad_distances = gradient(env, distances)
 
 # Negative gradient points toward goal
 goal_directed_flow = -grad_distances
 
 # Step 3: Compute divergence (find sources and sinks)
-div_flow = divergence(goal_directed_flow, env)
+div_flow = divergence(env, goal_directed_flow)
 
 # Step 4: Analyze results
 print(f"Goal bin divergence: {div_flow[goal_bin]:.3f}")  # Should be negative (sink)
@@ -326,43 +326,36 @@ plt.show()
 
 ## Mathematical Background
 
-### Graph Signal Processing Theory
+### Finite-Volume Geometry and Units
 
-Classical calculus operators are defined on continuous domains. Graph signal processing extends these to discrete graphs (Shuman et al., 2013):
+| Classical calculus | Finite-volume operator |
+| --- | --- |
+| Scalar field $f(x)$ | Bin-center values $f_i$ |
+| Vector field $\mathbf{q}(x)$ | Oriented edge flux density $q_e$ |
+| Gradient $\nabla f$ | $D^T f = (f_j-f_i)/d_e$ |
+| Divergence $\nabla\cdot\mathbf{q}$ | $-M^{-1} B\,\mathrm{diag}(A)q$ |
+| Laplacian $\nabla^2 f$ | $-M^{-1}(\mathrm{Deg}-W)f$ |
 
-| Classical Calculus | Graph Signal Processing |
-|-------------------|-------------------------|
-| Scalar field $f(x)$ | Node field $f_i$, $i \in \mathcal{V}$ |
-| Vector field $\mathbf{v}(x)$ | Edge field $g_e$, $e \in \mathcal{E}$ |
-| Gradient $\nabla f$ | $D^T f$ (nodes → edges) |
-| Divergence $\nabla \cdot \mathbf{v}$ | $D g$ (edges → nodes) |
-| Laplacian $\nabla^2 f$ | $D D^T f = L f$ |
+For a rate field in Hz and positions in cm, gradient is in Hz/cm and its divergence is in Hz/cm². Shared-face measures exclude corner-only diffusion on Cartesian grids, even though diagonal edges still have directional derivatives. On tracks, distances through junctions follow the track rather than the chord between bin centers.
 
-### Weighted vs. Unweighted Graphs
+### Sign Convention and Discrete Gauss–Green
 
-Neurospatial uses **weighted graphs** where edge weights represent spatial distances. The differential operator accounts for these weights using the square root scaling $\sqrt{w_e}$.
+Positive flux follows an edge from its first endpoint to its second. Divergence is positive for outward flow (a source) and negative for inward flow (a sink). With edge inner-product weights $A_ed_e$ and node weights $M_i$,
 
-For **unweighted graphs** (uniform weights $w_e = 1$), the differential operator reduces to the **incidence matrix** used in algebraic graph theory.
+$$
+\langle\mathrm{grad} f,q\rangle_{A d} = -\langle f,\mathrm{div}q\rangle_M.
+$$
 
-### Sign Convention
-
-The differential operator uses the convention:
-- **Source node**: $-\sqrt{w_e}$ (negative coefficient)
-- **Destination node**: $+\sqrt{w_e}$ (positive coefficient)
-
-This ensures:
-- Gradient measures change **along** edge direction
-- Divergence is positive for **net outflow** (source)
-- Laplacian $L = D D^T$ is positive semi-definite
+Thus `div(grad)` is negative semidefinite in the volume-weighted inner product, and matches the negative of the diffusion generator used by `env.smooth`.
 
 ## Advanced Topics
 
 ### Computing Laplacian Smoothing
 
-Implement iterative Laplacian smoothing (heat diffusion):
+Implement iterative Laplacian smoothing (heat diffusion). The step size `alpha` has length² units and must satisfy `alpha < 2 / λ_max`, where `λ_max` is the largest eigenvalue of the positive diffusion generator. On a uniform 2-D grid of spacing `h`, `alpha < h²/4` is a conservative bound.
 
 ```python
-from neurospatial import gradient, divergence
+from neurospatial.ops import gradient, divergence
 import numpy as np
 
 def laplacian_smooth(field, env, alpha=0.1, n_iterations=10):
@@ -375,7 +368,7 @@ def laplacian_smooth(field, env, alpha=0.1, n_iterations=10):
     env : Environment
         Spatial environment
     alpha : float
-        Step size (controls diffusion rate)
+        Step size in length² units; must satisfy alpha < 2 / lambda_max.
     n_iterations : int
         Number of iterations
 
@@ -388,11 +381,11 @@ def laplacian_smooth(field, env, alpha=0.1, n_iterations=10):
 
     for _ in range(n_iterations):
         # Compute Laplacian: L(f) = div(grad(f))
-        grad_field = gradient(smoothed, env)
-        laplacian = divergence(grad_field, env)
+        grad_field = gradient(env, smoothed)
+        laplacian = divergence(env, grad_field)
 
-        # Heat equation: f_new = f - alpha * L(f)
-        smoothed = smoothed - alpha * laplacian
+        # Heat equation: f_new = f + alpha * div(grad(f))
+        smoothed = smoothed + alpha * laplacian
 
     return smoothed
 
@@ -434,7 +427,7 @@ def plot_edge_field(edge_field, env, ax=None, cmap='RdBu_r', vmin=None, vmax=Non
 
 # Example: visualize gradient field
 distances = distance_field(env.connectivity, sources=[goal_bin])
-grad_distances = gradient(distances, env)
+grad_distances = gradient(env, distances)
 
 plot_edge_field(grad_distances, env)
 plt.title('Distance Gradient (Edge Field)')
@@ -474,9 +467,9 @@ plt.show()
 
 ## API Reference
 
-- `neurospatial.compute_differential_operator(env)` - Build differential operator matrix
-- `neurospatial.gradient(field, env)` - Compute gradient (scalar → edge field)
-- `neurospatial.divergence(edge_field, env)` - Compute divergence (edge → scalar field)
+- `neurospatial.ops.compute_differential_operator(env)` - Build differential operator matrix
+- `neurospatial.ops.gradient(env, field)` - Compute gradient (scalar → edge field)
+- `neurospatial.ops.divergence(env, edge_field)` - Compute divergence (edge → scalar field)
 - `env.get_differential_operator()` - Cached differential operator method
-- `neurospatial.distance_field(graph, sources)` - Multi-source geodesic distances
+- `neurospatial.ops.distance_field(graph, sources)` - Multi-source geodesic distances
 - `env.smooth(field, bandwidth)` - Gaussian smoothing on graph

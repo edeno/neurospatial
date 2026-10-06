@@ -48,7 +48,10 @@ from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
 )
-from neurospatial.ops.calculus import compute_differential_operator
+from neurospatial.ops.calculus import (
+    _compute_divergence_operator,
+    compute_differential_operator,
+)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -1047,7 +1050,7 @@ class _BaseEnvironment(
 
     @check_fitted
     def get_differential_operator(self) -> sparse.csc_matrix:
-        """Compute and cache the differential operator matrix for graph signal processing.
+        """Compute and cache the inverse-distance edge differential operator.
 
         The differential operator D is a sparse matrix of shape (n_bins, n_edges)
         that encodes the oriented edge structure of the connectivity graph. It
@@ -1064,21 +1067,20 @@ class _BaseEnvironment(
         ------
         RuntimeError
             If called before the environment is fitted.
+        NotImplementedError
+            If the layout has no finite-volume geometry builder.
 
         Notes
         -----
-        The differential operator satisfies the fundamental relationship:
-        L = D @ D.T, where L is the graph Laplacian matrix.
+        Each oriented edge i -> j contributes -1/d at i and +1/d at j,
+        using the finite-volume distances (including track junctions).
+        ``D.T @ f`` gives directional derivatives in field units per length.
+        Divergence uses a separate cached operator ``-M**-1 D diag(A*d)``;
+        ``div(grad(f)) = -M**-1 (Deg - W) f`` with ``W = A/d``, the negative
+        of the generator used by ``env.smooth``.
 
-        This property is cached using ``@cached_property``, meaning the matrix
-        is computed only once and reused on subsequent accesses. The cache is
-        cleared when the environment is copied or modified.
-
-        The differential operator enables efficient graph signal processing:
-
-        - Gradient: grad(f) = D.T @ f  (scalar field → edge field)
-        - Divergence: div(g) = D @ g   (edge field → scalar field)
-        - Laplacian: lap(f) = D @ D.T @ f = div(grad(f))
+        Both matrices use ``@versioned_cached_property`` and are recomputed
+        when the environment's state version changes.
 
         Examples
         --------
@@ -1111,11 +1113,16 @@ class _BaseEnvironment(
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        # compute_differential_operator only reads self.connectivity; the cast
-        # bridges the _BaseEnvironment self type to its Environment-typed param.
+        # Bridge the shared base to the operator's concrete Environment type.
         from typing import cast
 
         return compute_differential_operator(cast("Environment", self))
+
+    @versioned_cached_property
+    def _divergence_operator_cached(self) -> sparse.csc_matrix:
+        from typing import cast
+
+        return _compute_divergence_operator(cast("Environment", self))
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> _BaseEnvironment:

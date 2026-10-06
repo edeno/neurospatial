@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **Behavior change:** `gradient`, `divergence`, and
+  `compute_differential_operator` now use the finite-volume cell geometry of
+  `env.smooth`: gradient divides by edge length, and divergence weights face
+  flux by cell volume with positive values at sources. For `f=x`, gradients
+  are 1 at bin spacings 1, 2, and 4 (formerly 1, 2.83, and 8);
+  `div(grad(x²+y²))` is 4 in grid interiors (formerly -15.31, -122.51,
+  and -980.08). The Laplacian has the continuum sign and units Hz/cm² for
+  rates in Hz and positions in cm. Layouts without finite-volume geometry,
+  including NWB-reconstructed environments, now raise `NotImplementedError`
+  with a fix instead of returning physically inconsistent derivatives.
 - `decode_position` (and every decoder built on `normalize_to_posterior`)
   floored the prior at `1e-10`, so a bin with zero prior could still win the
   posterior given a large enough likelihood (for example a MAP in an excluded

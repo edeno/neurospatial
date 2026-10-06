@@ -1,391 +1,241 @@
-"""Differential operators for graph signal processing on spatial environments.
+"""Finite-volume differential operators on spatial environments.
 
-This module implements the differential operator framework for graph-discretized
-spatial environments, enabling gradient, divergence, and Laplacian computations
-on irregular spatial graphs.
+For an oriented edge i -> j of length d, the gradient is (f[j] - f[i]) / d.
+Divergence weights edge flux by the shared-face measure A and divides by the
+cell volume M. Their composition is the continuum-sign Laplacian:
+``div(grad(f)) = -M**-1 (Deg - W) f``, with ``W = A / d``, the generator
+used by ``env.smooth``. The pair satisfies discrete Gauss-Green with edge
+inner-product weights A*d and node inner-product weights M.
 
-The differential operator D is a sparse matrix (n_bins × n_edges) that encodes
-the oriented edge structure of the connectivity graph. It satisfies the fundamental
-relationship: L = D @ D.T, where L is the graph Laplacian.
-
-Import paths
-------------
-Functions are accessible from both locations:
-
-    # Preferred (canonical location)
-    from neurospatial.ops.calculus import gradient, divergence
-    from neurospatial.ops import gradient, divergence
-
-    # Top-level convenience (if exported)
-    from neurospatial import gradient, divergence
-
-References
-----------
-.. [1] PyGSP: Graph Signal Processing in Python
-       https://pygsp.readthedocs.io/
-.. [2] Shuman et al. (2013). "The emerging field of signal processing on graphs."
-       IEEE Signal Processing Magazine, 30(3), 83-98.
+Import from ``neurospatial.ops`` or ``neurospatial.ops.calculus``.
 """
 
 from __future__ import annotations
 
-__all__ = [
-    "compute_differential_operator",
-    "divergence",
-    "gradient",
-]
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
+    import networkx as nx
+
     from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
+
+__all__ = ["compute_differential_operator", "divergence", "gradient"]
 
 
-def compute_differential_operator(
-    env: Environment,
-) -> sparse.csc_matrix:
-    """Compute the differential operator matrix for graph signal processing.
+def _fv_edges(env: Environment) -> tuple[nx.Graph, NDArray[np.float64]]:
+    """Resolve face measures, along-edge distances and cell volumes."""
+    from neurospatial.ops.diffusion import _finite_volume_geometry
 
-    The differential operator D is a sparse matrix of shape (n_bins, n_edges)
-    that encodes the oriented edge structure of the connectivity graph. For each
-    edge e = (i, j) with weight w_e (distance):
+    try:
+        return _finite_volume_geometry(cast("EnvironmentProtocol", env))
+    except NotImplementedError as err:
+        raise NotImplementedError(
+            f"gradient/divergence need finite-volume cell geometry, which layout "
+            f"{type(env.layout).__name__!r} does not provide ({err}).\n"
+            "Fix: build the environment with a factory method, e.g. "
+            "Environment.from_samples(positions, bin_size=...)."
+        ) from err
 
-    - D[i, e] = -sqrt(w_e)  (source node)
-    - D[j, e] = +sqrt(w_e)  (destination node)
 
-    This construction ensures the fundamental relationship: L = D @ D.T,
-    where L is the graph Laplacian matrix.
+def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
+    """Build the inverse-distance oriented edge operator.
+
+    For edge e = (i -> j), ``D[i, e] = -1/d_e`` and ``D[j, e] = 1/d_e``.
+    ``D.T @ f`` is the gradient in field units per environment length unit.
 
     Parameters
     ----------
     env : Environment
-        Environment with a connectivity graph. Must have a `connectivity`
-        attribute containing a NetworkX graph with 'distance' edge attributes.
+        Fitted environment with finite-volume cell geometry. Edge distances
+        use the same geometry as ``env.smooth``, including track junctions.
 
     Returns
     -------
-    D : scipy.sparse.csc_matrix
-        Sparse differential operator matrix of shape (n_bins, n_edges).
-        Stored in Compressed Sparse Column (CSC) format for efficient
-        matrix-vector products.
+    D : scipy.sparse.csc_matrix, shape (n_bins, n_edges)
+        Sparse operator, with columns in ``env.connectivity.edges()`` order.
+
+    Raises
+    ------
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
-    The differential operator provides the foundation for gradient and divergence
-    operations on graph-discretized spatial fields:
-
-    - Gradient: grad(f) = D.T @ f  (scalar field → edge field)
-    - Divergence: div(g) = D @ g   (edge field → scalar field)
-    - Laplacian: lap(f) = D @ D.T @ f = div(grad(f))
-
-    Edge weights (distances) are incorporated via their square root, following
-    the weighted graph Laplacian convention in graph signal processing [1]_.
+    Divergence is a separate operator: ``-M**-1 D diag(A*d)``. Thus
+    ``div(grad(f)) = -M**-1 (Deg - W) f``, with ``W = A/d``. It is
+    negative semidefinite in the volume-weighted node inner product.
+    ``D @ D.T`` alone is not the physical Laplacian.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.calculus import compute_differential_operator
-    >>> # Create a simple 1D chain environment
-    >>> data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    >>> env = Environment.from_samples(data, bin_size=1.0)
-    >>> # Compute differential operator
+    >>> env = Environment.from_samples(np.arange(4.0)[:, None], bin_size=1.0)
     >>> D = compute_differential_operator(env)
     >>> D.shape
     (4, 3)
-    >>> # Verify Laplacian relationship: L = D @ D.T
-    >>> import networkx as nx
-    >>> L_from_D = D @ D.T
-    >>> L_nx = nx.laplacian_matrix(env.connectivity, weight="distance")
-    >>> np.allclose(L_from_D.toarray(), L_nx.toarray())
+    >>> np.allclose(D.T @ env.bin_centers[:, 0], 1.0)
     True
 
     See Also
     --------
-    Environment.get_differential_operator() : Cached method that builds and reuses this operator on the Environment.
-
-    References
-    ----------
-    .. [1] PyGSP: Graph Signal Processing in Python
-           https://pygsp.readthedocs.io/
+    gradient : Compute the directional derivative along each edge.
+    divergence : Compute the net outward flux per cell volume.
+    Environment.get_differential_operator : Cached access to this matrix.
     """
-    # Get number of bins and edges
-    n_bins = env.n_bins
-    n_edges = len(env.connectivity.edges)
-
-    # Handle edge case: no edges (single node or disconnected graph)
+    graph, _ = _fv_edges(env)
+    edges = list(graph.edges(data="distance"))
+    n_bins, n_edges = env.n_bins, len(edges)
     if n_edges == 0:
         return sparse.csc_matrix((n_bins, 0), dtype=np.float64)
-
-    # Preallocate arrays for sparse matrix construction (COO format)
-    # Each edge contributes 2 entries (source and destination)
-    row_indices = np.zeros(2 * n_edges, dtype=np.int32)
-    col_indices = np.zeros(2 * n_edges, dtype=np.int32)
-    data_values = np.zeros(2 * n_edges, dtype=np.float64)
-
-    # Build differential operator entries
-    idx = 0
-    for edge_id, (i, j, edge_data) in enumerate(env.connectivity.edges(data=True)):
-        # Get edge weight (distance)
-        distance = edge_data["distance"]
-
-        # Compute sqrt of weight for differential operator
-        sqrt_weight = np.sqrt(distance)
-
-        # Source node gets negative weight
-        row_indices[idx] = i
-        col_indices[idx] = edge_id
-        data_values[idx] = -sqrt_weight
-        idx += 1
-
-        # Destination node gets positive weight
-        row_indices[idx] = j
-        col_indices[idx] = edge_id
-        data_values[idx] = +sqrt_weight
-        idx += 1
-
-    # Construct sparse matrix in COO format, then convert to CSC
-    d_coo = sparse.coo_matrix(
-        (data_values, (row_indices, col_indices)),
+    src = np.fromiter((u for u, _, _ in edges), dtype=np.int64, count=n_edges)
+    dst = np.fromiter((v for _, v, _ in edges), dtype=np.int64, count=n_edges)
+    inv_d = 1.0 / np.fromiter((d for *_, d in edges), dtype=np.float64, count=n_edges)
+    cols = np.arange(n_edges)
+    return sparse.csc_matrix(
+        (
+            np.concatenate([-inv_d, inv_d]),
+            (np.concatenate([src, dst]), np.concatenate([cols, cols])),
+        ),
         shape=(n_bins, n_edges),
-        dtype=np.float64,
     )
 
-    # Convert to CSC for efficient column-wise operations
-    d_csc = d_coo.tocsc()
 
-    return d_csc
+def _compute_divergence_operator(env: Environment) -> sparse.csc_matrix:
+    """Build the negative volume-weighted adjoint of the gradient."""
+    graph, volumes = _fv_edges(env)
+    grad_t = env.get_differential_operator()
+    area = np.fromiter(
+        (a for *_, a in graph.edges(data="A")), dtype=np.float64, count=grad_t.shape[1]
+    )
+    length = np.fromiter(
+        (d for *_, d in graph.edges(data="distance")),
+        dtype=np.float64,
+        count=grad_t.shape[1],
+    )
+    return (
+        -sparse.diags(1.0 / np.asarray(volumes, dtype=np.float64))
+        @ grad_t
+        @ sparse.diags(area * length)
+    ).tocsc()
 
 
-def gradient(
-    env: Environment,
-    field: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Compute the gradient of a scalar field on the graph.
-
-    The gradient operator transforms a scalar field defined on bins (nodes) into
-    an edge field that represents the directional derivative along each edge.
-    Mathematically, for a scalar field f and differential operator D:
-
-        gradient(f) = D.T @ f
-
-    Each edge's gradient value represents the change in the field value from the
-    source node to the destination node, weighted by the square root of the edge
-    distance (following graph signal processing convention).
+def gradient(env: Environment, field: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Compute the directional derivative of a scalar field along every edge.
 
     Parameters
     ----------
     env : Environment
-        Environment with connectivity graph and differential operator. Must be
-        fitted (i.e., created via a factory method like `Environment.from_samples()`).
+        Fitted environment with finite-volume cell geometry.
     field : NDArray[np.float64], shape (n_bins,)
-        Scalar field defined on the environment's bins. Each element corresponds
-        to a field value at a bin center.
+        Scalar value at each bin center.
 
     Returns
     -------
     gradient_field : NDArray[np.float64], shape (n_edges,)
-        Edge field representing the gradient. Each element corresponds to the
-        directional derivative along one edge in the connectivity graph.
+        ``(field[j] - field[i]) / d_e`` on each oriented edge i -> j, in
+        field units per length unit. Edge order is ``env.connectivity.edges()``.
 
     Raises
     ------
     ValueError
-        If field shape does not match the number of bins in the environment.
+        If field shape does not match the environment's bins.
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
-    The gradient operation is the adjoint of the divergence operation:
-
-    - Gradient: scalar field → edge field (D.T @ f)
-    - Divergence: edge field → scalar field (D @ g)
-    - Laplacian: scalar field → scalar field (D @ D.T @ f = div(grad(f)))
-
-    For regular grids, the gradient approximates the continuous spatial gradient
-    via finite differences. For irregular graphs, the gradient follows the graph
-    connectivity structure.
+    The gradient and divergence satisfy discrete Gauss-Green:
+    ``sum(A*d*grad(f)*q) = -sum(M*f*div(q))``. Their composition is the
+    continuum-sign Laplacian, the negative of the diffusion generator.
 
     Examples
     --------
-    Compute gradient of a distance field (useful for goal-directed navigation):
-
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.calculus import gradient
-    >>> # Create 1D chain environment
-    >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
-    >>> env = Environment.from_samples(data, bin_size=1.0)
-    >>> # Create distance field (distance from left end)
-    >>> field = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    >>> # Compute gradient
-    >>> grad = gradient(env, field)
-    >>> grad.shape
-    (4,)
-    >>> # For uniform spacing and linear field, gradient should be constant
-    >>> np.allclose(np.abs(grad), np.abs(grad[0]), rtol=0.1)
+    >>> env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1.0)
+    >>> np.allclose(gradient(env, env.bin_centers[:, 0]), 1.0)
     True
-
-    Gradient of a constant field is zero:
-
-    >>> const_field = np.ones(env.n_bins) * 5.0
-    >>> grad_const = gradient(env, const_field)
-    >>> np.allclose(grad_const, 0.0, atol=1e-10)
+    >>> np.allclose(gradient(env, np.ones(env.n_bins)), 0.0)
     True
 
     See Also
     --------
-    divergence : Compute divergence of an edge field
-    compute_differential_operator : Construct the differential operator matrix
-    Environment.get_differential_operator() : Cached method on the Environment
-
-    References
-    ----------
-    .. [1] Shuman et al. (2013). "The emerging field of signal processing on graphs."
-           IEEE Signal Processing Magazine, 30(3), 83-98.
+    divergence : Compute outward flux per cell volume.
+    compute_differential_operator : Build the inverse-distance edge operator.
     """
-    # Validate input shape
     if field.shape != (env.n_bins,):
-        msg = (
+        raise ValueError(
             f"field must have shape ({env.n_bins},) to match environment bins, "
-            f"but got shape {field.shape}"
+            f"but got shape {field.shape}; a scalar value is needed at each bin.\n"
+            "Fix: pass a 1-D field with one value per environment bin."
         )
-        raise ValueError(msg)
-
-    # Compute gradient using differential operator transpose
-    # gradient(f) = D.T @ f
-    diff_op = env.get_differential_operator()
-    gradient_field = diff_op.T @ field
-
-    # Convert result to dense array and ensure proper dtype
-    # Note: sparse @ dense always returns dense in scipy
-    result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
-
-    return result
+    return np.asarray(
+        env.get_differential_operator().T @ field, dtype=np.float64
+    ).ravel()
 
 
 def divergence(
-    env: Environment,
-    edge_field: NDArray[np.float64],
+    env: Environment, edge_field: NDArray[np.float64]
 ) -> NDArray[np.float64]:
-    """Compute the divergence of an edge field on the graph.
-
-    The divergence operator transforms an edge field (vector field on edges) into
-    a scalar field defined on bins (nodes). It measures the net outflow from each
-    node. Mathematically, for an edge field g and differential operator D:
-
-        divergence(g) = D @ g
-
-    The divergence is the adjoint of the gradient operation, satisfying:
-    div(grad(f)) = D @ D.T @ f = Laplacian(f).
+    """Compute net outward flux per cell volume.
 
     Parameters
     ----------
     env : Environment
-        Environment with connectivity graph and differential operator. Must be
-        fitted (i.e., created via a factory method like `Environment.from_samples()`).
+        Fitted environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
-        Edge field (vector field on edges). Each element corresponds to a value
-        assigned to one edge in the connectivity graph. Typically represents a
-        flow or gradient along edges.
+        Flux density along each oriented edge in ``env.connectivity.edges()``
+        order. Positive values flow from the first endpoint to the second.
 
     Returns
     -------
     divergence_field : NDArray[np.float64], shape (n_bins,)
-        Scalar field representing the divergence. Each element corresponds to the
-        net outflow at a bin (node). Positive values indicate sources (net outflow),
-        negative values indicate sinks (net inflow).
+        Net outward face flux divided by cell volume, in edge-field units per
+        length unit. Positive at sources and negative at sinks.
 
     Raises
     ------
     ValueError
-        If edge_field shape does not match the number of edges in the environment.
+        If edge_field shape does not match the connectivity graph's edges.
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
-    The divergence operation is the adjoint of the gradient operation:
-
-    - Gradient: scalar field → edge field (D.T @ f)
-    - Divergence: edge field → scalar field (D @ g)
-    - Laplacian: scalar field → scalar field (D @ D.T @ f = div(grad(f)))
-
-    **Physical Interpretation:**
-
-    - Positive divergence: source (net outflow from node)
-    - Negative divergence: sink (net inflow to node)
-    - Zero divergence: conservation (inflow = outflow)
-
-    **Applications:**
-
-    - Flow field analysis (e.g., successor representations in RL)
-    - Source/sink detection in spatial trajectories
-    - Laplacian smoothing via div(grad(·))
-    - Graph-based diffusion processes
+    With oriented incidence matrix B (negative at source, positive at
+    destination), ``div(q) = -M**-1 B diag(A) q``. Consequently
+    ``div(grad(f)) = -M**-1 (Deg - W) f``, ``W = A/d``. For a field in Hz
+    and an environment in cm, this Laplacian has units Hz/cm².
 
     Examples
     --------
-    Compute divergence of a gradient field (equals Laplacian):
-
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.calculus import gradient, divergence
-    >>> # Create 1D chain environment
-    >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
-    >>> env = Environment.from_samples(data, bin_size=1.0)
-    >>> # Create test field
-    >>> field = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
-    >>> # Compute div(grad(f))
-    >>> grad_field = gradient(env, field)
-    >>> div_grad = divergence(env, grad_field)
-    >>> div_grad.shape
-    (5,)
-    >>> # Verify div(grad(f)) = Laplacian(f)
-    >>> import networkx as nx
-    >>> L = nx.laplacian_matrix(env.connectivity, weight="distance")
-    >>> laplacian = L @ field
-    >>> np.allclose(div_grad, laplacian, atol=1e-10)
+    >>> env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1.0)
+    >>> field = env.bin_centers[:, 0] ** 2
+    >>> np.allclose(divergence(env, gradient(env, field))[1:-1], 2.0)
     True
-
-    Divergence of zero edge field is zero everywhere:
-
-    >>> n_edges = len(env.connectivity.edges)
-    >>> zero_field = np.zeros(n_edges)
-    >>> div_zero = divergence(env, zero_field)
-    >>> np.allclose(div_zero, 0.0, atol=1e-10)
+    >>> np.allclose(divergence(env, np.zeros(env.connectivity.number_of_edges())), 0.0)
     True
 
     See Also
     --------
-    gradient : Compute gradient of a scalar field
-    compute_differential_operator : Construct the differential operator matrix
-    Environment.get_differential_operator() : Cached method on the Environment
-
-    References
-    ----------
-    .. [1] Shuman et al. (2013). "The emerging field of signal processing on graphs."
-           IEEE Signal Processing Magazine, 30(3), 83-98.
+    gradient : Compute directional derivatives on edges.
+    Environment.smooth : Smooth a field using the same finite-volume geometry.
     """
-    # Get number of edges
-    n_edges = len(env.connectivity.edges)
-
-    # Validate input shape
+    n_edges = env.connectivity.number_of_edges()
     if edge_field.shape != (n_edges,):
-        msg = (
+        raise ValueError(
             f"edge_field must have shape ({n_edges},) to match connectivity graph edges, "
-            f"but got shape {edge_field.shape}"
+            f"but got shape {edge_field.shape}; a flux is needed for each edge.\n"
+            "Fix: pass a 1-D edge_field in env.connectivity.edges() order."
         )
-        raise ValueError(msg)
-
-    # Compute divergence using differential operator
-    # divergence(g) = D @ g
-    diff_op = env.get_differential_operator()
-    divergence_field = diff_op @ edge_field
-
-    # Convert result to dense array and ensure proper dtype
-    # Note: sparse @ dense always returns dense in scipy
-    result: np.ndarray = np.asarray(divergence_field, dtype=np.float64).ravel()
-
-    return result
+    return np.asarray(
+        env._divergence_operator_cached @ edge_field, dtype=np.float64
+    ).ravel()
