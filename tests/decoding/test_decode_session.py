@@ -956,9 +956,20 @@ class TestDecodeSessionMaxGap:
         decode_session(env, spike_times, times, positions, dt=0.1)
         assert seen["max_gap"] == 0.5
 
-    def test_max_gap_none_changes_encoding(self) -> None:
-        """max_gap=None keeps the gap spike, changing the posterior vs default."""
+    def test_max_gap_none_changes_encoding(self, monkeypatch) -> None:
+        """Keeping a gap changes encoding models and restores decode bins."""
         from neurospatial.decoding import decode_session
+        from neurospatial.encoding import spatial
+
+        original = spatial.compute_spatial_rates
+        models = []
+
+        def track_models(*args, **kwargs):
+            result = original(*args, **kwargs)
+            models.append(np.asarray(result.firing_rates))
+            return result
+
+        monkeypatch.setattr(spatial, "compute_spatial_rates", track_models)
 
         env, spike_times, times, positions, _ = self._gap_session()
 
@@ -974,9 +985,8 @@ class TestDecodeSessionMaxGap:
             max_gap=None,
             warn_on_drop=False,
         )
-        # Dropping vs keeping the in-gap spike changes the encoding model and
-        # therefore the posterior.
-        assert not np.allclose(res_default.posterior, res_no_gap.posterior)
+        assert not np.allclose(models[0], models[1])
+        assert res_default.n_time_bins < res_no_gap.n_time_bins
 
     def test_summary_accepts_max_gap(self) -> None:
         """decode_session_summary also accepts and forwards max_gap."""

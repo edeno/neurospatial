@@ -106,6 +106,7 @@ def test_population_summary_flat_dict():
     assert set(s) == {
         "n_units",
         "n_events",
+        "n_events_dropped",
         "mean_peak_rate",
         "population_peak_latency",
     }

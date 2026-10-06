@@ -17,6 +17,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import intervals_contain, resolve_time_windows
+from neurospatial.decoding._binning import (
+    _time_bin_rounding,
+    count_spikes_in_time_bins,
+    time_bins_in_windows,
+)
 from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
 
 if TYPE_CHECKING:
@@ -36,9 +42,9 @@ def _make_bin_edges(
     window[1]]``; otherwise the final bin would extend past ``window[1]``
     and silently absorb spikes that fall outside the requested window.
 
-    A spike at exactly ``window[1]`` that would have fallen in the dropped
-    partial bin is intentionally excluded; align it inside a full bin by
-    choosing ``bin_size`` to divide the window evenly if that spike matters.
+    Every bin is half-open: a spike at the final whole-bin edge or at the
+    window stop is excluded. Edges are clamped to the window stop using
+    timestamp-relative rounding rather than an absolute epsilon.
 
     Parameters
     ----------
@@ -55,16 +61,9 @@ def _make_bin_edges(
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Centers of each full bin; all lie within ``[window[0], window[1]]``.
     """
-    window_duration = window[1] - window[0]
-    # floor (not ceil): keep only whole bins so the last edge does not
-    # overshoot window[1]. A small epsilon guards against floating-point
-    # error swallowing a bin edge that is mathematically exact (e.g.
-    # 2.0 / 0.1 evaluating to 19.9999...).
-    n_bins = int(np.floor(window_duration / bin_size + 1e-9))
-    n_bins = max(n_bins, 0)
-    bin_edges = window[0] + np.arange(n_bins + 1, dtype=np.float64) * bin_size
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    return bin_edges, bin_centers
+    left, right = time_bins_in_windows(np.asarray([window], dtype=np.float64), bin_size)
+    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
+    return edges, left + bin_size / 2
 
 
 def align_spikes_to_events(
@@ -200,12 +199,80 @@ def align_spikes_to_events(
     return result
 
 
+def _keep_observed_events(
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], int]:
+    """Keep events with windows contained in epochs and spike_window.
+
+    Non-finite events are kept so align_spikes_to_events still raises on them.
+    """
+    keep = np.ones(event_times.shape, dtype=bool)
+    finite = np.isfinite(event_times)
+    for windows in (epochs, spike_window):
+        if windows is not None:
+            keep[finite] &= intervals_contain(
+                windows,
+                event_times[finite] + window[0],
+                event_times[finite] + window[1],
+            )
+    n_dropped = int(event_times.size - keep.sum())
+    if n_dropped == event_times.size:
+        raise ValueError(
+            f"All {event_times.size} events were dropped from the peri-event "
+            f"histogram: no event's window [event{window[0]:+g} s, "
+            f"event{window[1]:+g} s) lies entirely inside epochs ∩ spike_window. "
+            f"\nWhy: a window that reaches unrecorded time would be averaged as "
+            f"if no spikes occurred there.\nFix: check that event_times, epochs "
+            f"and spike_window share one clock (seconds), or narrow `window`."
+        )
+    return event_times[keep], n_dropped
+
+
+def _count_peri_event_bins(
+    spike_times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    bin_edges: NDArray[np.float64],
+    bin_size: float,
+) -> NDArray[np.float64]:
+    """Count on the absolute clock without rounding spikes across boundaries."""
+    # Preserve the primitive's spike/event validation. Its relative-time output
+    # cannot be used for counting: subtraction can move an exact boundary spike.
+    align_spikes_to_events(spike_times, event_times, window)
+    windows = np.c_[event_times + window[0], event_times + window[1]]
+    _time_bin_rounding(
+        windows,
+        bin_size,
+        context="peri-event bins",
+        width_name="bin_size",
+        clock_fix=(
+            "subtract a time origin from spike_times and event_times first "
+            "(keep the relative window unchanged), or use a larger bin_size."
+        ),
+    )
+    spikes = np.sort(np.asarray(spike_times, dtype=np.float64))
+    histograms = np.zeros((event_times.size, bin_edges.size - 1), dtype=np.float64)
+    for i, event in enumerate(event_times):
+        edges = np.minimum(event + bin_edges, windows[i, 1])
+        start = np.searchsorted(spikes, edges[0], side="left")
+        stop = np.searchsorted(spikes, edges[-1], side="left")
+        histograms[i] = count_spikes_in_time_bins(
+            [spikes[start:stop]], edges[:-1], edges[1:]
+        )[:, 0]
+    return histograms
+
+
 def peri_event_histogram(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     *,
     bin_size: float = 0.025,
+    epochs: Any = None,
+    spike_window: Any = None,
 ) -> PeriEventResult:
     """
     Compute peri-event time histogram (PSTH).
@@ -225,6 +292,18 @@ def peri_event_histogram(
         ``(-0.5, 1.0)`` captures 500ms before to 1s after each event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``event_times``). An event is kept only if its entire
+        analysis window lies inside one recording window. ``None`` (default)
+        means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording, on the same clock as
+        ``event_times``. Events are kept only if their entire analysis window
+        lies inside both ``epochs`` and ``spike_window``. ``None`` adds no
+        recording constraint; this spike-only analysis has no position stream
+        from which to assume coverage. Pass ``spike_window`` (or ``epochs``)
+        when the recording has gaps or edges inside your event windows.
 
     Returns
     -------
@@ -233,19 +312,27 @@ def peri_event_histogram(
         - bin_centers: Time relative to event (seconds)
         - histogram: Mean spike count per bin across events
         - sem: Standard error of the mean across events
-        - n_events: Number of events
+        - n_events: Number of retained events
+        - n_events_dropped: Events whose windows leave the recording
         - window: The input window
         - bin_size: The input bin_size
 
     Raises
     ------
     ValueError
-        If window is inverted, bin_size is non-positive, or event_times is empty.
+        If window is inverted, bin_size is non-positive, event_times is empty,
+        time windows are invalid, or all events are dropped.
 
     Warns
     -----
     UserWarning
         When computing PSTH with a single event (SEM is undefined).
+
+    Notes
+    -----
+    Every bin is half-open ``[left, right)`` and stays inside ``window``.
+    A trailing partial bin is dropped; spikes at the last whole-bin edge or
+    the window stop are not counted.
 
     See Also
     --------
@@ -299,6 +386,10 @@ def peri_event_histogram(
             "  HOW: Provide at least one event time."
         )
 
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    event_times, n_dropped = _keep_observed_events(
+        event_times, window, resolved_epochs, resolved_spike_window
+    )
     n_events = len(event_times)
 
     # Warn about single event
@@ -309,19 +400,14 @@ def peri_event_histogram(
             stacklevel=2,
         )
 
-    # Get aligned spikes for each event
-    aligned = align_spikes_to_events(spike_times, event_times, window)
-
     # Create bin edges (see _make_bin_edges for the partial-bin policy).
     bin_edges, bin_centers = _make_bin_edges(window, bin_size)
     n_bins = len(bin_centers)
 
     # Compute histogram for each event
-    histograms = np.zeros((n_events, n_bins), dtype=np.float64)
-    for i, trial_spikes in enumerate(aligned):
-        if len(trial_spikes) > 0:
-            counts, _ = np.histogram(trial_spikes, bins=bin_edges)
-            histograms[i] = counts
+    histograms = _count_peri_event_bins(
+        spike_times, event_times, window, bin_edges, bin_size
+    )
 
     # Compute mean and SEM
     mean_histogram = histograms.mean(axis=0)
@@ -339,6 +425,7 @@ def peri_event_histogram(
         n_events=n_events,
         window=window,
         bin_size=bin_size,
+        n_events_dropped=n_dropped,
     )
 
 
@@ -348,6 +435,8 @@ def population_peri_event_histogram(
     window: tuple[float, float],
     *,
     bin_size: float = 0.025,
+    epochs: Any = None,
+    spike_window: Any = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> PopulationPeriEventResult:
     """
@@ -368,6 +457,18 @@ def population_peri_event_histogram(
         Time window (start, end) relative to each event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``event_times``). An event is kept only if its entire
+        analysis window lies inside one recording window. ``None`` (default)
+        means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording, on the same clock as
+        ``event_times``. Events are kept only if their entire analysis window
+        lies inside both ``epochs`` and ``spike_window``. ``None`` adds no
+        recording constraint; this spike-only analysis has no position stream
+        from which to assume coverage. Pass ``spike_window`` (or ``epochs``)
+        when the recording has gaps or edges inside your event windows.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per unit in the
         same order as ``spike_trains``. Stored on the result's ``unit_ids``
@@ -384,7 +485,8 @@ def population_peri_event_histogram(
         - histograms: Per-unit mean spike counts, shape (n_units, n_bins)
         - sem: Per-unit SEM across events, shape (n_units, n_bins)
         - mean_histogram: Population average, shape (n_bins,)
-        - n_events: Number of events
+        - n_events: Number of retained events
+        - n_events_dropped: Events whose windows leave the recording
         - n_units: Number of units
         - window: The input window
         - bin_size: The input bin_size
@@ -393,7 +495,14 @@ def population_peri_event_histogram(
     ------
     ValueError
         If spike_trains is empty, event_times is empty, window is inverted,
-        or bin_size is non-positive.
+        bin_size is non-positive, time windows are invalid, or all events are
+        dropped.
+
+    Notes
+    -----
+    Every bin is half-open ``[left, right)`` and stays inside ``window``.
+    A trailing partial bin is dropped; spikes at the last whole-bin edge or
+    the window stop are not counted.
 
     See Also
     --------
@@ -463,6 +572,10 @@ def population_peri_event_histogram(
             "  HOW: Provide at least one event time."
         )
 
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    event_times, n_dropped = _keep_observed_events(
+        event_times, window, resolved_epochs, resolved_spike_window
+    )
     n_units = len(trains)
     n_events = len(event_times)
 
@@ -494,14 +607,9 @@ def population_peri_event_histogram(
     all_histograms = np.zeros((n_units, n_events, n_bins), dtype=np.float64)
 
     for unit_idx, spike_times in enumerate(trains):
-        # Get aligned spikes for this unit
-        aligned = align_spikes_to_events(spike_times, event_times, window)
-
-        # Compute histogram for each event
-        for event_idx, trial_spikes in enumerate(aligned):
-            if len(trial_spikes) > 0:
-                counts, _ = np.histogram(trial_spikes, bins=bin_edges)
-                all_histograms[unit_idx, event_idx] = counts
+        all_histograms[unit_idx] = _count_peri_event_bins(
+            spike_times, event_times, window, bin_edges, bin_size
+        )
 
     # Compute per-unit mean and SEM across events
     # histograms shape: (n_units, n_bins)
@@ -526,6 +634,7 @@ def population_peri_event_histogram(
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
+        n_events_dropped=n_dropped,
     )
 
 

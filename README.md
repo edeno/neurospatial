@@ -238,7 +238,9 @@ To go the other way — reconstruct position from population spikes — the one-
 path is
 [`decode_session`](https://edeno.github.io/neurospatial/api/):
 `from neurospatial.decoding import decode_session` runs the whole encode → bin →
-decode pipeline and returns a `DecodingResult`. See
+decode pipeline and returns a `DecodingResult`. Pauses in tracking are never
+decoded: time bins are formed only within recorded stretches, and
+`epochs=`/`spike_window=` restrict them further. See
 [example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
 for the full Bayesian decoding tutorial.
 

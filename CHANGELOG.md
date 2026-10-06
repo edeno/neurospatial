@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Changed — decoding and peri-event histograms respect recording gaps
+
+- Peri-event counts use original spike times against absolute event-shifted
+  edges, preserving inclusive starts and exclusive stops at nonzero and Unix
+  timestamps. The shared precision guard rejects widths that the absolute
+  clock cannot represent, with an origin-shift fix for spike/event times.
+- Peri-event histograms share the decoding edge and count helpers: every bin
+  is half-open and stays inside its requested window. Spikes at the last
+  whole-bin edge are excluded, and large timestamp offsets use relative
+  rounding instead of an absolute `1e-9` epsilon.
+- Conflicting `epochs` and explicit bounds in `bin_spikes_in_time` report
+  the argument conflict with separate `Why:` and `Fix:` lines.
+- Single-unit and population peri-event histograms accept `epochs` and
+  `spike_window`, keeping only events whose entire analysis window is observed.
+  Means and SEM use retained events, and results, child results, plots and
+  summaries carry `n_events_dropped`. With neither window supplied, all events
+  remain eligible; partial drops add no warning.
+- Full and streamed decoding results record `spike_window` and
+  `spike_window_assumed`, including summaries and NetCDF-compatible xarray
+  attributes. Attaching session metadata preserves the single posterior
+  allocation; public construction and replacement still copy input arrays.
+- Posterior heatmaps with detected recording breaks use time-bin indices and
+  dashed gap markers, preserving visible separation instead of stretching
+  bins across a pause. Contiguous and single-bin results keep time axes;
+  two timestamps alone cannot distinguish a gap from a larger bin width.
+- `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
+  `spike_window`. Training masks the original arrays instead of concatenating
+  epoch slices, preserving aligned speed samples and unit identities.
+  `predict`, `predict_summary`, and `score` forward the same window keywords
+  and the decoder's configured `max_gap` to observed-run decoding.
+- `decode_session` and its streamed summary accept `epochs` and
+  `spike_window`, and form bins only within observed sample runs. No posterior
+  is invented inside a tracking pause. Decode bins retain immobility and
+  out-of-bounds periods; speed/bounds restrict encoding only. Full and streamed
+  paths use the same half-open edges and counters, including run breaks.
+- `bin_spikes_in_time` accepts `epochs=` and tiles each normalized window
+  independently. Shared decoding helpers count only half-open bins and clamp
+  their edges to window stops. Final-edge spikes are no longer counted, and
+  floating-point rounding uses timestamp-relative slack instead of an absolute
+  `1e-9` epsilon (which lost a bin near `1e9` seconds). Partial trailing bins
+  are dropped, and unrepresentable bin widths raise with an origin-shift fix.
+
 ### Changed — recording gaps and time windows in rate maps
 
 - The three frame-family cell predicates propagate invalid `epochs` and

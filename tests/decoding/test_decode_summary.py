@@ -493,8 +493,26 @@ class TestDecodingSummaryTerminalVerbs:
         assert s["n_bins"] == small_2d_env.n_bins
         assert "mean_entropy" in s
         assert "max_entropy" in s
-        # all scalar
-        for v in s.values():
+        assert set(s) == {
+            "n_time_bins",
+            "n_bins",
+            "mean_entropy",
+            "max_entropy",
+            "mean_peak_prob",
+            "spike_window",
+            "spike_window_assumed",
+        }
+        assert s["spike_window"] is None
+        assert s["spike_window_assumed"] is True
+        # Headline metrics remain scalar; coverage metadata may hold intervals.
+        for key in (
+            "n_time_bins",
+            "n_bins",
+            "mean_entropy",
+            "max_entropy",
+            "mean_peak_prob",
+        ):
+            v = s[key]
             assert np.isscalar(v) or isinstance(v, (int, float))
 
     def test_plot_returns_axes(self, small_2d_env):
