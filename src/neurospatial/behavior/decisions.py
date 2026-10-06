@@ -74,6 +74,7 @@ from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
 from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.environment.trajectory import observed_runs
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -758,6 +759,9 @@ def detect_boundary_crossings(
     position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[list[float], list[tuple[int, int]]]:
     """Detect when trajectory crosses decision boundaries.
 
@@ -787,6 +791,30 @@ def detect_boundary_crossings(
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times)
 
+    if len(position_bins) != len(times):
+        raise ValueError(
+            f"position_bins and times must have same length; got "
+            f"{len(position_bins)} and {len(times)}.\n"
+            "Why: each trajectory sample needs its corresponding timestamp.\n"
+            "Fix: pass one timestamp per position bin on the same clock."
+        )
+    crossing_times: list[float] = []
+    crossing_directions: list[tuple[int, int]] = []
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        run_times, run_directions = _detect_boundary_crossings_contiguous(
+            position_bins[run], voronoi_labels, times[run]
+        )
+        crossing_times.extend(run_times)
+        crossing_directions.extend(run_directions)
+    return crossing_times, crossing_directions
+
+
+def _detect_boundary_crossings_contiguous(
+    position_bins: NDArray[np.int_],
+    voronoi_labels: NDArray[np.int_],
+    times: NDArray[np.float64],
+) -> tuple[list[float], list[tuple[int, int]]]:
+    """Detect label changes within one recording with labels indexed by bin."""
     # Get label for each trajectory point
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
 

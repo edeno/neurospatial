@@ -23,7 +23,14 @@ def gap_free_outputs(continuous_pause_track, continuous_lap_track):
 def gap_free_goldens():
     path = Path(__file__).parent / "data" / "segmentation_gap_free.npz"
     with np.load(path, allow_pickle=False) as archive:
-        return {name: json.loads(archive[name].item()) for name in archive.files}
+        goldens = {name: json.loads(archive[name].item()) for name in archive.files}
+    # Voronoi goal labels use the existing native np.int_ API (32-bit on
+    # Windows); their values and shape remain exact, and other dtypes stay strict.
+    labels = goldens["compute_decision_analysis"]["fields"]["boundary"]["fields"][
+        "goal_labels"
+    ]
+    labels["array"] = str(np.dtype(np.int_))
+    return goldens
 
 
 def assert_snapshot_equal(actual, expected):

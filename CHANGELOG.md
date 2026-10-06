@@ -4,6 +4,13 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Runs, trials, velocity epochs, laps, goal-directed candidates and decision
+  boundary crossings accept `max_gap` and `epochs` and analyze each observed
+  run separately. The measured 98.5→1100 s run and 0→1100 s trial are no longer
+  marked successful across a pause, the 98.1→1100 s movement epoch is clipped,
+  and the 88.6→1108.6 s region lap and 599.95 s boundary crossing disappear.
+  Auto laps keep the first 10% of the whole input as their template. Running
+  direction labels forward the same windows and retain one label per sample.
 - `detect_region_crossings` accepts `max_gap` and `epochs`, and detects entries
   and exits separately within observed runs. A first post-pause target sample
   no longer invents an entry at 1100 s. Compatibility argument dispatch and
