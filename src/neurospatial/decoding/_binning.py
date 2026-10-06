@@ -256,8 +256,8 @@ def bin_spikes_in_time(
         if t_start is not None or t_stop is not None:
             raise ValueError(
                 "bin_spikes_in_time got both epochs and t_start/t_stop. "
-                "Why: epochs already defines where bins are formed. "
-                "Fix: pass either epochs=[(start, stop), ...] or "
+                "\nWhy: epochs already defines where bins are formed. "
+                "\nFix: pass either epochs=[(start, stop), ...] or "
                 "t_start=..., t_stop=..., not both."
             )
         windows = as_intervals(epochs, name="epochs")

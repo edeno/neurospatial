@@ -24,8 +24,9 @@ def test_epochs_tile_each_window():
     )
     assert counts.shape == (8, 1)
     assert counts.sum() == 2
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(ValueError, match="not both") as error:
         bin_spikes_in_time([], 0.25, t_start=0, epochs=(0, 1))
+    assert any(line.startswith("Fix:") for line in str(error.value).splitlines())
 
 
 def test_time_bins_decimal_boundary():

@@ -4,6 +4,8 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Conflicting `epochs` and explicit bounds in `bin_spikes_in_time` report
+  the argument conflict with separate `Why:` and `Fix:` lines.
 - Single-unit and population peri-event histograms accept `epochs` and
   `spike_window`, keeping only events whose entire analysis window is observed.
   Means and SEM use retained events, and results, child results, plots and
