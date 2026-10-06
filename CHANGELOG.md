@@ -4,6 +4,11 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- `detect_region_crossings` accepts `max_gap` and `epochs`, and detects entries
+  and exits separately within observed runs. A first post-pause target sample
+  no longer invents an entry at 1100 s. Compatibility argument dispatch and
+  its deprecation warning run once per call; the contiguous detector keeps
+  its existing crossing timestamps and region-boundary handling.
 - `Environment.bin_sequence` and `bin_sequence_with_runs` accept `max_gap`
   and `epochs`, drop samples that touch no observed interval (including
   singleton inputs), and split same-bin runs and deduplication at recording

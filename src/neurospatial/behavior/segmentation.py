@@ -73,7 +73,7 @@ import itertools
 import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
@@ -82,6 +82,7 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._validation import validate_finite
+from neurospatial.environment.trajectory import observed_runs
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -327,6 +328,8 @@ def detect_region_crossings(
     *,
     region_name: str | None = None,
     direction: Literal["both", "entry", "exit"] = "both",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> list[Crossing]:
     """Detect region entry and exit events in a trajectory.
 
@@ -470,9 +473,31 @@ def detect_region_crossings(
             f"Got {len(position_bins)} and {len(times)}"
         )
 
-    if len(position_bins) == 0:
-        return []
+    position_bins = np.asarray(position_bins, dtype=np.int64)
+    times = np.asarray(times, dtype=np.float64)
+    results: list[Crossing] = []
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        results.extend(
+            _detect_region_crossings_contiguous(
+                position_bins[run],
+                times[run],
+                env,
+                region_name=region_name,
+                direction=direction,
+            )
+        )
+    return results
 
+
+def _detect_region_crossings_contiguous(
+    position_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    region_name: str,
+    direction: Literal["both", "entry", "exit"] = "both",
+) -> list[Crossing]:
+    """Detect crossings within one recording, after public input validation."""
     # Get bins in region using existing regions_to_mask functionality
     from neurospatial.ops.binning import regions_to_mask
 

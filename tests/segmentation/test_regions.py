@@ -39,7 +39,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="both",
+            max_gap=None,
         )
 
         # Should detect entries and exits
@@ -68,7 +73,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="entry"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="entry",
+            max_gap=None,
         )
 
         # All crossings should be entries
@@ -93,7 +103,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="exit"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="exit",
+            max_gap=None,
         )
 
         # All crossings should be exits
