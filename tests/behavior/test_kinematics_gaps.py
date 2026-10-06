@@ -178,6 +178,16 @@ def test_home_range_without_observations_is_empty(two_epoch_recording):
     assert result.size == 0
 
 
+def test_full_home_range_excludes_zero_dwell_bins():
+    times = np.r_[np.arange(215) * 0.02, 1000.0]
+    bins = np.arange(len(times))
+    observed = compute_home_range(bins, times=times, percentile=100)
+    np.testing.assert_array_equal(np.sort(observed), bins[:-1])
+    # The isolated sample is still a visit when timestamps are absent.
+    untimed = compute_home_range(bins, percentile=100)
+    np.testing.assert_array_equal(np.sort(untimed), bins)
+
+
 def test_curvature_isolated_sample_nan(two_epoch_recording):
     r = two_epoch_recording
     selected = [0, 1, 4999, 5000, 5001]

@@ -424,7 +424,8 @@ def compute_home_range(
 
     When ``times`` is given, dwell comes only from valid intervals. Each
     run's last sample receives that run's median interval duration; samples
-    in no run receive zero dwell. No observed dwell gives an empty home
+    in no run receive zero dwell. Bins with zero observed dwell are omitted.
+    No observed dwell gives an empty home
     range. With ``times=None``, counts are used and time gates are unused.
 
     The home range is computed by:
@@ -490,6 +491,8 @@ def compute_home_range(
         unique_bins, inverse = np.unique(position_bins, return_inverse=True)
         occupancy = np.zeros(len(unique_bins), dtype=np.float64)
         np.add.at(occupancy, inverse, sample_weights)
+        observed = occupancy != 0
+        unique_bins, occupancy = unique_bins[observed], occupancy[observed]
 
     # Sort bins by occupancy (descending)
     sort_idx = np.argsort(occupancy)[::-1]

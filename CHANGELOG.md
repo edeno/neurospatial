@@ -4,6 +4,9 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Timed home ranges omit bins with zero observed dwell, including at
+  `percentile=100`, so rounding in cumulative percentages cannot include an
+  isolated sample's bin. Untimed visit counts retain their previous meaning.
 - The 13 kinematic/event entry points expose `max_gap=0.5` and `epochs=None`:
   `heading_from_velocity`, `pre_decision_heading_stats`,
   `pre_decision_speed_stats`, `head_sweep_from_positions`,
