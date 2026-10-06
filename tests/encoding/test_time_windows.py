@@ -1,9 +1,79 @@
 """Spatial spikes and occupancy use matching analysis and acquisition windows."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+
+@pytest.fixture
+def direct_rate_result_factory(continuous_recording):
+    from neurospatial import Environment
+    from neurospatial.encoding.directional import (
+        DirectionalRateResult,
+        DirectionalRatesResult,
+    )
+    from neurospatial.encoding.egocentric import (
+        EgocentricRateResult,
+        EgocentricRatesResult,
+    )
+    from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
+    from neurospatial.encoding.view import ViewRateResult, ViewRatesResult
+
+    classes = {
+        "spatial": (SpatialRateResult, SpatialRatesResult),
+        "directional": (DirectionalRateResult, DirectionalRatesResult),
+        "view": (ViewRateResult, ViewRatesResult),
+        "egocentric": (EgocentricRateResult, EgocentricRatesResult),
+    }
+
+    def make_result(family, plural):
+        env = continuous_recording.env
+        kwargs = {}
+        if family == "egocentric":
+            env = Environment.from_polar_egocentric(
+                distance_range=(0, 50),
+                angle_range=(-np.pi, np.pi),
+                distance_bin_size=25.0,
+                angle_bin_size=np.pi / 2,
+            )
+            kwargs.update(
+                env=env, distance_range=(0, 50), n_distance_bins=2, n_direction_bins=4
+            )
+        elif family == "directional":
+            kwargs.update(
+                bin_centers=np.linspace(-np.pi, np.pi, env.n_bins, endpoint=False),
+                bin_size=2 * np.pi / env.n_bins,
+                bandwidth=0.3,
+            )
+        else:
+            kwargs.update(env=env, method="binned", bandwidth=5.0)
+            if family == "view":
+                kwargs.update(gaze_model="fixed_distance", view_distance=10.0)
+        kwargs["firing_rates" if plural else "firing_rate"] = np.ones(
+            (2, env.n_bins) if plural else env.n_bins
+        )
+        kwargs["occupancy"] = np.ones(env.n_bins)
+        return classes[family][int(plural)](**kwargs)
+
+    return make_result
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
+@pytest.mark.parametrize("plural", [False, True])
+def test_direct_rate_results_make_assumption_visible(
+    direct_rate_result_factory, family, plural
+):
+    result = direct_rate_result_factory(family, plural)
+    assert result.spike_window is None
+    assert result.spike_window_assumed is True
+    assert result.summary()["spike_window"] is None
+    assert result.summary()["spike_window_assumed"] is True
+    explicit = replace(result, spike_window=np.array([[0.0, 100.0]]))
+    assert explicit.spike_window_assumed is False
+    assert explicit.summary()["spike_window"] == [[0.0, 100.0]]
 
 
 @pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
@@ -139,3 +209,44 @@ def test_single_spatial_mask_is_shared_once(continuous_recording, monkeypatch):
     )
     assert len(calls) == 1
     assert result.occupancy.sum() == pytest.approx(100.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("method", ["binned", "glm"])
+@pytest.mark.parametrize("plural", [False, True])
+@pytest.mark.parametrize("window", [None, (100.0, 200.0)])
+def test_spatial_results_record_spike_window(
+    continuous_recording, method, plural, window
+):
+    r = continuous_recording
+    function = compute_spatial_rates if plural else compute_spatial_rate
+    result = function(
+        r.env,
+        [r.spike_times] if plural else r.spike_times,
+        r.times,
+        r.positions,
+        method=method,
+        spike_window=window,
+    )
+    assert result.spike_window_assumed is (window is None)
+    assert result.summary()["spike_window_assumed"] is (window is None)
+    if window is None:
+        assert result.spike_window is None
+        assert result.summary()["spike_window"] is None
+    else:
+        np.testing.assert_array_equal(result.spike_window, [[100.0, 200.0]])
+        assert result.summary()["spike_window"] == [[100.0, 200.0]]
+    if plural:
+        child = result[0]
+        assert child.spike_window_assumed is (window is None)
+        if window is not None:
+            np.testing.assert_array_equal(child.spike_window, result.spike_window)
+
+
+@pytest.mark.parametrize("method", ["binned", "glm"])
+def test_empty_population_records_spike_window(continuous_recording, method):
+    r = continuous_recording
+    result = compute_spatial_rates(
+        r.env, [], r.times, r.positions, method=method, spike_window=(100, 200)
+    )
+    np.testing.assert_array_equal(result.spike_window, [[100, 200]])
+    assert result.summary()["spike_window_assumed"] is False

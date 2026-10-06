@@ -181,7 +181,10 @@ def intervals_contain(
     j = np.maximum(idx, 0)
     # searchsorted places a NaN start after every row, so idx alone cannot
     # reject it; the explicit start comparison is False for NaN.
-    return (idx >= 0) & (starts >= windows[j, 0]) & (stops <= windows[j, 1])
+    keep: NDArray[np.bool_] = (
+        (idx >= 0) & (starts >= windows[j, 0]) & (stops <= windows[j, 1])
+    )
+    return keep
 
 
 def intersect_intervals(

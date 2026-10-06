@@ -191,6 +191,18 @@ class SpatialResultMixin(ResultMixin):
     ``_bin_centers`` to return the appropriate centers array.
     """
 
+    spike_window: NDArray[np.float64] | None = None
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
+
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         """Bin centers in the relevant coordinate space.
@@ -361,7 +373,7 @@ class SpatialResultMixin(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['method', 'n_bins', 'peak_firing_rate', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
@@ -379,6 +391,10 @@ class SpatialResultMixin(ResultMixin):
             "n_bins": int(rates.shape[-1]),
             "peak_firing_rate": peak_value,
             "total_occupancy": float(np.nansum(occupancy)),
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": None
+            if self.spike_window is None
+            else self.spike_window.tolist(),
         }
         if rates.ndim > 1:
             out["n_neurons"] = int(rates.shape[0])

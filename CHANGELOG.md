@@ -4,6 +4,13 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- Every rate result exposes `spike_window` and the read-only
+  `spike_window_assumed` flag in `summary()`. Spatial encoders record the
+  normalized acquisition windows, preserving them when indexing a population
+  and in direction-conditioned place fields. Spatial population xarray exports
+  store the assumption as an integer and supplied windows as a flat array,
+  so both round-trip through NetCDF. Other rate families currently report
+  assumed coverage until their window keywords are available.
 - `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
   same window parser as spatial analyses. Nested sequences always describe
   `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.

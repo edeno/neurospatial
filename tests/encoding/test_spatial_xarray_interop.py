@@ -11,6 +11,7 @@ xarray is unavailable.
 from __future__ import annotations
 
 import builtins
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -20,6 +21,26 @@ from neurospatial.encoding.directional import DirectionalRatesResult
 from neurospatial.encoding.egocentric import EgocentricRatesResult
 from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.encoding.view import ViewRatesResult
+
+
+@pytest.mark.parametrize("window", [None, np.array([[0.0, 10.0], [20.0, 30.0]])])
+def test_spike_window_attrs_roundtrip(rates_result, tmp_path, window):
+    xr = pytest.importorskip("xarray")
+    result = replace(rates_result, spike_window=window)
+    ds = result.to_xarray()
+    assert ds.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in ds.attrs
+    else:
+        np.testing.assert_array_equal(ds.attrs["spike_window"], window.ravel())
+    path = tmp_path / "rates.nc"
+    ds.to_netcdf(path, engine="scipy")
+    loaded = xr.load_dataset(path, engine="scipy")
+    assert loaded.attrs["spike_window_assumed"] == ds.attrs["spike_window_assumed"]
+    if window is None:
+        assert "spike_window" not in loaded.attrs
+    else:
+        np.testing.assert_array_equal(loaded.attrs["spike_window"], window.ravel())
 
 
 @pytest.fixture(scope="module")

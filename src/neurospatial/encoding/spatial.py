@@ -622,6 +622,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     def __post_init__(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
@@ -1382,6 +1386,10 @@ class SpatialRatesResult(SpatialResultMixin):
     penalty_selected_by_reml: NDArray[np.bool_] | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
@@ -1476,6 +1484,7 @@ class SpatialRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -1699,6 +1708,7 @@ class SpatialRatesResult(SpatialResultMixin):
             "method": self.method,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
+            "spike_window_assumed": int(self.spike_window_assumed),
         }
         # Guard on the value, not on ``method``: NetCDF attributes cannot hold
         # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
@@ -1706,6 +1716,8 @@ class SpatialRatesResult(SpatialResultMixin):
         # ``bandwidth is not None`` guards exactly that serialization precondition
         # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
         # correct even if a ratio result ever carried a ``None`` bandwidth.
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         if self.bandwidth is not None:
             attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
@@ -2987,6 +2999,7 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
             occupancy=single_occupancy,
             env=env,
@@ -3032,6 +3045,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        spike_window=resolved_spike_window,
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=env,
@@ -3548,6 +3562,7 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=glm_firing_rates,
             occupancy=batch_occupancy,
             env=env,
@@ -3599,6 +3614,7 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=firing_rates_result,
             occupancy=occupancy_result,
             env=env,
@@ -3661,6 +3677,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=env,
@@ -3731,6 +3748,20 @@ class DirectionalPlaceFields(ResultMixin):
     occupancy: Mapping[str, NDArray[np.float64]]
     env: Environment
     labels: tuple[str, ...]
+
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
 
     def correlation(self, label_a: str, label_b: str) -> float:
         """Pearson correlation between two directions' rate maps.
@@ -3895,6 +3926,10 @@ class DirectionalPlaceFields(ResultMixin):
         """
         out: dict[str, Any] = {
             "n_directions": len(self.labels),
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": None
+            if self.spike_window is None
+            else self.spike_window.tolist(),
             "n_bins": int(self.env.n_bins),
         }
         for label in self.labels:
@@ -4194,6 +4229,7 @@ def compute_directional_place_fields(
         occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
 
     return DirectionalPlaceFields(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,
