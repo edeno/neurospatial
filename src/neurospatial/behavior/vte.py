@@ -129,7 +129,8 @@ class VTETrialResult(ResultMixin):
     is_vte : bool or None
         True if vte_index > threshold. None if not classified.
     window_start : float
-        Start time of analysis window (seconds).
+        Requested window start (seconds), clipped at the trial start in
+        session analysis. Available samples may start later after a pause.
     window_end : float
         End time of window (decision region entry time, seconds).
     """
@@ -555,6 +556,14 @@ def compute_vte_trial(
         Duration of pre-decision window (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -562,6 +571,15 @@ def compute_vte_trial(
         VTE metrics for the trial.
         Note: z-scores and classification are None for single trial analysis.
         Use compute_vte_session() for session-level analysis with z-scoring.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    The pre-decision samples are restricted to the run containing entry_time.
+    Result window bounds describe the requested window; fewer samples
+    may be available within that window.
 
     Examples
     --------
@@ -662,11 +680,29 @@ def compute_vte_session(
     vte_threshold : float, default=0.5
         Threshold for VTE classification.
         Trial is VTE if vte_index > threshold.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     VTESessionResult
         Session-level VTE analysis with per-trial metrics.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Each pre-decision window uses only its trial samples and the run
+    containing the decision-region entry. Result window bounds describe
+    the requested window clipped at the trial start; fewer samples may
+    be available within that window.
 
     Examples
     --------

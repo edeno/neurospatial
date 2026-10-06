@@ -362,6 +362,14 @@ def detect_region_crossings(
         - 'both': detect entries and exits (default)
         - 'entry': only detect entries
         - 'exit': only detect exits
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -383,6 +391,9 @@ def detect_region_crossings(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
     to the first sample inside (for entry) or outside (for exit) the region.
@@ -404,9 +415,14 @@ def detect_region_crossings(
     >>> trajectory = np.column_stack([traj_x, traj_y])
     >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
-    >>> # Detect crossings (new 0.6+ order: env positional, region_name keyword)
+    >>> # Treat these 1 Hz samples as continuous with max_gap=None
     >>> crossings = detect_region_crossings(
-    ...     position_bins, times, env, region_name="goal", direction="both"
+    ...     position_bins,
+    ...     times,
+    ...     env,
+    ...     region_name="goal",
+    ...     direction="both",
+    ...     max_gap=None,
     ... )
     >>> len(crossings) > 0  # Should detect entries and exits
     True
@@ -587,6 +603,14 @@ def detect_runs_between_regions(
         positions, so the value is bin-quantized; pre-filter on
         continuous positions if you need true sub-bin precision.
         If None, no velocity filtering is applied. Default: None.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -619,6 +643,12 @@ def detect_runs_between_regions(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    A run in progress when a recording ends is emitted there with
+    success=False, as at the end of a complete recording.
+
     A run is defined as:
     1. Exit from source region
     2. Trajectory through environment
@@ -863,6 +893,14 @@ def segment_by_velocity(
     smooth_window : float, optional
         Temporal window for velocity smoothing in seconds. Default: 0.2.
         Velocities are smoothed with a moving average to reduce noise.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -892,6 +930,12 @@ def segment_by_velocity(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Smoothing and hysteresis are applied separately within each recording.
+    A movement epoch in progress at its end is truncated there.
+
     Velocity is computed as Euclidean distance between consecutive samples
     divided by time difference. Velocities are smoothed using a moving average
     to reduce noise from measurement errors. The moving average uses
@@ -1173,6 +1217,14 @@ def detect_laps(
     start_region : str | None, optional
         Name of start region for 'region' method.
         Required when method='region'.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1200,6 +1252,13 @@ def detect_laps(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Region entries are paired within each recording. Reference and auto
+    searches stay within it. The auto template still uses the first 10%
+    of the whole input, before any recording splits.
+
     **Lap Detection Methods:**
 
     - **Auto**: Automatically extracts template from first 10% of trajectory,
@@ -1708,6 +1767,14 @@ def running_direction_labels(
         If True (default), only runs that reached their target contribute
         labels; timed-out runs stay ``"other"``. If False, timed-out runs are
         labeled by their attempted direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1730,6 +1797,9 @@ def running_direction_labels(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
     Outbound and inbound runs are detected independently per end region (start
     -> end and end -> start). Where intervals overlap, inbound labels are
     applied after outbound (last-writer-wins); on a well-behaved out-and-back
@@ -1858,6 +1928,14 @@ def segment_trials(
     max_duration : float, optional
         Maximum trial duration in seconds. Default: 15.0.
         Trials exceeding this are marked as failed (timeout).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1889,6 +1967,12 @@ def segment_trials(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    A trial in progress when a recording ends is emitted there with
+    success=False, as at the end of a complete recording.
+
     Trial segmentation is fundamental for analyzing spatial navigation tasks:
 
     **T-maze**: start_region='start', end_regions=['left', 'right']
@@ -1953,7 +2037,7 @@ def segment_trials(
     >>> trajectory = np.column_stack([x_traj, y_traj])
     >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
-    >>> # Segment into trials
+    >>> # Treat these 1 Hz samples as continuous with max_gap=None
     >>> trials = segment_trials(
     ...     position_bins,
     ...     times,
@@ -1962,6 +2046,7 @@ def segment_trials(
     ...     end_regions=["left", "right"],
     ...     min_duration=5.0,
     ...     max_duration=50.0,
+    ...     max_gap=None,
     ... )
     >>> len(trials) >= 1  # Should detect at least one trial
     True
@@ -2424,6 +2509,14 @@ def detect_goal_directed_runs(
     min_progress : float, optional
         Minimum distance progress toward goal (physical units). Filters out
         short runs with minimal displacement. Default is 20.0.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -2449,6 +2542,12 @@ def detect_goal_directed_runs(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Each recording supplies one candidate. Its success flag retains the
+    existing meaning of significant progress toward the goal.
+
     **Directedness score** measures path efficiency:
 
     .. math::

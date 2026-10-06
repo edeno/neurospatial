@@ -603,16 +603,24 @@ class EnvironmentTrajectory:
             Position coordinates matching environment dimensions.
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
-            If False, return bin index for every sample.
+            If False, return a bin index for every retained sample.
         outside_value : int or None, default=-1
             Bin index for samples outside environment bounds.
             - If -1 (default), outside samples are marked with -1.
             - If None, outside samples are dropped from the sequence entirely.
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
         bins : NDArray[np.int32], shape (n_sequences,)
-            Bin index at each time point (or deduplicated sequence).
+            Bin index at each retained time point (or deduplicated sequence).
             Values are in range [0, n_bins-1] for valid bins, or -1 for
             outside samples (when outside_value=-1).
 
@@ -631,6 +639,13 @@ class EnvironmentTrajectory:
 
         Notes
         -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        Samples that touch no valid interval are dropped, including singleton
+        inputs. Deduplication never merges samples across an invalid interval.
+        With dedup=False, one bin is returned per retained sample.
+
         Timestamps must be monotonically increasing (non-decreasing).
         Sort your data by time before calling this method if needed.
 
@@ -684,6 +699,14 @@ class EnvironmentTrajectory:
             gaps split runs even when consecutive in-env samples land
             in the same bin (so ``run_lengths.sum()`` equals the
             post-filter count of in-env samples).
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
@@ -695,6 +718,16 @@ class EnvironmentTrajectory:
         See Also
         --------
         bin_sequence : Returns just the bin sequence (supports ``dedup``).
+
+        Notes
+        -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        Samples that touch no valid interval are dropped, including singleton
+        inputs. Invalid intervals split runs even if the bins match. Run
+        starts and lengths refer to the original input indices, so durations
+        computed from them exclude pauses.
 
         Examples
         --------
@@ -926,6 +959,14 @@ class EnvironmentTrajectory:
             If True, return row-stochastic matrix where each row sums to 1
             (representing transition probabilities).
             If False, return raw counts (empirical) or unnormalized weights (model).
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
@@ -957,6 +998,13 @@ class EnvironmentTrajectory:
 
         Notes
         -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        When times are supplied, a pair (k, k + lag) counts only if every
+        interval from k through k + lag - 1 is valid. Raw bin-only inputs
+        and model-based transitions have no time gate.
+
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using
         the connectivity graph. Useful for removing tracking errors.

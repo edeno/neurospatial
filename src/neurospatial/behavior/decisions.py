@@ -371,6 +371,14 @@ def extract_pre_decision_window(
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window to extract (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -381,7 +389,14 @@ def extract_pre_decision_window(
 
     Notes
     -----
-    If the requested window extends before the trajectory start,
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    The window never extends before the start of the observed run
+    containing entry_time. If entry_time lies in no run, empty arrays
+    are returned.
+
+    If the requested window extends before the observed run start,
     the returned window will be shorter than requested.
 
     Examples
@@ -555,11 +570,27 @@ def compute_pre_decision_metrics(
         Duration of pre-decision window to analyze (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     PreDecisionMetrics
         Dataclass containing all pre-decision metrics.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Only the pre-decision window in the run containing entry_time is
+    analyzed; its duration excludes any preceding pause.
 
     Examples
     --------
@@ -789,6 +820,14 @@ def detect_boundary_crossings(
         Voronoi label for each bin (from geodesic_voronoi_labels).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -796,6 +835,11 @@ def detect_boundary_crossings(
         Times when trajectory crossed a decision boundary.
     crossing_directions : list[tuple[int, int]]
         (from_goal_idx, to_goal_idx) for each crossing.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
 
     Examples
     --------
@@ -892,6 +936,14 @@ def compute_decision_analysis(
         Duration of pre-decision window to analyze (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -905,6 +957,14 @@ def compute_decision_analysis(
         If decision_region or any goal_region not found in env.regions.
     ValueError
         If positions and times have different lengths.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Pre-decision windows and boundary crossings respect these recordings.
+    Per-sample goal labels and boundary distances keep the input shape.
 
     Examples
     --------
