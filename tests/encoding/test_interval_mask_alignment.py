@@ -1,25 +1,12 @@
-"""Tests for FULL interval-mask alignment between spikes and occupancy (R1).
+"""Spike counts and occupancy share interval gates and half-open boundaries.
 
-A firing rate map is ``spike_counts (numerator) / occupancy (denominator)``
-per bin. ``env.occupancy`` drops an interval ``k`` (spanning ``[t_k, t_{k+1})``,
-``time_allocation="start"``) for THREE reasons:
-
-  * ``dt[k] > max_gap``           (large tracking gap; default max_gap=0.5 s)
-  * ``speed[k] < min_speed``      (low-speed filtering)
-  * ``start_bin[k] < 0``          (interval's start sample out of bounds)
-
-Before this fix the spike binner only filtered by the time window and (since
-task 2.6) by speed — NOT by ``max_gap`` and NOT by the out-of-bounds-start
-rule. A spike inside a dropped interval (a tracking gap, or an out-of-bounds
-excursion) was therefore COUNTED in the numerator while occupancy EXCLUDED its
-time from the denominator, inflating the rate.
-
-These tests pin that the spike numerator and the occupancy denominator now drop
-the IDENTICAL set of intervals via the single shared ``interval_valid_mask``
-helper.
+Gap, speed, bounds and window exclusions apply to the same sampling intervals
+in both sides of the firing-rate ratio. A final sample starts no interval.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -32,6 +19,25 @@ from neurospatial.encoding._binning import (
 )
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
 from neurospatial.environment.trajectory import interval_valid_mask
+
+
+@pytest.mark.parametrize("offset", [0.0, 1e9])
+def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, offset):
+    f = frame_family
+    r = replace(
+        continuous_recording,
+        times=offset + np.array([0.0, 0.5, 1.0]),
+        positions=np.tile([40.0, 40.0], (3, 1)),
+        headings=np.zeros(3),
+        spike_times=offset + np.array([0.5, 1.0]),
+    )
+    counts = f.count(*f.args(r, r.spike_times, kernel=True), **f.kernel_defaults)
+    if f.name == "egocentric":
+        counts = counts[0]
+    assert counts.sum() == 1
+    result = f.single(*f.args(r, r.spike_times), **f.defaults)
+    assert np.nansum(result.firing_rate * result.occupancy) == pytest.approx(1.0)
+
 
 SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 

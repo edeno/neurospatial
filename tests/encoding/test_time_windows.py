@@ -9,6 +9,24 @@ import pytest
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 
 
+@pytest.mark.pynapple
+def test_frame_windows_accept_intervalset(frame_family, continuous_recording):
+    nap = pytest.importorskip("pynapple")
+    f, r = frame_family, continuous_recording
+    result = f.single(
+        *f.args(r, r.spike_times),
+        **f.defaults,
+        epochs=nap.IntervalSet(start=[10.0], end=[50.0]),
+        spike_window=nap.IntervalSet(start=[20.0], end=[60.0]),
+    )
+    expected = f.single(*f.args(r, r.spike_times), **f.defaults, epochs=(20, 50))
+    np.testing.assert_array_equal(result.spike_window, [[20.0, 60.0]])
+    np.testing.assert_allclose(result.occupancy, expected.occupancy, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(
+        result.firing_rate, expected.firing_rate, rtol=1e-12, atol=0, equal_nan=True
+    )
+
+
 @pytest.mark.parametrize("kind", ["single", "plural", "empty"])
 @pytest.mark.parametrize("window", [None, (100.0, 200.0)])
 def test_results_record_spike_window(frame_family, continuous_recording, kind, window):
@@ -51,6 +69,13 @@ def test_zero_unit_occupancy_respects_windows(frame_family, two_epoch_recording)
 
 def test_spike_window_restores_true_rate(frame_family, continuous_recording):
     f, r = frame_family, continuous_recording
+    if f.name == "view":
+        # Isolate acquisition coverage from time-varying out-of-bounds gaze.
+        r = replace(
+            r,
+            positions=np.tile([40.0, 40.0], (len(r.times), 1)),
+            headings=np.zeros_like(r.headings),
+        )
     recorded = r.spike_times[r.spike_times >= 100]
     spikes = [recorded + 0.04 * u for u in range(5)]
     with pytest.warns(UserWarning, match="All 5 units are silent") as caught:
@@ -139,7 +164,7 @@ def test_epochs_equal_slicing(frame_family, continuous_recording, plural):
     )
 
 
-@pytest.mark.parametrize("n_units", [0, 1, 3])
+@pytest.mark.parametrize("n_units", [None, 0, 1, 3])
 def test_frame_analysis_mask_is_shared_once(
     frame_family, continuous_recording, monkeypatch, n_units
 ):
@@ -148,6 +173,13 @@ def test_frame_analysis_mask_is_shared_once(
 
     original = trajectory.interval_valid_mask
     seen = []
+    parser = f.module.resolve_time_windows
+    parsed = []
+
+    def track_parser(*args, **kwargs):
+        result = parser(*args, **kwargs)
+        parsed.append(result)
+        return result
 
     def track(*args, **kwargs):
         result = original(*args, **kwargs)
@@ -156,10 +188,14 @@ def test_frame_analysis_mask_is_shared_once(
 
     monkeypatch.setattr(trajectory, "interval_valid_mask", track)
     monkeypatch.setattr(f.binning, "interval_valid_mask", track, raising=False)
-    result = f.plural(
-        *f.args(r, [r.spike_times] * n_units), **f.defaults, epochs=(0, 100)
+    monkeypatch.setattr(f.module, "resolve_time_windows", track_parser)
+    result = (f.single if n_units is None else f.plural)(
+        *f.args(r, r.spike_times if n_units is None else [r.spike_times] * n_units),
+        **f.defaults,
+        epochs=(0, 100),
     )
     assert len(seen) == 1
+    assert len(parsed) == 1
     assert np.any(seen[0][:5000])
     assert not np.any(seen[0][5000:])
     assert result.occupancy.sum() == pytest.approx(np.diff(r.times)[seen[0]].sum())

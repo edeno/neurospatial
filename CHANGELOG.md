@@ -20,7 +20,9 @@
   `spike_window`. They parse windows once and apply one shared analysis mask
   across units, including empty populations. Directional, view and egocentric
   rates now recover a 5 Hz synthetic rate across a 1000-second recording pause
-  instead of charging the pause to a single bin.
+  instead of charging the pause to a single bin. In an unsmoothed example,
+  pooled directional/egocentric rates rise from 0.833 Hz to 5.001 Hz and view
+  rates from 0.717 Hz to 4.916 Hz; no bin absorbs the 1000-second pause.
 - Directional, view and egocentric binning helpers use one interval mask for
   both spike counts and occupancy. Their default `max_gap=0.5` excludes
   recording pauses instead of charging them to one bin, and their normalized
