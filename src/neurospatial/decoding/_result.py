@@ -328,7 +328,10 @@ class DecodingResult(ResultMixin):
             )
 
         When ``times`` is provided, the x-axis shows time in seconds with
-        proper extent. Otherwise, the x-axis shows time bin indices.
+        proper extent for contiguous bins. Recording breaks use bin indices
+        with dashed lines marking the breaks. Without ``times``, the x-axis
+        also shows bin indices. With only two timestamps, a gap cannot be
+        distinguished from a larger uniform bin width, so time is used.
 
         The MAP trajectory (``show_map=True``) shows the bin with highest
         posterior probability at each time step as a white line.
@@ -345,7 +348,11 @@ class DecodingResult(ResultMixin):
 
         # Compute extent for proper axis labeling
         # extent = [left, right, bottom, top]
-        if self.times is not None:
+        breaks = np.empty(0, dtype=np.intp)
+        if self.times is not None and self.times.size >= 2:
+            d = np.diff(self.times)
+            breaks = np.flatnonzero(d > 1.5 * np.min(d))
+        if self.times is not None and breaks.size == 0:
             # Use actual time values
             t_min = float(self.times[0])
             t_max = float(self.times[-1])
@@ -359,7 +366,9 @@ class DecodingResult(ResultMixin):
                 -0.5,
                 self.posterior.shape[1] - 0.5,
             ]
-            x_label = "Time bin"
+            x_label = (
+                "Time bin (dashed lines: recording gaps)" if breaks.size else "Time bin"
+            )
 
         # Build imshow kwargs
         im_kwargs: dict[str, Any] = {
@@ -381,7 +390,7 @@ class DecodingResult(ResultMixin):
         # Add MAP trajectory overlay if requested
         if show_map:
             # Get time coordinates for plotting
-            if self.times is not None:
+            if self.times is not None and breaks.size == 0:
                 x_coords: NDArray[np.float64] = self.times
             else:
                 x_coords = np.arange(self.n_time_bins, dtype=np.float64)
@@ -396,6 +405,9 @@ class DecodingResult(ResultMixin):
                 alpha=0.8,
                 label="MAP",
             )
+
+        for boundary in breaks:
+            ax.axvline(boundary + 0.5, linestyle="--", color="black", alpha=0.6)
 
         ax.set_xlabel(x_label)
         ax.set_ylabel("Spatial bin")

@@ -4,6 +4,10 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Posterior heatmaps with detected recording breaks use time-bin indices and
+  dashed gap markers, preserving visible separation instead of stretching
+  bins across a pause. Contiguous and single-bin results keep time axes;
+  two timestamps alone cannot distinguish a gap from a larger bin width.
 - `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
   `spike_window`. Training masks the original arrays instead of concatenating
   epoch slices, preserving aligned speed samples and unit identities.
