@@ -8,6 +8,70 @@ import pytest
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 
 
+@pytest.mark.parametrize("plural", [False, True])
+def test_epochs_equal_slicing(frame_family, continuous_recording, plural):
+    f, r = frame_family, continuous_recording
+    function = f.plural if plural else f.single
+    windowed = function(
+        *f.args(r, [r.spike_times] if plural else r.spike_times),
+        **f.defaults,
+        epochs=[(0.0, 100.0)],
+    )
+    keep = r.times <= 100
+    sliced = replace(
+        r, times=r.times[keep], positions=r.positions[keep], headings=r.headings[keep]
+    )
+    spikes = r.spike_times[r.spike_times < 100]
+    expected = function(*f.args(sliced, [spikes] if plural else spikes), **f.defaults)
+    np.testing.assert_allclose(
+        windowed.occupancy, expected.occupancy, rtol=1e-12, atol=0
+    )
+    np.testing.assert_allclose(
+        windowed.firing_rates if plural else windowed.firing_rate,
+        expected.firing_rates if plural else expected.firing_rate,
+        rtol=1e-12,
+        atol=0,
+        equal_nan=True,
+    )
+
+
+@pytest.mark.parametrize("n_units", [0, 1, 3])
+def test_frame_analysis_mask_is_shared_once(
+    frame_family, continuous_recording, monkeypatch, n_units
+):
+    f, r = frame_family, continuous_recording
+    from neurospatial.environment import trajectory
+
+    original = trajectory.interval_valid_mask
+    seen = []
+
+    def track(*args, **kwargs):
+        result = original(*args, **kwargs)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(trajectory, "interval_valid_mask", track)
+    monkeypatch.setattr(f.binning, "interval_valid_mask", track, raising=False)
+    result = f.plural(
+        *f.args(r, [r.spike_times] * n_units), **f.defaults, epochs=(0, 100)
+    )
+    assert len(seen) == 1
+    assert np.any(seen[0][:5000])
+    assert not np.any(seen[0][5000:])
+    assert result.occupancy.sum() == pytest.approx(np.diff(r.times)[seen[0]].sum())
+    assert result.occupancy.sum() <= 100.0 + 1e-9
+
+
+def test_frame_window_errors_are_aggregated(frame_family, continuous_recording):
+    f, r = frame_family, continuous_recording
+    with pytest.raises(ValueError) as exc:
+        f.single(
+            *f.args(r, r.spike_times), **f.defaults, epochs=(2, 1), spike_window="bad"
+        )
+    for word in ("epochs", "spike_window", "Why:", "Fix:"):
+        assert word in str(exc.value)
+
+
 @pytest.fixture
 def direct_rate_result_factory(continuous_recording):
     from neurospatial import Environment

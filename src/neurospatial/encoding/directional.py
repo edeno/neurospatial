@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+from neurospatial._intervals import resolve_time_windows
 from neurospatial.encoding._base import SpatialResultMixin
 
 __all__ = [
@@ -1650,6 +1651,9 @@ def compute_directional_rate(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
     """Compute directional firing rate for one neuron.
@@ -1777,14 +1781,15 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._directional_binning import (
-        bin_directional_spike_train,
-        compute_directional_occupancy,
+        bin_directional_spike_trains,
     )
     from neurospatial.encoding._validation import (
         validate_spike_times,
@@ -1814,15 +1819,18 @@ def compute_directional_rate(
     validate_trajectory(times, headings=headings, context="compute_directional_rate")
     validate_spike_times(spike_times, context="compute_directional_rate")
 
-    # Compute occupancy and bin centers
-    occupancy, bin_centers = compute_directional_occupancy(
-        times, headings, bin_size, angle_unit=angle_unit
+    # Counts and occupancy share one frame mask, including a single unit.
+    counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
+        [spike_times],
+        times,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
-
-    # Bin spike train
-    spike_counts = bin_directional_spike_train(
-        spike_times, times, headings, bin_size, angle_unit=angle_unit
-    )
+    spike_counts = counts_batch[0]
 
     # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
     # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
@@ -1887,6 +1895,9 @@ def compute_directional_rates(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -2032,14 +2043,15 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._directional_binning import (
-        bin_directional_spike_train,
-        compute_directional_occupancy,
+        bin_directional_spike_trains,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
@@ -2086,9 +2098,17 @@ def compute_directional_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
 
-    # Precompute shared quantities: occupancy and bin centers
-    occupancy, bin_centers = compute_directional_occupancy(
-        times, headings, bin_size, angle_unit=angle_unit
+    # Precompute frame bins and one shared mask for the whole population.
+    spike_counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
+        spike_times_list,
+        times,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
+        n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     n_bins = len(bin_centers)
 
@@ -2138,12 +2158,9 @@ def compute_directional_rates(
 
     # Helper function to process a single neuron's spike train
     def _process_neuron(
-        neuron_spikes: NDArray[np.float64],
+        spike_counts: NDArray[np.float64],
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Bin spike train and compute (firing_rate, spike_counts) for one neuron."""
-        spike_counts = bin_directional_spike_train(
-            neuron_spikes, times, headings, bin_size, angle_unit=angle_unit
-        )
+        """Compute (firing_rate, spike_counts) from shared-mask counts."""
 
         # Apply smoothing if requested
         if bandwidth_rad is not None:
@@ -2164,17 +2181,8 @@ def compute_directional_rates(
         # Return the unsmoothed counts for the Rayleigh test weights.
         return firing_rate, spike_counts
 
-    # Process neurons (sequential or parallel)
-    if n_jobs == 1 or n_neurons <= 1:
-        # Sequential processing
-        processed = [_process_neuron(spikes) for spikes in spike_times_list]
-    else:
-        # Parallel processing with joblib
-        from joblib import Parallel, delayed
-
-        processed = Parallel(n_jobs=n_jobs)(
-            delayed(_process_neuron)(spikes) for spikes in spike_times_list
-        )
+    # Spike counting already honors n_jobs in the shared binning path.
+    processed = [_process_neuron(counts) for counts in spike_counts_batch]
 
     firing_rates = np.array([rate for rate, _ in processed], dtype=np.float64)
     spike_counts_all: ArrayLike = np.array(
@@ -2216,6 +2224,9 @@ def is_head_direction_cell(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     min_mvl: float = 0.4,
     alpha: float = 0.05,
 ) -> bool:
@@ -2312,6 +2323,9 @@ def is_head_direction_cell(
             bin_size=bin_size,
             bandwidth=bandwidth,
             angle_unit=angle_unit,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
     except (ValueError, RuntimeError):
         # Computation passed validation but produced no usable tuning

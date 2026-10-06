@@ -84,6 +84,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import resolve_time_windows
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
@@ -1117,6 +1118,9 @@ def compute_view_rate(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1276,6 +1280,8 @@ def compute_view_rate(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1348,6 +1354,9 @@ def compute_view_rate(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         n_jobs=1,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     spike_counts = spike_counts_batch[0]
 
@@ -1393,6 +1402,9 @@ def compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1595,6 +1607,8 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1685,6 +1699,9 @@ def compute_view_rates(
             gaze_model=gaze_model,
             view_distance=view_distance,
             gaze_offsets=gaze_offsets,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
         occupancy_result: ArrayLike = occupancy
@@ -1716,6 +1733,9 @@ def compute_view_rates(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -1765,6 +1785,9 @@ def is_spatial_view_cell(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_info: float = 0.5,
@@ -1838,6 +1861,9 @@ def is_spatial_view_cell(
             gaze_model=gaze_model,
             method=method,
             bandwidth=bandwidth,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
         return result.is_spatial_view_cell(min_info=min_info)
     except (ValueError, RuntimeError):

@@ -35,6 +35,65 @@ from neurospatial.ops.smoothing import compute_diffusion_kernels
 # =============================================================================
 
 
+@pytest.fixture(scope="module")
+def frame_population_recording():
+    """Fifty seeded 5 Hz units with 60 seconds of 50 Hz tracking."""
+    from types import SimpleNamespace
+
+    times = np.arange(3000) / 50
+    positions = np.c_[50 + 40 * np.sin(times / 3.1), 50 + 40 * np.cos(times / 4.7)]
+    rng = np.random.default_rng(0)
+    headings = rng.uniform(-np.pi, np.pi, times.size)
+    spikes = [np.sort(rng.uniform(0, 60, rng.poisson(300))) for _ in range(50)]
+    return SimpleNamespace(
+        times=times,
+        positions=positions,
+        headings=headings,
+        spikes=spikes,
+        env=Environment.from_samples(positions, bin_size=5.0),
+    )
+
+
+@pytest.mark.slow
+class TestFrameFamilyRates:
+    """Track population frame-binning runtime on a shared recording."""
+
+    @pytest.mark.parametrize("family", ["directional", "view", "egocentric"])
+    def test_population_rates(self, benchmark, frame_population_recording, family):
+        from neurospatial.encoding import (
+            compute_directional_rates,
+            compute_egocentric_rates,
+            compute_view_rates,
+        )
+
+        r = frame_population_recording
+        if family == "directional":
+            result = benchmark(compute_directional_rates, r.spikes, r.times, r.headings)
+        elif family == "view":
+            result = benchmark(
+                compute_view_rates,
+                r.env,
+                r.spikes,
+                r.times,
+                r.positions,
+                r.headings,
+                view_distance=5.0,
+            )
+        else:
+            result = benchmark(
+                compute_egocentric_rates,
+                r.env,
+                r.spikes,
+                r.times,
+                r.positions,
+                r.headings,
+                np.array([[50.0, 50.0]]),
+                distance_range=(0, 100),
+            )
+        assert result.firing_rates.shape == (50, len(result.occupancy))
+        assert 0 < result.occupancy.sum() <= 59.98 + 1e-6
+
+
 def _compute_spatial_rate_map(*args, **kwargs):
     """Return only the rate map so benchmarks track the old ndarray surface."""
     return compute_spatial_rate(*args, **kwargs).firing_rate

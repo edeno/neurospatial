@@ -4,6 +4,13 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- `compute_directional_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_head_direction_cell`, `is_spatial_view_cell`,
+  and `is_object_vector_cell` accept keyword-only `max_gap`, `epochs`, and
+  `spike_window`. They parse windows once and apply one shared analysis mask
+  across units, including empty populations. Directional, view and egocentric
+  rates now recover a 5 Hz synthetic rate across a 1000-second recording pause
+  instead of charging the pause to a single bin.
 - Directional, view and egocentric binning helpers use one interval mask for
   both spike counts and occupancy. Their default `max_gap=0.5` excludes
   recording pauses instead of charging them to one bin, and their normalized

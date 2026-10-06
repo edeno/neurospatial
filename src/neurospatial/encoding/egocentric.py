@@ -79,6 +79,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import resolve_time_windows
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
@@ -1333,6 +1334,9 @@ def compute_egocentric_rate(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1494,6 +1498,8 @@ def compute_egocentric_rate(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1578,6 +1584,9 @@ def compute_egocentric_rate(
         metric=metric,
         env=env,
         n_jobs=1,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     spike_counts = spike_counts_batch[0]
 
@@ -1622,6 +1631,9 @@ def compute_egocentric_rates(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1838,6 +1850,8 @@ def compute_egocentric_rates(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1942,6 +1956,9 @@ def compute_egocentric_rates(
             n_direction_bins=n_direction_bins,
             metric=metric,
             env=env,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )
         firing_rates_result: ArrayLike = np.empty(
             (0, polar_env.n_bins), dtype=np.float64
@@ -1977,6 +1994,9 @@ def compute_egocentric_rates(
         metric=metric,
         env=env,
         n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
 
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
@@ -2174,6 +2194,9 @@ def is_object_vector_cell(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     min_info: float = 0.3,
 ) -> bool:
     """Quick check: Is this an object-vector cell?
@@ -2262,6 +2285,9 @@ def is_object_vector_cell(
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
     except (ValueError, RuntimeError):
         return False
