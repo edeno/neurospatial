@@ -63,6 +63,32 @@ def validate_dt(dt: float) -> float:
     return dt
 
 
+def _time_bin_rounding(
+    windows: NDArray[np.float64],
+    dt: float,
+    *,
+    context: str = "Time bins",
+    width_name: str = "dt",
+    clock_fix: str | None = None,
+) -> NDArray[np.float64]:
+    """Return edge rounding allowance, refusing unrepresentable bin widths."""
+    start, stop = windows[:, 0], windows[:, 1]
+    rounding = 4.0 * np.spacing(np.maximum(np.abs(start), np.abs(stop)))
+    imprecise = rounding > 1e-2 * dt
+    if imprecise.any():
+        w = int(np.flatnonzero(imprecise)[0])
+        fix = clock_fix or (
+            "subtract a time origin first (e.g. times - times[0], and the same "
+            "offset from spike times and windows), or use a larger dt."
+        )
+        raise ValueError(
+            f"{context} of {width_name}={dt:g} s cannot be represented at timestamps near "
+            f"{start[w]:.6g} s: float64 rounding there is {rounding[w]:.3g} s, more "
+            f"than 1% of {width_name}.\nFix: {fix}"
+        )
+    return rounding
+
+
 def time_bins_in_windows(
     windows: NDArray[np.float64], dt: float
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -92,17 +118,7 @@ def time_bins_in_windows(
     # Rounding error of the edges is a few ulp of the timestamps' magnitude.
     # If that is not small against dt, the edges cannot be represented to bin
     # precision, so refuse instead of inventing or merging bins.
-    rounding = 4.0 * np.spacing(np.maximum(np.abs(start), np.abs(stop)))
-    imprecise = rounding > 1e-2 * dt
-    if imprecise.any():
-        w = int(np.flatnonzero(imprecise)[0])
-        raise ValueError(
-            f"Time bins of dt={dt:g} s cannot be represented at timestamps near "
-            f"{start[w]:.6g} s: float64 rounding there is {rounding[w]:.3g} s, more "
-            f"than 1% of dt.\n"
-            f"Fix: subtract a time origin first (e.g. times - times[0], and the same "
-            f"offset from spike times and windows), or use a larger dt."
-        )
+    rounding = _time_bin_rounding(windows, dt)
     ratio = (stop - start) / dt
     # A shortfall below the rounding allowance is rounding, not a partial bin.
     # After the precision check the allowance is at most ~0.01, so it can

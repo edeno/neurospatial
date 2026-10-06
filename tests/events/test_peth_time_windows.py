@@ -145,3 +145,33 @@ def test_no_whole_peth_bin_preserves_empty_result(population):
     counts = result.histograms[0] if population else result.histogram
     assert counts.shape == (0,)
     assert result.bin_centers.shape == (0,)
+
+
+@pytest.mark.parametrize("population", [False, True])
+@pytest.mark.parametrize("event", [100.0, 1.7e9])
+def test_absolute_event_window_stop_is_excluded(population, event):
+    """Subtracting a nonzero event must not move its stop into the last bin."""
+    function = population_peri_event_histogram if population else peri_event_histogram
+    spikes = event + np.array([0.1, 0.2, 0.3])
+    result = function(
+        [spikes] if population else spikes,
+        np.array([event, event]),
+        (0.1, 0.3),
+        bin_size=0.1,
+    )
+    counts = result.histograms[0] if population else result.histogram
+    np.testing.assert_array_equal(counts, [1, 1])
+
+
+@pytest.mark.parametrize("population", [False, True])
+def test_peth_rejects_unrepresentable_absolute_edges(population):
+    function = population_peri_event_histogram if population else peri_event_histogram
+    spikes = np.array([1e9])
+    with pytest.raises(ValueError, match=r"peri-event.*bin_size") as error:
+        function(
+            [spikes] if population else spikes,
+            np.array([1e9, 1e9]),
+            (0, 1e-6),
+            bin_size=2e-7,
+        )
+    assert "Fix: subtract a time origin" in str(error.value)

@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import intervals_contain, resolve_time_windows
 from neurospatial.decoding._binning import (
+    _time_bin_rounding,
     count_spikes_in_time_bins,
     time_bins_in_windows,
 )
@@ -230,6 +231,40 @@ def _keep_observed_events(
     return event_times[keep], n_dropped
 
 
+def _count_peri_event_bins(
+    spike_times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    bin_edges: NDArray[np.float64],
+    bin_size: float,
+) -> NDArray[np.float64]:
+    """Count on the absolute clock without rounding spikes across boundaries."""
+    # Preserve the primitive's spike/event validation. Its relative-time output
+    # cannot be used for counting: subtraction can move an exact boundary spike.
+    align_spikes_to_events(spike_times, event_times, window)
+    windows = np.c_[event_times + window[0], event_times + window[1]]
+    _time_bin_rounding(
+        windows,
+        bin_size,
+        context="peri-event bins",
+        width_name="bin_size",
+        clock_fix=(
+            "subtract a time origin from spike_times and event_times first "
+            "(keep the relative window unchanged), or use a larger bin_size."
+        ),
+    )
+    spikes = np.sort(np.asarray(spike_times, dtype=np.float64))
+    histograms = np.zeros((event_times.size, bin_edges.size - 1), dtype=np.float64)
+    for i, event in enumerate(event_times):
+        edges = np.minimum(event + bin_edges, windows[i, 1])
+        start = np.searchsorted(spikes, edges[0], side="left")
+        stop = np.searchsorted(spikes, edges[-1], side="left")
+        histograms[i] = count_spikes_in_time_bins(
+            [spikes[start:stop]], edges[:-1], edges[1:]
+        )[:, 0]
+    return histograms
+
+
 def peri_event_histogram(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -365,20 +400,14 @@ def peri_event_histogram(
             stacklevel=2,
         )
 
-    # Get aligned spikes for each event
-    aligned = align_spikes_to_events(spike_times, event_times, window)
-
     # Create bin edges (see _make_bin_edges for the partial-bin policy).
     bin_edges, bin_centers = _make_bin_edges(window, bin_size)
     n_bins = len(bin_centers)
 
     # Compute histogram for each event
-    histograms = np.zeros((n_events, n_bins), dtype=np.float64)
-    for i, trial_spikes in enumerate(aligned):
-        if len(trial_spikes) > 0:
-            histograms[i] = count_spikes_in_time_bins(
-                [trial_spikes], bin_edges[:-1], bin_edges[1:]
-            )[:, 0]
+    histograms = _count_peri_event_bins(
+        spike_times, event_times, window, bin_edges, bin_size
+    )
 
     # Compute mean and SEM
     mean_histogram = histograms.mean(axis=0)
@@ -578,15 +607,9 @@ def population_peri_event_histogram(
     all_histograms = np.zeros((n_units, n_events, n_bins), dtype=np.float64)
 
     for unit_idx, spike_times in enumerate(trains):
-        # Get aligned spikes for this unit
-        aligned = align_spikes_to_events(spike_times, event_times, window)
-
-        # Compute histogram for each event
-        for event_idx, trial_spikes in enumerate(aligned):
-            if len(trial_spikes) > 0:
-                all_histograms[unit_idx, event_idx] = count_spikes_in_time_bins(
-                    [trial_spikes], bin_edges[:-1], bin_edges[1:]
-                )[:, 0]
+        all_histograms[unit_idx] = _count_peri_event_bins(
+            spike_times, event_times, window, bin_edges, bin_size
+        )
 
     # Compute per-unit mean and SEM across events
     # histograms shape: (n_units, n_bins)

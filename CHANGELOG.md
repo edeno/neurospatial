@@ -4,6 +4,10 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Peri-event counts use original spike times against absolute event-shifted
+  edges, preserving inclusive starts and exclusive stops at nonzero and Unix
+  timestamps. The shared precision guard rejects widths that the absolute
+  clock cannot represent, with an origin-shift fix for spike/event times.
 - Peri-event histograms share the decoding edge and count helpers: every bin
   is half-open and stays inside its requested window. Spikes at the last
   whole-bin edge are excluded, and large timestamp offsets use relative
