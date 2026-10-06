@@ -1,7 +1,22 @@
 """Shared gap-free calls for structured kinematic baseline comparisons."""
 
+from dataclasses import replace
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+
+def load_kinematic_recording(recording):
+    """Load the original recording's exact numeric inputs across platforms."""
+    from neurospatial import Environment
+
+    file = Path(__file__).parent / "data" / "kinematics_inputs.npz"
+    with np.load(file, allow_pickle=False) as archive:
+        arrays = {name: archive[name] for name in archive.files}
+    env = Environment.from_samples(arrays["positions"], bin_size=5.0)
+    env.units = "cm"
+    return replace(recording, **arrays, env=env)
 
 
 def capture_kinematics_outputs(recording, *, legacy_heading=False):
@@ -35,6 +50,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     r = recording
     goal = r.positions[-1]
     bins = r.env.bin_at(r.positions)
+    # Unique visit counts avoid depending on an unstable sort's tied-bin order.
+    home_bins = np.repeat(np.arange(20), np.arange(10, 30))
+    home_times = r.times[: len(home_bins)]
     # Avoid changing the session-scoped fixture's regions.
     env = r.env.copy()
     env.regions.add("decision", point=tuple(env.bin_centers[bins[4000]]))
@@ -82,8 +100,8 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "compute_trajectory_curvature_no_times": compute_trajectory_curvature(
             r.positions
         ),
-        "compute_home_range": compute_home_range(bins, times=r.times),
-        "compute_home_range_no_times": compute_home_range(bins),
+        "compute_home_range": compute_home_range(home_bins, times=home_times),
+        "compute_home_range_no_times": compute_home_range(home_bins),
         "add_positions": add_positions(
             pd.DataFrame({"timestamp": [0.0, 50.005, 120.01, r.times[-1]]}),
             times=r.times,

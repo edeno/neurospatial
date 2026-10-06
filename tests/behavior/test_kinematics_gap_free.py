@@ -1,7 +1,9 @@
 """Gap-free kinematic outputs captured from baseline commit a51ff5eb.
 
-The same continuous 50 Hz fixture supplies all inventory functions and shared
-composites. Structure and labels are exact; floating values use rtol=1e-12.
+Frozen inputs from the continuous 50 Hz fixture supply the inventory functions
+and shared composites. Home-range calls use distinct visit counts at 50 Hz to
+avoid depending on the order of tied bins. Structure and labels are exact;
+floating values use rtol=1e-12.
 The baseline heading API uses a scalar dt and smoothing sigma in samples.
 """
 
@@ -11,14 +13,18 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ._kinematics_snapshots import capture_kinematics_outputs
+from ._kinematics_snapshots import (
+    capture_kinematics_outputs,
+    load_kinematic_recording,
+)
 from ._segmentation_snapshots import structural_snapshot
 from .test_segmentation_gap_free import assert_snapshot_equal
 
 
 @pytest.fixture(scope="session")
 def kinematic_outputs(continuous_recording):
-    return capture_kinematics_outputs(continuous_recording)
+    recording = load_kinematic_recording(continuous_recording)
+    return capture_kinematics_outputs(recording)
 
 
 @pytest.fixture(scope="session")
