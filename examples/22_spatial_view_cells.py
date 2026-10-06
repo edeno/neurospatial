@@ -51,12 +51,11 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.encoding import (
-    FieldOfView,
     compute_spatial_rate,
     compute_view_rate,
-    compute_viewed_location,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
+from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 from neurospatial.simulation import (
     PlaceCellModel,
     SpatialViewCellModel,
@@ -104,7 +103,7 @@ positions = 50 + np.cumsum(velocities * dt, axis=0)
 positions = np.clip(positions, 10, 90)  # Stay in bounds
 
 # Compute heading from velocity
-headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
+headings = heading_from_velocity(positions, times, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {n_time} samples, {times[-1]:.1f}s duration")
 print(

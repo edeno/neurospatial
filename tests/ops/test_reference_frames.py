@@ -12,6 +12,134 @@ import pytest
 from numpy.testing import assert_allclose
 
 
+def test_heading_from_velocity_ignores_pause(two_epoch_recording):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    r = two_epoch_recording
+    headings = heading_from_velocity(r.positions, r.times)
+    previous = r.positions[4999] - r.positions[4998]
+    jump = r.positions[5000] - r.positions[4999]
+    expected = np.arctan2(previous[1], previous[0])
+    np.testing.assert_allclose(headings[4999], expected, rtol=1e-12, atol=0)
+    jump_heading = np.arctan2(jump[1], jump[0])
+    assert not np.any(np.isclose(headings, jump_heading, rtol=1e-12, atol=1e-12))
+
+
+def test_heading_from_velocity_isolated_sample_nan(two_epoch_recording):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    r = two_epoch_recording
+    selected = [0, 1, 4999, 5000, 5001]
+    headings = heading_from_velocity(r.positions[selected], r.times[selected])
+    assert np.isnan(headings[2])
+    assert np.isfinite(headings[[0, 1, 3, 4]]).all()
+
+
+def test_heading_interpolation_stays_in_run(two_epoch_recording):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    r = two_epoch_recording
+    times = r.times[np.r_[np.arange(6), 5000 + np.arange(6)]]
+    positions = np.c_[
+        np.r_[0, 1, 2, 2, 2, 2, np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
+    ]
+    headings = heading_from_velocity(positions, times, min_speed=5.0)
+    np.testing.assert_allclose(headings[:6], 0.0, atol=0)
+    np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
+
+
+def test_run_without_moving_anchors_stays_nan(two_epoch_recording):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    r = two_epoch_recording
+    times = r.times[np.r_[np.arange(6), 5000 + np.arange(6)]]
+    positions = np.c_[
+        np.r_[np.zeros(6), np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
+    ]
+    headings = heading_from_velocity(positions, times, min_speed=5.0)
+    assert np.isnan(headings[:6]).all()
+    np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
+
+
+@pytest.mark.parametrize(
+    "times",
+    [
+        np.array(0.1),
+        np.zeros((3, 1)),
+        np.array([0.0, 0.1]),
+        np.array([0.0, 0.0, 0.1]),
+        np.array([0.2, 0.1, 0.0]),
+        np.array([0.0, np.nan, 0.2]),
+        np.array([0.0, np.inf, 0.2]),
+        np.array(["zero", "one", "two"]),
+    ],
+)
+def test_heading_from_velocity_rejects_bad_times(times):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    positions = np.c_[[0.0, 1.0, 2.0], np.zeros(3)]
+    with pytest.raises(ValueError) as caught:
+        heading_from_velocity(positions, times)
+    message = str(caught.value)
+    assert "times" in message
+    assert "Why:" in message
+    assert "Fix:" in message
+
+
+def test_velocity_heading_uses_actual_intervals():
+    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+
+    times = np.array([0.0, 0.1, 0.3])
+    positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 4.0]])
+    headings, speed = _velocity_heading_and_speed(
+        positions,
+        times,
+        interval_mask=observed_interval_mask(times, max_gap=0.5, epochs=None),
+    )
+    np.testing.assert_allclose(headings, [0, np.pi / 2, np.pi / 2])
+    np.testing.assert_allclose(speed, [10, 20, 20])
+
+
+def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
+    from scipy.ndimage import gaussian_filter1d
+
+    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+
+    r = two_epoch_recording
+    headings, speed = _velocity_heading_and_speed(
+        r.positions,
+        r.times,
+        bandwidth=2.0,
+        interval_mask=observed_interval_mask(r.times, max_gap=0.5, epochs=None),
+    )
+    for run in (slice(0, 5000), slice(5000, 10000)):
+        velocity = np.diff(r.positions[run], axis=0) / np.diff(r.times[run])[:, None]
+        velocity = np.vstack([velocity, velocity[-1]])
+        velocity = gaussian_filter1d(velocity, 2.0, axis=0)
+        expected_heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+        expected_speed = np.hypot(velocity[:, 0], velocity[:, 1])
+        np.testing.assert_allclose(headings[run], expected_heading, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(speed[run], expected_speed, rtol=1e-12, atol=0)
+
+
+@pytest.mark.parametrize(
+    "positions",
+    [np.arange(4.0), np.arange(4.0)[:, None], np.array(0.0), np.zeros((4, 2, 2))],
+)
+def test_heading_rejects_position_shapes_before_broadcast(positions):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    with pytest.raises(ValueError) as caught:
+        heading_from_velocity(positions, np.arange(4) * 0.1)
+    message = str(caught.value)
+    assert "positions" in message
+    assert "shape" in message
+    assert "Why:" in message
+    assert "Fix:" in message
+
+
 class TestModuleSetup:
     """Test module imports and structure."""
 
@@ -537,7 +665,7 @@ class TestHeadingFromVelocity:
         t = np.linspace(0, 10, 100)
         positions = np.column_stack([t * 10, np.zeros_like(t)])  # x = 0 to 100
 
-        headings = heading_from_velocity(positions, dt=t[1] - t[0])
+        headings = heading_from_velocity(positions, times=t)
 
         # All headings should be 0 (East), except possibly at boundaries
         assert_allclose(headings[10:-10], 0.0, atol=0.1)
@@ -550,7 +678,7 @@ class TestHeadingFromVelocity:
         t = np.linspace(0, 10, 100)
         positions = np.column_stack([np.zeros_like(t), t * 10])
 
-        headings = heading_from_velocity(positions, dt=t[1] - t[0])
+        headings = heading_from_velocity(positions, times=t)
 
         # All headings should be π/2 (North)
         assert_allclose(headings[10:-10], np.pi / 2, atol=0.1)
@@ -571,7 +699,10 @@ class TestHeadingFromVelocity:
         positions[70:, 0] = 30 + np.arange(30)
 
         headings = heading_from_velocity(
-            positions, dt=0.1, min_speed=0.5, bandwidth=2.0
+            positions,
+            times=np.arange(len(positions)) * 0.1,
+            min_speed=0.5,
+            bandwidth=2.0,
         )
 
         # Stationary period should have smoothly interpolated headings
@@ -598,12 +729,17 @@ class TestHeadingFromVelocity:
         positions = np.random.RandomState(42).randn(100, 2) * 0.001
 
         with pytest.raises(ValueError, match=r"(?i)min_speed|speed"):
-            heading_from_velocity(positions, dt=0.1, min_speed=10.0)
+            heading_from_velocity(
+                positions, times=np.arange(len(positions)) * 0.1, min_speed=10.0
+            )
 
         # Opt-in escape hatch: warns and returns the all-NaN array.
         with pytest.warns(UserWarning, match="speed"):
             headings = heading_from_velocity(
-                positions, dt=0.1, min_speed=10.0, allow_all_nan=True
+                positions,
+                times=np.arange(len(positions)) * 0.1,
+                min_speed=10.0,
+                allow_all_nan=True,
             )
         assert np.all(np.isnan(headings))
 
@@ -614,7 +750,7 @@ class TestHeadingFromVelocity:
         positions = np.array([[0.0, 0.0]])  # Only 1 point
 
         with pytest.raises(ValueError, match="at least 2"):
-            heading_from_velocity(positions, dt=0.1)
+            heading_from_velocity(positions, times=np.arange(len(positions)) * 0.1)
 
     def test_smoothing_reduces_noise(self):
         """Larger smoothing sigma reduces heading noise."""
@@ -626,8 +762,12 @@ class TestHeadingFromVelocity:
         noise = rng.normal(0, 0.5, size=(100, 2))
         positions = np.column_stack([t * 10, np.zeros_like(t)]) + noise
 
-        headings_no_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=0)
-        headings_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=5)
+        headings_no_smooth = heading_from_velocity(
+            positions, times=np.arange(len(positions)) * 0.1, bandwidth=0
+        )
+        headings_smooth = heading_from_velocity(
+            positions, times=np.arange(len(positions)) * 0.1, bandwidth=5
+        )
 
         # Smoothed version should have less variance
         var_no_smooth = np.nanvar(headings_no_smooth[10:-10])
@@ -759,7 +899,9 @@ class TestHeadingFromVelocityWestward:
         y = np.full_like(x, 50.0)
         positions = np.column_stack([x, y])
 
-        headings = heading_from_velocity(positions, dt=0.1, min_speed=5.0)
+        headings = heading_from_velocity(
+            positions, times=np.arange(len(positions)) * 0.1, min_speed=5.0
+        )
 
         assert np.allclose(headings, np.pi, atol=1e-6)
 
@@ -777,7 +919,9 @@ class TestHeadingFromVelocityWestward:
         y = np.full_like(x, 50.0)
         positions = np.column_stack([x, y])
 
-        headings = heading_from_velocity(positions, dt=0.1, min_speed=5.0)
+        headings = heading_from_velocity(
+            positions, times=np.arange(len(positions)) * 0.1, min_speed=5.0
+        )
 
         assert np.allclose(headings, np.pi, atol=1e-6)
         # Explicitly: no sample collapsed to -pi.
@@ -823,19 +967,19 @@ class TestAllocentricToEgocentricSignConvention:
 
 
 class TestHeadingFromVelocityGuards:
-    """heading_from_velocity must reject non-positive dt and non-finite positions."""
+    """heading_from_velocity must reject non-increasing timestamps and non-finite positions."""
 
-    def test_heading_from_velocity_rejects_nonpositive_dt(self):
-        """dt == 0 and dt < 0 each raise ValueError instead of NaN/flipped headings."""
+    def test_heading_from_velocity_rejects_nonincreasing_times(self):
+        """Duplicate and descending timestamps raise instead of NaN/flipped headings."""
         from neurospatial.ops.egocentric import heading_from_velocity
 
         positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
 
-        with pytest.raises(ValueError, match="dt"):
-            heading_from_velocity(positions, dt=0.0)
+        with pytest.raises(ValueError, match="times"):
+            heading_from_velocity(positions, times=np.arange(len(positions)) * 0.0)
 
-        with pytest.raises(ValueError, match="dt"):
-            heading_from_velocity(positions, dt=-0.1)
+        with pytest.raises(ValueError, match="times"):
+            heading_from_velocity(positions, times=np.arange(len(positions)) * -0.1)
 
     def test_heading_from_velocity_rejects_nonfinite_positions(self):
         """positions containing NaN or Inf raise ValueError via validate_finite."""
@@ -843,28 +987,32 @@ class TestHeadingFromVelocityGuards:
 
         with_nan = np.array([[0.0, 0.0], [np.nan, 0.0], [2.0, 0.0]])
         with pytest.raises(ValueError):
-            heading_from_velocity(with_nan, dt=0.1)
+            heading_from_velocity(with_nan, times=np.arange(len(with_nan)) * 0.1)
 
         with_inf = np.array([[0.0, 0.0], [np.inf, 0.0], [2.0, 0.0]])
         with pytest.raises(ValueError):
-            heading_from_velocity(with_inf, dt=0.1)
+            heading_from_velocity(with_inf, times=np.arange(len(with_inf)) * 0.1)
 
-    def test_heading_from_velocity_negative_dt_would_flip(self):
-        """The dt guard blocks the dt<0 call that would rotate headings by pi.
+    def test_heading_from_velocity_descending_times_would_flip(self):
+        """The timestamp guard blocks descending times that would rotate headings by pi.
 
-        For an eastward trajectory a correct positive dt gives heading ~= 0;
-        a negative dt would silently negate the velocity and return ~= pi.
+        For an eastward trajectory ascending times give heading ~= 0;
+        descending times would silently negate the velocity and return ~= pi.
         """
         from neurospatial.ops.egocentric import heading_from_velocity
 
         positions = np.column_stack([np.arange(20, dtype=float), np.zeros(20)])
 
-        headings = heading_from_velocity(positions, dt=0.1, min_speed=1.0)
+        headings = heading_from_velocity(
+            positions, times=np.arange(len(positions)) * 0.1, min_speed=1.0
+        )
         assert np.allclose(headings[:-1], 0.0, atol=1e-8)
 
-        # The dt<0 call (which would return ~= pi) must instead raise.
-        with pytest.raises(ValueError, match="dt"):
-            heading_from_velocity(positions, dt=-0.1, min_speed=1.0)
+        # Descending times (which would return ~= pi) must instead raise.
+        with pytest.raises(ValueError, match="times"):
+            heading_from_velocity(
+                positions, times=np.arange(len(positions)) * -0.1, min_speed=1.0
+            )
 
 
 class TestEgocentricDistance3DTargets:
@@ -956,7 +1104,9 @@ def test_heading_from_velocity_turn_is_gradual():
     from neurospatial.ops.egocentric import heading_from_velocity
 
     positions = np.column_stack([[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)])
-    heading = heading_from_velocity(positions, 0.1, min_speed=0.5)
+    heading = heading_from_velocity(
+        positions, np.arange(len(positions)) * 0.1, min_speed=0.5
+    )
     assert np.max(np.abs(np.diff(heading))) <= np.pi / 4 + 1e-12
 
 

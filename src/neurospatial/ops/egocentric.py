@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -652,79 +652,132 @@ def compute_egocentric_distance(
     return distances
 
 
+def _validate_velocity_positions(
+    positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Reject shapes that cannot supply aligned x/y velocity components."""
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim != 2 or positions.shape[1] < 2:
+        raise ValueError(
+            f"positions must be a 2-D array with at least x/y coordinates; "
+            f"got shape {positions.shape}.\n"
+            "Why: per-interval timestamps must align with position rows; "
+            "a 1-D array would broadcast into a square velocity matrix.\n"
+            "Fix: pass positions with shape (n_samples, 2), for example "
+            "np.column_stack([x, y]), with one timestamp per row."
+        )
+    return positions
+
+
+def _validate_velocity_times(
+    times: NDArray[np.float64], n_samples: int
+) -> NDArray[np.float64]:
+    """Validate the timestamp array before building an interval mask."""
+    try:
+        times = np.asarray(times, dtype=np.float64)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"times must be numeric timestamps; got {times!r}.\n"
+            "Why: velocities need seconds between consecutive samples.\n"
+            "Fix: pass heading_from_velocity(positions, times) with a numeric "
+            "1-D timestamp array, one timestamp per position."
+        ) from error
+    problems = []
+    if times.ndim != 1:
+        problems.append(f"times must be 1-D; got shape {times.shape}")
+    else:
+        if len(times) != n_samples:
+            problems.append(
+                f"times and positions must have the same length; got "
+                f"{len(times)} times and {n_samples} positions"
+            )
+        finite = np.isfinite(times)
+        if not finite.all():
+            index = int(np.flatnonzero(~finite)[0])
+            problems.append(
+                f"times must be finite; got {times[index]!r} at index {index}"
+            )
+        elif np.any(np.diff(times) <= 0):
+            index = int(np.flatnonzero(np.diff(times) <= 0)[0])
+            problems.append(
+                f"times must be strictly increasing; got "
+                f"{times[index]!r}, {times[index + 1]!r} at indices "
+                f"{index}, {index + 1}"
+            )
+    if problems:
+        raise ValueError(
+            "; ".join(problems) + ".\n"
+            "Why: each position needs a finite timestamp and a positive "
+            "elapsed interval for velocity.\n"
+            "Fix: pass heading_from_velocity(positions, times) with a 1-D "
+            "timestamp array of matching length; remove non-finite samples "
+            "and sort/de-duplicate positions and times together."
+        )
+    return times
+
+
 def _velocity_heading_and_speed(
-    positions: NDArray[np.float64], dt: float, *, bandwidth: float = 0.0
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    interval_mask: NDArray[np.bool_],
+    bandwidth: float = 0.0,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute per-sample velocity heading and speed without interpolation.
+    """Compute forward velocity headings and speeds separately per recording.
 
     Parameters
     ----------
     positions : ndarray, shape (n_samples, 2)
         Position coordinates in environment units.
-    dt : float
-        Positive finite time step, seconds.
+    times : ndarray, shape (n_samples,)
+        Finite, strictly increasing timestamps in seconds.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Observed intervals supplied by the shared mask helper.
     bandwidth : float, default=0.0
-        Gaussian smoothing sigma in samples, applied to velocity.
+        Gaussian smoothing sigma in samples, applied separately per run.
 
     Returns
     -------
     heading, speed : ndarray, shape (n_samples,)
-        Heading in radians and speed in position units per second. Forward
-        differences are used, with the last interval's velocity repeated.
+        Radians and position units per second. The final interval's velocity
+        is repeated at each run's last sample; samples in no run are NaN.
     """
+    from neurospatial._intervals import run_sample_bounds
     from neurospatial._validation import validate_finite
 
-    positions = np.asarray(positions, dtype=np.float64)
-
-    if not np.isfinite(dt) or dt <= 0:
-        raise ValueError(
-            f"Cannot compute heading: dt must be a positive, finite time step "
-            f"(got {dt!r}).\n\n"
-            f"WHAT: dt is the seconds between consecutive position samples\n"
-            f"WHY: velocity = diff(positions) / dt; dt <= 0 negates or NaNs the "
-            f"velocity, rotating every heading by pi (180 deg)\n\n"
-            f"HOW to fix:\n"
-            f"1. Pass dt = times[1] - times[0] from ASCENDING timestamps\n"
-            f"2. Sort your timestamps before differencing"
-        )
-
+    positions = _validate_velocity_positions(positions)
+    times = _validate_velocity_times(times, len(positions))
     validate_finite(positions, name="positions")
-
     if len(positions) < 2:
         raise ValueError(
-            f"Cannot compute heading: insufficient trajectory data.\n\n"
-            f"WHAT: Need at least 2 position samples, got {len(positions)}\n"
-            f"WHY: Heading is computed from velocity (position change over time)\n\n"
-            f"HOW to fix:\n"
-            f"1. Check data filtering - may have removed too many frames\n"
-            f"2. Verify trajectory isn't empty after quality control\n"
-            f"3. For short events, use heading_from_body_orientation() instead"
+            f"Cannot compute heading: insufficient trajectory data; need at "
+            f"least 2 position samples, got {len(positions)}.\n"
+            "Why: heading needs a position change over time.\n"
+            "Fix: pass at least two aligned position/timestamp samples or "
+            "use heading_from_body_orientation() for single-frame pose data."
         )
-
-    # Compute velocity via finite differences
-    velocity = np.diff(positions, axis=0) / dt
-
-    # Pad velocity to match positions length
-    velocity = np.vstack([velocity, velocity[-1:]])
-
-    # Apply Gaussian smoothing if requested
-    if bandwidth > 0:
-        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
-        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
-
-    # Compute speed
-    speed = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)
-
-    # Compute heading
-    heading = np.arctan2(velocity[:, 1], velocity[:, 0])
-
-    return heading, speed
+    headings: NDArray[np.float64] = np.full(len(positions), np.nan)
+    speeds: NDArray[np.float64] = np.full(len(positions), np.nan)
+    for first, last in run_sample_bounds(interval_mask):
+        run = slice(first, last + 1)
+        velocity: NDArray[np.float64] = (
+            np.diff(positions[run], axis=0) / np.diff(times[run])[:, None]
+        )
+        velocity = np.vstack([velocity, velocity[-1:]])
+        if bandwidth > 0:
+            velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
+            velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
+        speeds[run] = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)
+        headings[run] = np.arctan2(velocity[:, 1], velocity[:, 0])
+    return headings, speeds
 
 
 def heading_from_velocity(
     positions: NDArray[np.float64],
-    dt: float,
+    times: NDArray[np.float64],
     *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
     min_speed: float = 0.0,
     bandwidth: float = 0.0,
     allow_all_nan: bool = False,
@@ -735,8 +788,8 @@ def heading_from_velocity(
     ----------
     positions : NDArray, shape (n_time, 2)
         Animal positions over time, in environment units (e.g. cm).
-    dt : float
-        Time step between samples in seconds.
+    times : array-like, shape (n_time,)
+        Finite, strictly increasing timestamps in seconds, one per position.
     min_speed : float, default 0.0
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples
@@ -746,11 +799,19 @@ def heading_from_velocity(
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
     allow_all_nan : bool, default False
-        Controls the degenerate case where **every** sample is below
+        Controls the degenerate case where **every observed** sample is below
         ``min_speed`` (heading undefined everywhere). ``False`` (the default)
         raises ``ValueError`` so the failure is loud; ``True`` returns an
         all-NaN array with a ``UserWarning`` instead, for batch pipelines that
         handle NaN explicitly.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -765,20 +826,31 @@ def heading_from_velocity(
     ------
     ValueError
         If positions has fewer than 2 samples, contains non-finite values,
-        if dt is not a positive finite number, or if **every** sample is
+        or is not 2-D with at least x/y coordinates,
+        if times is not 1-D, finite, strictly increasing and aligned, or if
+        every observed sample is
         below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
 
     Warns
     -----
     UserWarning
-        If every sample is below ``min_speed`` and ``allow_all_nan=True``
+        If every observed sample is below ``min_speed`` and ``allow_all_nan=True``
         (an all-NaN heading array is returned).
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Velocity uses each interval's actual elapsed time. Smoothing bandwidth
+    remains Gaussian sigma in samples and is applied separately per run.
+    Low-speed interpolation uses moving anchors from that run only. A run
+    with no moving anchors and samples touching no valid interval have NaN
+    headings. If no samples belong to any run, the result is all NaN.
+
     Heading is computed from the forward finite difference of position, which
     yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
-    an array aligned to ``positions`` (length ``n_time``), the last sample's
+    an array aligned to ``positions`` (length ``n_time``), each run's last sample's
     heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
     rather than an independently measured value. For long trajectories this
     edge effect is negligible; for very short trajectories treat the final
@@ -793,53 +865,52 @@ def heading_from_velocity(
 
     >>> t = np.linspace(0, 10, 100)
     >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> headings = heading_from_velocity(positions, t)
     >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
     True
 
     Trajectory moving North:
 
     >>> positions = np.column_stack([np.zeros_like(t), t * 10])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> headings = heading_from_velocity(positions, t)
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
     """
-    positions = np.asarray(positions, dtype=np.float64)
-    heading, speed = _velocity_heading_and_speed(positions, dt, bandwidth=bandwidth)
+    from neurospatial._intervals import run_sample_bounds
+    from neurospatial.environment.trajectory import observed_interval_mask
 
-    # Mask low-speed periods
+    positions = _validate_velocity_positions(positions)
+    times = _validate_velocity_times(times, len(positions))
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    heading, speed = _velocity_heading_and_speed(
+        positions, times, interval_mask=interval_mask, bandwidth=bandwidth
+    )
+    in_run = np.r_[interval_mask, False] | np.r_[False, interval_mask]
     low_speed_mask = speed < min_speed
-
-    if np.all(low_speed_mask):
+    if np.any(in_run) and np.all(low_speed_mask[in_run]):
+        fastest = float(np.max(speed[in_run]))
         if not allow_all_nan:
             raise ValueError(
-                f"Cannot compute heading: every sample's speed is below "
-                f"min_speed={min_speed} (the fastest is {speed.max():.4g}, in the "
-                f"same units/second as positions). Velocity direction is "
-                f"undefined for a too-slow/stationary trajectory, so the heading "
-                f"would be all-NaN -- which then flows silently into egocentric / "
-                f"object-vector analyses as a false negative (e.g. "
-                f"is_object_vector_cell -> False).\n\n"
-                f"HOW to fix:\n"
-                f"1. Lower min_speed (e.g. min_speed={speed.max() * 0.5:.4g}) or "
-                f"pass min_speed=0.0 to use every sample\n"
-                f"2. Check units: min_speed is in position-units per second\n"
-                f"3. Pass allow_all_nan=True to opt into the all-NaN array in "
-                f"batch pipelines that handle NaN explicitly"
+                f"Cannot compute heading: every observed sample's speed is "
+                f"below min_speed={min_speed} (the fastest is {fastest:.4g}).\n"
+                "Why: velocity direction is undefined for an all-stationary "
+                "or too-slow trajectory.\n"
+                "Fix: lower min_speed in position-units per second, or pass "
+                "allow_all_nan=True for a batch pipeline that handles NaN."
             )
         warnings.warn(
-            f"All speeds (max {speed.max():.4g}) are below min_speed threshold "
-            f"({min_speed}); returning an all-NaN heading array because "
-            f"allow_all_nan=True.",
+            f"All observed speeds (max {fastest:.4g}) are below min_speed "
+            f"threshold ({min_speed}); returning an all-NaN heading array "
+            "because allow_all_nan=True.",
             UserWarning,
             stacklevel=2,
         )
         return np.full(len(positions), np.nan)
 
-    if np.any(low_speed_mask):
-        # Interpolate heading for low-speed periods using circular interpolation
-        heading = _interpolate_heading_circular(heading, low_speed_mask)
-
+    heading[low_speed_mask] = np.nan
+    for first, last in run_sample_bounds(interval_mask):
+        run = slice(first, last + 1)
+        heading[run] = _interpolate_heading_circular(heading[run], low_speed_mask[run])
     return heading
 
 

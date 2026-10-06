@@ -429,6 +429,8 @@ def pre_decision_heading_stats(
     times: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float, float]:
     """Compute circular statistics on heading in a trajectory window.
 
@@ -441,6 +443,14 @@ def pre_decision_heading_stats(
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -455,6 +465,9 @@ def pre_decision_heading_stats(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
     Circular statistics are computed directly:
 
     - mean_resultant_length = sqrt(mean(cos(theta))^2 + mean(sin(theta))^2)
@@ -477,13 +490,17 @@ def pre_decision_heading_stats(
     positions = np.asarray(positions)
     times = np.asarray(times)
 
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return 0.0, 1.0, 0.0
 
-    # Use median dt to handle irregular sampling
-    dt = float(np.median(np.diff(times)))
-
-    headings, speed = _velocity_heading_and_speed(positions, dt)
+    headings, speed = _velocity_heading_and_speed(
+        positions,
+        times,
+        interval_mask=interval_mask,
+    )
     valid_headings = headings[speed >= min_speed]
 
     if len(valid_headings) == 0:
@@ -506,6 +523,9 @@ def pre_decision_heading_stats(
 def pre_decision_speed_stats(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float]:
     """Compute speed statistics for a trajectory window.
 
@@ -515,6 +535,14 @@ def pre_decision_speed_stats(
         Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -522,6 +550,14 @@ def pre_decision_speed_stats(
         Mean instantaneous speed (units/s).
     min_speed : float
         Minimum instantaneous speed (units/s).
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Only observed interval speeds enter the reductions. Both results are
+    NaN when no interval is valid, including empty or singleton inputs.
 
     Examples
     --------
@@ -534,16 +570,22 @@ def pre_decision_speed_stats(
     positions = np.asarray(positions)
     times = np.asarray(times)
 
-    if len(positions) < 2:
-        return 0.0, 0.0
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.environment.trajectory import observed_interval_mask
 
-    # Compute velocities
-    dt = np.diff(times)
-    displacement = np.diff(positions, axis=0)
-    velocity = displacement / dt[:, np.newaxis]
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have the same length; got "
+            f"{len(positions)} and {len(times)}.\n"
+            "Why: every speed interval needs aligned position samples.\n"
+            "Fix: pass one timestamp per position sample."
+        )
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    if not mask.any():
+        return np.nan, np.nan
+    velocity = interval_velocity(times, positions, mask)
     speeds = np.linalg.norm(velocity, axis=1)
-
-    return float(np.mean(speeds)), float(np.min(speeds))
+    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
 
 
 def compute_pre_decision_metrics(
@@ -587,7 +629,7 @@ def compute_pre_decision_metrics(
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    is analyzed as a separate recording; no velocity or heading spans a pause.
 
     Only the pre-decision window in the run containing entry_time is
     analyzed; its duration excludes any preceding pause.
@@ -624,11 +666,13 @@ def compute_pre_decision_metrics(
 
     # Compute heading stats
     mean_dir, circ_var, mrl = pre_decision_heading_stats(
-        window_pos, window_times, min_speed=min_speed
+        window_pos, window_times, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     # Compute speed stats
-    mean_speed, min_speed_val = pre_decision_speed_stats(window_pos, window_times)
+    mean_speed, min_speed_val = pre_decision_speed_stats(
+        window_pos, window_times, max_gap=max_gap, epochs=epochs
+    )
 
     # Actual window duration
     actual_duration = (

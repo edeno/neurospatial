@@ -4,6 +4,43 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Timestamp-based heading rejects malformed position shapes before velocity
+  division, preventing a 1-D trajectory from broadcasting into a square matrix.
+  The error names the shape and supplies an aligned x/y-coordinate fix.
+- Timed home ranges omit bins with zero observed dwell, including at
+  `percentile=100`, so rounding in cumulative percentages cannot include an
+  isolated sample's bin. Untimed visit counts retain their previous meaning.
+- The 13 kinematic/event entry points expose `max_gap=0.5` and `epochs=None`:
+  `heading_from_velocity`, `pre_decision_heading_stats`,
+  `pre_decision_speed_stats`, `head_sweep_from_positions`,
+  `heading_direction_labels`, `compute_path_efficiency`,
+  `instantaneous_goal_alignment`, `goal_bias`, `approach_rate`,
+  `compute_goal_directed_metrics`, `compute_trajectory_curvature`,
+  `compute_home_range`, and `events.add_positions`. Pre-decision and VTE
+  composites use their existing window keywords for kinematics too. Examples
+  and notebook pairs now pass timestamps to `heading_from_velocity`.
+- Speed statistics, approach rates, direction labels, head sweeps, trajectory
+  curvature and home-range dwell respect `max_gap` and `epochs`; goal and VTE
+  composites forward the same windows. IdPhi sums runs without joining their
+  headings, and the two-epoch dwell totals 200 seconds instead of charging the
+  pause to a bin. Entirely excluded speed windows return NaN without reduction
+  warnings. Samples outside runs have NaN curvature and stationary labels.
+  `compute_path_efficiency` reports NaN traveled length, efficiency and angular
+  efficiency when any interval is unobserved. Shortest length and wall-clock
+  time efficiency/time-to-goal retain their existing meanings.
+- `heading_from_velocity(positions, times)` replaces scalar `dt`, validates
+  finite, strictly increasing aligned timestamps, and computes velocity,
+  smoothing and circular interpolation separately per observed run. The
+  measured 1,911.44 cm/s teleport no longer produces a heading across the pause.
+  Isolated samples and runs without moving anchors have NaN headings.
+  Shared heading statistics, goal alignment and simulation callers use actual
+  timestamps. Smoothing bandwidth retains its existing units of samples.
+- `events.add_positions` accepts `max_gap` and `epochs`, interpolating only
+  inside closed observed-run spans. Events in pauses, on isolated samples or
+  outside the tracked span now receive NaN coordinates; extrapolation ends.
+  Events exactly at either observed run endpoint retain that sample's position.
+- Kinematic interval velocity masks unobserved intervals with NaN, preserving
+  interval alignment and position-units-per-second measurements.
 - All 16 segmentation and sequence entry points now expose keyword-only
   `max_gap=0.5` and `epochs=None`: `detect_region_crossings`,
   `detect_runs_between_regions`, `segment_by_velocity`, `detect_laps`,

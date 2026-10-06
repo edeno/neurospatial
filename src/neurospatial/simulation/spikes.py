@@ -425,8 +425,7 @@ def _compute_model_firing_rate(
                 return np.zeros(len(times), dtype=np.float64)
             from neurospatial.ops.egocentric import heading_from_velocity
 
-            dt = float(np.median(np.diff(times)))
-            headings = heading_from_velocity(positions, dt, min_speed=0.0)
+            headings = heading_from_velocity(positions, times, min_speed=0.0)
         rates = model_any.firing_rate(headings, positions=positions, times=times)
     elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
         rates = model_any.firing_rate(positions, times, headings=headings)

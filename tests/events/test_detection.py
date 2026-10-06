@@ -26,7 +26,7 @@ class TestAddPositions:
             [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0], [10.0, 10.0]]
         )
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Check x, y columns added
         assert "x" in result.columns
@@ -51,7 +51,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         positions = np.array([[0.0], [10.0], [20.0], [30.0], [40.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Only x column for 1D
         assert "x" in result.columns
@@ -69,7 +69,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0])
         positions = np.array([[0.0, 0.0, 0.0], [10.0, 20.0, 30.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # x, y, z columns for 3D
         assert "x" in result.columns
@@ -89,7 +89,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Should get exact position at t=2.0
         assert_allclose(result["x"].values, [3.0])
@@ -105,7 +105,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Original should be unchanged
         assert list(events.columns) == original_columns
@@ -124,7 +124,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         assert len(result) == 0
         assert "x" in result.columns
@@ -139,7 +139,7 @@ class TestAddPositions:
         times = np.array([0.0, 2.0])
         positions = np.array([[0.0, 0.0], [4.0, 8.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         assert len(result) == 1
         assert_allclose(result["x"].values, [2.0])
@@ -155,7 +155,11 @@ class TestAddPositions:
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
         result = add_positions(
-            events, times=times, positions=positions, timestamp_column="event_time"
+            events,
+            times=times,
+            positions=positions,
+            timestamp_column="event_time",
+            max_gap=None,
         )
 
         assert_allclose(result["x"].values, [1.5])
@@ -170,39 +174,37 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         assert list(result.index) == ["event_a", "event_b"]
 
-    def test_event_before_trajectory_extrapolates(self):
-        """Test event before trajectory start extrapolates from first segment."""
+    def test_event_before_trajectory_gets_nan(self):
+        """Outside-span events are missing; observed events retain positions."""
         from neurospatial.events.detection import add_positions
 
-        events = pd.DataFrame({"timestamp": [-1.0]})  # Before trajectory
+        events = pd.DataFrame({"timestamp": [-1.0, 1.0]})
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [2.0, 4.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
-        # Linear extrapolation: at t=-1, x=-1, y=-2
-        assert_allclose(result["x"].values, [-1.0])
-        assert_allclose(result["y"].values, [-2.0])
+        assert_allclose(result["x"].values, [np.nan, 1.0])
+        assert_allclose(result["y"].values, [np.nan, 2.0])
 
-    def test_event_after_trajectory_extrapolates(self):
-        """Test event after trajectory end extrapolates from last segment."""
+    def test_event_after_trajectory_gets_nan(self):
+        """Outside-span events are missing; observed events retain positions."""
         from neurospatial.events.detection import add_positions
 
-        events = pd.DataFrame({"timestamp": [3.0]})  # After trajectory
+        events = pd.DataFrame({"timestamp": [3.0, 1.0]})
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [2.0, 4.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
-        # Linear extrapolation: at t=3, x=3, y=6
-        assert_allclose(result["x"].values, [3.0])
-        assert_allclose(result["y"].values, [6.0])
+        assert_allclose(result["x"].values, [np.nan, 1.0])
+        assert_allclose(result["y"].values, [np.nan, 2.0])
 
     def test_missing_timestamp_column_raises(self):
         """Test that missing timestamp column raises ValueError."""
@@ -283,7 +285,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # First and third should be valid
         assert_allclose(result["x"].values[0], 1.0)
@@ -303,7 +305,7 @@ class TestAddPositions:
         times = np.array([2.0, 0.0, 1.0, 3.0])
         positions = np.array([[4.0, 4.0], [0.0, 0.0], [2.0, 2.0], [6.0, 6.0]])
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Should interpolate correctly after internal sorting
         # t=1.5 is between t=1 (pos 2,2) and t=2 (pos 4,4) -> (3,3)
@@ -399,7 +401,7 @@ class TestAddPositionsDegenerateTrajectory:
             [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0]]
         )
 
-        result = add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions, max_gap=None)
 
         # Finite events interpolate correctly.
         assert result["x"].iloc[0] == pytest.approx(2.0)
@@ -438,6 +440,6 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]], dtype=np.float64)
 
-        result = add_positions(rewards, times=times, positions=positions)
+        result = add_positions(rewards, times=times, positions=positions, max_gap=None)
 
         assert_allclose(result[["x", "y"]].values, [[3.0, 3.0], [7.0, 7.0]])

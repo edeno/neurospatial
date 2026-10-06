@@ -145,7 +145,7 @@ Allocentric ↔ egocentric coordinate transforms.
 
 **Key Functions:**
 
-- `heading_from_velocity()`, `heading_from_body_orientation()`:
+- `heading_from_velocity(positions, times)`, `heading_from_body_orientation()`:
   Derive head direction from tracking data
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions

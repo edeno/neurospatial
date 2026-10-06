@@ -172,7 +172,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(positions, times, goal, min_speed=5.0)
+        result = instantaneous_goal_alignment(
+            positions, times, goal, min_speed=5.0, max_gap=None
+        )
 
         # All should be NaN due to zero speed
         assert np.all(np.isnan(result))
@@ -245,7 +247,7 @@ class TestGoalBias:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(positions, times, goal, min_speed=5.0)
+        result = goal_bias(positions, times, goal, min_speed=5.0, max_gap=None)
 
         assert np.isnan(result)
 
@@ -302,7 +304,7 @@ class TestApproachRate:
         times = np.linspace(0, 10, n_samples)  # 100 units in 10 seconds = 10 units/s
         goal = np.array([100.0, 0.0])
 
-        result = approach_rate(positions, times, goal, metric="euclidean")
+        result = approach_rate(positions, times, goal, metric="euclidean", max_gap=None)
 
         # Approach rate magnitude should be ~10 units/s
         valid_rates = result[~np.isnan(result)]
