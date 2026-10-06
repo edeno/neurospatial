@@ -152,6 +152,26 @@ def compute_occupancy(
         Offset from heading to gaze direction (e.g., from eye tracking).
         If None, gaze is aligned with heading.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
+
     Returns
     -------
     ndarray, shape (n_bins,)
@@ -294,6 +314,26 @@ def bin_view_spike_train(
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
+
     Returns
     -------
     ndarray, shape (n_bins,)
@@ -413,6 +453,25 @@ def bin_view_spike_trains(
         Distance for fixed_distance gaze model (environment units).
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
