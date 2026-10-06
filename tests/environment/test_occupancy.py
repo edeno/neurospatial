@@ -708,7 +708,9 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
         occ = env.occupancy(times, positions, max_gap=None)
 
         # bin_sequence agrees: the middle sample is -1.
-        bin_seq = env.bin_sequence(times, positions, dedup=False, outside_value=-1)
+        bin_seq = env.bin_sequence(
+            times, positions, dedup=False, outside_value=-1, max_gap=None
+        )
         assert bin_seq[1] == -1
 
         # The interval (t=1 to t=2) starts at the out-of-env sample and

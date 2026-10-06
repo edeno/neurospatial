@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed — behavior analyses respect recording gaps
+
+- `Environment.bin_sequence` and `bin_sequence_with_runs` accept `max_gap`
+  and `epochs`, drop samples that touch no observed interval (including
+  singleton inputs), and split same-bin runs and deduplication at recording
+  breaks. Original run indices and lengths stay aligned with the input.
+  Empirical `transitions` gates every intervening interval in a lagged pair;
+  the two-epoch fixture gives 9,998 one-step and 9,994 lag-three pairs. Raw
+  bin-only transitions retain their previous behavior without a time gate.
+
 ### Changed — decoding and peri-event histograms respect recording gaps
 
 - Peri-event counts use original spike times against absolute event-shifted
