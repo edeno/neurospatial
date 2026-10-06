@@ -324,18 +324,20 @@ env = Environment.from_samples(
     name="Experiment1_OpenField"
 )
 
+# Treat this intentionally coarse 1 Hz example as continuous with max_gap=None.
 # Compute occupancy with speed filtering
 occupancy = env.occupancy(
     times=times,
     positions=position,
     speed=speeds,
     min_speed=2.5,  # cm/s - filter slow periods
-    bandwidth=10.0  # cm - smooth the occupancy map
+    bandwidth=10.0,  # cm - smooth the occupancy map
+    max_gap=None,
 )
 
 # Analyze movement patterns
-transitions = env.transitions(times=times, positions=position, normalize=True)
-bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True)
+transitions = env.transitions(times=times, positions=position, normalize=True, max_gap=None)
+bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True, max_gap=None)
 ```
 
 ### 2. Creating Masked Environments
