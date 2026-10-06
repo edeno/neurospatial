@@ -8,6 +8,67 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pytest
 
+
+@pytest.fixture(params=["directional", "view", "egocentric"])
+def frame_family(request):
+    """Real rate and binning functions with shared family-specific arguments."""
+    import importlib
+    from types import SimpleNamespace
+
+    name = request.param
+    module = importlib.import_module(f"neurospatial.encoding.{name}")
+    binning = importlib.import_module(f"neurospatial.encoding._{name}_binning")
+    predicate_name = {
+        "directional": "is_head_direction_cell",
+        "view": "is_spatial_view_cell",
+        "egocentric": "is_object_vector_cell",
+    }[name]
+
+    def args(recording, spikes=None, *, occupancy=False, kernel=False):
+        if name == "directional":
+            lead = () if occupancy else (spikes,)
+            values = (*lead, recording.times, recording.headings)
+            return (*values, np.pi / 30) if kernel else values
+        lead = () if name == "egocentric" and kernel else (recording.env,)
+        if not occupancy:
+            lead = (*lead, spikes)
+        values = (*lead, recording.times, recording.positions, recording.headings)
+        if name == "egocentric":
+            values = (*values, np.array([[50.0, 50.0]]))
+        return values
+
+    defaults = (
+        {"bandwidth": None}
+        if name == "directional"
+        else {
+            "method": "binned",
+            "bandwidth": 0.0,
+        }
+    )
+    kernel_defaults = {}
+    if name == "view":
+        defaults["view_distance"] = kernel_defaults["view_distance"] = 5.0
+    if name == "egocentric":
+        defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
+    return SimpleNamespace(
+        name=name,
+        module=module,
+        binning=binning,
+        args=args,
+        single=getattr(module, f"compute_{name}_rate"),
+        plural=getattr(module, f"compute_{name}_rates"),
+        predicate=getattr(module, predicate_name),
+        defaults=defaults,
+        kernel_defaults=kernel_defaults,
+        count=getattr(binning, f"bin_{name}_spike_train"),
+        counts=getattr(binning, f"bin_{name}_spike_trains"),
+        occupancy=getattr(
+            binning,
+            "compute_occupancy" if name == "view" else f"compute_{name}_occupancy",
+        ),
+    )
+
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 

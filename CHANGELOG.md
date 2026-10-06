@@ -4,6 +4,12 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- Directional, view and egocentric binning helpers use one interval mask for
+  both spike counts and occupancy. Their default `max_gap=0.5` excludes
+  recording pauses instead of charging them to one bin, and their normalized
+  `epochs` and `spike_window` keywords restrict the same intervals on both
+  sides. **Behavior change:** a spike at `times[-1]` is no longer counted;
+  the final sample starts no half-open interval.
 - Malformed numeric attributes on IntervalSet-like windows now report the
   window argument, conversion problem, `Why:` and `Fix:` together, without
   hiding invalid values in the other time-window argument.
