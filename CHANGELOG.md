@@ -4,6 +4,15 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- The 13 kinematic/event entry points expose `max_gap=0.5` and `epochs=None`:
+  `heading_from_velocity`, `pre_decision_heading_stats`,
+  `pre_decision_speed_stats`, `head_sweep_from_positions`,
+  `heading_direction_labels`, `compute_path_efficiency`,
+  `instantaneous_goal_alignment`, `goal_bias`, `approach_rate`,
+  `compute_goal_directed_metrics`, `compute_trajectory_curvature`,
+  `compute_home_range`, and `events.add_positions`. Pre-decision and VTE
+  composites use their existing window keywords for kinematics too. Examples
+  and notebook pairs now pass timestamps to `heading_from_velocity`.
 - Speed statistics, approach rates, direction labels, head sweeps, trajectory
   curvature and home-range dwell respect `max_gap` and `epochs`; goal and VTE
   composites forward the same windows. IdPhi sums runs without joining their

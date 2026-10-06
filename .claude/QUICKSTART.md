@@ -379,8 +379,7 @@ import numpy as np
 
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
-dt = times[1] - times[0]
-headings = heading_from_velocity(positions, dt, min_speed=5.0, bandwidth=3.0)  # cm/s
+headings = heading_from_velocity(positions, times, min_speed=5.0, bandwidth=3.0)  # cm/s
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)

@@ -8,8 +8,8 @@ The baseline heading API uses a scalar dt and smoothing sigma in samples.
 import json
 from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
 
 from ._kinematics_snapshots import capture_kinematics_outputs
 from ._segmentation_snapshots import structural_snapshot

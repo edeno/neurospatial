@@ -101,7 +101,7 @@ positions, times = simulate_trajectory_ou(
     seed=42,
 )
 dt = float(times[1] - times[0])
-headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
+headings = heading_from_velocity(positions, times, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {len(times)} samples, {times[-1]:.1f}s")
 print(

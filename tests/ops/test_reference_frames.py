@@ -103,6 +103,7 @@ def test_velocity_heading_uses_actual_intervals():
 
 def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
     from scipy.ndimage import gaussian_filter1d
+
     from neurospatial.environment.trajectory import observed_interval_mask
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
