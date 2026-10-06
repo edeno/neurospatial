@@ -3,7 +3,7 @@ name: Tests (NWB interop)
 # NWB (pynwb) is an optional extra. The default test job installs only the dev
 # extra, so the NWB round-trip / lazy-read tests and the Session.from_nwb tests
 # would otherwise only ever be skipped. This job installs the nwb extra and runs
-# the NWB tests.
+# the NWB tests, including operator regressions on reconstructed environments.
 
 on:
   push:
@@ -39,6 +39,9 @@ jobs:
 
       - name: Run NWB interop tests
         run: |
-          uv run pytest tests/nwb tests/test_recording.py -n 0 -q
+          uv run pytest tests/nwb tests/test_recording.py \
+            tests/ops/test_differential.py::test_operators_raise_without_finite_volume_geometry \
+            tests/ops/test_basis.py::test_heat_kernel_raises_without_finite_volume_geometry \
+            -n 0 -q
         env:
           MPLBACKEND: Agg
