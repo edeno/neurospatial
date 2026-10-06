@@ -357,11 +357,27 @@ def compute_step_lengths(
     return step_lengths
 
 
+def _sample_dwell_times(
+    times: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """Sample dwell from valid intervals, padding each run's final sample."""
+    from neurospatial._intervals import run_sample_bounds
+
+    dt = np.diff(times)
+    weights: NDArray[np.float64] = np.zeros(len(times), dtype=np.float64)
+    weights[:-1] = np.where(interval_mask, dt, 0.0)
+    for first, last in run_sample_bounds(interval_mask):
+        weights[last] = np.median(dt[first:last])
+    return weights
+
+
 def compute_home_range(
     position_bins: NDArray[np.int_],
     *,
     times: NDArray[np.float64] | None = None,
     percentile: float = 95.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.int_]:
     """
     Compute home range as bins containing a percentile of time spent.
@@ -449,13 +465,12 @@ def compute_home_range(
                 f"times and position_bins must have same length. "
                 f"Got {len(times)} and {len(position_bins)}."
             )
+        from neurospatial.environment.trajectory import observed_interval_mask
+
+        interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
         if len(position_bins) == 0:
             return np.array([], dtype=np.intp)
-        intervals = np.diff(times)
-        # The last sample has no successor; assign it the median interval so it
-        # is not dropped. Falls back to 1.0 for a single sample.
-        last_dwell = float(np.median(intervals)) if len(intervals) > 0 else 1.0
-        sample_weights = np.append(intervals, last_dwell)
+        sample_weights = _sample_dwell_times(times, interval_mask)
         # Sum dwell time per bin.
         unique_bins, inverse = np.unique(position_bins, return_inverse=True)
         occupancy = np.zeros(len(unique_bins), dtype=np.float64)
@@ -468,6 +483,8 @@ def compute_home_range(
 
     # Compute cumulative percentage
     total_counts = np.sum(sorted_counts)
+    if total_counts == 0:
+        return np.array([], dtype=np.intp)
     cumulative_pct = np.cumsum(sorted_counts) / total_counts * 100.0
 
     # Find bins to include (cumulative percentage >= threshold)
@@ -756,6 +773,8 @@ def compute_trajectory_curvature(
     times: NDArray[np.float64] | None = None,
     *,
     smooth_window: float | None = 0.2,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute trajectory curvature from position data.
 
@@ -832,6 +851,36 @@ def compute_trajectory_curvature(
     --------
     compute_turn_angles : Raw turn angles without padding
     """
+    if times is None:
+        return _compute_trajectory_curvature_contiguous(
+            positions, None, smooth_window=smooth_window
+        )
+    from neurospatial.environment.trajectory import observed_runs
+
+    positions = np.asarray(positions)
+    times = np.asarray(times, dtype=np.float64)
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have the same length; got "
+            f"{len(positions)} and {len(times)}.\n"
+            "Why: each curvature sample needs its corresponding timestamp.\n"
+            "Fix: pass one timestamp per position sample."
+        )
+    curvature: NDArray[np.float64] = np.full(len(positions), np.nan)
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        curvature[run] = _compute_trajectory_curvature_contiguous(
+            positions[run], times[run], smooth_window=smooth_window
+        )
+    return curvature
+
+
+def _compute_trajectory_curvature_contiguous(
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64] | None,
+    *,
+    smooth_window: float | None,
+) -> NDArray[np.float64]:
+    """Apply the existing angle padding and smoothing within one recording."""
     # 1. Compute turn angles using existing function
     # Returns length (n_angles,) where n_angles <= n_samples - 2
     # Filters stationary periods automatically

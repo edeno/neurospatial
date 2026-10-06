@@ -1112,6 +1112,8 @@ def heading_direction_labels(
     heading: NDArray[np.float64] | None = None,
     n_directions: int = 8,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
@@ -1184,13 +1186,18 @@ def heading_direction_labels(
         times_arr = np.asarray(times, dtype=np.float64)
         n_samples = len(times_arr)
 
+        from neurospatial.behavior._kinematics import interval_velocity
+        from neurospatial.environment.trajectory import observed_interval_mask
+
+        interval_mask = observed_interval_mask(
+            times_arr, max_gap=max_gap, epochs=epochs
+        )
         if n_samples == 0:
             return np.array([], dtype=object)
         if n_samples == 1:
             return np.array(["stationary"], dtype=object)
 
-        dt = np.diff(times_arr)
-        velocity = np.diff(positions_arr, axis=0) / dt[:, np.newaxis]
+        velocity = interval_velocity(times_arr, positions_arr, interval_mask)
 
         speed_computed = np.linalg.norm(velocity, axis=1)
         heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
@@ -1575,6 +1582,8 @@ def compute_path_efficiency(
     *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
     reference_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> PathEfficiencyResult:
     """Compute comprehensive path efficiency metrics.
 
@@ -1613,9 +1622,14 @@ def compute_path_efficiency(
             f"Check that both arrays cover the same time period."
         )
 
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    complete_path = observed_interval_mask(times, max_gap=max_gap, epochs=epochs).all()
     goal = np.asarray(goal)
 
-    if len(positions) >= 2:
+    if not complete_path:
+        traveled = np.nan
+    elif len(positions) >= 2:
         traveled = traveled_path_length(positions, metric=metric, env=env)
     else:
         traveled = 0.0
@@ -1637,7 +1651,7 @@ def compute_path_efficiency(
             optimal_distance=shortest,
         )
 
-    ang_eff = angular_efficiency(positions, goal)
+    ang_eff = angular_efficiency(positions, goal) if complete_path else np.nan
 
     return PathEfficiencyResult(
         traveled_length=traveled,
@@ -1772,15 +1786,16 @@ def instantaneous_goal_alignment(
     times = np.asarray(times)
     goal = np.asarray(goal)
 
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
-
-    from neurospatial.environment.trajectory import observed_interval_mask
 
     velocity_heading, speed = _velocity_heading_and_speed(
         positions,
         times,
-        interval_mask=observed_interval_mask(times, max_gap=max_gap, epochs=epochs),
+        interval_mask=interval_mask,
     )
     velocity_heading[speed < min_speed] = np.nan
     goal_heading = goal_direction(positions, goal)
@@ -1797,6 +1812,8 @@ def goal_bias(
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> float:
     """Compute mean alignment toward goal over trajectory.
 
@@ -1834,7 +1851,7 @@ def goal_bias(
     True
     """
     alignment = instantaneous_goal_alignment(
-        positions, times, goal, min_speed=min_speed
+        positions, times, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     valid_alignment = alignment[~np.isnan(alignment)]
@@ -1852,6 +1869,8 @@ def approach_rate(
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
     env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute rate of distance change toward goal.
 
@@ -1925,11 +1944,13 @@ def approach_rate(
             position_bins, env, target_bins=goal_bin, metric="geodesic"
         )
 
-    dt = _positive_dt(times, name="times")
-    d_distance = np.diff(distances)
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.environment.trajectory import observed_interval_mask
 
+    _positive_dt(times, name="times")
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     rates = np.full(len(positions), np.nan)
-    rates[1:] = d_distance / dt
+    rates[1:] = interval_velocity(times, distances[:, None], mask)[:, 0]
 
     return rates
 
@@ -1943,6 +1964,8 @@ def compute_goal_directed_metrics(
     metric: Literal["geodesic", "euclidean"] = "euclidean",
     min_speed: float = 5.0,
     goal_radius: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> GoalDirectedMetrics:
     """Compute comprehensive goal-directed navigation metrics.
 
@@ -1991,10 +2014,14 @@ def compute_goal_directed_metrics(
             f"Check that both arrays cover the same time period."
         )
 
-    bias = goal_bias(positions, times, goal, min_speed=min_speed)
+    bias = goal_bias(
+        positions, times, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+    )
 
-    rates = approach_rate(positions, times, goal, metric=metric, env=env)
-    mean_rate = float(np.nanmean(rates))
+    rates = approach_rate(
+        positions, times, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
+    )
+    mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
     goal_vec = goal_vector(positions, goal)
     distances = np.linalg.norm(goal_vec, axis=1)

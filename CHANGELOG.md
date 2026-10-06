@@ -4,6 +4,15 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Speed statistics, approach rates, direction labels, head sweeps, trajectory
+  curvature and home-range dwell respect `max_gap` and `epochs`; goal and VTE
+  composites forward the same windows. IdPhi sums runs without joining their
+  headings, and the two-epoch dwell totals 200 seconds instead of charging the
+  pause to a bin. Entirely excluded speed windows return NaN without reduction
+  warnings. Samples outside runs have NaN curvature and stationary labels.
+  `compute_path_efficiency` reports NaN traveled length, efficiency and angular
+  efficiency when any interval is unobserved. Shortest length and wall-clock
+  time efficiency/time-to-goal retain their existing meanings.
 - `heading_from_velocity(positions, times)` replaces scalar `dt`, validates
   finite, strictly increasing aligned timestamps, and computes velocity,
   smoothing and circular interpolation separately per observed run. The

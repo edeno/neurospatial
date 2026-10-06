@@ -353,8 +353,10 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(positions, times, min_speed=1.0)  # doctest: +SKIP
     0.0
     """
+    from neurospatial.environment.trajectory import observed_runs
     from neurospatial.ops.egocentric import heading_from_velocity
 
+    runs = observed_runs(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return 0.0
 
@@ -370,7 +372,7 @@ def head_sweep_from_positions(
         epochs=epochs,
     )
 
-    return head_sweep_magnitude(headings)
+    return sum(head_sweep_magnitude(headings[run]) for run in runs)
 
 
 # =============================================================================
@@ -598,7 +600,10 @@ def compute_vte_trial(
     >>> result.window_end
     2.0
     """
-    from neurospatial.behavior.decisions import extract_pre_decision_window
+    from neurospatial.behavior.decisions import (
+        extract_pre_decision_window,
+        pre_decision_speed_stats,
+    )
 
     # Extract pre-decision window
     window_positions, window_times = extract_pre_decision_window(
@@ -615,7 +620,11 @@ def compute_vte_trial(
 
     # Compute head sweep magnitude
     head_sweep = head_sweep_from_positions(
-        window_positions, window_times, min_speed=min_speed
+        window_positions,
+        window_times,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Compute speed statistics
@@ -623,11 +632,9 @@ def compute_vte_trial(
         mean_spd = 0.0
         min_spd = 0.0
     else:
-        dt = np.diff(window_times)
-        velocity = np.diff(window_positions, axis=0) / dt[:, np.newaxis]
-        speeds = np.linalg.norm(velocity, axis=1)
-        mean_spd = float(np.mean(speeds))
-        min_spd = float(np.min(speeds))
+        mean_spd, min_spd = pre_decision_speed_stats(
+            window_positions, window_times, max_gap=max_gap, epochs=epochs
+        )
 
     return VTETrialResult(
         head_sweep_magnitude=head_sweep,
@@ -725,6 +732,7 @@ def compute_vte_session(
     from neurospatial.behavior.decisions import (
         decision_region_entry_time,
         extract_pre_decision_window,
+        pre_decision_speed_stats,
     )
 
     # First pass: compute raw metrics for all trials
@@ -786,15 +794,17 @@ def compute_vte_session(
 
         # Compute head sweep magnitude
         head_sweep = head_sweep_from_positions(
-            window_positions, window_times, min_speed=min_speed
+            window_positions,
+            window_times,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
         )
 
         # Compute speed statistics
-        dt = np.diff(window_times)
-        velocity = np.diff(window_positions, axis=0) / dt[:, np.newaxis]
-        speeds = np.linalg.norm(velocity, axis=1)
-        mean_spd = float(np.mean(speeds))
-        min_spd = float(np.min(speeds))
+        mean_spd, min_spd = pre_decision_speed_stats(
+            window_positions, window_times, max_gap=max_gap, epochs=epochs
+        )
 
         raw_head_sweeps.append(head_sweep)
         raw_speeds.append(mean_spd)

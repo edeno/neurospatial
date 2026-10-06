@@ -1753,7 +1753,7 @@ def test_compute_trajectory_curvature_edge_case_few_positions():
     positions = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])  # All same
     times = np.array([0.0, 1.0, 2.0])
 
-    curvature = compute_trajectory_curvature(positions, times)
+    curvature = compute_trajectory_curvature(positions, times, max_gap=None)
 
     # Should return zeros (no curvature possible)
     assert curvature.shape == (3,)

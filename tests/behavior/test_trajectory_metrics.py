@@ -269,7 +269,9 @@ class TestComputeHomeRange:
         assert count_based[0] == 0
 
         # Time-weighted: bin 1 dwell time dominates -> bin 1 first.
-        time_weighted = compute_home_range(position_bins, times=times, percentile=100.0)
+        time_weighted = compute_home_range(
+            position_bins, times=times, percentile=100.0, max_gap=None
+        )
         assert time_weighted[0] == 1, (
             f"Time-weighted home range should rank long-dwell bin 1 first, "
             f"got order {time_weighted}"

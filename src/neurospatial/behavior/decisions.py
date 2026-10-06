@@ -479,15 +479,16 @@ def pre_decision_heading_stats(
     positions = np.asarray(positions)
     times = np.asarray(times)
 
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return 0.0, 1.0, 0.0
-
-    from neurospatial.environment.trajectory import observed_interval_mask
 
     headings, speed = _velocity_heading_and_speed(
         positions,
         times,
-        interval_mask=observed_interval_mask(times, max_gap=max_gap, epochs=epochs),
+        interval_mask=interval_mask,
     )
     valid_headings = headings[speed >= min_speed]
 
@@ -511,6 +512,9 @@ def pre_decision_heading_stats(
 def pre_decision_speed_stats(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float]:
     """Compute speed statistics for a trajectory window.
 
@@ -539,16 +543,22 @@ def pre_decision_speed_stats(
     positions = np.asarray(positions)
     times = np.asarray(times)
 
-    if len(positions) < 2:
-        return 0.0, 0.0
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.environment.trajectory import observed_interval_mask
 
-    # Compute velocities
-    dt = np.diff(times)
-    displacement = np.diff(positions, axis=0)
-    velocity = displacement / dt[:, np.newaxis]
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have the same length; got "
+            f"{len(positions)} and {len(times)}.\n"
+            "Why: every speed interval needs aligned position samples.\n"
+            "Fix: pass one timestamp per position sample."
+        )
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    if not mask.any():
+        return np.nan, np.nan
+    velocity = interval_velocity(times, positions, mask)
     speeds = np.linalg.norm(velocity, axis=1)
-
-    return float(np.mean(speeds)), float(np.min(speeds))
+    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
 
 
 def compute_pre_decision_metrics(
@@ -629,11 +639,13 @@ def compute_pre_decision_metrics(
 
     # Compute heading stats
     mean_dir, circ_var, mrl = pre_decision_heading_stats(
-        window_pos, window_times, min_speed=min_speed
+        window_pos, window_times, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     # Compute speed stats
-    mean_speed, min_speed_val = pre_decision_speed_stats(window_pos, window_times)
+    mean_speed, min_speed_val = pre_decision_speed_stats(
+        window_pos, window_times, max_gap=max_gap, epochs=epochs
+    )
 
     # Actual window duration
     actual_duration = (
