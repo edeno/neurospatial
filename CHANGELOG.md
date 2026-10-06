@@ -4,6 +4,10 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- The three frame-family cell predicates propagate invalid `epochs` and
+  `spike_window` diagnostics, including combined argument problems and
+  `Why:`/`Fix:` guidance, instead of silently classifying malformed inputs
+  as `False`. Each analysis still normalizes the windows once.
 - Directional, view and egocentric encoders record the normalized
   `spike_window` on singular, population and zero-unit results. Population
   indexing/iteration preserves it, and xarray exports include the assumption

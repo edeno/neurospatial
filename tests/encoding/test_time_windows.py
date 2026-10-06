@@ -212,6 +212,48 @@ def test_frame_window_errors_are_aggregated(frame_family, continuous_recording):
         assert word in str(exc.value)
 
 
+@pytest.mark.parametrize(
+    "epochs,spike_window",
+    [
+        ((2, 1), "bad"),
+        ((2, 1), None),
+        (None, "bad"),
+        ([], None),
+        (None, []),
+    ],
+)
+def test_predicates_report_invalid_windows(
+    frame_family, continuous_recording, epochs, spike_window, monkeypatch
+):
+    f, r = frame_family, continuous_recording
+    original = f.module.resolve_time_windows
+    calls = []
+
+    def track(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(f.module, "resolve_time_windows", track)
+    options = dict(f.defaults)
+    if f.name == "egocentric":
+        options.pop("method")
+        options.pop("bandwidth")
+    with pytest.raises(ValueError) as caught:
+        f.predicate(
+            *f.args(r, r.spike_times),
+            **options,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+    assert len(calls) == 1
+    message = str(caught.value)
+    assert "Why:" in message and "Fix:" in message
+    if epochs is not None:
+        assert "epochs" in message
+    if spike_window is not None:
+        assert "spike_window" in message
+
+
 @pytest.fixture
 def direct_rate_result_factory(continuous_recording):
     from neurospatial import Environment

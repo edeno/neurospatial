@@ -1815,11 +1815,6 @@ def compute_egocentric_rates(
         an outage for a single unit or one shorter than 60 seconds, and its
         absence is not proof that recording coverage is correct.
 
-    See Also
-    --------
-    compute_spatial_rate : Single-neuron version
-    SpatialRatesResult : Result class with batch methods
-
     Notes
     -----
     An interval is analyzed only if it passes the gap, speed and bounds
@@ -2349,6 +2344,12 @@ def is_object_vector_cell(
         True if the neuron's egocentric spatial information exceeds
         ``min_info``.
 
+    Raises
+    ------
+    ValueError
+        If ``epochs`` or ``spike_window`` is malformed. The shared parser
+        reports all window problems together with an explanation and fix.
+
     Notes
     -----
     An interval is analyzed only if it passes the gap, speed and bounds
@@ -2394,7 +2395,13 @@ def is_object_vector_cell(
             epochs=epochs,
             spike_window=spike_window,
         )
-    except (ValueError, RuntimeError):
+    except ValueError as exc:
+        # Malformed windows are input errors, not negative classifications.
+        # Keep the shared normalizer's diagnostic and avoid parsing twice.
+        if str(exc).startswith("Invalid time window:"):
+            raise
+        return False
+    except RuntimeError:
         return False
 
     return result.is_object_vector_cell(min_info=min_info)
