@@ -652,6 +652,23 @@ def compute_egocentric_distance(
     return distances
 
 
+def _validate_velocity_positions(
+    positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Reject shapes that cannot supply aligned x/y velocity components."""
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim != 2 or positions.shape[1] < 2:
+        raise ValueError(
+            f"positions must be a 2-D array with at least x/y coordinates; "
+            f"got shape {positions.shape}.\n"
+            "Why: per-interval timestamps must align with position rows; "
+            "a 1-D array would broadcast into a square velocity matrix.\n"
+            "Fix: pass positions with shape (n_samples, 2), for example "
+            "np.column_stack([x, y]), with one timestamp per row."
+        )
+    return positions
+
+
 def _validate_velocity_times(
     times: NDArray[np.float64], n_samples: int
 ) -> NDArray[np.float64]:
@@ -728,7 +745,7 @@ def _velocity_heading_and_speed(
     from neurospatial._intervals import run_sample_bounds
     from neurospatial._validation import validate_finite
 
-    positions = np.asarray(positions, dtype=np.float64)
+    positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))
     validate_finite(positions, name="positions")
     if len(positions) < 2:
@@ -809,6 +826,7 @@ def heading_from_velocity(
     ------
     ValueError
         If positions has fewer than 2 samples, contains non-finite values,
+        or is not 2-D with at least x/y coordinates,
         if times is not 1-D, finite, strictly increasing and aligned, or if
         every observed sample is
         below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
@@ -861,7 +879,7 @@ def heading_from_velocity(
     from neurospatial._intervals import run_sample_bounds
     from neurospatial.environment.trajectory import observed_interval_mask
 
-    positions = np.asarray(positions, dtype=np.float64)
+    positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     heading, speed = _velocity_heading_and_speed(

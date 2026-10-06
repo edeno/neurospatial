@@ -4,6 +4,9 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Timestamp-based heading rejects malformed position shapes before velocity
+  division, preventing a 1-D trajectory from broadcasting into a square matrix.
+  The error names the shape and supplies an aligned x/y-coordinate fix.
 - Timed home ranges omit bins with zero observed dwell, including at
   `percentile=100`, so rounding in cumulative percentages cannot include an
   isolated sample's bin. Untimed visit counts retain their previous meaning.

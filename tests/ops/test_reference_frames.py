@@ -124,6 +124,22 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
         np.testing.assert_allclose(speed[run], expected_speed, rtol=1e-12, atol=0)
 
 
+@pytest.mark.parametrize(
+    "positions",
+    [np.arange(4.0), np.arange(4.0)[:, None], np.array(0.0), np.zeros((4, 2, 2))],
+)
+def test_heading_rejects_position_shapes_before_broadcast(positions):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    with pytest.raises(ValueError) as caught:
+        heading_from_velocity(positions, np.arange(4) * 0.1)
+    message = str(caught.value)
+    assert "positions" in message
+    assert "shape" in message
+    assert "Why:" in message
+    assert "Fix:" in message
+
+
 class TestModuleSetup:
     """Test module imports and structure."""
 
