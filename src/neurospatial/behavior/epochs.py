@@ -39,149 +39,16 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import as_intervals
+
 __all__ = ["in_epochs", "restrict", "restrict_spike_trains"]
 
 _Closed = Literal["both", "left", "right", "neither"]
 
 
-def _stack_start_end(start: Any, end: Any) -> NDArray[np.float64]:
-    """Column-stack ``(start, end)`` into an ``(n, 2)`` interval array.
-
-    Scalars broadcast to one interval; equal-length 1-D arrays give ``n``
-    intervals. Raises when the two are not the same length.
-    """
-    start_arr = np.atleast_1d(np.asarray(start, dtype=np.float64))
-    end_arr = np.atleast_1d(np.asarray(end, dtype=np.float64))
-    if start_arr.ndim != 1 or end_arr.ndim != 1:
-        raise ValueError(
-            "epoch start and end must be scalars or 1-D arrays, got shapes "
-            f"{start_arr.shape} and {end_arr.shape}."
-        )
-    if start_arr.shape[0] != end_arr.shape[0]:
-        raise ValueError(
-            "epoch start and end must have the same length, got "
-            f"{start_arr.shape[0]} and {end_arr.shape[0]}."
-        )
-    if start_arr.size == 0:
-        return np.empty((0, 2), dtype=np.float64)
-    return np.column_stack([start_arr, end_arr])
-
-
-def _sequence_length(x: Any) -> int | None:
-    """Return the length of an array-like sequence, or ``None`` if ``x`` is scalar.
-
-    A 1-D+ ``ndarray`` reports its first-axis length; a 0-dim ``ndarray`` (and a
-    plain ``float``/``int``) is scalar and reports ``None``. Any other object
-    exposing ``__len__`` (list, tuple) reports ``len(x)``.
-    """
-    if isinstance(x, np.ndarray):
-        return int(x.shape[0]) if x.ndim >= 1 else None
-    if hasattr(x, "__len__"):
-        return len(x)
-    return None
-
-
-def _as_intervals(epochs: Any) -> NDArray[np.float64]:
-    """Normalize any accepted ``epochs`` form to an ``(n, 2)`` interval array.
-
-    Accepts, in order of precedence:
-
-    - an **``IntervalSet``-like** object -- duck-typed via
-      ``hasattr(epochs, "start") and hasattr(epochs, "end")`` (e.g. a pynapple
-      ``IntervalSet``); converted with ``np.column_stack([epochs.start,
-      epochs.end])``. This branch never imports pynapple and never
-      ``isinstance``-checks a pynapple type.
-    - a **2-tuple/list ``(start, end)`` of scalars** -> one interval;
-    - **two 1-D arrays** passed as ``(starts, ends)`` -> ``n`` intervals (when
-      the two arrays have length != 2 -- length-2 arrays are the ambiguous case
-      below);
-    - a single **``(n, 2)`` NumPy array** -> ``n`` interval rows (must be an
-      ndarray, not a bare nested list).
-
-    The one genuinely ambiguous form **raises**: a length-2 tuple/list whose two
-    elements are *themselves* length-2 sequences (e.g. ``[[0, 5], [10, 15]]`` or
-    ``(np.array([0, 10]), np.array([5, 15]))``). It could mean two ``(start,
-    end)`` interval rows *or* two parallel ``(starts, ends)`` arrays, and there
-    is no way to tell which -- so the user must disambiguate by passing an
-    ``(n, 2)`` NumPy array (interval rows) or explicit 1-D ``start``/``end``
-    arrays. Scalars, ``(n, 2)`` ndarrays, ``IntervalSet``-like objects, and
-    parallel arrays whose length is not 2 are all unambiguous and never raise.
-
-    Empty epochs (0 intervals) are allowed and normalize to shape ``(0, 2)``
-    (they select nothing).
-
-    Parameters
-    ----------
-    epochs : IntervalSet-like, tuple, list, or ndarray
-        The epochs specification (see above).
-
-    Returns
-    -------
-    ndarray, shape (n_intervals, 2)
-        ``[start, end]`` rows, dtype ``float64``.
-
-    Raises
-    ------
-    ValueError
-        If the input is the ambiguous length-2-pair-of-length-2-sequences form
-        (see above), any ``start > end`` (naming the offending interval), any
-        endpoint is non-finite, or the array form is not ``(n, 2)``.
-    """
-    # 1. IntervalSet-like (duck-typed): pynapple IntervalSet and friends. Checked
-    #    first because NumPy arrays / tuples never carry .start / .end.
-    if hasattr(epochs, "start") and hasattr(epochs, "end"):
-        intervals = _stack_start_end(epochs.start, epochs.end)
-    # 2. A length-2 tuple/list. Scalars -> one (start, end) interval; two 1-D
-    #    arrays -> parallel (starts, ends). But if BOTH elements are themselves
-    #    length-2 sequences the input is irreducibly ambiguous (two interval rows
-    #    vs two parallel length-2 arrays) -> raise and force disambiguation. (An
-    #    (n, 2) array is handled in branch 3: it must be an ndarray, not a nested
-    #    list.)
-    elif isinstance(epochs, (tuple, list)) and len(epochs) == 2:
-        start, end = epochs
-        if _sequence_length(start) == 2 and _sequence_length(end) == 2:
-            raise ValueError(
-                "Ambiguous `epochs`: a length-2 pair of length-2 sequences "
-                "could mean two `(start, end)` interval rows or two parallel "
-                "`(starts, ends)` arrays. Pass `np.asarray(epochs)` with shape "
-                "`(n, 2)` for interval rows (e.g. `np.array([[0, 5], [10, "
-                "15]])`), or pass explicit 1-D `start`/`end` arrays."
-            )
-        intervals = _stack_start_end(start, end)
-    # 3. Otherwise treat as an array of intervals: (n, 2), or empty.
-    else:
-        arr = np.asarray(epochs, dtype=np.float64)
-        if arr.size == 0:
-            return np.empty((0, 2), dtype=np.float64)
-        if arr.ndim != 2 or arr.shape[1] != 2:
-            raise ValueError(
-                "epochs array must have shape (n_intervals, 2) of [start, end] "
-                f"rows, got shape {arr.shape}. Pass (start, end) scalars/arrays "
-                "for the tuple form, or an (n, 2) NumPy array."
-            )
-        intervals = arr
-
-    if intervals.shape[0] == 0:
-        return intervals
-
-    if not np.all(np.isfinite(intervals)):
-        raise ValueError(
-            "epoch bounds must be finite; found a non-finite (NaN/inf) start or "
-            "end. Check the epochs passed to restrict/in_epochs."
-        )
-    bad = intervals[:, 0] > intervals[:, 1]
-    if np.any(bad):
-        i = int(np.flatnonzero(bad)[0])
-        raise ValueError(
-            f"each epoch must have start <= end, but interval {i} is "
-            f"[{intervals[i, 0]}, {intervals[i, 1]}]."
-        )
-    return intervals
-
-
 def _mask_in_intervals(
     t: NDArray[np.float64],
-    intervals: NDArray[np.float64],
+    intervals: NDArray[np.float64] | None,
     *,
     closed: _Closed,
 ) -> NDArray[np.bool_]:
@@ -189,7 +56,7 @@ def _mask_in_intervals(
 
     The vectorized core shared by :func:`in_epochs` and
     :func:`restrict_spike_trains`. ``intervals`` must already be an ``(n, 2)``
-    ``float64`` array (as :func:`_as_intervals` returns), so a caller restricting
+    ``float64`` array (as :func:`~neurospatial._intervals.as_intervals` returns), so a caller restricting
     many trains against one epoch set can normalize **once** and reuse this per
     train instead of re-normalizing the same intervals for every unit.
 
@@ -198,7 +65,7 @@ def _mask_in_intervals(
     t : ndarray
         Timestamps to test (any shape; the mask has the same shape).
     intervals : ndarray, shape (n_intervals, 2)
-        Normalized ``[start, end]`` rows (from :func:`_as_intervals`).
+        Normalized ``[start, end]`` rows (from :func:`~neurospatial._intervals.as_intervals`).
     closed : {"both", "left", "right", "neither"}
         Which endpoints are inclusive.
 
@@ -212,7 +79,7 @@ def _mask_in_intervals(
     ``closed`` is validated here too, so this stays safe to call directly (e.g.
     per train from :func:`restrict_spike_trains`); :func:`in_epochs` validates it
     a second time, up front, only to report a bad ``closed`` *before* a malformed
-    ``epochs`` (this helper runs after ``_as_intervals``).
+    ``epochs`` (this helper runs after ``as_intervals``).
     """
     if closed not in ("both", "left", "right", "neither"):
         raise ValueError(
@@ -221,6 +88,8 @@ def _mask_in_intervals(
 
     t_arr = np.asarray(t, dtype=np.float64)
 
+    if intervals is None:
+        return np.ones(t_arr.shape, dtype=np.bool_)
     if intervals.shape[0] == 0:
         return np.zeros(t_arr.shape, dtype=np.bool_)
 
@@ -256,7 +125,7 @@ def in_epochs(
     t : ndarray
         Timestamps to test (any shape; the mask has the same shape).
     epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`_as_intervals`
+        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`
         (``(start, end)`` scalars/arrays, an ``(n, 2)`` array, or a
         duck-typed ``IntervalSet``). Empty epochs -> all-``False``.
     closed : {"both", "left", "right", "neither"}, optional
@@ -280,7 +149,7 @@ def in_epochs(
     >>> in_epochs(np.array([0.0, 2.5, 5.0, 6.0]), (0.0, 5.0))
     array([ True,  True,  True, False])
     """
-    # Validate ``closed`` up front -- before ``_as_intervals`` and the
+    # Validate ``closed`` up front -- before ``as_intervals`` and the
     # empty-epochs early return -- so a bad value always raises (even with no
     # intervals) AND is reported before a malformed ``epochs``.
     if closed not in ("both", "left", "right", "neither"):
@@ -288,7 +157,7 @@ def in_epochs(
             f"closed must be one of 'both', 'left', 'right', 'neither', got {closed!r}."
         )
 
-    intervals = _as_intervals(epochs)
+    intervals = as_intervals(epochs, name="epochs")
     return _mask_in_intervals(t, intervals, closed=closed)
 
 
@@ -323,7 +192,7 @@ def restrict(
     *arrays : ndarray
         Zero or more arrays aligned to ``times`` (first axis length ``n``).
     epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`_as_intervals`.
+        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
         ``"both"``.
@@ -392,7 +261,7 @@ def restrict_spike_trains(
         :class:`~neurospatial.encoding.SpikeTrains` container is accepted --
         iterating it yields the per-unit train arrays.
     epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`_as_intervals`. Empty epochs ->
+        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`. Empty epochs ->
         every returned train is empty (but present, preserving order/count).
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
@@ -418,7 +287,7 @@ def restrict_spike_trains(
     # front, and each train is then masked against the same pre-normalized
     # ``(n, 2)`` array via ``_mask_in_intervals`` -- avoiding the per-unit
     # re-normalization that ``in_epochs`` would repeat on every call.
-    intervals = _as_intervals(epochs)
+    intervals = as_intervals(epochs, name="epochs")
     out: list[NDArray[np.float64]] = []
     for train in trains:
         t = np.asarray(train, dtype=np.float64)

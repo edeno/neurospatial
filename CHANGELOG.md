@@ -4,6 +4,12 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
+  same window parser as spatial analyses. Nested sequences always describe
+  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.
+  Overlapping or touching rows merge, zero-width and empty window sets raise
+  with a fix, and `epochs=None` leaves data unrestricted. Point membership
+  still uses the requested `closed=` setting on the normalized windows.
 - Spatial rate functions, `is_place_cell`, and `compute_directional_place_fields`
   accept `epochs=` and `spike_window=`. One shared analysis mask excludes the
   same intervals from spike counts and occupancy, including GLM and empty
