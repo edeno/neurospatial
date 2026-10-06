@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **Behavior change:** `pre_decision_heading_stats` now excludes samples below
+  `min_speed` using the same uninterpolated velocity and speed as goal
+  alignment. On an east/stop/north path, circular variance and resultant length
+  are 0.2929 and 0.7071 (formerly 0.1849 and 0.8151 from stationary headings).
+  The all-stationary result remains `(0.0, 1.0, 0.0)`.
+
 - **Behavior change:** `instantaneous_goal_alignment` now returns NaN for
   samples below `min_speed`, and `goal_bias` averages moving samples only.
   On an east/stop/north path, all 30 stopped samples are excluded and
