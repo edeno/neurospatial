@@ -738,3 +738,24 @@ class TestErrorHandling:
                 decision_region="center",
                 goal_regions=["left", "right"],
             )
+
+
+def test_pre_decision_heading_stats_excludes_stationary(east_stop_north):
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    positions, times = east_stop_north
+    np.testing.assert_allclose(
+        pre_decision_heading_stats(positions, times),
+        [0.7854, 0.2929, 0.7071],
+        atol=1e-4,
+    )
+
+
+def test_pre_decision_heading_stats_all_stationary():
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    assert pre_decision_heading_stats(np.ones((10, 2)), np.arange(10) / 10) == (
+        0.0,
+        1.0,
+        0.0,
+    )

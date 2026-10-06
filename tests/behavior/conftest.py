@@ -15,6 +15,16 @@ from neurospatial import Environment
 
 
 @pytest.fixture
+def east_stop_north():
+    """An eastward run, three seconds stationary, then a northward run."""
+    times = np.arange(50) * 0.1
+    positions = np.column_stack(
+        [np.minimum(times, 1) * 20, np.maximum(times - 4, 0) * 20]
+    )
+    return positions, times
+
+
+@pytest.fixture
 def grid_env_with_last_bin_region():
     """2D grid environment with a polygon region covering the *last* bin.
 

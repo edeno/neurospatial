@@ -4,6 +4,43 @@
 
 ### Fixed
 
+- **Behavior change:** `pre_decision_heading_stats` now excludes samples below
+  `min_speed` using the same uninterpolated velocity and speed as goal
+  alignment. On an east/stop/north path, circular variance and resultant length
+  are 0.2929 and 0.7071 (formerly 0.1849 and 0.8151 from stationary headings).
+  The all-stationary result remains `(0.0, 1.0, 0.0)`.
+
+- **Behavior change:** `instantaneous_goal_alignment` now returns NaN for
+  samples below `min_speed`, and `goal_bias` averages moving samples only.
+  On an east/stop/north path, all 30 stopped samples are excluded and
+  `goal_bias` is 0.5055 (formerly 0.5862 from interpolated stationary headings).
+  Fully stationary trajectories still return NaN without raising.
+
+- **Behavior change:** `heading_from_velocity` and `heading_from_body_orientation`
+  interpolate missing or low-speed headings along the shorter arc, uniformly
+  in angle. Near a 180° turn, filled headings formerly snapped toward the
+  endpoints (errors up to 0.785 rad) because interpolation followed the chord.
+  Antipodal turns follow the sign of the stored angle difference; unmasked
+  NaN headings no longer contaminate neighboring filled samples.
+
+- **Behavior change:** `heat_kernel_wavelet_basis` now uses the finite-volume
+  diffusion generator, scaled by squared bin spacing. On uniform Cartesian
+  grids its standard deviation is `sqrt(2 * scale)` bins at every bin size
+  (scale 1 formerly spread 2.77, 3.91, and 6.17 bins at sizes 1, 2, and 5).
+  Layouts without finite-volume geometry now raise `NotImplementedError`
+  with a fix. `chebyshev_filter_basis` keeps its graph-hop locality and
+  distance-weighted, spectrally rescaled operator.
+
+- **Behavior change:** `gradient`, `divergence`, and
+  `compute_differential_operator` now use the finite-volume cell geometry of
+  `env.smooth`: gradient divides by edge length, and divergence weights face
+  flux by cell volume with positive values at sources. For `f=x`, gradients
+  are 1 at bin spacings 1, 2, and 4 (formerly 1, 2.83, and 8);
+  `div(grad(x²+y²))` is 4 in grid interiors (formerly -15.31, -122.51,
+  and -980.08). The Laplacian has the continuum sign and units Hz/cm² for
+  rates in Hz and positions in cm. Layouts without finite-volume geometry,
+  including NWB-reconstructed environments, now raise `NotImplementedError`
+  with a fix instead of returning physically inconsistent derivatives.
 - `decode_position` (and every decoder built on `normalize_to_posterior`)
   floored the prior at `1e-10`, so a bin with zero prior could still win the
   posterior given a large enough likelihood (for example a MAP in an excluded

@@ -342,3 +342,24 @@ class TestBehavioralFunctions:
         )
 
         assert len(distances) == len(position_bins)
+
+
+def test_goal_alignment_nan_when_stationary(east_stop_north):
+    from neurospatial.behavior import goal_bias, instantaneous_goal_alignment
+
+    positions, times = east_stop_north
+    goal = np.array([1000.0, 20.0])
+    stationary = (times >= 1) & (times < 4)
+    alignment = instantaneous_goal_alignment(positions, times, goal)
+    assert stationary.sum() == 30
+    assert np.isnan(alignment[stationary]).all()
+    assert np.isfinite(alignment[~stationary]).all()
+    assert goal_bias(positions, times, goal) == pytest.approx(0.5055, abs=1e-4)
+
+
+def test_goal_bias_all_stationary_is_nan():
+    from neurospatial.behavior import goal_bias
+
+    assert np.isnan(
+        goal_bias(np.ones((10, 2)), np.arange(10) / 10, np.array([100.0, 20.0]))
+    )

@@ -923,3 +923,48 @@ class TestWrapAngleAntipode:
 
         bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[np.pi]])
+
+
+@pytest.mark.parametrize("turn", [np.pi / 2, np.pi - 0.1, np.pi])
+def test_heading_interpolation_is_uniform_on_shorter_arc(turn):
+    from neurospatial.ops.egocentric import _interpolate_heading_circular
+
+    headings = np.array([0.0, np.nan, np.nan, np.nan, turn])
+    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    np.testing.assert_allclose(
+        filled[1:-1], turn * np.array([0.25, 0.5, 0.75]), atol=1e-12
+    )
+
+
+def test_heading_interpolation_across_pi_wrap():
+    from neurospatial.ops.egocentric import _interpolate_heading_circular
+
+    headings = np.array([np.pi - 0.1, np.nan, -np.pi + 0.1])
+    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    assert abs(filled[1]) == pytest.approx(np.pi, abs=1e-12)
+
+
+def test_antipodal_turn_has_no_jump_to_zero():
+    from neurospatial.ops.egocentric import _interpolate_heading_circular
+
+    headings = np.array([np.pi / 2, np.nan, np.nan, np.nan, -np.pi / 2])
+    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    np.testing.assert_allclose(filled[1:-1], [np.pi / 4, 0.0, -np.pi / 4], atol=1e-12)
+
+
+def test_heading_from_velocity_turn_is_gradual():
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    positions = np.column_stack([[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)])
+    heading = heading_from_velocity(positions, 0.1, min_speed=0.5)
+    assert np.max(np.abs(np.diff(heading))) <= np.pi / 4 + 1e-12
+
+
+def test_nan_anchor_not_propagated():
+    from neurospatial.ops.egocentric import _interpolate_heading_circular
+
+    headings = np.array([0.0, 0.0, np.nan, np.pi / 2])
+    mask = np.array([False, True, False, False])
+    filled = _interpolate_heading_circular(headings, mask)
+    assert np.isfinite(filled[1])
+    assert np.isnan(filled[2])

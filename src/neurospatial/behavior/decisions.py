@@ -447,7 +447,7 @@ def pre_decision_heading_stats(
     >>> if circ_var > 0.5:
     ...     print("High heading variability")  # doctest: +SKIP
     """
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     positions = np.asarray(positions)
     times = np.asarray(times)
@@ -455,18 +455,11 @@ def pre_decision_heading_stats(
     if len(positions) < 2:
         return 0.0, 1.0, 0.0
 
-    # Compute dt from times (heading_from_velocity expects scalar dt)
     # Use median dt to handle irregular sampling
     dt = float(np.median(np.diff(times)))
 
-    # Get headings. allow_all_nan: a fully-stationary window is handled below as
-    # "undefined direction, max variance", so an all-NaN heading is expected here.
-    headings = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
-    )
-
-    # Filter out NaN (stationary periods)
-    valid_headings = headings[~np.isnan(headings)]
+    headings, speed = _velocity_heading_and_speed(positions, dt)
+    valid_headings = headings[speed >= min_speed]
 
     if len(valid_headings) == 0:
         # No valid headings: undefined direction, max variance

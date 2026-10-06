@@ -1753,7 +1753,7 @@ def instantaneous_goal_alignment(
     -------
     NDArray[np.float64], shape (n_samples,)
         Cosine of angle between velocity and goal direction.
-        Range [-1, 1]. NaN for stationary periods.
+        Range [-1, 1]. NaN where speed < ``min_speed``.
 
     Examples
     --------
@@ -1764,7 +1764,7 @@ def instantaneous_goal_alignment(
     >>> bool(np.nanmean(alignment) > 0.9)
     True
     """
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     positions = np.asarray(positions)
     times = np.asarray(times)
@@ -1775,11 +1775,8 @@ def instantaneous_goal_alignment(
 
     dt = float(np.median(np.diff(times)))
 
-    # allow_all_nan: a fully-stationary window has undefined goal alignment; the
-    # NaN propagates to `alignment` rather than raising (goal_bias handles it).
-    velocity_heading = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
-    )
+    velocity_heading, speed = _velocity_heading_and_speed(positions, dt)
+    velocity_heading[speed < min_speed] = np.nan
     goal_heading = goal_direction(positions, goal)
 
     angle_diff = velocity_heading - goal_heading
@@ -1806,7 +1803,8 @@ def goal_bias(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     min_speed : float, default=5.0
-        Minimum speed threshold. Stationary periods excluded.
+        Speed threshold in position units per second. Samples slower than this
+        are excluded from the mean.
 
     Returns
     -------

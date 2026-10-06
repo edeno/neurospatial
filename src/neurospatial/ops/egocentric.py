@@ -652,88 +652,25 @@ def compute_egocentric_distance(
     return distances
 
 
-def heading_from_velocity(
-    positions: NDArray[np.float64],
-    dt: float,
-    *,
-    min_speed: float = 0.0,
-    bandwidth: float = 0.0,
-    allow_all_nan: bool = False,
-) -> NDArray[np.float64]:
-    """Compute heading from position timeseries using velocity direction.
+def _velocity_heading_and_speed(
+    positions: NDArray[np.float64], dt: float, *, bandwidth: float = 0.0
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Compute per-sample velocity heading and speed without interpolation.
 
     Parameters
     ----------
-    positions : NDArray, shape (n_time, 2)
-        Animal positions over time, in environment units (e.g. cm).
+    positions : ndarray, shape (n_samples, 2)
+        Position coordinates in environment units.
     dt : float
-        Time step between samples in seconds.
-    min_speed : float, default 0.0
-        Minimum speed threshold in **the same units per second as
-        ``positions``** (e.g. cm/s if positions are in cm). Samples
-        with speed below this are interpolated from surrounding valid
-        samples.
-    bandwidth : float, default 0.0
-        Gaussian smoothing sigma in samples. Applied to velocity before
-        computing heading. Set to 0 to disable smoothing.
-    allow_all_nan : bool, default False
-        Controls the degenerate case where **every** sample is below
-        ``min_speed`` (heading undefined everywhere). ``False`` (the default)
-        raises ``ValueError`` so the failure is loud; ``True`` returns an
-        all-NaN array with a ``UserWarning`` instead, for batch pipelines that
-        handle NaN explicitly.
+        Positive finite time step, seconds.
+    bandwidth : float, default=0.0
+        Gaussian smoothing sigma in samples, applied to velocity.
 
     Returns
     -------
-    NDArray, shape (n_time,)
-        Heading in radians at each timepoint, in the **allocentric
-        world-frame convention** (0 = East, π/2 = North, π = West,
-        -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
-        (so westward motion returns +π, not -π). Samples below ``min_speed``
-        are circularly interpolated from surrounding valid samples.
-
-    Raises
-    ------
-    ValueError
-        If positions has fewer than 2 samples, contains non-finite values,
-        if dt is not a positive finite number, or if **every** sample is
-        below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
-
-    Warns
-    -----
-    UserWarning
-        If every sample is below ``min_speed`` and ``allow_all_nan=True``
-        (an all-NaN heading array is returned).
-
-    Notes
-    -----
-    Heading is computed from the forward finite difference of position, which
-    yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
-    an array aligned to ``positions`` (length ``n_time``), the last sample's
-    heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
-    rather than an independently measured value. For long trajectories this
-    edge effect is negligible; for very short trajectories treat the final
-    sample's heading as approximate.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.ops.egocentric import heading_from_velocity
-
-    Trajectory moving East:
-
-    >>> t = np.linspace(0, 10, 100)
-    >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
-    >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
-    True
-
-    Trajectory moving North:
-
-    >>> positions = np.column_stack([np.zeros_like(t), t * 10])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
-    >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
-    True
+    heading, speed : ndarray, shape (n_samples,)
+        Heading in radians and speed in position units per second. Forward
+        differences are used, with the last interval's velocity repeated.
     """
     from neurospatial._validation import validate_finite
 
@@ -781,6 +718,95 @@ def heading_from_velocity(
     # Compute heading
     heading = np.arctan2(velocity[:, 1], velocity[:, 0])
 
+    return heading, speed
+
+
+def heading_from_velocity(
+    positions: NDArray[np.float64],
+    dt: float,
+    *,
+    min_speed: float = 0.0,
+    bandwidth: float = 0.0,
+    allow_all_nan: bool = False,
+) -> NDArray[np.float64]:
+    """Compute heading from position timeseries using velocity direction.
+
+    Parameters
+    ----------
+    positions : NDArray, shape (n_time, 2)
+        Animal positions over time, in environment units (e.g. cm).
+    dt : float
+        Time step between samples in seconds.
+    min_speed : float, default 0.0
+        Minimum speed threshold in **the same units per second as
+        ``positions``** (e.g. cm/s if positions are in cm). Samples
+        with speed below this are interpolated along the shorter arc,
+        linearly in angle between surrounding valid samples.
+    bandwidth : float, default 0.0
+        Gaussian smoothing sigma in samples. Applied to velocity before
+        computing heading. Set to 0 to disable smoothing.
+    allow_all_nan : bool, default False
+        Controls the degenerate case where **every** sample is below
+        ``min_speed`` (heading undefined everywhere). ``False`` (the default)
+        raises ``ValueError`` so the failure is loud; ``True`` returns an
+        all-NaN array with a ``UserWarning`` instead, for batch pipelines that
+        handle NaN explicitly.
+
+    Returns
+    -------
+    NDArray, shape (n_time,)
+        Heading in radians at each timepoint, in the **allocentric
+        world-frame convention** (0 = East, π/2 = North, π = West,
+        -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
+        (so westward motion returns +π, not -π). Samples below ``min_speed``
+        are interpolated along the shorter arc from surrounding valid samples.
+
+    Raises
+    ------
+    ValueError
+        If positions has fewer than 2 samples, contains non-finite values,
+        if dt is not a positive finite number, or if **every** sample is
+        below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
+
+    Warns
+    -----
+    UserWarning
+        If every sample is below ``min_speed`` and ``allow_all_nan=True``
+        (an all-NaN heading array is returned).
+
+    Notes
+    -----
+    Heading is computed from the forward finite difference of position, which
+    yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
+    an array aligned to ``positions`` (length ``n_time``), the last sample's
+    heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
+    rather than an independently measured value. For long trajectories this
+    edge effect is negligible; for very short trajectories treat the final
+    sample's heading as approximate.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.ops.egocentric import heading_from_velocity
+
+    Trajectory moving East:
+
+    >>> t = np.linspace(0, 10, 100)
+    >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
+    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
+    True
+
+    Trajectory moving North:
+
+    >>> positions = np.column_stack([np.zeros_like(t), t * 10])
+    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
+    True
+    """
+    positions = np.asarray(positions, dtype=np.float64)
+    heading, speed = _velocity_heading_and_speed(positions, dt, bandwidth=bandwidth)
+
     # Mask low-speed periods
     low_speed_mask = speed < min_speed
 
@@ -821,9 +847,12 @@ def _interpolate_heading_circular(
     heading: NDArray[np.float64],
     mask: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
-    """Interpolate heading values using circular (unit vector) interpolation.
+    """Interpolate masked headings along the shorter arc, linearly in angle.
 
-    This avoids discontinuities at the +/-pi boundary.
+    Unwrap consecutive finite anchors, interpolate angles, then wrap to
+    (-pi, pi]. For an exactly antipodal pair, the sign of the stored
+    difference chooses the turn. Samples beyond the anchors keep the nearest
+    valid heading. Unmasked non-finite values are not interpolation anchors.
 
     Parameters
     ----------
@@ -840,25 +869,14 @@ def _interpolate_heading_circular(
     if not np.any(mask):
         return heading
 
-    # Convert to unit vectors
-    cos_h = np.cos(heading)
-    sin_h = np.sin(heading)
-
-    # Get indices
-    valid_indices = np.where(~mask)[0]
-    invalid_indices = np.where(mask)[0]
-
-    if len(valid_indices) == 0:
+    valid = ~mask & np.isfinite(heading)
+    valid_idx = np.flatnonzero(valid)
+    if valid_idx.size == 0:
         return heading
-
-    # Interpolate unit vector components
-    cos_interp = np.interp(invalid_indices, valid_indices, cos_h[valid_indices])
-    sin_interp = np.interp(invalid_indices, valid_indices, sin_h[valid_indices])
-
-    # Convert back to angle
+    unwrapped = np.unwrap(heading[valid_idx])
+    filled = np.interp(np.flatnonzero(mask), valid_idx, unwrapped)
     result: NDArray[np.float64] = heading.copy()
-    result[mask] = np.arctan2(sin_interp, cos_interp)
-
+    result[mask] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
     return result
 
 
@@ -879,7 +897,7 @@ def heading_from_body_orientation(
     -------
     NDArray, shape (n_time,)
         Heading in radians at each timepoint. NaN keypoints are
-        interpolated using circular interpolation.
+        interpolated along the shorter arc, linearly in angle.
 
     Raises
     ------
