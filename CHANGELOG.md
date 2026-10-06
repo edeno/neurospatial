@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **Behavior change:** `heat_kernel_wavelet_basis` now uses the finite-volume
+  diffusion generator, scaled by squared bin spacing. On uniform Cartesian
+  grids its standard deviation is `sqrt(2 * scale)` bins at every bin size
+  (scale 1 formerly spread 2.77, 3.91, and 6.17 bins at sizes 1, 2, and 5).
+  Layouts without finite-volume geometry now raise `NotImplementedError`
+  with a fix. `chebyshev_filter_basis` keeps its graph-hop locality and
+  distance-weighted, spectrally rescaled operator.
+
 - **Behavior change:** `gradient`, `divergence`, and
   `compute_differential_operator` now use the finite-volume cell geometry of
   `env.smooth`: gradient divides by edge length, and divergence weights face
