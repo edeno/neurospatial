@@ -73,7 +73,9 @@ def _time_bin_rounding(
 ) -> NDArray[np.float64]:
     """Return edge rounding allowance, refusing unrepresentable bin widths."""
     start, stop = windows[:, 0], windows[:, 1]
-    rounding = 4.0 * np.spacing(np.maximum(np.abs(start), np.abs(stop)))
+    rounding: NDArray[np.float64] = 4.0 * np.spacing(
+        np.maximum(np.abs(start), np.abs(stop))
+    )
     imprecise = rounding > 1e-2 * dt
     if imprecise.any():
         w = int(np.flatnonzero(imprecise)[0])
