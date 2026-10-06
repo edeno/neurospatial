@@ -23,10 +23,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._intervals import resolve_time_windows
+from neurospatial.environment.trajectory import start_allocated_occupancy
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -178,10 +181,7 @@ def _bin_spike_train_with_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    speed: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    max_gap: float | None = 0.5,
-    interval_mask: NDArray[np.bool_] | None = None,
+    interval_mask: NDArray[np.bool_],
 ) -> tuple[
     NDArray[np.float64],  # spike_counts, shape (n_bins,)
     int,  # n_time_dropped
@@ -189,73 +189,37 @@ def _bin_spike_train_with_stats(
     int,  # n_total spikes
     int,  # n_after_time  (spikes surviving the time-window filter)
 ]:
-    """Core spike-binning kernel: interp + bin_at, done exactly once.
-
-    Private helper used by both the single-neuron public function
-    (``bin_spike_train``) and the batch function (``bin_spike_trains``).
-    Doing the interpolation and bin-mapping here – and returning the drop
-    counts alongside the spike-count array – means the batch path can
-    accumulate drop statistics for free during the single counting pass
-    instead of repeating the O(spikes) work in a separate aggregation loop.
+    """Bin spikes using the caller's shared occupancy-interval mask.
 
     Parameters
     ----------
     env : Environment
-        The spatial environment.
+        Spatial environment.
     spike_times : ndarray, shape (n_spikes,)
-        Already cast to float64.
+        Spike timestamps in seconds, already cast to float64.
     times : ndarray, shape (n_samples,)
-        Already cast to float64.
+        Validated trajectory timestamps in seconds.
     positions : ndarray, shape (n_samples, n_dims)
-        Already reshaped to 2-D and cast to float64.
-    speed : ndarray, shape (n_samples,), or None
-        Concrete, already-resolved speed array (from :func:`resolve_speed`).
-        Consumed as-is; this kernel never re-derives speed.
-    min_speed : float or None
-        Speed threshold for the per-interval speed gate (see below).
-    max_gap : float or None
-        Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
-        dropped from BOTH occupancy and spike counts (default 0.5). ``None``
-        disables gap gating on both sides.
-
-        Each time-window-valid spike is gated by the validity of the interval
-        it falls in. For a spike at time ``t``, its interval index is
-        ``k = clip(searchsorted(times, t, side="right") - 1, 0, n_samples-2)``,
-        and the spike is KEPT iff interval ``k`` is valid per
-        :func:`~neurospatial.environment.trajectory.interval_valid_mask`, i.e.
-        ``(max_gap is None or dt[k] <= max_gap) AND
-        (min_speed is None or speed[k] >= min_speed) AND start_bin[k] >= 0``.
-        This is the SAME interval-valid mask ``env.occupancy`` applies to the
-        denominator, so the numerator (spikes) and denominator (occupancy) drop
-        exactly the same intervals. Intervals excluded by this mask (large
-        gaps, out-of-bounds start, low speed) are INTENTIONAL exclusions and
-        are NOT counted as ``n_bin_dropped`` (the drop stats stay about
-        time-window and inactive-bin drops only).
-    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
-        Optional precomputed interval-valid mask (the result of
-        :func:`~neurospatial.environment.trajectory.interval_valid_mask` for
-        this ``(times, positions, env, speed, min_speed, max_gap)``). The mask
-        depends only on the trajectory and gate parameters — NOT on the
-        per-neuron ``spike_times`` — so the batch path computes it ONCE and
-        passes it into every per-neuron call here, avoiding a redundant
-        ``env.bin_at(positions)`` over the full trajectory per neuron. When
-        ``None`` (e.g. a direct kernel caller), the mask is computed here as a
-        fallback. Either way the result is byte-for-byte identical.
+        Trajectory coordinates, already reshaped to two dimensions.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Precomputed gap, speed, bounds and time-window validity. The same
+        array gates occupancy and every unit's spike counts. A spike belongs
+        to interval ``searchsorted(times, t, side="right") - 1``; a spike at
+        ``times[-1]`` belongs to no interval. Exclusions by this mask are
+        intentional and do not count toward inactive-bin drop warnings.
 
     Returns
     -------
     spike_counts : ndarray, shape (n_bins,)
+        Counts after time, interval and interpolated-position gates.
     n_time_dropped : int
-        Spikes outside the position time window.
+        Spikes outside ``[times[0], times[-1])``.
     n_bin_dropped : int
-        Time-valid (and speed-valid) spikes that mapped to
-        inactive/out-of-environment bins.
+        Interval-valid spikes whose interpolated positions are outside bins.
     n_total : int
-        Total number of spikes (= len(spike_times)).
+        Input spike count.
     n_after_time : int
-        Spikes surviving the time-window filter (and, when speed filtering is
-        active, the speed gate) — i.e. the denominator for the inactive-bin
-        drop fraction.
+        Spikes surviving the time and interval filters.
     """
     n_bins = env.n_bins
     spike_counts = np.zeros(n_bins, dtype=np.float64)
@@ -265,52 +229,13 @@ def _bin_spike_train_with_stats(
         return spike_counts, 0, 0, 0, 0
 
     t_min, t_max = times.min(), times.max()
-    valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
+    valid_time_mask = (spike_times >= t_min) & (spike_times < t_max)
     spike_times_valid = spike_times[valid_time_mask]
     n_time_dropped = n_total - len(spike_times_valid)
 
-    # Interval-valid gate: applied AFTER the time-window filter and BEFORE
-    # bin_at. For each surviving spike at time t, find the interval it falls in
-    #   k = searchsorted(times, t, side="right") - 1   (clamped to [0, n-2])
-    # and keep it iff interval k is valid per the SHARED interval_valid_mask
-    # (max_gap ∪ low-speed ∪ out-of-bounds-start). This is the IDENTICAL mask
-    # env.occupancy applies to the denominator, so spikes and occupancy drop
-    # exactly the same intervals — numerator/denominator stay aligned by
-    # construction. Intervals excluded by this mask (large tracking gaps,
-    # out-of-bounds start samples, low speed) are INTENTIONAL exclusions: they
-    # are NOT counted as dropped (they do not inflate n_bin_dropped or its
-    # warning). The full trajectory is still used for position interpolation
-    # below; only which spikes survive changes.
-    #
-    # The upper clip is n-2 (the index of the LAST occupancy interval), not
-    # n-1: a spike landing exactly on times[-1] would otherwise index past the
-    # mask (length n-1), which occupancy never consults. Clipping to n-2 gates
-    # the t_max spike by the last occupancy interval, matching occupancy
-    # exactly. (For n == 1 there are no intervals; resolve_speed/empty-mask
-    # handle that degenerate case upstream.)
-    gate_active = max_gap is not None or (speed is not None and min_speed is not None)
-    if gate_active and len(spike_times_valid) > 0 and len(times) >= 2:
-        # Use the caller-precomputed mask when supplied (the batch path computes
-        # it ONCE for the whole trajectory and reuses it across all neurons);
-        # otherwise compute it here as a fallback for direct kernel callers.
-        if interval_mask is not None:
-            valid_mask = interval_mask
-        else:
-            from neurospatial.environment.trajectory import interval_valid_mask
-
-            valid_mask = interval_valid_mask(
-                times,
-                positions,
-                cast("EnvironmentProtocol", env),
-                speed=speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-            )
+    if len(spike_times_valid) > 0:
         spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
-        upper = max(len(times) - 2, 0)
-        spike_interval = np.clip(spike_interval, 0, upper)
-        interval_keep = valid_mask[spike_interval]
-        spike_times_valid = spike_times_valid[interval_keep]
+        spike_times_valid = spike_times_valid[interval_mask[spike_interval]]
 
     n_after_time = len(spike_times_valid)
 
@@ -344,7 +269,9 @@ def _resolve_interval_mask(
     speed: NDArray[np.float64] | None,
     min_speed: float | None,
     max_gap: float | None,
-) -> NDArray[np.bool_] | None:
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask once for a whole trajectory.
 
     The interval-valid mask depends only on ``(times, positions, env, speed,
@@ -354,9 +281,7 @@ def _resolve_interval_mask(
     trajectory inside each neuron's kernel call. The single-neuron path uses it
     too, keeping one code path.
 
-    Returns ``None`` when no gate is active (``max_gap is None`` and no speed
-    filter) or when there are fewer than two samples — in those cases the
-    kernel never consults a mask, so there is nothing to precompute.
+    The bounds gate always applies, even when gap and speed checks are off.
 
     Parameters
     ----------
@@ -375,14 +300,9 @@ def _resolve_interval_mask(
 
     Returns
     -------
-    ndarray of bool, shape (n_samples - 1,), or None
-        The shared interval-valid mask, or ``None`` when no gate is active or
-        there are too few samples to form an interval.
+    ndarray of bool, shape (n_samples - 1,)
+        Shared validity; empty when fewer than two samples form an interval.
     """
-    gate_active = max_gap is not None or (speed is not None and min_speed is not None)
-    if not gate_active or len(times) < 2:
-        return None
-
     from neurospatial.environment.trajectory import interval_valid_mask
 
     return interval_valid_mask(
@@ -392,14 +312,19 @@ def _resolve_interval_mask(
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        start_bin=env.bin_at(positions),
+        epochs=epochs,
+        spike_window=spike_window,
     )
 
 
 def _emit_all_excluded_intervals_warning(
-    interval_mask: NDArray[np.bool_] | None,
+    interval_mask: NDArray[np.bool_],
     *,
     max_gap: float | None,
     min_speed: float | None,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     stacklevel: int = 2,
 ) -> None:
     """Emit a UserWarning when the interval filter excludes ALL intervals.
@@ -422,15 +347,13 @@ def _emit_all_excluded_intervals_warning(
     Detection uses the resolved interval-valid mask — the exact same mask
     ``env.occupancy`` and the spike kernel apply — so it fires iff the rate map
     is genuinely empty. It is a no-op (returns silently) when there is no mask
-    to check (``None`` — no active gate or fewer than two samples), when the
-    mask is empty, or when at least one interval survives.
+    to check (fewer than two samples), or when at least one interval survives.
 
     Parameters
     ----------
-    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
-        The resolved per-interval validity mask (from
-        :func:`_resolve_interval_mask`). ``None`` means no gate is active (or
-        too few samples); nothing is emitted.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Resolved validity from :func:`_resolve_interval_mask`. An empty mask
+        emits no warning.
     max_gap : float or None
         The active maximum-gap threshold (named in the message when set).
     min_speed : float or None
@@ -438,7 +361,7 @@ def _emit_all_excluded_intervals_warning(
     stacklevel : int, optional
         ``warnings.warn`` stacklevel.
     """
-    if interval_mask is None or interval_mask.size == 0:
+    if interval_mask.size == 0:
         return
     if interval_mask.any():
         return
@@ -451,6 +374,10 @@ def _emit_all_excluded_intervals_warning(
         causes.append(f"max_gap={max_gap}")
     if min_speed is not None:
         causes.append(f"min_speed={min_speed}")
+    if epochs is not None:
+        causes.append("epochs")
+    if spike_window is not None:
+        causes.append("spike_window")
     if causes:
         gate_part = (
             f"active gate(s) {', '.join(causes)} (or all start samples out of bounds)"
@@ -466,6 +393,10 @@ def _emit_all_excluded_intervals_warning(
         )
     if max_gap is not None:
         fixes.append("pass max_gap=None to disable gap gating")
+    if epochs is not None or spike_window is not None:
+        fixes.append(
+            "check that epochs/spike_window overlap `times` (same clock, seconds)"
+        )
     fix_part = ("; ".join(fixes) + ". ") if fixes else ""
 
     warnings.warn(
@@ -578,6 +509,9 @@ def bin_spike_train(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    interval_mask: NDArray[np.bool_] | None = None,
     context: str = "bin_spike_train",
     warn_on_drop: bool = True,
 ) -> NDArray[np.float64]:
@@ -680,13 +614,20 @@ def bin_spike_train(
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
 
-    # Compute the interval-valid mask once (it depends only on the trajectory
-    # and gate params, not on spike_times) and pass it into the kernel. Trivial
-    # here for the single-neuron path, but keeps a single code path with the
-    # batch path where it removes a per-neuron recompute.
-    interval_mask = _resolve_interval_mask(
-        env, times, positions, speed=speed, min_speed=min_speed, max_gap=max_gap
-    )
+    if interval_mask is None:
+        resolved_epochs, resolved_spike_window = resolve_time_windows(
+            epochs, spike_window
+        )
+        interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+        )
 
     spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
         _bin_spike_train_with_stats(
@@ -694,9 +635,6 @@ def bin_spike_train(
             spike_times,
             times,
             positions,
-            speed=speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
             interval_mask=interval_mask,
         )
     )
@@ -728,6 +666,9 @@ def compute_occupancy(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    interval_mask: NDArray[np.bool_] | None = None,
     context: str = "compute_occupancy",
 ) -> NDArray[np.float64]:
     """Compute occupancy (time spent in each bin).
@@ -745,14 +686,13 @@ def compute_occupancy(
         Position coordinates at each time sample.
     speed : ndarray, shape (n_samples,), or None
         Concrete, already-resolved speed array (typically from
-        :func:`resolve_speed`). Forwarded to ``env.occupancy``; when provided
+        :func:`resolve_speed`). Used by the shared mask; when provided
         with ``min_speed``, interval ``k`` is gated by ``speed[k] >= min_speed``.
     min_speed : float or None
         Minimum speed threshold. When ``None`` (default), no speed filtering
-        is applied and nothing speed-related is passed to ``env.occupancy``, so
-        the result is byte-for-byte identical to before.
+        is applied.
     max_gap : float or None
-        Maximum time gap in seconds. Forwarded to ``env.occupancy`` (default
+        Maximum time gap in seconds (default
         0.5, matching ``env.occupancy``'s own default). ``None`` disables gap
         gating.
 
@@ -769,11 +709,8 @@ def compute_occupancy(
 
     Notes
     -----
-    Delegates to Environment.occupancy() which handles:
-    - Time interval allocation to bins
-    - Speed filtering (if configured)
-    - Gap handling
-    - Kernel smoothing (if configured)
+    Uses start-sample allocation with the same interval mask as spike counts.
+    Every excluded interval contributes neither duration nor spikes.
 
     Examples
     --------
@@ -815,27 +752,26 @@ def compute_occupancy(
             f"but environment has {env.n_dims} dimensions"
         )
 
-    # Delegate to Environment.occupancy() which handles all the complexity.
-    # max_gap is always forwarded so the occupancy denominator and the spike
-    # numerator drop the IDENTICAL gap intervals (its default 0.5 matches
-    # env.occupancy's own default, so existing callers are unchanged). When
-    # min_speed is None we pass nothing speed-related (byte-for-byte identical
-    # to the legacy call on that axis).
-    if min_speed is None:
-        occupancy = cast("EnvironmentProtocol", env).occupancy(
-            times, positions, max_gap=max_gap, return_seconds=True
+    if interval_mask is None:
+        resolved_epochs, resolved_spike_window = resolve_time_windows(
+            epochs, spike_window
         )
-    else:
-        occupancy = cast("EnvironmentProtocol", env).occupancy(
+        interval_mask = _resolve_interval_mask(
+            env,
             times,
             positions,
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
-            return_seconds=True,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )
-
-    return occupancy.astype(np.float64)
+    return start_allocated_occupancy(
+        env.bin_at(positions),
+        np.diff(times),
+        interval_mask,
+        env.n_bins,
+    )
 
 
 def bin_spike_trains(
@@ -847,6 +783,9 @@ def bin_spike_trains(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    interval_mask: NDArray[np.bool_] | None = None,
     n_jobs: int = 1,
     warn_on_drop: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -956,32 +895,25 @@ def bin_spike_trains(
     # This is what guarantees numerator/denominator alignment by construction.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Occupancy is independent of which neuron we're binning, so compute once.
-    # Spike binning itself depends on per-neuron spike_times (interpolated to
-    # spike positions), so it stays inside the per-neuron loop.
+    if interval_mask is None:
+        resolved_epochs, resolved_spike_window = resolve_time_windows(
+            epochs, spike_window
+        )
+        interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+        )
     occupancy = compute_occupancy(
         env,
         times,
         positions,
-        speed=resolved_speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-    )
-
-    # Compute the interval-valid mask ONCE for the whole trajectory and reuse it
-    # across every per-neuron kernel call. The mask depends only on
-    # (times, positions, env, speed, min_speed, max_gap) — none vary per neuron
-    # — so computing it inside the per-neuron loop (as before) re-ran
-    # env.bin_at over the full trajectory once per neuron, a pure-redundant cost
-    # paid on every batch call now that max_gap defaults to 0.5. Pickling this
-    # boolean array to joblib workers is cheaper than recomputing bin_at there.
-    interval_mask = _resolve_interval_mask(
-        env,
-        times,
-        positions,
-        speed=resolved_speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
+        interval_mask=interval_mask,
     )
 
     # Spike-counting pass.  We use the private kernel _bin_spike_train_with_stats
@@ -1007,9 +939,6 @@ def bin_spike_trains(
                 spikes,
                 times,
                 positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
                 interval_mask=interval_mask,
             )
             spike_counts[i] = counts
@@ -1029,9 +958,6 @@ def bin_spike_trains(
                 spikes,
                 times,
                 positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
                 interval_mask=interval_mask,
             )
 

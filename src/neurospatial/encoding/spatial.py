@@ -2560,6 +2560,8 @@ def compute_spatial_rate(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
@@ -2816,6 +2818,7 @@ default="diffusion_kde"
     >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
     True
     """
+    from neurospatial._intervals import resolve_time_windows
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -2901,22 +2904,26 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE if EVERY interval is excluded (empty rate
-    # map), regardless of WHICH gate caused it. Gated by warn_on_drop. Reshape
-    # 1-D positions so _resolve_interval_mask sees the canonical 2-D shape.
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+    interval_mask = _resolve_interval_mask(
+        env,
+        times,
+        positions_2d,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
     if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
-            env,
-            times,
-            _positions_2d,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
         _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            stacklevel=2,
         )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
@@ -2928,6 +2935,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
     )
@@ -2942,6 +2950,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
     )
 
@@ -3047,6 +3056,8 @@ def compute_spatial_rates(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -3334,6 +3345,7 @@ default="diffusion_kde"
     >>> len(result2)
     2
     """
+    from neurospatial._intervals import resolve_time_windows
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -3452,22 +3464,26 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE for the whole batch if EVERY interval is
-    # excluded (empty rate maps), regardless of WHICH gate caused it — not once
-    # per neuron. Gated by warn_on_drop. Reshape 1-D positions to canonical 2-D.
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+    interval_mask = _resolve_interval_mask(
+        env,
+        times,
+        positions_2d,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
     if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
-            env,
-            times,
-            _positions_2d,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
         _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            stacklevel=2,
         )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
@@ -3491,6 +3507,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 context="compute_spatial_rates",
             )
         else:
@@ -3502,6 +3519,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 n_jobs=n_jobs,
                 warn_on_drop=warn_on_drop,
             )
@@ -3566,6 +3584,7 @@ default="diffusion_kde"
             speed=resolved_speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            interval_mask=interval_mask,
             context="compute_spatial_rates",
         )
 
@@ -3598,6 +3617,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
     )
@@ -4019,108 +4039,6 @@ class DirectionalPlaceFields(ResultMixin):
         return ax
 
 
-def _subset_spikes_by_time_mask(
-    times: NDArray[np.float64],
-    spike_times: NDArray[np.float64],
-    mask: NDArray[np.bool_],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Subset spike times by a boolean mask over trajectory times.
-
-    Extracts spikes that fall within the time ranges defined by contiguous
-    True segments in the mask. Uses binary search (searchsorted) for
-    efficient O(log n) spike slicing per segment.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_timepoints,)
-        Timestamps of trajectory samples (seconds). Must be sorted.
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Timestamps of spike occurrences (seconds). Must be sorted.
-    mask : NDArray[np.bool_], shape (n_timepoints,)
-        Boolean mask indicating which timepoints to include.
-        Contiguous True segments define time ranges for spike inclusion.
-
-    Returns
-    -------
-    times_sub : NDArray[np.float64]
-        Subset of times where mask is True. Same as ``times[mask]``.
-    spike_times_sub : NDArray[np.float64]
-        Spikes that fall within the time ranges of contiguous True segments.
-        Boundaries are inclusive: spikes at segment start/end are included.
-
-    Notes
-    -----
-    For each contiguous segment of True values in mask:
-    - ``t_start = times[segment_first_index]``
-    - ``t_end = times[segment_last_index]``
-    - Spikes in ``[t_start, t_end]`` (inclusive) are selected
-
-    This function is designed for conditioning place field analysis on
-    subsets of the trajectory (e.g., by movement direction, trial type).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    >>> spike_times = np.array([0.5, 1.5, 2.5, 3.5])
-    >>> mask = np.array([False, True, True, False, False])
-    >>> times_sub, spikes_sub = _subset_spikes_by_time_mask(times, spike_times, mask)
-    >>> times_sub
-    array([1., 2.])
-    >>> spikes_sub
-    array([1.5])
-    """
-    # Fast path: empty mask
-    if not np.any(mask):
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Get indices where mask is True
-    true_indices = np.where(mask)[0]
-
-    # Find contiguous segments by looking for gaps > 1
-    # diff > 1 indicates a break in contiguity
-    if len(true_indices) == 0:
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Find segment boundaries: where consecutive indices are not adjacent
-    breaks = np.where(np.diff(true_indices) > 1)[0] + 1
-    segment_starts = np.concatenate([[0], breaks])
-    segment_ends = np.concatenate([breaks, [len(true_indices)]])
-
-    # Fast path: empty spike train
-    if len(spike_times) == 0:
-        return times[mask], np.array([], dtype=np.float64)
-
-    # Collect spikes from each segment
-    spike_slices = []
-
-    for seg_start_idx, seg_end_idx in zip(segment_starts, segment_ends, strict=True):
-        # Get the actual time indices for this segment
-        first_time_idx = true_indices[seg_start_idx]
-        last_time_idx = true_indices[seg_end_idx - 1]
-
-        # Get time boundaries
-        t_start = times[first_time_idx]
-        t_end = times[last_time_idx]
-
-        # Use searchsorted for O(log n) spike slicing
-        # side="left" for t_start: include spikes at exactly t_start
-        # side="right" for t_end: include spikes at exactly t_end
-        spike_start = np.searchsorted(spike_times, t_start, side="left")
-        spike_end = np.searchsorted(spike_times, t_end, side="right")
-
-        if spike_start < spike_end:
-            spike_slices.append(spike_times[spike_start:spike_end])
-
-    # Concatenate all spike slices
-    if spike_slices:
-        spike_times_sub = np.concatenate(spike_slices)
-    else:
-        spike_times_sub = np.array([], dtype=np.float64)
-
-    return times[mask], spike_times_sub
-
-
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -4131,6 +4049,9 @@ def compute_directional_place_fields(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -4219,6 +4140,12 @@ def compute_directional_place_fields(
     True
     """
     # Validate direction_labels length matches times
+    from neurospatial._intervals import (
+        intersect_intervals,
+        resolve_time_windows,
+        run_time_bounds,
+    )
+
     if len(direction_labels) != len(times):
         raise ValueError(
             f"direction_labels must have same length as times, "
@@ -4238,24 +4165,30 @@ def compute_directional_place_fields(
     firing_rates_dict: dict[str, NDArray[np.float64]] = {}
     occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     for label in unique_labels:
-        # Build mask for this direction
-        mask = labels_arr == label
-
-        # Get subsets using our helper
-        times_sub, spike_times_sub = _subset_spikes_by_time_mask(
-            times, spike_times, mask
+        label_windows = run_time_bounds(times, labels_arr[:-1] == label)
+        if label_windows.shape[0] == 0:
+            continue
+        windows = (
+            label_windows
+            if resolved_epochs is None
+            else intersect_intervals(label_windows, resolved_epochs)
         )
-        positions_sub = positions[mask]
+        if windows.shape[0] == 0:
+            continue
 
         single = compute_spatial_rate(
             env,
-            spike_times_sub,
-            times_sub,
-            positions_sub,
+            spike_times,
+            times,
+            positions,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
+            max_gap=max_gap,
+            epochs=windows,
+            spike_window=resolved_spike_window,
         )
         firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
         occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
@@ -4264,7 +4197,7 @@ def compute_directional_place_fields(
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,
-        labels=tuple(str(label) for label in unique_labels),
+        labels=tuple(firing_rates_dict),
     )
 
 
@@ -4468,6 +4401,9 @@ def is_place_cell(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     threshold: float = 0.2,
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
@@ -4541,6 +4477,9 @@ def is_place_cell(
             positions,
             method=method,
             bandwidth=bandwidth,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
     except (ValueError, RuntimeError):
         return False

@@ -4,6 +4,17 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- Spatial rate functions, `is_place_cell`, and `compute_directional_place_fields`
+  accept `epochs=` and `spike_window=`. One shared analysis mask excludes the
+  same intervals from spike counts and occupancy, including GLM and empty
+  populations. Direction-labelled runs use epochs instead of concatenated
+  samples, removing artificial occupancy across breaks (1.6 s instead of
+  1.9 s in a repeated-label example).
+- **Behavior change:** with `max_gap=None`, intervals starting outside the
+  environment now exclude their spikes as well as their occupancy. A spike
+  exactly at the last position timestamp, `times[-1]`, lies outside all
+  half-open sampling intervals and is no longer counted; it is reported as
+  time-dropped.
 - `Environment.occupancy` accepts `epochs=` as half-open windows in seconds.
   It excludes intervals that cross window boundaries for both start and
   linear time allocation, interval counts, and smoothed occupancy.
