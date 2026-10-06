@@ -4,6 +4,9 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- Malformed numeric attributes on IntervalSet-like windows now report the
+  window argument, conversion problem, `Why:` and `Fix:` together, without
+  hiding invalid values in the other time-window argument.
 - `compute_spatial_rates` warns once when at least five units are all silent
   for at least 60 seconds of continuously tracked time and no `spike_window`
   was supplied. This recording-outage heuristic includes leading and trailing

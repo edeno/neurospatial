@@ -93,6 +93,39 @@ def test_as_intervals_reports_every_problem():
     assert "spike_window" in str(exc.value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        IntervalSetLike(np.array(["bad"]), np.array([10])),
+        IntervalSetLike(np.array([0]), np.array(["bad"])),
+        IntervalSetLike(np.array([object()]), np.array([10])),
+    ],
+)
+def test_intervalset_numeric_errors_follow_contract(value):
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(ValueError) as exc:
+        as_intervals(value, name="epochs")
+    message = str(exc.value)
+    assert "epochs.start and epochs.end" in message
+    assert "could not be read as numbers" in message
+    assert "Why:" in message
+    assert "\nFix:" in message
+
+
+def test_intervalset_numeric_error_does_not_hide_other_window_errors():
+    from neurospatial._intervals import resolve_time_windows
+
+    value = IntervalSetLike(np.array(["bad"]), np.array([10]))
+    with pytest.raises(ValueError) as exc:
+        resolve_time_windows(value, [[5, 1]])
+    message = str(exc.value)
+    assert "epochs.start and epochs.end" in message
+    assert "spike_window row(s) 0 have stop <= start" in message
+    assert "Why:" in message
+    assert "\nFix:" in message
+
+
 def test_intervals_contain():
     from neurospatial._intervals import intervals_contain
 

@@ -32,12 +32,17 @@ def _parse_intervals(
 ) -> tuple[NDArray[np.float64] | None, list[str]]:
     """Convert ``value`` to an unsorted ``(n, 2)`` array and list every problem.
 
-    Returns ``(rows, problems)``. ``rows`` is ``None`` only when the shape is
-    unusable; ``problems`` is empty when ``rows`` is valid.
+    Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
+    are unusable; ``problems`` is empty when ``rows`` is valid.
     """
     if hasattr(value, "start") and hasattr(value, "end"):
-        starts = np.asarray(value.start, dtype=np.float64)
-        stops = np.asarray(value.end, dtype=np.float64)
+        try:
+            starts = np.asarray(value.start, dtype=np.float64)
+            stops = np.asarray(value.end, dtype=np.float64)
+        except (TypeError, ValueError) as exc:
+            return None, [
+                f"{name}.start and {name}.end could not be read as numbers ({exc})"
+            ]
         if starts.ndim != 1 or stops.shape != starts.shape:
             return None, [
                 f"{name}.start and {name}.end must be 1-D arrays of equal "
