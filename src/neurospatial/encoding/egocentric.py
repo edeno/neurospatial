@@ -197,6 +197,10 @@ class EgocentricRateResult(SpatialResultMixin):
     n_direction_bins: int
     unit_id: int | str | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: egocentric results index polar bins
@@ -611,6 +615,10 @@ class EgocentricRatesResult(SpatialResultMixin):
     n_direction_bins: int
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table

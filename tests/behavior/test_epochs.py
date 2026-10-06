@@ -1,7 +1,7 @@
 """Tests for array-native epoch selection (``neurospatial.behavior.epochs``).
 
 Covers the three public entry points -- :func:`in_epochs`, :func:`restrict`,
-and :func:`restrict_spike_trains` -- plus the private ``_as_intervals``
+and :func:`restrict_spike_trains` -- plus the shared interval
 normalizer. The headline invariant (the DoD) is **array-vs-IntervalSet
 parity**: restricting by ``(start, end)`` arrays equals restricting by an
 ``IntervalSet``-like object. That parity is tested two ways:
@@ -21,9 +21,39 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._intervals import as_intervals
 from neurospatial.behavior import in_epochs, restrict, restrict_spike_trains
-from neurospatial.behavior.epochs import _as_intervals
 from neurospatial.encoding import SpikeTrains, compute_spatial_rates
+
+
+def test_nested_epoch_rows_are_unambiguous():
+    times = np.array([0.0, 5.0, 7.0, 10.0, 15.0])
+    np.testing.assert_array_equal(
+        in_epochs(times, [[0, 5], [10, 15]]), [True, True, False, True, True]
+    )
+
+
+@pytest.mark.parametrize(
+    "epochs",
+    [np.empty((0, 2)), [[1, 1]], (np.array([0, 10, 20]), np.array([5, 15, 25]))],
+)
+def test_epoch_utilities_reject_invalid_windows(epochs):
+    times = np.array([0.0, 1.0, 2.0])
+    for call in (
+        lambda: in_epochs(times, epochs),
+        lambda: restrict(times, epochs=epochs),
+        lambda: restrict_spike_trains([times], epochs),
+    ):
+        with pytest.raises(ValueError, match="Fix:"):
+            call()
+
+
+def test_none_epochs_are_unrestricted():
+    times = np.array([0.0, 1.0, 2.0])
+    np.testing.assert_array_equal(in_epochs(times, None), np.ones(3, dtype=bool))
+    np.testing.assert_array_equal(restrict(times, epochs=None), times)
+    np.testing.assert_array_equal(restrict_spike_trains([times], None)[0], times)
+
 
 HAS_PYNAPPLE = importlib.util.find_spec("pynapple") is not None
 
@@ -37,34 +67,21 @@ class FakeIntervalSet:
 
 
 # ---------------------------------------------------------------------------
-# _as_intervals: accepts every documented form
+# Interval normalization: accepts every documented form
 # ---------------------------------------------------------------------------
 
 
 def test_as_intervals_scalar_tuple() -> None:
     """A 2-tuple of scalars -> one interval."""
-    out = _as_intervals((1.0, 5.0))
+    out = as_intervals((1.0, 5.0), name="epochs")
     np.testing.assert_array_equal(out, np.array([[1.0, 5.0]]))
     assert out.shape == (1, 2)
-
-
-def test_as_intervals_two_arrays() -> None:
-    """Two 1-D (starts, ends) arrays of length != 2 -> parallel n intervals.
-
-    Length-2 arrays are the *ambiguous* case (see
-    ``test_as_intervals_ambiguous_nested_pair_raises``); three intervals is
-    unambiguous, so this exercises the parallel-arrays path.
-    """
-    out = _as_intervals((np.array([0.0, 10.0, 20.0]), np.array([5.0, 15.0, 25.0])))
-    np.testing.assert_array_equal(
-        out, np.array([[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]])
-    )
 
 
 def test_as_intervals_n_by_2_array() -> None:
     """A single (n, 2) array passes through unchanged."""
     arr = np.array([[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]])
-    out = _as_intervals(arr)
+    out = as_intervals(arr, name="epochs")
     np.testing.assert_array_equal(out, arr)
 
 
@@ -74,32 +91,14 @@ def test_as_intervals_n_by_2_array_two_rows() -> None:
     ``np.array([[0, 5], [10, 15]])`` is unambiguous (it is an ndarray, not a
     bare nested list) and must read as the rows ``(0, 5)`` and ``(10, 15)``.
     """
-    out = _as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]))
+    out = as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]), name="epochs")
     np.testing.assert_array_equal(out, np.array([[0.0, 5.0], [10.0, 15.0]]))
-
-
-@pytest.mark.parametrize(
-    "ambiguous",
-    [
-        [[0.0, 5.0], [10.0, 15.0]],
-        ([0.0, 5.0], [10.0, 15.0]),
-        (np.array([0.0, 10.0]), np.array([5.0, 15.0])),
-    ],
-)
-def test_as_intervals_ambiguous_nested_pair_raises(ambiguous) -> None:
-    """A length-2 pair of length-2 sequences is irreducibly ambiguous -> raise.
-
-    Could mean two ``(start, end)`` rows or two parallel ``(starts, ends)``
-    arrays; force the user to disambiguate with an ``(n, 2)`` array.
-    """
-    with pytest.raises(ValueError, match="Ambiguous"):
-        _as_intervals(ambiguous)
 
 
 def test_as_intervals_intervalset_like() -> None:
     """A duck-typed IntervalSet (.start/.end) -> column-stacked intervals."""
     iset = FakeIntervalSet(start=np.array([0.0, 10.0]), end=np.array([5.0, 15.0]))
-    out = _as_intervals(iset)
+    out = as_intervals(iset, name="epochs")
     np.testing.assert_array_equal(out, np.array([[0.0, 5.0], [10.0, 15.0]]))
 
 
@@ -112,9 +111,9 @@ def test_as_intervals_intervalset_like() -> None:
     ],
 )
 def test_as_intervals_empty_forms(empty) -> None:
-    """Empty epochs (0 intervals) normalize to shape (0, 2)."""
-    out = _as_intervals(empty)
-    assert out.shape == (0, 2)
+    """Empty epochs are rejected rather than silently excluding all data."""
+    with pytest.raises(ValueError, match="Fix:"):
+        as_intervals(empty, name="epochs")
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +144,10 @@ def test_in_epochs_overlapping_intervals_union() -> None:
 
 
 def test_in_epochs_empty_all_false() -> None:
-    """Empty epochs select nothing."""
+    """An empty epoch set raises an informative error."""
     t = np.array([0.0, 1.0, 2.0])
-    mask = in_epochs(t, np.empty((0, 2)))
-    np.testing.assert_array_equal(mask, [False, False, False])
-    assert mask.dtype == np.bool_
+    with pytest.raises(ValueError, match="no rows"):
+        in_epochs(t, np.empty((0, 2)))
 
 
 def test_in_epochs_closed_left() -> None:
@@ -305,11 +303,10 @@ def test_restrict_spike_trains_accepts_spiketrains_container() -> None:
 
 
 def test_restrict_spike_trains_empty_epochs_all_empty() -> None:
-    """Empty epochs -> every returned train is empty (but present)."""
+    """Empty epoch sets are rejected for every train."""
     trains = [np.array([0.1, 1.5]), np.array([0.5, 3.0])]
-    out = restrict_spike_trains(trains, np.empty((0, 2)))
-    assert len(out) == 2
-    assert all(t.size == 0 for t in out)
+    with pytest.raises(ValueError, match="no rows"):
+        restrict_spike_trains(trains, np.empty((0, 2)))
 
 
 # ---------------------------------------------------------------------------
@@ -365,20 +362,20 @@ def test_compute_spatial_rates_honors_restriction() -> None:
 
 def test_as_intervals_start_after_end_raises() -> None:
     """start > end raises, naming the offending interval."""
-    with pytest.raises(ValueError, match="start <= end"):
-        _as_intervals((5.0, 1.0))
+    with pytest.raises(ValueError, match="stop <= start"):
+        as_intervals((5.0, 1.0), name="epochs")
 
 
 def test_as_intervals_nonfinite_raises() -> None:
     """A non-finite endpoint raises."""
     with pytest.raises(ValueError, match="finite"):
-        _as_intervals((0.0, np.inf))
+        as_intervals((0.0, np.inf), name="epochs")
 
 
 def test_as_intervals_bad_shape_raises() -> None:
     """An (n, 3) array is not a valid interval array."""
     with pytest.raises(ValueError, match=r"shape"):
-        _as_intervals(np.zeros((4, 3)))
+        as_intervals(np.zeros((4, 3)), name="epochs")
 
 
 def test_restrict_top_level_export() -> None:

@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Changed — recording gaps and time windows in rate maps
+
+- Malformed numeric attributes on IntervalSet-like windows now report the
+  window argument, conversion problem, `Why:` and `Fix:` together, without
+  hiding invalid values in the other time-window argument.
+- `compute_spatial_rates` warns once when at least five units are all silent
+  for at least 60 seconds of continuously tracked time and no `spike_window`
+  was supplied. This recording-outage heuristic includes leading and trailing
+  silence and rest, but never combines silence across untracked pauses;
+  an explicit window suppresses it. Its absence does not prove coverage.
+- Every rate result exposes `spike_window` and the read-only
+  `spike_window_assumed` flag in `summary()`. Spatial encoders record the
+  normalized acquisition windows, preserving them when indexing a population
+  and in direction-conditioned place fields. Spatial population xarray exports
+  store the assumption as an integer and supplied windows as a flat array,
+  so both round-trip through NetCDF. Other rate families currently report
+  assumed coverage until their window keywords are available.
+- `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
+  same window parser as spatial analyses. Nested sequences always describe
+  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.
+  Overlapping or touching rows merge, zero-width and empty window sets raise
+  with a fix, and `epochs=None` leaves data unrestricted. Point membership
+  still uses the requested `closed=` setting on the normalized windows.
+- Spatial rate functions, `is_place_cell`, and `compute_directional_place_fields`
+  accept `epochs=` and `spike_window=`. One shared analysis mask excludes the
+  same intervals from spike counts and occupancy, including GLM and empty
+  populations. Direction-labelled runs use epochs instead of concatenated
+  samples, removing artificial occupancy across breaks (1.6 s instead of
+  1.9 s in a repeated-label example).
+- **Behavior change:** with `max_gap=None`, intervals starting outside the
+  environment now exclude their spikes as well as their occupancy. A spike
+  exactly at the last position timestamp, `times[-1]`, lies outside all
+  half-open sampling intervals and is no longer counted; it is reported as
+  time-dropped.
+- `Environment.occupancy` accepts `epochs=` as half-open windows in seconds.
+  It excludes intervals that cross window boundaries for both start and
+  linear time allocation, interval counts, and smoothed occupancy.
+
 ### Fixed
 
 - **Behavior change:** `pre_decision_heading_stats` now excludes samples below

@@ -36,6 +36,38 @@ from neurospatial.environment.trajectory import interval_valid_mask
 SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 
 
+@pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
+def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
+    from neurospatial.encoding._binning import _bin_spike_train_with_stats
+
+    times = offset + np.arange(3) * step
+    positions = np.full((3, 1), 20.0)
+    spikes = times[1:]
+    mask = interval_valid_mask(times, positions, env_1d)
+    counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
+        _bin_spike_train_with_stats(
+            env_1d, spikes, times, positions, interval_mask=mask
+        )
+    )
+    assert counts.sum() == 1
+    assert (n_time_dropped, n_bin_dropped, n_total, n_after_time) == (1, 0, 2, 1)
+    public_counts = bin_spike_train(
+        env_1d, spikes, times, positions, warn_on_drop=False
+    )
+    np.testing.assert_array_equal(public_counts, counts)
+
+
+def test_max_gap_none_drops_out_of_bounds_spikes(env_1d):
+    times = np.array([0.0, 0.5, 1.0])
+    positions = np.array([[-20.0], [20.0], [30.0]])
+    counts = bin_spike_train(
+        env_1d, np.array([0.45, 0.75]), times, positions, max_gap=None
+    )
+    assert counts.sum() == 1
+    occupancy = compute_occupancy(env_1d, times, positions, max_gap=None)
+    assert occupancy.sum() == 0.5
+
+
 # ==============================================================================
 # Fixtures
 # ==============================================================================
@@ -611,9 +643,8 @@ def test_interval_mask_not_recomputed_per_neuron_batch(
 
     # Constant regardless of neuron count (the recompute-per-neuron is gone).
     assert calls_5 == calls_50
-    # Concretely: once for env.occupancy's denominator mask + once for the
-    # shared spike-side mask = 2 per batch call (NOT n_neurons + 1).
-    assert calls_5 == 2
+    # The identical mask is shared by occupancy and every spike train.
+    assert calls_5 == 1
 
 
 def test_compute_spatial_rates_mask_computed_once(
@@ -639,8 +670,8 @@ def test_compute_spatial_rates_mask_computed_once(
 
     calls["n"] = 0
     compute_spatial_rates(env_1d, spike_trains, times, positions, warn_on_drop=False)
-    # Independent of n_neurons: NOT n_neurons-scaled. (2 = occupancy + spikes.)
-    assert calls["n"] == 2
+    # One analysis mask supplies both occupancy and all per-unit counts.
+    assert calls["n"] == 1
 
 
 def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> None:

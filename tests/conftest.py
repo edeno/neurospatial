@@ -32,6 +32,7 @@ Size Guidelines (approximate bin counts):
 import os
 from collections import UserDict
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import networkx as nx
@@ -109,6 +110,47 @@ LOOSE_TOLERANCE = 0.1
 SMALL_EXTENT = 10.0
 MEDIUM_EXTENT = 50.0
 LARGE_EXTENT = 100.0
+
+
+@dataclass(frozen=True)
+class Recording:
+    """Tracked recording with regular spikes and a known firing rate."""
+
+    times: NDArray[np.float64]
+    positions: NDArray[np.float64]
+    headings: NDArray[np.float64]
+    spike_times: NDArray[np.float64]
+    env: Environment
+
+
+def _make_recording(
+    times: NDArray[np.float64], spike_times: NDArray[np.float64]
+) -> Recording:
+    positions = np.c_[50 + 40 * np.sin(times / 3.1), 50 + 40 * np.cos(times / 4.7)]
+    env = Environment.from_samples(positions, bin_size=5.0)
+    env.units = "cm"
+    return Recording(
+        times,
+        positions,
+        np.random.default_rng(0).uniform(-np.pi, np.pi, times.size),
+        spike_times,
+        env,
+    )
+
+
+@pytest.fixture(scope="session")
+def two_epoch_recording() -> Recording:
+    """Two 100-second recordings separated by a 1000-second pause."""
+    return _make_recording(
+        np.r_[np.arange(5000) / 50, 1100 + np.arange(5000) / 50],
+        np.r_[np.arange(0.1, 100, 0.2), np.arange(1100.1, 1200, 0.2)],
+    )
+
+
+@pytest.fixture(scope="session")
+def continuous_recording() -> Recording:
+    """Continuous 200-second tracking with regular 5 Hz spikes."""
+    return _make_recording(np.arange(10000) / 50, np.arange(0.1, 200, 0.2))
 
 
 # =============================================================================

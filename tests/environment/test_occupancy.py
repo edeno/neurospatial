@@ -7,6 +7,39 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 
 
+@pytest.mark.parametrize("time_allocation", ["start", "linear"])
+def test_occupancy_epochs_restricts_and_matches_slicing(
+    continuous_recording, time_allocation
+):
+    recording = continuous_recording
+    keep = recording.times <= 100
+    actual = recording.env.occupancy(
+        recording.times,
+        recording.positions,
+        epochs=[(0.0, 100.0)],
+        time_allocation=time_allocation,
+    )
+    expected = recording.env.occupancy(
+        recording.times[keep],
+        recording.positions[keep],
+        time_allocation=time_allocation,
+    )
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0)
+    assert actual.sum() == pytest.approx(100.0, abs=1e-9)
+
+
+def test_occupancy_epochs_counts_and_smoothing(continuous_recording):
+    recording = continuous_recording
+    counts = recording.env.occupancy(
+        recording.times, recording.positions, epochs=(0, 100), return_seconds=False
+    )
+    assert counts.sum() == 5000
+    smoothed = recording.env.occupancy(
+        recording.times, recording.positions, epochs=(0, 100), bandwidth=5.0
+    )
+    assert smoothed.sum() == pytest.approx(100.0, abs=1e-9)
+
+
 class TestOccupancyBasic:
     """Basic occupancy computation tests.
 

@@ -217,6 +217,10 @@ class ViewRateResult(SpatialResultMixin):
     bandwidth: float
     unit_id: int | str | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field (firing rate by viewed location).
 
@@ -545,6 +549,10 @@ class ViewRatesResult(SpatialResultMixin):
     bandwidth: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table

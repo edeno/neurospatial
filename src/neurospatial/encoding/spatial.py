@@ -622,6 +622,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     def __post_init__(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
@@ -1382,6 +1386,10 @@ class SpatialRatesResult(SpatialResultMixin):
     penalty_selected_by_reml: NDArray[np.bool_] | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
@@ -1476,6 +1484,7 @@ class SpatialRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -1699,6 +1708,7 @@ class SpatialRatesResult(SpatialResultMixin):
             "method": self.method,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
+            "spike_window_assumed": int(self.spike_window_assumed),
         }
         # Guard on the value, not on ``method``: NetCDF attributes cannot hold
         # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
@@ -1706,6 +1716,8 @@ class SpatialRatesResult(SpatialResultMixin):
         # ``bandwidth is not None`` guards exactly that serialization precondition
         # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
         # correct even if a ratio result ever carried a ``None`` bandwidth.
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         if self.bandwidth is not None:
             attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
@@ -2560,6 +2572,8 @@ def compute_spatial_rate(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
@@ -2696,25 +2710,23 @@ default="diffusion_kde"
         times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
         last sample starts no occupancy interval). This Euclidean default is
         simple; for geodesic / track environments pass an explicit ``speed``.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        spike numerator AND the occupancy denominator using ONE shared
-        per-interval mask, so the firing rate stays correct. This default
-        matches ``env.occupancy``'s own default, so occupancy behavior is
-        unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes occurring inside
-           intervals longer than ``max_gap`` (large tracking gaps) or inside
-           intervals whose start sample is out of bounds are now excluded from
-           spike counts, matching occupancy. Previously such spikes were
-           counted while their time was excluded from the denominator,
-           inflating the rate. This changes firing-rate maps for sessions
-           with large tracking gaps or out-of-bounds excursions. Pass
-           ``max_gap=None`` to disable gap gating on BOTH sides (restoring the
-           pre-fix, no-gap-gating behavior while keeping the two sides
-           aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -2763,6 +2775,10 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
     compute the smoothed firing rate.
@@ -2816,6 +2832,7 @@ default="diffusion_kde"
     >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
     True
     """
+    from neurospatial._intervals import resolve_time_windows
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -2901,22 +2918,26 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE if EVERY interval is excluded (empty rate
-    # map), regardless of WHICH gate caused it. Gated by warn_on_drop. Reshape
-    # 1-D positions so _resolve_interval_mask sees the canonical 2-D shape.
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+    interval_mask = _resolve_interval_mask(
+        env,
+        times,
+        positions_2d,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
     if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
-            env,
-            times,
-            _positions_2d,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
         _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            stacklevel=2,
         )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
@@ -2928,6 +2949,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
     )
@@ -2942,6 +2964,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
     )
 
@@ -2978,6 +3001,7 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
             occupancy=single_occupancy,
             env=env,
@@ -3023,6 +3047,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        spike_window=resolved_spike_window,
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=env,
@@ -3047,6 +3072,8 @@ def compute_spatial_rates(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -3161,22 +3188,23 @@ default="diffusion_kde"
         ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
         times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
         for geodesic / linearized-track environments.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        shared occupancy denominator AND every per-neuron spike numerator
-        using ONE shared per-interval mask. This default matches
-        ``env.occupancy``'s own default, so occupancy is unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes inside intervals
-           longer than ``max_gap`` or inside intervals whose start sample is
-           out of bounds are now excluded from spike counts, matching
-           occupancy. Previously such spikes were counted while their time was
-           excluded from the denominator, inflating the rate. This changes
-           rate maps for sessions with large tracking gaps / out-of-bounds
-           excursions. Pass ``max_gap=None`` to disable gap gating on BOTH
-           sides (pre-fix behavior, still aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -3240,6 +3268,15 @@ default="diffusion_kde"
         The result supports iteration: ``for single in result: ...``
         and indexing: ``single = result[0]``.
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     See Also
     --------
     compute_spatial_rate : Single-neuron version
@@ -3247,6 +3284,10 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
     1. Occupancy is computed once and shared across all neurons
@@ -3334,14 +3375,18 @@ default="diffusion_kde"
     >>> len(result2)
     2
     """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
+        _SILENCE_MIN_SECONDS,
+        _SILENCE_MIN_UNITS,
         _emit_all_excluded_intervals_warning,
         _resolve_interval_mask,
+        _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
     )
@@ -3355,6 +3400,7 @@ default="diffusion_kde"
         validate_spike_times,
         validate_trajectory,
     )
+    from neurospatial.environment.trajectory import interval_valid_mask
 
     validate_env_fitted(env, context="compute_spatial_rates")
 
@@ -3452,22 +3498,41 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE for the whole batch if EVERY interval is
-    # excluded (empty rate maps), regardless of WHICH gate caused it — not once
-    # per neuron. Gated by warn_on_drop. Reshape 1-D positions to canonical 2-D.
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+    interval_mask = _resolve_interval_mask(
+        env,
+        times,
+        positions_2d,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
     if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
-            env,
-            times,
-            _positions_2d,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
         _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            stacklevel=2,
+        )
+
+    # Recording coverage is a separate concern from speed/bounds filtering.
+    # Short recordings or populations below the heuristic threshold cannot
+    # produce a silence warning, so they need no separate observed mask.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
         )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
@@ -3491,6 +3556,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 context="compute_spatial_rates",
             )
         else:
@@ -3502,6 +3568,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 n_jobs=n_jobs,
                 warn_on_drop=warn_on_drop,
             )
@@ -3530,6 +3597,7 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=glm_firing_rates,
             occupancy=batch_occupancy,
             env=env,
@@ -3566,6 +3634,7 @@ default="diffusion_kde"
             speed=resolved_speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            interval_mask=interval_mask,
             context="compute_spatial_rates",
         )
 
@@ -3580,6 +3649,7 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=firing_rates_result,
             occupancy=occupancy_result,
             env=env,
@@ -3598,6 +3668,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
     )
@@ -3641,6 +3712,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=env,
@@ -3711,6 +3783,20 @@ class DirectionalPlaceFields(ResultMixin):
     occupancy: Mapping[str, NDArray[np.float64]]
     env: Environment
     labels: tuple[str, ...]
+
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
 
     def correlation(self, label_a: str, label_b: str) -> float:
         """Pearson correlation between two directions' rate maps.
@@ -3875,6 +3961,10 @@ class DirectionalPlaceFields(ResultMixin):
         """
         out: dict[str, Any] = {
             "n_directions": len(self.labels),
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": None
+            if self.spike_window is None
+            else self.spike_window.tolist(),
             "n_bins": int(self.env.n_bins),
         }
         for label in self.labels:
@@ -4019,108 +4109,6 @@ class DirectionalPlaceFields(ResultMixin):
         return ax
 
 
-def _subset_spikes_by_time_mask(
-    times: NDArray[np.float64],
-    spike_times: NDArray[np.float64],
-    mask: NDArray[np.bool_],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Subset spike times by a boolean mask over trajectory times.
-
-    Extracts spikes that fall within the time ranges defined by contiguous
-    True segments in the mask. Uses binary search (searchsorted) for
-    efficient O(log n) spike slicing per segment.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_timepoints,)
-        Timestamps of trajectory samples (seconds). Must be sorted.
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Timestamps of spike occurrences (seconds). Must be sorted.
-    mask : NDArray[np.bool_], shape (n_timepoints,)
-        Boolean mask indicating which timepoints to include.
-        Contiguous True segments define time ranges for spike inclusion.
-
-    Returns
-    -------
-    times_sub : NDArray[np.float64]
-        Subset of times where mask is True. Same as ``times[mask]``.
-    spike_times_sub : NDArray[np.float64]
-        Spikes that fall within the time ranges of contiguous True segments.
-        Boundaries are inclusive: spikes at segment start/end are included.
-
-    Notes
-    -----
-    For each contiguous segment of True values in mask:
-    - ``t_start = times[segment_first_index]``
-    - ``t_end = times[segment_last_index]``
-    - Spikes in ``[t_start, t_end]`` (inclusive) are selected
-
-    This function is designed for conditioning place field analysis on
-    subsets of the trajectory (e.g., by movement direction, trial type).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    >>> spike_times = np.array([0.5, 1.5, 2.5, 3.5])
-    >>> mask = np.array([False, True, True, False, False])
-    >>> times_sub, spikes_sub = _subset_spikes_by_time_mask(times, spike_times, mask)
-    >>> times_sub
-    array([1., 2.])
-    >>> spikes_sub
-    array([1.5])
-    """
-    # Fast path: empty mask
-    if not np.any(mask):
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Get indices where mask is True
-    true_indices = np.where(mask)[0]
-
-    # Find contiguous segments by looking for gaps > 1
-    # diff > 1 indicates a break in contiguity
-    if len(true_indices) == 0:
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Find segment boundaries: where consecutive indices are not adjacent
-    breaks = np.where(np.diff(true_indices) > 1)[0] + 1
-    segment_starts = np.concatenate([[0], breaks])
-    segment_ends = np.concatenate([breaks, [len(true_indices)]])
-
-    # Fast path: empty spike train
-    if len(spike_times) == 0:
-        return times[mask], np.array([], dtype=np.float64)
-
-    # Collect spikes from each segment
-    spike_slices = []
-
-    for seg_start_idx, seg_end_idx in zip(segment_starts, segment_ends, strict=True):
-        # Get the actual time indices for this segment
-        first_time_idx = true_indices[seg_start_idx]
-        last_time_idx = true_indices[seg_end_idx - 1]
-
-        # Get time boundaries
-        t_start = times[first_time_idx]
-        t_end = times[last_time_idx]
-
-        # Use searchsorted for O(log n) spike slicing
-        # side="left" for t_start: include spikes at exactly t_start
-        # side="right" for t_end: include spikes at exactly t_end
-        spike_start = np.searchsorted(spike_times, t_start, side="left")
-        spike_end = np.searchsorted(spike_times, t_end, side="right")
-
-        if spike_start < spike_end:
-            spike_slices.append(spike_times[spike_start:spike_end])
-
-    # Concatenate all spike slices
-    if spike_slices:
-        spike_times_sub = np.concatenate(spike_slices)
-    else:
-        spike_times_sub = np.array([], dtype=np.float64)
-
-    return times[mask], spike_times_sub
-
-
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -4131,6 +4119,9 @@ def compute_directional_place_fields(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -4161,6 +4152,24 @@ def compute_directional_place_fields(
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+
     Returns
     -------
     DirectionalPlaceFields
@@ -4183,15 +4192,15 @@ def compute_directional_place_fields(
 
     Notes
     -----
-    The "other" label is reserved for timepoints that should be excluded from
-    analysis (e.g., inter-trial intervals, stationary periods). Any timepoints
-    with label "other" are ignored when computing fields.
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
-    For each unique non-"other" label, this function:
-    1. Creates a boolean mask for timepoints with that label
-    2. Extracts the trajectory and spikes within those masked periods
-    3. Calls ``compute_spatial_rate`` on the subset
-    4. Stores the resulting field in the output mapping
+    Each interval carries the direction label of its start sample. Separate
+    runs of the same label become analysis epochs on the original trajectory,
+    so filtering never joins nonadjacent samples into artificial intervals.
+    The caller's epochs intersect the label windows; ``spike_window`` remains
+    the caller's acquisition coverage.
 
     Examples
     --------
@@ -4219,6 +4228,12 @@ def compute_directional_place_fields(
     True
     """
     # Validate direction_labels length matches times
+    from neurospatial._intervals import (
+        intersect_intervals,
+        resolve_time_windows,
+        run_time_bounds,
+    )
+
     if len(direction_labels) != len(times):
         raise ValueError(
             f"direction_labels must have same length as times, "
@@ -4238,33 +4253,40 @@ def compute_directional_place_fields(
     firing_rates_dict: dict[str, NDArray[np.float64]] = {}
     occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     for label in unique_labels:
-        # Build mask for this direction
-        mask = labels_arr == label
-
-        # Get subsets using our helper
-        times_sub, spike_times_sub = _subset_spikes_by_time_mask(
-            times, spike_times, mask
+        label_windows = run_time_bounds(times, labels_arr[:-1] == label)
+        if label_windows.shape[0] == 0:
+            continue
+        windows = (
+            label_windows
+            if resolved_epochs is None
+            else intersect_intervals(label_windows, resolved_epochs)
         )
-        positions_sub = positions[mask]
+        if windows.shape[0] == 0:
+            continue
 
         single = compute_spatial_rate(
             env,
-            spike_times_sub,
-            times_sub,
-            positions_sub,
+            spike_times,
+            times,
+            positions,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
+            max_gap=max_gap,
+            epochs=windows,
+            spike_window=resolved_spike_window,
         )
         firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
         occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
 
     return DirectionalPlaceFields(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,
-        labels=tuple(str(label) for label in unique_labels),
+        labels=tuple(firing_rates_dict),
     )
 
 
@@ -4468,6 +4490,9 @@ def is_place_cell(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     threshold: float = 0.2,
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
@@ -4497,6 +4522,23 @@ def is_place_cell(
         Rate map smoothing method.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     threshold : float, default=0.2
         Fraction of peak rate for field boundary detection (0-1).
     min_size : int, optional
@@ -4512,6 +4554,12 @@ def is_place_cell(
     bool
         True if the neuron passes place-cell criteria (has >= 1 detected
         place field).
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
     Examples
     --------
@@ -4541,6 +4589,9 @@ def is_place_cell(
             positions,
             method=method,
             bandwidth=bandwidth,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
     except (ValueError, RuntimeError):
         return False
