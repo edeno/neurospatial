@@ -371,7 +371,7 @@ def decode_session(
         times=centers,
         dtype=dtype,
         **decode_kwargs,
-    )
+    )._evolve(spike_window=resolved_spike_window)
 
 
 def _build_encoding_model(
@@ -926,4 +926,5 @@ warn_on_drop, dtype
         peak_prob=peak_prob,
         map_bin=map_bin,
         env=env,
+        spike_window=resolved_spike_window,
     )

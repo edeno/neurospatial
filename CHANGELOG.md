@@ -4,6 +4,10 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Full and streamed decoding results record `spike_window` and
+  `spike_window_assumed`, including summaries and NetCDF-compatible xarray
+  attributes. Attaching session metadata preserves the single posterior
+  allocation; public construction and replacement still copy input arrays.
 - Posterior heatmaps with detected recording breaks use time-bin indices and
   dashed gap markers, preserving visible separation instead of stretching
   bins across a pause. Contiguous and single-bin results keep time axes;
