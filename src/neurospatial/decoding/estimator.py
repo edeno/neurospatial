@@ -292,7 +292,8 @@ warn_on_drop
         *,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
-        epoch: Any = None,
+        epochs: Any = None,
+        spike_window: Any = None,
     ) -> BayesianDecoder:
         """Build encoding models from training data; return a new fitted decoder.
 
@@ -324,11 +325,9 @@ warn_on_drop
             Minimum speed threshold (position units / second). When set,
             low-speed samples are excluded from both the spike numerator and the
             occupancy denominator of the encoding model.
-        epoch : IntervalSet-like, tuple, list, or ndarray, optional
-            When given, the training data is restricted to these epochs *first*
-            (via :func:`neurospatial.behavior.restrict` for the position track
-            and :func:`neurospatial.behavior.restrict_spike_trains` for spikes),
-            then encoded. Enables train/test splits.
+        epochs, spike_window : optional
+            Analysis and acquisition windows, applied through the shared
+            interval mask on the original tracking samples and spike trains.
 
         Returns
         -------
@@ -351,10 +350,10 @@ warn_on_drop
         Examples
         --------
         >>> decoder = BayesianDecoder(env).fit(  # doctest: +SKIP
-        ...     spike_times, times, positions, epoch=(0.0, 60.0)
+        ...     spike_times, times, positions, epochs=(0.0, 60.0)
         ... )
         """
-        from neurospatial._typing import as_times_positions
+        from neurospatial._intervals import resolve_time_windows
         from neurospatial.decoding.session import _build_encoding_model
         from neurospatial.encoding import as_spike_trains_with_ids
 
@@ -362,35 +361,13 @@ warn_on_drop
         # restriction never changes which units exist, only their spike counts).
         trains, extracted_ids = as_spike_trains_with_ids(spike_times)
 
-        if epoch is not None:
-            from neurospatial.behavior import restrict, restrict_spike_trains
-
-            # Restrict the training data to the epoch BEFORE encoding. Normalize
-            # the position track to arrays first (restrict needs a shared time
-            # axis); restrict the already-normalized trains (never the raw group
-            # -- iterating a TsGroup would yield ids, not trains). ``speed`` (if
-            # given) is time-aligned to ``times``, so it must be sliced by the
-            # SAME epoch mask -- otherwise the full-length speed reaches the
-            # encoder with the restricted times and raises a length mismatch.
-            times, positions = as_times_positions(times, positions)
-            if speed is not None:
-                speed_arr = np.asarray(speed, dtype=np.float64)
-                times, positions, speed = restrict(
-                    times, positions, speed_arr, epochs=epoch
-                )
-            else:
-                times, positions = restrict(times, positions, epochs=epoch)
-            spike_input: Any = restrict_spike_trains(trains, epoch)
-        else:
-            # No epoch: reuse the trains already coerced above rather than
-            # re-coercing the raw input inside the encoder. Re-coercing a
-            # list[float64 array] is a no-op, so the encode stays byte-for-byte
-            # identical to decode_session's (and to the epoch branch above).
-            spike_input = trains
+        resolved_epochs, resolved_spike_window = resolve_time_windows(
+            epochs, spike_window
+        )
 
         firing_rates = _build_encoding_model(
             self.env,
-            spike_input,
+            trains,
             times,
             positions,
             dt=self.dt,
@@ -406,6 +383,8 @@ warn_on_drop
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             context="BayesianDecoder.fit",
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )[1]
 
         unit_ids = (
@@ -471,6 +450,9 @@ warn_on_drop
         self,
         spike_times: SpikeTrainsLike,
         times: ArrayLike | PositionLike,
+        *,
+        epochs: Any = None,
+        spike_window: Any = None,
     ) -> DecodingResult:
         """Decode the full posterior for new spikes against the fitted models.
 
@@ -518,6 +500,9 @@ warn_on_drop
             encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
+            max_gap=self.max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
 
     def predict_summary(
@@ -525,6 +510,8 @@ warn_on_drop
         spike_times: SpikeTrainsLike,
         times: ArrayLike | PositionLike,
         *,
+        epochs: Any = None,
+        spike_window: Any = None,
         time_chunk: int = 1024,
     ) -> DecodingSummary:
         """Decode memory-safe per-time reductions for new spikes.
@@ -576,6 +563,9 @@ warn_on_drop
             encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
+            max_gap=self.max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
             time_chunk=time_chunk,
         )
 
@@ -585,6 +575,8 @@ warn_on_drop
         times: ArrayLike | PositionLike,
         positions: NDArray[np.float64] | None = None,
         *,
+        epochs: Any = None,
+        spike_window: Any = None,
         metric: str = "median_error",
         distance: str = "euclidean",
     ) -> float:
@@ -669,7 +661,9 @@ warn_on_drop
         # like the explicit (times, positions) pair.
         times_arr, positions_arr = as_times_positions(times, positions)
 
-        result = self.predict(spike_times, times_arr)
+        result = self.predict(
+            spike_times, times_arr, epochs=epochs, spike_window=spike_window
+        )
         # `distance` is validated above, so narrowing it to the Literal the
         # DecodingResult expects is safe.
         errors = result.error_against(

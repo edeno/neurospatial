@@ -4,6 +4,11 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
+  `spike_window`. Training masks the original arrays instead of concatenating
+  epoch slices, preserving aligned speed samples and unit identities.
+  `predict`, `predict_summary`, and `score` forward the same window keywords
+  and the decoder's configured `max_gap` to observed-run decoding.
 - `decode_session` and its streamed summary accept `epochs` and
   `spike_window`, and form bins only within observed sample runs. No posterior
   is invented inside a tracking pause. Decode bins retain immobility and
