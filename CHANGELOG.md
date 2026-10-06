@@ -4,6 +4,13 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- `heading_from_velocity(positions, times)` replaces scalar `dt`, validates
+  finite, strictly increasing aligned timestamps, and computes velocity,
+  smoothing and circular interpolation separately per observed run. The
+  measured 1,911.44 cm/s teleport no longer produces a heading across the pause.
+  Isolated samples and runs without moving anchors have NaN headings.
+  Shared heading statistics, goal alignment and simulation callers use actual
+  timestamps. Smoothing bandwidth retains its existing units of samples.
 - `events.add_positions` accepts `max_gap` and `epochs`, interpolating only
   inside closed observed-run spans. Events in pauses, on isolated samples or
   outside the tracked span now receive NaN coordinates; extrapolation ends.

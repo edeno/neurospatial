@@ -25,6 +25,6 @@ def interval_velocity(
     ndarray, shape (n_samples - 1, n_dims)
     """
     dt = np.diff(times)
-    velocity = np.diff(positions, axis=0) / dt[:, np.newaxis]
+    velocity: NDArray[np.float64] = np.diff(positions, axis=0) / dt[:, np.newaxis]
     velocity[~interval_mask] = np.nan
     return velocity

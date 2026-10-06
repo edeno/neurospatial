@@ -1735,6 +1735,8 @@ def instantaneous_goal_alignment(
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute instantaneous alignment between movement and goal direction.
 
@@ -1773,9 +1775,13 @@ def instantaneous_goal_alignment(
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
 
-    dt = float(np.median(np.diff(times)))
+    from neurospatial.environment.trajectory import observed_interval_mask
 
-    velocity_heading, speed = _velocity_heading_and_speed(positions, dt)
+    velocity_heading, speed = _velocity_heading_and_speed(
+        positions,
+        times,
+        interval_mask=observed_interval_mask(times, max_gap=max_gap, epochs=epochs),
+    )
     velocity_heading[speed < min_speed] = np.nan
     goal_heading = goal_direction(positions, goal)
 

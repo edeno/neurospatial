@@ -429,6 +429,8 @@ def pre_decision_heading_stats(
     times: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float, float]:
     """Compute circular statistics on heading in a trajectory window.
 
@@ -480,10 +482,13 @@ def pre_decision_heading_stats(
     if len(positions) < 2:
         return 0.0, 1.0, 0.0
 
-    # Use median dt to handle irregular sampling
-    dt = float(np.median(np.diff(times)))
+    from neurospatial.environment.trajectory import observed_interval_mask
 
-    headings, speed = _velocity_heading_and_speed(positions, dt)
+    headings, speed = _velocity_heading_and_speed(
+        positions,
+        times,
+        interval_mask=observed_interval_mask(times, max_gap=max_gap, epochs=epochs),
+    )
     valid_headings = headings[speed >= min_speed]
 
     if len(valid_headings) == 0:

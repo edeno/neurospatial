@@ -322,6 +322,8 @@ def head_sweep_from_positions(
     times: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> float:
     """Compute head sweep magnitude (IdPhi) from position trajectory.
 
@@ -356,15 +358,16 @@ def head_sweep_from_positions(
     if len(positions) < 2:
         return 0.0
 
-    # Compute dt from times (heading_from_velocity expects scalar dt)
-    # Use median dt to handle irregular sampling
-    dt = float(np.median(np.diff(times)))
-
     # Get headings. allow_all_nan: a VTE window is often a slow head-sweeping
     # pause, so an all-below-min_speed (all-NaN) heading is expected here, not an
     # error; head_sweep_magnitude handles the NaN.
     headings = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
+        positions,
+        times,
+        min_speed=min_speed,
+        allow_all_nan=True,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     return head_sweep_magnitude(headings)
