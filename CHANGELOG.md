@@ -4,6 +4,8 @@
 
 ### Fixed — documentation
 
+- Explain graph linearization as geometric coordinates rather than direction separation. The synchronized track tutorial and an executable graph/trial recipe use explicit direction labels and recover separate planted field centers within one bin.
+
 - Distinguish standardized assembly activity and EV/REV effect sizes from calibrated significance, document controlled REV correctly, and explain that selected dimensions can have no thresholded core members. Statistical calculations are unchanged.
 
 - Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.

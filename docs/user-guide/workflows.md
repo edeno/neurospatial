@@ -440,6 +440,72 @@ Analyzing maze experiments with branching structures.
 
 See the complete example in [examples/05_track_linearization.ipynb](../examples/05_track_linearization.ipynb).
 
+### Direction-specific fields on a graph track
+
+Linearization supplies coordinates along track geometry. On a single-edge
+track, a return traversal reuses the same coordinates and bins; it does not
+automatically become a separate directional map. For a branched graph,
+assignment also depends on the graph and projection settings.
+
+Use explicit trial labels to condition firing on direction. This complete
+60-second example plants a field at 60 cm outbound and 40 cm inbound, then
+checks each recovered peak against its own ground truth within one 5 cm bin.
+Replace the synthetic positions and spikes with your recorded arrays for an
+experiment. The two panels share the same environment.
+
+<!-- docs-test: run -->
+```python
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+from shapely.geometry import Polygon
+
+from neurospatial import Environment
+from neurospatial.behavior import goal_pair_direction_labels, segment_trials
+from neurospatial.encoding import compute_directional_place_fields
+from neurospatial.simulation import generate_poisson_spikes
+
+# A 100 cm track: graph coordinates describe geometry, not running direction.
+graph = nx.Graph()
+graph.add_node(0, pos=(0.0, 0.0))
+graph.add_node(1, pos=(100.0, 0.0))
+graph.add_edge(0, 1, distance=100.0)
+env = Environment.from_graph(graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0)
+env.units = "cm"
+repeated = np.array([[25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [50.0, 0.0], [25.0, 0.0]])
+np.testing.assert_allclose(env.to_linear(repeated), repeated[:, 0])
+repeated_bins = env.bin_at(repeated)
+assert repeated_bins[0] == repeated_bins[-1] and repeated_bins[1] == repeated_bins[-2]
+
+# Six out-and-back cycles in 60 seconds, with different planted field centers.
+times = np.arange(0.0, 60.0, 0.05)
+phase = (times % 10.0) / 10.0
+x = 10.0 + 80.0 * (1.0 - np.abs(2.0 * phase - 1.0))
+positions = np.column_stack([x, np.zeros_like(x)])
+planted_center = np.where(phase < 0.5, 60.0, 40.0)
+intensity = 0.5 + 25.0 * np.exp(-0.5 * ((x - planted_center) / 10.0) ** 2)
+spikes = generate_poisson_spikes(intensity, times, seed=7)
+
+# Explicit trials supply the direction labels; both maps use the same graph.
+env.regions.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
+env.regions.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
+position_bins = env.bin_sequence(times, positions, dedup=False)
+outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
+inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
+labels = goal_pair_direction_labels(times, outbound + inbound)
+fields = compute_directional_place_fields(env, spikes, times, positions, labels)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
+for ax, label, truth in zip(axes, ["home→goal", "goal→home"], [60.0, 40.0], strict=True):
+    field = fields.firing_rates[label]
+    recovered = env.bin_centers[np.nanargmax(field), 0]
+    assert abs(recovered - truth) <= 5.0  # Recover each planted center within one bin.
+    env.plot_field(field, ax=ax, colorbar_label="Firing rate (Hz)")
+    ax.set_title(f"{label}: peak {recovered:.1f} cm")
+    print(f"{label}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
+plt.show()
+```
+
 ## Common Patterns
 
 ### Pattern: Handling Edge Cases
