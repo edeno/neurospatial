@@ -8,6 +8,8 @@
 
 ### Added — executable documentation
 
+- Execute flagship docstrings, including NWB geometry and position examples, with only display/video calls skipped. Module doctests write outputs in temporary directories; the NWB workflow enforces its examples separately.
+
 - Check public docstring sections and constructor inputs, and complete the missing examples and parameter documentation.
 
 ### Changed — errors that teach

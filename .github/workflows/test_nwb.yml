@@ -45,3 +45,8 @@ jobs:
             -n 0 -q
         env:
           MPLBACKEND: Agg
+
+      - name: Run NWB flagship docstrings
+        run: uv run pytest tests/docs/test_flagship_docstrings.py -m nwb -n 0
+        env:
+          MPLBACKEND: Agg

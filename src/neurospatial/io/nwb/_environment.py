@@ -202,11 +202,28 @@ def write_environment(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     write_environment(nwbfile, env, name="linear_track")
+    >>> from datetime import datetime, timezone
+    >>> from pynwb import NWBFile, NWBHDF5IO
+    >>> nwbfile = NWBFile(
+    ...     "Example recording", "example", datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ... )
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.io.nwb import write_environment, read_environment
+    >>> positions = np.array([[0.0, 0.0], [0.0, 4.0], [4.0, 0.0], [4.0, 4.0]])
+    >>> env = Environment.from_samples(
+    ...     positions, bin_size=2.0, name="arena", units="cm"
+    ... )
+    >>> write_environment(nwbfile, env)
+    >>> with NWBHDF5IO("environment.nwb", "w") as io:
     ...     io.write(nwbfile)
+    >>> with NWBHDF5IO("environment.nwb", "r") as io:
+    ...     restored = read_environment(io.read())
+    >>> restored.n_bins == env.n_bins
+    True
+    >>> restored.units
+    'cm'
+
     """
     _require_pynwb()
     from hdmf.common import DynamicTable, VectorData
@@ -560,10 +577,28 @@ def read_environment(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     env = read_environment(nwbfile, name="linear_track")
+    >>> from datetime import datetime, timezone
+    >>> from pynwb import NWBFile, NWBHDF5IO
+    >>> nwbfile = NWBFile(
+    ...     "Example recording", "example", datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ... )
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.io.nwb import write_environment, read_environment
+    >>> positions = np.array([[0.0, 0.0], [0.0, 4.0], [4.0, 0.0], [4.0, 4.0]])
+    >>> env = Environment.from_samples(
+    ...     positions, bin_size=2.0, name="arena", units="cm"
+    ... )
+    >>> write_environment(nwbfile, env)
+    >>> with NWBHDF5IO("environment.nwb", "w") as io:
+    ...     io.write(nwbfile)
+    >>> with NWBHDF5IO("environment.nwb", "r") as io:
+    ...     restored = read_environment(io.read())
+    >>> restored.n_bins == env.n_bins
+    True
+    >>> restored.units
+    'cm'
+
     """
     _require_pynwb()
 

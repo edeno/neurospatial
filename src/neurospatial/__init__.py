@@ -131,42 +131,43 @@ Create environment from position data::
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> env.units = 'cm'
     >>> assert env.n_bins > 0  # Number of bins depends on data coverage
 
 Map trajectory to bins::
 
-    >>> times = np.linspace(0, 10, 100)  # doctest: +SKIP
-    >>> trajectory = np.random.uniform(0, 100, (100, 2))  # doctest: +SKIP
+    >>> times = np.linspace(0, 10, 100)
+    >>> trajectory = rng.uniform(0, 100, (100, 2))
     >>> # bin_sequence and occupancy take (times, positions). Reversing the
     >>> # arguments raises ValueError because the first argument must be a
     >>> # 1-D `times` array, not the 2-D positions array.
-    >>> bin_sequence = env.bin_sequence(times, trajectory)  # doctest: +SKIP
-    >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
+    >>> bin_sequence = env.bin_sequence(times, trajectory)
+    >>> occupancy = env.occupancy(times, trajectory)
 
 Compute a spatial firing-rate map from spikes::
 
-    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
-    >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])  # doctest: +SKIP
-    >>> result = compute_spatial_rate(  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rate
+    >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])
+    >>> result = compute_spatial_rate(
     ...     env, spike_times, times, trajectory,
     ...     method='diffusion_kde', bandwidth=5.0
     ... )
-    >>> firing_rate = result.firing_rate  # doctest: +SKIP
+    >>> firing_rate = result.firing_rate
 
 Add and query regions::
 
-    >>> env.regions.add('goal', point=[50, 50])  # doctest: +SKIP
-    >>> env.regions.add('start', point=[10, 10])  # doctest: +SKIP
-    >>> membership = env.region_membership(env.bin_centers)  # doctest: +SKIP
+    >>> _ = env.regions.add('goal', point=[50, 50])
+    >>> _ = env.regions.add('start', point=[10, 10])
+    >>> membership = env.region_membership()
 
 Save and load::
 
-    >>> from neurospatial.io import to_file, from_file  # doctest: +SKIP
-    >>> to_file(env, 'my_environment')  # doctest: +SKIP
-    >>> loaded = from_file('my_environment')  # doctest: +SKIP
+    >>> from neurospatial.io import to_file, from_file
+    >>> to_file(env, 'my_environment')
+    >>> loaded = from_file('my_environment')
 
 See Also
 --------
@@ -188,32 +189,32 @@ Examples
 --------
 Create 2D environment and compute shortest path::
 
-    >>> env = Environment.from_samples(  # doctest: +SKIP
+    >>> env = Environment.from_samples(
     ...     positions, bin_size=5.0,
     ...     connect_diagonal_neighbors=True,
     ... )
-    >>> env.units = 'cm'  # doctest: +SKIP
-    >>> path = env.path_between(0, 100)  # doctest: +SKIP
+    >>> env.units = 'cm'
+    >>> path = env.path_between(0, 100)
     >>> # distance_between takes coordinates; for graph distance between bin
     >>> # indices use distance_to([target_bin]) and index by the source bin.
-    >>> distance = float(env.distance_to([100])[0])  # doctest: +SKIP
+    >>> distance = float(env.distance_to([100])[0])
 
 Create 3D environment::
 
-    >>> positions_3d = np.random.uniform(0, 100, (1000, 3))  # doctest: +SKIP
-    >>> env_3d = Environment.from_samples(  # doctest: +SKIP
+    >>> positions_3d = rng.uniform(0, 100, (1000, 3))
+    >>> env_3d = Environment.from_samples(
     ...     positions_3d, bin_size=5.0,
     ... )
-    >>> env_3d.units = 'cm'  # doctest: +SKIP
-    >>> env_3d.n_dims  # doctest: +SKIP
+    >>> env_3d.units = 'cm'
+    >>> env_3d.n_dims
     3
 
 Create environment from polygon::
 
-    >>> from shapely.geometry import box  # doctest: +SKIP
-    >>> polygon = box(0, 0, 100, 100)  # doctest: +SKIP
-    >>> env = Environment.from_polygon(polygon, bin_size=5.0)  # doctest: +SKIP
-    >>> env.units = 'cm'  # doctest: +SKIP
+    >>> from shapely.geometry import box
+    >>> polygon = box(0, 0, 100, 100)
+    >>> env = Environment.from_polygon(polygon, bin_size=5.0)
+    >>> env.units = 'cm'
 """
 
 import logging

@@ -305,13 +305,13 @@ def decode_session(
     ... )
     >>> rng = np.random.default_rng(0)
     >>> positions_raw = np.column_stack([np.linspace(0.0, 100.0, 500), np.zeros(500)])
-    >>> env = Environment.from_samples(positions_raw, bin_size=5.0)  # doctest: +SKIP
-    >>> env.units = "cm"  # required by simulate_trajectory_ou  # doctest: +SKIP
-    >>> positions, times = simulate_trajectory_ou(  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions_raw, bin_size=5.0)
+    >>> env.units = "cm"  # required by simulate_trajectory_ou
+    >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=10.0, speed_units="cm", seed=0
     ... )
     >>> n_neurons = 10
-    >>> spike_times = [  # doctest: +SKIP
+    >>> spike_times = [
     ...     generate_poisson_spikes(
     ...         PlaceCellModel(env, width=15.0, seed=i).firing_rate(positions, times),
     ...         times,
@@ -319,18 +319,16 @@ def decode_session(
     ...     )
     ...     for i in range(n_neurons)
     ... ]
-    >>> result = decode_session(  # doctest: +SKIP
-    ...     env, spike_times, times, positions, dt=0.1
-    ... )
-    >>> result.posterior.shape  # doctest: +SKIP
-    (n_time_bins, n_bins)
-    >>> result.map_position.shape  # doctest: +SKIP
-    (n_time_bins, 2)
+    >>> result = decode_session(env, spike_times, times, positions, dt=0.1)
+    >>> result.posterior.shape[1] == env.n_bins
+    True
+    >>> result.map_position.shape[1]
+    2
 
     Re-use precomputed encoding models across multiple sessions:
 
-    >>> from neurospatial.encoding import compute_spatial_rates  # doctest: +SKIP
-    >>> models = compute_spatial_rates(  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rates
+    >>> models = compute_spatial_rates(
     ...     env,
     ...     spike_times,
     ...     times,
@@ -338,7 +336,7 @@ def decode_session(
     ...     bandwidth=5.0,
     ...     fill_value=0.0,
     ... ).firing_rates  # shape (n_neurons, n_bins)
-    >>> result = decode_session(  # doctest: +SKIP
+    >>> result = decode_session(
     ...     env,
     ...     spike_times,
     ...     times,

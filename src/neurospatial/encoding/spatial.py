@@ -4381,7 +4381,7 @@ def detect_place_fields(
     ...     dist = np.linalg.norm(env.bin_centers[i])
     ...     firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
     >>> fields = detect_place_fields(env, firing_rate)
-    >>> len(fields)  # doctest: +SKIP
+    >>> len(fields)
     1
 
     See Also
@@ -4577,8 +4577,8 @@ def is_place_cell(
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> times = np.linspace(0, 100, 1000)
-    >>> spike_times = np.sort(rng.uniform(0, 100, 50))
+    >>> times = np.linspace(0, 40, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 40, 50))
     >>> result = is_place_cell(env, spike_times, times, positions)
     >>> type(result)
     <class 'bool'>

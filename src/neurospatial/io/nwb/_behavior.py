@@ -103,17 +103,38 @@ def read_position(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     positions, timestamps = read_position(nwbfile)
+    >>> from datetime import datetime, timezone
+    >>> from pynwb import NWBFile, NWBHDF5IO
+    >>> nwbfile = NWBFile(
+    ...     "Example recording", "example", datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ... )
+    >>> import numpy as np
+    >>> from pynwb.behavior import Position, SpatialSeries
+    >>> from neurospatial.io.nwb import read_position
+    >>> position = Position(name="Position")
+    >>> _ = position.add_spatial_series(
+    ...     SpatialSeries(
+    ...         name="xy",
+    ...         data=np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]),
+    ...         timestamps=np.arange(3) / 30.0,
+    ...         reference_frame="arena origin",
+    ...         unit="cm",
+    ...     )
+    ... )
+    >>> _ = nwbfile.create_processing_module("behavior", "Tracking").add(position)
+    >>> positions, times = read_position(
+    ...     nwbfile, processing_module="behavior", position_name="xy"
+    ... )
+    >>> positions.shape
+    (3, 2)
+    >>> with NWBHDF5IO("position.nwb", "w") as io:
+    ...     io.write(nwbfile)
+    >>> with NWBHDF5IO("position.nwb", "r") as io:
+    ...     positions_lazy, times_lazy = read_position(io.read(), lazy=True)
+    ...     first_position = np.asarray(positions_lazy[:1])
+    >>> first_position.tolist()
+    [[0.0, 0.0]]
 
-    Lazy read (materialize a slice inside the open-file block):
-
-    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     positions, timestamps = read_position(nwbfile, lazy=True)
-    ...     first_100 = positions[:100]  # only this slice is read from disk
     """
     _require_pynwb()
     from pynwb.behavior import Position as PositionType
