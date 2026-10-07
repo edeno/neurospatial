@@ -176,8 +176,8 @@ See **"Canonical Argument Order"** above (encoding env-first, directional
 exception, egocentric `(positions, headings, targets)`, segmentation
 `(position_bins, times, env, *, region_params)`). v0.6 adds:
 **`detect_region_crossings(position_bins, times, env, *, region_name,
-direction)`** — env in slot 3 (matches segmentation). The old positional order
-`(..., region_name, env)` still works for one release but warns.
+direction)`** — env in slot 3 (matches segmentation), with required
+keyword-only `region_name`.
 
 ### Factory presets (experiment vocabulary over `from_*`)
 
@@ -751,6 +751,9 @@ def function_name(param1, param2):
 ## 🧪 Testing Quick Reference
 
 ```bash
+# Execute public Markdown and flagship docstring examples
+uv run pytest tests/docs -n 4
+
 # Run all tests
 uv run pytest
 
@@ -766,6 +769,22 @@ uv run pytest --doctest-modules src/neurospatial/
 # Skip slow tests
 uv run pytest -m "not slow"
 ```
+
+Documentation tests execute README and the getting-started quickstart cumulatively
+without injected names. CLAUDE patterns and opted-in reference fragments each get
+a fresh NumPy recording fixture, so variables do not carry between blocks.
+Place a marker directly above a Python fence:
+
+- `<!-- docs-test: run -->` opts a reference fragment into execution.
+- `<!-- docs-test: run setup=quickstart_vte_session -->` selects a named setup
+  migrated from the former snippet manifest. Every setup name must exist in
+  `SETUPS` in `tests/docs/test_executable_docs.py` and be used by a marker.
+- `<!-- docs-test: skip requires a display -->` skips execution with a required reason.
+- `<!-- docs-test: raises ValueError -->` checks an intentionally wrong call.
+
+Figures use the Agg backend and outputs go into temporary directories. Animation
+setup patches are restored after each test. Module doctests remain a separate
+check: `uv run pytest --doctest-modules src/neurospatial/ -n 0`.
 
 **More testing options:** [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
 

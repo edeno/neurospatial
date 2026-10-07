@@ -219,7 +219,7 @@ spike_times = generate_population_spikes(
 # 5. Recover the place field from spikes + trajectory.
 result = compute_spatial_rate(
     env, spike_times, times, positions_t,
-    method="diffusion_kde", bandwidth=5.0,
+    bandwidth=5.0,
 )
 
 # 6. Plot.
@@ -240,8 +240,10 @@ To go the other way — reconstruct position from population spikes — the one-
 path is
 [`decode_session`](https://edeno.github.io/neurospatial/api/):
 `from neurospatial.decoding import decode_session` runs the whole encode → bin →
-decode pipeline and returns a `DecodingResult`. Pauses in tracking are never
-decoded: time bins are formed only within recorded stretches, and
+decode pipeline and returns a `DecodingResult`. With precomputed count matrices
+and population rate maps, use
+`decode_position(env, spike_counts, encoding_models, dt)`. Pauses in tracking
+are never decoded: time bins are formed only within recorded stretches, and
 `epochs=`/`spike_window=` restrict them further. See
 [example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
 for the full Bayesian decoding tutorial.
