@@ -3852,8 +3852,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
@@ -3918,8 +3918,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()

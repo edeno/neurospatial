@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import IncompatibleEnvironmentError
+from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
 from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
@@ -212,16 +212,18 @@ def _normalize_block(
             if n_nan > 0:
                 n_neg_inf = n_degenerate - n_nan
                 raise ValueError(
-                    f"Found {n_degenerate} degenerate row(s): {n_nan} contain "
-                    f"NaN values (upstream corruption, e.g. a NaN firing rate "
-                    f"leaking into the likelihood) and {n_neg_inf} are all -inf "
-                    f"(zero-rate). Fix the NaN source; the -inf rows can be "
-                    f"handled with handle_degenerate='uniform' or 'nan'."
+                    _format_error(
+                        f"Found {n_degenerate} degenerate row(s): {n_nan} contain NaN values (upstream corruption, e.g. a NaN firing rate leaking into the likelihood) and {n_neg_inf} are all -inf (zero-rate). Fix the NaN source; the -inf rows can be handled with handle_degenerate='uniform' or 'nan'.",
+                        fix="fix non-finite likelihood inputs first; for all -inf rows pass handle_degenerate='uniform'",
+                        why="Why: NaN or all -inf likelihoods cannot be normalized to a posterior.",
+                    )
                 )
             raise ValueError(
-                f"Found {n_degenerate} degenerate row(s) with all -inf values "
-                f"(zero-rate). Consider using handle_degenerate='uniform' or "
-                f"'nan'."
+                _format_error(
+                    f"Found {n_degenerate} degenerate row(s) with all -inf values (zero-rate). Consider using handle_degenerate='uniform' or 'nan'.",
+                    fix="fix non-finite likelihood inputs first; for all -inf rows pass handle_degenerate='uniform'",
+                    why="Why: NaN or all -inf likelihoods cannot be normalized to a posterior.",
+                )
             )
         elif handle_degenerate == "uniform":
             if prior_support is None:
@@ -1555,9 +1557,11 @@ def _log_poisson_likelihood_nan_safe(
         )
     if spike_counts.shape[1] != encoding_models.shape[0]:
         raise ValueError(
-            f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} "
-            f"neurons (axis 1) but encoding_models has {encoding_models.shape[0]} "
-            f"neurons (axis 0). These must agree for the Poisson likelihood."
+            _format_error(
+                f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {encoding_models.shape[0]} neurons (axis 0). These must agree for the Poisson likelihood.",
+                fix="build spike_counts and encoding_models from the same unit list, in the same order",
+                why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
+            )
         )
 
     # Replace NaN rates with the floor so log/exp stay finite, then zero out

@@ -32,6 +32,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
+from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created, log_graph_validation
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
@@ -340,19 +341,11 @@ class _BaseEnvironment(
         """
         if layout is None:
             raise ValueError(
-                "[E1006] Environment cannot be constructed directly — "
-                "use a factory method.\n\n"
-                "Most common (from positions you recorded):\n"
-                "    env = Environment.from_samples(positions, bin_size=2.0)\n\n"
-                "Other factories, chosen by the data you have:\n"
-                "    from_polygon     — a Shapely polygon boundary\n"
-                "    from_graph       — a track/maze graph (linearized 1D)\n"
-                "    from_grid_mask   — an N-D boolean mask + grid edges\n"
-                "    from_pixel_mask  — a 2D image / pixel mask\n\n"
-                "Avoid:\n"
-                "    env = Environment()  # not supported\n\n"
-                "See each factory's docstring for its exact arguments, or:\n"
-                "    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly"
+                _format_error(
+                    "[E1006] Environment cannot be constructed directly — use a factory method.\n\nMost common (from positions you recorded):\n    env = Environment.from_samples(positions, bin_size=2.0)\n\nOther factories, chosen by the data you have:\n    from_polygon     — a Shapely polygon boundary\n    from_graph       — a track/maze graph (linearized 1D)\n    from_grid_mask   — an N-D boolean mask + grid edges\n    from_pixel_mask  — a 2D image / pixel mask\n\nAvoid:\n    env = Environment()  # not supported\n\nSee each factory's docstring for its exact arguments, or:\n    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
+                    fix="env = Environment.from_samples(positions, bin_size=2.0)",
+                    why="Why: a factory builds the geometry and connectivity required by Environment.",
+                )
             )
 
         self.name = name

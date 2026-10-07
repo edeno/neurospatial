@@ -4,6 +4,8 @@
 
 ### Changed — errors that teach
 
+- First-run factory, graph-query, encoding, decoding, peri-event, animation and file errors give concrete corrected calls. Segmentation and boundary regressors raise `RegionNotFoundError` with the caller's region argument and available names; NWB readers and direction-label lookups name their corrected arguments.
+
 - Replace `HOW:` labels with `Fix:` in diagnostic messages. Shared timestamp, spike and trajectory validators name their caller, collect all input problems, detect swapped arrays, and check coordinate dimensions before binning. A non-Environment first argument now raises `TypeError` with a corrected call.
 
 - Add `NeurospatialError` as the common base for library exceptions while retaining their standard Python bases. `RegionNotFoundError` also supports `except ValueError` and prints an unquoted `Fix:` line with a suggested region name.

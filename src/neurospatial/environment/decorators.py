@@ -10,7 +10,9 @@ from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
-from neurospatial._exceptions import EnvironmentNotFittedError as EnvironmentNotFittedError
+from neurospatial._exceptions import (
+    EnvironmentNotFittedError as EnvironmentNotFittedError,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment

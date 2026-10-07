@@ -23,7 +23,11 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import BinIndexOutOfRangeError, RegionNotFoundError
+from neurospatial._exceptions import (
+    BinIndexOutOfRangeError,
+    RegionNotFoundError,
+    _format_error,
+)
 from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -55,15 +59,20 @@ def _resolve_point_or_index(
     resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
     if resolved.size != 1:
         raise ValueError(
-            f"expected a single coordinate point of shape (n_dims,), but got "
-            f"{resolved.size} points (input shape {point.shape}); pass one "
-            "point or a single bin index (int)."
+            _format_error(
+                f"expected a single coordinate point of shape (n_dims,), but got {resolved.size} points (input shape {point.shape}); pass one point or a single bin index (int).",
+                fix="pass one point, e.g. env.neighbors([x, y]), or a single bin index: env.neighbors(int(bin_idx[0]))",
+                why="Why: a graph query starts from one active bin.",
+            )
         )
     idx = int(resolved[0])
     if idx < 0:
         raise ValueError(
-            f"Point {point.tolist()} is not inside any active bin; pass a point "
-            "within the environment, or a bin index (int)."
+            _format_error(
+                f"Point {point.tolist()} is not inside any active bin; pass a point within the environment, or a bin index (int).",
+                fix="pass a point inside the environment, or an integer bin index from env.bin_at([point])[0]",
+                why="Why: graph queries need a point mapped to an active bin.",
+            )
         )
     return idx
 
@@ -582,7 +591,7 @@ class EnvironmentQueries:
             region_name = targets
             if region_name not in self.regions:
                 raise RegionNotFoundError(
-                    region_name, available=list(self.regions.keys())
+                    region_name, available=list(self.regions.keys()), argument="targets"
                 )
 
             # Get bins in region via membership

@@ -189,8 +189,8 @@ def _get_behavior_container(
         # Look in specific module
         if processing_module not in nwbfile.processing:
             raise KeyError(
-                f"Processing module '{processing_module}' not found in NWB file. "
-                f"Available modules: {list(nwbfile.processing.keys())}"
+                f"Processing module '{processing_module}' not found in NWB file. Available modules: {list(nwbfile.processing.keys())}"
+                + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
             )
         module = nwbfile.processing[processing_module]
         # Find container in this module
@@ -206,6 +206,7 @@ def _get_behavior_container(
                 return obj
         raise KeyError(
             f"No {type_name} found in processing module '{processing_module}'"
+            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
         )
 
     # Auto-discover using priority search
@@ -215,6 +216,7 @@ def _get_behavior_container(
         searched_locations = ["processing/*", "acquisition"]
         raise KeyError(
             f"No {type_name} data found in NWB file. Searched: {searched_locations}"
+            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
         )
 
     # Return the first one (highest priority due to sort order)

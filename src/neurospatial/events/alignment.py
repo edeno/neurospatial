@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
 from neurospatial.decoding._binning import (
     _time_bin_rounding,
@@ -29,6 +30,18 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial._typing import SpikeTrainsLike
+
+
+def _validate_window(window: tuple[float, float], *, context: str) -> None:
+    """Validate a peri-event window expressed in seconds."""
+    if window[0] > window[1]:
+        raise ValueError(
+            _format_error(
+                f"{context}: Window start ({window[0]}) must be <= end ({window[1]}).",
+                why="Why: a peri-event window defines a valid range relative to each event.",
+                fix="pass window=(-0.5, 1.0), with start <= stop, in seconds",
+            )
+        )
 
 
 def _make_bin_edges(
@@ -129,12 +142,7 @@ def align_spikes_to_events(
     ...     pass  # plt.scatter(trial_spikes, [trial_idx]*len(trial_spikes))
     """
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  Fix: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="align_spikes_to_events")
 
     # Convert to arrays if needed
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -368,12 +376,7 @@ def peri_event_histogram(
         )
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  Fix: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="peri_event_histogram")
 
     # Convert to arrays
     event_times = np.asarray(event_times, dtype=np.float64)
@@ -554,12 +557,7 @@ def population_peri_event_histogram(
         )
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  Fix: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="population_peri_event_histogram")
 
     # Convert event_times to array
     event_times = np.asarray(event_times, dtype=np.float64)
@@ -707,12 +705,7 @@ def align_events(
     import pandas as pd
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  Fix: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="align_events")
 
     # Validate event_column exists
     if event_column not in events.columns:

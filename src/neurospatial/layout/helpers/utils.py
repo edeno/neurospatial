@@ -22,6 +22,8 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
+from neurospatial._exceptions import _format_error
+
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
     """Calculate the center of each bin given its edges.
@@ -328,7 +330,13 @@ def _infer_dimension_ranges_from_samples(
 
     clean_samples = positions[~np.any(np.isnan(positions), axis=1)]
     if clean_samples.shape[0] == 0:
-        raise ValueError("All 'positions' are NaN or the array is empty.")
+        raise ValueError(
+            _format_error(
+                f"All 'positions' are NaN or the array is empty: {len(positions)} of {len(positions)} rows contain NaN; check for tracking dropouts.",
+                why="Why: finite positions are required to infer the environment's extent.",
+                fix="remove tracking-dropout rows or interpolate them before calling Environment.from_samples(positions, bin_size=2.0)",
+            )
+        )
 
     min_vals = np.min(clean_samples, axis=0)
     max_vals = np.max(clean_samples, axis=0)

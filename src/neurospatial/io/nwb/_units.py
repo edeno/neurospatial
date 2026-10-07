@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.io.nwb._core import _require_pynwb
 
 if TYPE_CHECKING:
@@ -169,8 +170,11 @@ def read_units(
                 rows.append(int(match[0]))
         if missing:
             raise ValueError(
-                f"unit_ids not found in the units table: {missing}. "
-                f"Available ids: {ids.tolist()}."
+                _format_error(
+                    f"unit_ids not found in the units table: {missing}. Available ids: {ids.tolist()}.",
+                    fix="pass unit_ids= with existing table ids; inspect np.asarray(nwbfile.units.id[:]) for available ids",
+                    why="Why: unit_ids names table identities, not row positions.",
+                )
             )
         out_ids = ids[rows]
 

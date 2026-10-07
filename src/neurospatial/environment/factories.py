@@ -32,6 +32,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.layout.factories import (
     LayoutType,
     create_layout,
@@ -177,7 +178,13 @@ def _assemble_maze_graph(
             edge_order.append((base_node, arm_node))
 
     else:
-        raise ValueError(f"Unknown maze kind {kind!r}")
+        raise ValueError(
+            _format_error(
+                f"Unknown maze kind {kind!r}",
+                fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                why="Why: maze topology depends on a supported maze kind.",
+            )
+        )
 
     return graph, edge_order
 
@@ -411,8 +418,11 @@ class EnvironmentFactories:
 
         if positions.ndim != 2:
             raise ValueError(
-                f"positions must be a 2D array of shape (n_points, n_dims), "
-                f"got shape {positions.shape}.",
+                _format_error(
+                    f"positions must be a 2D array of shape (n_points, n_dims), got shape {positions.shape}.",
+                    fix="use positions[:, None] for 1-D data; if positions has shape (n_dims, n_samples), pass positions.T",
+                    why="Why: each row must be one sample and each column one spatial coordinate.",
+                )
             )
 
         # Warn on a likely-transposed positions array before building the grid.
@@ -885,8 +895,11 @@ class EnvironmentFactories:
         kind_normalized = kind.lower() if isinstance(kind, str) else kind
         if kind_normalized not in allowed:
             raise ValueError(
-                f"Unknown maze kind {kind!r}. `kind` must be one of "
-                f"{allowed} (W maze, plus/cross maze, or T maze)."
+                _format_error(
+                    f"Unknown maze kind {kind!r}. `kind` must be one of {allowed} (W maze, plus/cross maze, or T maze).",
+                    fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                    why="Why: maze topology depends on a supported maze kind.",
+                )
             )
 
         if track_graph is not None and node_positions is not None:
