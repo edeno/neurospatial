@@ -446,7 +446,7 @@ from neurospatial.simulation import (
 arena_data = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
 
 # Create environment
-env = Environment.from_samples(arena_data, bin_size=2.0)
+env = Environment.from_samples(arena_data, bin_size=5.0)
 env.units = "cm"  # Required for trajectory simulation
 
 # Generate realistic trajectory using Ornstein-Uhlenbeck process.
@@ -480,7 +480,7 @@ detected_field = result.firing_rate
 # Compare detected field to ground truth
 true_center = place_cell.ground_truth['center']
 print(f"True field center: {true_center}")
-print(f"Detected peak: {env.bin_centers[detected_field.argmax()]}")
+print(f"Detected peak: {result.peak_location()}")
 ```
 
 ### Available Features

@@ -41,7 +41,7 @@ West----+----East                 Back----+----Ahead
 
 All public functions follow a consistent argument order pattern:
 
-```python
+```text
 # Neural encoding functions (place fields, object-vector, spatial view, etc.)
 func(
     env,                    # 1. Environment (spatial context)
@@ -235,7 +235,8 @@ from neurospatial import Environment
 import numpy as np
 
 # Generate sample position data
-positions = np.random.rand(100, 2) * 100  # 100 points in 2D
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, (5000, 2))  # Dense coverage of the arena
 
 # Create environment (bin_size is REQUIRED)
 env = Environment.from_samples(positions, bin_size=2.0)
@@ -246,7 +247,7 @@ env.frame = "session1"
 
 # Query the environment
 bin_idx = env.bin_at([50.0, 50.0])
-neighbors = env.neighbors(bin_idx)
+neighbors = env.neighbors(int(bin_idx[0]))
 ```
 
 **Need different layout?** See [QUICKSTART.md - Environment Creation](.claude/QUICKSTART.md#environment-creation)
@@ -319,7 +320,10 @@ position_overlay = PositionOverlay(
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
 )
-env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
+env.animate_fields(
+    fields, frame_times=frame_times, overlays=[position_overlay],
+    backend="html", save_path="trajectory_overlay.html",
+)
 ```
 
 **Need pose tracking or events?** See [QUICKSTART.md - Overlays](.claude/QUICKSTART.md#visualization--animation)
@@ -459,9 +463,10 @@ uv add package
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises ValueError -->
 ```python
-env = Environment()  # Not fitted!
-env.bin_at([10.0, 5.0])  # RuntimeError
+env = Environment()  # ValueError [E1006]: use a factory
+env.bin_at([10.0, 5.0])
 ```
 
 ✅ **Right:**
@@ -475,8 +480,9 @@ env.bin_at([10.0, 5.0])  # Works
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises TypeError -->
 ```python
-env = Environment.from_samples(data)  # TypeError
+env = Environment.from_samples(positions)  # bin_size is required
 ```
 
 ✅ **Right:**
@@ -489,32 +495,38 @@ env = Environment.from_samples(positions, bin_size=2.0)
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises AttributeError -->
 ```python
-env.regions['goal'].point = new_point  # AttributeError
+env.regions.add("goal", point=(50.0, 50.0))
+new_point = (60.0, 60.0)
+env.regions["goal"].data = np.asarray(new_point)  # Immutable region
 ```
 
 ✅ **Right:**
 
 ```python
-env.regions.update_region('goal', point=new_point)  # No warning
+env.regions.add("goal", point=(50.0, 50.0))
+new_point = (60.0, 60.0)
+env.regions.update_region("goal", point=new_point)
 ```
 
 ### Gotcha 5: Check `is_linearized_track` before linearization
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises AttributeError -->
 ```python
 env = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
-linear_pos = env.to_linear(position)  # AttributeError
+linear_pos = env.to_linear(positions[:1])
 ```
 
 ✅ **Right:**
 
 ```python
 if env.is_linearized_track:
-    linear_pos = env.to_linear(position)
+    linear_pos = env.to_linear(positions[:1])
 else:
-    bin_idx = env.bin_at(position)
+    bin_idx = env.bin_at(positions[:1])
 ```
 
 **More gotchas?** See [TROUBLESHOOTING.md - Common Gotchas](.claude/TROUBLESHOOTING.md#common-gotchas)
@@ -530,7 +542,7 @@ uv sync  # From project root
 uv run python -c "import neurospatial; print(neurospatial.__file__)"
 ```
 
-### Error: `RuntimeError: Environment must be fitted before calling this method`
+### Error: `ValueError: [E1006] Environment cannot be constructed directly`
 
 Use factory methods:
 

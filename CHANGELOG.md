@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed — documentation
+
+- Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
+
 ### Removed
 
 - Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
