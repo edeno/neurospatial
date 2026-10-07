@@ -2855,7 +2855,9 @@ default="diffusion_kde"
         validate_trajectory,
     )
 
-    validate_env_fitted(env, context="compute_spatial_rate")
+    validate_env_fitted(
+        env, context="compute_spatial_rate", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3404,7 +3406,9 @@ default="diffusion_kde"
     )
     from neurospatial.environment.trajectory import interval_valid_mask
 
-    validate_env_fitted(env, context="compute_spatial_rates")
+    validate_env_fitted(
+        env, context="compute_spatial_rates", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:

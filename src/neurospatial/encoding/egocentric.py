@@ -1558,6 +1558,7 @@ def compute_egocentric_rate(
         validate_env_fitted(
             env,
             context="compute_egocentric_rate",
+            arguments="spike_times, times, positions, headings, object_positions",
         )
 
     # Validate backend
@@ -1950,6 +1951,7 @@ def compute_egocentric_rates(
         validate_env_fitted(
             env,
             context="compute_egocentric_rates",
+            arguments="spike_times, times, positions, headings, object_positions",
         )
 
     # Validate backend
@@ -2007,6 +2009,7 @@ def compute_egocentric_rates(
         positions=positions,
         headings=headings,
         context="compute_egocentric_rates",
+        n_dims=env.n_dims if env is not None else None,
     )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_egocentric_rates (neuron {i})")

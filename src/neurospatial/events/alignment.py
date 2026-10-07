@@ -35,6 +35,8 @@ if TYPE_CHECKING:
 def _validate_window(window: tuple[float, float], *, context: str) -> None:
     """Validate a peri-event window expressed in seconds."""
     try:
+        if np.asarray(window).dtype.kind not in "biuf":
+            raise TypeError("window bounds must be real numbers")
         bounds = np.asarray(window, dtype=np.float64)
     except (TypeError, ValueError) as exc:
         raise ValueError(

@@ -582,7 +582,7 @@ def animate_fields(
         raise ValueError(
             _format_error(
                 f"Unknown backend: {backend}",
-                fix="pass backend='napari', 'video', 'html', or 'auto'",
+                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
                 why="Why: only the advertised rendering backends are supported.",
             )
         )

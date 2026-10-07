@@ -950,7 +950,9 @@ def _prepare_decode_inputs(
     """
     from neurospatial.encoding._validation import validate_env_fitted
 
-    validate_env_fitted(env, context=context)
+    validate_env_fitted(
+        env, context=context, arguments="spike_counts, encoding_models, dt"
+    )
 
     # Validate method
     if method != "poisson":

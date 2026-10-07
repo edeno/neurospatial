@@ -4,6 +4,8 @@
 
 ### Changed — errors that teach
 
+- Corrected-call guidance includes each encoder's and decoder's required arguments and all animation backends. Population egocentric validation reports coordinate and length problems together, and malformed peri-event window bounds fail with guidance before alignment.
+
 - Region fixes show list-valued `end_regions` and handle missing names without a conversion error. Zero-rate posterior errors distinguish all-negative-infinity likelihoods from corrupt NaN inputs.
 
 - Warn visibly when `bin_size` covers every data axis or a peri-event window exceeds 60 seconds, with units and corrected values. Large-grid warnings are now `UserWarning` instead of hidden `ResourceWarning`; the existing hard memory ceiling is unchanged. Length-1 bin-index arrays explain how to unwrap `bin_at` output before a graph query.

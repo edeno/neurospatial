@@ -38,7 +38,7 @@ __all__ = [
 ]
 
 
-def validate_env_fitted(env: object, *, context: str) -> None:
+def validate_env_fitted(env: object, *, context: str, arguments: str) -> None:
     """Raise ``EnvironmentNotFittedError`` if ``env`` is not fitted.
 
     Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
@@ -60,6 +60,8 @@ def validate_env_fitted(env: object, *, context: str) -> None:
     context : str
         Name of the calling public free function, used as the
         ``EnvironmentNotFittedError`` function-name argument.
+    arguments : str
+        Required argument names after ``env`` in the corrected public call.
 
     Raises
     ------
@@ -78,7 +80,7 @@ def validate_env_fitted(env: object, *, context: str) -> None:
             _format_error(
                 f"{context}() expects an Environment as its first argument, got {description}.",
                 why="Why: spatial analysis needs the environment's geometry and bins.",
-                fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, spike_times, times, positions).",
+                fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, {arguments}).",
             )
         )
     if not getattr(env, "_is_fitted", False):

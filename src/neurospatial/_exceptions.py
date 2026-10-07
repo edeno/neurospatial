@@ -42,8 +42,8 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
 
     Parameters
     ----------
-    name : str
-        Requested region name.
+    name : str or None
+        Requested region name; ``None`` reports a missing name with guidance.
     available : list of str, optional
         Available region names, used to suggest a close match.
     argument : str, default "region_name"
@@ -62,7 +62,7 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
 
     def __init__(
         self,
-        name: str,
+        name: str | None,
         *,
         available: list[str] | None = None,
         argument: str = "region_name",

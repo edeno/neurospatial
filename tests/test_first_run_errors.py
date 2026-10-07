@@ -68,6 +68,88 @@ def test_trajectory_reports_length_and_dimensions_together(recording):
     assert message.splitlines()[-1].startswith("Fix: ")
 
 
+def test_egocentric_population_reports_length_and_dimensions_together(recording):
+    from neurospatial.encoding import compute_egocentric_rates
+
+    r = recording
+    with pytest.raises(ValueError) as caught:
+        compute_egocentric_rates(
+            r.env,
+            [r.spike_times],
+            r.times,
+            np.zeros((len(r.times) - 1, 3)),
+            np.zeros(len(r.times)),
+            np.array([[50.0, 50.0]]),
+        )
+    message = str(caught.value)
+    assert "compute_egocentric_rates" in message
+    assert "positions length (1799)" in message
+    assert "2-D" in message
+    assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
+
+
+@pytest.mark.parametrize(
+    "name,arguments",
+    [
+        ("decode_position", "spike_counts, encoding_models, dt"),
+        ("decode_position_summary", "spike_counts, encoding_models, dt"),
+        ("compute_view_rate", "spike_times, times, positions, headings"),
+        ("compute_view_rates", "spike_times, times, positions, headings"),
+        (
+            "compute_egocentric_rate",
+            "spike_times, times, positions, headings, object_positions",
+        ),
+        (
+            "compute_egocentric_rates",
+            "spike_times, times, positions, headings, object_positions",
+        ),
+    ],
+)
+def test_missing_environment_shows_the_complete_call(recording, name, arguments):
+    import neurospatial.decoding as decoding
+    import neurospatial.encoding as encoding
+
+    r = recording
+    if name.startswith("decode_"):
+        function = getattr(decoding, name)
+        args = (r.spike_times, np.ones((2, 1)), np.ones((r.env.n_bins, 1)), 0.1)
+    else:
+        function = getattr(encoding, name)
+        spikes = [r.spike_times] if name.endswith("rates") else r.spike_times
+        args = (r.spike_times, spikes, r.times, r.positions, np.zeros(len(r.times)))
+        if "egocentric" in name:
+            args += (np.array([[50.0, 50.0]]),)
+    with pytest.raises(TypeError, match="expects an Environment") as caught:
+        function(*args)
+    assert f"{name}(env, {arguments})" in str(caught.value).splitlines()[-1]
+
+
+@pytest.mark.parametrize("name", ["align_spikes_to_events", "peri_event_histogram"])
+def test_window_strings_name_the_call(name):
+    import neurospatial.events as events
+
+    function = getattr(events, name)
+    with pytest.raises(ValueError) as caught:
+        function(np.array([0.1]), np.array([0.0, 1.0]), window=("-0.5", "1.0"))
+    message = str(caught.value)
+    assert name in message
+    assert "window" in message
+    assert "Why:" in message
+    assert message.splitlines()[-1].startswith("Fix: ")
+
+
+def test_unknown_animation_backend_lists_widget(recording):
+    with pytest.raises(ValueError) as caught:
+        recording.env.animate_fields(
+            np.zeros((2, recording.env.n_bins)),
+            frame_times=np.array([0.0, 0.1]),
+            backend="unknown",
+        )
+    fix = str(caught.value).splitlines()[-1]
+    for backend in ["auto", "napari", "video", "html", "widget"]:
+        assert repr(backend) in fix
+
+
 def test_trajectory_reports_time_and_heading_problems_together():
     with pytest.raises(ValueError) as caught:
         validate_trajectory(
