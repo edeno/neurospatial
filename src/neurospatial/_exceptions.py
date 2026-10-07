@@ -75,13 +75,26 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
             what = f"Region '{name}' not found. This environment has no regions."
         else:
             what = f"Region '{name}' not found."
-        matches = get_close_matches(name, available or [], n=1)
-        if matches:
-            fix = f"pass {argument}='{matches[0]}'"
+        matches = (
+            get_close_matches(name, available or [], n=1)
+            if isinstance(name, str)
+            else []
+        )
+        if not isinstance(name, str):
+            what = f"{argument}={name!r} was not found; region names must be strings."
+            suggested = available[0] if available else "home"
+            value = f"[{suggested!r}]" if argument == "end_regions" else repr(suggested)
+            fix = f"pass {argument}={value}; add it first with env.regions.add({suggested!r}, point=(x, y)) if needed"
+        elif matches:
+            value = (
+                f"[{matches[0]!r}]" if argument == "end_regions" else repr(matches[0])
+            )
+            fix = f"pass {argument}={value}"
         else:
+            value = f"[{name!r}]" if argument == "end_regions" else repr(name)
             fix = (
-                f"add it first: env.regions.add('{name}', point=(x, y)) "
-                f"(or polygon=...), then pass {argument}='{name}'."
+                f"add it first: env.regions.add({name!r}, point=(x, y)) "
+                f"(or polygon=...), then pass {argument}={value}."
             )
         super().__init__(_format_error(what, fix=fix))
         self.region_name = name

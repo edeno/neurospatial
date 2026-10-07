@@ -7,6 +7,7 @@ particularly for methods like path_between() and bins_in_region().
 import numpy as np
 import pytest
 
+from neurospatial import BinIndexOutOfRangeError
 from neurospatial.environment import Environment
 
 # Test data for creating environments
@@ -49,7 +50,7 @@ class TestPathBetweenErrorPaths:
         invalid_source = env.n_bins + 100  # Way out of range
         valid_target = 0
 
-        with pytest.raises(IndexError, match=r"out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
             env.path_between(invalid_source, valid_target)
 
     def test_shortest_path_invalid_target_node(self):
@@ -59,7 +60,7 @@ class TestPathBetweenErrorPaths:
         valid_source = 0
         invalid_target = -999  # Negative index
 
-        with pytest.raises(IndexError, match=r"out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
             env.path_between(valid_source, invalid_target)
 
     def test_shortest_path_both_nodes_invalid(self):
@@ -69,7 +70,7 @@ class TestPathBetweenErrorPaths:
         invalid_source = env.n_bins + 50
         invalid_target = env.n_bins + 100
 
-        with pytest.raises(IndexError):
+        with pytest.raises(BinIndexOutOfRangeError):
             env.path_between(invalid_source, invalid_target)
 
     def test_shortest_path_same_node(self):
@@ -253,14 +254,14 @@ class TestNeighborsErrorPaths:
 
         invalid_idx = env.n_bins + 100
 
-        with pytest.raises(IndexError, match=r"out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
             env.neighbors(invalid_idx)
 
     def test_neighbors_negative_index(self):
         """Test neighbors with negative bin index."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
-        with pytest.raises(IndexError, match=r"out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
             env.neighbors(-1)
 
     def test_neighbors_valid_isolated_node(self):

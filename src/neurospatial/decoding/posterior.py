@@ -221,8 +221,8 @@ def _normalize_block(
             raise ValueError(
                 _format_error(
                     f"Found {n_degenerate} degenerate row(s) with all -inf values (zero-rate). Consider using handle_degenerate='uniform' or 'nan'.",
-                    fix="fix non-finite likelihood inputs first; for all -inf rows pass handle_degenerate='uniform'",
-                    why="Why: NaN or all -inf likelihoods cannot be normalized to a posterior.",
+                    fix="pass handle_degenerate='uniform' or 'nan' for zero-rate rows",
+                    why="Why: all -inf rows have zero likelihood mass and cannot be normalized to a posterior.",
                 )
             )
         elif handle_degenerate == "uniform":

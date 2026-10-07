@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+from neurospatial import BinIndexOutOfRangeError
+
 
 class TestBinAt:
     """Tests for Environment.bin_at() method."""
@@ -620,7 +622,7 @@ class TestReachableFrom:
 
     def test_reachable_from_invalid_source_raises(self, small_2d_env):
         """Test that invalid source bin raises ValueError."""
-        with pytest.raises(IndexError, match="out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match="out of range"):
             small_2d_env.reachable_from(small_2d_env.n_bins + 10, radius=None)
 
     def test_reachable_from_negative_radius_raises(self, small_2d_env):

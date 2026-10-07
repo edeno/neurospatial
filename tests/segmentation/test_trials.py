@@ -298,7 +298,7 @@ class TestSegmentTrials:
         from neurospatial.behavior.segmentation import segment_trials
 
         # Missing start_region - passes None which won't be found in regions
-        with pytest.raises(ValueError, match=r"start_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*start_region="):
             segment_trials(
                 position_bins,
                 times,
@@ -308,7 +308,7 @@ class TestSegmentTrials:
             )
 
         # Missing end_regions - need to pass a string in list form that doesn't exist
-        with pytest.raises(ValueError, match=r"end_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*end_regions="):
             segment_trials(
                 position_bins,
                 times,
@@ -328,7 +328,7 @@ class TestSegmentTrials:
             )
 
         # Nonexistent start_region
-        with pytest.raises(ValueError, match=r"start_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*start_region="):
             segment_trials(
                 position_bins,
                 times,
@@ -338,7 +338,7 @@ class TestSegmentTrials:
             )
 
         # Nonexistent end_region
-        with pytest.raises(ValueError, match=r"end_regions.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*end_regions="):
             segment_trials(
                 position_bins,
                 times,

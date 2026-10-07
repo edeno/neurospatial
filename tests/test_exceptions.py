@@ -171,6 +171,19 @@ def test_region_not_found_names_the_argument():
     assert "start_region='home'" in str(exc)
 
 
+def test_region_not_found_handles_missing_name():
+    exc = RegionNotFoundError(None, available=["home"], argument="start_region")
+    assert isinstance(exc, ValueError)
+    assert "start_region=None" in str(exc)
+    assert "Fix: pass start_region='home'" in str(exc)
+
+
+@pytest.mark.parametrize("name,available", [("hom", ["home"]), ("home", [])])
+def test_region_not_found_formats_end_regions_as_a_list(name, available):
+    exc = RegionNotFoundError(name, available=available, argument="end_regions")
+    assert "end_regions=['home']" in str(exc)
+
+
 def test_no_import_cycle():
     source = Path(__file__).parents[1] / "src" / "neurospatial"
     tree = ast.parse((source / "_exceptions.py").read_text())

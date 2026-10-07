@@ -4,6 +4,8 @@
 
 ### Changed — errors that teach
 
+- Region fixes show list-valued `end_regions` and handle missing names without a conversion error. Zero-rate posterior errors distinguish all-negative-infinity likelihoods from corrupt NaN inputs.
+
 - Warn visibly when `bin_size` covers every data axis or a peri-event window exceeds 60 seconds, with units and corrected values. Large-grid warnings are now `UserWarning` instead of hidden `ResourceWarning`; the existing hard memory ceiling is unchanged. Length-1 bin-index arrays explain how to unwrap `bin_at` output before a graph query.
 
 - First-run factory, graph-query, encoding, decoding, peri-event, animation and file errors give concrete corrected calls. Segmentation and boundary regressors raise `RegionNotFoundError` with the caller's region argument and available names; NWB readers and direction-label lookups name their corrected arguments.

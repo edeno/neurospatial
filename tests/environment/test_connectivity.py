@@ -18,7 +18,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import BinIndexOutOfRangeError, Environment
 
 # =============================================================================
 # Test Suite 1: Components - Basic Functionality
@@ -335,11 +335,11 @@ class TestReachableFromEdgeCases:
         env = Environment.from_samples(data, bin_size=1.5)
 
         # Test negative bin index
-        with pytest.raises(IndexError, match=r"out of range \[0, "):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range.*\[0, "):
             env.reachable_from(-1)
 
         # Test bin index >= n_bins
-        with pytest.raises(IndexError, match=r"out of range \[0, "):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range.*\[0, "):
             env.reachable_from(env.n_bins)
 
     def test_reachable_from_negative_radius(self):
