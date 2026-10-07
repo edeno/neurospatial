@@ -16,6 +16,8 @@
 
 ### Added — executable documentation
 
+- Install widget support in the headless module-doctest CI job so the newly executable widget example runs there too.
+
 - Execute Markdown examples using adjacent `docs-test` markers, cumulative reader state for README/quickstart, fresh seeded blocks for reference fragments, and restored animation setup patches. Replace the indexed snippet manifest and subprocess helper with default pytest coverage.
 
 - Execute flagship docstrings, including NWB geometry and position examples, with only display/video calls skipped. Module doctests write outputs in temporary directories; the NWB workflow enforces its examples separately.
