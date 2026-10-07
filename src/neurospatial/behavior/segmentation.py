@@ -81,6 +81,7 @@ from numpy.typing import NDArray
 from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._validation import validate_finite
 from neurospatial.environment.trajectory import observed_runs
 
@@ -478,9 +479,8 @@ def detect_region_crossings(
     # Validate inputs
     if region_name not in env.regions:
         available = list(env.regions.keys())
-        raise ValueError(
-            f"Region '{region_name}' not found in environment. "
-            f"Available regions: {available}"
+        raise RegionNotFoundError(
+            region_name, available=available, argument="region_name"
         )
 
     if len(position_bins) != len(times):
@@ -699,15 +699,11 @@ def detect_runs_between_regions(
     # Validate inputs
     if source not in env.regions:
         available = list(env.regions.keys())
-        raise ValueError(
-            f"Source region '{source}' not found. Available regions: {available}"
-        )
+        raise RegionNotFoundError(source, available=available, argument="source")
 
     if target not in env.regions:
         available = list(env.regions.keys())
-        raise ValueError(
-            f"Target region '{target}' not found. Available regions: {available}"
-        )
+        raise RegionNotFoundError(target, available=available, argument="target")
 
     if len(position_bins) != len(times):
         raise ValueError(
@@ -1377,15 +1373,28 @@ def detect_laps(
 
     # Validate method-specific requirements
     if method == "reference" and reference_lap is None:
-        raise ValueError("reference_lap is required when method='reference'")
+        raise ValueError(
+            _format_error(
+                "reference_lap is required when method='reference'",
+                fix="pass reference_lap=position_bins_of_one_complete_lap when method='reference'",
+                why="Why: reference-based detection compares each traversal to that lap.",
+            )
+        )
 
     if method == "region":
         if start_region is None:
-            raise ValueError("start_region is required when method='region'")
-        if start_region not in env.regions:
             raise ValueError(
-                f"start_region '{start_region}' not in env.regions. "
-                f"Available regions: {list(env.regions.keys())}"
+                _format_error(
+                    "start_region is required when method='region'",
+                    fix="pass start_region='home' when method='region'",
+                    why="Why: a region-based lap starts and ends at a named region.",
+                )
+            )
+        if start_region not in env.regions:
+            raise RegionNotFoundError(
+                start_region,
+                available=list(env.regions.keys()),
+                argument="start_region",
             )
 
     if len(position_bins) != len(times):
@@ -2069,20 +2078,24 @@ def segment_trials(
     # Validate inputs
     if start_region not in env.regions:
         available = list(env.regions.keys())
-        raise ValueError(
-            f"start_region '{start_region}' not found in environment. "
-            f"Available regions: {available}"
+        raise RegionNotFoundError(
+            start_region, available=available, argument="start_region"
         )
 
     if len(end_regions) == 0:
-        raise ValueError("end_regions cannot be empty")
+        raise ValueError(
+            _format_error(
+                "end_regions cannot be empty",
+                fix="pass end_regions=['goal']",
+                why="Why: each trial must finish at a named end region.",
+            )
+        )
 
     for region in end_regions:
         if region not in env.regions:
             available = list(env.regions.keys())
-            raise ValueError(
-                f"end_regions contains '{region}' which is not found in environment. "
-                f"Available regions: {available}"
+            raise RegionNotFoundError(
+                region, available=available, argument="end_regions"
             )
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
@@ -2601,9 +2614,8 @@ def detect_goal_directed_runs(
     # Input validation
     if goal_region not in env.regions:
         available = list(env.regions.keys())
-        raise ValueError(
-            f"Region '{goal_region}' not found in env.regions. "
-            f"Available regions: {available}"
+        raise RegionNotFoundError(
+            goal_region, available=available, argument="goal_region"
         )
 
     if not 0.0 <= directedness_threshold <= 1.0:

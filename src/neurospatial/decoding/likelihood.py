@@ -36,6 +36,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
+from neurospatial._exceptions import _format_error
 from neurospatial.decoding._binning import validate_dt
 
 
@@ -152,9 +153,11 @@ def log_poisson_likelihood(
         )
     if spike_counts.shape[1] != encoding_models.shape[0]:
         raise ValueError(
-            f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} "
-            f"neurons (axis 1) but encoding_models has {encoding_models.shape[0]} "
-            f"neurons (axis 0). These must agree for the Poisson likelihood."
+            _format_error(
+                f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {encoding_models.shape[0]} neurons (axis 0). These must agree for the Poisson likelihood.",
+                fix="build spike_counts and encoding_models from the same unit list, in the same order",
+                why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
+            )
         )
 
     # Clip rates to avoid log(0)

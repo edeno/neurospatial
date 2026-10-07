@@ -126,7 +126,7 @@ class SpikeTrains:
                     f"Each spike train must be 1-D, but train {i} has shape "
                     f"{arr.shape}.\n"
                     "  WHY: SpikeTrains holds one 1-D spike-time array per unit.\n"
-                    "  HOW: pass a 1-D array of spike times for each unit."
+                    "  Fix: pass a 1-D array of spike times for each unit."
                 )
             coerced.append(arr)
         # Store as a tuple so in-place mutation (e.g. ``st.trains.append(...)``)
@@ -259,7 +259,7 @@ class SpikeTrains:
                 "Cannot filter a SpikeTrains with unit_table=None: there is no "
                 "per-unit metadata to query.\n"
                 "  WHY: filter() selects units by matching unit_table rows.\n"
-                "  HOW: construct SpikeTrains with a unit_table (one row per "
+                "  Fix: construct SpikeTrains with a unit_table (one row per "
                 "unit) before calling filter()."
             )
 

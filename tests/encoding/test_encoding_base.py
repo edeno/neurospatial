@@ -486,27 +486,27 @@ class TestValidateTrajectoryRejectsBadTimes:
 
         empty = np.empty(0, dtype=np.float64)
         with pytest.raises(ValueError, match=r"At least 2 samples"):
-            validate_trajectory(empty)
+            validate_trajectory(empty, context="compute_spatial_rate")
 
     def test_single_sample_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_trajectory
 
         with pytest.raises(ValueError, match=r"At least 2 samples"):
-            validate_trajectory(np.array([0.0]))
+            validate_trajectory(np.array([0.0]), context="compute_spatial_rate")
 
     def test_decreasing_times_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_trajectory
 
         decreasing = np.array([0.0, 1.0, 0.5, 2.0])
         with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
-            validate_trajectory(decreasing)
+            validate_trajectory(decreasing, context="compute_spatial_rate")
 
     def test_nan_times_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_trajectory
 
         with_nan = np.array([0.0, 0.5, np.nan, 1.0])
         with pytest.raises(ValueError, match=r"finite"):
-            validate_trajectory(with_nan)
+            validate_trajectory(with_nan, context="compute_spatial_rate")
 
     def test_compute_spatial_rate_rejects_decreasing_times(self) -> None:
         """End-to-end: the public entry point inherits the time validation."""
@@ -533,49 +533,69 @@ class TestValidateSpikeTimes:
         """A neuron with zero spikes is a valid input (silent neuron)."""
         from neurospatial.encoding._validation import validate_spike_times
 
-        validate_spike_times(np.empty(0, dtype=np.float64))  # does not raise
+        validate_spike_times(
+            np.empty(0, dtype=np.float64), context="compute_spatial_rate"
+        )  # does not raise
 
     def test_empty_rejected_when_disallowed(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
         with pytest.raises(ValueError, match=r"empty \(no spikes\)"):
-            validate_spike_times(np.empty(0, dtype=np.float64), allow_empty=False)
+            validate_spike_times(
+                np.empty(0, dtype=np.float64),
+                allow_empty=False,
+                context="compute_spatial_rate",
+            )
 
     def test_two_dim_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
         with pytest.raises(ValueError, match=r"1-D"):
-            validate_spike_times(np.array([[0.5, 1.0], [1.5, 2.0]]))
+            validate_spike_times(
+                np.array([[0.5, 1.0], [1.5, 2.0]]), context="compute_spatial_rate"
+            )
 
     def test_nan_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
         with pytest.raises(ValueError, match=r"finite"):
-            validate_spike_times(np.array([0.0, np.nan, 1.0]))
+            validate_spike_times(
+                np.array([0.0, np.nan, 1.0]), context="compute_spatial_rate"
+            )
 
     def test_inf_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
         with pytest.raises(ValueError, match=r"finite"):
-            validate_spike_times(np.array([0.0, 1.0, np.inf]))
+            validate_spike_times(
+                np.array([0.0, 1.0, np.inf]), context="compute_spatial_rate"
+            )
 
     def test_negative_rejected(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
         with pytest.raises(ValueError, match=r"non-negative"):
-            validate_spike_times(np.array([-0.1, 0.5, 1.0]))
+            validate_spike_times(
+                np.array([-0.1, 0.5, 1.0]), context="compute_spatial_rate"
+            )
 
     def test_decreasing_rejected_with_actionable_message(self) -> None:
         from neurospatial.encoding._validation import validate_spike_times
 
-        with pytest.raises(ValueError, match=r"monotonically non-decreasing.*np\.sort"):
-            validate_spike_times(np.array([0.0, 2.0, 1.0, 3.0]))
+        with pytest.raises(
+            ValueError, match=r"(?s)monotonically non-decreasing.*np\.sort"
+        ):
+            validate_spike_times(
+                np.array([0.0, 2.0, 1.0, 3.0]), context="compute_spatial_rate"
+            )
 
     def test_sorted_with_duplicates_accepted(self) -> None:
         """Equal-valued adjacent samples (simultaneous spikes) are allowed."""
         from neurospatial.encoding._validation import validate_spike_times
 
-        validate_spike_times(np.array([0.0, 0.5, 0.5, 0.5, 1.0]))  # does not raise
+        validate_spike_times(
+            np.array([0.0, 0.5, 0.5, 0.5, 1.0]), context="compute_spatial_rate"
+        )  # does not raise
 
     def test_compute_spatial_rate_rejects_unsorted_spike_times(self) -> None:
         """End-to-end: compute_spatial_rate inherits the spike-time validation."""

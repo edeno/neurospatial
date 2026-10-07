@@ -16,6 +16,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import GraphValidationError as GraphValidationError
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
@@ -23,21 +25,6 @@ if TYPE_CHECKING:
 REQUIRED_NODE_ATTRS = {"pos", "source_grid_flat_index", "original_grid_nd_index"}
 REQUIRED_EDGE_ATTRS = {"distance", "vector", "edge_id"}
 OPTIONAL_EDGE_ATTRS = {"angle_2d"}
-
-
-class GraphValidationError(ValueError):
-    """Raised when connectivity graph has invalid structure or metadata.
-
-    This error indicates a bug in the layout engine that produced the graph,
-    not a user error. All layout engines must produce graphs that pass
-    validation.
-
-    See Also
-    --------
-    validate_connectivity_graph : Main validation function
-    """
-
-    pass
 
 
 def validate_bin_size(

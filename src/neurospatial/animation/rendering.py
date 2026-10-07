@@ -634,7 +634,7 @@ def _validate_frame_labels(
             f"WHAT: Mismatch between frame_labels and fields arrays.\n\n"
             f"WHY: Each frame needs exactly one label for the {backend_name} "
             f"backend's controls.\n\n"
-            f"HOW: Ensure frame_labels has {n_frames} elements, for example:\n"
+            f"Fix: Ensure frame_labels has {n_frames} elements, for example:\n"
             f"  frame_labels = [f'Frame {{i + 1}}' for i in range({n_frames})]\n"
             f"  # Or pass frame_labels=None to use backend defaults (when supported)"
         )

@@ -13,6 +13,7 @@ import pytest
 from numpy.typing import NDArray
 from shapely.geometry import Polygon as ShapelyPoly
 
+from neurospatial import BinIndexOutOfRangeError
 from neurospatial.environment import Environment
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
@@ -151,7 +152,7 @@ class TestEnvironmentFromGraph:
         path_to_self = graph_env.path_between(bin_idx_west, bin_idx_west)
         assert path_to_self == [bin_idx_west]
 
-        with pytest.raises(IndexError, match=r"out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
             graph_env.path_between(0, 100)
 
     def test_linearized_coordinates(self, graph_env: Environment):

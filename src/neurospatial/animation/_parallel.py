@@ -1481,12 +1481,12 @@ def parallel_render_frames(
         except Exception as e:
             # WHAT: Environment not pickle-able
             # WHY: Parallel rendering requires pickling to send to workers
-            # HOW: Call env.clear_cache() or use n_workers=1
+            # Fix: Call env.clear_cache() or use n_workers=1
             raise ValueError(
                 f"WHAT: Environment is not pickle-able for parallel rendering.\n"
                 f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
                 f"the environment to send to worker processes.\n"
-                f"HOW: Choose one of these solutions:\n"
+                f"Fix: Choose one of these solutions:\n"
                 f"  1. Call env.clear_cache() to remove unpickleable cached objects\n"
                 f"  2. Use n_workers=1 for serial rendering (no pickling required)\n"
                 f"Original error: {e}"
@@ -1499,12 +1499,12 @@ def parallel_render_frames(
             except Exception as e:
                 # WHAT: overlay_data not pickle-able
                 # WHY: Parallel rendering requires pickling overlay data
-                # HOW: Remove unpickleable objects or use n_workers=1
+                # Fix: Remove unpickleable objects or use n_workers=1
                 raise ValueError(
                     f"WHAT: overlay_data is not pickle-able for parallel rendering.\n"
                     f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
                     f"overlay_data to send to worker processes.\n"
-                    f"HOW: Choose one of these solutions:\n"
+                    f"Fix: Choose one of these solutions:\n"
                     f"  1. Remove unpickleable objects (lambdas, closures, local functions)\n"
                     f"  2. Ensure overlay_data uses only standard types (numpy arrays, "
                     f"strings, numbers)\n"

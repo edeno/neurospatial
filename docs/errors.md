@@ -1,8 +1,40 @@
 # Error Reference
 
-**Last Updated**: 2025-11-14
+**Last Updated**: 2026-10-07
 
-This document provides detailed explanations and solutions for common errors in neurospatial. Each error has a unique error code for easy reference and troubleshooting.
+This reference explains common errors and how to correct their inputs. Environment errors use the codes below; other validation errors name the calling function and offending argument or shape.
+
+## Catching neurospatial errors
+
+Import `NeurospatialError` from the package root to catch library-specific exceptions:
+
+```python
+from neurospatial import NeurospatialError
+
+try:
+    distances = env.distance_to("hom")
+except NeurospatialError as exc:
+    print(exc)
+```
+
+If the environment contains a region named `home`, the error suggests `Fix: pass targets='home'`. If the region is missing, it shows how to add it with `env.regions.add('hom', point=(x, y))` or a polygon.
+
+Concrete exceptions inherit their standard Python type first, followed by `NeurospatialError`, so existing catch blocks continue to work:
+
+| Exception | Standard Python bases | Use |
+|-----------|-----------------------|-----|
+| `RegionNotFoundError` | `KeyError`, `ValueError` | Unknown region in a lookup, segmentation call or regressor |
+| `BinIndexOutOfRangeError` | `ValueError` | Graph-query bin index outside `[0, env.n_bins)` |
+| `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
+| `GraphValidationError` | `ValueError` | Invalid layout connectivity metadata |
+| `LayoutNotBuiltError` | `RuntimeError` | Access to layout geometry before `build()` |
+| `EnvironmentNotFittedError` | `RuntimeError` | Analysis with an environment that is not fitted |
+
+Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. Ordinary input validation can also raise standard `TypeError` or `ValueError` directly.
+
+Diagnostics describe what is wrong, why it matters and a corrected call using the `Fix:` label (formerly `HOW:`). Shared trajectory validation reports shape, length and timestamp problems together. `RegionNotFoundError` prints its message without `KeyError`'s quotes; bare `KeyError` messages include their fix as a final sentence. Missing required arguments keep Python's own `TypeError` and truthful signatures.
+
+Warnings also use concrete fixes. A `bin_size` that covers every data axis warns about a possible units mismatch, and peri-event windows wider than 60 seconds suggest `window=(-0.5, 1.0)` when milliseconds were intended. Large-grid warnings are visible `UserWarning`s; the existing hard memory ceiling still applies.
 
 ---
 
@@ -193,6 +225,7 @@ env = Environment.from_samples(
 **Error Message:**
 ```
 ValueError: [E1006] Environment cannot be constructed directly — use a factory method.
+Fix: env = Environment.from_samples(positions, bin_size=2.0)
 ```
 **Cause:** `Environment()` was called directly. `Environment` is always built through a factory that constructs the underlying layout/connectivity.
 
@@ -283,11 +316,13 @@ composite_3d = CompositeEnvironment.from_environments(envs_3d)
 
 ## Usage Errors
 
+<a id="e1004"></a>
+
 ### E1004: Environment not fitted
 
 **Error Message Example:**
 ```
-RuntimeError: [E1004] Environment.bin_at() requires the environment to be fully initialized.
+EnvironmentNotFittedError: [E1004] Environment.bin_at() requires the environment to be fully initialized.
 Ensure it was created with a factory method.
 
 Example (correct usage):
@@ -298,6 +333,7 @@ Avoid:
     env = Environment()  # This will not work!
 
 For more information, see: https://edeno.github.io/neurospatial/errors/#e1004
+Fix: env = Environment.from_samples(positions, bin_size=2.0)
 ```
 
 **What This Means:**
@@ -306,7 +342,9 @@ You're calling a method on an Environment that hasn't been properly initialized.
 
 **Why This Happens:**
 
-The Environment uses the "fitted" pattern common in scientific Python libraries (similar to scikit-learn). Direct instantiation with `Environment()` creates an empty, unfitted object that can't perform spatial operations.
+The Environment uses a fitted state to indicate that its geometry and connectivity are ready. E1004 signals a partially initialized environment; calling `Environment()` directly raises E1006 instead. Factory methods return fitted environments.
+
+For encoding and decoding entry points, forgetting the environment produces a `TypeError` that names the corrected call, for example `compute_spatial_rate(env, spike_times, times, positions)`. E1004 remains the error for an actual environment whose fitted state is false.
 
 **Solutions:**
 
@@ -315,14 +353,12 @@ The Environment uses the "fitted" pattern common in scientific Python libraries 
 ```python
 import numpy as np
 
-# ❌ Direct instantiation doesn't work
-env = Environment()
-env.bin_at(np.array([[10.0, 20.0]]))  # RuntimeError: E1004
+# Direct instantiation raises E1006 before any spatial query can run.
 
 # ✓ Use factory method
 env = Environment.from_samples(positions, bin_size=5.0)
 env.units = 'cm'
-env.bin_at(np.array([[10.0, 20.0]]))  # Works!
+bin_indices = env.bin_at(positions[:1])
 ```
 
 #### Solution 2: Use the right factory for your data

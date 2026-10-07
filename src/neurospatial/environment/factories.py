@@ -32,6 +32,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.layout.factories import (
     LayoutType,
     create_layout,
@@ -177,7 +178,13 @@ def _assemble_maze_graph(
             edge_order.append((base_node, arm_node))
 
     else:
-        raise ValueError(f"Unknown maze kind {kind!r}")
+        raise ValueError(
+            _format_error(
+                f"Unknown maze kind {kind!r}",
+                fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                why="Why: maze topology depends on a supported maze kind.",
+            )
+        )
 
     return graph, edge_order
 
@@ -411,8 +418,11 @@ class EnvironmentFactories:
 
         if positions.ndim != 2:
             raise ValueError(
-                f"positions must be a 2D array of shape (n_points, n_dims), "
-                f"got shape {positions.shape}.",
+                _format_error(
+                    f"positions must be a 2D array of shape (n_points, n_dims), got shape {positions.shape}.",
+                    fix="use positions[:, None] for 1-D data; if positions has shape (n_dims, n_samples), pass positions.T",
+                    why="Why: each row must be one sample and each column one spatial coordinate.",
+                )
             )
 
         # Warn on a likely-transposed positions array before building the grid.
@@ -492,6 +502,31 @@ class EnvironmentFactories:
             **layout_specific_kwargs,
         }
 
+        finite_rows = np.all(np.isfinite(positions), axis=1)
+        finite_positions = positions if np.all(finite_rows) else positions[finite_rows]
+        try:
+            sizes = np.asarray(bin_size, dtype=float)
+        except (TypeError, ValueError):
+            sizes = None  # Preserve the layout's existing invalid-value error.
+        if (
+            sizes is not None
+            and np.all(np.isfinite(sizes))
+            and np.all(sizes > 0)
+            and len(finite_positions)
+            and (sizes.ndim == 0 or sizes.shape == (n_dims,))
+        ):
+            extent = np.ptp(finite_positions, axis=0)
+            if np.any(extent > 0) and np.all(sizes >= extent):
+                suggested = float(np.max(extent)) / 50.0
+                warnings.warn(
+                    _format_error(
+                        f"bin_size={bin_size} is at least the per-axis data extent {extent.tolist()} in every dimension.",
+                        why="Why: this produces very few bins and may indicate a units mismatch.",
+                        fix=f"use bin_size={suggested:g} (in the same units as positions), or choose a size below the data extent",
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
         env = cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
         if units is not None:
             env.units = units
@@ -885,8 +920,11 @@ class EnvironmentFactories:
         kind_normalized = kind.lower() if isinstance(kind, str) else kind
         if kind_normalized not in allowed:
             raise ValueError(
-                f"Unknown maze kind {kind!r}. `kind` must be one of "
-                f"{allowed} (W maze, plus/cross maze, or T maze)."
+                _format_error(
+                    f"Unknown maze kind {kind!r}. `kind` must be one of {allowed} (W maze, plus/cross maze, or T maze).",
+                    fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                    why="Why: maze topology depends on a supported maze kind.",
+                )
             )
 
         if track_graph is not None and node_positions is not None:

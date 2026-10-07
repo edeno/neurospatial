@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
 from neurospatial.decoding._binning import (
     _time_bin_rounding,
@@ -29,6 +30,48 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial._typing import SpikeTrainsLike
+
+
+def _validate_window(window: tuple[float, float], *, context: str) -> None:
+    """Validate a peri-event window expressed in seconds."""
+    try:
+        if np.asarray(window).dtype.kind not in "biuf":
+            raise TypeError("window bounds must be real numbers")
+        bounds = np.asarray(window, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two numeric bounds, got {window!r}.",
+                why="Why: peri-event windows are expressed in seconds relative to each event.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        ) from exc
+    if bounds.shape != (2,) or not np.all(np.isfinite(bounds)):
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two finite bounds, got {window!r} with shape {bounds.shape}.",
+                why="Why: peri-event windows need a finite start and stop in seconds.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        )
+    if window[0] > window[1]:
+        raise ValueError(
+            _format_error(
+                f"{context}: Window start ({window[0]}) must be <= end ({window[1]}).",
+                why="Why: a peri-event window defines a valid range relative to each event.",
+                fix="pass window=(-0.5, 1.0), with start <= stop, in seconds",
+            )
+        )
+    if bounds[1] - bounds[0] > 60:
+        warnings.warn(
+            _format_error(
+                f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
+                why="Why: an unusually wide peri-event window may be specified in milliseconds instead of seconds.",
+                fix="use window=(-0.5, 1.0) if you meant milliseconds",
+            ),
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def _make_bin_edges(
@@ -129,12 +172,7 @@ def align_spikes_to_events(
     ...     pass  # plt.scatter(trial_spikes, [trial_idx]*len(trial_spikes))
     """
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="align_spikes_to_events")
 
     # Convert to arrays if needed
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -146,13 +184,13 @@ def align_spikes_to_events(
             raise ValueError(
                 "spike_times contains NaN values.\n"
                 "  WHY: Cannot compute relative times with undefined values.\n"
-                "  HOW: Remove or interpolate NaN values before alignment."
+                "  Fix: Remove or interpolate NaN values before alignment."
             )
         if np.any(np.isinf(spike_times)):
             raise ValueError(
                 "spike_times contains Inf values.\n"
                 "  WHY: Cannot compute relative times with infinite values.\n"
-                "  HOW: Remove Inf values before alignment."
+                "  Fix: Remove Inf values before alignment."
             )
 
     if event_times.size > 0:
@@ -160,13 +198,13 @@ def align_spikes_to_events(
             raise ValueError(
                 "event_times contains NaN values.\n"
                 "  WHY: Cannot align spikes to undefined event times.\n"
-                "  HOW: Remove NaN event times before alignment."
+                "  Fix: Remove NaN event times before alignment."
             )
         if np.any(np.isinf(event_times)):
             raise ValueError(
                 "event_times contains Inf values.\n"
                 "  WHY: Cannot align spikes to infinite event times.\n"
-                "  HOW: Remove Inf event times before alignment."
+                "  Fix: Remove Inf event times before alignment."
             )
 
     # Handle empty cases
@@ -364,16 +402,11 @@ def peri_event_histogram(
         raise ValueError(
             f"bin_size must be positive, got {bin_size}.\n"
             "  WHY: bin_size defines histogram bin width.\n"
-            "  HOW: Use a positive value like bin_size=0.025 (25ms)."
+            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
         )
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="peri_event_histogram")
 
     # Convert to arrays
     event_times = np.asarray(event_times, dtype=np.float64)
@@ -383,7 +416,7 @@ def peri_event_histogram(
         raise ValueError(
             "event_times is empty.\n"
             "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  HOW: Provide at least one event time."
+            "  Fix: Provide at least one event time."
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -542,7 +575,7 @@ def population_peri_event_histogram(
         raise ValueError(
             "spike_trains is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
-            "  HOW: Provide at least one spike train."
+            "  Fix: Provide at least one spike train."
         )
 
     # Validate bin_size
@@ -550,16 +583,11 @@ def population_peri_event_histogram(
         raise ValueError(
             f"bin_size must be positive, got {bin_size}.\n"
             "  WHY: bin_size defines histogram bin width.\n"
-            "  HOW: Use a positive value like bin_size=0.025 (25ms)."
+            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
         )
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="population_peri_event_histogram")
 
     # Convert event_times to array
     event_times = np.asarray(event_times, dtype=np.float64)
@@ -569,7 +597,7 @@ def population_peri_event_histogram(
         raise ValueError(
             "event_times is empty.\n"
             "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  HOW: Provide at least one event time."
+            "  Fix: Provide at least one event time."
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -707,19 +735,14 @@ def align_events(
     import pandas as pd
 
     # Validate window
-    if window[0] > window[1]:
-        raise ValueError(
-            f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
-            "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
-        )
+    _validate_window(window, context="align_events")
 
     # Validate event_column exists
     if event_column not in events.columns:
         raise ValueError(
             f"Events DataFrame missing '{event_column}' column.\n"
             "  WHY: Need timestamps to compute relative times.\n"
-            f"  HOW: Ensure events has '{event_column}' column.\n"
+            f"  Fix: Ensure events has '{event_column}' column.\n"
             f"  Available columns: {list(events.columns)}"
         )
 
@@ -728,7 +751,7 @@ def align_events(
         raise ValueError(
             f"Reference DataFrame missing '{reference_column}' column.\n"
             "  WHY: Need reference timestamps to align events to.\n"
-            f"  HOW: Ensure reference_events has '{reference_column}' column.\n"
+            f"  Fix: Ensure reference_events has '{reference_column}' column.\n"
             f"  Available columns: {list(reference_events.columns)}"
         )
 

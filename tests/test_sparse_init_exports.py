@@ -35,6 +35,7 @@ def test_all_has_core_classes_and_exceptions():
         "BinIndexOutOfRangeError",
         "IncompatibleEnvironmentError",
         "LayoutNotBuiltError",
+        "NeurospatialError",
         # Eagerly-exported primitives
         "bin_spikes_in_time",
         # Lazily-accessible public container (PEP 562 __getattr__); the one

@@ -26,6 +26,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import EnvironmentNotFittedError, _format_error
 from neurospatial._validation import validate_finite
 
 __all__ = [
@@ -37,7 +38,7 @@ __all__ = [
 ]
 
 
-def validate_env_fitted(env: object, *, context: str) -> None:
+def validate_env_fitted(env: object, *, context: str, arguments: str) -> None:
     """Raise ``EnvironmentNotFittedError`` if ``env`` is not fitted.
 
     Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
@@ -59,129 +60,165 @@ def validate_env_fitted(env: object, *, context: str) -> None:
     context : str
         Name of the calling public free function, used as the
         ``EnvironmentNotFittedError`` function-name argument.
+    arguments : str
+        Required argument names after ``env`` in the corrected public call.
 
     Raises
     ------
+    TypeError
+        If ``env`` has no fitted-state attribute and cannot serve as an
+        environment. The message shows how to build and pass one.
     EnvironmentNotFittedError
-        If ``env`` does not have ``_is_fitted=True``.
+        If ``env`` exposes ``_is_fitted`` but is not fitted.
     """
-    # Local import to keep this module dependency-free at module load time;
-    # the encoding package imports decorators lazily for the same reason.
-    from neurospatial.environment.decorators import EnvironmentNotFittedError
-
+    if not hasattr(env, "_is_fitted"):
+        description = type(env).__name__
+        shape = getattr(env, "shape", None)
+        if shape is not None:
+            description += f" with shape {shape}"
+        raise TypeError(
+            _format_error(
+                f"{context}() expects an Environment as its first argument, got {description}.",
+                why="Why: spatial analysis needs the environment's geometry and bins.",
+                fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, {arguments}).",
+            )
+        )
     if not getattr(env, "_is_fitted", False):
         raise EnvironmentNotFittedError(context, is_function=True)
 
 
-def validate_times(times: NDArray[np.float64], context: str = "encoding") -> None:
-    """Check that ``times`` has at least 2 samples, is finite, and monotonic.
+def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None:
+    """Report all input problems with their combined concrete fixes."""
+    if not problems:
+        return
+    details = (
+        problems[0][0]
+        if len(problems) == 1
+        else "invalid inputs:\n" + "\n".join(f"- {what}" for what, _ in problems)
+    )
+    raise ValueError(
+        _format_error(
+            f"{context}: {details}",
+            why="Why: timestamps in seconds and sample-aligned coordinates are needed to assign observations to the correct bins.",
+            fix="; ".join(dict.fromkeys(fix for _, fix in problems)),
+        )
+    )
+
+
+def _time_problems(times: NDArray[np.float64]) -> list[tuple[str, str]]:
+    """Collect timestamp-shape, finite-value and ordering problems."""
+    problems = []
+    if times.ndim != 1:
+        return [
+            (
+                f"times must be 1D, got shape {times.shape}",
+                "pass times as a 1-D array of timestamps in seconds",
+            )
+        ]
+    if len(times) < 2:
+        problems.append(
+            (
+                f"At least 2 samples required, got {len(times)}",
+                "pass at least two timestamped position samples",
+            )
+        )
+    if not np.all(np.isfinite(times)):
+        n_bad = int(np.sum(~np.isfinite(times)))
+        problems.append(
+            (
+                f"times must be finite; got {n_bad} NaN/inf entries",
+                "remove non-finite timestamps and the corresponding sample rows",
+            )
+        )
+    decreasing = np.flatnonzero(np.diff(times) < 0)
+    if decreasing.size:
+        problems.append(
+            (
+                f"times must be monotonically non-decreasing (sorted); found {decreasing.size} decreasing interval(s) at indices {decreasing[:5].tolist()}",
+                "sort times and all corresponding sample rows with order = np.argsort(times)",
+            )
+        )
+    return problems
+
+
+def validate_times(times: NDArray[np.float64], *, context: str) -> None:
+    """Check finite, non-decreasing timestamps with at least two samples.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Timestamps to validate.
-    context : str, default "encoding"
-        Description of the calling function for error messages.
+        Timestamps in seconds; adjacent equal timestamps are allowed.
+    context : str
+        Name of the calling function, used in the error message.
 
     Raises
     ------
     ValueError
-        If ``times`` has fewer than 2 samples, contains NaN or +/-inf, or
-        if any pair of adjacent samples is decreasing (``times`` must be
-        sorted; equal-valued adjacent samples are allowed).
+        If the shape, sample count, finite values or ordering is invalid.
     """
-    n_samples = len(times)
-    if n_samples < 2:
-        raise ValueError(f"At least 2 samples required for {context}, got {n_samples}")
-
-    if not np.all(np.isfinite(times)):
-        # NaN comparisons are False, so the monotonic check below would
-        # silently accept NaN-laced timestamps. Reject explicitly here.
-        n_bad = int(np.sum(~np.isfinite(times)))
-        raise ValueError(
-            f"times must be finite for {context}; got {n_bad} NaN/inf entries"
-        )
-
-    time_diffs = np.diff(times)
-    if np.any(time_diffs < 0):
-        decreasing_indices = np.where(time_diffs < 0)[0]
-        raise ValueError(
-            "times must be monotonically non-decreasing (sorted). "
-            f"Found {len(decreasing_indices)} decreasing interval(s) at "
-            f"indices: {decreasing_indices.tolist()[:5]}"
-            + (" ..." if len(decreasing_indices) > 5 else "")
-        )
+    _raise_input_problems(context, _time_problems(times))
 
 
 def validate_spike_times(
-    spike_times: NDArray[np.float64],
-    *,
-    context: str = "encoding",
-    allow_empty: bool = True,
+    spike_times: NDArray[np.float64], *, context: str, allow_empty: bool = True
 ) -> None:
-    """Check that ``spike_times`` is 1-D, finite, sorted, and non-negative.
-
-    Internal helpers downstream (``bin_spike_train`` and friends) use
-    ``np.searchsorted`` against the spike-time array, so an out-of-order
-    spike train silently produces wrong bin assignments. The four public
-    ``compute_*_rate(s)`` entry points should call this once on user input.
+    """Check one-dimensional finite, sorted, non-negative spike timestamps.
 
     Parameters
     ----------
     spike_times : ndarray, shape (n_spikes,)
-        Spike timestamps in seconds. Empty arrays are allowed by default
-        (a neuron with zero spikes is a valid input).
-    context : str, default "encoding"
-        Description of the calling function for error messages.
+        Spike timestamps in seconds. Empty trains are allowed by default.
+    context : str
+        Name of the calling function, used in the error message.
     allow_empty : bool, default True
-        If False, also reject zero-length spike trains. Use this when the
-        caller cannot meaningfully proceed without at least one spike.
+        Whether a neuron with no spikes is a valid input.
 
     Raises
     ------
     ValueError
-        If ``spike_times`` is not 1-D, contains NaN or +/-inf, contains a
-        negative value, has any pair of adjacent samples in decreasing
-        order, or (with ``allow_empty=False``) is empty.
+        If the shape, finite values, sign, ordering or emptiness is invalid.
     """
+    problems = []
     if spike_times.ndim != 1:
-        raise ValueError(
-            f"spike_times must be 1-D for {context}, got shape {spike_times.shape}"
+        problems.append(
+            (
+                f"spike_times must be 1-D, got shape {spike_times.shape}",
+                "pass one 1-D spike_times array per unit",
+            )
         )
-
-    n_spikes = len(spike_times)
-    if n_spikes == 0:
-        if not allow_empty:
-            raise ValueError(f"spike_times is empty (no spikes) for {context}")
-        return
-
-    if not np.all(np.isfinite(spike_times)):
-        n_bad = int(np.sum(~np.isfinite(spike_times)))
-        raise ValueError(
-            f"spike_times must be finite (seconds) for {context}; "
-            f"got {n_bad} NaN/inf entries"
-        )
-
-    if np.any(spike_times < 0.0):
-        n_negative = int(np.sum(spike_times < 0.0))
-        raise ValueError(
-            f"spike_times must be non-negative (seconds) for {context}; "
-            f"got {n_negative} negative entr{'y' if n_negative == 1 else 'ies'} "
-            f"(min: {float(spike_times.min()):.6g} s)"
-        )
-
-    diffs = np.diff(spike_times)
-    if np.any(diffs < 0):
-        decreasing = np.where(diffs < 0)[0]
-        sample = decreasing.tolist()[:5]
-        more = " ..." if decreasing.size > 5 else ""
-        raise ValueError(
-            "spike_times must be monotonically non-decreasing (sorted in "
-            f"ascending order) for {context}. Found {decreasing.size} "
-            f"decreasing interval(s) at indices: {sample}{more}. "
-            "If your spikes were merged from multiple sources, sort the "
-            "array with `np.sort(spike_times)` before passing it in."
-        )
+    else:
+        if not len(spike_times) and not allow_empty:
+            problems.append(
+                (
+                    "spike_times is empty (no spikes)",
+                    "pass at least one spike timestamp in seconds",
+                )
+            )
+        if not np.all(np.isfinite(spike_times)):
+            n_bad = int(np.sum(~np.isfinite(spike_times)))
+            problems.append(
+                (
+                    f"spike_times must be finite (seconds); got {n_bad} NaN/inf entries",
+                    "remove non-finite spike_times entries",
+                )
+            )
+        if np.any(spike_times < 0):
+            n_negative = int(np.sum(spike_times < 0))
+            problems.append(
+                (
+                    f"spike_times must be non-negative (seconds); got {n_negative} negative entries (min: {float(np.nanmin(spike_times)):.6g} s)",
+                    "align spike_times to the recording's non-negative time origin",
+                )
+            )
+        decreasing = np.flatnonzero(np.diff(spike_times) < 0)
+        if decreasing.size:
+            problems.append(
+                (
+                    f"spike_times must be monotonically non-decreasing (sorted in ascending order); found {decreasing.size} decreasing interval(s) at indices {decreasing[:5].tolist()}",
+                    "if spikes were merged from multiple sources, sort the array with np.sort(spike_times)",
+                )
+            )
+    _raise_input_problems(context, problems)
 
 
 def validate_trajectory(
@@ -189,62 +226,87 @@ def validate_trajectory(
     positions: NDArray[np.float64] | None = None,
     headings: NDArray[np.float64] | None = None,
     *,
-    context: str = "encoding",
+    context: str,
+    n_dims: int | None = None,
 ) -> None:
-    """Check that trajectory arrays are 1D-aligned and ``times`` is sane.
+    """Check trajectory shapes, aligned sample rows and timestamp validity.
 
-    Combines the ndim/length cross-check on ``(times, positions?, headings?)``
-    with the timestamp-shape check from :func:`validate_times` (min length 2,
-    finite, monotonically non-decreasing). Public ``compute_*`` entry points
-    should call this once on their trajectory inputs.
+    All detected problems are reported together. Non-finite positions and
+    headings remain valid missing observations for the binning layer to drop.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Timestamps. Must be 1D and pass :func:`validate_times`.
+        Finite non-decreasing timestamps in seconds, with at least two samples.
     positions : ndarray, shape (n_samples,) or (n_samples, n_dims), optional
-        Position coordinates. Must be 1D (linearized) or 2D with first
-        axis matching ``times``.
+        Coordinates aligned with times. One-dimensional positions are accepted
+        for a one-dimensional environment.
     headings : ndarray, shape (n_samples,), optional
-        Head direction values. Must be 1D with length matching ``times``.
-    context : str, default "encoding"
-        Description of the calling function for error messages.
+        Head directions aligned with times.
+    context : str
+        Name of the calling function, used in the error message.
+    n_dims : int, optional
+        Expected coordinate dimension of the environment.
 
     Raises
     ------
     ValueError
-        If ``times`` is not 1D, fails :func:`validate_times`, if
-        ``headings`` is not 1D, if ``positions`` is not 1D or 2D, or if
-        any provided array's first axis disagrees with ``len(times)``.
+        If timestamp validity, shapes, coordinate dimensions or lengths disagree.
     """
-    if times.ndim != 1:
-        raise ValueError(f"times must be 1D, got shape {times.shape}")
-
-    validate_times(times, context=context)
-
-    n_samples = len(times)
-
+    problems = _time_problems(times)
     if positions is not None:
+        if times.ndim == 2 and positions.ndim == 1:
+            problems.append(
+                (
+                    f"times has shape {times.shape} and positions has shape {positions.shape}; did you pass positions before times?",
+                    f"call {context}(env, spike_times, times, positions) with times before positions",
+                )
+            )
         if positions.ndim not in (1, 2):
-            raise ValueError(
-                f"in {context}: positions must be 1D or 2D, got shape {positions.shape}"
+            problems.append(
+                (
+                    f"positions must be 1D or 2D, got shape {positions.shape}",
+                    "pass positions with shape (n_samples, n_dims)",
+                )
             )
-        if len(positions) != n_samples:
-            raise ValueError(
-                f"in {context}: times length ({n_samples}) must match "
-                f"positions length ({len(positions)})"
+        if times.ndim >= 1 and positions.ndim >= 1 and len(positions) != len(times):
+            problems.append(
+                (
+                    f"times length ({len(times)}) must match positions length ({len(positions)})",
+                    "align times and positions so each timestamp has one position row",
+                )
             )
-
+        if n_dims is not None and (
+            (positions.ndim == 1 and n_dims > 1)
+            or (positions.ndim == 2 and positions.shape[1] != n_dims)
+        ):
+            example = (
+                "np.column_stack([x, y])"
+                if n_dims == 2
+                else f"an array with {n_dims} coordinate columns"
+            )
+            problems.append(
+                (
+                    f"positions has shape {positions.shape} but env is {n_dims}-D, so positions must have shape (n_samples, {n_dims})",
+                    f"pass all coordinates, e.g. {example}; for a 1-D track, build env from 1-D data (positions[:, None]) or Environment.linear_track(...)",
+                )
+            )
     if headings is not None:
         if headings.ndim != 1:
-            raise ValueError(
-                f"in {context}: headings must be 1D, got shape {headings.shape}"
+            problems.append(
+                (
+                    f"headings must be 1D, got shape {headings.shape}",
+                    "pass headings as a 1-D array with one angle per timestamp",
+                )
             )
-        if len(headings) != n_samples:
-            raise ValueError(
-                f"in {context}: times length ({n_samples}) must match "
-                f"headings length ({len(headings)})"
+        if times.ndim >= 1 and headings.ndim >= 1 and len(headings) != len(times):
+            problems.append(
+                (
+                    f"times length ({len(times)}) must match headings length ({len(headings)})",
+                    "align times and headings so each timestamp has one angle",
+                )
             )
+    _raise_input_problems(context, problems)
 
 
 def validate_classifier_trajectory(

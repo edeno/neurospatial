@@ -41,6 +41,7 @@ from numpy.typing import NDArray
 from sklearn.neighbors import KDTree
 
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
+from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_composite_build
 from neurospatial._typing import is_environment_like
 from neurospatial.environment import Environment
@@ -101,7 +102,7 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     first_ndims = subenvs[0].n_dims
     for i, env in enumerate(subenvs[1:], start=1):
         if env.n_dims != first_ndims:
-            raise ValueError(
+            raise IncompatibleEnvironmentError(
                 f"[E1003] All sub-environments must share the same n_dims. "
                 f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}.\n"
                 "\n"

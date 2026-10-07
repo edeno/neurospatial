@@ -94,7 +94,7 @@ def _validate_aligned_lengths(n_times: int, n_values: int, *, owner: str) -> Non
             f"{owner}.t and {owner}.values must have the same length, but "
             f"len({owner}.t)={n_times} and len({owner}.values)={n_values}.\n"
             "  WHY: each position sample needs exactly one timestamp.\n"
-            "  HOW: pass `t` and `values` of equal length (one timestamp per "
+            "  Fix: pass `t` and `values` of equal length (one timestamp per "
             "sample)."
         )
 
@@ -139,7 +139,7 @@ class Position:
                 f"{t.shape}.\n"
                 "  WHY: `t` is the 1-D timestamp axis, one entry per position "
                 "sample.\n"
-                "  HOW: pass a 1-D array of timestamps (seconds)."
+                "  Fix: pass a 1-D array of timestamps (seconds)."
             )
         _validate_aligned_lengths(len(t), len(values), owner="Position")
 
@@ -245,7 +245,7 @@ class Session:
                 f"{type(position).__name__}.\n"
                 "  WHY: Session reads the animal's trajectory from position.t "
                 "and position.values.\n"
-                "  HOW: build with Session.from_arrays(times=..., positions=...) "
+                "  Fix: build with Session.from_arrays(times=..., positions=...) "
                 "(which wraps arrays into a Position holder), or pass a pynapple "
                 "Tsd / TsdFrame."
             )
@@ -264,7 +264,7 @@ class Session:
                 f"{type(self.env).__name__}.\n"
                 "  WHY: Session.env provides the spatial context for encoding / "
                 "decoding.\n"
-                "  HOW: pass an Environment (e.g. Environment.from_samples(...)) "
+                "  Fix: pass an Environment (e.g. Environment.from_samples(...)) "
                 "or None."
             )
 
@@ -492,7 +492,7 @@ class Session:
                 "env must be an Environment-like object (exposing bin_centers, "
                 f"connectivity, neighbors), got {type(env).__name__}.\n"
                 "  WHY: with_environment attaches the spatial context.\n"
-                "  HOW: pass an Environment (e.g. Environment.from_samples(...))."
+                "  Fix: pass an Environment (e.g. Environment.from_samples(...))."
             )
         return dataclasses.replace(self, env=env)
 
@@ -550,7 +550,7 @@ class Session:
                 "overlap this session's time range.\n"
                 "  WHY: a common cause is a seconds-vs-milliseconds unit "
                 "mismatch between `epochs` and the session timestamps.\n"
-                "  HOW: check that `epochs` are in the same time units (seconds) "
+                "  Fix: check that `epochs` are in the same time units (seconds) "
                 "as session.times.",
                 stacklevel=2,
             )
@@ -624,6 +624,6 @@ def load_session(source: Any, **kwargs: Any) -> Session:
         f"{type(source).__name__}.\n"
         "  WHY: load_session is the file-loading entry point; in-memory arrays "
         "are not files.\n"
-        "  HOW: for arrays use Session.from_arrays(env=..., times=..., "
+        "  Fix: for arrays use Session.from_arrays(env=..., times=..., "
         "positions=..., spike_times=...)."
     )

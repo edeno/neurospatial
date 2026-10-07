@@ -108,7 +108,7 @@ def intervals_to_events(
         raise TypeError(
             f"Expected pd.DataFrame, got {type(intervals).__name__}.\n"
             "  WHY: Intervals must be a pandas DataFrame.\n"
-            "  HOW: Convert using pd.DataFrame({'start_time': starts, 'stop_time': stops})"
+            "  Fix: Convert using pd.DataFrame({'start_time': starts, 'stop_time': stops})"
         )
 
     # Validate which parameter
@@ -117,7 +117,7 @@ def intervals_to_events(
         raise ValueError(
             f"'which' must be one of {valid_which}, got '{which}'.\n"
             "  WHY: Only 'start', 'stop', or 'both' are valid options.\n"
-            "  HOW: Use which='start' to extract start times only."
+            "  Fix: Use which='start' to extract start times only."
         )
 
     # Validate required columns based on 'which'
@@ -132,7 +132,7 @@ def intervals_to_events(
         raise ValueError(
             f"Missing required columns: {missing}.\n"
             f"  WHY: These columns are needed to extract '{which}' events.\n"
-            f"  HOW: Ensure intervals DataFrame has columns: {required_cols}.\n"
+            f"  Fix: Ensure intervals DataFrame has columns: {required_cols}.\n"
             f"  Available columns: {list(intervals.columns)}"
         )
 
@@ -145,7 +145,7 @@ def intervals_to_events(
             raise ValueError(
                 f"Columns to preserve not found: {missing_preserve}.\n"
                 "  WHY: Cannot preserve columns that don't exist in intervals.\n"
-                f"  HOW: Check column names. Available: {list(intervals.columns)}"
+                f"  Fix: Check column names. Available: {list(intervals.columns)}"
             )
 
     # Handle empty intervals
@@ -306,7 +306,7 @@ def events_to_intervals(
             raise ValueError(
                 f"Event counts don't match: {n_start} starts, {n_stop} stops.\n"
                 "  WHY: Sequential pairing requires equal numbers of start/stop events.\n"
-                "  HOW: Use match_by='column_name' for non-sequential pairing,\n"
+                "  Fix: Use match_by='column_name' for non-sequential pairing,\n"
                 "       or ensure equal numbers of start and stop events."
             )
 
@@ -354,7 +354,7 @@ def events_to_intervals(
                 f"  Start events with no matching stop: {unmatched_start}\n"
                 f"  Stop events with no matching start: {unmatched_stop}\n"
                 "  WHY: Each start event needs a matching stop event.\n"
-                "  HOW: Ensure all values in '{match_by}' column have both start and stop."
+                "  Fix: Ensure all values in '{match_by}' column have both start and stop."
             )
 
         # Each match_by value must appear at most once on each side. Without
@@ -376,7 +376,7 @@ def events_to_intervals(
                 "  WHY: Matching by a non-unique key would cross-join "
                 "(Cartesian product) every repeated value, producing more "
                 "intervals than real start/stop pairs.\n"
-                "  HOW: De-duplicate so each value of "
+                "  Fix: De-duplicate so each value of "
                 f"'{match_by}' appears once per side, or use match_by=None "
                 "for sequential pairing of equal-length start/stop events."
             )
@@ -505,7 +505,7 @@ def filter_by_intervals(
         raise ValueError(
             f"Events DataFrame missing '{timestamp_column}' column.\n"
             "  WHY: Need timestamps to check interval membership.\n"
-            f"  HOW: Ensure events has '{timestamp_column}' column.\n"
+            f"  Fix: Ensure events has '{timestamp_column}' column.\n"
             f"  Available columns: {list(events.columns)}"
         )
 
@@ -515,7 +515,7 @@ def filter_by_intervals(
             raise ValueError(
                 f"Intervals DataFrame missing '{col}' column.\n"
                 f"  WHY: Need {name} times to define intervals.\n"
-                f"  HOW: Ensure intervals has '{col}' column.\n"
+                f"  Fix: Ensure intervals has '{col}' column.\n"
                 f"  Available columns: {list(intervals.columns)}"
             )
 

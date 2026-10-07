@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -205,7 +206,17 @@ class TriangularMeshLayout:
             self._full_delaunay_tri is None
             or self._original_simplex_to_active_idx_map is None
         ):
-            raise RuntimeError("TriangularMeshLayout is not built. Call build() first.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "_full_delaunay_tri",
+                        "_original_simplex_to_active_idx_map",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
 
         pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
@@ -305,7 +316,20 @@ class TriangularMeshLayout:
             or self.connectivity is None
             or self.dimension_ranges is None
         ):
-            raise RuntimeError("TriangularMeshLayout is not built. Call build() first.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "_full_delaunay_tri",
+                        "_active_original_simplex_indices",
+                        "bin_centers",
+                        "connectivity",
+                        "dimension_ranges",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
 
         if ax is None:
             _, ax = plt.subplots(figsize=(7, 7))  # Default figsize
@@ -429,7 +453,17 @@ class TriangularMeshLayout:
             self._full_delaunay_tri is None
             or self._active_original_simplex_indices is None
         ):  # pragma: no cover
-            raise RuntimeError("TriangularMeshLayout is not built. Call build() first.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "_full_delaunay_tri",
+                        "_active_original_simplex_indices",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
 
         # Get the vertices of all active N-simplices
         # .points has shape (total_points, n_dim)

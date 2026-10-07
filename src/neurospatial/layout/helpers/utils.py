@@ -22,6 +22,8 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
+from neurospatial._exceptions import _format_error
+
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
     """Calculate the center of each bin given its edges.
@@ -328,7 +330,13 @@ def _infer_dimension_ranges_from_samples(
 
     clean_samples = positions[~np.any(np.isnan(positions), axis=1)]
     if clean_samples.shape[0] == 0:
-        raise ValueError("All 'positions' are NaN or the array is empty.")
+        raise ValueError(
+            _format_error(
+                f"All 'positions' are NaN or the array is empty: {len(positions)} of {len(positions)} rows contain NaN; check for tracking dropouts.",
+                why="Why: finite positions are required to infer the environment's extent.",
+                fix="remove tracking-dropout rows or interpolate them before calling Environment.from_samples(positions, bin_size=2.0)",
+            )
+        )
 
     min_vals = np.min(clean_samples, axis=0)
     max_vals = np.max(clean_samples, axis=0)
@@ -1136,7 +1144,7 @@ def check_grid_size_safety(
 
     Warnings
     --------
-    ResourceWarning
+    UserWarning
         If estimated memory exceeds warn_threshold_mb.
 
     Notes
@@ -1167,7 +1175,7 @@ def check_grid_size_safety(
 
     >>> # Large grid - warning (but creation proceeds)
     >>> check_grid_size_safety((500, 500), n_dims=2)  # doctest: +SKIP
-    ResourceWarning: Creating large grid with shape (500, 500) (250,000 bins).
+    UserWarning: Creating large grid with shape (500, 500) (250,000 bins).
     Estimated memory usage: 214.8 MB
     Consider increasing bin_size or using infer_active_bins=True.
 
@@ -1180,9 +1188,11 @@ def check_grid_size_safety(
 
     if estimated_mb > warn_threshold_mb:
         warnings.warn(
-            f"Creating large grid with shape {grid_shape} ({n_bins:,} bins).\n"
-            f"Estimated memory usage: {estimated_mb:.1f} MB\n"
-            f"Consider increasing bin_size or using infer_active_bins=True.",
-            ResourceWarning,
+            _format_error(
+                f"Creating large grid with shape {grid_shape} ({n_bins:,} bins). Estimated memory usage: {estimated_mb:.1f} MB.",
+                why="Why: allocating this grid may consume substantial memory.",
+                fix=f"increase bin_size; this grid has {n_bins:,} bins. For example, use bin_size=2.0 in the same units as positions, or infer_active_bins=True",
+            ),
+            UserWarning,
             stacklevel=4,  # Adjust stacklevel to point to user code
         )

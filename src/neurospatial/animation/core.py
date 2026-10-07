@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._protocols import EnvironmentProtocol
@@ -317,7 +319,13 @@ def animate_fields(
 
     # Validate array dimensions if array input
     if isinstance(fields, np.ndarray) and fields.ndim < 2:
-        raise ValueError("fields must be at least 2D (n_frames, n_bins)")
+        raise ValueError(
+            _format_error(
+                f"fields must be at least 2D (n_frames, n_bins), got shape {fields.shape}",
+                fix="pass fields with shape (n_frames, n_bins), e.g. field[None, :]",
+                why="Why: each animation frame needs one value per environment bin.",
+            )
+        )
 
     # Compute n_frames from appropriate source
     if fields_is_array:
@@ -325,12 +333,24 @@ def animate_fields(
         assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
         n_frames = fields.shape[0]
         if n_frames == 0:
-            raise ValueError("fields cannot be empty")
+            raise ValueError(
+                _format_error(
+                    "fields cannot be empty (got 0 frames)",
+                    fix="pass at least one field and a matching frame_times array",
+                    why="Why: an animation cannot render zero frames.",
+                )
+            )
     else:
         # Convert to list for non-array inputs
         fields = list(fields)
         if len(fields) == 0:
-            raise ValueError("fields cannot be empty")
+            raise ValueError(
+                _format_error(
+                    "fields cannot be empty (got 0 frames)",
+                    fix="pass at least one field and a matching frame_times array",
+                    why="Why: an animation cannot render zero frames.",
+                )
+            )
         n_frames = len(fields)
 
     # Validate environment is fitted
@@ -451,7 +471,7 @@ def animate_fields(
             "multiple spatial fields per frame (multi-field mode).\n\n"
             "WHY: Video, HTML, and widget backends currently expect a single "
             "field array per frame and cannot render multi-field layouts.\n\n"
-            "HOW: Either:\n"
+            "Fix: Either:\n"
             "  - Use backend='napari' (or backend='auto' without save_path) "
             "to explore multi-field data interactively, or\n"
             "  - Convert your multi-field input into a single field per frame "
@@ -494,7 +514,7 @@ def animate_fields(
             raise RuntimeError(
                 "WHAT: ffmpeg is not installed or not found in PATH.\n\n"
                 "WHY: Video export requires ffmpeg for encoding frames into video.\n\n"
-                "HOW: Install ffmpeg:\n"
+                "Fix: Install ffmpeg:\n"
                 "  macOS:   brew install ffmpeg\n"
                 "  Ubuntu:  sudo apt install ffmpeg\n"
                 "  Windows: Download from https://ffmpeg.org/download.html\n\n"
@@ -505,7 +525,13 @@ def animate_fields(
             )
 
         if save_path is None:
-            raise ValueError("save_path required for video backend")
+            raise ValueError(
+                _format_error(
+                    "save_path required for video backend, got None",
+                    fix="pass save_path='out.mp4' when backend='video'",
+                    why="Why: the video backend writes to an output file.",
+                )
+            )
 
         # Validate environment pickle-ability for parallel rendering
         n_workers = kwargs.get("n_workers")
@@ -553,7 +579,13 @@ def animate_fields(
         )
 
     else:
-        raise ValueError(f"Unknown backend: {backend}")
+        raise ValueError(
+            _format_error(
+                f"Unknown backend: {backend}",
+                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
+                why="Why: only the advertised rendering backends are supported.",
+            )
+        )
 
 
 def _select_backend(

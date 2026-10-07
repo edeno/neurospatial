@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed — errors that teach
+
+- Corrected-call guidance includes each encoder's and decoder's required arguments and all animation backends. Population egocentric validation reports coordinate and length problems together, and malformed peri-event window bounds fail with guidance before alignment.
+
+- Region fixes show list-valued `end_regions` and handle missing names without a conversion error. Zero-rate posterior errors distinguish all-negative-infinity likelihoods from corrupt NaN inputs.
+
+- Warn visibly when `bin_size` covers every data axis or a peri-event window exceeds 60 seconds, with units and corrected values. Large-grid warnings are now `UserWarning` instead of hidden `ResourceWarning`; the existing hard memory ceiling is unchanged. Length-1 bin-index arrays explain how to unwrap `bin_at` output before a graph query.
+
+- First-run factory, graph-query, encoding, decoding, peri-event, animation and file errors give concrete corrected calls. Segmentation and boundary regressors raise `RegionNotFoundError` with the caller's region argument and available names; NWB readers and direction-label lookups name their corrected arguments.
+
+- Replace `HOW:` labels with `Fix:` in diagnostic messages. Shared timestamp, spike and trajectory validators name their caller, collect all input problems, detect swapped arrays, and check coordinate dimensions before binning. A non-Environment first argument now raises `TypeError` with a corrected call.
+
+- Add `NeurospatialError` as the common base for library exceptions while retaining their standard Python bases. `RegionNotFoundError` also supports `except ValueError` and prints an unquoted `Fix:` line with a suggested region name.
+- Raise `BinIndexOutOfRangeError` for graph-query bin indices (formerly `IndexError`), `LayoutNotBuiltError` for unbuilt layouts, and `IncompatibleEnvironmentError` for mismatched environment dimensions or decoding bins.
+
 ### Changed — behavior analyses respect recording gaps
 
 - Timestamp-based heading rejects malformed position shapes before velocity

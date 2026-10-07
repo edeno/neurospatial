@@ -124,7 +124,7 @@ def add_positions(
         raise TypeError(
             f"events must be a pandas DataFrame, got {type(events).__name__}.\n"
             "  WHY: This function operates on DataFrames to preserve metadata.\n"
-            "  HOW: Convert your data to a DataFrame before calling."
+            "  Fix: Convert your data to a DataFrame before calling."
         )
 
     # Validate timestamp column exists
@@ -132,7 +132,7 @@ def add_positions(
         raise ValueError(
             f"timestamp column '{timestamp_column}' not found in events.\n"
             f"  WHY: Events must have a timestamp column for interpolation.\n"
-            f"  HOW: Use timestamp_column parameter to specify the correct name.\n"
+            f"  Fix: Use timestamp_column parameter to specify the correct name.\n"
             f"  Available columns: {list(events.columns)}"
         )
 
@@ -162,7 +162,7 @@ def add_positions(
         raise ValueError(
             f"times and positions must have same length, got {len(times)} and {len(positions)}.\n"
             "  WHY: Each position sample must have a corresponding timestamp.\n"
-            "  HOW: Ensure positions.shape[0] == times.shape[0]."
+            "  Fix: Ensure positions.shape[0] == times.shape[0]."
         )
 
     # Ensure positions is 2D
@@ -202,7 +202,7 @@ def add_positions(
             f"interpolate, got {len(times)}.\n"
             "  WHY: linear interpolation is undefined for a single sample and "
             "would return NaN for every event position.\n"
-            "  HOW: pass a trajectory with >= 2 samples spanning the event times."
+            "  Fix: pass a trajectory with >= 2 samples spanning the event times."
         )
     if np.ptp(times) == 0:
         raise ValueError(
@@ -210,7 +210,7 @@ def add_positions(
             f"(every sample at t={times[0]:g}).\n"
             "  WHY: interpolation needs a non-zero time span; duplicate sample "
             "times leave the interpolant undefined (NaN/Inf positions).\n"
-            "  HOW: pass a trajectory whose timestamps vary."
+            "  Fix: pass a trajectory whose timestamps vary."
         )
 
     # Get event timestamps

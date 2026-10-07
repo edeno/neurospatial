@@ -499,7 +499,7 @@ def compute_egocentric_occupancy(
         )
 
     # Validate times
-    _validate_times(times, context="egocentric occupancy computation")
+    _validate_times(times, context="compute_egocentric_occupancy")
 
     # Validate metric
     if metric not in ("euclidean", "geodesic"):
@@ -666,7 +666,7 @@ def bin_egocentric_spike_train(
     object_positions = np.asarray(object_positions, dtype=np.float64)
 
     # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="egocentric spike binning")
+    _validate_times(times, context="bin_egocentric_spike_train")
 
     # Validate metric and env
     if metric not in ("euclidean", "geodesic"):
@@ -851,7 +851,7 @@ def bin_egocentric_spike_trains(
         )
 
     # Validate times
-    _validate_times(times, context="spike binning")
+    _validate_times(times, context="bin_egocentric_spike_trains")
 
     # Create egocentric environment
     polar_env = _create_egocentric_environment(

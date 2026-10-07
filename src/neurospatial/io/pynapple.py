@@ -205,7 +205,7 @@ def to_pynapple(
         raise ValueError(
             f"`times` must be 1-D, got shape {times.shape}.\n"
             "  WHY: pynapple indexes a Tsd/TsdFrame by a 1-D time axis.\n"
-            "  HOW: pass a 1-D array of timestamps."
+            "  Fix: pass a 1-D array of timestamps."
         )
     if values.ndim not in (1, 2):
         raise ValueError(
@@ -213,14 +213,14 @@ def to_pynapple(
             f"{values.shape}).\n"
             "  WHY: a Tsd holds 1-D values, a TsdFrame holds 2-D "
             "(n_samples, n_columns) values.\n"
-            "  HOW: pass values shaped (n,) or (n, n_columns)."
+            "  Fix: pass values shaped (n,) or (n, n_columns)."
         )
     if len(times) != len(values):
         raise ValueError(
             f"`times` and `values` must have the same length, got "
             f"{len(times)} timestamps and {len(values)} value rows.\n"
             "  WHY: each value (row) is sampled at one timestamp.\n"
-            "  HOW: pass times and values with matching first-axis length."
+            "  Fix: pass times and values with matching first-axis length."
         )
     non_finite = np.flatnonzero(~np.isfinite(times))
     if non_finite.size:

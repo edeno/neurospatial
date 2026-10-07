@@ -85,18 +85,18 @@ class TestCheckGridSizeSafety:
     def test_medium_grid_warning(self):
         """Test that medium-sized grids trigger warnings."""
         # Grid that should exceed warn_threshold_mb
-        with pytest.warns(ResourceWarning, match="Creating large grid"):
+        with pytest.warns(UserWarning, match="Creating large grid"):
             check_grid_size_safety((500, 500), n_dims=2, warn_threshold_mb=50.0)
 
     def test_large_grid_still_proceeds(self):
         """Test that very large grids only warn, don't error."""
         # This should warn but NOT raise an error
-        with pytest.warns(ResourceWarning, match="Creating large grid"):
+        with pytest.warns(UserWarning, match="Creating large grid"):
             check_grid_size_safety((2000, 2000), n_dims=2, warn_threshold_mb=100.0)
 
     def test_warning_message_contains_diagnostics(self):
         """Test that warning message includes helpful diagnostics."""
-        with pytest.warns(ResourceWarning) as warning_list:
+        with pytest.warns(UserWarning) as warning_list:
             check_grid_size_safety((500, 500), n_dims=2, warn_threshold_mb=50.0)
 
         warning_msg = str(warning_list[0].message)
@@ -111,7 +111,7 @@ class TestCheckGridSizeSafety:
     def test_custom_thresholds(self):
         """Test using custom warning threshold."""
         # With very low threshold, even small grid should warn
-        with pytest.warns(ResourceWarning):
+        with pytest.warns(UserWarning):
             check_grid_size_safety((100, 100), n_dims=2, warn_threshold_mb=1.0)
 
         # With very high threshold, large grid should not warn
@@ -161,7 +161,7 @@ class TestMemorySafetyIntegration:
         # 1500 x 1500 grid with bin_size=1.0 -> 2.25M bins ≈ 241MB (> 100MB warn)
         positions = rng.uniform(0, 1500, (1000, 2))
 
-        with pytest.warns(ResourceWarning, match="Creating large grid"):
+        with pytest.warns(UserWarning, match="Creating large grid"):
             # Small bin_size relative to range -> large grid
             env = Environment.from_samples(
                 positions, bin_size=1.0, infer_active_bins=False

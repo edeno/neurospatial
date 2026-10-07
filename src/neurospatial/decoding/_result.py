@@ -655,7 +655,7 @@ class DecodingResult(ResultMixin):
                     f"shape {time_coord.shape}.\n"
                     "  WHY: the xarray 'time' coordinate labels one posterior "
                     "row per decoded time bin.\n"
-                    "  HOW: pass a 1-D times array with length "
+                    "  Fix: pass a 1-D times array with length "
                     "posterior.shape[0], or leave times=None to use integer "
                     "time-bin indices."
                 )
@@ -666,7 +666,7 @@ class DecodingResult(ResultMixin):
                     f"{n_time} time bin(s).\n"
                     "  WHY: the xarray 'time' coordinate must align one-to-one "
                     "with posterior rows.\n"
-                    "  HOW: pass times with length posterior.shape[0], or "
+                    "  Fix: pass times with length posterior.shape[0], or "
                     "leave times=None to use integer time-bin indices."
                 )
         else:

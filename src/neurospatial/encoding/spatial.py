@@ -2855,7 +2855,9 @@ default="diffusion_kde"
         validate_trajectory,
     )
 
-    validate_env_fitted(env, context="compute_spatial_rate")
+    validate_env_fitted(
+        env, context="compute_spatial_rate", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -2909,7 +2911,9 @@ default="diffusion_kde"
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rate")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rate", n_dims=env.n_dims
+    )
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Resolve the speed gate ONCE so the SAME concrete array feeds both the
@@ -3402,7 +3406,9 @@ default="diffusion_kde"
     )
     from neurospatial.environment.trajectory import interval_valid_mask
 
-    validate_env_fitted(env, context="compute_spatial_rates")
+    validate_env_fitted(
+        env, context="compute_spatial_rates", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3487,7 +3493,9 @@ default="diffusion_kde"
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rates")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
+    )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 
@@ -3848,8 +3856,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
@@ -3914,8 +3922,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()

@@ -79,7 +79,7 @@ def _pickling_guidance(n_workers: int | None = None) -> str:
     --------
     >>> guidance = _pickling_guidance(n_workers=4)
     >>> print(guidance)  # doctest: +ELLIPSIS
-    HOW: Fix the issue using one of these approaches:
+    Fix: Fix the issue using one of these approaches:
     ...
 
     Notes
@@ -95,7 +95,7 @@ def _pickling_guidance(n_workers: int | None = None) -> str:
     n_workers_str = str(n_workers) if n_workers is not None else "N"
 
     return (
-        "HOW: Fix the issue using one of these approaches:\n"
+        "Fix: Fix the issue using one of these approaches:\n"
         "  1. Clear caches before rendering (most common fix):\n"
         "     env.clear_cache()  # Remove cached unpickleable objects\n"
         f"     env.animate_fields(..., n_workers={n_workers_str})\n\n"

@@ -31,6 +31,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 
@@ -297,9 +299,11 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
         existing = [str(p) for p in (json_path, npz_path) if p.exists()]
         if existing:
             raise FileExistsError(
-                f"Refusing to overwrite existing environment file(s): "
-                f"{', '.join(existing)}. Pass overwrite=True to replace them, "
-                "or choose a different path."
+                _format_error(
+                    f"Refusing to overwrite existing environment file(s): {', '.join(existing)}. Pass overwrite=True to replace them, or choose a different path.",
+                    fix="call env.to_file(path, overwrite=True) to replace both .json and .npz, or choose a new path",
+                    why="Why: an environment is stored as paired metadata and array files.",
+                )
             )
 
     # Ensure parent directory exists
@@ -439,9 +443,21 @@ def from_file(path: PathLike) -> Environment:
     npz_path = path_obj.with_suffix(".npz")
 
     if not json_path.exists():
-        raise FileNotFoundError(f"Metadata file not found: {json_path}")
+        raise FileNotFoundError(
+            _format_error(
+                f"Metadata file not found: {json_path}",
+                fix="save both files with env.to_file(path), then load using the same path prefix",
+                why="Why: loading an environment requires both its .json metadata and .npz arrays.",
+            )
+        )
     if not npz_path.exists():
-        raise FileNotFoundError(f"Array file not found: {npz_path}")
+        raise FileNotFoundError(
+            _format_error(
+                f"Array file not found: {npz_path}",
+                fix="save both files with env.to_file(path), then load using the same path prefix",
+                why="Why: loading an environment requires both its .json metadata and .npz arrays.",
+            )
+        )
 
     # Load metadata
     with json_path.open("r") as f:

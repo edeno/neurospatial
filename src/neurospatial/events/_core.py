@@ -632,7 +632,7 @@ def validate_events_dataframe(
         raise TypeError(
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
             "  WHY: Events must be a pandas DataFrame for NWB compatibility.\n"
-            "  HOW: Convert using pd.DataFrame({'timestamp': times})"
+            "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
 
     # Check required columns
@@ -643,7 +643,7 @@ def validate_events_dataframe(
         raise ValueError(
             f"Missing required columns: {missing}.\n"
             f"  WHY: These columns are needed{context_str}.\n"
-            f"  HOW: Add missing columns to DataFrame.\n"
+            f"  Fix: Add missing columns to DataFrame.\n"
             f"  Available columns: {list(df.columns)}"
         )
 
@@ -652,7 +652,7 @@ def validate_events_dataframe(
         raise ValueError(
             f"Timestamp column '{timestamp_column}' contains non-numeric values.\n"
             "  WHY: Timestamps must be numeric (seconds from session start).\n"
-            f"  HOW: Convert timestamps: df['{timestamp_column}'] = "
+            f"  Fix: Convert timestamps: df['{timestamp_column}'] = "
             f"df['{timestamp_column}'].astype(float)"
         )
 
@@ -716,7 +716,7 @@ def validate_spatial_columns(
         raise ValueError(
             "Events DataFrame missing spatial columns ('x', 'y').\n"
             f"  WHY: {context_str} requires event positions.\n"
-            "  HOW: Use add_positions(events, times=times, positions=positions)"
+            "  Fix: Use add_positions(events, times=times, positions=positions)"
         )
 
     return has_positions

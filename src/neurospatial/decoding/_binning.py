@@ -21,6 +21,7 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 
 
@@ -292,9 +293,11 @@ def bin_spikes_in_time(
     if left.size == 0:
         longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
         raise ValueError(
-            f"Window span ({longest}) is smaller than one bin dt ({dt}); "
-            "no whole time bin fits. Why: each window must contain a full bin.\n"
-            "Fix: use a smaller dt or widen the time windows."
+            _format_error(
+                f"Window span ({longest}) is smaller than one bin dt ({dt}); no whole time bin fits. Why: each window must contain a full bin.\nFix: use a smaller dt or widen the time windows.",
+                fix=f"use dt <= {longest:g} or widen the time windows",
+                why="Why: each analyzed window must contain at least one full time bin.",
+            )
         )
     counts = count_spikes_in_time_bins(trains, left, right)
     bin_centers = left + dt / 2.0

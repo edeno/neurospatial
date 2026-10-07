@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 
@@ -129,14 +131,14 @@ def time_to_nearest_event(
         raise ValueError(
             "sample_times contains NaN values.\n"
             "  WHY: Times must be valid numeric values.\n"
-            "  HOW: Remove or interpolate NaN values before calling."
+            "  Fix: Remove or interpolate NaN values before calling."
         )
 
     if np.any(np.isinf(sample_times)):
         raise ValueError(
             "sample_times contains inf values.\n"
             "  WHY: Times must be finite.\n"
-            "  HOW: Remove or clip infinite values before calling."
+            "  Fix: Remove or clip infinite values before calling."
         )
 
     if len(event_times) > 0:
@@ -144,21 +146,21 @@ def time_to_nearest_event(
             raise ValueError(
                 "event_times contains NaN values.\n"
                 "  WHY: Event times must be valid numeric values.\n"
-                "  HOW: Remove NaN values from event times."
+                "  Fix: Remove NaN values from event times."
             )
 
         if np.any(np.isinf(event_times)):
             raise ValueError(
                 "event_times contains inf values.\n"
                 "  WHY: Event times must be finite.\n"
-                "  HOW: Remove infinite values from event times."
+                "  Fix: Remove infinite values from event times."
             )
 
     if max_time is not None and max_time < 0:
         raise ValueError(
             f"max_time must be non-negative, got {max_time}.\n"
             "  WHY: max_time defines a symmetric window around events.\n"
-            "  HOW: Use max_time >= 0 or None for no clipping."
+            "  Fix: Use max_time >= 0 or None for no clipping."
         )
 
     # Handle empty sample_times
@@ -295,14 +297,14 @@ def event_count_in_window(
         raise ValueError(
             "sample_times contains NaN values.\n"
             "  WHY: Times must be valid numeric values.\n"
-            "  HOW: Remove or interpolate NaN values before calling."
+            "  Fix: Remove or interpolate NaN values before calling."
         )
 
     if np.any(np.isinf(sample_times)):
         raise ValueError(
             "sample_times contains inf values.\n"
             "  WHY: Times must be finite.\n"
-            "  HOW: Remove or clip infinite values before calling."
+            "  Fix: Remove or clip infinite values before calling."
         )
 
     if len(event_times) > 0:
@@ -310,14 +312,14 @@ def event_count_in_window(
             raise ValueError(
                 "event_times contains NaN values.\n"
                 "  WHY: Event times must be valid numeric values.\n"
-                "  HOW: Remove NaN values from event times."
+                "  Fix: Remove NaN values from event times."
             )
 
         if np.any(np.isinf(event_times)):
             raise ValueError(
                 "event_times contains inf values.\n"
                 "  WHY: Event times must be finite.\n"
-                "  HOW: Remove infinite values from event times."
+                "  Fix: Remove infinite values from event times."
             )
 
     # Validate window
@@ -326,7 +328,7 @@ def event_count_in_window(
         raise ValueError(
             f"window start ({window_start}) must be <= window end ({window_end}).\n"
             "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Handle empty sample_times
@@ -443,14 +445,14 @@ def event_indicator(
         raise ValueError(
             "sample_times contains NaN values.\n"
             "  WHY: Times must be valid numeric values.\n"
-            "  HOW: Remove or interpolate NaN values before calling."
+            "  Fix: Remove or interpolate NaN values before calling."
         )
 
     if np.any(np.isinf(sample_times)):
         raise ValueError(
             "sample_times contains inf values.\n"
             "  WHY: Times must be finite.\n"
-            "  HOW: Remove or clip infinite values before calling."
+            "  Fix: Remove or clip infinite values before calling."
         )
 
     if len(event_times) > 0:
@@ -458,14 +460,14 @@ def event_indicator(
             raise ValueError(
                 "event_times contains NaN values.\n"
                 "  WHY: Event times must be valid numeric values.\n"
-                "  HOW: Remove NaN values from event times."
+                "  Fix: Remove NaN values from event times."
             )
 
         if np.any(np.isinf(event_times)):
             raise ValueError(
                 "event_times contains inf values.\n"
                 "  WHY: Event times must be finite.\n"
-                "  HOW: Remove infinite values from event times."
+                "  Fix: Remove infinite values from event times."
             )
 
     # Validate window
@@ -474,7 +476,7 @@ def event_indicator(
         raise ValueError(
             f"window start ({window_start}) must be <= window end ({window_end}).\n"
             "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Handle empty sample_times
@@ -692,7 +694,7 @@ def distance_to_reward(
                 "  WHY: linear interpolation of reward locations assumes "
                 "monotonically increasing timestamps; unsorted times yield "
                 "wrong reward positions and a corrupted distance regressor.\n"
-                "  HOW: sort (times, positions) by time before calling, or "
+                "  Fix: sort (times, positions) by time before calling, or "
                 "pass explicit reward_positions to skip interpolation."
             )
         t_min = times.min()
@@ -960,9 +962,8 @@ def distance_to_boundary(
         # region_name is already validated as not None by the earlier check
         assert region_name is not None  # for type checker
         if region_name not in env.regions:
-            raise ValueError(
-                f"Region '{region_name}' not found in environment. "
-                f"Available regions: {list(env.regions.keys())}."
+            raise RegionNotFoundError(
+                region_name, available=list(env.regions.keys()), argument="region_name"
             )
         boundary_bins = _find_region_boundary_bins(env, region_name)
 

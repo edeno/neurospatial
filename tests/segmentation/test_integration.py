@@ -321,7 +321,7 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
         np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
     )
 
-    with pytest.raises(ValueError, match=r"not found in env\.regions"):
+    with pytest.raises(ValueError, match=r"(?s)not found.*goal_region="):
         detect_goal_directed_runs(
             position_bins,
             times,

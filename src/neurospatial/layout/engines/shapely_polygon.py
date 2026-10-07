@@ -9,6 +9,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
@@ -188,7 +189,20 @@ class ShapelyPolygonLayout(_GridMixin):
             or self.grid_shape is None
             or self.connectivity is None
         ):
-            raise RuntimeError("Layout not built. Call `build` first.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "bin_centers",
+                        "grid_edges",
+                        "active_mask",
+                        "grid_shape",
+                        "connectivity",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
         if self.polygon_definition_ is None:
             raise RuntimeError(
                 "Polygon definition is missing; ensure build() was called successfully."

@@ -10,6 +10,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
@@ -361,7 +362,14 @@ class HexagonalLayout:
 
         """
         if self.hex_radius_ is None or self.bin_centers is None:  # pragma: no cover
-            raise RuntimeError("Layout not built; hex_radius_ or bin_centers missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("hex_radius_", "bin_centers")
+                    if getattr(self, name) is None
+                ),
+            )
 
         # Area of a regular hexagon: (3 * sqrt(3) / 2) * side_length^2
         # For pointy-top hexagons, side_length (s) is equal to hex_radius_ (R, center to vertex).
