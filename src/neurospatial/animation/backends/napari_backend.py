@@ -538,7 +538,7 @@ class PlaybackController:
             msg = (
                 "WHAT: scrub_debounce_ms must be non-negative.\n"
                 f"WHY: Received {scrub_debounce_ms}, which is invalid.\n"
-                "HOW: Use 0 to disable debouncing, or a positive value in milliseconds."
+                "Fix: Use 0 to disable debouncing, or a positive value in milliseconds."
             )
             raise ValueError(msg)
 
@@ -2331,7 +2331,7 @@ def _validate_field_types_consistent(fields: list) -> None:
             "  - Single-field mode: list of 1D arrays [arr1, arr2, ...]\n"
             "  - Multi-field mode: list of sequences [[arr1, arr2], [arr3, arr4]]\n"
             "  Mixed types cannot be processed correctly.\n\n"
-            "HOW: Ensure all elements are the same type:\n"
+            "Fix: Ensure all elements are the same type:\n"
             "  # Single-field: list of arrays\n"
             "  fields = [field_frame0, field_frame1, ...]\n"
             "  # Multi-field: list of lists/tuples\n"
@@ -3421,7 +3421,7 @@ def _render_multi_field_napari(
             "  Current: layout=None\n"
             "  Available: 'horizontal', 'vertical', 'grid'\n\n"
             "WHY: Multiple field sequences must be arranged spatially.\n\n"
-            "HOW: Specify layout when animating multiple fields:\n"
+            "Fix: Specify layout when animating multiple fields:\n"
             "  env.animate_fields(fields, frame_times=frame_times, layout='horizontal')  # Side-by-side\n"
             "  env.animate_fields(fields, frame_times=frame_times, layout='vertical')    # Stacked\n"
             "  env.animate_fields(fields, frame_times=frame_times, layout='grid')        # 2D grid"
@@ -3437,7 +3437,7 @@ def _render_multi_field_napari(
             f"  Got lengths: {sequence_lengths}\n"
             f"  Expected: {sequence_lengths[0]} frames (from first sequence)\n\n"
             f"WHY: Animation requires synchronized frames across all fields.\n\n"
-            f"HOW: Ensure all field sequences have the same number of frames:\n"
+            f"Fix: Ensure all field sequences have the same number of frames:\n"
             f"  # Truncate to shortest sequence\n"
             f"  min_len = min(len(seq) for seq in field_sequences)\n"
             f"  fields = [[seq[:min_len] for seq in field_sequences]]\n\n"

@@ -2909,7 +2909,9 @@ default="diffusion_kde"
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rate")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rate", n_dims=env.n_dims
+    )
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Resolve the speed gate ONCE so the SAME concrete array feeds both the
@@ -3487,7 +3489,9 @@ default="diffusion_kde"
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rates")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
+    )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 

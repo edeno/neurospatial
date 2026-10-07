@@ -238,7 +238,7 @@ def compute_occupancy(
         )
 
     # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="view occupancy computation")
+    _validate_times(times, context="compute_occupancy")
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
@@ -391,7 +391,7 @@ def bin_view_spike_train(
     headings = np.asarray(headings, dtype=np.float64)
 
     # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="view spike binning")
+    _validate_times(times, context="bin_view_spike_train")
 
     view_bins = _precompute_view_bins(
         env,
@@ -541,7 +541,7 @@ def bin_view_spike_trains(
     headings = np.asarray(headings, dtype=np.float64)
 
     # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="spike binning")
+    _validate_times(times, context="bin_view_spike_trains")
 
     # Precompute view bins ONCE (shared across all neurons)
     # This is the expensive computation - computed once instead of per-neuron

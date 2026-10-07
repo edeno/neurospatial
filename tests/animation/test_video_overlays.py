@@ -1561,7 +1561,7 @@ class TestHTMLBackendVideoOverlay:
             # Verify WHAT/WHY/HOW format
             assert "WHAT:" in warning_msg, "Warning should contain WHAT section"
             assert "WHY:" in warning_msg, "Warning should contain WHY section"
-            assert "HOW" in warning_msg, "Warning should contain HOW section"
+            assert "Fix:" in warning_msg, "Warning should contain Fix section"
             # Should explain what the problem is
             assert "video" in warning_msg.lower()
             # Should provide alternatives

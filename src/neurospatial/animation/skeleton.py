@@ -227,7 +227,7 @@ class Skeleton:
             raise ValueError(
                 "WHAT: Skeleton must have at least one node.\n"
                 "WHY: A skeleton with no nodes cannot represent any body parts.\n"
-                "HOW: Provide at least one node name in the 'nodes' parameter."
+                "Fix: Provide at least one node name in the 'nodes' parameter."
             )
 
         # Check for duplicate nodes
@@ -236,7 +236,7 @@ class Skeleton:
             raise ValueError(
                 f"WHAT: Duplicate node names found: {sorted(set(duplicates))}\n"
                 "WHY: Each node name must be unique to identify body parts.\n"
-                "HOW: Remove duplicate names or rename body parts."
+                "Fix: Remove duplicate names or rename body parts."
             )
 
         # Validate edges reference existing nodes
@@ -246,7 +246,7 @@ class Skeleton:
                 raise ValueError(
                     f"WHAT: Invalid edge format: {edge}\n"
                     "WHY: Edges must be (source, target) pairs.\n"
-                    "HOW: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"
+                    "Fix: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"
                 )
             src, dst = edge
             missing = []
@@ -258,7 +258,7 @@ class Skeleton:
                 raise ValueError(
                     f"WHAT: Edge {edge} references unknown node(s): {missing}\n"
                     f"WHY: All edge endpoints must be defined in 'nodes'.\n"
-                    f"HOW: Add missing nodes to 'nodes' parameter or fix edge names.\n"
+                    f"Fix: Add missing nodes to 'nodes' parameter or fix edge names.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
 
@@ -269,7 +269,7 @@ class Skeleton:
                 raise ValueError(
                     f"WHAT: node_colors references unknown nodes: {sorted(unknown_colors)}\n"
                     f"WHY: Colors can only be assigned to existing nodes.\n"
-                    f"HOW: Remove unknown keys or add corresponding nodes.\n"
+                    f"Fix: Remove unknown keys or add corresponding nodes.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
 
@@ -395,7 +395,7 @@ class Skeleton:
                 raise ValueError(
                     f"WHAT: node_order is missing nodes from edges: {sorted(missing)}\n"
                     "WHY: All nodes in edges must appear in node_order.\n"
-                    "HOW: Add missing nodes to node_order or remove edges referencing them."
+                    "Fix: Add missing nodes to node_order or remove edges referencing them."
                 )
             nodes = tuple(node_order)
         else:
@@ -516,7 +516,7 @@ class Skeleton:
             raise ValueError(
                 "WHAT: Dataset missing 'keypoints' coordinate.\n"
                 "WHY: Cannot extract skeleton nodes without keypoint names.\n"
-                "HOW: Ensure dataset has 'keypoints' coordinate from movement.io loaders."
+                "Fix: Ensure dataset has 'keypoints' coordinate from movement.io loaders."
             )
 
         nodes = tuple(str(k) for k in dataset.coords["keypoints"].values)

@@ -1359,7 +1359,11 @@ def compute_view_rate(
     headings = np.asarray(headings, dtype=np.float64)
 
     validate_trajectory(
-        times, positions=positions, headings=headings, context="compute_view_rate"
+        times,
+        positions=positions,
+        headings=headings,
+        context="compute_view_rate",
+        n_dims=env.n_dims,
     )
     validate_spike_times(spike_times, context="compute_view_rate")
     n_samples = len(times)
@@ -1733,7 +1737,11 @@ def compute_view_rates(
     headings = np.asarray(headings, dtype=np.float64)
 
     validate_trajectory(
-        times, positions=positions, headings=headings, context="compute_view_rates"
+        times,
+        positions=positions,
+        headings=headings,
+        context="compute_view_rates",
+        n_dims=env.n_dims,
     )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_view_rates (neuron {i})")

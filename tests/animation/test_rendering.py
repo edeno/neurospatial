@@ -602,7 +602,7 @@ class TestValidateFrameLabels:
         # Check WHAT/WHY/HOW format
         assert "WHAT:" in error_msg
         assert "WHY:" in error_msg
-        assert "HOW:" in error_msg
+        assert "Fix:" in error_msg
         # Check specific details
         assert "2" in error_msg  # frame_labels length
         assert "5" in error_msg  # n_frames

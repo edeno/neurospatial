@@ -451,7 +451,7 @@ def animate_fields(
             "multiple spatial fields per frame (multi-field mode).\n\n"
             "WHY: Video, HTML, and widget backends currently expect a single "
             "field array per frame and cannot render multi-field layouts.\n\n"
-            "HOW: Either:\n"
+            "Fix: Either:\n"
             "  - Use backend='napari' (or backend='auto' without save_path) "
             "to explore multi-field data interactively, or\n"
             "  - Convert your multi-field input into a single field per frame "
@@ -494,7 +494,7 @@ def animate_fields(
             raise RuntimeError(
                 "WHAT: ffmpeg is not installed or not found in PATH.\n\n"
                 "WHY: Video export requires ffmpeg for encoding frames into video.\n\n"
-                "HOW: Install ffmpeg:\n"
+                "Fix: Install ffmpeg:\n"
                 "  macOS:   brew install ffmpeg\n"
                 "  Ubuntu:  sudo apt install ffmpeg\n"
                 "  Windows: Download from https://ffmpeg.org/download.html\n\n"

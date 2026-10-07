@@ -109,7 +109,7 @@ def resolve_unit_ids(
         raise ValueError(
             f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
             "  WHY: unit_ids labels one identity per unit (row).\n"
-            "  HOW: pass a 1-D sequence with one entry per unit, or omit it "
+            "  Fix: pass a 1-D sequence with one entry per unit, or omit it "
             "to default to np.arange(n_units)."
         )
     if resolved.shape[0] != n_units:
@@ -117,7 +117,7 @@ def resolve_unit_ids(
             f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
             f"label(s) but there are {n_units} unit(s).\n"
             "  WHY: each unit must have exactly one identity label.\n"
-            "  HOW: pass unit_ids with one entry per unit, or omit it to "
+            "  Fix: pass unit_ids with one entry per unit, or omit it to "
             "default to np.arange(n_units)."
         )
     # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
@@ -177,7 +177,7 @@ def validate_unit_table(
             f"there are {n_units} unit(s).\n"
             "  WHY: unit_table must carry exactly one row per unit, aligned "
             "to unit_ids.\n"
-            "  HOW: pass a unit_table with one row per unit, or omit it."
+            "  Fix: pass a unit_table with one row per unit, or omit it."
         )
 
 
@@ -325,7 +325,7 @@ def _bin_center_coords(
             f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
             "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
             "coordinate.\n"
-            "  HOW: ensure the environment is fitted and exposes 2-D "
+            "  Fix: ensure the environment is fitted and exposes 2-D "
             "bin_centers."
         )
     if bin_centers.shape[0] != n_bins:
@@ -336,7 +336,7 @@ def _bin_center_coords(
             "  WHY: the 'bin' coordinate must have one center per bin; a "
             "mismatch would silently produce a structurally-incomplete or "
             "misaligned Dataset.\n"
-            "  HOW: pass the same environment used to compute the result, or "
+            "  Fix: pass the same environment used to compute the result, or "
             "recompute the result against this environment."
         )
 
@@ -438,7 +438,7 @@ def build_population_dataset(
             f"label(s) are duplicated: {dups}.\n"
             "  WHY: label-based selection .sel(unit_id=...) requires a unique "
             "index coordinate.\n"
-            "  HOW: deduplicate unit_ids (e.g. when concatenating populations) "
+            "  Fix: deduplicate unit_ids (e.g. when concatenating populations) "
             "before calling to_xarray()."
         )
 
@@ -457,7 +457,7 @@ def build_population_dataset(
                 f"{n_bins} bin(s) (firing_rates.shape[1]).\n"
                 "  WHY: the 'bin' coordinate must have one center per bin; a "
                 "mismatch would silently produce a misaligned Dataset.\n"
-                "  HOW: pass a 1-D bin_centers array of length n_bins."
+                "  Fix: pass a 1-D bin_centers array of length n_bins."
             )
         coords["bin_center_angle"] = ("bin", bc)
 
@@ -476,7 +476,7 @@ def build_population_dataset(
                 "  WHY: the 'occupancy' data var is indexed by bin; a length "
                 "mismatch would silently produce a structurally-incomplete "
                 "Dataset.\n"
-                "  HOW: pass a 1-D occupancy array of length n_bins, or omit "
+                "  Fix: pass a 1-D occupancy array of length n_bins, or omit "
                 "it entirely if unavailable."
             )
         data_vars["occupancy"] = (("bin",), occ)

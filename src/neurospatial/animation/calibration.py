@@ -170,7 +170,7 @@ def calibrate_video(
         raise FileNotFoundError(
             f"WHAT: Video file not found at '{video_path}'.\n"
             f"WHY: The video_path must point to an existing file.\n"
-            f"HOW: Check the file path and ensure the video file exists."
+            f"Fix: Check the file path and ensure the video file exists."
         )
 
     # Get frame size from video
@@ -189,7 +189,7 @@ def calibrate_video(
         raise ValueError(
             "WHAT: No calibration method specified.\n"
             "WHY: calibrate_video() requires one of: scale_bar, landmarks, or cm_per_px.\n"
-            "HOW: Provide exactly one calibration parameter, e.g.:\n"
+            "Fix: Provide exactly one calibration parameter, e.g.:\n"
             "     - scale_bar=((x1, y1), (x2, y2), length_cm)\n"
             "     - landmarks_px=array, landmarks_env=array\n"
             "     - cm_per_px=0.25"
@@ -199,7 +199,7 @@ def calibrate_video(
         raise ValueError(
             f"WHAT: Multiple calibration methods specified: {methods_provided}.\n"
             f"WHY: scale_bar, landmarks, and cm_per_px are mutually exclusive.\n"
-            f"HOW: Provide exactly one calibration method."
+            f"Fix: Provide exactly one calibration method."
         )
 
     # Check for unusual env.units='pixels' + cm_per_px combination
@@ -209,7 +209,7 @@ def calibrate_video(
             f"WHAT: env.units='pixels' but cm_per_px={cm_per_px} provided.\n"
             f"WHY: This is an unusual combination. If your environment uses pixel "
             f"coordinates, you typically don't need a scale factor.\n"
-            f"HOW: If converting from pixels to another unit, set env.units to that "
+            f"Fix: If converting from pixels to another unit, set env.units to that "
             f"unit (e.g., 'cm'). Using flip_y=False since pixel coordinates typically "
             f"use image convention (Y-down).",
             UserWarning,
@@ -225,7 +225,7 @@ def calibrate_video(
             raise ValueError(
                 f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
                 f"WHY: A scale bar must have positive real-world length.\n"
-                f"HOW: Provide a positive value for known_length_cm."
+                f"Fix: Provide a positive value for known_length_cm."
             )
 
         # Compute pixel distance between endpoints
@@ -237,7 +237,7 @@ def calibrate_video(
             raise ValueError(
                 f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
                 f"WHY: Cannot compute scale from coincident endpoints.\n"
-                f"HOW: Provide two distinct points for the scale bar."
+                f"Fix: Provide two distinct points for the scale bar."
             )
 
         # Compute scale factor
@@ -256,13 +256,13 @@ def calibrate_video(
             raise ValueError(
                 "WHAT: landmarks_px is required when landmarks_env is provided.\n"
                 "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
-                "HOW: Provide landmarks_px array of shape (n_points, 2)."
+                "Fix: Provide landmarks_px array of shape (n_points, 2)."
             )
         if landmarks_env is None:
             raise ValueError(
                 "WHAT: landmarks_env is required when landmarks_px is provided.\n"
                 "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
-                "HOW: Provide landmarks_env array of shape (n_points, 2)."
+                "Fix: Provide landmarks_env array of shape (n_points, 2)."
             )
 
         # Ensure arrays
@@ -275,7 +275,7 @@ def calibrate_video(
                 f"WHAT: landmarks_px has {len(landmarks_px)} points but landmarks_env "
                 f"has {len(landmarks_env)} points.\n"
                 f"WHY: Each pixel landmark must have a corresponding environment point.\n"
-                f"HOW: Ensure landmarks_px and landmarks_env have the same number of points."
+                f"Fix: Ensure landmarks_px and landmarks_env have the same number of points."
             )
 
         transform = calibrate_from_landmarks(
@@ -292,7 +292,7 @@ def calibrate_video(
             raise ValueError(
                 f"WHAT: cm_per_px must be positive (got {cm_per_px}).\n"
                 f"WHY: Scale factor must be positive to produce valid transforms.\n"
-                f"HOW: Provide a positive value, e.g., cm_per_px=0.25."
+                f"Fix: Provide a positive value, e.g., cm_per_px=0.25."
             )
         _, frame_height = frame_size_px
 
@@ -428,7 +428,7 @@ def _validate_calibration_coverage(
             f"y=[{env_y_min:.1f}, {env_y_max:.1f}] exceeds "
             f"video range x=[{video_x_min:.1f}, {video_x_max:.1f}], "
             f"y=[{video_y_min:.1f}, {video_y_max:.1f}].\n"
-            f"HOW: Regions outside video coverage will appear blank during rendering. "
+            f"Fix: Regions outside video coverage will appear blank during rendering. "
             f"Consider adjusting calibration or cropping the environment.",
             UserWarning,
             stacklevel=3,  # Point to caller of calibrate_video

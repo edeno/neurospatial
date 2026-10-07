@@ -1555,7 +1555,10 @@ def compute_egocentric_rate(
     # if the user supplied an env; the geodesic path raises its own
     # explicit error a few lines below if env is None.
     if env is not None:
-        validate_env_fitted(env, context="compute_egocentric_rate")
+        validate_env_fitted(
+            env,
+            context="compute_egocentric_rate",
+        )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1593,9 +1596,16 @@ def compute_egocentric_rate(
     object_positions = normalize_object_positions(object_positions)
 
     validate_trajectory(
-        times, positions=positions, headings=headings, context="compute_egocentric_rate"
+        times,
+        positions=positions,
+        headings=headings,
+        context="compute_egocentric_rate",
+        n_dims=env.n_dims if env is not None else None,
     )
-    validate_spike_times(spike_times, context="compute_egocentric_rate")
+    validate_spike_times(
+        spike_times,
+        context="compute_egocentric_rate",
+    )
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
@@ -1937,7 +1947,10 @@ def compute_egocentric_rates(
     # `env` is optional in this function (None is permitted with the
     # euclidean distance metric); only validate fitted-state when supplied.
     if env is not None:
-        validate_env_fitted(env, context="compute_egocentric_rates")
+        validate_env_fitted(
+            env,
+            context="compute_egocentric_rates",
+        )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:

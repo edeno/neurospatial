@@ -955,14 +955,14 @@ def dataframe_to_events_table(
         raise TypeError(
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
             "  WHY: Events must be a pandas DataFrame.\n"
-            "  HOW: Convert using pd.DataFrame({'timestamp': times})"
+            "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
 
     if "timestamp" not in df.columns:
         raise ValueError(
             "DataFrame is missing required 'timestamp' column.\n"
             "  WHY: EventsTable requires timestamp for each event.\n"
-            f"  HOW: Add timestamp column. Available columns: {list(df.columns)}"
+            f"  Fix: Add timestamp column. Available columns: {list(df.columns)}"
         )
 
     # Validate timestamps if not empty
@@ -972,13 +972,13 @@ def dataframe_to_events_table(
             raise ValueError(
                 "timestamp column contains non-finite values (NaN or Inf).\n"
                 "  WHY: EventsTable requires valid numeric timestamps.\n"
-                "  HOW: Remove or replace NaN/Inf values in timestamp column."
+                "  Fix: Remove or replace NaN/Inf values in timestamp column."
             )
         if np.any(timestamps < 0):
             raise ValueError(
                 "timestamp column contains negative values.\n"
                 "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
-                "  HOW: Adjust timestamps to be relative to session start."
+                "  Fix: Adjust timestamps to be relative to session start."
             )
 
     # Create EventsTable

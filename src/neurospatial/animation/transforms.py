@@ -243,7 +243,7 @@ def _warn_fallback(suppress: bool = False) -> None:
             "WHY: Environment lacks required attributes for proper scaling:\n"
             "  - dimension_ranges: needed to compute spatial bounds\n"
             "  - layout.grid_shape: needed to compute pixel scaling\n\n"
-            "HOW: Ensure your environment has proper dimension ranges:\n"
+            "Fix: Ensure your environment has proper dimension ranges:\n"
             "  - Use Environment.from_samples() which computes ranges automatically\n"
             "  - Or set env.dimension_ranges manually after creation\n"
             "  - For custom layouts, ensure layout.grid_shape is defined",

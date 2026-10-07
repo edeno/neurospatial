@@ -133,7 +133,7 @@ def align_spikes_to_events(
         raise ValueError(
             f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
             "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Convert to arrays if needed
@@ -146,13 +146,13 @@ def align_spikes_to_events(
             raise ValueError(
                 "spike_times contains NaN values.\n"
                 "  WHY: Cannot compute relative times with undefined values.\n"
-                "  HOW: Remove or interpolate NaN values before alignment."
+                "  Fix: Remove or interpolate NaN values before alignment."
             )
         if np.any(np.isinf(spike_times)):
             raise ValueError(
                 "spike_times contains Inf values.\n"
                 "  WHY: Cannot compute relative times with infinite values.\n"
-                "  HOW: Remove Inf values before alignment."
+                "  Fix: Remove Inf values before alignment."
             )
 
     if event_times.size > 0:
@@ -160,13 +160,13 @@ def align_spikes_to_events(
             raise ValueError(
                 "event_times contains NaN values.\n"
                 "  WHY: Cannot align spikes to undefined event times.\n"
-                "  HOW: Remove NaN event times before alignment."
+                "  Fix: Remove NaN event times before alignment."
             )
         if np.any(np.isinf(event_times)):
             raise ValueError(
                 "event_times contains Inf values.\n"
                 "  WHY: Cannot align spikes to infinite event times.\n"
-                "  HOW: Remove Inf event times before alignment."
+                "  Fix: Remove Inf event times before alignment."
             )
 
     # Handle empty cases
@@ -364,7 +364,7 @@ def peri_event_histogram(
         raise ValueError(
             f"bin_size must be positive, got {bin_size}.\n"
             "  WHY: bin_size defines histogram bin width.\n"
-            "  HOW: Use a positive value like bin_size=0.025 (25ms)."
+            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
         )
 
     # Validate window
@@ -372,7 +372,7 @@ def peri_event_histogram(
         raise ValueError(
             f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
             "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Convert to arrays
@@ -383,7 +383,7 @@ def peri_event_histogram(
         raise ValueError(
             "event_times is empty.\n"
             "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  HOW: Provide at least one event time."
+            "  Fix: Provide at least one event time."
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -542,7 +542,7 @@ def population_peri_event_histogram(
         raise ValueError(
             "spike_trains is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
-            "  HOW: Provide at least one spike train."
+            "  Fix: Provide at least one spike train."
         )
 
     # Validate bin_size
@@ -550,7 +550,7 @@ def population_peri_event_histogram(
         raise ValueError(
             f"bin_size must be positive, got {bin_size}.\n"
             "  WHY: bin_size defines histogram bin width.\n"
-            "  HOW: Use a positive value like bin_size=0.025 (25ms)."
+            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
         )
 
     # Validate window
@@ -558,7 +558,7 @@ def population_peri_event_histogram(
         raise ValueError(
             f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
             "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Convert event_times to array
@@ -569,7 +569,7 @@ def population_peri_event_histogram(
         raise ValueError(
             "event_times is empty.\n"
             "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  HOW: Provide at least one event time."
+            "  Fix: Provide at least one event time."
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -711,7 +711,7 @@ def align_events(
         raise ValueError(
             f"Window start ({window[0]}) must be <= end ({window[1]}).\n"
             "  WHY: Window defines valid time range relative to events.\n"
-            "  HOW: Use window=(start, end) where start <= end."
+            "  Fix: Use window=(start, end) where start <= end."
         )
 
     # Validate event_column exists
@@ -719,7 +719,7 @@ def align_events(
         raise ValueError(
             f"Events DataFrame missing '{event_column}' column.\n"
             "  WHY: Need timestamps to compute relative times.\n"
-            f"  HOW: Ensure events has '{event_column}' column.\n"
+            f"  Fix: Ensure events has '{event_column}' column.\n"
             f"  Available columns: {list(events.columns)}"
         )
 
@@ -728,7 +728,7 @@ def align_events(
         raise ValueError(
             f"Reference DataFrame missing '{reference_column}' column.\n"
             "  WHY: Need reference timestamps to align events to.\n"
-            f"  HOW: Ensure reference_events has '{reference_column}' column.\n"
+            f"  Fix: Ensure reference_events has '{reference_column}' column.\n"
             f"  Available columns: {list(reference_events.columns)}"
         )
 
