@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
+
 ### Fixed — documentation
 
 - Explain graph linearization as geometric coordinates rather than direction separation. The synchronized track tutorial and an executable graph/trial recipe use explicit direction labels and recover separate planted field centers within one bin.
