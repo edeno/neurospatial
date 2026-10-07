@@ -1,6 +1,6 @@
 # Phase 5a — `label_cell_types` fix and frame-explicit object-vector analysis
 
-**Requires:** Phase 4b and the researcher-workflow checkpoint ([overview → Rollout Strategy](overview.md#rollout-strategy)).
+**Requires:** Phases 4b and 4c merged, and a passing repeated researcher-workflow checkpoint ([overview → Rollout Strategy](overview.md#rollout-strategy)). The 2026-10-07 checkpoint is held.
 
 [← back to PLAN.md](PLAN.md) · [executing](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md)
 

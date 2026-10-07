@@ -6,6 +6,25 @@
 
 Read [executing.md](executing.md) first: branch and PR workflow, definition of done, CHANGELOG-per-commit, and what to do when the plan and reality disagree. This file holds only what is specific to Phase 6c.
 
+## Checkpoint additions (2026-10-07)
+
+- Preserve a complete public NWB component-reader → selected epochs →
+  environment → population fields → decode → summary/plot/overlay recipe as
+  tuple returns become holders and Session/load_session disappear. Update the
+  interoperability guide and API index, not only isolated docstrings.
+- Make position units available from the holder and use them when creating
+  the environment. Keep unit IDs through rate-table/decoder handoffs. Read
+  named interval tables explicitly to choose analysis epochs; do not imply
+  those are automatically inferred from population spikes or loader defaults.
+  Acquisition `spike_window` and selected analysis epochs have different roles.
+- Add real-file executable coverage using a small synthetic HDF5 fixture with
+  nondefault unit IDs, two epochs and explicit units; eager data remain usable
+  after file close. No private-helper discovery or compatibility tuple/bundle
+  shim is needed. Preserve the corrected Phase 4c simulation-duration contract
+  when changing simulator attribute names.
+
+## Original scope
+
 This phase (decision 4: raw arrays are the only input form; loaders and simulators return plain data holders whose attributes are passed explicitly):
 
 - makes simulator output a frozen holder whose attribute names are the analysis parameter names;
@@ -88,11 +107,20 @@ class SimulationSession:
 
 **6c.4 NWB readers return frozen, non-iterable holders.** An old `positions, t = read_position(...)` unpack then fails loudly with `TypeError` instead of swapping:
 
-- `read_position → NWBPosition(times, positions)`;
+- `read_position → NWBPosition(times, positions, units)`;
 - `read_head_direction → NWBHeadDirection(times, headings)`;
 - `read_units → NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`.
 
 Define them as `@dataclass(frozen=True)` in `io/nwb/_holders.py` (no `__iter__`, so tuple unpacking raises `TypeError`), export them from `io.nwb`, and update the internal callers and docstring unpackings listed in Inputs. `read_position(..., lazy=True)` keeps its lazy arrays inside the holder. Update every test, doc and example that unpacks a reader: `tests/nwb/test_behavior.py`, `test_units.py`, `test_environment.py`, `test_overlays.py`, `test_fields_roundtrip.py`, `docs/user-guide/interoperability.md`, `examples/27_loading_from_nwb.py`, `.claude/QUICKSTART.md`, `.claude/ADVANCED.md`, `.claude/TROUBLESHOOTING.md`.
+
+**Checkpoint addition:** `NWBPosition.units: str | None` describes the physical
+units of the returned positions, after the existing conversion/offset path.
+Reuse existing unit aliases, preserve nonempty unrecognized declarations, and
+use `None` when no unit was declared. Do not rescale numerical values again or
+report an assumed unit as declared metadata. Carry the same units on eager/lazy
+holders and into the joined recipe; missing declarations need an explicit user
+choice there. Keep `environment_from_position`'s existing warned cm fallback
+unchanged (Phase 2a); exposing reader metadata does not change that contract.
 
 **6c.5 Units keep their acquisition windows** ([time-window semantics, Defaults](shared-contracts.md#time-window-semantics): loaders preserve acquisition windows). On `main`, `read_units` (`io/nwb/_units.py:70-186`) reads only `spike_times` and ignores the NWB `obs_intervals` column. Add both fields:
 
@@ -141,7 +169,7 @@ The result's `spike_window_assumed` is then `False` whenever the file recorded `
 | `…::test_holder_is_frozen` | assigning `sim.times = …` raises `FrozenInstanceError` |
 | `tests/simulation/test_validation_sim.py::test_select_by_label` | `validate_simulation(sim, unit_ids=[0, 2, 4])` validates exactly those three; `unit_ids=[99]` raises `ValueError` naming `99` with `Fix:`; `validate_simulation(env=…)` raises `TypeError` (no such keyword) |
 | `tests/simulation/test_validation_sim.py::test_plot_session_summary_labels` | `plot_session_summary(sim, unit_ids=[1, 3])` draws two rate panels |
-| `tests/nwb/test_reader_holders.py::test_read_position_holder` (pynwb extra) | `pos = read_position(f)`; `pos.times.ndim == 1`, `pos.positions.shape == (n, 2)`; `a, b = read_position(f)` raises `TypeError`. Conversion and offset are still applied (`pos.positions` equals `data * conversion + offset`) |
+| `tests/nwb/test_reader_holders.py::test_read_position_holder` (pynwb extra) | `pos = read_position(f)`; `pos.times.ndim == 1`, `pos.positions.shape == (n, 2)`; `a, b = read_position(f)` raises `TypeError`. Conversion and offset are still applied (`pos.positions` equals `data * conversion + offset`); `pos.units` matches their physical unit, including a cm fixture and eager/lazy parity. |
 | `tests/nwb/test_reader_holders.py::test_read_head_direction_holder` (pynwb extra) | `hd.times`, `hd.headings` shapes; unpacking raises `TypeError` |
 | `tests/nwb/test_reader_holders.py::test_read_units_spike_window` (pynwb extra) | Units 7 (`obs_intervals=[[0, 100], [1100, 1200]]`) and 11 (`[[10, 1150]]`): `units.obs_intervals[0]` equals the first, and `units.spike_window` equals `[[10, 100], [1100, 1150]]`. A file without the column gives `obs_intervals is None` and `spike_window is None`. Passing `spike_window=units.spike_window` to `compute_spatial_rates` gives `spike_window_assumed is False` |
 | `tests/test_typing.py` (trimmed) | passes without the `as_times_positions` tests |

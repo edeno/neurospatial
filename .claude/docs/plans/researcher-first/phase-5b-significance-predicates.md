@@ -6,6 +6,20 @@
 
 Read [executing.md](executing.md) first: branch and PR workflow, definition of done, CHANGELOG-per-commit, and what to do when the plan and reality disagree. This file holds only what is specific to Phase 5b.
 
+## Checkpoint additions (2026-10-07)
+
+- In the updated object-vector tutorial, keep an explicit place-cell control
+  and distinguish a candidate information screen from cell identity. The
+  checkpoint's control passed at 1.0982 bits/spike; that is corroborating
+  evidence for this phase's existing bias work, not a new threshold target.
+- Reconcile raw/smoothed estimator guidance. The checkpoint measured raw
+  information slightly above smoothed information for both OVC and control;
+  do not promise that raw binning is universally lower or more conservative.
+  Show which estimator/criterion each printed verdict used and preserve
+  same-estimator agreement between the result method and convenience predicate.
+
+## Original scope
+
 Each threshold classifier keeps its current criterion (decision 5), with one exception, place cells (decision 5, revised):
 
 - Field detection keeps its fast behavior under the honest name `has_place_field()`, as a free function and a method.
