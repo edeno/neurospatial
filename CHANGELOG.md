@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
+
+### Added — executable documentation
+
+- Check public docstring sections and constructor inputs, and complete the missing examples and parameter documentation.
+
 ### Changed — errors that teach
 
 - Corrected-call guidance includes each encoder's and decoder's required arguments and all animation backends. Population egocentric validation reports coordinate and length problems together, and malformed peri-event window bounds fail with guidance before alignment.

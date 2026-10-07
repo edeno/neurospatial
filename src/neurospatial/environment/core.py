@@ -338,6 +338,9 @@ class _BaseEnvironment(
             Parameters used to build the layout. If None, inferred from
             `layout._build_params_used`. Defaults to None.
 
+        regions : Regions or None, optional
+            Initial named regions; an empty container is created when omitted.
+
         """
         if layout is None:
             raise ValueError(
@@ -1376,6 +1379,17 @@ class Environment(_BaseEnvironment):
 
     See :class:`_BaseEnvironment` for the full attribute and terminology
     reference shared by both environment types.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> positions = np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]])
+    >>> env = Environment.from_samples(positions, bin_size=1.0, units="cm")
+    >>> env.n_dims
+    2
+    >>> env.bin_at(positions).shape
+    (4,)
     """
 
     _POLAR: ClassVar[bool] = False
@@ -1399,6 +1413,28 @@ class Environment(_BaseEnvironment):
         See that class's
         :meth:`~neurospatial.environment.polar.EgocentricPolarEnvironment.create`
         for the full parameter documentation.
+
+        Parameters
+        ----------
+        distance_range : tuple of (float, float)
+            The (min, max) range of distances in physical units (e.g., cm).
+            Must have min < max.
+        angle_range : tuple of (float, float)
+            The (min, max) range of angles in radians. For full circle
+            coverage use (-π, π) or (0, 2π). Must have min < max.
+        distance_bin_size : float
+            Size of each distance bin, same units as ``distance_range``.
+            Must be positive.
+        angle_bin_size : float
+            Size of each angle bin in radians. Must be positive.
+        circular_angle : bool, default=True
+            If True, the angle dimension wraps circularly, connecting the
+            first and last angle bins at each distance ring. Appropriate
+            when ``angle_range`` spans a full circle.
+        connect_diagonal_neighbors : bool, default=True
+            Whether to connect diagonally adjacent (distance, angle) bins.
+        name : str, default=""
+            Optional name for the environment.
 
         Returns
         -------

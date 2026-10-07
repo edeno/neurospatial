@@ -145,6 +145,12 @@ warn_on_drop
         From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
         decoder is unfitted.
 
+    Other Parameters
+    ----------------
+    _unit_ids_generated : bool, default=False
+        Internal identity flag carried by selection or fitting when unit labels
+        were generated. Leave it at its default when supplying real unit IDs.
+
     Examples
     --------
     >>> import numpy as np

@@ -606,6 +606,11 @@ def validate_events_dataframe(
     context : str, optional
         Additional context for error messages (e.g., function name).
 
+    Returns
+    -------
+    None
+        Returns normally when the DataFrame is valid; otherwise raises.
+
     Raises
     ------
     TypeError

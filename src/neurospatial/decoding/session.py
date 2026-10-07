@@ -783,6 +783,19 @@ warn_on_drop, dtype
     --------
     decode_session : Full-posterior golden path.
     neurospatial.decoding.decode_position_summary : Array-first streamed decoder.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding import decode_session_summary
+    >>> times = np.arange(300) / 30.0
+    >>> positions = np.c_[np.linspace(0.0, 10.0, len(times)), np.zeros(len(times))]
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> spikes = [times[::10], times[::15]]
+    >>> summary = decode_session_summary(env, spikes, times, positions, dt=0.1, time_chunk=8)
+    >>> len(summary.map_position) > 0
+    True
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 

@@ -70,7 +70,6 @@ Run
 from __future__ import annotations
 
 import itertools
-import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -324,10 +323,9 @@ class Trial:
 def detect_region_crossings(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    arg3: Environment | str,
-    arg4: Environment | None = None,
+    env: Environment,
     *,
-    region_name: str | None = None,
+    region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -341,23 +339,17 @@ def detect_region_crossings(
     The :class:`~neurospatial.Environment` holding the region definition is
     passed positionally as the third argument in the new (0.6+) call form.
 
-    .. note::
-        The argument order changed in 0.6 to follow the behavioral-segmentation
-        convention ``(position_bins, times, env, *, region_name, ...)``, where
-        ``env`` is the environment containing the region. The old positional
-        order ``(position_bins, times, region_name, env, ...)`` is still
-        accepted for one release with a :class:`DeprecationWarning` and will be
-        removed in 0.7.
-
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to position bins (seconds).
+    env : Environment
+        Environment containing the named region.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
-        Keyword-only in the new (0.6+) call form.
+        Passed as a keyword-only argument.
     direction : {'both', 'entry', 'exit'}, optional
         Which crossings to detect:
         - 'both': detect entries and exits (default)
@@ -428,54 +420,6 @@ def detect_region_crossings(
     >>> len(crossings) > 0  # Should detect entries and exits
     True
     """
-    # TODO(0.7): collapse to the clean keyword-only signature
-    #   def detect_region_crossings(position_bins, times, env, *,
-    #                               region_name, direction="both")
-    # and drop this transitional dispatch + DeprecationWarning.
-    #
-    # Disambiguate old vs new positional order. The OLD order was
-    # ``(position_bins, times, region_name: str, env)``; the NEW order is
-    # ``(position_bins, times, env, *, region_name=...)``. The only accepted
-    # four-positional shape is the old order. A new-order call with positional
-    # region_name must fail clearly because it is not future-compatible.
-    env: Environment
-    if isinstance(arg3, str):
-        if arg4 is None:
-            raise TypeError(
-                "detect_region_crossings() missing required environment argument. "
-                "Call as detect_region_crossings(position_bins, times, env, "
-                "region_name=...)."
-            )
-        warnings.warn(
-            "detect_region_crossings argument order changed in 0.6: pass "
-            "(position_bins, times, env, region_name=...) instead of "
-            "(position_bins, times, region_name, env). The old positional "
-            "order is deprecated since 0.6 and will be removed in 0.7.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Old order: arg3 is region_name, arg4 is env.
-        region_name = arg3
-        env = arg4
-    elif arg4 is not None:
-        raise TypeError(
-            "detect_region_crossings() takes region_name as a keyword-only "
-            "argument in the new API. Call as "
-            "detect_region_crossings(position_bins, times, env, "
-            "region_name=...)."
-        )
-    else:
-        # New order: arg3 is env, region_name is keyword-only.
-        # (mypy narrows arg3 to Environment here via the isinstance check above)
-        env = arg3
-
-    if region_name is None:
-        raise TypeError(
-            "detect_region_crossings() missing required argument 'region_name'. "
-            "Call as detect_region_crossings(position_bins, times, env, "
-            "region_name=...)."
-        )
-
     # Validate inputs
     if region_name not in env.regions:
         available = list(env.regions.keys())
