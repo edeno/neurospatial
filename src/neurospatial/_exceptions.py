@@ -1,28 +1,12 @@
-"""Custom exception classes for the neurospatial public API.
+"""Public exception classes and error-message formatting.
 
-This module collects the project's custom exceptions so users have a
-single canonical import path for ``except`` blocks. Most exceptions
-inherit from a stdlib base (``KeyError``, ``ValueError``,
-``RuntimeError``) so that callers who catch the broader stdlib type
-keep working.
-
-Two exceptions live elsewhere for historical / dependency reasons but
-are re-exported here so that ``from neurospatial import <Error>`` is the
-documented import path:
-
-* :class:`EnvironmentNotFittedError` — defined in
-  :mod:`neurospatial.environment.decorators` because it ships with the
-  ``check_fitted`` decorator that raises it.
-* :class:`GraphValidationError` — defined in
-  :mod:`neurospatial.layout.validation` next to the validator that
-  emits it.
+Library errors inherit a standard Python exception first and the common
+NeurospatialError base second. This module has no internal dependencies.
 """
 
 from __future__ import annotations
 
-# Re-export so users have one canonical import path.
-from neurospatial.environment.decorators import EnvironmentNotFittedError
-from neurospatial.layout.validation import GraphValidationError
+from difflib import get_close_matches
 
 __all__ = [
     "BinIndexOutOfRangeError",
@@ -30,15 +14,40 @@ __all__ = [
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
+    "NeurospatialError",
     "RegionNotFoundError",
 ]
 
 
-class RegionNotFoundError(KeyError):
+class NeurospatialError(Exception):
+    """Base class for every exception neurospatial defines.
+
+    Each concrete error also inherits a built-in type, listed first, so
+    ``except ValueError`` keeps working. ``except NeurospatialError`` catches
+    only problems that neurospatial itself detected.
+    """
+
+
+def _format_error(what: str, *, fix: str, why: str | None = None) -> str:
+    """Return ``what``, an optional ``why``, and a final ``Fix:`` line."""
+    lines = [what.strip()] + ([why.strip()] if why else []) + [f"Fix: {fix.strip()}"]
+    return "\n".join(lines)
+
+
+class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
     """Raised when a region name is requested but not in the Regions container.
 
-    Inherits from :class:`KeyError` so ``except KeyError`` blocks (e.g.
-    around ``regions[name]`` lookups) keep working.
+    Inherits from :class:`KeyError` and :class:`ValueError` so existing
+    catch blocks for region lookups and segmentation keep working.
+
+    Parameters
+    ----------
+    name : str
+        Requested region name.
+    available : list of str, optional
+        Available region names, used to suggest a close match.
+    argument : str, default "region_name"
+        Calling function's argument name, shown in the corrected call.
 
     Examples
     --------
@@ -46,23 +55,43 @@ class RegionNotFoundError(KeyError):
     >>> try:
     ...     raise RegionNotFoundError("goal")
     ... except KeyError as exc:
-    ...     print(repr(exc.args[0]))
-    "Region 'goal' not found."
+    ...     print(str(exc))
+    Region 'goal' not found.
+    Fix: add it first: env.regions.add('goal', point=(x, y)) (or polygon=...), then pass region_name='goal'.
     """
 
-    def __init__(self, name: str, *, available: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        available: list[str] | None = None,
+        argument: str = "region_name",
+    ) -> None:
         if available:
-            msg = (
+            what = (
                 f"Region '{name}' not found. Available regions: {sorted(available)!r}."
             )
+        elif available is not None:
+            what = f"Region '{name}' not found. This environment has no regions."
         else:
-            msg = f"Region '{name}' not found."
-        super().__init__(msg)
+            what = f"Region '{name}' not found."
+        matches = get_close_matches(name, available or [], n=1)
+        if matches:
+            fix = f"pass {argument}='{matches[0]}'"
+        else:
+            fix = (
+                f"add it first: env.regions.add('{name}', point=(x, y)) "
+                f"(or polygon=...), then pass {argument}='{name}'."
+            )
+        super().__init__(_format_error(what, fix=fix))
         self.region_name = name
         self.available = available
 
+    def __str__(self) -> str:
+        return str(self.args[0])
 
-class BinIndexOutOfRangeError(ValueError):
+
+class BinIndexOutOfRangeError(ValueError, NeurospatialError):
     """Raised when a bin index falls outside ``[0, n_bins)``.
 
     Inherits from :class:`ValueError` so existing ``except ValueError``
@@ -82,12 +111,17 @@ class BinIndexOutOfRangeError(ValueError):
             f"Bin index {index} is out of range for an environment with "
             f"{n_bins} bin(s); valid indices are [0, {n_bins})."
         )
-        super().__init__(msg)
+        super().__init__(
+            _format_error(
+                msg,
+                fix=f"pass a bin index in [0, {n_bins}); obtain one with int(env.bin_at([point])[0]).",
+            )
+        )
         self.index = index
         self.n_bins = n_bins
 
 
-class IncompatibleEnvironmentError(ValueError):
+class IncompatibleEnvironmentError(ValueError, NeurospatialError):
     """Raised when two environments are required to share a property but do not.
 
     Typical examples: composing a 2D environment with a 3D one,
@@ -106,12 +140,17 @@ class IncompatibleEnvironmentError(ValueError):
         first: object | None = None,
         second: object | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            _format_error(
+                message,
+                fix="use environments with matching n_dims and bins; recompute encoding_models on the decoding env.",
+            )
+        )
         self.first = first
         self.second = second
 
 
-class LayoutNotBuiltError(RuntimeError):
+class LayoutNotBuiltError(RuntimeError, NeurospatialError):
     """Raised when a :class:`LayoutEngine` is accessed before ``build()``.
 
     Distinct from :class:`EnvironmentNotFittedError`: this signals that
@@ -125,11 +164,128 @@ class LayoutNotBuiltError(RuntimeError):
     """
 
     def __init__(self, layout_name: str, attribute: str) -> None:
-        msg = (
-            f"{layout_name}.{attribute} is unavailable: the layout has not been "
-            "built yet. Call layout.build() (or use a factory like "
-            "Environment.from_samples) before accessing this attribute."
+        msg = f"{layout_name}.{attribute} is unavailable: the layout is not built yet."
+        super().__init__(
+            _format_error(
+                msg,
+                fix="call build() on the layout first, or create the environment with a factory such as Environment.from_samples(positions, bin_size=2.0).",
+            )
         )
-        super().__init__(msg)
         self.layout_name = layout_name
         self.attribute = attribute
+
+
+class EnvironmentNotFittedError(RuntimeError, NeurospatialError):
+    """Exception raised when an unfitted Environment is consumed.
+
+    This exception is raised both by the :func:`check_fitted` decorator on
+    bound methods and by free functions that receive an :class:`Environment`
+    argument. It supports two construction shapes:
+
+    1. Bound-method form: ``EnvironmentNotFittedError(class_name, method_name)``
+       — formats the message as ``Environment.method()`` with factory-method
+       guidance.
+    2. Free-function form:
+       ``EnvironmentNotFittedError(function_name, *, is_function=True)`` —
+       formats the message as ``function()`` (no class qualifier) and the
+       same guidance about factory methods.
+
+    Parameters
+    ----------
+    class_or_function_name : str
+        For the bound-method form, the Environment class name (e.g.
+        "Environment"). For the free-function form, the qualified function
+        name (e.g. "path_progress" or "neurospatial.behavior.navigation.path_progress").
+    method_name : str, optional
+        Name of the method requiring initialization. Required for the
+        bound-method form; ignored when ``is_function=True``.
+    error_code : str, optional
+        Error code for documentation reference. Default is "E1004".
+    is_function : bool, optional
+        If True, format the message as a free function (omit class
+        qualifier). Default is False.
+
+    Examples
+    --------
+    >>> from neurospatial.environment.decorators import EnvironmentNotFittedError
+    >>> raise EnvironmentNotFittedError("Environment", "bin_at")
+    Traceback (most recent call last):
+        ...
+    neurospatial._exceptions.EnvironmentNotFittedError: [E1004] Environment.bin_at() requires...
+
+    >>> raise EnvironmentNotFittedError("path_progress", is_function=True)
+    Traceback (most recent call last):
+        ...
+    neurospatial._exceptions.EnvironmentNotFittedError: [E1004] path_progress() requires...
+
+    See Also
+    --------
+    check_fitted : Decorator that raises this exception for bound methods.
+
+    Notes
+    -----
+    This exception inherits from ``RuntimeError`` to maintain backward
+    compatibility with existing code that catches ``RuntimeError``. Users
+    can catch either ``EnvironmentNotFittedError`` for specific handling or
+    ``RuntimeError`` for general error handling.
+
+    """
+
+    def __init__(
+        self,
+        class_or_function_name: str,
+        method_name: str | None = None,
+        *,
+        is_function: bool = False,
+        error_code: str = "E1004",
+    ) -> None:
+        if is_function:
+            qualified = f"{class_or_function_name}()"
+            class_name: str | None = None
+            method_name_resolved = class_or_function_name
+        else:
+            if method_name is None:
+                raise TypeError(
+                    "EnvironmentNotFittedError requires `method_name` "
+                    "when `is_function=False` (the default bound-method form)."
+                )
+            qualified = f"{class_or_function_name}.{method_name}()"
+            class_name = class_or_function_name
+            method_name_resolved = method_name
+
+        message = (
+            f"[{error_code}] {qualified} "
+            "requires the environment to be fully initialized. "
+            "Ensure it was created with a factory method.\n\n"
+            "Example (correct usage):\n"
+            "    env = Environment.from_samples(data, bin_size=2.0)\n"
+            "    result = env.bin_at(points)\n\n"
+            "Avoid:\n"
+            "    env = Environment()  # This will not work!\n\n"
+            "For more information, see: "
+            f"https://edeno.github.io/neurospatial/errors/#{error_code.lower()}"
+        )
+        super().__init__(
+            _format_error(
+                message, fix="env = Environment.from_samples(positions, bin_size=2.0)"
+            )
+        )
+        self.class_name = class_name
+        self.method_name = method_name_resolved
+        self.error_code = error_code
+        self.is_function = is_function
+
+
+class GraphValidationError(ValueError, NeurospatialError):
+    """Raised when connectivity graph has invalid structure or metadata.
+
+    This error indicates a bug in the layout engine that produced the graph,
+    not a user error. All layout engines must produce graphs that pass
+    validation.
+
+    See Also
+    --------
+    validate_connectivity_graph : Main validation function
+    """
+
+    pass

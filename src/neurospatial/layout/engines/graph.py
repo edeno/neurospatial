@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from track_linearization import get_linearized_position as _get_linearized_position
 from track_linearization import plot_graph_as_1D
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -394,7 +395,14 @@ class GraphLayout(_KDTreeMixin):
 
         """
         if self.grid_edges is None or self.active_mask is None:
-            raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "active_mask")
+                    if getattr(self, name) is None
+                ),
+            )
 
         full_grid_ind = _find_bin_for_linear_position(
             data_points,
@@ -430,7 +438,14 @@ class GraphLayout(_KDTreeMixin):
 
         """
         if self.grid_edges is None or self.active_mask is None:  # pragma: no cover
-            raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "active_mask")
+                    if getattr(self, name) is None
+                ),
+            )
         if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
             raise ValueError(
                 "grid_edges (1D) are not properly defined for length calculation.",

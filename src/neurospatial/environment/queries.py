@@ -23,6 +23,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import BinIndexOutOfRangeError, RegionNotFoundError
 from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -40,7 +41,7 @@ def _resolve_point_or_index(
 
     Raises
     ------
-    IndexError
+    BinIndexOutOfRangeError
         If an integer index is outside ``[0, n_bins)``.
     ValueError
         If a coordinate point falls outside every active bin.
@@ -48,7 +49,7 @@ def _resolve_point_or_index(
     if isinstance(point_or_index, (int, np.integer)):
         idx = int(point_or_index)
         if not 0 <= idx < env.n_bins:
-            raise IndexError(f"bin index {idx} is out of range [0, {env.n_bins}).")
+            raise BinIndexOutOfRangeError(idx, n_bins=env.n_bins)
         return idx
     point = np.asarray(point_or_index, dtype=float)
     resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
@@ -258,7 +259,7 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
-        IndexError
+        BinIndexOutOfRangeError
             If bin_index is an integer index outside [0, n_bins).
         ValueError
             If bin_index is a coordinate point outside every active bin.
@@ -433,7 +434,7 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
-        IndexError
+        BinIndexOutOfRangeError
             If source/target is an integer index outside [0, n_bins).
         ValueError
             If source/target is a coordinate point outside every active bin.
@@ -580,15 +581,6 @@ class EnvironmentQueries:
         if isinstance(targets, str):
             region_name = targets
             if region_name not in self.regions:
-                # Local import: neurospatial.__init__ imports _exceptions before
-                # environment. _exceptions imports environment.decorators, which
-                # pulls in environment.core, which imports this module — re-
-                # entering while _exceptions is still initializing. A top-level
-                # `from neurospatial._exceptions import RegionNotFoundError` here
-                # would therefore be a partially-initialized-module circular
-                # import.
-                from neurospatial._exceptions import RegionNotFoundError
-
                 raise RegionNotFoundError(
                     region_name, available=list(self.regions.keys())
                 )
@@ -698,7 +690,7 @@ class EnvironmentQueries:
 
         Raises
         ------
-        IndexError
+        BinIndexOutOfRangeError
             If source_bin is an integer index outside [0, n_bins).
         ValueError
             If source_bin is a coordinate point outside every active bin.

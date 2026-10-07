@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
@@ -1670,7 +1671,7 @@ def _validate_inputs(
 
     # Encoding models must be defined on the decoding environment.
     if encoding_models.ndim == 2 and encoding_models.shape[1] != env.n_bins:
-        raise ValueError(
+        raise IncompatibleEnvironmentError(
             f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
             f"but env has {env.n_bins} active bins. Recompute the place "
             f"fields on this environment before decoding."

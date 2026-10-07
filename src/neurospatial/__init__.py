@@ -226,6 +226,7 @@ from neurospatial._exceptions import (
     GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
+    NeurospatialError,
     RegionNotFoundError,
 )
 from neurospatial.composite import CompositeEnvironment
@@ -301,6 +302,7 @@ __all__ = [
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
+    "NeurospatialError",
     "Region",
     "RegionNotFoundError",
     "Regions",

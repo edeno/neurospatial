@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed — errors that teach
+
+- Add `NeurospatialError` as the common base for library exceptions while retaining their standard Python bases. `RegionNotFoundError` also supports `except ValueError` and prints an unquoted `Fix:` line with a suggested region name.
+- Raise `BinIndexOutOfRangeError` for graph-query bin indices (formerly `IndexError`), `LayoutNotBuiltError` for unbuilt layouts, and `IncompatibleEnvironmentError` for mismatched environment dimensions or decoding bins.
+
 ### Changed — behavior analyses respect recording gaps
 
 - Timestamp-based heading rejects malformed position shapes before velocity
