@@ -19,6 +19,7 @@ The block below is complete and runnable top to bottom. It creates an
 environment, simulates a foraging trajectory and one place cell's spikes with
 neurospatial's built-in simulators, and estimates the cell's firing-rate map.
 
+<!-- docs-test: run -->
 ```python
 import matplotlib.pyplot as plt
 import numpy as np

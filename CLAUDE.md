@@ -289,6 +289,7 @@ firing_rate = result.firing_rate  # Access firing rate from result object
 
 ### 3. Animate Spatial Fields
 
+<!-- docs-test: skip requires a display and ffmpeg -->
 ```python
 # IMPORTANT: frame_times is REQUIRED
 frame_times = np.arange(len(fields)) / 30.0  # 30 Hz timestamps

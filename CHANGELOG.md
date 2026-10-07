@@ -8,6 +8,8 @@
 
 ### Added — executable documentation
 
+- Execute Markdown examples using adjacent `docs-test` markers, cumulative reader state for README/quickstart, fresh seeded blocks for reference fragments, and restored animation setup patches. Replace the indexed snippet manifest and subprocess helper with default pytest coverage.
+
 - Execute flagship docstrings, including NWB geometry and position examples, with only display/video calls skipped. Module doctests write outputs in temporary directories; the NWB workflow enforces its examples separately.
 
 - Check public docstring sections and constructor inputs, and complete the missing examples and parameter documentation.

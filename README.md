@@ -134,6 +134,7 @@ conda install -c conda-forge ffmpeg
 
 Here's a minimal example showing how to create an environment from spatial data:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -184,6 +185,7 @@ around and spikes from a neuron — show me where the cell fires." Here
 is the end-to-end pipeline using simulated data so you can run it
 right now without any setup:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -250,6 +252,7 @@ Gaps longer than `max_gap=0.5` seconds are detected from `times` and excluded au
 `epochs=` selects analysis windows; `spike_window=` covers ephys that started late or stopped early.
 Without `spike_window`, spikes are assumed recorded whenever position was; `result.spike_window_assumed` says so.
 
+<!-- docs-test: run -->
 ```python
 run_epochs = [(float(times[0]), float(times[-1]))]
 t_ephys_start, t_ephys_stop = run_epochs[0]
@@ -299,6 +302,7 @@ You typically don't interact with layout engines directly; instead, use the `Env
 
 ### 1. Analyzing Animal Position Data
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -427,6 +431,7 @@ neurospatial includes a comprehensive simulation subpackage for generating synth
 
 ### Quick Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -517,6 +522,7 @@ Visualize how spatial fields evolve over time with multi-backend animation suppo
 
 ### Quick Example
 
+<!-- docs-test: skip Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate for a CI smoke test. Animation behavior is exercised by notebooks 16-18 and the dedicated animation tests. -->
 ```python
 import numpy as np
 
@@ -569,6 +575,7 @@ env.animate_fields(fields, frame_times=frame_times, backend="widget")
 
 For sessions with 100K+ frames (e.g., 1-hour recording at 250 Hz):
 
+<!-- docs-test: skip Same as readme_animation_napari_block: requires napari/ffmpeg. -->
 ```python
 import numpy as np
 from neurospatial.animation import subsample_frames

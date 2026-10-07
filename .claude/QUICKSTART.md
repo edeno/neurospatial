@@ -8,6 +8,7 @@ Essential patterns for daily use. Copy-paste and modify for your needs.
 
 ## Your First Environment
 
+<!-- docs-test: run -->
 ```python
 from neurospatial import Environment
 import numpy as np
@@ -296,6 +297,7 @@ bias = goal_bias(positions, times, goal_position, min_speed=5.0)
 
 **VTE (Vicarious Trial and Error) detection:**
 
+<!-- docs-test: run setup=quickstart_vte_session -->
 ```python
 from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
@@ -505,6 +507,7 @@ df = result.summary_table()
 
 **Classify object-vector cells from result metrics:**
 
+<!-- docs-test: run setup=quickstart_ovc_classify_single -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate
 
@@ -629,6 +632,7 @@ df = result.summary_table()
 
 **Classify spatial view cells from result metrics:**
 
+<!-- docs-test: run setup=quickstart_view_classify -->
 ```python
 # Single-neuron result from compute_view_rate(...)
 print(single.is_spatial_view_cell(min_info=0.5))
@@ -725,6 +729,7 @@ env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed
 
 **Add trajectory overlays:**
 
+<!-- docs-test: run setup=quickstart_overlay_block -->
 ```python
 from neurospatial.animation import (
     BodypartOverlay,
@@ -844,6 +849,7 @@ env.plot_field(place_field, title="Fitted Place Field")
 
 For circular predictors (head direction, theta phase, running direction):
 
+<!-- docs-test: run setup=quickstart_circular_basis_metrics -->
 ```python
 from neurospatial.stats.circular import (
     circular_basis,
@@ -917,6 +923,7 @@ print(f"Population mean shape: {result.mean_histogram.shape}")
 
 **GLM regressors from events:**
 
+<!-- docs-test: run setup=quickstart_events_glm_regressors -->
 ```python
 from neurospatial.events import time_to_nearest_event, event_indicator, event_count_in_window
 

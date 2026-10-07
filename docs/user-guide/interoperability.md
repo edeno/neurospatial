@@ -33,6 +33,7 @@ shows the *same* analysis bundled with `Session` and driven through the
 `BayesianDecoder` object — all composing with the **identical** compute
 functions.
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 
