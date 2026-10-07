@@ -2,6 +2,7 @@
 
 import inspect
 import re
+import sys
 
 import pytest
 
@@ -17,11 +18,13 @@ def _sections(doc: str) -> dict[str, str]:
     return dict(zip(parts[1::2], parts[2::2], strict=True))
 
 
-def _documented_parameters(sections: dict[str, str]) -> set[str]:
-    text = "\n".join(
-        sections.get(name, "")
-        for name in ("Parameters", "Other Parameters", "Attributes")
-    )
+def _documented_parameters(
+    sections: dict[str, str], *, include_attributes: bool = False
+) -> set[str]:
+    names = ("Parameters", "Other Parameters")
+    if include_attributes:
+        names += ("Attributes",)
+    text = "\n".join(sections.get(name, "") for name in names)
     return {
         name.strip().lstrip("*")
         for row in re.findall(r"(?m)^([^\s][^\n]*)", text)
@@ -52,10 +55,12 @@ def test_public_docstring_sections_and_parameters(dotted):
         for name in inspect.signature(obj).parameters
         if name not in {"self", "cls"}
     }
-    documented = _documented_parameters(sections)
+    documented = _documented_parameters(
+        sections, include_attributes=inspect.isclass(obj)
+    )
     if inspect.isclass(obj):
         documented |= _documented_parameters(
-            _sections(inspect.getdoc(obj.__init__) or "")
+            _sections(inspect.getdoc(obj.__init__) or ""), include_attributes=True
         )
     else:
         if parameters:
@@ -75,3 +80,48 @@ def test_public_docstring_sections_and_parameters(dotted):
 @pytest.mark.parametrize("dotted", sorted(_EXEMPT))
 def test_exempt_public_names_still_resolve(dotted):
     assert callable(resolve(dotted)), f"remove obsolete exemption {dotted}"
+
+
+def test_function_parameters_cannot_be_documented_only_as_attributes(monkeypatch):
+    def function(value) -> None:
+        """Validate an input.
+
+        Parameters
+        ----------
+        other : int
+            A different name from the required input.
+
+        Attributes
+        ----------
+        value : int
+            An attribute cannot document a function argument.
+
+        Examples
+        --------
+        >>> function(1)
+        """
+
+    monkeypatch.setattr(sys.modules[__name__], "resolve", lambda _: function)
+    with pytest.raises(AssertionError, match=r"undocumented parameters.*value"):
+        test_public_docstring_sections_and_parameters("example.function")
+
+
+def test_class_constructor_parameters_can_be_documented_as_attributes(monkeypatch):
+    class Example:
+        """Store a value.
+
+        Attributes
+        ----------
+        value : int
+            The value passed to the constructor.
+
+        Examples
+        --------
+        >>> example = Example(1)
+        """
+
+        def __init__(self, value):
+            self.value = value
+
+    monkeypatch.setattr(sys.modules[__name__], "resolve", lambda _: Example)
+    test_public_docstring_sections_and_parameters("example.Example")

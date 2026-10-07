@@ -16,6 +16,8 @@
 
 ### Added — executable documentation
 
+- Require function inputs to be documented under Parameters or Other Parameters; only class constructors may also use Attributes.
+
 - Install widget support in the headless module-doctest CI job so the newly executable widget example runs there too.
 
 - Execute Markdown examples using adjacent `docs-test` markers, cumulative reader state for README/quickstart, fresh seeded blocks for reference fragments, and restored animation setup patches. Replace the indexed snippet manifest and subprocess helper with default pytest coverage.
