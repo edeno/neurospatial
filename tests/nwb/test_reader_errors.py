@@ -7,6 +7,7 @@ import pytest
 from neurospatial.io.nwb import read_position, read_units
 
 pynwb = pytest.importorskip("pynwb")
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

@@ -346,3 +346,69 @@ def test_direction_label_errors_teach(method, recording):
     assert "Fix:" in str(caught.value)
     assert "forward" in str(caught.value)
     assert "\\n" not in str(caught.value)
+
+
+def test_neighbors_of_bin_at_output(recording):
+    r = recording
+    index = r.env.bin_at(r.positions[:1])
+    with pytest.raises(ValueError, match=r"int\(bin_idx\[0\]\)") as caught:
+        r.env.neighbors(index)
+    assert "bin_at" in str(caught.value)
+    # Unwrapping the returned index is a real, successful correction.
+    assert r.env.neighbors(int(index[0])) == r.env.neighbors(r.positions[0])
+
+
+def test_coarse_bin_size_warns():
+    import warnings
+
+    x = np.linspace(0.0, 80.0, 200)
+    positions = np.c_[x, x[::-1]]
+    with pytest.warns(UserWarning, match="bin_size=500") as caught:
+        Environment.from_samples(positions, bin_size=500)
+    assert len(caught) == 1
+    assert "Fix:" in str(caught[0].message)
+    with warnings.catch_warnings(record=True) as normal:
+        warnings.simplefilter("always")
+        Environment.from_samples(positions, bin_size=2.0)
+    assert not normal
+    track = np.c_[np.linspace(0.0, 200.0, 200), np.linspace(0.0, 5.0, 200)]
+    with warnings.catch_warnings(record=True) as narrow:
+        warnings.simplefilter("always")
+        Environment.from_samples(track, bin_size=5.0)
+    assert not narrow
+
+
+def test_large_grid_warning_is_visible():
+    from neurospatial.layout.helpers.utils import check_grid_size_safety
+
+    with pytest.warns(UserWarning) as caught:
+        check_grid_size_safety((500, 500), n_dims=2)
+    assert "250,000" in str(caught[0].message)
+    assert "Fix:" in str(caught[0].message)
+
+
+def test_psth_window_in_ms_warns(recording):
+    import warnings
+
+    from neurospatial.events import peri_event_histogram
+
+    r = recording
+    with pytest.warns(UserWarning, match=r"window=\(-0.5, 1.0\)"):
+        peri_event_histogram(
+            r.spike_times, np.array([20.0, 30.0]), window=(-500, 1000), bin_size=1.0
+        )
+    with warnings.catch_warnings(record=True) as normal:
+        warnings.simplefilter("always")
+        peri_event_histogram(r.spike_times, np.array([20.0, 30.0]), window=(-1.0, 2.0))
+    assert not normal
+
+
+@pytest.mark.parametrize("window", [(), (0.0, 1.0, 2.0), (np.nan, 1.0), (0.0, np.inf)])
+def test_invalid_peri_event_window_names_the_call(window):
+    from neurospatial.events import align_spikes_to_events
+
+    with pytest.raises(ValueError) as caught:
+        align_spikes_to_events(np.array([1.0]), np.array([1.0]), window)
+    assert "align_spikes_to_events" in str(caught.value)
+    assert "window" in str(caught.value)
+    assert "Fix:" in str(caught.value)

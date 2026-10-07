@@ -34,6 +34,24 @@ if TYPE_CHECKING:
 
 def _validate_window(window: tuple[float, float], *, context: str) -> None:
     """Validate a peri-event window expressed in seconds."""
+    try:
+        bounds = np.asarray(window, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two numeric bounds, got {window!r}.",
+                why="Why: peri-event windows are expressed in seconds relative to each event.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        ) from exc
+    if bounds.shape != (2,) or not np.all(np.isfinite(bounds)):
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two finite bounds, got {window!r} with shape {bounds.shape}.",
+                why="Why: peri-event windows need a finite start and stop in seconds.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        )
     if window[0] > window[1]:
         raise ValueError(
             _format_error(
@@ -41,6 +59,16 @@ def _validate_window(window: tuple[float, float], *, context: str) -> None:
                 why="Why: a peri-event window defines a valid range relative to each event.",
                 fix="pass window=(-0.5, 1.0), with start <= stop, in seconds",
             )
+        )
+    if bounds[1] - bounds[0] > 60:
+        warnings.warn(
+            _format_error(
+                f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
+                why="Why: an unusually wide peri-event window may be specified in milliseconds instead of seconds.",
+                fix="use window=(-0.5, 1.0) if you meant milliseconds",
+            ),
+            UserWarning,
+            stacklevel=3,
         )
 
 

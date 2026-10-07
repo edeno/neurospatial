@@ -502,6 +502,31 @@ class EnvironmentFactories:
             **layout_specific_kwargs,
         }
 
+        finite_rows = np.all(np.isfinite(positions), axis=1)
+        finite_positions = positions if np.all(finite_rows) else positions[finite_rows]
+        try:
+            sizes = np.asarray(bin_size, dtype=float)
+        except (TypeError, ValueError):
+            sizes = None  # Preserve the layout's existing invalid-value error.
+        if (
+            sizes is not None
+            and np.all(np.isfinite(sizes))
+            and np.all(sizes > 0)
+            and len(finite_positions)
+            and (sizes.ndim == 0 or sizes.shape == (n_dims,))
+        ):
+            extent = np.ptp(finite_positions, axis=0)
+            if np.any(extent > 0) and np.all(sizes >= extent):
+                suggested = float(np.max(extent)) / 50.0
+                warnings.warn(
+                    _format_error(
+                        f"bin_size={bin_size} is at least the per-axis data extent {extent.tolist()} in every dimension.",
+                        why="Why: this produces very few bins and may indicate a units mismatch.",
+                        fix=f"use bin_size={suggested:g} (in the same units as positions), or choose a size below the data extent",
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
         env = cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
         if units is not None:
             env.units = units

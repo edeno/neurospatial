@@ -56,6 +56,14 @@ def _resolve_point_or_index(
             raise BinIndexOutOfRangeError(idx, n_bins=env.n_bins)
         return idx
     point = np.asarray(point_or_index, dtype=float)
+    if point.shape == (1,) and env.n_dims > 1:
+        raise ValueError(
+            _format_error(
+                f"Got a length-1 array with shape {point.shape} in a {env.n_dims}-D environment. bin_at returns an array, even for one point.",
+                why="Why: this array is neither a scalar bin index nor a complete coordinate point.",
+                fix=f"unwrap the bin_at result with env.neighbors(int(bin_idx[0])), or pass a complete coordinate point of shape ({env.n_dims},)",
+            )
+        )
     resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
     if resolved.size != 1:
         raise ValueError(

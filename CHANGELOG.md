@@ -4,6 +4,8 @@
 
 ### Changed — errors that teach
 
+- Warn visibly when `bin_size` covers every data axis or a peri-event window exceeds 60 seconds, with units and corrected values. Large-grid warnings are now `UserWarning` instead of hidden `ResourceWarning`; the existing hard memory ceiling is unchanged. Length-1 bin-index arrays explain how to unwrap `bin_at` output before a graph query.
+
 - First-run factory, graph-query, encoding, decoding, peri-event, animation and file errors give concrete corrected calls. Segmentation and boundary regressors raise `RegionNotFoundError` with the caller's region argument and available names; NWB readers and direction-label lookups name their corrected arguments.
 
 - Replace `HOW:` labels with `Fix:` in diagnostic messages. Shared timestamp, spike and trajectory validators name their caller, collect all input problems, detect swapped arrays, and check coordinate dimensions before binning. A non-Environment first argument now raises `TypeError` with a corrected call.
