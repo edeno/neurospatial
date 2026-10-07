@@ -1,13 +1,4 @@
-"""Tests for the transitional detect_region_crossings argument order.
-
-Target signature (0.6+): ``(position_bins, times, env, *, region_name, ...)``.
-Old signature (deprecated, removed in 0.7):
-``(position_bins, times, region_name, env, *, ...)``.
-
-The transitional dispatch must (a) accept the old 4-positional call with a
-DeprecationWarning, (b) accept the new ``(..., env, region_name=...)`` form
-warning-free, and (c) produce identical crossings either way.
-"""
+"""Region crossings take the environment third and a keyword-only region name."""
 
 from __future__ import annotations
 
@@ -52,39 +43,6 @@ def test_new_order_is_warning_free() -> None:
     assert len(crossings) > 0
 
 
-def test_old_positional_order_warns() -> None:
-    env, position_bins, times = _make_env_and_trajectory()
-    with pytest.warns(DeprecationWarning):
-        crossings = detect_region_crossings(
-            position_bins, times, "goal", env, direction="both", max_gap=None
-        )
-    assert len(crossings) > 0
-
-
-def test_old_and_new_order_identical() -> None:
-    env, position_bins, times = _make_env_and_trajectory()
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        new = detect_region_crossings(
-            position_bins,
-            times,
-            env,
-            region_name="goal",
-            direction="both",
-            max_gap=None,
-        )
-
-    with pytest.warns(DeprecationWarning):
-        old = detect_region_crossings(
-            position_bins, times, "goal", env, direction="both", max_gap=None
-        )
-
-    assert [(c.time, c.direction, c.bin_index) for c in old] == [
-        (c.time, c.direction, c.bin_index) for c in new
-    ]
-
-
 def test_missing_region_name_in_new_order_raises() -> None:
     env, position_bins, times = _make_env_and_trajectory()
     with pytest.raises(TypeError, match="region_name"):
@@ -93,5 +51,5 @@ def test_missing_region_name_in_new_order_raises() -> None:
 
 def test_new_order_with_positional_region_name_raises_clear_type_error() -> None:
     env, position_bins, times = _make_env_and_trajectory()
-    with pytest.raises(TypeError, match="keyword-only"):
+    with pytest.raises(TypeError, match="takes 3 positional arguments"):
         detect_region_crossings(position_bins, times, env, "goal")

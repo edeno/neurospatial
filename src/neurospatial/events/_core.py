@@ -69,11 +69,16 @@ class PeriEventResult(ResultMixin):
 
     Examples
     --------
-    >>> result = peri_event_histogram(spikes, events, window=(-1, 2))  # doctest: +SKIP
-    >>> # Access firing rate
-    >>> rate = result.firing_rate  # doctest: +SKIP
-    >>> # Find peak response time
-    >>> peak_time = result.bin_centers[np.argmax(rate)]  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.events import peri_event_histogram
+    >>> spikes = np.array([0.8, 1.0, 1.2, 2.8, 3.0, 3.2])
+    >>> events = np.array([1.0, 3.0])
+    >>> result = peri_event_histogram(spikes, events, window=(-0.5, 0.5), bin_size=0.1)
+    >>> rate = result.firing_rate
+    >>> rate.shape == result.bin_centers.shape
+    True
+    >>> peak_time = result.bin_centers[np.argmax(rate)]
+
     """
 
     bin_centers: NDArray[np.float64]
@@ -261,13 +266,18 @@ class PopulationPeriEventResult(ResultMixin):
 
     Examples
     --------
-    >>> result = population_peri_event_histogram(  # doctest: +SKIP
-    ...     spike_trains, events, window=(-1, 2)
+    >>> import numpy as np
+    >>> from neurospatial.events import population_peri_event_histogram
+    >>> spikes = [np.array([0.8, 1.0, 3.2]), np.array([1.2, 2.8, 3.0])]
+    >>> events = np.array([1.0, 3.0])
+    >>> result = population_peri_event_histogram(
+    ...     spikes, events, window=(-0.5, 0.5), bin_size=0.1
     ... )
-    >>> # Get firing rates for all units
-    >>> rates = result.firing_rates  # shape: (n_units, n_bins)  # doctest: +SKIP
-    >>> # Get population average firing rate (Hz)
-    >>> pop_rate = result.mean_firing_rate  # shape: (n_bins,)  # doctest: +SKIP
+    >>> rates = result.firing_rates
+    >>> rates.shape[0]
+    2
+    >>> pop_rate = result.mean_firing_rate
+
     """
 
     bin_centers: NDArray[np.float64]
@@ -605,6 +615,11 @@ def validate_events_dataframe(
         Name of timestamp column to check.
     context : str, optional
         Additional context for error messages (e.g., function name).
+
+    Returns
+    -------
+    None
+        Returns normally when the DataFrame is valid; otherwise raises.
 
     Raises
     ------

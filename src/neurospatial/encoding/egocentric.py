@@ -1497,11 +1497,11 @@ def compute_egocentric_rate(
 
     >>> # Create trajectory and objects
     >>> rng = np.random.default_rng(42)
-    >>> times = np.linspace(0, 100, 1000)
+    >>> times = np.linspace(0, 40, 1000)
     >>> positions = rng.uniform(10, 90, (1000, 2))
     >>> headings = rng.uniform(-np.pi, np.pi, 1000)
     >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
-    >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+    >>> spike_times = np.sort(rng.uniform(0, 40, 100))
 
     >>> # Compute egocentric rate
     >>> result = compute_egocentric_rate(
@@ -1522,7 +1522,7 @@ def compute_egocentric_rate(
     >>> is_object_vector_cell = result.is_object_vector_cell()
 
     >>> # Plot the egocentric rate map
-    >>> ax = result.plot()  # doctest: +SKIP
+    >>> ax = result.plot()
 
     References
     ----------
@@ -1858,16 +1858,16 @@ def compute_egocentric_rates(
 
     >>> # Create trajectory and objects
     >>> rng = np.random.default_rng(42)
-    >>> times = np.linspace(0, 100, 1000)
+    >>> times = np.linspace(0, 40, 1000)
     >>> positions = rng.uniform(10, 90, (1000, 2))
     >>> headings = rng.uniform(-np.pi, np.pi, 1000)
     >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
 
     >>> # Spike times for 3 neurons
     >>> spike_times = [
-    ...     np.sort(rng.uniform(0, 100, 100)),  # Neuron 0
-    ...     np.sort(rng.uniform(0, 100, 150)),  # Neuron 1
-    ...     np.sort(rng.uniform(0, 100, 50)),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 40, 100)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 40, 150)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 40, 50)),  # Neuron 2
     ... ]
 
     >>> # Compute egocentric rates for all neurons
@@ -1894,7 +1894,7 @@ def compute_egocentric_rates(
     ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
     Neuron 0: 2.5 cm at 15 deg
     Neuron 1: 7.5 cm at 45 deg
-    Neuron 2: 42.5 cm at -75 deg
+    Neuron 2: 17.5 cm at 135 deg
 
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()

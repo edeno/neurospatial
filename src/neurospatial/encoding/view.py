@@ -1304,7 +1304,7 @@ def compute_view_rate(
     True
 
     >>> # Plot the view field
-    >>> ax = result.plot()  # doctest: +SKIP
+    >>> ax = result.plot()
 
     References
     ----------
@@ -1960,9 +1960,9 @@ def is_spatial_view_cell(
     >>> from neurospatial.encoding.view import is_spatial_view_cell
     >>> positions = np.random.rand(1000, 2) * 100
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> times = np.linspace(0, 100, 1000)
+    >>> times = np.linspace(0, 40, 1000)
     >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
-    >>> spike_times = np.random.uniform(0, 100, 50)
+    >>> spike_times = np.random.uniform(0, 40, 50)
     >>> result = is_spatial_view_cell(env, spike_times, times, positions, headings)
     >>> type(result)
     <class 'bool'>

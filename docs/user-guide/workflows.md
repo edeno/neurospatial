@@ -14,6 +14,7 @@ A complete workflow for analyzing spatial firing patterns of neurons during navi
 
 ### Complete Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -150,6 +151,7 @@ decoder for you. The whole encode → bin → decode pipeline fits in one line.
 
 ### Complete Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -212,6 +214,7 @@ related helpers for accuracy metrics.
 recordings or large populations that array can be too big to hold in memory.
 Use the memory-safe summary decoder instead:
 
+<!-- docs-test: run setup=workflows_decode_session_summary_streaming -->
 ```python
 from neurospatial.decoding import decode_session_summary
 
@@ -458,6 +461,7 @@ firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[va
 
 ### Pattern: Batch Processing
 
+<!-- docs-test: run setup=workflows_batch_processing_compute_spatial_rates -->
 ```python
 from neurospatial.encoding import compute_spatial_rates
 

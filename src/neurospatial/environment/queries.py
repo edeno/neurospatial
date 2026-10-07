@@ -150,12 +150,12 @@ class EnvironmentQueries:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> points = np.array([[2.0, 2.0], [15.0, 15.0]])
         >>> indices = env.bin_at(points)
-        >>> print(indices)  # doctest: +SKIP
-        [12 -1]  # Second point outside environment
+        >>> indices.tolist()  # -1 denotes the point outside the environment
+        [4, -1]
 
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
@@ -285,11 +285,11 @@ class EnvironmentQueries:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> neighbors = env.neighbors(0)
-        >>> print(len(neighbors))  # doctest: +SKIP
-        4  # Number of neighbors varies by layout
+        >>> len(neighbors)  # Corner bin, including diagonal connectivity
+        3
 
         """
         bin_index = _resolve_point_or_index(self, bin_index)

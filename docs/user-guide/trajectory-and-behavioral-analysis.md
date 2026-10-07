@@ -232,6 +232,7 @@ $$
 
 Detect when the animal enters or exits named regions.
 
+<!-- docs-test: run setup=docs_trajectory_region_crossings -->
 ```python
 from neurospatial.behavior.segmentation import detect_region_crossings
 

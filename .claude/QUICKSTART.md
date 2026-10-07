@@ -8,6 +8,7 @@ Essential patterns for daily use. Copy-paste and modify for your needs.
 
 ## Your First Environment
 
+<!-- docs-test: run -->
 ```python
 from neurospatial import Environment
 import numpy as np
@@ -83,13 +84,14 @@ env.units = "cm"
 
 **1D linearized track:**
 
+<!-- docs-test: run -->
 ```python
 import networkx as nx
 
 # Create track graph (nodes = track points, edges = connections)
 G = nx.Graph()
 G.add_nodes_from([(0, {"pos": (0, 0)}), (1, {"pos": (50, 0)}), (2, {"pos": (100, 0)})])
-G.add_edges_from([(0, 1), (1, 2)])
+G.add_edges_from([(0, 1), (1, 2)], distance=50.0)
 
 # from_graph requires edge_order (linearization order) and edge_spacing (gap between edges)
 env = Environment.from_graph(
@@ -101,6 +103,7 @@ env = Environment.from_graph(
 print(env.is_linearized_track)  # True
 
 # Linearization methods available
+nd_position = np.array([[25.0, 0.0]])  # On the first track segment
 linear_pos = env.to_linear(nd_position)
 nd_pos = env.linear_to_nd(linear_pos)
 ```
@@ -296,6 +299,7 @@ bias = goal_bias(positions, times, goal_position, min_speed=5.0)
 
 **VTE (Vicarious Trial and Error) detection:**
 
+<!-- docs-test: run setup=quickstart_vte_session -->
 ```python
 from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
@@ -505,6 +509,7 @@ df = result.summary_table()
 
 **Classify object-vector cells from result metrics:**
 
+<!-- docs-test: run setup=quickstart_ovc_classify_single -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate
 
@@ -629,6 +634,7 @@ df = result.summary_table()
 
 **Classify spatial view cells from result metrics:**
 
+<!-- docs-test: run setup=quickstart_view_classify -->
 ```python
 # Single-neuron result from compute_view_rate(...)
 print(single.is_spatial_view_cell(min_info=0.5))
@@ -665,6 +671,7 @@ spike_times = generate_poisson_spikes(rates, times, seed=42)
 
 **Visibility and gaze analysis:**
 
+<!-- docs-test: run -->
 ```python
 from neurospatial.ops.visibility import (
     compute_viewed_location,
@@ -695,8 +702,7 @@ print(f"Visible bins: {viewshed.n_visible_bins}")
 # Check which cues/landmarks are visible
 cue_positions = np.array([[80, 50], [20, 80]])
 visible, distances, bearings = visible_cues(
-    env, observer_position=np.array([50, 50]),
-    observer_heading=0.0, cue_positions=cue_positions
+    env, np.array([50, 50]), 0.0, cue_positions, fov=fov
 )
 ```
 
@@ -725,6 +731,7 @@ env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed
 
 **Add trajectory overlays:**
 
+<!-- docs-test: run setup=quickstart_overlay_block -->
 ```python
 from neurospatial.animation import (
     BodypartOverlay,
@@ -781,6 +788,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[video_overlay])
 
 ### Working with Regions
 
+<!-- docs-test: run -->
 ```python
 # Add regions
 env.regions.add("goal", point=(50.0, 50.0))
@@ -788,7 +796,9 @@ env.regions.add("start", point=(10.0, 10.0))
 
 # Query regions
 bins_in_goal = env.bins_in_region("goal")
-is_in_start = env.point_in_region((12.0, 12.0), "start")
+# Region membership uses the spatial bin containing the query point.
+query_bin = int(env.bin_at([[12.0, 12.0]])[0])
+is_in_start = query_bin in env.bins_in_region("start")
 
 # Update region (don't modify in place - regions are immutable)
 env.regions.update_region("goal", point=(55.0, 55.0))  # No warning
@@ -844,6 +854,7 @@ env.plot_field(place_field, title="Fitted Place Field")
 
 For circular predictors (head direction, theta phase, running direction):
 
+<!-- docs-test: run setup=quickstart_circular_basis_metrics -->
 ```python
 from neurospatial.stats.circular import (
     circular_basis,
@@ -917,6 +928,7 @@ print(f"Population mean shape: {result.mean_histogram.shape}")
 
 **GLM regressors from events:**
 
+<!-- docs-test: run setup=quickstart_events_glm_regressors -->
 ```python
 from neurospatial.events import time_to_nearest_event, event_indicator, event_count_in_window
 

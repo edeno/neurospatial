@@ -70,7 +70,6 @@ Run
 from __future__ import annotations
 
 import itertools
-import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -324,10 +323,9 @@ class Trial:
 def detect_region_crossings(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    arg3: Environment | str,
-    arg4: Environment | None = None,
+    env: Environment,
     *,
-    region_name: str | None = None,
+    region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -341,23 +339,17 @@ def detect_region_crossings(
     The :class:`~neurospatial.Environment` holding the region definition is
     passed positionally as the third argument in the new (0.6+) call form.
 
-    .. note::
-        The argument order changed in 0.6 to follow the behavioral-segmentation
-        convention ``(position_bins, times, env, *, region_name, ...)``, where
-        ``env`` is the environment containing the region. The old positional
-        order ``(position_bins, times, region_name, env, ...)`` is still
-        accepted for one release with a :class:`DeprecationWarning` and will be
-        removed in 0.7.
-
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to position bins (seconds).
+    env : Environment
+        Environment containing the named region.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
-        Keyword-only in the new (0.6+) call form.
+        Passed as a keyword-only argument.
     direction : {'both', 'entry', 'exit'}, optional
         Which crossings to detect:
         - 'both': detect entries and exits (default)
@@ -428,54 +420,6 @@ def detect_region_crossings(
     >>> len(crossings) > 0  # Should detect entries and exits
     True
     """
-    # TODO(0.7): collapse to the clean keyword-only signature
-    #   def detect_region_crossings(position_bins, times, env, *,
-    #                               region_name, direction="both")
-    # and drop this transitional dispatch + DeprecationWarning.
-    #
-    # Disambiguate old vs new positional order. The OLD order was
-    # ``(position_bins, times, region_name: str, env)``; the NEW order is
-    # ``(position_bins, times, env, *, region_name=...)``. The only accepted
-    # four-positional shape is the old order. A new-order call with positional
-    # region_name must fail clearly because it is not future-compatible.
-    env: Environment
-    if isinstance(arg3, str):
-        if arg4 is None:
-            raise TypeError(
-                "detect_region_crossings() missing required environment argument. "
-                "Call as detect_region_crossings(position_bins, times, env, "
-                "region_name=...)."
-            )
-        warnings.warn(
-            "detect_region_crossings argument order changed in 0.6: pass "
-            "(position_bins, times, env, region_name=...) instead of "
-            "(position_bins, times, region_name, env). The old positional "
-            "order is deprecated since 0.6 and will be removed in 0.7.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Old order: arg3 is region_name, arg4 is env.
-        region_name = arg3
-        env = arg4
-    elif arg4 is not None:
-        raise TypeError(
-            "detect_region_crossings() takes region_name as a keyword-only "
-            "argument in the new API. Call as "
-            "detect_region_crossings(position_bins, times, env, "
-            "region_name=...)."
-        )
-    else:
-        # New order: arg3 is env, region_name is keyword-only.
-        # (mypy narrows arg3 to Environment here via the isinstance check above)
-        env = arg3
-
-    if region_name is None:
-        raise TypeError(
-            "detect_region_crossings() missing required argument 'region_name'. "
-            "Call as detect_region_crossings(position_bins, times, env, "
-            "region_name=...)."
-        )
-
     # Validate inputs
     if region_name not in env.regions:
         available = list(env.regions.keys())
@@ -666,34 +610,30 @@ def detect_runs_between_regions(
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from shapely.geometry import Point  # doctest: +SKIP
-    >>> import numpy as np  # doctest: +SKIP
-    >>> x = np.linspace(0, 100, 200)  # doctest: +SKIP
-    >>> y = np.linspace(0, 100, 200)  # doctest: +SKIP
-    >>> positions = np.column_stack([x, y])  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-    >>> _ = env.regions.add(
-    ...     "start", polygon=Point(10.0, 50.0).buffer(5.0)
-    ... )  # doctest: +SKIP
-    >>> _ = env.regions.add(
-    ...     "goal", polygon=Point(90.0, 50.0).buffer(5.0)
-    ... )  # doctest: +SKIP
-    >>> traj_x = np.linspace(10.0, 90.0, 100)  # doctest: +SKIP
-    >>> traj_y = np.ones(100) * 50.0  # doctest: +SKIP
-    >>> trajectory = np.column_stack([traj_x, traj_y])  # doctest: +SKIP
-    >>> times = np.linspace(0, 5.0, 100)  # doctest: +SKIP
-    >>> position_bins = env.bin_at(trajectory)  # doctest: +SKIP
-    >>> runs = detect_runs_between_regions(  # doctest: +SKIP
-    ...     position_bins,  # doctest: +SKIP
-    ...     times,  # doctest: +SKIP
-    ...     env,  # doctest: +SKIP
-    ...     source="start",  # doctest: +SKIP
-    ...     target="goal",  # doctest: +SKIP
-    ...     min_duration=0.5,  # doctest: +SKIP
-    ...     max_duration=10.0,  # doctest: +SKIP
-    ... )  # doctest: +SKIP
-    >>> len(runs) > 0  # doctest: +SKIP
+    >>> from neurospatial import Environment
+    >>> from shapely.geometry import Point
+    >>> import numpy as np
+    >>> x = np.linspace(0, 100, 200)
+    >>> y = np.full(200, 50.0)
+    >>> positions = np.column_stack([x, y])
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> _ = env.regions.add("start", polygon=Point(10.0, 50.0).buffer(5.0))
+    >>> _ = env.regions.add("goal", polygon=Point(90.0, 50.0).buffer(5.0))
+    >>> traj_x = np.linspace(10.0, 90.0, 100)
+    >>> traj_y = np.ones(100) * 50.0
+    >>> trajectory = np.column_stack([traj_x, traj_y])
+    >>> times = np.linspace(0, 5.0, 100)
+    >>> position_bins = env.bin_at(trajectory)
+    >>> runs = detect_runs_between_regions(
+    ...     position_bins,
+    ...     times,
+    ...     env,
+    ...     source="start",
+    ...     target="goal",
+    ...     min_duration=0.5,
+    ...     max_duration=10.0,
+    ... )
+    >>> len(runs) > 0
     True
     """
     # Validate inputs
@@ -1280,48 +1220,49 @@ def detect_laps(
 
     Examples
     --------
-    Detect laps on circular track with auto template:
+    Detect laps on a circular track. The first 10% of this recording contains
+    a complete lap, so it can serve as the automatic template:
 
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.behavior.segmentation import detect_laps  # doctest: +SKIP
-    >>> theta = np.linspace(0, 4 * np.pi, 200)  # doctest: +SKIP
-    >>> x = 50 + 30 * np.cos(theta)  # doctest: +SKIP
-    >>> y = 50 + 30 * np.sin(theta)  # doctest: +SKIP
-    >>> positions = np.column_stack([x, y])  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=3.0)  # doctest: +SKIP
-    >>> position_bins = env.bin_at(positions)  # doctest: +SKIP
-    >>> times = np.linspace(0, 40, 200)  # doctest: +SKIP
-    >>> laps = detect_laps(position_bins, times, env, method="auto")  # doctest: +SKIP
-    >>> len(laps) >= 1  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior.segmentation import detect_laps
+    >>> theta = np.linspace(0, 20 * np.pi, 1801)
+    >>> x = 50 + 30 * np.cos(theta)
+    >>> y = 50 + 30 * np.sin(theta)
+    >>> positions = np.column_stack([x, y])
+    >>> env = Environment.from_samples(positions, bin_size=3.0)
+    >>> position_bins = env.bin_at(positions)
+    >>> times = np.linspace(0, 60, 1801)
+    >>> laps = detect_laps(position_bins, times, env, method="auto")
+    >>> len(laps) >= 1
     True
 
     Detect laps with user-provided reference:
 
-    >>> reference = position_bins[:50]  # doctest: +SKIP
-    >>> laps = detect_laps(  # doctest: +SKIP
+    >>> reference = position_bins[:181]
+    >>> laps = detect_laps(
     ...     position_bins,
     ...     times,
     ...     env,
     ...     method="reference",
-    ...     reference_lap=reference,  # doctest: +SKIP
-    ... )  # doctest: +SKIP
-    >>> all(lap.overlap_score >= 0.8 for lap in laps)  # doctest: +SKIP
+    ...     reference_lap=reference,
+    ... )
+    >>> all(lap.overlap_score >= 0.8 for lap in laps)
     True
 
     Filter laps by direction:
 
-    >>> laps_cw = detect_laps(
-    ...     position_bins, times, env, direction="clockwise"
-    ... )  # doctest: +SKIP
-    >>> laps_ccw = detect_laps(  # doctest: +SKIP
+    >>> laps_cw = detect_laps(position_bins, times, env, direction="clockwise")
+    >>> laps_ccw = detect_laps(
     ...     position_bins,
     ...     times,
     ...     env,
-    ...     direction="counter-clockwise",  # doctest: +SKIP
-    ... )  # doctest: +SKIP
-    >>> len(laps_cw) + len(laps_ccw) >= 0  # doctest: +SKIP
+    ...     direction="counter-clockwise",
+    ... )
+    >>> len(laps_ccw) > 0
     True
+    >>> len(laps_cw)
+    0
 
     Feed detected laps into directional place fields via
     :func:`laps_to_direction_labels`:

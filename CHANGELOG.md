@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Fixed — documentation
+
+- Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
+
+### Documentation
+
+- Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
+
+### Removed
+
+- Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
+
+### Added — executable documentation
+
+- Require function inputs to be documented under Parameters or Other Parameters; only class constructors may also use Attributes.
+
+- Install widget support in the headless module-doctest CI job so the newly executable widget example runs there too.
+
+- Execute Markdown examples using adjacent `docs-test` markers, cumulative reader state for README/quickstart, fresh seeded blocks for reference fragments, and restored animation setup patches. Replace the indexed snippet manifest and subprocess helper with default pytest coverage.
+
+- Execute flagship docstrings, including NWB geometry and position examples, with only display/video calls skipped. Module doctests write outputs in temporary directories; the NWB workflow enforces its examples separately.
+
+- Check public docstring sections and constructor inputs, and complete the missing examples and parameter documentation.
+
 ### Changed — errors that teach
 
 - Corrected-call guidance includes each encoder's and decoder's required arguments and all animation backends. Population egocentric validation reports coordinate and length problems together, and malformed peri-event window bounds fail with guidance before alignment.
@@ -758,11 +782,94 @@ messages, a few APIs were made consistent, and the docs/viewers were polished.
   architecture page; colorblind-safe `viridis` in examples; example-notebook
   links normalized with an internal link-check step in docs CI.
 
-## [v0.6.0] - 2026-07-03
 
-## What's Changed
 
-### Features
+### Additional release notes
+
+- **BREAKING: `smoothing_method` renamed to `method`.** The smoothing/estimator
+  keyword is now uniformly named `method` across every smoothing encoder
+  (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_place_cell`,
+  `compute_directional_place_fields`), the four rate result classes
+  (`SpatialRateResult`/`SpatialRatesResult`, `ViewRateResult`/`ViewRatesResult`),
+  the decoder (`decode_session`, `decode_session_summary`, `BayesianDecoder`),
+  and `simulation.validate_simulation`. This is a hard rename with no alias;
+  defaults and numerics are unchanged (`"diffusion_kde"`, or `"binned"` for the
+  egocentric encoders). NWB `write_spatial_rates` stores the estimator under the
+  key `"method"` (schema bumped to `2.0`); this is a clean break with no
+  back-compatibility shim, so spatial-rates tables written by earlier versions
+  (schema `1.x`) no longer read. On
+  `decode_session_summary`, `method` now names the smoothing estimator, so it is
+  no longer accepted as a per-block decode kwarg (Poisson is the only likelihood
+  and is applied unconditionally).
+
+- **`method="binned"` is not a dense-kernel memory mitigation.**
+  Earlier notes (through 0.6.0) recommended `binned` to avoid the dense
+  `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
+  diffusion kernel (via `env.smooth`), so all smoothing methods build a dense
+  kernel. The only memory mitigation is fewer bins (a larger `bin_size`).
+
+- **`add_positions` is now `add_positions(events, *, times, positions)`** —
+  reordered to the canonical `(data, times, positions)` order and made
+  **keyword-only** (a bare 1-D trajectory made a positional swap
+  shape-indistinguishable). *Migration:*
+  `add_positions(events, times=times, positions=positions)`.
+
+- **Assembly functions take `(n_time_bins, n_neurons)`** — `detect_assemblies`,
+  `assembly_activation`, `pairwise_correlations`, `reactivation_strength` now
+  match `decode_position` / `bin_spikes_in_time`. *Migration:* feed the default
+  `bin_spikes_in_time(...)` output as-is, or transpose an old
+  `(n_neurons, n_time_bins)` matrix.
+
+- **Behavior result `summary()` returns a `dict`** (was a formatted string).
+  *Migration:* use `str(result)` for the human-readable form.
+
+- **Fail-loud instead of silent sentinels** — `bin_at` raises on wrong-dimension
+  points on a graph/track env; `heading_from_velocity` raises when every sample
+  is below `min_speed` (opt out with `allow_all_nan=True`); graph queries reject
+  a multi-point coordinate batch.
+
+- **`units=` / `frame=` keyword args** on `from_samples`, `open_field`,
+  `linear_track`, and `maze` set the metadata at construction.
+
+- **Graph queries accept coordinates** (not just bin indices) — `neighbors`,
+  `path_between`, `reachable_from` map a coordinate via `bin_at`.
+
+- **`ResultMixin` on every result class** — concise repr/HTML and a scalar
+  `summary()` dict.
+
+- `dir(neurospatial.ops)` surfaces the lazily-exported ops (autocomplete).
+
+- **`min_occupancy` thresholds raw occupancy seconds, not smoothed density** —
+  fixes silent all-zero place fields; consistent across all smoothing methods
+  (single and batch); `min_occupancy=0.0` unchanged.
+
+- **Grid allocation is preflighted** — a transposed `(2, N)` trajectory raises
+  fast instead of OOMing; a likely-transposed array warns rather than
+  false-rejecting a valid low-sample N-D environment.
+
+- Non-finite query rows map to the `-1` sentinel per row (one NaN no longer
+  empties the whole map).
+
+- `to_file` no-overwrite default; `occupancy()` shape-before-monotonicity;
+  `from_graph` edge-`distance` validation.
+
+- `SpatialRateResult.plot()` colorbar docs corrected + "Firing Rate (Hz)" label;
+  actionable batch `plot()` error.
+
+- **Interactive-viewer accessibility** — HTML player keyboard-focus guard,
+  `:focus-visible`, aria-live toggled off during autoplay; napari region dock and
+  track-builder layout/labels.
+
+- Version bumped to 0.8.0; dead links and fork-clone fixed; value-first runnable
+  quickstart; grouped/collapsible nav; new advanced architecture page; `viridis`
+  defaults; example-notebook links normalized + internal link-check in docs CI.
+
+## [0.6.0] - 2026-07-03
+
+### Commit highlights
+
+#### Features
 - feat(io/nwb): SpatialRatesResult round-trip (write_spatial_rates/read_place_field) + lazy reads (92cb14a)
 - feat(decoding): add immutable BayesianDecoder (fit/predict/predict_summary/score) over the decode core (5ec00da)
 - feat(recording): add frozen Session bundle + load_session (from_arrays/from_nwb, with_environment/restrict) (5edf393)
@@ -896,10 +1003,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the project is pre-1.0, minor releases may still include breaking changes;
 these are called out under a dedicated **Breaking changes** heading.
-
-## [Unreleased]
-
-## [0.6.0] - 2026-07-03
 
 ### Changed
 
@@ -1678,6 +1781,151 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   many-neuron users to `compute_spatial_rates` (plural), which shares occupancy
   and smoothing-kernel work across the whole population.
 
+### Additional release notes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray`.
+  - Population rate results (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) use dims `("unit_id", "bin")`.
+    The rate matrix lives in the `firing_rate` data variable and `unit_id`
+    stores real per-unit identity labels.
+  - Decode results (`DecodingResult`) use dims `("time", "bin")`; they have no
+    `unit_id` axis.
+  - Duplicate `unit_ids` raise `ValueError` because label-based xarray
+    selection requires unique labels.
+
+- Batch encoding `to_dataframe()` is now dense tidy: one row per `(unit, bin)`,
+  always carrying `unit_id`, bin-center coordinates, `firing_rate`, and
+  `occupancy`.
+
+- Per-unit metric tables moved to `summary_table()`, which is indexed by
+  `unit_id`. The old `neuron_ids=` relabeling keyword is replaced by
+  `unit_ids=` on `summary_table()`.
+
+- Real unit identity on population results via `unit_ids`, plus singular
+  `unit_id` on indexed/iterated single-unit results.
+
+- `summary_table()` on batch encoding results and population PSTH results.
+
+- Experiment-shaped environment presets:
+  `Environment.open_field(...)`, `Environment.linear_track(...)`, and
+  `Environment.maze(...)`.
+
+- `SpatialRatesResult.label_cell_types()` for multi-class labels, with
+  `SpatialRatesResult.classify()` reserved for the boolean place-cell predicate.
+
+- `decode_position()` accepts population rate result objects directly, and
+  preserves their dtype (a `float32` rate result decodes in `float32` rather
+  than being promoted back to `float64`).
+
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  returns a new `DecodingSummary` result that streams over time and reduces
+  each block to per-time scalars/vectors (`map_position` / `map_bin`,
+  `mean_position`, `posterior_entropy`, `peak_prob`) without ever
+  materializing the full `(n_time, n_bins)` posterior. `decode_session_summary`
+  is the matching one-call encode -> bin -> decode wrapper, and now also
+  streams the time-binning so the full count matrix is never materialized
+  either. `DecodingSummary` carries the standard terminal verbs
+  (`to_dataframe()`, `summary()`, `plot()`, `to_xarray()`).
+
+- `decode_session()` and `decode_session_summary()` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`) that is honored
+  **end-to-end** — a single `dtype=np.float32` controls both the encoding-model
+  working set and the posterior, halving the decode working set on the golden
+  path (no silent promotion back to `float64`). Default `np.float64` leaves
+  every existing caller byte-for-byte unchanged; any other dtype raises
+  `ValueError`.
+
+- `decode_position()` gains keyword-only `dtype` (`np.float32` / `np.float64`,
+  default `np.float64`) and a **hybrid** `time_chunk`. `time_chunk=None` (the
+  default) keeps the full-matmul path byte-for-byte unchanged;
+  `decode_position(time_chunk=N)` computes the Poisson likelihood blockwise
+  directly into the preallocated posterior, cutting the transient peak to ~1×
+  over the returned posterior (tolerance-equal to the default, not byte-exact).
+  `decode_session()` forwards both.
+
+- The summary decoders (`decode_position_summary` / `decode_session_summary`)
+  **reject `time_chunk=None`** (raising a clear `ValueError`): a `None` value
+  would set the streaming block to the full session length and materialize the
+  full `(n_time, n_bins)` posterior, defeating their never-materialize contract.
+  `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
+
+- `compute_spatial_rates()` gains a keyword-only `dtype` (`np.float32` /
+  `np.float64`, default `np.float64`) to halve the memory of stored rate maps.
+
+- Speed filtering on the encode path: `compute_spatial_rate` /
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` (forwarded by
+  **both** `decode_session` and `decode_session_summary`). When `min_speed` is
+  set, **one shared per-interval speed gate** filters **both** the spike
+  numerator and the occupancy denominator, so a `min_speed` knob can never bias
+  firing rates by filtering only one side.
+
+- `population_coverage()` gains a keyword-only `n_jobs` parameter to
+  parallelize per-neuron coverage; results are identical regardless of
+  `n_jobs`.
+
+- `decode_session` / `decode_session_summary` now **validate `dt`** (finite,
+  `> 0`; non-numeric and `bool` rejected) up front with a clear `ValueError`,
+  matching `bin_spikes_in_time`. Previously the shared decode-grid builder
+  bypassed that guard, so an invalid `dt` leaked a cryptic downstream error
+  (`dt=0` -> `ZeroDivisionError`, `dt=NaN` -> "cannot convert float NaN to
+  integer", `dt<0` -> a misleading "span smaller than one bin" message).
+
+- `bin_spikes_in_time` now **validates `dt` consistently** via the same shared
+  helper: a non-numeric `dt` (including a numeric string like `"0.1"`) and a
+  `bool` (`dt=True`) now raise a clear `ValueError` ("dt must be a finite
+  number > 0, ..."). Previously a numeric string leaked a raw `TypeError` and
+  `dt=True` was silently accepted as a chunk size of `1`.
+
+- `decode_position` now **preserves `float32`** when handed a rate-result
+  object (anything exposing `.firing_rates`). Previously the friendly object
+  path promoted a `float32` `.firing_rates` to `float64`, silently losing part
+  of the `dtype=np.float32` memory win the raw-array path already delivered.
+  The object path now matches the raw-array path byte-for-byte: `float32` stays
+  `float32`, `float64` stays `float64`, an integer rate map is promoted to
+  `float64`, and a `None` / dict / non-2-D `.firing_rates` still raises the
+  same clear `ValueError`.
+
+- `time_chunk` is now **validated as a positive integer (not `bool`)** across
+  `normalize_to_posterior`, `decode_position`, `decode_position_summary`, and
+  `decode_session_summary`, raising a clear `ValueError` naming the value and
+  its type. Previously a float (`1.5`) or string (`"2"`) leaked a raw
+  `TypeError`, and `True` was silently accepted as a chunk size of `1`.
+
+- **Firing-rate numerator/denominator alignment (behavior change for gappy /
+  out-of-bounds data).** `compute_spatial_rate` / `compute_spatial_rates` gain
+  a keyword-only `max_gap` (default `0.5 s`); spikes inside large tracking gaps
+  and out-of-bounds excursions are now excluded from the numerator so it drops
+  the **identical** set of intervals that `env.occupancy` drops from the
+  denominator. Rate maps now differ (and are more correct) for sessions with
+  large tracking gaps or out-of-bounds samples; pass `max_gap=None` to disable
+  gap gating on both sides.
+
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores (single pass, faster for large populations).
+
+- The dense smoothing kernels (`diffusion_kde` and `gaussian_kde`) are
+  `O(n_bins²)` memory by construction. For very large bin counts they now emit
+  a loud `UserWarning` (with the estimated size) and **proceed** — there is no
+  hard limit and no opt-out parameter. To reduce memory, use
+  `smoothing_method="binned"` (or fewer bins / a larger `bin_size`).
+
+- `EgocentricRatesResult.detect_ovcs(...)` -> `classify(...)`
+
+- `ViewRatesResult.detect_view_cells(...)` -> `classify(...)`
+
+- `DirectionalRatesResult.detect_hd_cells(...)` -> `classify(...)`
+
+- `SpatialRatesResult.detect_cell_types(...)` -> `label_cell_types(...)`
+
+- `ViewRateResult.peak_view_location()` -> `peak_location()`
+
+- `ViewRatesResult.peak_view_location()` -> `peak_locations()`
+
+- `detect_region_crossings(position_bins, times, region_name, env, ...)` ->
+  `detect_region_crossings(position_bins, times, env, *, region_name, ...)`
+
 ## [v0.5.0] - 2026-06-04
 
 ## What's Changed
@@ -1861,7 +2109,7 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   bump it, so stale caches are surfaced loudly instead of returning
   silently-wrong results.
 - **`Environment.__str__` returns `info()`** for quick inspection.
-- **Glossary page** at [docs/glossary.md](docs/glossary.md) defining 14
+- **Glossary page** at [docs/glossary.md](https://edeno.github.io/neurospatial/glossary/) defining 14
   core terms. Linked from `docs/getting-started/core-concepts.md` and
   the README.
 - **`docs/api/index.md` expansion.** Structured sections for
@@ -2165,3 +2413,33 @@ names that were renamed during the M2 consolidation pass (see
 [0.4.0]: https://github.com/edeno/neurospatial/compare/v0.2.0...v0.4.0
 [0.2.0]: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/edeno/neurospatial/releases/tag/v0.1.0
+
+### Additional release notes
+
+- Initial release of neurospatial
+
+- Core `Environment` class with factory methods
+
+- Multiple layout engines (regular grid, hexagonal, triangular, graph-based)
+
+- Region support for defining ROIs
+
+- Composite environment functionality
+
+- Alignment and transformation tools
+
+- Comprehensive test suite
+
+- NumPy-style docstrings throughout
+
+- Automatic active bin detection from data samples
+
+- NetworkX-based connectivity graphs
+
+- 1D linearization for track-based experiments
+
+- Spatial queries (bin_at, neighbors, shortest_path, distance_between)
+
+- Visualization with matplotlib
+
+- Morphological operations (dilation, closing, hole filling)

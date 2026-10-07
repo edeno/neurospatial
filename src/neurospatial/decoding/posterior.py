@@ -1378,6 +1378,19 @@ def decode_position_summary(
     decode_position : Full-posterior decode (return contract unchanged).
     DecodingSummary : Streamed per-time reductions container.
     decode_session_summary : One-call encode->bin->summary-decode wrapper.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding import decode_position_summary
+    >>> positions = np.c_[np.arange(10.0), np.zeros(10)]
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> counts = np.ones((4, 2), dtype=np.int64)
+    >>> models = np.full((2, env.n_bins), 5.0)
+    >>> summary = decode_position_summary(env, counts, models, dt=0.1, time_chunk=2)
+    >>> summary.map_position.shape
+    (4, 2)
     """
     if time_chunk is None:
         raise ValueError(

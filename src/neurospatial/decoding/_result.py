@@ -85,9 +85,8 @@ class DecodingResult(ResultMixin):
     >>> result = DecodingResult(posterior=posterior, env=env)
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
-    >>> print(
-    ...     f"Mean entropy: {result.posterior_entropy.mean():.2f} bits"
-    ... )  # doctest: +SKIP
+    >>> print(f"Mean entropy: {result.posterior_entropy.mean():.2f} bits")
+    Mean entropy: ... bits
 
     Notes
     -----

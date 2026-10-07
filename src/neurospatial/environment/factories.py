@@ -317,6 +317,10 @@ class EnvironmentFactories:
         add_boundary_bins : bool, default False
             If True, add peripheral bins around the bounding region of samples.
 
+        **layout_specific_kwargs : Any
+            Additional options passed to the selected layout engine; see
+            ``get_layout_parameters(layout)`` for supported names.
+
         Returns
         -------
         env : Environment

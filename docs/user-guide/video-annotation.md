@@ -63,6 +63,7 @@ When the napari viewer opens:
 
 ### Step 3: Use the Results
 
+<!-- docs-test: run setup=docs_video_annotation_use_results -->
 ```python
 # The environment is ready to use
 print(f"Environment has {env.n_bins} bins")

@@ -103,6 +103,13 @@ class Region:
         nested container can be mutated after construction. Serialization via
         :meth:`to_dict` thaws this back into plain ``dict``/``list`` data.
 
+
+    Examples
+    --------
+    >>> from neurospatial import Region
+    >>> goal = Region(name="goal", kind="point", data=[5.0, 5.0])
+    >>> goal.n_dims
+    2
     """
 
     name: str
@@ -257,6 +264,19 @@ class Regions(MutableMapping[str, Region]):
 
     Provides the usual mapping API plus a few helpers
     (`add`, `remove`, `list_names`, `buffer`, …).
+
+    Parameters
+    ----------
+    items : iterable of Region or None, optional
+        Initial regions, keyed by each region's name. Omit for an empty container.
+
+    Examples
+    --------
+    >>> from neurospatial import Regions
+    >>> regions = Regions()
+    >>> _ = regions.add("home", point=(0.0, 0.0))
+    >>> regions["home"].name
+    'home'
     """
 
     __slots__ = ("_store",)

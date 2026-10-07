@@ -4,6 +4,7 @@ Animate spatial fields over time using four different backends optimized for dif
 
 ## Quick Start
 
+<!-- docs-test: run setup=docs_animation_quick_start -->
 ```python
 import numpy as np
 

@@ -158,6 +158,19 @@ class CompositeEnvironment:
     _layout_params_used : Dict[str, Any]
         Parameters used to construct the composite.
 
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import CompositeEnvironment, Environment
+    >>> corners = np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]])
+    >>> left = Environment.from_samples(corners, bin_size=1.0, name="left")
+    >>> right = Environment.from_samples(
+    ...     corners + [4.0, 0.0], bin_size=1.0, name="right"
+    ... )
+    >>> combined = CompositeEnvironment([left, right])
+    >>> combined.n_bins == left.n_bins + right.n_bins
+    True
     """
 
     is_linearized_track: bool

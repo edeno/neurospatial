@@ -43,13 +43,13 @@ def test_crossing_epochs_equal_slicing(continuous_pause_track):
     assert actual == expected
 
 
-def test_compatibility_warning_is_emitted_once(pause_track):
+def test_canonical_crossings_do_not_warn_for_multiple_runs(pause_track):
     r = pause_track
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        detect_region_crossings(r.position_bins, r.times, "target", r.env)
+        detect_region_crossings(r.position_bins, r.times, r.env, region_name="target")
     deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert len(deprecations) == 1
+    assert not deprecations
 
 
 def test_invalid_epochs_raise_without_observed_samples(pause_track):

@@ -109,9 +109,12 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> env.to_file("my_environment")  # doctest: +SKIP
-        >>> env.to_file("my_environment", overwrite=True)  # replace  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> env.to_file("my_environment")  # Creates .json and .npz companions
+        >>> env.to_file("my_environment", overwrite=True)  # Explicit replacement
 
         See Also
         --------
@@ -151,7 +154,14 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_file("my_environment")  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> env.to_file("my_environment")
+        >>> loaded = Environment.from_file("my_environment")
+        >>> loaded.n_bins == env.n_bins
+        True
 
         See Also
         --------

@@ -405,23 +405,23 @@ class EnvironmentTrajectory:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create environment
-        >>> data = np.array([[0, 0], [20, 20]])
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
-        >>> times = np.array([0.0, 1.0, 2.0, 3.0])  # doctest: +SKIP
-        >>> positions = np.array([[5, 5], [5, 5], [10, 10], [10, 10]])  # doctest: +SKIP
-        >>> occ = env.occupancy(times, positions)  # doctest: +SKIP
-        >>> occ.sum()  # doctest: +SKIP
-        3.0  # doctest: +SKIP
-        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])  # doctest: +SKIP
-        >>> occ_filtered = env.occupancy(  # doctest: +SKIP
+        >>> x, y = np.meshgrid(np.arange(0.0, 22.0, 2.0), np.arange(0.0, 22.0, 2.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.array([0.0, 1.0, 2.0, 3.0])
+        >>> positions = np.array([[5.0, 5.0], [5.0, 5.0], [10.0, 10.0], [10.0, 10.0]])
+        >>> # These 1 Hz demonstration samples are intentionally continuous.
+        >>> occ = env.occupancy(times, positions, max_gap=None)
+        >>> float(occ.sum())
+        3.0
+        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])
+        >>> occ_filtered = env.occupancy(
         ...     times,
         ...     positions,
         ...     speed=speeds,
         ...     min_speed=2.0,
-        ...     bandwidth=3.0,  # doctest: +SKIP
-        ... )  # doctest: +SKIP
+        ...     bandwidth=3.0,
+        ...     max_gap=None,
+        ... )
 
         """
         # Input validation

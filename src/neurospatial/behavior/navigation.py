@@ -1466,6 +1466,14 @@ def angular_efficiency(
     Notes
     -----
     Computed as: 1 - mean(|delta_theta|) / pi
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import angular_efficiency
+    >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    >>> angular_efficiency(positions, goal=np.array([2.0, 0.0]))
+    1.0
     """
     from neurospatial.behavior.trajectory import compute_turn_angles
 
@@ -1508,6 +1516,16 @@ def subgoal_efficiency(
     -------
     SubgoalEfficiencyResult
         Per-segment efficiency and aggregated metrics.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import subgoal_efficiency
+    >>> positions = np.c_[np.arange(11.0), np.zeros(11)]
+    >>> env = Environment.from_samples(positions, bin_size=1.0)
+    >>> subgoals = np.array([[5.0, 0.0], [10.0, 0.0]])
+    >>> result = subgoal_efficiency(env, positions, subgoals, metric="euclidean")
     """
     subgoals = np.asarray(subgoals)
     if subgoals.ndim == 1:
