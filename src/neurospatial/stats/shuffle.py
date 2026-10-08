@@ -23,6 +23,7 @@ Shuffle Categories
 | **Posterior** | Trajectory detection is not biased |
 | **Trial** | Trial identity is not significant |
 | **ISI** | Inter-spike interval ordering is not significant |
+| **Circular Spike Time** | Spike alignment to behavior exceeds shifted alignment |
 
 Note: Surrogate generation functions (Poisson, inhomogeneous Poisson, jitter)
 have been moved to ``neurospatial.stats.surrogates`` but are re-exported here
@@ -62,6 +63,9 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+from neurospatial._intervals import as_intervals
+
 # Import internal utilities from canonical location
 from neurospatial.stats._utils import _ensure_rng
 
@@ -81,6 +85,129 @@ if TYPE_CHECKING:
 # =============================================================================
 # I. Temporal Order Shuffles - Test sequential structure within events
 # =============================================================================
+
+
+def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
+    """Reject invalid counts and offsets before allocating shuffle output."""
+    problems = []
+    if (
+        isinstance(n_shuffles, (bool, np.bool_))
+        or not isinstance(n_shuffles, (int, np.integer))
+        or n_shuffles < 1
+    ):
+        problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
+    if not np.isscalar(min_shift) or not np.isfinite(min_shift) or min_shift < 0:
+        problems.append(f"min_shift={min_shift!r} must be finite and non-negative")
+    if problems:
+        raise ValueError(
+            _format_error(
+                "; ".join(problems) + ".",
+                why="Why: a null distribution needs a positive draw count and a valid time offset",
+                fix="pass n_shuffles=1000 and a finite min_shift>=0 in seconds",
+            )
+        )
+
+
+def shuffle_spike_times_circular(
+    spike_times: NDArray[np.float64],
+    windows: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Circularly shift spikes on the joined analyzed-time axis.
+
+    Join valid recording windows into one circular axis. Each draw adds one
+    uniform offset in [min_shift, T-min_shift] to all retained spikes. Counts
+    and circular spacings on that compressed clock are preserved; spikes never
+    enter a recording gap. Physical spacings across removed gaps can differ.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Spike timestamps in seconds. Spikes outside windows are dropped.
+    windows : ndarray, shape (n_windows, 2)
+        Half-open analyzed recording windows in seconds, on the spike clock.
+        The shared interval normalizer sorts and merges touching/overlapping rows.
+    n_shuffles : int, default=1000
+        Positive number of shifted trains to yield.
+    min_shift : float, default=20.0
+        Minimum offset in either direction, in seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Random generator or reproducible integer seed.
+
+    Yields
+    ------
+    ndarray, shape (n_spikes_in_windows,)
+        Sorted shifted spike times on the original recording clock.
+
+    Raises
+    ------
+    ValueError
+        If windows/settings are invalid or analyzed time is not longer than
+        twice min_shift.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.stats import shuffle_spike_times_circular
+    >>> draws = list(
+    ...     shuffle_spike_times_circular(
+    ...         np.array([1.0, 10.0, 205.0]),
+    ...         np.array([[0.0, 100.0], [200.0, 300.0]]),
+    ...         n_shuffles=3,
+    ...         rng=7,
+    ...     )
+    ... )
+    >>> [len(train) for train in draws]
+    [3, 3, 3]
+    """
+    _validate_circular_shift_settings(n_shuffles, min_shift)
+    normalized = as_intervals(windows, name="windows")
+    if normalized is None:
+        raise ValueError(
+            _format_error(
+                "windows must contain analyzed recording intervals.",
+                why="Why: spikes need explicit valid time bounds for circular shifting",
+                fix="pass windows=np.array([[start, stop]]) in seconds",
+            )
+        )
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
+        raise ValueError(
+            _format_error(
+                f"spike_times must be a finite 1-D array, got shape {spike_times.shape}.",
+                why="Why: circular shifting operates on one spike train in seconds",
+                fix="pass a finite 1-D spike_times array",
+            )
+        )
+    offsets = np.concatenate([[0.0], np.cumsum(normalized[:, 1] - normalized[:, 0])])
+    total = float(offsets[-1])
+    if total <= 2.0 * min_shift:
+        raise ValueError(
+            _format_error(
+                f"Analyzed time is {total:.1f} s, not longer than 2 * min_shift = {2.0 * min_shift:.1f} s.",
+                why="Why: no circular offset can move spikes by at least min_shift in both directions",
+                fix=f"pass min_shift={total / 4:.1f}, or analyze a longer recording",
+            )
+        )
+    idx = np.searchsorted(normalized[:, 0], spike_times, side="right") - 1
+    inside = (idx >= 0) & (spike_times < normalized[np.maximum(idx, 0), 1])
+    idx = idx[inside]
+    compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
+    generator = _ensure_rng(rng)
+    for _ in range(n_shuffles):
+        wrapped = np.mod(
+            compressed + generator.uniform(min_shift, total - min_shift), total
+        )
+        j = np.minimum(
+            np.searchsorted(offsets, wrapped, side="right") - 1, len(normalized) - 1
+        )
+        shifted = normalized[j, 0] + (wrapped - offsets[j])
+        # A sum on a large absolute clock may round up to an excluded stop.
+        shifted = np.minimum(shifted, np.nextafter(normalized[j, 1], normalized[j, 0]))
+        yield np.sort(shifted)
 
 
 def shuffle_time_bins(
