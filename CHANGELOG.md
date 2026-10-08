@@ -52,6 +52,8 @@
 
 ### Fixed
 
+- Plot native 1D rate maps as labeled lines over physical bin coordinates, including singular/population results and NaN breaks. Existing graph-track and 2D plotting paths are retained; rate arrays are unchanged.
+
 - Name the current `spike_times` keyword in simulation validation's missing-input diagnostic.
 
 - Name nonnumeric times/positions together in shared conversion errors, retaining shape/order problems from the convertible argument and providing Why/Fix guidance without changing valid arrays.
