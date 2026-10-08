@@ -125,6 +125,19 @@ units of Hz. Built from spike counts ÷ occupancy, optionally smoothed
 via graph diffusion or Gaussian KDE. The phrase "place field" refers
 to a thresholded subset of the rate map.
 
+### Shuffle significance
+
+An observed tuning statistic compared with a null distribution made by
+circularly shifting each spike train on the joined valid recording clock.
+Shifts preserve the retained spike count and compressed-clock circular
+spacing, avoid recording gaps, and break alignment with behavior. This null
+assumes stable firing statistics over analyzed time. Upper-tail p-values use
+`(1 + number of finite null scores >= observed) / (1 + number of finite scores)`.
+The five `encoding.*_cell_significance` functions return label-keyed results;
+free predicates use `criterion="shuffle"`. A threshold screen or detected
+place field is separate from a calibrated verdict, and a significant
+association alone does not establish cell identity.
+
 ### Spike-triggered
 
 Anything indexed by spike times rather than time bins. A

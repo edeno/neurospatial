@@ -2337,7 +2337,8 @@ def is_head_direction_cell(
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
-        Timestamps of head direction samples in seconds.
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
@@ -2701,7 +2702,8 @@ def head_direction_cell_significance(
         All formats are coerced to per-neuron spike trains via
         ``as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
-        Strictly increasing sample timestamps in seconds.
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,

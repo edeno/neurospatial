@@ -73,6 +73,8 @@ print(result.summary())
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
 print("Spatial information (bits/spike):", result.spatial_information())
+print("Place candidate (information screen):", result.is_place_cell(criterion="spatial_info"))
+print("Has a detected field:", result.has_place_field())
 
 # Plot the firing-rate map; returns a Matplotlib Axes you can further style.
 ax = result.plot()
@@ -83,6 +85,13 @@ plt.show()
 The peak sits near `(50, 50)` cm — right where the place cell was tuned — and
 the map is a smooth bump over the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
+
+Cell classification requires choosing a criterion: `"spatial_info"` is a fast
+screen biased upward at low spike counts; `"shuffle"` compares information with
+circularly shifted spike trains. Call
+`is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
+for that verdict using the raw arrays. It costs about 1000 map recomputes by
+default. Results offer screens and field detection; they keep no raw arrays.
 
 ## What just happened
 

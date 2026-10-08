@@ -453,6 +453,13 @@ bearing is heading-relative (0 = ahead, +pi/2 = left). Results record
 
 **Compute allocentric rate field (no headings):**
 
+Information thresholds screen candidates rather than establish object-vector
+identity. Use `object_vector_cell_significance(...)` for allocentric direction
+or `egocentric_object_vector_cell_significance(...)` with headings for animal-
+relative bearing. Free frame predicates also accept `criterion="shuffle"`;
+match `unit_id` and the integer `rng` with a population call for the same stream.
+A significant position association can also arise from a place-cell control.
+
 <!-- docs-test: run setup=quickstart_ovc_classify_single -->
 ```python
 from neurospatial.encoding import compute_object_vector_rate, is_object_vector_cell
@@ -653,7 +660,13 @@ view_cells = result.classify(min_info=0.5)  # (n_neurons,) bool
 df = result.summary_table()
 ```
 
-**Classify spatial view cells from result metrics:**
+**Screen spatial view candidates from result metrics:**
+
+Information screens are biased at low spike counts. For a circular-shift
+verdict, use `is_spatial_view_cell(env, spikes, times, positions, headings,
+criterion="shuffle", rng=0)` or `spatial_view_cell_significance(...)` on the raw
+arrays. They reuse the observed gaze model and valid recording windows and
+cost about `n_shuffles` map recomputes. Result methods stay threshold-only.
 
 <!-- docs-test: run setup=quickstart_view_classify -->
 ```python

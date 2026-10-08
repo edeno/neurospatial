@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Validate required environments before constructing place/view shuffle windows, so missing environments receive the encoder diagnostic and a corrected call. Object-vector Euclidean significance continues to accept `env=None`.
+
 - Normalize allocentric object bearings exactly like zero-heading egocentric bearings at direction-bin boundaries, and make invalid-environment guidance omit headings for allocentric calls. Result help consistently describes the recorded frame.
 
 - Require the documented spatial-information threshold for every place, grid and border label. In the seeded 10-minute noise example, erroneous border labels fall from 19/20 to 0/20; label precedence and threshold values are unchanged.
@@ -43,6 +45,8 @@
 - Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
 
 ### Documentation
+
+- Update cell-criterion migration, README/quickstart, API references, glossary and neuroscience guidance. Execute six new flagship docstrings and synchronize the view, heading and object-vector tutorials; the object-vector tutorial reports its estimator/criterion and adds seeded shuffle results alongside an explicit place-cell control.
 
 - Document finite-count information bias and the measured noise-screen results in every cell predicate, field detector and batch classifier. Explain occupancy bias in rate-weighted Rayleigh tests, circular-shift assumptions and the need for calibrated publication verdicts; retain the uniform-spike example and show its shuffle rejection.
 

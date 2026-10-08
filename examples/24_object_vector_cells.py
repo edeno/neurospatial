@@ -64,6 +64,7 @@ from neurospatial import Environment
 from neurospatial.encoding import (
     compute_egocentric_rate,
     compute_spatial_rate,
+    egocentric_object_vector_cell_significance,
     is_egocentric_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
@@ -424,37 +425,17 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 # %% [markdown]
 # ## Part 9: Two-Sided Classification
 #
-# Two ways to classify a candidate OVC, with a caveat about which
-# tuning curve each one uses:
-#
-# 1. **``is_egocentric_object_vector_cell``** — the library's one-shot screener.
-#    It internally calls ``compute_egocentric_rate`` with the default
-#    smoothing (``method="binned"``, no bandwidth, no occupancy
-#    threshold) and classifies on the egocentric-spatial-information
-#    criterion, comparing the tuning's information against its default
-#    ``min_info=0.3`` (bits/spike). This is fast but the raw-binned
-#    tuning is noisy in egocentric polar coordinates, so the
-#    information is typically lower than what you would get on a
-#    smoothed tuning.
-# 2. **Manual two-criterion check** on the *smoothed* tuning we
-#    already computed: ``object_vector_score`` plus
-#    ``spatial_information``. Smoothing buys a much cleaner
-#    score but requires picking smoothing parameters explicitly, so
-#    thresholds need to be tuned to your recording.
-#
-# We show both. Because they apply *different criteria* — the library
-# screen looks at egocentric spatial information alone, while the manual
-# screen requires both an object-vector score and an information
-# threshold — they can disagree. The place cell below is exactly such a
-# case: the info-only library screen returns ``True`` (the place field
-# carries enough egocentric information to clear ``min_info=0.3``), while
-# the stricter manual score+info screen returns ``False`` (its
-# object-vector score is far too low). Pick one workflow and stick with
-# it. See the ``is_egocentric_object_vector_cell`` docstring for guidance on
-# choosing thresholds.
+# Information screens identify candidate associations, not cell identity.
+# Raw and smoothed estimators can give either ordering of information;
+# raw binning is not universally lower or more conservative. Compare a free
+# predicate and a result method using the same estimator and parameters.
+# We show the library information screen, a manually chosen score+information
+# screen, and a calibrated circular-shift verdict. The explicit place-cell
+# control can have significant polar information too: a shuffle breaks
+# alignment with behavior, not the distinction between place and object tuning.
 
 # %%
-# 1. Library one-shot screener (raw-binned tuning, default thresholds)
+# 1. Library information screen (binned, bandwidth=5 cm, min_info=0.3)
 ovc_is_ovc = is_egocentric_object_vector_cell(
     env,
     ovc_spikes,
@@ -465,6 +446,9 @@ ovc_is_ovc = is_egocentric_object_vector_cell(
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
     n_direction_bins=12,
+    criterion="threshold",
+    method="binned",
+    bandwidth=5.0,
 )
 pc_is_ovc = is_egocentric_object_vector_cell(
     env,
@@ -476,8 +460,35 @@ pc_is_ovc = is_egocentric_object_vector_cell(
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
     n_direction_bins=12,
+    criterion="threshold",
+    method="binned",
+    bandwidth=5.0,
 )
-print("is_egocentric_object_vector_cell (library, default thresholds):")
+raw_ovc_result = compute_egocentric_rate(
+    env,
+    ovc_spikes,
+    times,
+    positions,
+    headings,
+    object_positions,
+    method="binned",
+    bandwidth=5.0,
+)
+raw_pc_result = compute_egocentric_rate(
+    env,
+    pc_spikes,
+    times,
+    positions,
+    headings,
+    object_positions,
+    method="binned",
+    bandwidth=5.0,
+)
+assert ovc_is_ovc == raw_ovc_result.is_object_vector_cell(min_info=0.3)
+assert pc_is_ovc == raw_pc_result.is_object_vector_cell(min_info=0.3)
+print(
+    "Egocentric candidates (criterion=threshold, method=binned, bandwidth=5, min_info=0.3):"
+)
 print(f"  OVC -> {ovc_is_ovc}")
 print(f"  Place cell -> {pc_is_ovc}")
 if pc_is_ovc:
@@ -487,16 +498,11 @@ if pc_is_ovc:
     )
 
 # 2. Manual screening on the smoothed tuning we computed in Part 5.
-# Thresholds chosen for this simulation - 0.1 is permissive given the
-# small absolute scores typical of smoothed egocentric polar maps;
-# 1.0 bits/spike is well above the library's 0.3-default but
-# comfortably below the strong-OVC range (0.5-1.5+) the
-# ``ObjectVectorRateResult.is_object_vector_cell`` docstring discusses.
-# Tune both to your recording.
+# Demo cutoffs are screening choices, not calibrated false-positive levels.
 score_threshold = 0.1
 info_threshold = 1.0
 print(
-    "\nManual screening (smoothed tuning, demo thresholds "
+    "\nManual screening (diffusion_kde, bandwidth=5, demo thresholds "
     f"score>{score_threshold}, info>{info_threshold} bits/spike):"
 )
 print(f"  {'Metric':<32} {'OVC':<10} {'Place':<10}")
@@ -510,6 +516,53 @@ ovc_passes = ovc_score > score_threshold and ovc_egoc_info > info_threshold
 pc_passes = pc_score > score_threshold and pc_egoc_info > info_threshold
 print(f"  OVC -> {ovc_passes}")
 print(f"  Place cell -> {pc_passes}")
+
+# %% [markdown]
+# ## Part 10: Circular-Shift Significance
+#
+# Test egocentric spatial information with the same binned estimator as the
+# library screen. Fifty shuffles keep this tutorial quick (minimum p=1/51);
+# use more for a precise publication p-value. Shifts use the joined valid
+# recording clock, preserve circular spike spacing there, and assume stable
+# firing statistics. Neither significance nor a cutoff alone establishes
+# object-vector identity; retain the place-cell control and compare frames.
+
+# %%
+shuffle_results = egocentric_object_vector_cell_significance(
+    env,
+    [ovc_spikes, pc_spikes],
+    times,
+    positions,
+    headings,
+    object_positions,
+    unit_ids=["egocentric_model", "place_control"],
+    method="binned",
+    bandwidth=5.0,
+    n_shuffles=50,
+    min_shift=20.0,
+    rng=0,
+)
+print(
+    "Egocentric association (criterion=shuffle, method=binned, bandwidth=5, alpha=0.05):"
+)
+for label, test in shuffle_results.items():
+    print(f"  {label}: p={test.p_value:.4f}, verdict={test.p_value < 0.05}")
+    spikes = ovc_spikes if label == "egocentric_model" else pc_spikes
+    assert is_egocentric_object_vector_cell(
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        object_positions,
+        criterion="shuffle",
+        method="binned",
+        bandwidth=5.0,
+        n_shuffles=50,
+        min_shift=20.0,
+        rng=0,
+        unit_id=label,
+    ) == (test.p_value < 0.05)
 
 # %% [markdown]
 # ## Summary
@@ -547,10 +600,11 @@ print(f"  Place cell -> {pc_passes}")
 # ### Classification
 # - The library default ``is_egocentric_object_vector_cell`` uses
 #   ``min_info=0.3`` bits/spike (egocentric spatial information) on the
-#   *raw-binned* tuning - fast screen, conservative
-# - Computing the score on a smoothed tuning (as in Part 5) gives
-#   higher absolute scores but requires picking smoothing parameters
-#   and thresholds appropriate to your recording
+#   binned tuning with bandwidth=5 - a fast, biased candidate screen
+# - Raw/smoothed information ordering depends on the data and estimator.
+#   Report the estimator and criterion for every verdict.
+# - Circular shifts calibrate association under a stable-clock null; a
+#   significant place-cell control still does not establish object-vector identity.
 # - Comparing egocentric vs allocentric spatial information (Part 8)
 #   is a frame-specific check: the egocentric model should favor egocentric
 #   tuning; the allocentric model below should favor allocentric tuning.

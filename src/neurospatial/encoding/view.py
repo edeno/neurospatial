@@ -1917,12 +1917,11 @@ def is_spatial_view_cell(
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : ndarray, shape (n_samples, 2)
-        Position coordinates at each time sample. NaN values (in positions or
-        headings) are treated as missing data and excluded from occupancy and
-        firing-rate computation; callers do not need to pre-filter tracking
-        dropouts.
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
@@ -2043,7 +2042,7 @@ def is_spatial_view_cell(
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> times = np.linspace(0, 40, 1000)
     >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
-    >>> spike_times = np.random.uniform(0, 40, 50)
+    >>> spike_times = np.sort(np.random.default_rng(0).uniform(0, 40, 50))
     >>> result = is_spatial_view_cell(env, spike_times, times, positions, headings)
     >>> type(result)
     <class 'bool'>
@@ -2159,9 +2158,11 @@ def spatial_view_cell_significance(
         All formats are coerced to per-neuron spike trains via
         ``as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
-        Strictly increasing sample timestamps in seconds.
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
     positions : ndarray, shape (n_samples, n_dims)
-        Animal position samples aligned with times, in environment length units.
+        Raw animal coordinates aligned with times, in environment units.
+
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
@@ -2321,12 +2322,11 @@ def spatial_view_cell_significance(
     options.update(
         epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
     )
-    if env is not None:
-        validate_env_fitted(
-            env,
-            context="spatial_view_cell_significance",
-            arguments="spike_times, times, positions, headings",
-        )
+    validate_env_fitted(
+        env,
+        context="spatial_view_cell_significance",
+        arguments="spike_times, times, positions, headings",
+    )
     validate_trajectory(
         times,
         positions=positions,

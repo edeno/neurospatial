@@ -4587,10 +4587,12 @@ def has_place_field(
         Spatial environment defining the discretization.
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Times of spikes.
-    times : NDArray[np.float64], shape (n_time,)
-        Timestamps for each behavioral sample.
-    positions : NDArray[np.float64], shape (n_time, n_dims)
-        Animal positions.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0
@@ -4830,16 +4832,12 @@ def is_place_cell(
         (e.g., created via ``Environment.from_samples()``).
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
         Estimator to use:
 
@@ -5447,9 +5445,11 @@ def place_cell_significance(
         ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
         group must equal the group's index.
     times : ndarray, shape (n_samples,)
-        Strictly increasing sample timestamps in seconds.
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
     positions : ndarray, shape (n_samples, n_dims)
-        Animal position samples aligned with times, in environment length units.
+        Raw animal coordinates aligned with times, in environment units.
+
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
         Estimator to use. See ``compute_spatial_rate()`` for details. In addition
         to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
@@ -5689,12 +5689,11 @@ def place_cell_significance(
     options.update(
         epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
     )
-    if env is not None:
-        validate_env_fitted(
-            env,
-            context="place_cell_significance",
-            arguments="spike_times, times, positions",
-        )
+    validate_env_fitted(
+        env,
+        context="place_cell_significance",
+        arguments="spike_times, times, positions",
+    )
     validate_trajectory(times, positions=positions, context="place_cell_significance")
     for train in trains:
         validate_spike_times(train, context="place_cell_significance")

@@ -294,3 +294,15 @@ def test_input_group_labels_cannot_be_overridden(
         )
     assert "10" in str(caught.value) and "20" in str(caught.value)
     assert "Fix:" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "name", ["place_cell_significance", "spatial_view_cell_significance"]
+)
+def test_significance_requires_fitted_environment(name, significance_recording):
+    r = significance_recording
+    args = (None, r.trains, r.times, r.positions)
+    if name == "spatial_view_cell_significance":
+        args += (r.headings,)
+    with pytest.raises(TypeError, match="Fix:"):
+        getattr(encoding, name)(*args, n_shuffles=1, rng=0)

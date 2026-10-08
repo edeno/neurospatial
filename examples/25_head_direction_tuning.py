@@ -250,11 +250,16 @@ print(f"True preferred direction: {np.degrees(preferred):.0f}° (HD cell)")
 #
 # ``is_head_direction_cell`` is the standalone classifier used for
 # screening. It applies the standard MVL ≥ 0.4 and Rayleigh p < 0.05
-# criteria.
+# criteria. Rate-weighted Rayleigh can be occupancy-biased; for a calibrated
+# circular-shift verdict use head_direction_cell_significance on raw arrays.
 
 # %%
-hd_is_hd = is_head_direction_cell(hd_spikes, times, headings)
-pc_is_hd = is_head_direction_cell(pc_spikes, times, headings)
+hd_is_hd = is_head_direction_cell(
+    hd_spikes, times, headings, criterion="threshold", min_mvl=0.4, alpha=0.05
+)
+pc_is_hd = is_head_direction_cell(
+    pc_spikes, times, headings, criterion="threshold", min_mvl=0.4, alpha=0.05
+)
 print(f"HD cell classified as HD:    {hd_is_hd}")
 print(f"Place cell classified as HD: {pc_is_hd}")
 
@@ -263,8 +268,12 @@ print(f"Place cell classified as HD: {pc_is_hd}")
 # defaults but is cheaper if you already computed the rate map:
 
 # %%
-print(f"hd_result.is_head_direction_cell() = {hd_result.is_head_direction_cell()}")
-print(f"pc_result.is_head_direction_cell() = {pc_result.is_head_direction_cell()}")
+print(
+    f"hd_result.is_head_direction_cell(min_mvl=0.4, alpha=0.05) = {hd_result.is_head_direction_cell(min_mvl=0.4, alpha=0.05)}"
+)
+print(
+    f"pc_result.is_head_direction_cell(min_mvl=0.4, alpha=0.05) = {pc_result.is_head_direction_cell(min_mvl=0.4, alpha=0.05)}"
+)
 
 # %% [markdown]
 # ## Part 7: Polar Tuning Curve Plot
