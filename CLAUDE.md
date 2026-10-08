@@ -69,6 +69,10 @@ func(
     *,                      # 4. Keyword-only separator
     region_params,          # 5. Region specifications (start_region, end_regions, etc.)
 )
+
+# Behavior with required coordinate samples
+func(env, times, positions, ...)  # When spatial context is required
+func(times, positions, ...)       # Without an environment
 ```
 
 **Key principles:**
@@ -76,6 +80,8 @@ func(
 - **Environment first** for encoding functions (establishes spatial context)
 - **Animal state before targets** for egocentric ops (positions, headings, then targets)
 - **Data before metadata** (spike_times before times, positions before headings)
+- **Times before positions** whenever both are required; positions-first
+  functions keep optional timestamps in their documented slot.
 - **Use `positions`** not `trajectory` for coordinate arrays (consistency)
 - **Use `position_bins`** not `trajectory_bins` for discretized indices
 

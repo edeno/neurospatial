@@ -363,10 +363,10 @@ def extract_pre_decision_window(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Full trajectory timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Full trajectory positions.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
@@ -441,10 +441,10 @@ def pre_decision_heading_stats(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
@@ -541,10 +541,10 @@ def pre_decision_speed_stats(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -617,10 +617,10 @@ def compute_pre_decision_metrics(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Full trajectory timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Full trajectory positions.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
@@ -988,10 +988,10 @@ def compute_decision_analysis(
     ----------
     env : Environment
         Spatial environment with region definitions.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     decision_region : str
         Name of decision region in env.regions (e.g., "center" for T-maze).
     goal_regions : list[str]

@@ -565,10 +565,10 @@ def shuffle_place_fields_circular_2d(
 
     Parameters
     ----------
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) for each neuron.
     env : Environment
         2D environment with grid layout (provides ``grid_shape``).
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps (place fields) for each neuron.
     n_shuffles : int, default=1000
         Number of shuffled versions to generate.
     rng : np.random.Generator | int | None, default=None

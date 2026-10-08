@@ -811,10 +811,10 @@ def segment_by_velocity(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Continuous position samples (e.g., in cm).
     min_speed : float
         Velocity threshold for movement classification (units/second).
         Samples with velocity > ``min_speed`` are considered movement.

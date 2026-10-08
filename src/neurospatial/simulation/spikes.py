@@ -238,10 +238,10 @@ def generate_population_spikes(
     models : list[NeuralModel]
         List of neural models (PlaceCellModel, BoundaryCellModel, GridCellModel, etc.).
         Each model must implement the NeuralModel protocol.
-    positions : NDArray[np.float64], shape (n_time, n_dims)
-        Position trajectory in continuous coordinates.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds (must be uniformly spaced).
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Position trajectory in continuous coordinates.
     headings : NDArray[np.float64], shape (n_time,), optional
         Head direction in radians. Required for spatial-view models and
         directional object-vector models. For head-direction models, headings

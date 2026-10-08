@@ -1161,12 +1161,12 @@ def visibility_occupancy(
     ----------
     env : Environment
         The environment.
+    times : NDArray[np.float64], shape (n_time,)
+        Timestamps for each position.
     positions : NDArray[np.float64], shape (n_time, 2)
         Positions along trajectory.
     headings : NDArray[np.float64], shape (n_time,)
         Headings at each position.
-    times : NDArray[np.float64], shape (n_time,)
-        Timestamps for each position.
     fov : FieldOfView, float, or None, default None
         Field of view constraint.
     n_rays : int, default 360

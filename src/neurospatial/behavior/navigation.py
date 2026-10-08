@@ -55,12 +55,12 @@ Typical Workflows
     3. Compute metrics: ``path_progress()``, ``distance_to_region()``, etc.
 
 **Path efficiency analysis**:
-    1. Compute efficiency: ``result = compute_path_efficiency(env, positions, times, goal)``
+    1. Compute efficiency: ``result = compute_path_efficiency(env, times, positions, goal)``
     2. Check efficiency: ``if result.is_efficient(threshold=0.8): ...``
     3. Print summary: ``print(result)``
 
 **Goal-directed analysis**:
-    1. Compute metrics: ``result = compute_goal_directed_metrics(env, positions, times, goal)``
+    1. Compute metrics: ``result = compute_goal_directed_metrics(env, times, positions, goal)``
     2. Check goal-directed: ``if result.is_goal_directed(): ...``
 
 Example
@@ -91,11 +91,11 @@ Complete analysis pipeline for a spatial navigation task::
     )
 
     # 3. Compute efficiency
-    result = compute_path_efficiency(env, positions, times, goal)
+    result = compute_path_efficiency(env, times, positions, goal)
     print(result)
 
     # 4. Compute goal-directed metrics
-    gd_result = compute_goal_directed_metrics(env, positions, times, goal)
+    gd_result = compute_goal_directed_metrics(env, times, positions, goal)
     print(f"Goal bias: {gd_result.goal_bias:.2f}")
 
 References
@@ -1395,10 +1395,10 @@ def time_efficiency(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions.
     reference_speed : float
         Reference speed in environment units per second.
     optimal_distance : float
@@ -1636,10 +1636,10 @@ def compute_path_efficiency(
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -1824,10 +1824,10 @@ def instantaneous_goal_alignment(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     min_speed : float, default=5.0
@@ -1909,10 +1909,10 @@ def goal_bias(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     min_speed : float, default=5.0
@@ -1980,10 +1980,10 @@ def approach_rate(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
@@ -2096,10 +2096,10 @@ def compute_goal_directed_metrics(
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"

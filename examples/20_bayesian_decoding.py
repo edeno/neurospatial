@@ -306,6 +306,10 @@ plt.show()
 #
 # The next four parts walk through those stages explicitly. They reproduce what
 # `decode_session` did above, so the decoded result matches.
+# For an existing SpatialRatesResult, use
+# `BayesianDecoder.from_rates(batch_result, dt=dt).predict(spike_times_list, times)`.
+# Pass prediction epochs and spike_window explicitly, and keep the returned
+# decoder timestamps when the recording has gaps.
 #
 # ### Build Encoding Models
 #
@@ -810,7 +814,7 @@ df.head()
 # ### The Manual Three-Call Path (custom control)
 # - Compute place fields for all neurons with `compute_spatial_rates()` (access `.firing_rates`)
 #   — result shape `(n_neurons, n_bins)`, ready for `decode_position()`
-# - Bin spikes with `bin_spikes_in_time(spike_trains, dt, t_start, t_stop)` → shape `(n_time_bins, n_neurons)`
+# - Bin spikes with `bin_spikes_in_time(spike_times, dt, t_start, t_stop)` → shape `(n_time_bins, n_neurons)`
 # - Decode with `decode_position()` to get the posterior distribution
 # - Use this when you need custom encoding models, to reuse fitted fields, or to inspect intermediates
 # - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `posterior_entropy`

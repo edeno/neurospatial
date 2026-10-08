@@ -333,10 +333,10 @@ def compute_region_coverage(
 
     Parameters
     ----------
-    field_bins : array of int
-        Bin indices comprising the field (e.g., from detect_place_fields).
     env : Environment
         Spatial environment with defined regions.
+    field_bins : array of int
+        Bin indices comprising the field (e.g., from detect_place_fields).
     regions : list of str, optional
         List of region names to analyze. If None, analyzes all regions
         defined in env.regions.

@@ -535,10 +535,10 @@ def mean_square_displacement(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions in continuous space.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps corresponding to each sample in the trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).

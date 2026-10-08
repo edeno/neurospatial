@@ -45,10 +45,10 @@ def calibrate_video(
 
     Parameters
     ----------
-    video_path : str or Path
-        Path to video file for extracting frame size.
     env : Environment
         Environment to calibrate against (used for bounds validation).
+    video_path : str or Path
+        Path to video file for extracting frame size.
     scale_bar : tuple, optional
         Scale bar calibration as ((x1, y1), (x2, y2), length_cm).
         The two points define the endpoints of a known-length bar in pixels.

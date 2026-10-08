@@ -728,10 +728,10 @@ def _velocity_heading_and_speed(
 
     Parameters
     ----------
-    positions : ndarray, shape (n_samples, 2)
-        Position coordinates in environment units.
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Position coordinates in environment units.
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         Observed intervals supplied by the shared mask helper.
     bandwidth : float, default=0.0
@@ -792,10 +792,19 @@ def heading_from_velocity(
 
     Parameters
     ----------
-    positions : NDArray, shape (n_time, 2)
-        Animal positions over time, in environment units (e.g. cm).
     times : array-like, shape (n_time,)
         Finite, strictly increasing timestamps in seconds, one per position.
+    positions : NDArray, shape (n_time, 2)
+        Animal positions over time, in environment units (e.g. cm).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+
     min_speed : float, default 0.0
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples
@@ -810,15 +819,6 @@ def heading_from_velocity(
         raises ``ValueError`` so the failure is loud; ``True`` returns an
         all-NaN array with a ``UserWarning`` instead, for batch pipelines that
         handle NaN explicitly.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-        Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
-
     Returns
     -------
     NDArray, shape (n_time,)

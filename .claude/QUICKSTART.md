@@ -952,9 +952,9 @@ plot_peri_event_histogram(result, show_sem=True, as_rate=True)
 from neurospatial.events import population_peri_event_histogram
 
 # Analyze multiple neurons
-spike_trains = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+spike_times = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = population_peri_event_histogram(
-    spike_trains, event_times, window=(-1.0, 2.0), bin_size=0.025
+    spike_times, event_times, window=(-1.0, 2.0), bin_size=0.025
 )
 
 print(f"Population mean shape: {result.mean_histogram.shape}")

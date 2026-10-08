@@ -175,8 +175,8 @@ def decode_session(
         When ``None`` (default) no speed filtering is applied (unchanged).
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals are excluded from encoding and decoding, including
-        when ``encoding_models`` is provided. ``None`` disables the gap check.
+        Longer intervals are excluded from encoding and decoding.
+        ``None`` disables the gap check.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

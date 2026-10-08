@@ -134,10 +134,10 @@ def map_points_to_bins(
 
     Parameters
     ----------
-    points : NDArray[np.float64], shape (n_points, n_dims)
-        Continuous coordinates to map to bins.
     env : Environment
         Environment containing the bin discretization.
+    points : NDArray[np.float64], shape (n_points, n_dims)
+        Continuous coordinates to map to bins.
     tie_break : TieBreakStrategy or {"lowest_index", "closest_center"}, default=TieBreakStrategy.LOWEST_INDEX
         Strategy for resolving ties when a point is equidistant from multiple
         bin centers. Can pass either a TieBreakStrategy enum member or a string.

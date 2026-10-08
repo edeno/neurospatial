@@ -324,10 +324,10 @@ def rate_map_coherence(
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
     env : EnvironmentProtocol
         Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
     method : {'pearson', 'spearman'}, optional
         Correlation method. Default is 'pearson'.
         - 'pearson': Pearson correlation (linear relationship)
@@ -568,13 +568,13 @@ def field_shape_metrics(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment for bin positions. Must be 2D (n_dims == 2).
+
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     field_bins : NDArray[np.int64], shape (n_field_bins,)
         Indices of bins belonging to the place field.
-    env : Environment
-        Spatial environment for bin positions. Must be 2D (n_dims == 2).
-
     Returns
     -------
     dict[str, float]

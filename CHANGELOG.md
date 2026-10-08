@@ -28,7 +28,7 @@
 
 - **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
 
-- **Breaking:** standardize required trajectory pairs as `(times, positions)` in the sixteen behavior functions, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`; place `env` first in region coverage, field shape/coherence, point binning, circular place-field shuffling and video calibration. Rename the spike parameters on time binning, population PSTH, spike restriction and simulation validation to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
+- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
 
 - **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
 
@@ -59,6 +59,8 @@
 - Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
 
 ### Fixed — documentation
+
+- Teach explicit tracking arrays, typed precomputed-rate and count-array decoding handoffs, and one retained event cohort across gap-aware PSTHs, rasters, regressors and positioned tables. Keep event identifiers and selection masks visible, explain each helper's existing edge closure, and synchronize the updated tutorials.
 
 - Correct both decoder tutorial posterior overlays to use spatial bins and the MAP line's plotted time coordinates. Synchronized examples and an executable continuous/gapped-clock recipe preserve physical coordinates for accuracy metrics and separate position plots.
 

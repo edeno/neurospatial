@@ -125,7 +125,7 @@ positions = np.column_stack([
 ])
 times = t
 env = Environment.from_samples(positions, bin_size=4.0)
-headings = heading_from_velocity(positions, times, min_speed=1.0)
+headings = heading_from_velocity(times, positions, min_speed=1.0)
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])
 spike_times = times[::7]
 """,
@@ -144,7 +144,7 @@ positions = np.column_stack([
 ])
 times = t
 env = Environment.from_samples(positions, bin_size=4.0)
-headings = heading_from_velocity(positions, times, min_speed=1.0)
+headings = heading_from_velocity(times, positions, min_speed=1.0)
 single = compute_view_rate(
     env, times[::7], times, positions, headings, view_distance=10.0
 )
@@ -222,7 +222,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 15))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 """,
     "workflows_batch_processing_compute_spatial_rates": """import os

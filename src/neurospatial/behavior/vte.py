@@ -326,10 +326,10 @@ def head_sweep_from_positions(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded.
@@ -569,10 +569,10 @@ def compute_vte_trial(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates for entire trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates for entire trajectory.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
@@ -692,10 +692,10 @@ def compute_vte_session(
     ----------
     env : Environment
         Environment with region definitions.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates for entire session.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates for entire session.
     decision_region : str
         Name of decision region in env.regions.
     trials : list[Trial]

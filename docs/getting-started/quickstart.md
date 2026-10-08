@@ -59,6 +59,12 @@ result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
     `env` from your recorded trajectory instead of `arena_samples`. Nothing
     else changes.
 
+Required tracking pairs always put timestamps before positions:
+`compute_spatial_rate(env, spike_times, times, positions)`, and behavior uses
+`(env, times, positions)` or `(times, positions)`. For pynapple tracking, pass
+`tsd.t, tsd.values` explicitly. Spatial rate functions require the positions
+argument; a tracking object cannot replace the timestamp array.
+
 ## Inspect and plot the result
 
 `compute_spatial_rate` returns a `SpatialRateResult`. Ask it for headline
