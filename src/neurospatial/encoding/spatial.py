@@ -5627,7 +5627,7 @@ def place_cell_significance(
     from neurospatial._exceptions import _format_error
     from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._binning import _spatial_interval_mask
+    from neurospatial.encoding._binning import _spatial_interval_mask, resolve_speed
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         shuffle_pvalues,
@@ -5694,14 +5694,18 @@ def place_cell_significance(
         context="place_cell_significance",
         arguments="spike_times, times, positions",
     )
-    validate_trajectory(times, positions=positions, context="place_cell_significance")
+    validate_trajectory(
+        times, positions=positions, context="place_cell_significance", n_dims=env.n_dims
+    )
     for train in trains:
         validate_spike_times(train, context="place_cell_significance")
+    resolved_speed = resolve_speed(times, positions, options["speed"], min_speed)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     mask = _spatial_interval_mask(
         env,
         times,
-        positions,
-        speed=options["speed"],
+        positions_2d,
+        speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=resolved_epochs,

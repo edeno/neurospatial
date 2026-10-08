@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Align place shuffle windows with inferred speed gates and 1-D trajectory normalization, preserving retained null spike counts. Validate object-vector metric choices before coordinate construction in both frames, with shared public diagnostics.
+
 - Validate required environments before constructing place/view shuffle windows, so missing environments receive the encoder diagnostic and a corrected call. Object-vector Euclidean significance continues to accept `env=None`.
 
 - Normalize allocentric object bearings exactly like zero-heading egocentric bearings at direction-bin boundaries, and make invalid-environment guidance omit headings for allocentric calls. Result help consistently describes the recorded frame.

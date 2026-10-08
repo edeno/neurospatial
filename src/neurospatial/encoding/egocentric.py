@@ -1733,6 +1733,28 @@ def compute_object_vector_rate(
     )
 
 
+def _validate_object_vector_metric(
+    env: Environment | None, metric: str, *, context: str
+) -> None:
+    """Validate public metric choices before coordinate construction."""
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            _format_error(
+                f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
+                why="Why: nearest-object distance uses a straight line or the environment graph",
+                fix="pass metric='euclidean', or metric='geodesic' with a fitted env",
+            )
+        )
+    if metric == "geodesic" and env is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: metric='geodesic' requires env parameter.",
+                why="Why: geodesic distance needs the environment's connectivity graph",
+                fix="pass a fitted env, or use metric='euclidean' with env=None",
+            )
+        )
+
+
 def _object_vector_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -1802,19 +1824,7 @@ def _object_vector_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    # Validate metric
-    valid_metrics = {"euclidean", "geodesic"}
-    if metric not in valid_metrics:
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
-        )
-
-    # Validate env requirement for geodesic
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
+    _validate_object_vector_metric(env, metric, context=context)
 
     _validate_smoothing_parameters(method, bandwidth)
 
@@ -2488,19 +2498,7 @@ def _object_vector_rates(
 
     _validate_smoothing_parameters(method, bandwidth)
 
-    # Validate metric
-    valid_metrics = {"euclidean", "geodesic"}
-    if metric not in valid_metrics:
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
-        )
-
-    # Validate env requirement for geodesic
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
+    _validate_object_vector_metric(env, metric, context=context)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
@@ -3606,6 +3604,9 @@ def object_vector_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="object_vector_cell_significance")
+    _validate_object_vector_metric(
+        env, metric, context="object_vector_cell_significance"
+    )
     object_positions = normalize_object_positions(object_positions)
     distances, bearings = _compute_object_coords(
         positions, None, object_positions, metric=metric, env=env
@@ -3884,6 +3885,9 @@ def egocentric_object_vector_cell_significance(
         validate_spike_times(
             train, context="egocentric_object_vector_cell_significance"
         )
+    _validate_object_vector_metric(
+        env, metric, context="egocentric_object_vector_cell_significance"
+    )
     object_positions = normalize_object_positions(object_positions)
     distances, bearings = _compute_object_coords(
         positions, headings, object_positions, metric=metric, env=env

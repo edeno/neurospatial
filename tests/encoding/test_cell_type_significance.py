@@ -306,3 +306,88 @@ def test_significance_requires_fitted_environment(name, significance_recording):
         args += (r.headings,)
     with pytest.raises(TypeError, match="Fix:"):
         getattr(encoding, name)(*args, n_shuffles=1, rng=0)
+
+
+def test_inferred_speed_gate_preserves_retained_null_spikes(
+    significance_recording, monkeypatch
+):
+    from neurospatial.encoding import spatial
+
+    r = significance_recording
+    r.positions = np.c_[10 + np.maximum(r.times - 20, 0), np.full(len(r.times), 50.0)]
+    trains = [np.arange(21.0, 59.5, 0.4)]
+    recorded = []
+    compute = spatial.compute_spatial_rates
+
+    def capture(*args, **kwargs):
+        recorded.append([train.copy() for train in args[1]])
+        return compute(*args, **kwargs)
+
+    monkeypatch.setattr(spatial, "compute_spatial_rates", capture)
+    implicit = spatial.place_cell_significance(
+        r.env,
+        trains,
+        r.times,
+        r.positions,
+        method="binned",
+        min_speed=0.5,
+        min_shift=5,
+        n_shuffles=10,
+        rng=0,
+    )[0]
+    for shifted in recorded[1:]:
+        assert len(shifted[0]) == len(trains[0])
+        assert np.all(shifted[0] >= 20.0)
+    reference_speed = np.where(r.times < 20, 0.0, 1.0)
+    explicit = spatial.place_cell_significance(
+        r.env,
+        trains,
+        r.times,
+        r.positions,
+        method="binned",
+        min_speed=0.5,
+        speed=reference_speed,
+        min_shift=5,
+        n_shuffles=10,
+        rng=0,
+    )[0]
+    np.testing.assert_array_equal(implicit.null_scores, explicit.null_scores)
+    assert implicit.p_value == explicit.p_value
+
+
+def test_place_significance_accepts_one_dimensional_positions():
+    from neurospatial import Environment
+
+    times = np.arange(0, 60, 0.1)
+    positions = times.copy()
+    env = Environment.from_samples(np.arange(0, 101, 5)[:, None], bin_size=5)
+    trains = [np.arange(0.3, 59.7, 0.7)]
+    vector = encoding.place_cell_significance(
+        env, trains, times, positions, method="binned", n_shuffles=10, rng=0
+    )[0]
+    column = encoding.place_cell_significance(
+        env, trains, times, positions[:, None], method="binned", n_shuffles=10, rng=0
+    )[0]
+    assert vector.p_value == column.p_value
+    np.testing.assert_array_equal(vector.null_scores, column.null_scores)
+
+
+@pytest.mark.parametrize(
+    "significance_family", ["object_vector", "egocentric_object_vector"], indirect=True
+)
+@pytest.mark.parametrize("metric", ["typo", "geodesic"])
+def test_object_significance_metric_errors_teach(
+    significance_family, significance_recording, metric
+):
+    f, r = significance_family, significance_recording
+    args = list(f.args(r))
+    args[0] = None
+    with pytest.raises(ValueError) as exc:
+        f.function(*args, metric=metric, n_shuffles=1, rng=0)
+    message = str(exc.value)
+    assert f.function.__name__ in message and "metric" in message
+    assert "Why:" in message and "Fix:" in message
+    if metric == "typo":
+        assert "typo" in message and "euclidean" in message
+    else:
+        assert "env" in message
