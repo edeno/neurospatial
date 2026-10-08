@@ -62,8 +62,9 @@ Transform landmark positions to egocentric coordinates:
 
 References
 ----------
-.. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
-       entorhinal cortex. Nature, 568(7752), 400-404.
+.. [1] Wang, C., et al. (2018). Egocentric coding of external items in the
+       lateral entorhinal cortex. Science, 362, 945-949.
+       https://doi.org/10.1126/science.aau4940
 """
 
 from __future__ import annotations

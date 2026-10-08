@@ -302,6 +302,8 @@ def direct_rate_result_factory(continuous_recording):
             (2, env.n_bins) if plural else env.n_bins
         )
         kwargs["occupancy"] = np.ones(env.n_bins)
+        if family == "egocentric":
+            kwargs["direction_frame"] = "egocentric"
         return classes[family][int(plural)](**kwargs)
 
     return make_result

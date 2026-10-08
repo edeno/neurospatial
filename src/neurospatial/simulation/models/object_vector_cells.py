@@ -62,7 +62,11 @@ References
        entorhinal cortex. Nature, 568(7752), 400-404.
        https://doi.org/10.1038/s41586-019-1077-7
 
-.. [2] Deshmukh, S. S., & Knierim, J. J. (2011). Representation of non-spatial
+.. [2] Wang, C., et al. (2018). Egocentric coding of external items in the
+       lateral entorhinal cortex. Science, 362, 945-949.
+       https://doi.org/10.1126/science.aau4940
+
+.. [3] Deshmukh, S. S., & Knierim, J. J. (2011). Representation of non-spatial
        and spatial information in the lateral entorhinal cortex. Frontiers in
        Behavioral Neuroscience, 5, 69.
 

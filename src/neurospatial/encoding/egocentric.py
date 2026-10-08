@@ -1,68 +1,37 @@
-"""Egocentric rate computation for object-vector cells.
+"""Object-vector rate maps in allocentric and egocentric reference frames.
 
-This module provides result classes and compute functions for egocentric
-firing rate analysis, specifically for object-vector cells (OVCs). OVCs fire
-when an animal is at a specific distance and direction from an object.
-
-Unlike spatial encoding which uses allocentric coordinates (world-centered),
-egocentric encoding uses animal-centered coordinates where:
-- Distance = Euclidean or geodesic distance to object
-- Direction = Bearing to object relative to animal's heading (0=ahead)
-
-Result Classes
---------------
-ObjectVectorRateResult
-    Single-neuron egocentric rate map with convenience methods
-ObjectVectorRatesResult
-    Multi-neuron egocentric rate maps with batch methods and iteration
-
-Compute Functions
------------------
-compute_egocentric_rate
-    Compute egocentric firing rate for one neuron
-compute_egocentric_rates
-    Compute egocentric firing rates for multiple neurons
-
-Coordinate Convention
----------------------
-**Egocentric direction** (animal-centered):
-- 0 radians = object is directly ahead of animal
-- +pi/2 radians = object is to the left
-- -pi/2 radians = object is to the right
-- +/-pi radians = object is behind
-
-This matches the convention in ``neurospatial.ops.egocentric``.
+Allocentric functions measure animal-to-object direction in world coordinates
+(0 = East, +pi/2 = North), following Høydal et al. (2019). Egocentric functions
+require headings and measure bearing relative to the animal (0 = ahead,
++pi/2 = left), following Wang et al. (2018). Both use nearest-object distance,
+Euclidean or geodesic, and return ObjectVectorRateResult/ObjectVectorRatesResult
+with a required ``direction_frame``. Add pi and wrap to obtain the reverse,
+object-to-animal vector. Egocentric boundary-vector coding (Alexander et al.,
+2020) is related work, not the object-vector definition.
 
 Examples
 --------
 >>> import numpy as np
->>> from neurospatial.encoding.egocentric import ObjectVectorRateResult
-
->>> # Create environment representing egocentric polar space
->>> from neurospatial import Environment
->>> positions = np.random.rand(100, 2) * 50
->>> env = Environment.from_samples(positions, bin_size=5.0)
-
->>> # Create result (typically from compute_egocentric_rate)
->>> firing_rate = np.random.rand(env.n_bins) * 10
->>> occupancy = np.ones(env.n_bins)
->>> result = ObjectVectorRateResult(
-...     firing_rate=firing_rate,
-...     occupancy=occupancy,
-...     env=env,
-...     distance_range=(0.0, 50.0),
-...     n_distance_bins=10,
-...     n_direction_bins=12,
-...     direction_frame="egocentric",
-... )
+>>> from neurospatial.encoding import compute_object_vector_rate
+>>> rng = np.random.default_rng(42)
+>>> times = np.arange(0, 40, 0.04)
+>>> positions = rng.uniform(10, 90, (len(times), 2))
+>>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+>>> result = compute_object_vector_rate(None, spikes, times, positions, [[50, 50]])
+>>> result.direction_frame
+'allocentric'
 
 References
 ----------
-Hoydal, O. A., et al. (2019). Object-vector coding in the medial entorhinal
-    cortex. Nature, 568(7752), 400-404.
+Høydal, Ø. A., et al. (2019). Object-vector coding in the medial entorhinal
+    cortex. Nature, 568, 400-404. doi:10.1038/s41586-019-1077-7.
+Wang, C., et al. (2018). Egocentric coding of external items in the lateral
+    entorhinal cortex. Science, 362, 945-949. doi:10.1126/science.aau4940.
 Deshmukh, S. S., & Knierim, J. J. (2011). Representation of non-spatial and
     spatial information in the lateral entorhinal cortex. Frontiers in
     Behavioral Neuroscience, 5, 69.
+Alexander, A. S., et al. (2020). Egocentric boundary vector tuning of the
+    retrosplenial cortex. Science Advances, 6, eaaz2322.
 
 See Also
 --------
@@ -1549,8 +1518,9 @@ def compute_egocentric_rate(
 
     References
     ----------
-    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
-           entorhinal cortex. Nature, 568(7752), 400-404.
+    .. [1] Wang, C., et al. (2018). Egocentric coding of external items in the
+           lateral entorhinal cortex. Science, 362, 945-949.
+           doi:10.1126/science.aau4940.
     """
     if headings is None:
         raise ValueError(
@@ -1750,8 +1720,9 @@ def compute_object_vector_rate(
 
     References
     ----------
-    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
-           entorhinal cortex. Nature, 568(7752), 400-404.
+    .. [1] Høydal, Ø. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568, 400-404.
+           doi:10.1038/s41586-019-1077-7.
     """
     return _object_vector_rate(
         env,
@@ -2189,8 +2160,9 @@ def compute_egocentric_rates(
 
     References
     ----------
-    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
-           entorhinal cortex. Nature, 568(7752), 400-404.
+    .. [1] Wang, C., et al. (2018). Egocentric coding of external items in the
+           lateral entorhinal cortex. Science, 362, 945-949.
+           doi:10.1126/science.aau4940.
     """
     if headings is None:
         raise ValueError(
@@ -2425,8 +2397,9 @@ def compute_object_vector_rates(
 
     References
     ----------
-    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
-           entorhinal cortex. Nature, 568(7752), 400-404.
+    .. [1] Høydal, Ø. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568, 400-404.
+           doi:10.1038/s41586-019-1077-7.
     """
     return _object_vector_rates(
         env,
@@ -2577,7 +2550,7 @@ def _object_vector_rates(
             times, max_gap=max_gap, epochs=resolved_epochs
         )
         _warn_if_population_silent(
-            spike_times_list, run_time_bounds(times, observed_mask)
+            spike_times_list, run_time_bounds(times, observed_mask), stacklevel=4
         )
 
     # Handle edge case: no neurons
@@ -3237,7 +3210,11 @@ def plot_object_vector_tuning(
 
     # Configure polar plot
     if isinstance(ax, MPLPolarAxes):
-        ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
+        if result.direction_frame == "allocentric":
+            ax.set_theta_zero_location("E")
+            ax.set_xlabel("direction to object (allocentric, 0 = East)")
+        else:
+            ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
         # Counter-clockwise: +π/2 = left of the animal is drawn on the left.
         ax.set_theta_direction(1)
 

@@ -2,6 +2,7 @@
 
 import inspect
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -150,13 +151,13 @@ def test_free_predicates_match_methods(
         f"is_{'' if frame == 'allocentric' else 'egocentric_'}object_vector_cell",
     )
     trains = noise_trains(120)[:2]
-    kwargs = dict(
-        method=method,
-        bandwidth=1,
-        min_occupancy=0.05,
-        epochs=[0, 100],
-        spike_window=[5, 105],
-    )
+    kwargs = {
+        "method": method,
+        "bandwidth": 1,
+        "min_occupancy": 0.05,
+        "epochs": [0, 100],
+        "spike_window": [5, 105],
+    }
     plural = getattr(encoding, f"compute_{family}_rates")(
         ou_env, trains, times, positions, *extra, obj, **kwargs
     )
@@ -186,3 +187,25 @@ def test_frame_predicate_signatures_are_truthful():
     assert egocentric["headings"].default is inspect.Parameter.empty
     with pytest.raises(TypeError, match="headings"):
         encoding.is_object_vector_cell(None, [], [], [], [], headings=[])
+
+
+def test_plot_allocentric_north_is_up(ou_env, ou_2min, obj):
+    times, positions, _ = ou_2min
+    result = encoding.compute_object_vector_rate(ou_env, [], times, positions, obj)
+    # A known north-peaked map checks the actual display transform, independent
+    # of estimator/trajectory uncertainty.
+    rate = np.zeros_like(result.firing_rate)
+    centers = result.env.bin_centers
+    peak = np.argmin(np.abs(centers[:, 1] - np.pi / 2) + np.abs(centers[:, 0] - 20))
+    rate[peak] = 10
+    from dataclasses import replace
+
+    result = replace(result, firing_rate=rate)
+    ax = encoding.plot_object_vector_tuning(result)
+    ax.figure.canvas.draw()
+    origin = ax.transData.transform((0, 0))
+    target = ax.transData.transform((np.pi / 2, 20))
+    dx, dy = target - origin
+    assert dy > 0 and abs(dx) < 0.1 * dy
+    assert "allocentric" in ax.get_xlabel()
+    plt.close(ax.figure)
