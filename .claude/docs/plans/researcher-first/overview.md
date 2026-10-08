@@ -109,7 +109,7 @@ Implementation phases and checkpoint follow-ups ship as separate PRs into `feat/
 - **3b, 3c, 3d**: each requires 3a. 3c also requires 2a, because both edit the PSTH code in `events/alignment.py`.
 - **3e**: requires 3d and 2b. 3d owns the new time-window keywords on `compute_pre_decision_metrics` and the VTE functions, and 3e only forwards them. 3e's `heading_from_velocity` change touches files 2b edits.
 - **4a**: requires all of Phases 2 and 3. It rewrites error sites that 2a and 2b touched. **4b** requires 4a, because 4b executes examples that depend on the four-array calls working.
-- **Checkpoint**: after 4b, before 5a (below). **4c** corrected the first checkpoint's duration and interpretation blockers. The [post-4c repeat](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4C.md) is held for **4d**, a bounded decoder-tutorial coordinate correction; repeat after 4d and pass before 5a.
+- **Checkpoint**: after 4b, before 5a (below). **4c** corrected the first checkpoint's duration and interpretation blockers; **4d** corrected the post-4c repeat's decoder-tutorial coordinates. The [post-4d repeat](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4D.md) passes; proceed to 5a after the checkpoint report/planning PR merges.
 - **5a, then 5b; 6a, then 6b, then 6c; then 7.** 6a requires 5b, because the snapshot freezes the names 5a and 5b introduce. 7 requires 5b (threshold constants) and 6c.
 
 No feature flags are used.
@@ -141,6 +141,21 @@ overlays centimeters on posterior bin-index axes and relabels the axes as cm;
 even a perfect decode is falsely displayed. Phase 4d corrects the two tutorial
 cells and adds a numeric plot-coordinate guard before another checkpoint.
 Existing later-phase navigation/cohort/holder/native-1D-output tasks remain.
+
+**Repeated checkpoint after Phase 4d, 2026-10-07: PASS.** Two independent
+reviewers complete all five journeys from current public documentation/help,
+with zero implementation/test reads or source fallbacks. Graph tracks are
+smooth and the other four journeys workable, clearly improving the original
+qualitative all-painful baseline. Fresh clocks/gap/statistical checks keep
+Phase 4c's blockers closed; current decoder cells align actual/MAP bin
+coordinates and continuous/gapped plot times with physical errors unchanged.
+The lead's separate 16-case public-cell probe agrees. Numerical call/LOC
+reductions are not claimed because original counts are unavailable and new
+fixtures/check overhead differ. Existing later-phase tasks remain; Phase 7
+adds a bounded continuous heatmap pixel-centering correction (37.5 ms maximum
+offset in the four-row 100 ms probe), without reopening the cm-versus-bin
+blocker or claiming sub-bin timing from pixels. Merge the checkpoint
+report/planning PR, then start Phase 5a.
 
 ## Open Questions
 
