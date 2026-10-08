@@ -34,6 +34,8 @@
 
 ### Fixed
 
+- Share one swap-aware times/positions validator across encoding and environment trajectory APIs. Timestamp shape, finiteness, ordering and sample-count problems are reported together with a corrected call; missing position samples remain supported.
+
 - Explain invalid circular-shift windows with a valid `windows=` call, preserving all row/shape problems from shared interval normalization.
 
 - Resolve heading interpretation thresholds through `HEAD_DIRECTION_THRESHOLDS`, matching the predicate and batch screen while preserving the default text and positional option.

@@ -566,7 +566,7 @@ class TestComputeEgocentricRatesInputValidation:
         # Create wrong-sized positions
         wrong_positions = trajectory_data["positions"][:-10]
 
-        with pytest.raises(ValueError, match=r"times length.*positions length"):
+        with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_egocentric_rates(
                 None,
                 spike_times_list,

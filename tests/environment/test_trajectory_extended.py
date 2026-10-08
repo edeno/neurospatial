@@ -129,7 +129,7 @@ class TestOccupancy:
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
-        with pytest.raises(ValueError, match="monotonically increasing"):
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
             small_2d_env.occupancy(times, positions)
 
     def test_occupancy_validates_matching_lengths(self, small_2d_env):
@@ -335,7 +335,7 @@ class TestBinSequence:
         times = np.array([0.0, 2.0, 1.0])  # Not monotonic
         positions = np.tile(small_2d_env.bin_centers[0:1], (3, 1))
 
-        with pytest.raises(ValueError, match="monotonically increasing"):
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
             small_2d_env.bin_sequence(times, positions)
 
     def test_bin_sequence_validates_dimensions(self, small_2d_env):

@@ -27,7 +27,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import EnvironmentNotFittedError, _format_error
-from neurospatial._validation import validate_finite
+from neurospatial._validation import (
+    format_times_positions_error,
+    times_positions_problems,
+    validate_finite,
+)
 
 __all__ = [
     "validate_classifier_trajectory",
@@ -253,60 +257,34 @@ def validate_trajectory(
     ValueError
         If timestamp validity, shapes, coordinate dimensions or lengths disagree.
     """
-    problems = _time_problems(times)
-    if positions is not None:
-        if times.ndim == 2 and positions.ndim == 1:
-            problems.append(
-                (
-                    f"times has shape {times.shape} and positions has shape {positions.shape}; did you pass positions before times?",
-                    f"call {context}(env, spike_times, times, positions) with times before positions",
-                )
-            )
-        if positions.ndim not in (1, 2):
-            problems.append(
-                (
-                    f"positions must be 1D or 2D, got shape {positions.shape}",
-                    "pass positions with shape (n_samples, n_dims)",
-                )
-            )
-        if times.ndim >= 1 and positions.ndim >= 1 and len(positions) != len(times):
-            problems.append(
-                (
-                    f"times length ({len(times)}) must match positions length ({len(positions)})",
-                    "align times and positions so each timestamp has one position row",
-                )
-            )
+    looks_swapped = False
+    if positions is None:
+        problems = [what for what, _ in _time_problems(times)]
+    else:
+        problems, looks_swapped = times_positions_problems(times, positions)
+        if times.ndim == 1 and len(times) < 2:
+            problems.append(f"At least 2 samples required, got {len(times)}.")
         if n_dims is not None and (
             (positions.ndim == 1 and n_dims > 1)
             or (positions.ndim == 2 and positions.shape[1] != n_dims)
         ):
-            example = (
-                "np.column_stack([x, y])"
-                if n_dims == 2
-                else f"an array with {n_dims} coordinate columns"
-            )
             problems.append(
-                (
-                    f"positions has shape {positions.shape} but env is {n_dims}-D, so positions must have shape (n_samples, {n_dims})",
-                    f"pass all coordinates, e.g. {example}; for a 1-D track, build env from 1-D data (positions[:, None]) or Environment.linear_track(...)",
-                )
+                f"positions has shape {positions.shape} but env is {n_dims}-D, "
+                f"so positions must have shape (n_samples, {n_dims})."
             )
     if headings is not None:
         if headings.ndim != 1:
-            problems.append(
-                (
-                    f"headings must be 1D, got shape {headings.shape}",
-                    "pass headings as a 1-D array with one angle per timestamp",
-                )
-            )
+            problems.append(f"headings must be 1D, got shape {headings.shape}.")
         if times.ndim >= 1 and headings.ndim >= 1 and len(headings) != len(times):
             problems.append(
-                (
-                    f"times length ({len(times)}) must match headings length ({len(headings)})",
-                    "align times and headings so each timestamp has one angle",
-                )
+                f"times length ({len(times)}) must match headings length ({len(headings)})."
             )
-    _raise_input_problems(context, problems)
+    if problems:
+        raise ValueError(
+            format_times_positions_error(
+                problems, looks_swapped, call=context, order="times, positions"
+            )
+        )
 
 
 def validate_classifier_trajectory(

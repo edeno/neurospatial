@@ -541,11 +541,11 @@ class TestTemporalBinningEdgeCases:
         times = np.array([0.0, 2.0, 1.5, 3.0])  # Decreases at index 2
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
-        with pytest.raises(ValueError, match="monotonically increasing") as exc_info:
+        with pytest.raises(ValueError, match="monotonically non-decreasing") as exc_info:
             small_2d_env.occupancy(times, positions)
 
         # Should mention index where decrease occurs
-        assert "indices" in str(exc_info.value).lower()
+        assert "index 1" in str(exc_info.value).lower()
 
     def test_temporal_binning_very_small_time_steps(self, small_2d_env):
         """Test occupancy with very small time steps.

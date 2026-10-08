@@ -692,7 +692,7 @@ class TestComputeViewRateInputValidation:
         positions = np.random.rand(500, 2) * 100  # Wrong length
         headings = np.random.uniform(0, 2 * np.pi, 1000)
 
-        with pytest.raises(ValueError, match=r"times length.*positions length"):
+        with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_view_rate(
                 simple_env,
                 spike_times,
@@ -1210,7 +1210,7 @@ class TestComputeViewRatesInputValidation:
         headings = np.random.uniform(0, 2 * np.pi, 1000)
         spike_times_list = [np.array([1.0, 2.5])]
 
-        with pytest.raises(ValueError, match=r"times length.*positions length"):
+        with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_view_rates(
                 simple_env,
                 spike_times_list,
