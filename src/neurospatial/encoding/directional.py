@@ -894,7 +894,7 @@ class DirectionalRateResult(SpatialResultMixin):
         alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
         return self.mean_vector_length() >= min_mvl and self.rayleigh_pvalue() < alpha
 
-    def interpretation(self, min_mvl: float = 0.4) -> str:
+    def interpretation(self, min_mvl: float | None = None) -> str:
         """Human-readable interpretation of head direction metrics.
 
         Provides a comprehensive summary of the neuron's directional tuning
@@ -904,9 +904,10 @@ class DirectionalRateResult(SpatialResultMixin):
 
         Parameters
         ----------
-        min_mvl : float, default=0.4
+        min_mvl : float or None, default=None
             Minimum mean vector length threshold for HD cell classification.
-            Same parameter as in :meth:`is_head_direction_cell`.
+            Same parameter as in :meth:`is_head_direction_cell`; None resolves
+            to HEAD_DIRECTION_THRESHOLDS["min_mvl"] (0.4).
 
         Returns
         -------
@@ -956,7 +957,8 @@ class DirectionalRateResult(SpatialResultMixin):
         rayleigh_pvalue : Statistical significance
         """
         lines = []
-        alpha = 0.05  # Fixed significance level for Rayleigh test
+        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
+        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"]
 
         mvl = self.mean_vector_length()
         pval = self.rayleigh_pvalue()

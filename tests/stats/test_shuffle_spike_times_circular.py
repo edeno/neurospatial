@@ -97,3 +97,18 @@ def test_large_clock_rounding_stays_below_excluded_stop(monkeypatch):
     )
     assert len(train) == 1
     assert t0 <= train[0] < t0 + 1
+
+
+@pytest.mark.parametrize("windows", [[[5, 1], [0, np.nan]], [[1, 2, 3]]])
+def test_invalid_windows_fix_names_primitive_argument(windows):
+    with pytest.raises(ValueError) as exc:
+        list(stats.shuffle_spike_times_circular([10], windows))
+    message = str(exc.value)
+    assert "windows" in message and "Why:" in message
+    fix = message.split("Fix:", 1)[1]
+    assert "windows=" in fix
+    assert "epochs" not in fix and "spike_window" not in fix and "None" not in fix
+    if len(windows) == 2:
+        assert "stop <= start" in message and "NaN" in message
+    else:
+        assert "shape" in message

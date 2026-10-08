@@ -26,6 +26,10 @@
 
 ### Fixed
 
+- Explain invalid circular-shift windows with a valid `windows=` call, preserving all row/shape problems from shared interval normalization.
+
+- Resolve heading interpretation thresholds through `HEAD_DIRECTION_THRESHOLDS`, matching the predicate and batch screen while preserving the default text and positional option.
+
 - Align place shuffle windows with inferred speed gates and 1-D trajectory normalization, preserving retained null spike counts. Validate object-vector metric choices before coordinate construction in both frames, with shared public diagnostics.
 
 - Validate required environments before constructing place/view shuffle windows, so missing environments receive the encoder diagnostic and a corrected call. Object-vector Euclidean significance continues to accept `env=None`.

@@ -318,3 +318,25 @@ def test_is_place_cell_spatial_info(ou_2min_env, ou_2min, noise_trains):
     assert all(
         rates[i].is_place_cell(criterion="spatial_info") == flags[i] for i in range(20)
     )
+
+
+def test_heading_interpretation_uses_shared_thresholds(
+    significance_recording, monkeypatch
+):
+    from neurospatial.encoding import directional
+
+    r = significance_recording
+    result = directional.compute_directional_rate(r.trains[0], r.times, r.headings)
+    assert (
+        inspect.signature(result.interpretation).parameters["min_mvl"].default is None
+    )
+    assert result.interpretation() == result.interpretation(min_mvl=0.4)
+    monkeypatch.setattr(
+        directional,
+        "HEAD_DIRECTION_THRESHOLDS",
+        MappingProxyType({"min_mvl": 0.0, "alpha": 0.0}),
+    )
+    text = result.interpretation()
+    assert "Not classified as HD cell" in text
+    assert "Rayleigh test not significant" in text
+    assert ">= 0.0" in text

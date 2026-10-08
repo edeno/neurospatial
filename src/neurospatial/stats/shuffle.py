@@ -168,7 +168,17 @@ def shuffle_spike_times_circular(
     [3, 3, 3]
     """
     _validate_circular_shift_settings(n_shuffles, min_shift)
-    normalized = as_intervals(windows, name="windows")
+    try:
+        normalized = as_intervals(windows, name="windows")
+    except ValueError as exc:
+        problems = str(exc).split("\nWhy:", 1)[0]
+        raise ValueError(
+            _format_error(
+                f"shuffle_spike_times_circular: {problems}",
+                why="Why: circular shifting requires finite half-open analyzed-time windows with start < stop",
+                fix="pass windows=np.array([[0.0, 100.0], [200.0, 300.0]]) in seconds",
+            )
+        ) from None
     if normalized is None:
         raise ValueError(
             _format_error(
