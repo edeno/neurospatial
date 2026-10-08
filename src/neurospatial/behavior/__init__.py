@@ -97,7 +97,6 @@ from neurospatial.behavior.vte import (
     compute_vte_trial,
     head_sweep_from_positions,
     head_sweep_magnitude,
-    integrated_absolute_rotation,
     normalize_vte_scores,
 )
 
@@ -128,7 +127,6 @@ __all__ = [  # noqa: RUF022
     "compute_vte_trial",
     "head_sweep_from_positions",
     "head_sweep_magnitude",
-    "integrated_absolute_rotation",
     "normalize_vte_scores",
     # navigation module
     "GoalDirectedMetrics",

@@ -170,10 +170,7 @@ from neurospatial.decoding.estimates import (
     posterior_mode,
 )
 from neurospatial.decoding.estimator import BayesianDecoder
-from neurospatial.decoding.likelihood import (
-    log_poisson_likelihood,
-    poisson_likelihood,
-)
+from neurospatial.decoding.likelihood import log_poisson_likelihood
 from neurospatial.decoding.metrics import (
     confusion_matrix,
     decoding_correlation,
@@ -243,6 +240,5 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "median_decoding_error",
     "normalize_to_posterior",
     "pairwise_correlations",
-    "poisson_likelihood",
     "reactivation_strength",
 ]

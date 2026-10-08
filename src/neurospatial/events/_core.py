@@ -3,7 +3,7 @@ Core dataclasses and validation helpers for the events module.
 
 This module provides:
 - Result dataclasses: PeriEventResult, PopulationPeriEventResult
-- Validation helpers: validate_events_dataframe, validate_spatial_columns
+- Validation helpers: _validate_events_dataframe, _validate_spatial_columns
 - Visualization: plot_peri_event_histogram
 """
 
@@ -591,7 +591,7 @@ class PopulationPeriEventResult(ResultMixin):
 # --- Validation Helpers ---
 
 
-def validate_events_dataframe(
+def _validate_events_dataframe(
     df: pd.DataFrame,
     *,
     required_columns: list[str] | None = None,
@@ -632,10 +632,10 @@ def validate_events_dataframe(
     --------
     >>> import pandas as pd
     >>> df = pd.DataFrame({"timestamp": [1.0, 2.0, 3.0]})
-    >>> validate_events_dataframe(df)  # No error
+    >>> _validate_events_dataframe(df)  # No error
 
     >>> df_bad = pd.DataFrame({"time": [1.0, 2.0]})
-    >>> validate_events_dataframe(df_bad)  # doctest: +IGNORE_EXCEPTION_DETAIL
+    >>> _validate_events_dataframe(df_bad)  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
         ...
     ValueError: Missing required columns: ['timestamp']...
@@ -672,7 +672,7 @@ def validate_events_dataframe(
         )
 
 
-def validate_spatial_columns(
+def _validate_spatial_columns(
     df: pd.DataFrame,
     *,
     require_positions: bool = False,
@@ -708,14 +708,14 @@ def validate_spatial_columns(
     --------
     >>> import pandas as pd
     >>> df = pd.DataFrame({"timestamp": [1.0], "x": [10.0], "y": [20.0]})
-    >>> validate_spatial_columns(df)
+    >>> _validate_spatial_columns(df)
     True
 
     >>> df_no_spatial = pd.DataFrame({"timestamp": [1.0]})
-    >>> validate_spatial_columns(df_no_spatial)
+    >>> _validate_spatial_columns(df_no_spatial)
     False
 
-    >>> validate_spatial_columns(  # doctest: +IGNORE_EXCEPTION_DETAIL
+    >>> _validate_spatial_columns(  # doctest: +IGNORE_EXCEPTION_DETAIL
     ...     df_no_spatial, require_positions=True
     ... )
     Traceback (most recent call last):

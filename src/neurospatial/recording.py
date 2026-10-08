@@ -218,7 +218,7 @@ class Session:
 
     def __post_init__(self) -> None:
         """Coerce ``spikes`` to a ``SpikeTrains`` and validate env / lengths."""
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding._spikes import as_spike_trains_with_ids
         from neurospatial.encoding.spike_trains import SpikeTrains
 
         # ``spikes`` is always a SpikeTrains: coerce a plain list / 2-D array /
@@ -342,7 +342,7 @@ class Session:
         Session
             A new frozen session.
         """
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding._spikes import as_spike_trains_with_ids
         from neurospatial.encoding.spike_trains import SpikeTrains
 
         t, pos = as_times_positions(times, positions)

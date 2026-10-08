@@ -9,9 +9,6 @@ log_poisson_likelihood : Compute log-likelihood under Poisson model (primary)
     Numerically stable log-likelihood computation. Use this for all
     decoding pipelines.
 
-poisson_likelihood : Compute likelihood in probability space (thin wrapper)
-    Convenience function that exponentiates log-likelihood with underflow
-    protection. Prefer log_poisson_likelihood + normalize_to_posterior.
 
 Notes
 -----
@@ -116,7 +113,6 @@ def log_poisson_likelihood(
 
     See Also
     --------
-    poisson_likelihood : Thin wrapper returning probability-space likelihoods
     normalize_to_posterior : Convert log-likelihood to posterior
     """
     # Validate dt and min_rate parameters. Route dt through the shared
@@ -219,89 +215,3 @@ def log_poisson_likelihood(
     log_likelihood = spike_term + rate_penalty
 
     return cast("NDArray[np.float64]", log_likelihood)
-
-
-def poisson_likelihood(
-    spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64],
-    dt: float,
-    *,
-    min_rate: float = 1e-10,
-) -> NDArray[np.float64]:
-    """Compute Poisson likelihood in probability space (thin wrapper).
-
-    **Warning**: This function can underflow/overflow for realistic spike
-    trains with large populations. Prefer `log_poisson_likelihood` +
-    `normalize_to_posterior` for decoding.
-
-    This is implemented as::
-
-        log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt, min_rate)
-        return np.exp(log_ll - log_ll.max(axis=1, keepdims=True))
-
-    The likelihoods are normalized per row to prevent underflow, but this
-    means they are NOT true probabilities and should only be used for
-    visualization or when probability-space is explicitly required.
-
-    Parameters
-    ----------
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts per neuron per time bin. Must be 2-D. A 1-D array of
-        shape ``(n_neurons,)`` is rejected (it would silently collapse the
-        time axis); for a single time bin pass ``spike_counts[np.newaxis, :]``.
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) in Hz.
-    dt : float
-        Time bin width in seconds.
-    min_rate : float, default=1e-10
-        Minimum firing rate floor to avoid log(0).
-
-    Returns
-    -------
-    likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Likelihood ratios (normalized per time bin to prevent underflow).
-        Maximum value per row is 1.0.
-
-    Raises
-    ------
-    ValueError
-        Propagated from :func:`log_poisson_likelihood`: if ``dt`` is not a
-        finite number > 0 (non-numeric, ``bool``, ``NaN``, ``Inf``, or
-        ``<= 0``), if ``min_rate`` is not positive, if ``spike_counts`` is not
-        2-D ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
-        if their neuron axes disagree.
-
-    Notes
-    -----
-    The normalization per row means:
-
-    - Maximum likelihood per row is exactly 1.0
-    - Other values are relative likelihoods (ratios)
-    - NOT true probabilities (don't sum to 1)
-    - Ranking of bins is preserved (same argmax as log version)
-
-    Examples
-    --------
-    >>> spike_counts = np.array([[0, 1], [2, 0]], dtype=np.int64)
-    >>> encoding_models = np.array([[1.0, 2.0, 3.0], [3.0, 2.0, 1.0]])
-    >>> likelihood = poisson_likelihood(spike_counts, encoding_models, dt=0.025)
-    >>> likelihood.max(axis=1)  # Maximum per row is 1.0
-    array([1., 1.])
-    >>> bool((likelihood >= 0).all())
-    True
-
-    See Also
-    --------
-    log_poisson_likelihood : Primary function for log-likelihood computation
-    normalize_to_posterior : Proper normalization to posterior probabilities
-    """
-    # Get log-likelihoods
-    log_ll = log_poisson_likelihood(
-        spike_counts, encoding_models, dt, min_rate=min_rate
-    )
-
-    # Shift by max per row for numerical stability, then exponentiate
-    log_ll_shifted = log_ll - log_ll.max(axis=1, keepdims=True)
-    likelihood = np.exp(log_ll_shifted)
-
-    return cast("NDArray[np.float64]", likelihood)

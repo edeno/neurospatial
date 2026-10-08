@@ -76,7 +76,7 @@ class OverlayProtocol(Protocol):
 
         from dataclasses import dataclass
         import numpy as np
-        from neurospatial.animation import PositionData
+        from neurospatial.animation.overlays import PositionData
 
 
         @dataclass
@@ -819,7 +819,6 @@ class EventOverlay:
     --------
     EventOverlay.from_fixed_positions : Create overlay with events at fixed locations (Mode A).
     EventOverlay.from_trajectory : Create overlay with events at animal position (Mode B).
-    SpikeOverlay : Convenience alias for EventOverlay for neural spike visualization.
     PositionOverlay : Trajectory visualization overlay.
 
     Notes
@@ -1469,7 +1468,6 @@ class EventOverlay:
 
 
 # Convenience alias for neural spike visualization
-SpikeOverlay = EventOverlay
 """Convenience alias for EventOverlay for neural spike visualization.
 
 See EventOverlay for full documentation.

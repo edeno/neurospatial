@@ -12,7 +12,6 @@ All functions are importable from `behavior.vte`:
         VTESessionResult,
         head_sweep_magnitude,
         head_sweep_from_positions,
-        integrated_absolute_rotation,
         normalize_vte_scores,
         compute_vte_index,
         classify_vte,
@@ -92,7 +91,6 @@ __all__ = [
     "compute_vte_trial",
     "head_sweep_from_positions",
     "head_sweep_magnitude",
-    "integrated_absolute_rotation",
     "normalize_vte_scores",
 ]
 
@@ -314,7 +312,6 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
 
 
 # Alias for backward compatibility and paper terminology
-integrated_absolute_rotation = head_sweep_magnitude
 
 
 def head_sweep_from_positions(

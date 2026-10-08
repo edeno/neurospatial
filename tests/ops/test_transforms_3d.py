@@ -1,4 +1,4 @@
-"""Tests for 3D transform functionality (AffineND, Affine3D)."""
+"""Tests for 3D transform functionality (AffineND)."""
 
 import numpy as np
 import pytest

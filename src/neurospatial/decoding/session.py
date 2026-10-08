@@ -434,7 +434,7 @@ def _build_encoding_model(
     # Mirrors how encoding/spatial.py defers its own heavy imports.
     from neurospatial._typing import _is_position_like, as_times_positions
     from neurospatial.decoding._binning import validate_dt
-    from neurospatial.encoding import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
 

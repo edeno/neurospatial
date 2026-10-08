@@ -4,6 +4,8 @@
 
 ### Added
 
+- Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
+
 - Add opt-in `criterion="shuffle"` to all five raw-array cell predicates, with explicit stream labels and p-value levels. Mode-specific keywords raise together when they would be ignored; result methods and batch classifiers remain threshold screens without retained inputs.
 
 - Add five raw-array circular-shift significance functions for place, head-direction, spatial-view and both object-vector frames. Shared valid-window masks, copied inputs and label-keyed random streams preserve recording coverage and seeded single/population agreement.
@@ -15,6 +17,8 @@
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed
+
+- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
 
 - **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
 
@@ -63,6 +67,8 @@
 - Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
 
 ### Removed
+
+- **Breaking:** remove root decoder/binner, spike-container and epoch-selection re-exports; import them from their domains. Drop public normalizers, event validators, animation internals/protocols, duplicate calibration and renderer helpers, and cache plumbing. Delete the probability-space Poisson wrapper, `integrated_absolute_rotation`, `Affine3D`, `SpikeOverlay` and surrogate compatibility imports.
 
 - Remove the superseded public API curation plans and the test pinning the old root export list; the public API snapshot replaces that export contract.
 

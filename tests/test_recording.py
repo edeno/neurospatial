@@ -30,8 +30,8 @@ from collections.abc import Mapping
 import numpy as np
 import pytest
 
-from neurospatial import Environment, SpikeTrains, load_session
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial import Environment, load_session
+from neurospatial.encoding import SpikeTrains, compute_spatial_rates
 from neurospatial.recording import Position, Session
 
 HAS_PYNWB = importlib.util.find_spec("pynwb") is not None

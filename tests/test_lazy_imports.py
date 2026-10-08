@@ -32,13 +32,26 @@ _EXPECTED_SUBMODULES = (
     "io",
 )
 
+# Each headline export must load and cache its canonical owner on demand.
+_EXPECTED_LAZY_ATTRS = {
+    "compute_spatial_rate": ("neurospatial.encoding.spatial", "compute_spatial_rate"),
+    "compute_spatial_rates": ("neurospatial.encoding.spatial", "compute_spatial_rates"),
+    "SpatialRateResult": ("neurospatial.encoding.spatial", "SpatialRateResult"),
+    "SpatialRatesResult": ("neurospatial.encoding.spatial", "SpatialRatesResult"),
+    "decode_position": ("neurospatial.decoding.posterior", "decode_position"),
+    "DecodingResult": ("neurospatial.decoding._result", "DecodingResult"),
+    "peri_event_histogram": ("neurospatial.events.alignment", "peri_event_histogram"),
+    "PeriEventResult": ("neurospatial.events._core", "PeriEventResult"),
+    "Session": ("neurospatial.recording", "Session"),
+    "load_session": ("neurospatial.recording", "load_session"),
+}
+
 # Eager exports that must remain importable directly from the package.
 _EAGER_EXPORTS = (
     "Environment",
     "Region",
     "Regions",
     "CompositeEnvironment",
-    "bin_spikes_in_time",
 )
 
 
@@ -54,6 +67,8 @@ def test_dir_lists_submodules() -> None:
     """``dir(ns)`` includes every lazy submodule and every eager export."""
     listed = set(dir(ns))
     for name in _EXPECTED_SUBMODULES:
+        assert name in listed, f"{name!r} missing from dir(neurospatial)"
+    for name in _EXPECTED_LAZY_ATTRS:
         assert name in listed, f"{name!r} missing from dir(neurospatial)"
     for name in _EAGER_EXPORTS:
         assert name in listed, f"{name!r} missing from dir(neurospatial)"
@@ -72,7 +87,7 @@ def test_eager_exports_unchanged(name: str) -> None:
     assert hasattr(ns, name)
 
 
-def test_no_eager_submodule_import() -> None:
+def test_headline_exports_are_deferred_and_cached() -> None:
     """Importing neurospatial does not eagerly import a lazy-only submodule.
 
     Uses ``animation`` as a representative submodule that is not pulled in by the
@@ -103,13 +118,32 @@ def test_no_eager_submodule_import() -> None:
             "neurospatial.animation should not be imported until first accessed"
         )
 
+        assert "neurospatial.decoding" not in sys.modules
+        assert "neurospatial.encoding.spatial" not in sys.modules
+        assert "neurospatial.events.alignment" not in sys.modules
+        assert "neurospatial.recording" not in sys.modules
+        assert not (_EXPECTED_LAZY_ATTRS.keys() & fresh.__dict__.keys())
+        assert set(_EXPECTED_LAZY_ATTRS).issubset(dir(fresh))
+
         # First access triggers the lazy import.
         module = fresh.animation
         assert isinstance(module, ModuleType)
         assert "neurospatial.animation" in sys.modules
+        for name, (owner, attr) in _EXPECTED_LAZY_ATTRS.items():
+            value = getattr(fresh, name)
+            assert value is getattr(importlib.import_module(owner), attr)
+            assert fresh.__dict__[name] is value
     finally:
         # Restore the original module objects so later tests in this worker see
         # the same class identities they imported at collection time.
         for mod_name in _neurospatial_modnames():
             del sys.modules[mod_name]
         sys.modules.update(saved)
+
+
+def test_phase_precession_function_does_not_shadow_module() -> None:
+    import neurospatial.encoding as encoding
+
+    module = importlib.import_module("neurospatial.encoding.phase_precession")
+    assert encoding.phase_precession is module
+    assert encoding.compute_phase_precession is module.compute_phase_precession

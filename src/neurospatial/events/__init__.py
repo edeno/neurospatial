@@ -10,10 +10,6 @@ Result Dataclasses:
     PeriEventResult : Result from peri-event histogram analysis
     PopulationPeriEventResult : Result from population peri-event analysis
 
-Validation Helpers:
-    validate_events_dataframe : Validate events DataFrame structure
-    validate_spatial_columns : Check for spatial columns (x, y)
-
 Spatial Utilities:
     add_positions : Add x, y columns to events by interpolation
 
@@ -68,8 +64,6 @@ from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
     plot_peri_event_histogram,
-    validate_events_dataframe,
-    validate_spatial_columns,
 )
 from neurospatial.events.alignment import (
     align_events,
@@ -96,9 +90,6 @@ __all__ = [
     # Result dataclasses
     "PeriEventResult",
     "PopulationPeriEventResult",
-    # Validation helpers
-    "validate_events_dataframe",
-    "validate_spatial_columns",
     # Spatial utilities
     "add_positions",
     # Interval utilities

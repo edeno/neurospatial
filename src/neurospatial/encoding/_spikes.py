@@ -64,7 +64,7 @@ def as_spike_trains(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding import as_spike_trains
+    >>> from neurospatial.encoding._spikes import as_spike_trains
     >>> spikes = np.array([0.1, 0.5, 1.2])
     >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
@@ -223,7 +223,7 @@ def as_spike_trains_with_ids(
     Plain sequence input carries no ids:
 
     >>> import numpy as np
-    >>> from neurospatial.encoding import as_spike_trains_with_ids
+    >>> from neurospatial.encoding._spikes import as_spike_trains_with_ids
     >>> trains, ids = as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)

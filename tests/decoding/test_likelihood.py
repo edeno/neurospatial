@@ -2,7 +2,6 @@
 
 Tests cover:
 - log_poisson_likelihood: numerically stable log-likelihood computation
-- poisson_likelihood: thin wrapper with underflow protection
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial.decoding.likelihood import (
     log_poisson_likelihood,
-    poisson_likelihood,
 )
 
 # =============================================================================
@@ -203,85 +201,6 @@ class TestLogPoissonLikelihood:
 
 
 # =============================================================================
-# Tests for poisson_likelihood
-# =============================================================================
-
-
-class TestPoissonLikelihood:
-    """Tests for poisson_likelihood function (thin wrapper)."""
-
-    def test_output_shape(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Output shape should be (n_time_bins, n_bins)."""
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert likelihood.shape == (2, 3)
-
-    def test_non_negative(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Likelihoods should be non-negative."""
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert (likelihood >= 0).all()
-
-    def test_max_is_one(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Maximum likelihood per row should be 1.0 (normalized to prevent underflow)."""
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        row_maxes = likelihood.max(axis=1)
-        assert_allclose(row_maxes, 1.0)
-
-    def test_consistent_with_log_likelihood(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Should be consistent with exp of log_poisson_likelihood (up to normalization)."""
-        ll = log_poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-
-        # Manually compute what poisson_likelihood should return
-        ll_shifted = ll - ll.max(axis=1, keepdims=True)
-        expected = np.exp(ll_shifted)
-
-        assert_allclose(likelihood, expected)
-
-    def test_ranking_preserved(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Ranking of bins should match log_poisson_likelihood."""
-        ll = log_poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-
-        # Argmax should match
-        assert_array_equal(ll.argmax(axis=1), likelihood.argmax(axis=1))
-
-    def test_large_population_no_underflow(
-        self, large_spike_counts: np.ndarray, large_encoding_models: np.ndarray
-    ) -> None:
-        """Should handle large populations without underflow to zero."""
-        likelihood = poisson_likelihood(
-            large_spike_counts, large_encoding_models, dt=0.025
-        )
-        assert np.isfinite(likelihood).all()
-        # At least one value per row should be nonzero (the max is 1.0)
-        assert (likelihood.max(axis=1) == 1.0).all()
-
-
-# =============================================================================
 # Edge Cases and Error Handling
 # =============================================================================
 
@@ -379,7 +298,7 @@ class TestEdgeCases:
 
 
 # =============================================================================
-# Shared dt validation (log_poisson_likelihood + poisson_likelihood)
+# Primary log-likelihood dt validation
 # =============================================================================
 
 
@@ -394,8 +313,8 @@ class TestDtValidation:
 
     @pytest.mark.parametrize(
         "func",
-        [log_poisson_likelihood, poisson_likelihood],
-        ids=["log_poisson_likelihood", "poisson_likelihood"],
+        [log_poisson_likelihood],
+        ids=["log_poisson_likelihood"],
     )
     @pytest.mark.parametrize(
         "bad_dt",
@@ -424,8 +343,8 @@ class TestDtValidation:
 
     @pytest.mark.parametrize(
         "func",
-        [log_poisson_likelihood, poisson_likelihood],
-        ids=["log_poisson_likelihood", "poisson_likelihood"],
+        [log_poisson_likelihood],
+        ids=["log_poisson_likelihood"],
     )
     def test_valid_dt_returns_expected_shape(
         self,
