@@ -99,23 +99,23 @@ class ObjectVectorRateResult(SpatialResultMixin):
     Parameters
     ----------
     firing_rate : ArrayLike
-        Firing rate in egocentric polar coordinates in Hz. Shape is (n_bins,)
-        where n_bins is the number of active bins in the egocentric environment.
-        The egocentric environment represents a polar grid with distance on one
+        Firing rate in polar coordinates in the recorded frame in Hz. Shape is (n_bins,)
+        where n_bins is the number of active bins in the polar environment.
+        The polar environment represents a polar grid with distance on one
         axis and direction on another. Can contain NaN for bins with insufficient
         occupancy.
     occupancy : ArrayLike
-        Time spent in each egocentric bin in seconds. Shape is (n_bins,).
+        Time spent in each polar bin in seconds. Shape is (n_bins,).
     env : Environment
-        The egocentric polar environment used for the computation. This is
+        The polar environment used for the computation. This is
         typically created via ``Environment.from_polar_egocentric()`` and
-        represents the (distance, direction) space centered on the animal.
+        represents the (distance, direction) space indexing distance and direction to objects.
     distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the egocentric environment.
+        Range of distances (min, max) covered by the polar environment.
     n_distance_bins : int
-        Number of distance bins in the egocentric grid.
+        Number of distance bins in the polar grid.
     n_direction_bins : int
-        Number of direction bins in the egocentric grid.
+        Number of direction bins in the polar grid.
 
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
@@ -124,7 +124,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
     Attributes
     ----------
     firing_rate : ArrayLike
-        Firing rate by egocentric coordinates in Hz. Shape is (n_bins,).
+        Firing rate by polar coordinates in Hz. Shape is (n_bins,).
     occupancy : ArrayLike
         Time in each bin in seconds. Shape is (n_bins,).
     env : Environment
@@ -199,9 +199,9 @@ class ObjectVectorRateResult(SpatialResultMixin):
         return bin_centers
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Plot the egocentric rate map (firing rate by distance/direction).
+        """Plot the object-vector rate map (firing rate by distance/direction).
 
-        Delegates to the egocentric environment's plot_field method for
+        Delegates to the polar environment's plot_field method for
         consistent visualization across the codebase.
 
         Parameters
@@ -222,7 +222,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
         Notes
         -----
-        The egocentric rate map shows firing rate indexed by (distance,
+        The object-vector rate map shows firing rate indexed by (distance,
         direction) relative to the object. Distance is the first dimension,
         direction is the second dimension.
 
@@ -260,7 +260,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
         the object. A cell with preferred_distance=20 fires most when the
         object is 20 cm away from the animal.
 
-        The distance is extracted from the egocentric environment's bin
+        The distance is extracted from the polar environment's bin
         centers. The first component (index 0) represents distance.
 
         Examples
@@ -283,7 +283,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
         See Also
         --------
         preferred_direction : Get direction component of peak response
-        plot : Visualize the egocentric rate map
+        plot : Visualize the object-vector rate map
         """
         firing_rate = _to_numpy(self.firing_rate)
         peak_bin = np.nanargmax(firing_rate)
@@ -291,39 +291,16 @@ class ObjectVectorRateResult(SpatialResultMixin):
         return float(bin_centers[peak_bin, 0])
 
     def preferred_direction(self) -> float:
-        """Direction to object at peak firing rate.
+        """Direction from the animal to the object at peak firing rate.
 
-        Returns the direction component (second dimension) of the egocentric
-        bin where the neuron shows maximum firing rate. Direction is in
-        radians in ``result.direction_frame``.
+        The result's ``direction_frame`` sets the convention: allocentric
+        0 = East and +pi/2 = North; egocentric 0 = ahead and +pi/2 = left.
+        The reverse, object-to-animal vector adds pi and wraps to [-pi, pi].
 
         Returns
         -------
         float
-            Direction to object at peak firing rate, in radians.
-            - 0 = object is directly ahead of animal
-            - +π/2 = object is to the left
-            - -π/2 = object is to the right
-            - ±π = object is behind
-
-            Uses nanargmax to handle NaN values in the firing rate map.
-
-        Notes
-        -----
-        For object-vector cells, this represents the preferred direction to
-        the object relative to the animal's heading. A cell with
-        preferred_direction=π/2 fires most when the object is to the left.
-
-        The direction is extracted from the egocentric environment's bin
-        centers. The second component (index 1) represents direction.
-
-        **Coordinate convention**: The result records which frame was used:
-        - Egocentric: 0 = ahead of animal, +π/2 = left
-        - Allocentric: 0 = East, +π/2 = North
-
-        Both measure animal-to-object direction. The object-centred
-        object-to-animal vector is ``preferred_direction() + pi``, wrapped
-        to [-pi, pi].
+            Peak animal-to-object direction in radians, in the recorded frame.
 
         Examples
         --------
@@ -345,7 +322,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
         See Also
         --------
         preferred_distance : Get distance component of peak response
-        plot : Visualize the egocentric rate map
+        plot : Visualize the object-vector rate map
         """
         firing_rate = _to_numpy(self.firing_rate)
         peak_bin = np.nanargmax(firing_rate)
@@ -353,17 +330,15 @@ class ObjectVectorRateResult(SpatialResultMixin):
         return float(bin_centers[peak_bin, 1])
 
     def spatial_information(self) -> float:
-        """Compute egocentric spatial information (bits per spike).
+        """Compute spatial information in the recorded frame (bits per spike).
 
-        Egocentric spatial information quantifies how much information each
-        spike conveys about the animal's egocentric position relative to an
-        object. This uses the Skaggs spatial information formula with the
-        egocentric occupancy.
+        Quantifies distance/direction selectivity using Skaggs information and
+        the occupancy of polar bins in ``result.direction_frame``.
 
         Returns
         -------
         float
-            Egocentric spatial information in bits per spike. Returns 0.0
+            Spatial information in the recorded frame, in bits per spike. Returns 0.0
             for uniform firing (no spatial selectivity).
 
         Notes
@@ -374,7 +349,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
             I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
 
-        where :math:`p_i` is occupancy probability in egocentric bin :math:`i`,
+        where :math:`p_i` is occupancy probability in polar bin :math:`i`,
         :math:`r_i` is firing rate in that bin, and :math:`\\bar{r}` is mean
         firing rate.
 
@@ -382,10 +357,10 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
         - Object-vector cells typically have 0.5-2.0+ bits/spike
         - Higher values indicate more selective tuning to distance/direction
-        - Zero means uniform firing (no egocentric selectivity)
+        - Zero means uniform firing (no distance/direction selectivity)
 
-        This metric uses the egocentric occupancy (time spent at each
-        distance/direction combination), which differs from standard spatial
+        This metric uses polar occupancy in the recorded frame (time spent
+        at each distance/direction combination), which differs from standard spatial
         information that uses allocentric position occupancy.
 
         Examples
@@ -416,16 +391,18 @@ class ObjectVectorRateResult(SpatialResultMixin):
         return spatial_information(firing_rate, occupancy)
 
     def is_object_vector_cell(self, min_info: float = 0.3) -> bool:
-        """Classify as object-vector cell based on egocentric spatial information.
+        """Classify as object-vector cell based on spatial information in the recorded frame.
 
-        A neuron is classified as an object-vector cell (OVC) if its egocentric
+        Tests object-vector tuning in ``result.direction_frame``.
+
+        A neuron is classified as a candidate in the recorded frame if its
         spatial information exceeds the minimum threshold. OVCs fire when the
         animal is at a specific distance and direction from an object.
 
         Parameters
         ----------
         min_info : float, default=0.3
-            Minimum egocentric spatial information threshold in bits/spike.
+            Minimum spatial information in the recorded frame threshold in bits/spike.
 
             **How was 0.3 chosen?**
 
@@ -458,9 +435,10 @@ class ObjectVectorRateResult(SpatialResultMixin):
         Notes
         -----
         **Object-vector vs place cells**: Both may show high spatial
-        information, but OVCs have higher *egocentric* spatial information
-        (using egocentric occupancy relative to objects) than *allocentric*
-        spatial information (using standard position occupancy).
+        information. Compare polar tuning in the appropriate direction frame
+        with a Cartesian position map; an egocentric map is appropriate only
+        for heading-relative bearing. A threshold screen alone does not
+        distinguish object-vector tuning from a place-cell control.
 
         For more rigorous classification, consider also using:
 
@@ -505,28 +483,28 @@ class ObjectVectorRateResult(SpatialResultMixin):
 class ObjectVectorRatesResult(SpatialResultMixin):
     """Result of object-vector rate computation for multiple neurons.
 
-    This class wraps egocentric firing rate maps for a population of neurons
-    with shared metadata (occupancy, egocentric environment, bin parameters).
+    This class wraps object-vector firing rate maps for a population of neurons
+    with shared metadata (occupancy, polar environment, bin parameters).
     It supports iteration and indexing to access individual neuron results.
 
     Parameters
     ----------
     firing_rates : ArrayLike
-        Firing rates in egocentric polar coordinates for all neurons in Hz.
+        Firing rates in polar coordinates in the recorded frame for all neurons in Hz.
         Shape is (n_neurons, n_bins) where n_bins is the number of active
-        bins in the egocentric environment.
+        bins in the polar environment.
     occupancy : ArrayLike
-        Time spent in each egocentric bin in seconds. Shape is (n_bins,).
+        Time spent in each polar bin in seconds. Shape is (n_bins,).
         This is shared across all neurons since the animal's trajectory
-        (and thus egocentric occupancy) is the same for all neurons.
+        (and thus polar occupancy in the recorded frame) is the same for all neurons.
     env : Environment
-        The egocentric polar environment used for the computation.
+        The polar environment used for the computation.
     distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the egocentric environment.
+        Range of distances (min, max) covered by the polar environment.
     n_distance_bins : int
-        Number of distance bins in the egocentric grid.
+        Number of distance bins in the polar grid.
     n_direction_bins : int
-        Number of direction bins in the egocentric grid.
+        Number of direction bins in the polar grid.
 
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
@@ -637,9 +615,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         return bin_centers
 
     def to_xarray(self) -> Any:
-        """Convert the egocentric fields to a labeled :class:`xarray.Dataset`.
+        """Convert the object-vector fields to a labeled :class:`xarray.Dataset`.
 
-        Wraps the ``(n_units, n_bins)`` egocentric firing-rate matrix in a
+        Wraps the ``(n_units, n_bins)`` object-vector firing-rate matrix in a
         labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
         ``unit_id`` index coordinate holds the real per-unit identity labels
         (:attr:`unit_ids`). Because the environment is an
@@ -730,7 +708,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         Returns
         -------
         ObjectVectorRateResult
-            Egocentric rate result for the specified neuron.
+            Object-vector rate result in the same frame for the specified neuron.
 
         Examples
         --------
@@ -770,7 +748,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         Yields
         ------
         ObjectVectorRateResult
-            Egocentric rate result for each neuron in order.
+            Object-vector rate result in the same frame for each neuron in order.
 
         Examples
         --------
@@ -796,9 +774,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             yield self[i]
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Plot the egocentric rate map for a specific neuron.
+        """Plot the object-vector rate map for a specific neuron.
 
-        Delegates to the egocentric environment's plot_field method for
+        Delegates to the polar environment's plot_field method for
         consistent visualization across the codebase.
 
         Parameters
@@ -821,13 +799,13 @@ class ObjectVectorRatesResult(SpatialResultMixin):
 
         Notes
         -----
-        The egocentric rate map shows firing rate indexed by (distance,
+        The object-vector rate map shows firing rate indexed by (distance,
         direction) relative to the object. Distance is the first dimension,
         direction is the second dimension.
 
         Examples
         --------
-        >>> # Plot the first neuron's egocentric rate map
+        >>> # Plot the first neuron's object-vector rate map
         >>> ax = result.plot(idx=0)  # doctest: +SKIP
         >>> plt.show()  # doctest: +SKIP
 
@@ -902,28 +880,16 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         return distances
 
     def preferred_directions(self) -> NDArray[np.float64]:
-        """Preferred directions to object for all neurons.
+        """Directions from the animal to the object at peak firing rate.
 
-        Returns the direction component (second dimension) of the egocentric
-        bin where each neuron shows maximum firing rate. Direction is in
-        radians in ``result.direction_frame``.
+        The result's ``direction_frame`` sets the convention: allocentric
+        0 = East and +pi/2 = North; egocentric 0 = ahead and +pi/2 = left.
+        The reverse, object-to-animal vector adds pi and wraps to [-pi, pi].
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
-            Direction to object at peak firing rate for each neuron, in radians.
-            - 0 = object is directly ahead of animal
-            - +π/2 = object is to the left
-            - -π/2 = object is to the right
-            - ±π = object is behind
-
-        Notes
-        -----
-        For object-vector cells, this represents the preferred direction to
-        the object relative to the animal's heading.
-
-        **Coordinate convention**: This uses egocentric (animal-centered)
-        coordinates, NOT allocentric (world-centered) coordinates.
+        NDArray[np.float64], shape (n_neurons,)
+            Peak animal-to-object direction in radians, in the recorded frame.
 
         Examples
         --------
@@ -963,20 +929,21 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         return directions
 
     def spatial_information(self) -> NDArray[np.float64]:
-        """Egocentric spatial information for all neurons (bits per spike).
+        """Spatial information in the recorded frame for all neurons (bits per spike).
 
-        Quantifies how much information each spike conveys about the animal's
-        egocentric position relative to an object for each neuron.
+        Quantifies distance/direction selectivity in ``result.direction_frame``
+        for each neuron.
 
         Returns
         -------
         ndarray, shape (n_neurons,)
-            Egocentric spatial information in bits/spike for each neuron.
+            Spatial information in the recorded frame, in bits/spike per neuron.
             Always non-negative. Returns 0.0 for uniform firing.
 
         Notes
         -----
-        Uses the Skaggs et al. (1993) formula with **egocentric occupancy**.
+        Uses the Skaggs et al. (1993) formula with polar occupancy in the
+        recorded frame.
         This is computed by delegating to the batch spatial information
         function in ``_metrics.py``.
 
@@ -1017,14 +984,16 @@ class ObjectVectorRatesResult(SpatialResultMixin):
     def classify(self, *, min_info: float = 0.3) -> NDArray[np.bool_]:
         """Classify neurons as object-vector cells.
 
-        A neuron is classified as an object-vector cell (OVC) if its egocentric
+        Tests object-vector tuning in ``result.direction_frame``.
+
+        A neuron is classified as a candidate in the recorded frame if its
         spatial information exceeds the minimum threshold. This is the
         single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
         ----------
         min_info : float, default=0.3
-            Minimum egocentric spatial information threshold in bits/spike.
+            Minimum spatial information in the recorded frame threshold in bits/spike.
             See ObjectVectorRateResult.is_object_vector_cell() for threshold rationale.
 
         Returns
@@ -1080,7 +1049,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         Parameters
         ----------
         min_info : float, default=0.3
-            Minimum egocentric spatial information threshold in bits/spike.
+            Minimum spatial information in the recorded frame threshold in bits/spike.
 
         Returns
         -------
@@ -1100,7 +1069,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
     ) -> pd.DataFrame:
         """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
-        Computes all egocentric metrics and returns one row per unit, indexed
+        Computes all object-vector metrics and returns one row per unit, indexed
         by ``unit_id``, with scalar metric columns. This is the per-unit
         summary for filtering, sorting, and population tables. For the dense
         per-bin frame (one row per ``(unit, bin)``) use :meth:`to_dataframe`.
@@ -1117,8 +1086,8 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             One row per unit, indexed by ``unit_id``, with columns:
 
             - preferred_distance: preferred distance to object (cm)
-            - preferred_direction: preferred direction to object (radians, 0=ahead)
-            - preferred_direction_deg: preferred direction (degrees)
+            - preferred_direction: preferred direction to object (radians in result.direction_frame)
+            - preferred_direction_deg: preferred direction (degrees in the same frame)
             - peak_rate: maximum firing rate (Hz)
             - is_object_vector_cell: whether classified as OVC (using default threshold)
 
@@ -1589,7 +1558,7 @@ def compute_object_vector_rate(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
         Animal position coordinates at each time sample. NaN values (in
-        positions or headings) are treated as missing data and excluded from
+        positions) are treated as missing data and excluded from
         occupancy and firing-rate computation; callers do not need to
         pre-filter tracking dropouts.
     object_positions : ndarray, shape (n_objects, 2)
@@ -1797,7 +1766,11 @@ def _object_vector_rate(
         validate_env_fitted(
             env,
             context=context,
-            arguments="spike_times, times, positions, headings, object_positions",
+            arguments=(
+                "spike_times, times, positions, object_positions"
+                if headings is None
+                else "spike_times, times, positions, headings, object_positions"
+            ),
         )
 
     # Validate backend
@@ -2219,7 +2192,7 @@ def compute_object_vector_rates(
 ) -> ObjectVectorRatesResult:
     """Compute allocentric firing rates for multiple neurons.
 
-    This is the batch version of ``compute_allocentric_rate(None)`` that efficiently
+    This is the batch version of ``compute_object_vector_rate(None)`` that efficiently
     processes multiple neurons with shared trajectory data. It precomputes
     shared quantities (allocentric coordinates, occupancy) once and optionally
     parallelizes spike counting with joblib.
@@ -2245,7 +2218,7 @@ def compute_object_vector_rates(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
         Animal position coordinates at each time sample. NaN values (in
-        positions or headings) are treated as missing data and excluded from
+        positions) are treated as missing data and excluded from
         occupancy and firing-rate computation; callers do not need to
         pre-filter tracking dropouts.
     object_positions : ndarray, shape (n_objects, 2)
@@ -2340,7 +2313,7 @@ def compute_object_vector_rates(
 
     See Also
     --------
-    compute_allocentric_rate : Single-neuron version
+    compute_object_vector_rate : Single-neuron version
     ObjectVectorRatesResult : Result class with batch methods
     compute_spatial_rates : Standard spatial rates (by animal position)
 
@@ -2359,7 +2332,7 @@ def compute_object_vector_rates(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    **Efficiency advantages over calling ``compute_allocentric_rate(None)`` in a loop**:
+    **Efficiency advantages over calling ``compute_object_vector_rate(None)`` in a loop**:
 
     1. Object-vector coordinates (distance, bearing to nearest object) are
        computed once and shared across all neurons
@@ -2372,11 +2345,11 @@ def compute_object_vector_rates(
     - **Batch** (this function): Processing 3+ neurons, or any case where
       efficiency matters. The overhead of precomputing shared quantities
       is amortized over multiple neurons.
-    - **Single** (``compute_allocentric_rate``): Processing 1-2 neurons, or when
+    - **Single** (``compute_object_vector_rate``): Processing 1-2 neurons, or when
       you need fine-grained control over individual neurons.
 
     **Coordinate convention**: Direction uses allocentric (world-centered)
-    coordinates where 0=ahead, +pi/2=left, -pi/2=right.
+    coordinates where 0=East, +pi/2=North, -pi/2=South.
 
     Examples
     --------
@@ -2477,7 +2450,11 @@ def _object_vector_rates(
         validate_env_fitted(
             env,
             context=context,
-            arguments="spike_times, times, positions, headings, object_positions",
+            arguments=(
+                "spike_times, times, positions, object_positions"
+                if headings is None
+                else "spike_times, times, positions, headings, object_positions"
+            ),
         )
 
     # Validate backend
@@ -2837,7 +2814,7 @@ def is_object_vector_cell(
     the result-object classification always agree: a neuron is an OVC when its
     allocentric spatial information exceeds ``min_info`` (bits/spike).
 
-    For detailed metrics, use :func:`compute_egocentric_rate` and inspect
+    For detailed metrics, use :func:`compute_object_vector_rate` and inspect
     the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
     etc.).
 
@@ -2929,6 +2906,7 @@ def is_object_vector_cell(
     is_egocentric_object_vector_cell : Screen the other reference frame
     object_vector_score : Compute OVC score from a tuning curve
     ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
+
     References
     ----------
     Høydal et al. (2019). Object-vector coding in the medial entorhinal
@@ -3099,6 +3077,7 @@ def is_egocentric_object_vector_cell(
     is_object_vector_cell : Screen the other reference frame
     object_vector_score : Compute OVC score from a tuning curve
     ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
+
     References
     ----------
     Wang et al. (2018). Egocentric coding of external items in the lateral
@@ -3149,12 +3128,12 @@ def plot_object_vector_tuning(
 
     Creates a polar plot where:
     - Radial axis = distance from object
-    - Angular axis = egocentric direction to object
+    - Angular axis = direction to object in result.direction_frame
 
     Parameters
     ----------
     result : ObjectVectorRateResult
-        Result from ``compute_egocentric_rate(None)``.
+        Result from either frame encoder; direction_frame sets the orientation.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure with polar projection.
     show_peak : bool, default=True

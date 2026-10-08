@@ -58,7 +58,7 @@ from neurospatial.environment.trajectory import (
     interval_valid_mask,
     start_allocated_occupancy,
 )
-from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.ops.egocentric import _wrap_angle, compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -173,14 +173,14 @@ def _compute_object_coords(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute egocentric coordinates to nearest object at each timepoint.
+    """Compute polar coordinates to the nearest object in the selected frame.
 
     Parameters
     ----------
     positions : ndarray, shape (n_time, 2)
         Animal positions in allocentric coordinates.
     headings : ndarray, shape (n_time,)
-        Animal heading at each time (radians, 0=East in allocentric frame).
+        Heading at each time (radians, 0=East), or None for allocentric bearing.
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
     metric : {"euclidean", "geodesic"}, default="euclidean"
@@ -248,7 +248,7 @@ def _compute_object_coords(
     # bearings_all: (n_time, n_objects)
     if headings is None:
         delta = object_positions[None, :, :] - positions[:, None, :]
-        bearings_all = np.arctan2(delta[:, :, 1], delta[:, :, 0])
+        bearings_all = _wrap_angle(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
     else:
         bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
 
@@ -381,7 +381,14 @@ def _coords_to_flat_bin_idx(
     return flat_bin_idx
 
 
-def _object_vector_interval_mask(times, *, start_bin, max_gap, epochs, spike_window):
+def _object_vector_interval_mask(
+    times: NDArray[np.float64],
+    *,
+    start_bin: NDArray[np.int64],
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+) -> NDArray[np.bool_]:
     """Use the same frame/window validity for both object-vector directions."""
     return interval_valid_mask(
         times,

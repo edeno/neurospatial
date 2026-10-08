@@ -39,22 +39,9 @@ def test_allocentric_recovers_east_field(
     assert allo.spatial_information() >= 1.3 * ego.spatial_information()
 
 
-def test_egocentric_recovers_ahead_ovc(ou_env, ou_10min, obj):
-    from neurospatial.simulation import ObjectVectorCellModel, generate_poisson_spikes
-
+def test_egocentric_recovers_ahead_ovc(ou_env, ou_10min, obj, egocentric_ovc_spikes):
     times, positions, headings = ou_10min
-    model = ObjectVectorCellModel(
-        ou_env,
-        direction_frame="egocentric",
-        object_positions=obj,
-        preferred_distance=20,
-        distance_width=5,
-        preferred_direction=0.0,
-        max_rate=10,
-    )
-    spikes = generate_poisson_spikes(
-        model.firing_rate(positions, headings=headings), times, seed=5
-    )
+    spikes = egocentric_ovc_spikes
     allo = encoding.compute_object_vector_rate(ou_env, spikes, times, positions, obj)
     ego = encoding.compute_egocentric_rate(
         ou_env, spikes, times, positions, headings, obj
@@ -188,6 +175,35 @@ def test_frame_predicate_signatures_are_truthful():
     assert egocentric["headings"].default is inspect.Parameter.empty
     with pytest.raises(TypeError, match="headings"):
         encoding.is_object_vector_cell(None, [], [], [], [], headings=[])
+
+
+def test_zero_heading_equivalence_at_direction_bin_edge():
+    times = np.arange(4) * 0.1
+    positions = np.zeros((4, 2))
+    objects = np.array([[4.999999999999999, -8.660254037844387]])
+    allo = encoding.compute_object_vector_rate(None, [0.05], times, positions, objects)
+    ego = encoding.compute_egocentric_rate(
+        None, [0.05], times, positions, np.zeros(4), objects
+    )
+    np.testing.assert_array_equal(allo.occupancy, ego.occupancy)
+    np.testing.assert_array_equal(allo.firing_rate, ego.firing_rate)
+    assert allo.preferred_direction() == ego.preferred_direction()
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_allocentric_bad_environment_guidance_omits_headings(plural):
+    compute = (
+        encoding.compute_object_vector_rates
+        if plural
+        else encoding.compute_object_vector_rate
+    )
+    with pytest.raises(TypeError) as caught:
+        compute(
+            "bad-env", [[]] if plural else [], [0, 0.1], [[0, 0], [0, 0]], [[10, 0]]
+        )
+    assert "headings" not in str(caught.value)
+    assert "object_positions" in str(caught.value)
+    assert "Fix:" in str(caught.value)
 
 
 def test_plot_allocentric_north_is_up(ou_env, ou_2min, obj):

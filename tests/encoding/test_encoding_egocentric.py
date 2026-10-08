@@ -1775,7 +1775,7 @@ class TestObjectVectorRatesResultClassify:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that classify() matches single-neuron is_egocentric_object_vector_cell() method."""
+        """Test that classify() matches single-neuron is_object_vector_cell() method."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2127,7 +2127,7 @@ class TestObjectVectorRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should have is_egocentric_object_vector_cell column."""
+        """summary_table() should have is_object_vector_cell column."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2141,7 +2141,7 @@ class TestObjectVectorRatesResultSummaryTable:
         )
 
         df = result.summary_table()
-        assert "is_egocentric_object_vector_cell" in df.columns
+        assert "is_object_vector_cell" in df.columns
 
     def test_summary_table_default_unit_ids(
         self,
@@ -2310,7 +2310,7 @@ class TestObjectVectorRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() is_egocentric_object_vector_cell should match classify()."""
+        """summary_table() is_object_vector_cell should match classify()."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2325,9 +2325,7 @@ class TestObjectVectorRatesResultSummaryTable:
 
         df = result.summary_table()
         expected = result.classify()  # Uses default min_info=0.3
-        np.testing.assert_array_equal(
-            df["is_egocentric_object_vector_cell"].values, expected
-        )
+        np.testing.assert_array_equal(df["is_object_vector_cell"].values, expected)
 
     def test_summary_table_empty_result(
         self,
@@ -2357,7 +2355,7 @@ class TestObjectVectorRatesResultSummaryTable:
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
         assert "peak_rate" in df.columns
-        assert "is_egocentric_object_vector_cell" in df.columns
+        assert "is_object_vector_cell" in df.columns
 
     def test_summary_table_single_neuron(
         self,

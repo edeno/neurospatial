@@ -78,6 +78,25 @@ def allocentric_field_spikes(ou_env, ou_10min, obj):
     return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
 
 
+@pytest.fixture(scope="session")
+def egocentric_ovc_spikes(ou_env, ou_10min, obj):
+    from neurospatial.simulation import ObjectVectorCellModel, generate_poisson_spikes
+
+    times, positions, headings = ou_10min
+    model = ObjectVectorCellModel(
+        ou_env,
+        object_positions=obj,
+        preferred_distance=20,
+        distance_width=5,
+        preferred_direction=0.0,
+        direction_frame="egocentric",
+        max_rate=10,
+    )
+    return generate_poisson_spikes(
+        model.firing_rate(positions, headings=headings), times, seed=5
+    )
+
+
 @pytest.fixture(params=["directional", "view", "egocentric"])
 def frame_family(request):
     """Real rate and binning functions with shared family-specific arguments."""
