@@ -52,6 +52,8 @@
 
 ### Fixed
 
+- Center continuous posterior image columns on decoder timestamps, preserving MAP/actual overlays, gapped index clocks and explicit extent overrides. Two-column plots use their timestamp spacing; a single column has a documented 1-second display width, with no changes to posterior arrays or clocks.
+
 - Plot native 1D rate maps as labeled lines over physical bin coordinates, including singular/population results and NaN breaks. Existing graph-track and 2D plotting paths are retained; rate arrays are unchanged.
 
 - Name the current `spike_times` keyword in simulation validation's missing-input diagnostic.
