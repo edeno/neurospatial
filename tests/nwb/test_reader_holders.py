@@ -86,3 +86,74 @@ def test_read_units_holder_without_coverage(empty_nwb):
         _, _ = read_units(empty_nwb)
     with pytest.raises(FrozenInstanceError):
         units.unit_ids = np.array([11])
+
+
+def test_read_units_spike_window(empty_nwb, tmp_path):
+    from neurospatial import Environment, compute_spatial_rates
+
+    empty_nwb.add_unit(
+        id=7,
+        spike_times=[20.0, 60.0, 1120.0],
+        obs_intervals=[[0.0, 100.0], [1100.0, 1200.0]],
+    )
+    empty_nwb.add_unit(
+        id=11,
+        spike_times=[25.0, 65.0, 1125.0],
+        obs_intervals=[[10.0, 1150.0]],
+    )
+    path = tmp_path / "unit_coverage.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        file = io.read()
+        units = read_units(file)
+        reordered = read_units(file, unit_ids=[11, 7], lazy=True)
+        np.testing.assert_array_equal(reordered.spike_window, units.spike_window)
+        np.testing.assert_array_equal(reordered.obs_intervals[0], [[10.0, 1150.0]])
+        np.testing.assert_array_equal(
+            np.asarray(reordered.spike_times[0]), [25, 65, 1125]
+        )
+        selected = read_units(file, unit_ids=[7])
+    np.testing.assert_array_equal(units.unit_ids, [7, 11])
+    np.testing.assert_array_equal(units.obs_intervals[0], [[0, 100], [1100, 1200]])
+    np.testing.assert_array_equal(units.spike_window, [[10, 100], [1100, 1150]])
+    np.testing.assert_array_equal(selected.spike_window, [[0, 100], [1100, 1200]])
+    times = np.arange(0, 1200.1, 0.1)
+    positions = np.sin(times)[:, None]
+    env = Environment.from_samples(positions, bin_size=0.2)
+    rates = compute_spatial_rates(
+        env,
+        units.spike_times,
+        times,
+        positions,
+        unit_ids=units.unit_ids,
+        spike_window=units.spike_window,
+        method="binned",
+    )
+    assert rates.spike_window_assumed is False
+    np.testing.assert_array_equal(rates.unit_ids, [7, 11])
+    assert rates.occupancy.sum() == pytest.approx(140.0)
+
+
+def test_unit_coverage_intersection_folds_all_selected_units(empty_nwb):
+    empty_nwb.add_unit(id=7, spike_times=[1.0], obs_intervals=[[0.0, 10.0]])
+    empty_nwb.add_unit(id=11, spike_times=[3.0], obs_intervals=[[2.0, 8.0]])
+    empty_nwb.add_unit(id=19, spike_times=[5.0], obs_intervals=[[4.0, 6.0]])
+    np.testing.assert_array_equal(read_units(empty_nwb).spike_window, [[4.0, 6.0]])
+    assert read_units(empty_nwb, unit_ids=[]).spike_window.shape == (0, 2)
+
+
+def test_disjoint_unit_coverage_is_explicitly_empty(empty_nwb):
+    from neurospatial import Environment, compute_spatial_rates
+
+    empty_nwb.add_unit(id=7, spike_times=[0.5], obs_intervals=[[0.0, 1.0]])
+    empty_nwb.add_unit(id=11, spike_times=[2.5], obs_intervals=[[2.0, 3.0]])
+    units = read_units(empty_nwb)
+    assert units.spike_window.shape == (0, 2)
+    times = np.arange(0, 3, 0.1)
+    positions = times[:, None]
+    env = Environment.from_samples(positions, bin_size=0.5)
+    with pytest.raises(ValueError, match=r"spike_window.*no rows"):
+        compute_spatial_rates(
+            env, units.spike_times, times, positions, spike_window=units.spike_window
+        )

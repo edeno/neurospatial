@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import as_intervals, intersect_intervals
 from neurospatial.io.nwb._core import _require_pynwb
 from neurospatial.io.nwb._holders import NWBUnits
 
@@ -99,7 +100,9 @@ def read_units(
     -------
     NWBUnits
         Frozen, non-iterable holder with ``spike_times`` (sorted arrays or lazy
-        handles), aligned table ``unit_ids``, and acquisition-window metadata.
+        handles), aligned table ``unit_ids``, per-unit ``obs_intervals`` and
+        their shared intersection ``spike_window``. Coverage fields are None
+        when the observation-interval column is absent.
 
     Raises
     ------
@@ -113,6 +116,14 @@ def read_units(
     -----
     Pass ``units.spike_times`` and ``units.unit_ids`` explicitly to population
     analyses. The holder has no tuple-unpacking compatibility interface.
+
+    Pass ``spike_window=units.spike_window`` to analyses to preserve acquisition
+    coverage. This window is the time every selected unit was observed; it is
+    separate from selected analysis ``epochs``. Read units with different
+    coverage in separate calls (``unit_ids=``) if their intersection is too
+    short. An empty intersection is stored as shape ``(0, 2)``; passing it to
+    an analysis raises its "no rows" window error. Observation intervals are
+    read eagerly even when spike arrays are lazy.
 
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Materialize them (``np.asarray`` or indexing) inside the
@@ -182,4 +193,19 @@ def read_units(
         spike_trains = [
             np.sort(np.asarray(units[i, "spike_times"], dtype=np.float64)) for i in rows
         ]
-    return NWBUnits(spike_trains, out_ids, None, None)
+    obs_intervals: list[NDArray[np.float64]] | None = None
+    spike_window: NDArray[np.float64] | None = None
+    if "obs_intervals" in units.colnames:
+        obs_intervals = [
+            np.asarray(units[row, "obs_intervals"], dtype=np.float64) for row in rows
+        ]
+        spike_window = np.empty((0, 2), dtype=np.float64)
+        for i, intervals in enumerate(obs_intervals):
+            normalized = as_intervals(
+                intervals, name=f"obs_intervals[{int(out_ids[i])}]"
+            )
+            assert normalized is not None
+            spike_window = (
+                normalized if i == 0 else intersect_intervals(spike_window, normalized)
+            )
+    return NWBUnits(spike_trains, out_ids, obs_intervals, spike_window)
