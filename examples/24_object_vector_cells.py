@@ -16,10 +16,13 @@
 # %% [markdown]
 # # Object-Vector Cell Analysis
 #
-# Object-vector cells (OVCs) fire when an object is at a specific
-# **distance and direction** relative to the animal's heading -
-# regardless of the animal's absolute position. They were first
-# described in the medial entorhinal cortex (Hoydal et al., 2019).
+# Allocentric object-vector cells (Høydal et al., 2019) encode distance
+# and world-relative direction to objects. Egocentric bearing cells
+# (Wang et al., 2018) encode direction relative to the animal's heading.
+# This notebook first demonstrates an explicitly egocentric model, then
+# compares both analysis frames for an allocentric model.
+# References: https://doi.org/10.1038/s41586-019-1077-7 and
+# https://doi.org/10.1126/science.aau4940.
 #
 # This notebook demonstrates:
 #
@@ -30,8 +33,8 @@
 #
 # **Key difference from place cells:**
 # - **Place cell**: fires when animal is AT a location
-# - **Object-vector cell**: fires when an OBJECT is at a specific
-#   (distance, egocentric direction) relative to the animal
+# - **Allocentric object-vector cell**: tuned to distance and world direction
+# - **Egocentric bearing cell**: tuned to distance and heading-relative bearing
 #
 # ## Learning Objectives
 #
@@ -41,7 +44,7 @@
 # - Compute egocentric rate maps with ``compute_egocentric_rate``
 # - Interpret tuning in (distance, egocentric direction) polar coordinates
 # - Compute the object-vector score and classify candidate OVCs
-# - Distinguish OVCs from place cells using egocentric spatial information
+# - Compare frame-specific tuning with an explicit place-cell control
 #
 # **Estimated time**: 20-25 minutes
 #
@@ -61,7 +64,7 @@ from neurospatial import Environment
 from neurospatial.encoding import (
     compute_egocentric_rate,
     compute_spatial_rate,
-    is_object_vector_cell,
+    is_egocentric_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
 )
@@ -123,7 +126,7 @@ print(
 # %% [markdown]
 # ## Part 2: Place an Object in the Environment
 #
-# An OVC's firing rate depends on the *egocentric* position of an object
+# This egocentric model depends on object bearing relative to heading
 # relative to the animal. We place a single object near the center of the
 # arena so the animal experiences it from many distances and directions.
 
@@ -169,7 +172,8 @@ plt.show()
 preferred_distance = 20.0
 preferred_direction = np.pi / 2  # to the left
 
-ovc_model = ObjectVectorCellModel(direction_frame="egocentric", 
+ovc_model = ObjectVectorCellModel(
+    direction_frame="egocentric",
     env=env,
     object_positions=object_positions,
     preferred_distance=preferred_distance,
@@ -197,7 +201,7 @@ print(
 #
 # A place cell fires when the animal is AT a fixed location. We use it
 # as a negative control. As Part 9 shows, a structured place cell can
-# still clear the one-shot ``is_object_vector_cell`` info-only screen
+# still clear the one-shot ``is_egocentric_object_vector_cell`` info-only screen
 # (its egocentric tuning carries information), but it fails the stricter
 # manual score-plus-info check that captures true object-vector tuning.
 
@@ -383,7 +387,7 @@ print("- Place cell: egocentric field is diffuse")
 # - Direction selectivity = mean resultant length over direction bins
 #
 # A higher score indicates stronger object-vector tuning. Note the
-# one-shot ``is_object_vector_cell`` classifier does *not* threshold this
+# one-shot ``is_egocentric_object_vector_cell`` classifier does *not* threshold this
 # score directly: it classifies on egocentric spatial information against
 # its default ``min_info=0.3`` bits/spike (see Part 9).
 
@@ -423,7 +427,7 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 # Two ways to classify a candidate OVC, with a caveat about which
 # tuning curve each one uses:
 #
-# 1. **``is_object_vector_cell``** — the library's one-shot screener.
+# 1. **``is_egocentric_object_vector_cell``** — the library's one-shot screener.
 #    It internally calls ``compute_egocentric_rate`` with the default
 #    smoothing (``method="binned"``, no bandwidth, no occupancy
 #    threshold) and classifies on the egocentric-spatial-information
@@ -446,12 +450,12 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 # carries enough egocentric information to clear ``min_info=0.3``), while
 # the stricter manual score+info screen returns ``False`` (its
 # object-vector score is far too low). Pick one workflow and stick with
-# it. See the ``is_object_vector_cell`` docstring for guidance on
+# it. See the ``is_egocentric_object_vector_cell`` docstring for guidance on
 # choosing thresholds.
 
 # %%
 # 1. Library one-shot screener (raw-binned tuning, default thresholds)
-ovc_is_ovc = is_object_vector_cell(
+ovc_is_ovc = is_egocentric_object_vector_cell(
     env,
     ovc_spikes,
     times,
@@ -462,7 +466,7 @@ ovc_is_ovc = is_object_vector_cell(
     n_distance_bins=10,
     n_direction_bins=12,
 )
-pc_is_ovc = is_object_vector_cell(
+pc_is_ovc = is_egocentric_object_vector_cell(
     env,
     pc_spikes,
     times,
@@ -473,7 +477,7 @@ pc_is_ovc = is_object_vector_cell(
     n_distance_bins=10,
     n_direction_bins=12,
 )
-print("is_object_vector_cell (library, default thresholds):")
+print("is_egocentric_object_vector_cell (library, default thresholds):")
 print(f"  OVC -> {ovc_is_ovc}")
 print(f"  Place cell -> {pc_is_ovc}")
 if pc_is_ovc:
@@ -513,8 +517,8 @@ print(f"  Place cell -> {pc_passes}")
 # In this notebook, you learned:
 #
 # ### Key Concepts
-# - **Object-vector cells** fire when an object is at a specific
-#   (distance, egocentric direction) from the animal
+# - **Allocentric object-vector cells** use world-relative direction;
+#   **egocentric bearing cells** use direction relative to heading.
 # - **Egocentric rate maps** (``compute_egocentric_rate``) index firing
 #   by polar coordinates relative to the *nearest* object at each
 #   timepoint
@@ -535,20 +539,21 @@ print(f"  Place cell -> {pc_passes}")
 #   ``spatial_information``)
 # - ``object_vector_score`` collapses a tuning curve into a single
 #   selectivity score in [0, 1]
-# - ``is_object_vector_cell`` is a one-shot screening function that
+# - ``is_egocentric_object_vector_cell`` is a one-shot screening function that
 #   classifies on egocentric spatial information (``min_info`` threshold)
 # - ``plot_object_vector_tuning`` renders the egocentric rate map on a
 #   polar axis
 #
 # ### Classification
-# - The library default ``is_object_vector_cell`` uses
+# - The library default ``is_egocentric_object_vector_cell`` uses
 #   ``min_info=0.3`` bits/spike (egocentric spatial information) on the
 #   *raw-binned* tuning - fast screen, conservative
 # - Computing the score on a smoothed tuning (as in Part 5) gives
 #   higher absolute scores but requires picking smoothing parameters
 #   and thresholds appropriate to your recording
 # - Comparing egocentric vs allocentric spatial information (Part 8)
-#   is a useful sanity check: OVCs are higher in the egocentric frame
+#   is a frame-specific check: the egocentric model should favor egocentric
+#   tuning; the allocentric model below should favor allocentric tuning.
 #
 # ### Next Steps
 # - Apply to real recordings with tracked head direction and known
@@ -560,3 +565,69 @@ print(f"  Place cell -> {pc_passes}")
 # ### References
 # - Hoydal, O. A., et al. (2019). Object-vector coding in the medial
 #   entorhinal cortex. *Nature*, 568(7752), 400-404.
+
+# %% [markdown]
+# ## Both Reference Frames
+#
+# The demonstration above explicitly selects egocentric tuning. The simulator's
+# default is allocentric: direction to the object is fixed in world coordinates,
+# with 0 = East and +pi/2 = North. The animal-to-object vector reverses the
+# object-to-animal vector used to describe a field location; add pi and wrap.
+# Both maps carry their frame, use the same distance/window rules and provide
+# candidate screens. The place-cell control above is retained; these screens
+# do not establish biological identity.
+
+# %%
+from neurospatial.encoding import compute_object_vector_rate, is_object_vector_cell
+
+allocentric_model = ObjectVectorCellModel(
+    env=env,
+    object_positions=object_positions,
+    preferred_distance=20.0,
+    distance_width=5.0,
+    preferred_direction=np.pi,
+    max_rate=60.0,
+)
+allocentric_spikes = generate_poisson_spikes(
+    allocentric_model.firing_rate(positions),
+    times,
+    seed=43,
+)
+allocentric_result = compute_object_vector_rate(
+    env,
+    allocentric_spikes,
+    times,
+    positions,
+    object_positions,
+)
+allocentric_ego_result = compute_egocentric_rate(
+    env,
+    allocentric_spikes,
+    times,
+    positions,
+    headings,
+    object_positions,
+)
+fig, axes = plt.subplots(1, 2, subplot_kw={"projection": "polar"}, figsize=(12, 5))
+for result, ax in zip([allocentric_result, allocentric_ego_result], axes, strict=True):
+    plot_object_vector_tuning(result, ax=ax, add_colorbar=True)
+    ax.set_title(
+        f"{result.direction_frame}: {result.spatial_information():.3f} bits/spike"
+    )
+plt.tight_layout()
+plt.show()
+print(
+    "Allocentric information-only candidate (default binned estimator):",
+    is_object_vector_cell(
+        env,
+        allocentric_spikes,
+        times,
+        positions,
+        object_positions,
+    ),
+)
+print(
+    "Recorded frames:",
+    allocentric_result.direction_frame,
+    allocentric_ego_result.direction_frame,
+)

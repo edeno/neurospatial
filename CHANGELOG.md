@@ -34,6 +34,8 @@
 
 ### Documentation
 
+- Teach allocentric and egocentric object-vector analysis separately in the guides, migration notes, glossary and synchronized tutorial. Public examples record the frame and use the appropriate heading-free or heading-required call; executable docstrings cover the new APIs.
+
 - Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
 
 ### Removed

@@ -282,11 +282,15 @@ from neurospatial.encoding import (
     ViewRateResult,                         # Result with occupancy, is_spatial_view_cell()
     ViewRatesResult,                        # Population result
 
-    # Egocentric Rate (Object-Vector Cells)
+    # Object-vector rate (allocentric and egocentric)
+    compute_object_vector_rate,             # Allocentric field, no headings
+    compute_object_vector_rates,            # Allocentric population fields
+    is_object_vector_cell,                  # Allocentric candidate screen
+    is_egocentric_object_vector_cell,       # Heading-relative candidate screen
     compute_egocentric_rate,                # Single-neuron egocentric polar field
     compute_egocentric_rates,               # Population egocentric fields
-    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction()
-    EgocentricRatesResult,                  # Population result
+    ObjectVectorRateResult,                   # Result with preferred_distance(), preferred_direction()
+    ObjectVectorRatesResult,                  # Population result
 
     # Metrics (available on result objects or standalone)
     spatial_information,                    # Spatial info (bits/spike)
@@ -354,7 +358,7 @@ Result objects from the new API provide convenient methods:
 - `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
 - `.view_distance` - Distance parameter for gaze model
 
-**EgocentricRateResult** (from `compute_egocentric_rate`):
+**ObjectVectorRateResult** (from `compute_egocentric_rate`):
 - `.firing_rate` - Egocentric polar field (n_bins,) in Hz
 - `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
 - `.env` - Egocentric polar environment
@@ -418,15 +422,22 @@ from neurospatial.encoding.border import (
 
 ```python
 from neurospatial.encoding import (
-    compute_egocentric_rate,                # Egocentric polar field (returns EgocentricRateResult)
+    compute_object_vector_rate,             # Allocentric field, no headings
+    compute_object_vector_rates,            # Allocentric population fields
+    is_object_vector_cell,                  # Allocentric candidate screen
+    is_egocentric_object_vector_cell,       # Heading-relative candidate screen
+    compute_egocentric_rate,                # Egocentric polar field (returns ObjectVectorRateResult)
     compute_egocentric_rates,               # Population egocentric fields
-    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction(), etc.
-    EgocentricRatesResult,                  # Population result
+    ObjectVectorRateResult,                   # Result with preferred_distance(), preferred_direction(), etc.
+    ObjectVectorRatesResult,                  # Population result
 )
 ```
 
 Use result methods such as `preferred_distance()`, `preferred_direction()`, and
-`is_object_vector_cell()` for classification workflows.
+`spatial_information()` and `is_object_vector_cell()` for candidate screening
+in `result.direction_frame`. Free allocentric functions omit headings; free
+egocentric functions require headings. Direction is animal-to-object: add pi
+and wrap for the reverse object-centred vector.
 
 ### Spatial View Cells
 
