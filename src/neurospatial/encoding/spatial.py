@@ -57,7 +57,11 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
-from neurospatial.encoding._significance import check_criterion, check_mode_keywords
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -5067,13 +5071,37 @@ def is_place_cell(
         call="is_place_cell",
     )
     if criterion == "shuffle":
-        raise ValueError(
-            _format_error(
-                "is_place_cell requires a raw-array shuffle computation.",
-                why="Why: this criterion requires a circular-shift null distribution",
-                fix="call place_cell_significance(...) with the raw arrays",
-            )
-        )
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = place_cell_significance(
+            env,
+            [spike_times],
+            times,
+            positions,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            fill_value=fill_value,
+            penalty=penalty,
+            rank=rank,
+            pooled=pooled,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            backend=backend,
+            warn_on_drop=warn_on_drop,
+        )[label]
+        return shuffle_result.p_value < level
     min_info = (
         PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
     )

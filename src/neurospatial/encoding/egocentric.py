@@ -60,7 +60,11 @@ from neurospatial.encoding._binning import (
 from neurospatial.encoding._egocentric_binning import (
     _object_vector_interval_mask as _object_vector_interval_mask,
 )
-from neurospatial.encoding._significance import check_criterion, check_mode_keywords
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+)
 from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
@@ -2951,13 +2955,35 @@ def is_object_vector_cell(
         call="is_object_vector_cell",
     )
     if criterion == "shuffle":
-        raise ValueError(
-            _format_error(
-                "is_object_vector_cell requires a raw-array shuffle computation.",
-                why="Why: this criterion requires a circular-shift null distribution",
-                fix="call object_vector_cell_significance(...) with the raw arrays",
-            )
-        )
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = object_vector_cell_significance(
+            env,
+            [spike_times],
+            times,
+            positions,
+            object_positions,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )[label]
+        return shuffle_result.p_value < level
     min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
     result = compute_object_vector_rate(
         env,
@@ -3169,13 +3195,36 @@ def is_egocentric_object_vector_cell(
         call="is_egocentric_object_vector_cell",
     )
     if criterion == "shuffle":
-        raise ValueError(
-            _format_error(
-                "is_egocentric_object_vector_cell requires a raw-array shuffle computation.",
-                why="Why: this criterion requires a circular-shift null distribution",
-                fix="call egocentric_object_vector_cell_significance(...) with the raw arrays",
-            )
-        )
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = egocentric_object_vector_cell_significance(
+            env,
+            [spike_times],
+            times,
+            positions,
+            headings,
+            object_positions,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )[label]
+        return shuffle_result.p_value < level
     min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
     result = compute_egocentric_rate(
         env,

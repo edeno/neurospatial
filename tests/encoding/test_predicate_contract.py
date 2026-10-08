@@ -200,3 +200,121 @@ def test_label_constants_and_removed_aliases(significance_recording):
         assert not hasattr(cls, alias)
     with pytest.raises(TypeError):
         rates.classify(min_spatial_info=0.5)
+
+
+@pytest.mark.slow
+def test_free_and_population_shuffles_agree(
+    significance_family, significance_recording
+):
+    f, r = significance_family, significance_recording
+    predicate = getattr(f.module, _names(f)[0])
+    ids = [10, 20, 30]
+    population = f.function(
+        *f.args(r), unit_ids=ids, n_shuffles=50, rng=0, **f.defaults
+    )
+    reorder = [2, 0, 1]
+    reordered = f.function(
+        *f.args(r, [r.trains[i] for i in reorder]),
+        unit_ids=[ids[i] for i in reorder],
+        n_shuffles=50,
+        rng=0,
+        **f.defaults,
+    )
+    for i, uid in enumerate(ids):
+        alone = f.function(
+            *f.args(r, [r.trains[i]]),
+            unit_ids=[uid],
+            n_shuffles=50,
+            rng=0,
+            **f.defaults,
+        )[uid]
+        np.testing.assert_array_equal(population[uid].p_value, alone.p_value)
+        np.testing.assert_array_equal(population[uid].p_value, reordered[uid].p_value)
+        assert (
+            np.min(np.abs(population[uid].null_scores - population[uid].observed_score))
+            > 1e-12
+        )
+        assert predicate(
+            *f.args(r, r.trains[i]),
+            criterion="shuffle",
+            unit_id=uid,
+            n_shuffles=50,
+            rng=0,
+            **f.defaults,
+        ) == (population[uid].p_value < 0.05)
+
+
+def test_is_place_cell_shuffle_rejects_noise(ou_2min_env, ou_2min, noise_trains):
+    t, p, _ = ou_2min
+    trains = noise_trains(120)[:5]
+    assert all(encoding.has_place_field(ou_2min_env, tr, t, p) for tr in trains)
+    flags = [
+        encoding.is_place_cell(
+            ou_2min_env, tr, t, p, criterion="shuffle", n_shuffles=50, rng=0
+        )
+        for tr in trains
+    ]
+    assert sum(flags) <= 2
+
+
+def test_head_direction_alpha_in_both_modes(significance_recording):
+    r = significance_recording
+    screen = encoding.is_head_direction_cell(
+        r.trains[0], r.times, r.headings, alpha=1.0
+    )
+    assert isinstance(screen, bool)
+    sig = encoding.head_direction_cell_significance(
+        [r.trains[0]], r.times, r.headings, n_shuffles=20, rng=0
+    )[0]
+    for alpha in [sig.p_value, 1.01]:
+        assert encoding.is_head_direction_cell(
+            r.trains[0],
+            r.times,
+            r.headings,
+            criterion="shuffle",
+            n_shuffles=20,
+            rng=0,
+            alpha=alpha,
+        ) == (sig.p_value < alpha)
+
+
+def test_results_do_not_retain_inputs(significance_family, significance_recording):
+    from functools import partial
+
+    f, r = significance_family, significance_recording
+    single = getattr(f.module, f.compute_name[:-1])(
+        *f.args(r, r.trains[0]), **f.defaults
+    )
+    plural = f.compute(*f.args(r), **f.defaults)
+    inputs = [*r.trains, r.times, r.positions, r.headings, r.objects]
+    for result in [single, plural, plural[0]]:
+        for name, value in vars(result).items():
+            if name == "env":
+                continue
+            assert not callable(value) and not isinstance(value, partial)
+            if isinstance(value, np.ndarray):
+                assert not any(
+                    np.shares_memory(value, input_array) for input_array in inputs
+                )
+    rates = plural.firing_rates.copy()
+    flags = plural.classify().copy()
+    r.positions[:] = 0
+    r.times[:] = 0
+    r.headings[:] = 0
+    np.testing.assert_array_equal(plural.firing_rates, rates)
+    np.testing.assert_array_equal(plural.classify(), flags)
+
+
+def test_is_place_cell_spatial_info(ou_2min_env, ou_2min, noise_trains):
+    t, p, _ = ou_2min
+    trains = noise_trains(120)
+    rates = encoding.compute_spatial_rates(ou_2min_env, trains, t, p)
+    flags = [
+        encoding.is_place_cell(ou_2min_env, tr, t, p, criterion="spatial_info")
+        for tr in trains
+    ]
+    np.testing.assert_array_equal(flags, rates.classify())
+    assert sum(flags) == 15
+    assert all(
+        rates[i].is_place_cell(criterion="spatial_info") == flags[i] for i in range(20)
+    )

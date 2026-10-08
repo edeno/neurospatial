@@ -85,7 +85,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
@@ -93,7 +92,11 @@ from neurospatial.encoding._binning import (
     _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
 )
-from neurospatial.encoding._significance import check_criterion, check_mode_keywords
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+)
 from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
@@ -2057,13 +2060,34 @@ def is_spatial_view_cell(
         call="is_spatial_view_cell",
     )
     if criterion == "shuffle":
-        raise ValueError(
-            _format_error(
-                "is_spatial_view_cell requires a raw-array shuffle computation.",
-                why="Why: this criterion requires a circular-shift null distribution",
-                fix="call spatial_view_cell_significance(...) with the raw arrays",
-            )
-        )
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = spatial_view_cell_significance(
+            env,
+            [spike_times],
+            times,
+            positions,
+            headings,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
+            gaze_model=gaze_model,
+            view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )[label]
+        return shuffle_result.p_value < level
     min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
     result = compute_view_rate(
         env,
