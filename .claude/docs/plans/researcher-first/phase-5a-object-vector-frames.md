@@ -1,6 +1,6 @@
 # Phase 5a — `label_cell_types` fix and frame-explicit object-vector analysis
 
-**Requires:** Phases 4b and 4c merged, and a passing repeated researcher-workflow checkpoint ([overview → Rollout Strategy](overview.md#rollout-strategy)). The 2026-10-07 checkpoint is held.
+**Requires:** Phases 4b, 4c and 4d merged, and a passing repeated researcher-workflow checkpoint ([overview → Rollout Strategy](overview.md#rollout-strategy)). The post-4c checkpoint on 2026-10-07 is held for the decoder-tutorial coordinate correction.
 
 [← back to PLAN.md](PLAN.md) · [executing](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md)
 

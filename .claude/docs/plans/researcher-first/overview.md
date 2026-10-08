@@ -109,7 +109,7 @@ Implementation phases and checkpoint follow-ups ship as separate PRs into `feat/
 - **3b, 3c, 3d**: each requires 3a. 3c also requires 2a, because both edit the PSTH code in `events/alignment.py`.
 - **3e**: requires 3d and 2b. 3d owns the new time-window keywords on `compute_pre_decision_metrics` and the VTE functions, and 3e only forwards them. 3e's `heading_from_velocity` change touches files 2b edits.
 - **4a**: requires all of Phases 2 and 3. It rewrites error sites that 2a and 2b touched. **4b** requires 4a, because 4b executes examples that depend on the four-array calls working.
-- **Checkpoint**: after 4b, before 5a (below). The [2026-10-07 review](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07.md) is held; **4c** corrects simulation duration and scientific documentation, then the checkpoint repeats.
+- **Checkpoint**: after 4b, before 5a (below). **4c** corrected the first checkpoint's duration and interpretation blockers. The [post-4c repeat](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4C.md) is held for **4d**, a bounded decoder-tutorial coordinate correction; repeat after 4d and pass before 5a.
 - **5a, then 5b; 6a, then 6b, then 6c; then 7.** 6a requires 5b, because the snapshot freezes the names 5a and 5b introduce. 7 requires 5b (threshold constants) and 6c.
 
 No feature flags are used.
@@ -134,6 +134,14 @@ Phase 4c fixes those blocking findings. Later plans carry the remaining
 navigation, event-cohort, holder and native 1D plotting additions. Phase 5a
 requires a passing repeated checkpoint; this review alone does not pass it.
 
+**Repeated checkpoint after Phase 4c, 2026-10-07:** all five journeys again
+complete with zero implementation/test reads. The joined graph route is now
+smooth, and Phase 4c's original blockers are closed. Tutorial 20 nevertheless
+overlays centimeters on posterior bin-index axes and relabels the axes as cm;
+even a perfect decode is falsely displayed. Phase 4d corrects the two tutorial
+cells and adds a numeric plot-coordinate guard before another checkpoint.
+Existing later-phase navigation/cohort/holder/native-1D-output tasks remain.
+
 ## Open Questions
 
 1. The population-silence warning thresholds (≥5 units, ≥60 s). These are the best current answer; revisit after use on real data.
@@ -157,6 +165,7 @@ Executor dry-runs measured the call sites and showed the original estimates were
 | 4a | about 1.5k lines |
 | 4b | about 1.5k lines |
 | 4c | bounded checkpoint corrections; estimate after inspecting the duration defect |
+| 4d | bounded decoder-tutorial overlay correction and executable coordinate guard |
 | 5a | about 2k lines, mostly mechanical renames |
 | 5b | about 1.5k lines |
 | 6a | about 1.5k lines |
