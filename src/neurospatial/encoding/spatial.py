@@ -580,6 +580,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
 
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
+
     Notes
     -----
     This is a frozen dataclass (immutable). All fields are set at construction
@@ -656,7 +660,13 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=None, kw_only=True, compare=False
     )
 
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
     def __post_init__(self) -> None:
+        if self.unit_id is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
         # all absent for a ratio method. n_units=None -> the singular per-unit slice.
@@ -1371,6 +1381,10 @@ class SpatialRatesResult(SpatialResultMixin):
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
 
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
+
     Notes
     -----
     This is a frozen dataclass (immutable). All fields are set at construction
@@ -1479,7 +1493,13 @@ class SpatialRatesResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
     def __post_init__(self) -> None:
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
@@ -1573,6 +1593,7 @@ class SpatialRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            _unit_ids_generated=self._unit_ids_generated,
             spike_window=self.spike_window,
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
@@ -3537,6 +3558,9 @@ default="diffusion_kde"
         context="compute_spatial_rates",
         input_ids=extracted_unit_ids,
     )
+    result_unit_ids = (
+        None if unit_ids is None and extracted_unit_ids is None else resolved_unit_ids
+    )
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
@@ -3660,7 +3684,7 @@ default="diffusion_kde"
             env=env,
             method=method,
             bandwidth=None,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
             # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
             # diagnostics are the float64 fit result and are kept float64 -- so
             # they do not lose precision (deviance/coefficients) and rates[i]
@@ -3712,7 +3736,7 @@ default="diffusion_kde"
             env=env,
             method=method,
             bandwidth=bandwidth,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
         )
 
     # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
@@ -3775,7 +3799,7 @@ default="diffusion_kde"
         env=env,
         method=method,
         bandwidth=bandwidth,
-        unit_ids=resolved_unit_ids,
+        unit_ids=result_unit_ids,
     )
 
 

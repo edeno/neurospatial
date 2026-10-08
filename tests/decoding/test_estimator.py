@@ -863,3 +863,142 @@ def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
     np.testing.assert_array_equal(supplied.unit_ids, [20, 10])
     with pytest.raises(ValueError, match="unique"):
         decoder.fit(spikes[:3], times, positions, unit_ids=[3, 3, 7])
+
+
+def test_from_rates_matches_fit(two_epoch_recording):
+    from neurospatial.encoding import compute_spatial_rates
+
+    r = two_epoch_recording
+    trains = [np.arange(0, 100, 0.4), np.arange(1100, 1200, 0.7)]
+    rates = compute_spatial_rates(
+        r.env,
+        trains,
+        r.times,
+        r.positions,
+        fill_value=0.0,
+        spike_window=[(0, 100), (1100, 1200)],
+    )
+    from_rates = BayesianDecoder.from_rates(rates)
+    fitted = BayesianDecoder(r.env).fit(
+        trains, r.times, r.positions, spike_window=[(0, 100), (1100, 1200)]
+    )
+    np.testing.assert_allclose(
+        from_rates.predict(trains, r.times).posterior,
+        fitted.predict(trains, r.times).posterior,
+        atol=1e-12,
+        rtol=0,
+    )
+    np.testing.assert_array_equal(from_rates.spike_window, rates.spike_window)
+    assert from_rates.is_fitted
+
+
+def test_from_rates_label_alignment(sim, make_spike_group):
+    from neurospatial.encoding import compute_spatial_rates
+
+    env, spikes, times, positions = sim
+    trains = spikes[:3]
+    rates = compute_spatial_rates(env, trains, times, positions, fill_value=0.0)
+    decoder = BayesianDecoder.from_rates(rates, dt=0.5)
+    np.testing.assert_array_equal(
+        decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times).posterior,
+        decoder.predict(trains, times).posterior,
+    )
+    labelled = compute_spatial_rates(
+        env,
+        make_spike_group(trains, index=[10, 11, 12]),
+        times,
+        positions,
+        fill_value=0.0,
+    )
+    decoder = BayesianDecoder.from_rates(labelled, dt=0.5)
+    np.testing.assert_array_equal(
+        decoder.predict(
+            make_spike_group(trains[::-1], index=[12, 11, 10]), times
+        ).posterior,
+        decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
+    )
+    with pytest.raises(ValueError) as caught:
+        decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
+    assert "missing: [12]" in str(caught.value)
+    assert "unexpected: [13]" in str(caught.value)
+
+
+def test_from_rates_constructor_labels(sim, make_spike_group):
+    from neurospatial.encoding import SpatialRatesResult
+
+    env, spikes, times, _ = sim
+    bins = np.arange(env.n_bins)
+    maps = np.vstack([1 + bins, 1 + bins[::-1]])
+    rates = SpatialRatesResult(
+        maps, np.ones(env.n_bins), env, "binned", 5, unit_ids=[10, 20]
+    )
+    decoder = BayesianDecoder.from_rates(rates, dt=0.5)
+    a = make_spike_group(spikes[:2], index=[10, 20])
+    b = make_spike_group(spikes[:2][::-1], index=[20, 10])
+    np.testing.assert_array_equal(
+        decoder.predict(a, times).posterior, decoder.predict(b, times).posterior
+    )
+    assert not rates._unit_ids_generated
+    assert not rates[0]._unit_ids_generated
+    assert not dataclasses.replace(rates)._unit_ids_generated
+    generated = SpatialRatesResult(maps, np.ones(env.n_bins), env, "binned", 5)
+    assert generated._unit_ids_generated
+    assert generated[0]._unit_ids_generated
+    assert dataclasses.replace(generated)._unit_ids_generated
+    decoder = BayesianDecoder.from_rates(generated, dt=0.5)
+    np.testing.assert_array_equal(
+        decoder.predict(a, times).posterior,
+        decoder.predict(spikes[:2], times).posterior,
+    )
+
+
+@pytest.mark.parametrize(
+    "method, options",
+    [
+        ("binned", {"bandwidth": 5}),
+        ("diffusion_kde", {"bandwidth": 5}),
+        ("glm", {"rank": 8, "penalty": 1.0}),
+    ],
+)
+def test_spatial_unit_identity_provenance_all_methods(sim, method, options):
+    from neurospatial.encoding import compute_spatial_rates
+
+    env, spikes, times, positions = sim
+    unlabelled = compute_spatial_rates(
+        env, spikes[:2], times, positions, method=method, **options
+    )
+    labelled = compute_spatial_rates(
+        env, spikes[:2], times, positions, method=method, unit_ids=[7, 9], **options
+    )
+    assert unlabelled._unit_ids_generated and unlabelled[0]._unit_ids_generated
+    assert not labelled._unit_ids_generated and not labelled[0]._unit_ids_generated
+
+
+def test_from_rates_rejects_other_types():
+    from neurospatial.encoding import compute_directional_rates
+
+    times = np.arange(300) / 30
+    rates = compute_directional_rates([times[::10]], times, np.sin(times))
+    with pytest.raises(TypeError, match="compute_spatial_rates"):
+        BayesianDecoder.from_rates(rates)
+
+
+def test_from_rates_nan_bins_use_existing_decoder_contract(sim):
+    from neurospatial.decoding import bin_spikes_in_time, decode_position
+    from neurospatial.encoding import SpatialRatesResult
+
+    env, spikes, times, _ = sim
+    maps = np.ones((2, env.n_bins))
+    maps[0, 0] = np.nan
+    rates = SpatialRatesResult(maps, np.ones(env.n_bins), env, "binned", 5)
+    decoder = BayesianDecoder.from_rates(rates, dt=0.5)
+    with pytest.warns(UserWarning, match="fill_value=0.0") as captured:
+        actual = decoder.predict(spikes[:2], times)
+    assert len(captured) == 1
+    counts, centers = bin_spikes_in_time(
+        spikes[:2], dt=0.5, t_start=times[0], t_stop=times[-1]
+    )
+    with pytest.warns(UserWarning, match="fill_value=0.0"):
+        expected = decode_position(env, counts, maps, 0.5, times=centers)
+    np.testing.assert_array_equal(actual.posterior, expected.posterior)
+    assert np.isnan(maps[0, 0])

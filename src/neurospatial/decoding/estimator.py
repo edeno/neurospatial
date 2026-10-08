@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
 
 __all__ = ["BayesianDecoder"]
@@ -152,6 +153,10 @@ warn_on_drop
         Internal identity flag carried by selection or fitting when unit labels
         were generated. Leave it at its default when supplying real unit IDs.
 
+    spike_window : ndarray or None
+        Spike-recording windows carried from training or precomputed rates as
+        provenance. Prediction takes its own explicit observation window.
+
     Examples
     --------
     >>> import numpy as np
@@ -189,6 +194,9 @@ warn_on_drop
     # True only when ``fit`` generated ``arange`` labels for an unlabelled
     # input; such labels never drive label-based pairing.
     _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate config domain and (if injected) fitted-state coupling.
@@ -270,6 +278,82 @@ warn_on_drop
             unfitted.
         """
         return self.encoding_models is not None
+
+    @classmethod
+    def from_rates(
+        cls, rates: SpatialRatesResult, *, dt: float = 0.025
+    ) -> BayesianDecoder:
+        """Create a fitted decoder from existing spatial population rate maps.
+
+        Parameters
+        ----------
+        rates : SpatialRatesResult
+            Result from ``compute_spatial_rates``. Carries the environment,
+            rate maps, unit labels and recorded spike-observation windows.
+        dt : float, default=0.025
+            Decode bin width in seconds.
+
+        Returns
+        -------
+        BayesianDecoder
+            Frozen fitted decoder; call ``predict`` or ``predict_summary`` with
+            spikes and timestamp arrays, without supplying tracking positions.
+
+        Raises
+        ------
+        TypeError
+            If ``rates`` is not a ``SpatialRatesResult``.
+        ValueError
+            If ``dt`` is not a valid positive finite bin width.
+
+        Notes
+        -----
+        Caller-supplied labels align labelled prediction inputs by identity.
+        Generated row numbers retain positional pairing. The spike window is
+        training provenance; pass the prediction recording's ``spike_window``
+        explicitly when decoding. Non-finite map bins follow ``decode_position``:
+        prediction warns once, excludes their Poisson contributions, and points
+        to ``fill_value=0.0`` for explicitly zero-rate maps. The maps are not
+        recomputed or silently filled by this constructor.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment, compute_spatial_rates
+        >>> times = np.arange(600) / 30.0
+        >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
+        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> spikes = [times[::10], times[::15]]
+        >>> train, test = (0.0, 10.0), (10.0, 19.9)
+        >>> rates = compute_spatial_rates(
+        ...     env, spikes, times, positions, epochs=train, fill_value=0.0
+        ... )
+        >>> result = BayesianDecoder.from_rates(rates).predict(
+        ...     spikes, times, epochs=test
+        ... )
+        >>> bool(np.all(result.times >= 10.0))
+        True
+        """
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        if not isinstance(rates, SpatialRatesResult):
+            raise TypeError(
+                f"BayesianDecoder.from_rates expects SpatialRatesResult, got {type(rates).__name__}.\n"
+                "Why: the decoder needs spatial rate maps, their environment and unit identities.\n"
+                "Fix: call rates = compute_spatial_rates(env, spike_times, times, positions), "
+                "then BayesianDecoder.from_rates(rates)."
+            )
+        models = np.asarray(rates.firing_rates)
+        dtype = np.float32 if models.dtype == np.float32 else np.float64
+        return cls(
+            rates.env,
+            dt=dt,
+            dtype=dtype,
+            encoding_models=models,
+            unit_ids=np.asarray(rates.unit_ids),
+            _unit_ids_generated=rates._unit_ids_generated,
+            spike_window=rates.spike_window,
+        )
 
     def _check_fitted(self) -> NDArray[np.float64]:
         """Return the fitted encoding models, or raise if unfitted.
@@ -425,6 +509,7 @@ warn_on_drop
             encoding_models=firing_rates,
             unit_ids=resolved_ids,
             _unit_ids_generated=unit_ids is None and extracted_ids is None,
+            spike_window=resolved_spike_window,
         )
 
     def _align_to_fitted_units(
