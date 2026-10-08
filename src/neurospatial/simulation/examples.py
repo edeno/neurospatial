@@ -52,7 +52,7 @@ def open_field_session(
         - env: Square arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -71,8 +71,8 @@ def open_field_session(
     >>> from neurospatial.simulation import open_field_session
     >>> session = open_field_session(duration=5.0, n_place_cells=3)
     >>> env = session.env
-    >>> spike_trains = session.spike_trains
-    >>> len(spike_trains)
+    >>> spike_times = session.spike_times
+    >>> len(spike_times)
     3
 
     Validate neurospatial's place field detection:
@@ -217,7 +217,7 @@ def linear_track_session(
         - env: 1D linear track Environment with units="cm"
         - positions: Trajectory from lap-based running
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -241,7 +241,7 @@ def linear_track_session(
     >>> env = session.env
     >>> env.n_dims
     1
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
 
     Validate place field detection on 1D track:
@@ -376,7 +376,7 @@ def tmaze_alternation_session(
         - env: T-maze graph Environment with units="cm"
         - positions: Trajectory from lap-based running with alternation
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration including 'trial_choices'
@@ -396,7 +396,7 @@ def tmaze_alternation_session(
     >>> from neurospatial.simulation import tmaze_alternation_session
     >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, n_place_cells=3)
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
     >>> "trial_choices" in session.metadata
     True
@@ -603,7 +603,7 @@ def boundary_cell_session(
         - env: Arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each cell (boundary + place)
+        - spike_times: Poisson spikes for each cell (boundary + place)
         - models: BoundaryCellModel and PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -626,7 +626,7 @@ def boundary_cell_session(
     ...     duration=5.0, n_boundary_cells=3, n_place_cells=2
     ... )
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     5
 
     Check cell type distribution:
@@ -755,7 +755,7 @@ def boundary_cell_session(
         model = BoundaryCellModel(env)
         models.append(model)
         # Store ground truth for boundary cell
-        ground_truth[f"cell_{i}"] = {
+        ground_truth[i] = {
             "cell_type": "boundary",
             "preferred_distance": float(model.preferred_distance),
             "distance_tolerance": float(model.distance_tolerance),
@@ -780,7 +780,7 @@ def boundary_cell_session(
         place_model = PlaceCellModel(env, center=center)
         models.append(place_model)
         # Store ground truth for place cell
-        ground_truth[f"cell_{cell_idx}"] = {
+        ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
             "max_rate": float(place_model.max_rate),
@@ -788,7 +788,7 @@ def boundary_cell_session(
         }
 
     # Generate spikes for all cells
-    spike_trains = generate_population_spikes(
+    spike_times = generate_population_spikes(
         models, times, positions, seed=seed, show_progress=False
     )
 
@@ -811,7 +811,8 @@ def boundary_cell_session(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,
@@ -856,7 +857,7 @@ def grid_cell_session(
         - env: Square arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each grid cell
+        - spike_times: Poisson spikes for each grid cell
         - models: GridCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -875,7 +876,7 @@ def grid_cell_session(
     >>> from neurospatial.simulation import grid_cell_session
     >>> session = grid_cell_session(duration=5.0, n_grid_cells=3)
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
 
     Use custom grid spacing:
@@ -1009,7 +1010,7 @@ def grid_cell_session(
         models.append(model)
 
         # Store ground truth
-        ground_truth[f"cell_{i}"] = {
+        ground_truth[i] = {
             "cell_type": "grid",
             "grid_spacing": float(grid_spacing),
             "phase_offset": phase.tolist(),
@@ -1019,7 +1020,7 @@ def grid_cell_session(
         }
 
     # Generate spikes for all cells
-    spike_trains = generate_population_spikes(
+    spike_times = generate_population_spikes(
         models, times, positions, seed=seed, show_progress=False
     )
 
@@ -1042,7 +1043,8 @@ def grid_cell_session(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,

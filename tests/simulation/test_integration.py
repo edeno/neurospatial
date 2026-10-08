@@ -42,13 +42,13 @@ class TestSimulateSessionIntegration:
         # Verify structure
         assert session.env is simple_2d_env
         assert len(session.models) == 10
-        assert len(session.spike_trains) == 10
+        assert len(session.spike_times) == 10
         assert len(session.ground_truth) == 10
         assert len(session.positions) > 0
         assert len(session.times) > 0
 
         # Verify spikes were generated
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0
 
     @pytest.mark.slow
@@ -66,7 +66,7 @@ class TestSimulateSessionIntegration:
         )
 
         assert len(session.models) == 10
-        assert len(session.spike_trains) == 10
+        assert len(session.spike_times) == 10
         assert len(session.ground_truth) == 10
 
     def test_simulate_session_grid_cells_end_to_end(self, simple_2d_env):
@@ -83,7 +83,7 @@ class TestSimulateSessionIntegration:
         )
 
         assert len(session.models) == 10
-        assert len(session.spike_trains) == 10
+        assert len(session.spike_times) == 10
         assert len(session.ground_truth) == 10
 
     def test_simulate_session_mixed_cells_end_to_end(self, simple_2d_env):
@@ -190,7 +190,7 @@ class TestPreConfiguredExamplesIntegration:
 
         assert session is not None
         assert len(session.models) == 5
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
 
     def test_linear_track_session_runs_without_errors(self):
         """Test linear_track_session() completes successfully."""
@@ -200,7 +200,7 @@ class TestPreConfiguredExamplesIntegration:
 
         assert session is not None
         assert len(session.models) == 5
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
 
     def test_tmaze_alternation_session_runs_without_errors(self):
         """Test tmaze_alternation_session() completes successfully."""
@@ -210,7 +210,7 @@ class TestPreConfiguredExamplesIntegration:
 
         assert session is not None
         assert len(session.models) == 5
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
         assert "trial_choices" in session.metadata
 
     def test_boundary_cell_session_runs_without_errors(self):
@@ -221,7 +221,7 @@ class TestPreConfiguredExamplesIntegration:
 
         assert session is not None
         assert len(session.models) == 5  # 3 boundary + 2 place
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
 
     def test_grid_cell_session_runs_without_errors(self):
         """Test grid_cell_session() completes successfully."""
@@ -229,7 +229,7 @@ class TestPreConfiguredExamplesIntegration:
 
         assert session is not None
         assert len(session.models) == 5
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
 
 
 class TestPlaceFieldDetectionAccuracy:
@@ -249,13 +249,13 @@ class TestPlaceFieldDetectionAccuracy:
         env = session.env
         positions = session.positions
         times = session.times
-        spike_trains = session.spike_trains
+        spike_trains = session.spike_times
         ground_truth = session.ground_truth
         # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
         bin_size = _typical_bin_spacing(env)
 
         true_centers = np.array(
-            [ground_truth[f"cell_{i}"]["center"] for i in range(len(spike_trains))],
+            [ground_truth[i]["center"] for i in range(len(spike_trains))],
             dtype=float,
         )
 
@@ -404,7 +404,7 @@ class TestSimulationReproducibility:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
         # Ground truth should be identical

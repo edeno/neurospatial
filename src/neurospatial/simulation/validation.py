@@ -188,7 +188,7 @@ def validate_simulation(
             )
 
         env = session.env
-        spike_times = session.spike_trains
+        spike_times = session.spike_times
         positions = session.positions
         times = session.times
         ground_truth = session.ground_truth
@@ -265,7 +265,7 @@ def validate_simulation(
         detected_center = env.bin_centers[peak_bin]
 
         # Get ground truth center
-        cell_key = f"cell_{cell_idx}"
+        cell_key = cell_idx
         if cell_key not in ground_truth:
             raise ValueError(
                 f"Ground truth missing for {cell_key}. "
@@ -570,7 +570,7 @@ def plot_session_summary(
     env = session.env
     positions = session.positions
     times = session.times
-    spike_trains = session.spike_trains
+    spike_trains = session.spike_times
     n_cells = len(spike_trains)
 
     # Determine which cells to plot

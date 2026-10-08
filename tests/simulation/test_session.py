@@ -23,16 +23,17 @@ class TestSimulationSession:
         # Create minimal session
         positions = np.array([[50.0, 50.0], [51.0, 51.0]])
         times = np.array([0.0, 0.1])
-        spike_trains = [np.array([0.05]), np.array([0.06])]
+        spike_trains = [np.array([0.05])]
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
-        ground_truth = {"cell_0": models[0].ground_truth}
+        ground_truth = {0: models[0].ground_truth}
         metadata = {"duration": 0.1}
 
         session = SimulationSession(
             env=simple_2d_env,
             positions=positions,
             times=times,
-            spike_trains=spike_trains,
+            spike_times=spike_trains,
+            unit_ids=np.arange(len(spike_trains), dtype=np.int64),
             models=models,
             ground_truth=ground_truth,
             metadata=metadata,
@@ -50,14 +51,15 @@ class TestSimulationSession:
         times = np.array([0.0])
         spike_trains = [np.array([0.05])]
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
-        ground_truth = {"cell_0": models[0].ground_truth}
+        ground_truth = {0: models[0].ground_truth}
         metadata = {"duration": 0.1}
 
         session = SimulationSession(
             env=simple_2d_env,
             positions=positions,
             times=times,
-            spike_trains=spike_trains,
+            spike_times=spike_trains,
+            unit_ids=np.arange(len(spike_trains), dtype=np.int64),
             models=models,
             ground_truth=ground_truth,
             metadata=metadata,
@@ -67,7 +69,7 @@ class TestSimulationSession:
         assert session.env is simple_2d_env
         assert isinstance(session.positions, np.ndarray)
         assert isinstance(session.times, np.ndarray)
-        assert isinstance(session.spike_trains, list)
+        assert isinstance(session.spike_times, list)
         assert isinstance(session.models, list)
         assert isinstance(session.ground_truth, dict)
         assert isinstance(session.metadata, dict)
@@ -82,7 +84,8 @@ class TestSimulationSession:
         assert "env" in field_names
         assert "positions" in field_names
         assert "times" in field_names
-        assert "spike_trains" in field_names
+        assert "spike_times" in field_names
+        assert "unit_ids" in field_names
         assert "models" in field_names
         assert "ground_truth" in field_names
         assert "metadata" in field_names
@@ -97,21 +100,22 @@ class TestSimulationSession:
         times = np.array([0.0])
         spike_trains = [np.array([])]  # Empty spike train
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
-        ground_truth = {"cell_0": models[0].ground_truth}
+        ground_truth = {0: models[0].ground_truth}
         metadata = {"duration": 0.0}
 
         session = SimulationSession(
             env=simple_2d_env,
             positions=positions,
             times=times,
-            spike_trains=spike_trains,
+            spike_times=spike_trains,
+            unit_ids=np.arange(len(spike_trains), dtype=np.int64),
             models=models,
             ground_truth=ground_truth,
             metadata=metadata,
         )
 
-        assert len(session.spike_trains) == 1
-        assert len(session.spike_trains[0]) == 0
+        assert len(session.spike_times) == 1
+        assert len(session.spike_times[0]) == 0
 
     def test_simulation_session_with_multiple_cells(self, simple_2d_env):
         """SimulationSession should handle multiple cells."""
@@ -127,22 +131,21 @@ class TestSimulationSession:
             PlaceCellModel(simple_2d_env, center=np.array([60.0, 60.0])),
             PlaceCellModel(simple_2d_env, center=np.array([70.0, 70.0])),
         ]
-        ground_truth = {
-            f"cell_{i}": model.ground_truth for i, model in enumerate(models)
-        }
+        ground_truth = {i: model.ground_truth for i, model in enumerate(models)}
         metadata = {"n_cells": 3}
 
         session = SimulationSession(
             env=simple_2d_env,
             positions=positions,
             times=times,
-            spike_trains=spike_trains,
+            spike_times=spike_trains,
+            unit_ids=np.arange(len(spike_trains), dtype=np.int64),
             models=models,
             ground_truth=ground_truth,
             metadata=metadata,
         )
 
-        assert len(session.spike_trains) == 3
+        assert len(session.spike_times) == 3
         assert len(session.models) == 3
         assert len(session.ground_truth) == 3
 
@@ -152,14 +155,15 @@ class TestSimulationSession:
         times = np.array([0.0])
         spike_trains = [np.array([0.05])]
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
-        ground_truth = {"cell_0": models[0].ground_truth}
+        ground_truth = {0: models[0].ground_truth}
         metadata = {"duration": 0.1}
 
         session = SimulationSession(
             env=simple_2d_env,
             positions=positions,
             times=times,
-            spike_trains=spike_trains,
+            spike_times=spike_trains,
+            unit_ids=np.arange(len(spike_trains), dtype=np.int64),
             models=models,
             ground_truth=ground_truth,
             metadata=metadata,
@@ -181,7 +185,7 @@ class TestSimulateSession:
 
         assert isinstance(session, SimulationSession)
         assert session.env is simple_2d_env
-        assert len(session.spike_trains) == 3
+        assert len(session.spike_times) == 3
         assert len(session.models) == 3
 
     def test_simulate_session_place_cells(self, simple_2d_env):
@@ -198,7 +202,7 @@ class TestSimulateSession:
 
         assert len(session.models) == 5
         assert all(isinstance(m, PlaceCellModel) for m in session.models)
-        assert len(session.spike_trains) == 5
+        assert len(session.spike_times) == 5
         assert len(session.ground_truth) == 5
 
     def test_simulate_session_boundary_cells(self, simple_2d_env):
@@ -289,8 +293,7 @@ class TestSimulateSession:
 
         # Extract field centers from ground truth
         centers = [
-            session.ground_truth[f"cell_{i}"]["center"]
-            for i in range(len(session.models))
+            session.ground_truth[i]["center"] for i in range(len(session.models))
         ]
 
         # With uniform coverage, centers should be well-distributed
@@ -313,8 +316,7 @@ class TestSimulateSession:
 
         # Extract field centers
         centers = [
-            session.ground_truth[f"cell_{i}"]["center"]
-            for i in range(len(session.models))
+            session.ground_truth[i]["center"] for i in range(len(session.models))
         ]
 
         # Should have multiple unique centers
@@ -346,7 +348,7 @@ class TestSimulateSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
     def test_simulate_session_mixed_shared_max_rate_reaches_all_cell_types(
@@ -437,12 +439,12 @@ class TestSimulateSession:
         # At least one neuron must have produced spikes (otherwise the test is
         # vacuous), and the session's spike trains must differ from the
         # trajectory-seed reproduction for at least one neuron.
-        total = sum(len(st) for st in session.spike_trains)
+        total = sum(len(st) for st in session.spike_times)
         assert total > 0, "no spikes generated; cannot test stream independence"
 
         differs = any(
             not np.array_equal(a, b)
-            for a, b in zip(session.spike_trains, collision_spikes, strict=True)
+            for a, b in zip(session.spike_times, collision_spikes, strict=True)
         )
         assert differs, (
             "session spike trains reproduced exactly using the trajectory seed, "
@@ -464,7 +466,7 @@ class TestSimulateSession:
         # Check ground_truth keys
         assert len(session.ground_truth) == 3
         for i in range(3):
-            key = f"cell_{i}"
+            key = i
             assert key in session.ground_truth
 
             # For place cells, should have center, width, max_rate, baseline_rate

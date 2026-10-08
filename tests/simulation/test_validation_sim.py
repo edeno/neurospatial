@@ -211,7 +211,7 @@ class TestValidateSimulation:
         # Validate with individual parameters
         result = validate_simulation(
             env=session.env,
-            spike_times=session.spike_trains,
+            spike_times=session.spike_times,
             positions=session.positions,
             times=session.times,
             ground_truth=session.ground_truth,
@@ -362,7 +362,7 @@ class TestValidateSimulation:
         with pytest.raises(ValueError, match="ground_truth"):
             validate_simulation(
                 env=session.env,
-                spike_times=session.spike_trains,
+                spike_times=session.spike_times,
                 positions=session.positions,
                 times=session.times,
                 # Missing ground_truth
@@ -409,7 +409,7 @@ def test_detected_center_ignores_unresolved_bins():
         positions=positions,
         times=times,
         ground_truth={
-            "cell_0": {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
+            0: {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
         },
     )
 
@@ -429,7 +429,7 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
         spike_times=[times[near_center][::5]],
         positions=positions,
         times=times,
-        ground_truth={"cell_0": {"center": center, "width": 15.0, "max_rate": 10.0}},
+        ground_truth={0: {"center": center, "width": 15.0, "max_rate": 10.0}},
     )
 
     center_section = result["summary"].split("Field Correlations")[0]

@@ -26,7 +26,7 @@ def assert_recording_clock(sim, duration, frequency):
     assert sim.positions.shape == (len(sim.times), sim.env.n_dims)
     assert np.all(np.isfinite(sim.positions))
     assert all(
-        np.all((spikes >= 0.0) & (spikes < duration)) for spikes in sim.spike_trains
+        np.all((spikes >= 0.0) & (spikes < duration)) for spikes in sim.spike_times
     )
 
 
@@ -67,7 +67,7 @@ def test_lap_session_keeps_every_requested_traversal(short_track, duration):
     moving = moving[moving != 0]
     directions = moving[np.r_[True, np.diff(moving) != 0]]
     np.testing.assert_array_equal(directions, [1, -1, 1, -1])
-    assert sum(len(spikes) for spikes in sim.spike_trains) > 0
+    assert sum(len(spikes) for spikes in sim.spike_times) > 0
 
 
 def test_minimum_sample_budget_keeps_pause_and_both_endpoints(short_track):
@@ -135,5 +135,5 @@ def test_duration_controlled_laps_are_seeded(short_track):
     second = simulate_session(short_track, **kwargs)
     np.testing.assert_array_equal(first.positions, second.positions)
     np.testing.assert_array_equal(first.times, second.times)
-    for left, right in zip(first.spike_trains, second.spike_trains, strict=True):
+    for left, right in zip(first.spike_times, second.spike_times, strict=True):
         np.testing.assert_array_equal(left, right)
