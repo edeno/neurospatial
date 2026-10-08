@@ -376,10 +376,3 @@ def test_as_intervals_bad_shape_raises() -> None:
     """An (n, 3) array is not a valid interval array."""
     with pytest.raises(ValueError, match=r"shape"):
         as_intervals(np.zeros((4, 3)), name="epochs")
-
-
-def test_restrict_top_level_export() -> None:
-    """restrict is reachable from the top-level neurospatial namespace."""
-    import neurospatial
-
-    assert neurospatial.restrict is restrict

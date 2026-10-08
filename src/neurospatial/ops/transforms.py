@@ -17,7 +17,7 @@ This module has moved from ``neurospatial.transforms`` to ``neurospatial.ops.tra
 
 Two complementary APIs
 ----------------------
-1.  *Composable objects* (`AffineND`, `Affine2D`, `Affine3D`)
+1.  *Composable objects* (`AffineND`, `Affine2D`)
     Build a transform once, reuse everywhere, keep provenance.
 2.  *Quick helpers* (`flip_y_data`, `convert_to_cm`, `convert_to_pixels`)
     One-liners for scripts that just need a NumPy array back.
@@ -26,14 +26,14 @@ For 2D (backward compatible):
     Use `Affine2D` or factory functions like `translate()`, `scale_2d()`.
 
 For 3D (new in v0.3):
-    Use `Affine3D` or factory functions like `translate_3d()`, `scale_3d()`,
+    Use `AffineND` or factory functions like `translate_3d()`, `scale_3d()`,
     or `from_rotation_matrix()` with scipy.spatial.transform.Rotation.
 
 Notes
 -----
 **Version History**:
 - v0.2.x and earlier: 2D-only (`Affine2D`)
-- v0.3+: Added 3D support (`AffineND`, `Affine3D`)
+- v0.3+: Added 3D support (`AffineND`)
 - v0.4+: Moved to ``neurospatial.ops.transforms``; merged ``calibration.py``
 """
 
@@ -55,7 +55,6 @@ if TYPE_CHECKING:
 __all__ = [
     # Core classes
     "Affine2D",
-    "Affine3D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",
@@ -137,7 +136,6 @@ class AffineND(SpatialTransform):
     See Also
     --------
     Affine2D : Alias for 2D transforms (backward compatible)
-    Affine3D : Alias for 3D transforms
     from_rotation_matrix : Create transform from rotation matrix
     """
 
@@ -1042,7 +1040,6 @@ def identity_nd(n_dims: int = 2) -> AffineND:
 
 
 # Convenience aliases
-Affine3D = AffineND  # Type alias for 3D transforms
 
 
 # ---------------------------------------------------------------------
@@ -1232,7 +1229,6 @@ def estimate_transform(
     --------
     AffineND : N-D affine transformation class
     Affine2D : 2D affine transformation (same as AffineND with n_dims=2)
-    Affine3D : 3D affine transformation (same as AffineND with n_dims=3)
     apply_transform_to_environment : Apply transform to Environment
 
     """

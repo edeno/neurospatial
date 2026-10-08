@@ -38,7 +38,6 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
-from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -84,8 +83,8 @@ from neurospatial.encoding.grid import (
 # Phase precession analysis
 from neurospatial.encoding.phase_precession import (
     PhasePrecessionResult,
+    compute_phase_precession,
     has_phase_precession,
-    phase_precession,
     plot_phase_precession,
     theta_phase,
 )
@@ -134,8 +133,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "head_direction_cell_significance",
     "place_cell_significance",
     # Spike-time normalization
-    "as_spike_trains",
-    "as_spike_trains_with_ids",
     # Ragged-spike-train container
     "SpikeTrains",
     # Border/boundary cell analysis
@@ -166,7 +163,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Phase precession analysis
     "PhasePrecessionResult",
     "has_phase_precession",
-    "phase_precession",
+    "compute_phase_precession",
     "plot_phase_precession",
     "theta_phase",
     # Object-vector cell analysis

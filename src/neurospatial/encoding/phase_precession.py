@@ -11,7 +11,7 @@ Which Function Should I Use?
     Use ``has_phase_precession()`` for fast boolean filtering.
 
 **Need phase precession slope for publication?**
-    Use ``phase_precession()`` for full analysis with slope, offset, and fit quality.
+    Use ``compute_phase_precession()`` for full analysis with slope, offset, and fit quality.
     This is what you want for figures and reporting.
 
 **Visualizing phase precession?**
@@ -30,11 +30,11 @@ Common Use Cases
 Use for detailed analysis and publication::
 
     from neurospatial.encoding.phase_precession import (
-        phase_precession,
+        compute_phase_precession,
         plot_phase_precession,
     )
 
-    result = phase_precession(positions, phases)
+    result = compute_phase_precession(positions, phases)
     print(result)  # Automatic interpretation with slope, correlation, fit
     plot_phase_precession(positions, phases, result)
 
@@ -67,8 +67,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "PhasePrecessionResult",
+    "compute_phase_precession",
     "has_phase_precession",
-    "phase_precession",
     "plot_phase_precession",
     "theta_phase",
 ]
@@ -84,7 +84,7 @@ def theta_phase(
 
     Band-pass filters ``lfp`` to the theta band, then takes the phase of the
     Hilbert analytic signal. The returned phase is wrapped to ``[0, 2*pi)``
-    radians, the convention that :func:`phase_precession` (and the rest of this
+    radians, the convention that :func:`compute_phase_precession` (and the rest of this
     module) consumes — so the output is drop-in for phase-precession analysis
     once you select the phases at spike times.
 
@@ -120,7 +120,7 @@ def theta_phase(
 
     See Also
     --------
-    phase_precession : Consumes spike phases (in radians) from this function.
+    compute_phase_precession : Consumes spike phases (in radians) from this function.
     has_phase_precession : Quick boolean precession screen.
 
     Notes
@@ -129,7 +129,7 @@ def theta_phase(
     introduced. This function takes an LFP array the caller already has — it
     does not load or spike-sort data.
 
-    To obtain the spike phases that :func:`phase_precession` expects, sample
+    To obtain the spike phases that :func:`compute_phase_precession` expects, sample
     this per-sample phase at the spike times (e.g. by interpolating the
     *unwrapped* phase onto the spike times, then re-wrapping to ``[0, 2*pi)``).
 
@@ -138,7 +138,7 @@ def theta_phase(
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import (
     ...     theta_phase,
-    ...     phase_precession,
+    ...     compute_phase_precession,
     ... )
     >>> # Synthesize a pure 8 Hz theta sinusoid sampled at 1 kHz.
     >>> sampling_rate = 1000.0
@@ -149,9 +149,9 @@ def theta_phase(
     True
     >>> bool(phase.min() >= 0 and phase.max() < 2 * np.pi)
     True
-    >>> # Phases are drop-in for phase_precession (no reshaping):
+    >>> # Phases are drop-in for compute_phase_precession (no reshaping):
     >>> positions = np.linspace(0, 50, phase.size)
-    >>> result = phase_precession(positions, phase, rng=0)
+    >>> result = compute_phase_precession(positions, phase, rng=0)
     >>> isinstance(result.slope, float)
     True
     """
@@ -453,7 +453,7 @@ def _fit_slope(
     return optimal_slope, float(-neg_mrl)
 
 
-def phase_precession(
+def compute_phase_precession(
     positions: NDArray[np.float64],
     phases: NDArray[np.float64],
     *,
@@ -545,10 +545,10 @@ def phase_precession(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding.phase_precession import phase_precession
+    >>> from neurospatial.encoding.phase_precession import compute_phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
-    >>> result = phase_precession(positions, phases, rng=0)
+    >>> result = compute_phase_precession(positions, phases, rng=0)
     >>> print(result)  # doctest: +SKIP
     """
     from scipy.stats import circmean
@@ -656,7 +656,7 @@ def has_phase_precession(
         Unit of input phases.
     n_shuffles : int, default=200
         Number of permutation shuffles for the p-value. A smaller default
-        than :func:`phase_precession` (1000) keeps screening fast since this
+        than :func:`compute_phase_precession` (1000) keeps screening fast since this
         function is intended for filtering many neurons.
     rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the shuffles. Pass a fixed value for a
@@ -670,7 +670,7 @@ def has_phase_precession(
 
     See Also
     --------
-    phase_precession : Full analysis with metrics.
+    compute_phase_precession : Full analysis with metrics.
 
     Notes
     -----
@@ -698,7 +698,7 @@ def has_phase_precession(
     validate_lengths({"positions": positions, "phases": phases})
 
     try:
-        result = phase_precession(
+        result = compute_phase_precession(
             positions,
             phases,
             angle_unit=angle_unit,
@@ -784,12 +784,12 @@ def plot_phase_precession(
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import (
-    ...     phase_precession,
+    ...     compute_phase_precession,
     ...     plot_phase_precession,
     ... )
     >>> positions = np.linspace(0, 50, 100)
     >>> phases = (2 * np.pi - positions * 0.1) % (2 * np.pi)
-    >>> result = phase_precession(positions, phases)
+    >>> result = compute_phase_precession(positions, phases)
     >>> ax = plot_phase_precession(positions, phases, result)  # doctest: +SKIP
     """
     import matplotlib.pyplot as plt

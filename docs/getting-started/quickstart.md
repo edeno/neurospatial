@@ -30,7 +30,7 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 
 rng = np.random.default_rng(1)
 

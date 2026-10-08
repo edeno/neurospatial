@@ -168,6 +168,27 @@ def compute_spatial_rate(
 
 ---
 
+## Root workflows
+
+```python
+from neurospatial import (
+    Environment,
+    compute_spatial_rate,
+    compute_spatial_rates,
+    SpatialRateResult,
+    SpatialRatesResult,
+    decode_position,
+    DecodingResult,
+    peri_event_histogram,
+    PeriEventResult,
+    NeurospatialError,
+)
+```
+
+Root workflows load lazily and expose concrete types to IDEs and mypy.
+`SpikeTrains` comes from `encoding`, `restrict` from `behavior`, and
+`BayesianDecoder` / `bin_spikes_in_time` from `decoding`.
+
 ## Core Classes
 
 ```python
@@ -187,7 +208,6 @@ from neurospatial.ops import (
     regions_to_mask,                # Convert regions to binary mask
     resample_field,                 # Resample field to different grid
     TieBreakStrategy,               # Enum for tie-breaking
-    clear_kdtree_cache,             # Clear KDTree cache
 
     # Distance
     distance_field,                 # Multi-source geodesic distances
@@ -199,7 +219,6 @@ from neurospatial.ops import (
 
     # Transforms - Core classes
     Affine2D,                       # 2D affine transform
-    Affine3D,                       # 3D affine transform
     AffineND,                       # ND affine transform
     SpatialTransform,               # Protocol for composable transforms
     VideoCalibration,               # Video calibration transform
@@ -485,7 +504,7 @@ the returned result methods for classification and summaries.
 
 ```python
 from neurospatial.encoding.phase_precession import (
-    phase_precession,                       # Phase precession analysis
+    compute_phase_precession,               # Phase precession analysis
     has_phase_precession,                   # Significance test
     plot_phase_precession,                  # Phase-position plot
     PhasePrecessionResult,                  # Result dataclass
@@ -520,7 +539,6 @@ from neurospatial.decoding import (
 
     # Likelihood
     log_poisson_likelihood,
-    poisson_likelihood,
 
     # Posterior
     normalize_to_posterior,
@@ -635,6 +653,9 @@ from neurospatial.stats.shuffle import (
 ```
 
 ### Surrogate Data Generation
+
+Surrogate generators come from `neurospatial.stats.surrogates` (or `stats`),
+not the shuffle module.
 
 ```python
 from neurospatial.stats.surrogates import (
@@ -756,11 +777,30 @@ from neurospatial.simulation import (
 # Animation overlays for simulation
 from neurospatial.animation import (
     ObjectVectorOverlay,           # Vectors from animal to objects
-    ObjectVectorData,              # Internal data container
 )
 ```
 
 ---
+
+## Population covariance and reactivation
+
+```python
+from neurospatial.decoding import (
+    detect_assemblies,
+    assembly_activation,
+    pairwise_correlations,
+    explained_variance_reactivation,
+    reactivation_strength,
+)
+```
+
+These consume spike-count matrices with a common unit selection and column
+order. `detect_assemblies` selects dimensions against a Marchenko-Pastur
+reference; thresholded core members and standardized activations have no
+calibrated neuron/bin p-values. EV, controlled REV and activation-magnitude
+ratios are effect sizes. Use an explicit pre-template control for controlled
+EV/REV. The complete recipe is in
+[workflows](../docs/user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ## Behavioral Analysis (behavior/)
 
@@ -866,7 +906,6 @@ from neurospatial.behavior.vte import (
 
     # VTE functions
     head_sweep_magnitude,           # Sum of |delta_theta| (IdPhi)
-    integrated_absolute_rotation,   # Alias for head_sweep_magnitude
     head_sweep_from_positions,      # IdPhi from trajectory
     normalize_vte_scores,           # Z-score across trials
     compute_vte_index,              # Combined VTE index
@@ -919,9 +958,6 @@ from neurospatial.events import (
     events_to_intervals,              # Pair start/stop events
     filter_by_intervals,              # Filter events by intervals
 
-    # Validation
-    validate_events_dataframe,        # Validate events DataFrame
-    validate_spatial_columns,         # Check for spatial columns
 )
 ```
 
@@ -936,7 +972,6 @@ from neurospatial.animation import (
     BodypartOverlay,                        # Pose tracking with skeleton
     HeadDirectionOverlay,                   # Orientation arrows
     EventOverlay,                           # Spikes, licks, rewards
-    SpikeOverlay,                           # Alias for EventOverlay
     TimeSeriesOverlay,                      # Continuous variables
     ObjectVectorOverlay,                    # Vectors from animal to objects
 
@@ -953,7 +988,7 @@ from neurospatial.animation import (
     subsample_frames,                       # Subsample frame arrays
 )
 
-# VideoCalibration and calibrate_from_landmarks also available from neurospatial.ops
+# Import VideoCalibration and calibrate_from_landmarks from neurospatial.ops.
 ```
 
 ---

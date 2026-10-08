@@ -1,4 +1,4 @@
-"""Tests for EventOverlay and SpikeOverlay animation overlay classes.
+"""Tests for EventOverlay animation overlay classes.
 
 This module tests the EventOverlay dataclass, its validation logic,
 conversion to EventData, and integration with the animation pipeline.
@@ -424,35 +424,6 @@ class TestEventOverlayInterpolationModes:
         )
 
         assert overlay.interp == "nearest"
-
-
-class TestSpikeOverlayAlias:
-    """Test that SpikeOverlay is an alias for EventOverlay."""
-
-    def test_spike_overlay_is_event_overlay(self):
-        """Test that SpikeOverlay is the same as EventOverlay."""
-        from neurospatial.animation.overlays import EventOverlay, SpikeOverlay
-
-        assert SpikeOverlay is EventOverlay
-
-    def test_spike_overlay_can_be_instantiated(self):
-        """Test that SpikeOverlay can be instantiated like EventOverlay."""
-        from neurospatial.animation.overlays import SpikeOverlay
-
-        positions = np.array([[0.0, 0.0], [10.0, 10.0]])
-        position_times = np.array([0.0, 1.0])
-        spike_times = np.array([0.5])
-
-        overlay = SpikeOverlay(
-            event_times=spike_times,
-            positions=positions,
-            position_times=position_times,
-            colors="red",
-        )
-
-        assert overlay.colors == "red"
-        # event_times is normalized to dict format in __post_init__
-        assert_array_equal(overlay.event_times["event"], spike_times)
 
 
 class TestEventDataDataclass:

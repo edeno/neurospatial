@@ -18,16 +18,23 @@ Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
 CompositeEnvironment : Multi-environment composition
     Merges multiple environments with automatic bridge inference.
-bin_spikes_in_time : Spike-time -> count-matrix binner
-    Bins per-neuron spike-time arrays onto a regular time grid, producing the
-    count matrix ``decode_position`` (or the assembly functions) consume.
-    Re-exported from :mod:`neurospatial.decoding` as a primary entry point.
+compute_spatial_rate, compute_spatial_rates : Spatial encoding
+    Estimate rate maps from environment, spikes, times and positions.
+SpatialRateResult, SpatialRatesResult : Spatial rate results
+    Measure, plot and export one neuron or a population.
+decode_position, DecodingResult : Position decoding
+    Decode a count matrix against rate maps; inspect posterior and estimates.
+peri_event_histogram, PeriEventResult : Peri-event analysis
+    Compute and inspect a histogram aligned to event times.
+NeurospatialError : Base library exception
+    Catch library-defined errors through one public exception hierarchy.
+Session, load_session : Session convenience recipe
+    Bundle or load an existing recording workflow.
 
 Submodule Organization
 ----------------------
-All other functionality is accessed via explicit submodule imports. This design
-follows Raymond Hettinger's "sparse top-level" principle for better autocomplete
-and clearer import patterns.
+The flagship workflows are available at the root through lazy imports.
+Each domain namespace exposes its specialized user-facing functions and types.
 
 encoding : Neural encoding analysis
     Place cells, grid cells, head direction cells, border cells, object-vector
@@ -76,7 +83,7 @@ io : File I/O and NWB integration
 animation : Visualization
     Napari viewer, video export, overlays (position, spike, event, HD, bodypart).
 
-    >>> from neurospatial.animation import PositionOverlay, SpikeOverlay
+    >>> from neurospatial.animation import PositionOverlay, EventOverlay
 
 simulation : Neural and trajectory simulation
     Cell models (place, grid, HD, border, OVC, SVC), trajectory generation.
@@ -95,11 +102,12 @@ annotation : Video annotation tools
 
 Import Patterns
 ---------------
-Core classes only at top level::
+Core classes and flagship workflows at the top level::
 
-    from neurospatial import Environment, Region, Regions, CompositeEnvironment
+    from neurospatial import Environment, compute_spatial_rate, decode_position
+    from neurospatial import peri_event_histogram
 
-Explicit submodule imports for all else (recommended)::
+Use domain imports for specialized analyses::
 
     # Neural encoding
     from neurospatial.encoding import compute_spatial_rate, spatial_information
@@ -219,7 +227,7 @@ Create environment from polygon::
 
 import logging
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
@@ -231,9 +239,27 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
 )
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.decoding import bin_spikes_in_time
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
+
+if TYPE_CHECKING:
+    # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
+    from neurospatial.decoding._result import DecodingResult as DecodingResult
+    from neurospatial.decoding.posterior import decode_position as decode_position
+    from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
+    from neurospatial.encoding.spatial import SpatialRatesResult as SpatialRatesResult
+    from neurospatial.encoding.spatial import (
+        compute_spatial_rate as compute_spatial_rate,
+    )
+    from neurospatial.encoding.spatial import (
+        compute_spatial_rates as compute_spatial_rates,
+    )
+    from neurospatial.events._core import PeriEventResult as PeriEventResult
+    from neurospatial.events.alignment import (
+        peri_event_histogram as peri_event_histogram,
+    )
+    from neurospatial.recording import Session as Session
+    from neurospatial.recording import load_session as load_session
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -259,18 +285,23 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 )
 
 
-# Public classes exposed at the top level but *lazily* imported, so that
+# Public workflows and results exposed at the top level but *lazily* imported, so that
 # ``import neurospatial`` does not eagerly import the domain packages; the
 # owning package loads on first attribute access. (Accessing the class does
 # then pull in its whole domain package, but plain ``import neurospatial``
 # stays cheap.)
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
-    "SpikeTrains": ("encoding.spike_trains", "SpikeTrains"),
-    "restrict": ("behavior.epochs", "restrict"),
+    "compute_spatial_rate": ("encoding.spatial", "compute_spatial_rate"),
+    "compute_spatial_rates": ("encoding.spatial", "compute_spatial_rates"),
+    "SpatialRateResult": ("encoding.spatial", "SpatialRateResult"),
+    "SpatialRatesResult": ("encoding.spatial", "SpatialRatesResult"),
+    "decode_position": ("decoding.posterior", "decode_position"),
+    "DecodingResult": ("decoding._result", "DecodingResult"),
+    "peri_event_histogram": ("events.alignment", "peri_event_histogram"),
+    "PeriEventResult": ("events._core", "PeriEventResult"),
     "Session": ("recording", "Session"),
     "load_session": ("recording", "load_session"),
-    "BayesianDecoder": ("decoding.estimator", "BayesianDecoder"),
 }
 
 
@@ -295,24 +326,28 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
-    "BayesianDecoder",
     "BinIndexOutOfRangeError",
     "CompositeEnvironment",
+    "DecodingResult",
     "Environment",
     "EnvironmentNotFittedError",
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
     "NeurospatialError",
+    "PeriEventResult",
     "Region",
     "RegionNotFoundError",
     "Regions",
     "Session",
-    "SpikeTrains",
+    "SpatialRateResult",
+    "SpatialRatesResult",
     "animation",
     "annotation",
     "behavior",
-    "bin_spikes_in_time",
+    "compute_spatial_rate",
+    "compute_spatial_rates",
+    "decode_position",
     "decoding",
     "encoding",
     "events",
@@ -320,8 +355,8 @@ __all__ = [
     "layout",
     "load_session",
     "ops",
+    "peri_event_histogram",
     "regions",
-    "restrict",
     "simulation",
     "stats",
 ]

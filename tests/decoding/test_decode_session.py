@@ -660,29 +660,6 @@ class TestDecodeSessionOutOfWindowWarning:
         )
 
 
-class TestAsSpikeTrainsPublic:
-    """as_spike_trains is publicly importable from neurospatial.encoding."""
-
-    def test_public_import(self) -> None:
-        """as_spike_trains importable from neurospatial.encoding."""
-        from neurospatial.encoding import as_spike_trains  # noqa: F401
-
-    def test_public_import_in_all(self) -> None:
-        """as_spike_trains is in neurospatial.encoding.__all__."""
-        import neurospatial.encoding as enc
-
-        assert "as_spike_trains" in enc.__all__
-
-    def test_normalizes_correctly(self) -> None:
-        """Public symbol behaves identically to the private implementation."""
-        from neurospatial.encoding import as_spike_trains
-
-        spikes = np.array([0.1, 0.5, 1.2])
-        result = as_spike_trains(spikes)
-        assert len(result) == 1
-        assert_allclose(result[0], spikes)
-
-
 class TestDecodeSessionDtype:
     """The `dtype` knob honors float32 end-to-end (R8).
 

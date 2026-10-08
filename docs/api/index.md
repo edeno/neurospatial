@@ -2,6 +2,28 @@
 
 Complete API documentation for neurospatial, automatically generated from source code docstrings.
 
+## Start with the root workflows
+
+<!-- docs-test: run -->
+```python
+from neurospatial import (
+    Environment,
+    compute_spatial_rate,
+    compute_spatial_rates,
+    SpatialRateResult,
+    SpatialRatesResult,
+    decode_position,
+    DecodingResult,
+    peri_event_histogram,
+    PeriEventResult,
+)
+```
+
+These workflows load lazily. Use domain imports for specialized analyses.
+The [shared-unit workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics)
+shows simulation and four-array encoding followed by separate decoding and
+population-statistics branches.
+
 ## Core Modules
 
 ### [neurospatial.environment](neurospatial/environment/index.md)
@@ -87,6 +109,7 @@ egocentric targets, and gaze.
 - `compute_directional_rate()`: Head-direction tuning curve
 - `compute_egocentric_rate()`: Object-vector tuning
 - `compute_view_rate()`: Spatial-view tuning
+- `compute_phase_precession()`: Theta-phase slope, offset and fit quality
 - `detect_place_fields()`: Threshold-and-cluster on a rate map
 - `spatial_information()`, `sparsity()`, `selectivity()`, `border_score()`,
   `grid_score()`: Classic place / boundary / grid metrics
@@ -113,6 +136,23 @@ Bayesian decoding of position from spike counts.
 - `DecodingResult`: Posterior + helpers (MAP, mean, entropy)
 - `DecodingSummary`: Per-time decode summary (MAP / mean / entropy /
   peak) from the memory-safe summary decoders
+
+### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
+
+Population covariance and reactivation analyses take count matrices, with
+consistent units and column order across template, match and control periods:
+
+- `detect_assemblies()`: Dimensions above the Marchenko-Pastur reference and
+  fitted patterns; a selected dimension may have no thresholded core members
+- `assembly_activation()`: Standardized projection in a chosen period;
+  relative activity rather than a calibrated bin-level significance test
+- `pairwise_correlations()`: Upper-triangle neuron-pair correlations
+- `explained_variance_reactivation()`: EV and controlled REV effect sizes;
+  pass an explicit baseline control and avoid treating EV > REV as a p-value
+- `reactivation_strength()`: Ratio of mean absolute projections on one shared
+  template-normalized scale; an effect size rather than a significance verdict
+
+See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ### [neurospatial.behavior](neurospatial/behavior/index.md)
 
@@ -202,7 +242,7 @@ Field animation backends (napari / video / HTML / widget).
 
 **Key Classes:**
 
-- `PositionOverlay`, `EventOverlay`, `SpikeOverlay`,
+- `PositionOverlay`, `EventOverlay`,
   `HeadDirectionOverlay`, `BodypartOverlay`, `VideoOverlay`:
   Composable overlays for animations
 

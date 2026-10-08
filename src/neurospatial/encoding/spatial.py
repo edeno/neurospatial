@@ -573,6 +573,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    spike_window : NDArray[np.float64] or None
+        Normalized spike-recording windows in seconds, copied read-only.
+        ``None`` records the assumption that spikes were observed whenever
+        position was recorded.
+    spike_window_assumed : bool
+        Whether spike-recording coverage was assumed rather than supplied.
 
     Notes
     -----
@@ -1358,6 +1364,12 @@ class SpatialRatesResult(SpatialResultMixin):
         Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
         quality, depth, inclusion flags), one row per unit; ``None`` when not
         provided. Rides alongside the rates for downstream filtering/grouping.
+    spike_window : NDArray[np.float64] or None
+        Normalized spike-recording windows in seconds, copied read-only.
+        Shared by the population and preserved on indexed single-unit results.
+        ``None`` records assumed recording coverage.
+    spike_window_assumed : bool
+        Whether spike-recording coverage was assumed rather than supplied.
 
     Notes
     -----

@@ -104,7 +104,7 @@ class SpikeTrains:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import SpikeTrains
+    >>> from neurospatial.encoding import SpikeTrains
     >>> st = SpikeTrains(
     ...     [np.array([0.1, 0.5]), np.array([0.2, 0.3, 0.8])],
     ...     unit_ids=np.array([7, 9]),
@@ -250,7 +250,7 @@ class SpikeTrains:
         --------
         >>> import numpy as np
         >>> import pandas as pd
-        >>> from neurospatial import SpikeTrains
+        >>> from neurospatial.encoding import SpikeTrains
         >>> st = SpikeTrains(
         ...     [np.array([0.1]), np.array([0.2]), np.array([0.3])],
         ...     unit_ids=np.array([10, 20, 30]),

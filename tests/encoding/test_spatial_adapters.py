@@ -18,12 +18,8 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding import (
-    as_spike_trains,
-    as_spike_trains_with_ids,
-    compute_spatial_rate,
-    compute_spatial_rates,
-)
+from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
 
 
 class _FakeTsdFrame:

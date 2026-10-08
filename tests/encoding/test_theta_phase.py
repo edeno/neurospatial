@@ -99,14 +99,14 @@ class TestThetaPhase:
 
     def test_feeds_phase_precession_without_reshaping(self) -> None:
         """theta_phase output is drop-in for phase_precession (no reshaping)."""
-        from neurospatial.encoding import phase_precession, theta_phase
+        from neurospatial.encoding import compute_phase_precession, theta_phase
 
         sampling_rate = 1000.0
         lfp, _ = _theta_sinusoid(8.0, sampling_rate, duration=2.0)
         phase = theta_phase(lfp, sampling_rate)
 
         positions = np.linspace(0.0, 50.0, phase.size)
-        result = phase_precession(positions, phase, rng=0)
+        result = compute_phase_precession(positions, phase, rng=0)
 
         # Consumed without error and returns the standard result type.
         assert isinstance(result.slope, float)

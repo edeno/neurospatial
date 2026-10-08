@@ -30,7 +30,7 @@ Which Function Should I Use?
 
 **Phase precession analysis?**
     See ``neurospatial.encoding.phase_precession`` module for
-    ``phase_precession()``, ``has_phase_precession()``, and
+    ``compute_phase_precession()``, ``has_phase_precession()``, and
     ``plot_phase_precession()``.
 
 **GLM-based circular regression?**

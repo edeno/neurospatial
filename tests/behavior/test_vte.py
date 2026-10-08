@@ -216,14 +216,6 @@ class TestHeadSweepMagnitude:
 
 
 # =============================================================================
-# Test integrated_absolute_rotation alias
-# =============================================================================
-
-
-class TestIntegratedAbsoluteRotationAlias:
-    """Test that integrated_absolute_rotation is an alias for head_sweep_magnitude."""
-
-
 class TestHeadSweepFromPositions:
     """Test head_sweep_from_positions() function."""
 

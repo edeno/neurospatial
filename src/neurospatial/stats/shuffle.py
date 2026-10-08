@@ -25,9 +25,6 @@ Shuffle Categories
 | **ISI** | Inter-spike interval ordering is not significant |
 | **Circular Spike Time** | Spike alignment to behavior exceeds shifted alignment |
 
-Note: Surrogate generation functions (Poisson, inhomogeneous Poisson, jitter)
-have been moved to ``neurospatial.stats.surrogates`` but are re-exported here
-for backward compatibility.
 
 Imports
 -------
@@ -68,13 +65,6 @@ from neurospatial._intervals import as_intervals
 
 # Import internal utilities from canonical location
 from neurospatial.stats._utils import _ensure_rng
-
-# Re-export surrogate functions from canonical location for backward compatibility.
-# These functions are now defined in neurospatial.stats.surrogates.
-from neurospatial.stats.surrogates import (  # noqa: F401
-    generate_inhomogeneous_poisson_surrogates,
-    generate_poisson_surrogates,
-)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

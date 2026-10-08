@@ -21,9 +21,9 @@ class TestPhasePrecessionImports:
 
     def test_import_phase_precession(self) -> None:
         """phase_precession should be importable from encoding.phase_precession."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
-        assert callable(phase_precession)
+        assert callable(compute_phase_precession)
 
     def test_import_has_phase_precession(self) -> None:
         """has_phase_precession should be importable from encoding.phase_precession."""
@@ -49,9 +49,9 @@ class TestPhasePrecessionEncodingPackageImports:
 
     def test_import_phase_precession_from_encoding(self) -> None:
         """phase_precession should be importable from encoding."""
-        from neurospatial.encoding import phase_precession
+        from neurospatial.encoding import compute_phase_precession
 
-        assert callable(phase_precession)
+        assert callable(compute_phase_precession)
 
     def test_import_has_phase_precession_from_encoding(self) -> None:
         """has_phase_precession should be importable from encoding."""
@@ -83,7 +83,7 @@ class TestPhasePrecessionModuleStructure:
         pp_module = importlib.import_module("neurospatial.encoding.phase_precession")
         expected = {
             "PhasePrecessionResult",
-            "phase_precession",
+            "compute_phase_precession",
             "has_phase_precession",
             "plot_phase_precession",
             "theta_phase",
@@ -116,10 +116,10 @@ class TestPhasePrecessionReExportIdentity:
     def test_phase_precession_identity(self) -> None:
         """phase_precession should be the same function as original."""
         from neurospatial.encoding.phase_precession import (
-            phase_precession as encoding_phase_precession,
+            compute_phase_precession as encoding_phase_precession,
         )
         from neurospatial.encoding.phase_precession import (
-            phase_precession as metrics_phase_precession,
+            compute_phase_precession as metrics_phase_precession,
         )
 
         assert encoding_phase_precession is metrics_phase_precession
@@ -154,20 +154,20 @@ class TestPhasePrecessionFunctionality:
         """phase_precession should return a PhasePrecessionResult."""
         from neurospatial.encoding.phase_precession import (
             PhasePrecessionResult,
-            phase_precession,
+            compute_phase_precession,
         )
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
         phases = rng.uniform(0, 2 * np.pi, 100)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         assert isinstance(result, PhasePrecessionResult)
 
     def test_phase_precession_detects_negative_slope(self) -> None:
         """phase_precession should detect negative slope for precession data."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -177,7 +177,7 @@ class TestPhasePrecessionFunctionality:
             2 * np.pi
         )
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         # Sign-only check; for magnitude recovery, see
         # TestPhasePrecessionSlopeMagnitude in test_phase_precession_metrics.py.
@@ -271,11 +271,11 @@ class TestPhasePrecessionShufflePvalue:
     """pval is a shuffle p-value at the fitted slope; correlation is descriptive."""
 
     def test_phase_precession_pval_tracks_fitted_slope(self, precessing_spikes) -> None:
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         d = precessing_spikes
         n_shuffles = 200
-        true_fit = phase_precession(
+        true_fit = compute_phase_precession(
             d["positions"], d["phases"], n_shuffles=n_shuffles, rng=0
         )
         assert true_fit.pval < 0.05
@@ -290,27 +290,29 @@ class TestPhasePrecessionShufflePvalue:
         assert true_fit.pval >= smoothing_floor
 
         # Shuffled phases against the same positions destroy the relationship.
-        shuffled = phase_precession(
+        shuffled = compute_phase_precession(
             d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, rng=0
         )
         assert shuffled.pval > 0.5
 
     def test_phase_precession_pval_deterministic(self, precessing_spikes) -> None:
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         d = precessing_spikes
-        a = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
-        b = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        a = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        b = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
         assert a.pval == b.pval
 
     def test_phase_precession_correlation_is_descriptive(
         self, precessing_spikes
     ) -> None:
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
         from neurospatial.stats.circular import circular_linear_correlation
 
         d = precessing_spikes
-        result = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=0)
+        result = compute_phase_precession(
+            d["positions"], d["phases"], n_shuffles=200, rng=0
+        )
         assert 0.0 <= result.correlation <= 1.0
         wrapped = d["phases"] % (2 * np.pi)
         expected, _ = circular_linear_correlation(

@@ -622,3 +622,157 @@ env_fine = Environment.from_samples(
 - [Environment API](../api/neurospatial/environment/index.md): Complete method documentation
 - [Regions Guide](regions.md): Working with ROIs
 - [Example Notebooks](../examples/index.md): Interactive tutorials
+
+## Workflow 6: Shared Units for Decoding and Population Statistics
+
+Simulate a labeled population, estimate spatial maps from four raw arrays,
+and use one unit selection for both downstream branches. The earlier period
+is the baseline control, the middle period is the encoding/statistical
+reference (template), and the last period is the match. These are synthetic
+navigation periods, not a claim of sleep replay. All models here are place
+cells; covariance patterns can reflect their shared spatial drive.
+
+| Branch | Inputs | Output |
+| --- | --- | --- |
+| Position decoding | Template rate maps and match spike counts, in the same unit order | Posterior over spatial bins |
+| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, standardized activations and EV/controlled REV effect sizes |
+
+A posterior is not an input to assembly or EV analysis. Remove constant units
+once across all periods, then apply the same mask to spike trains, map rows,
+count columns and unit IDs. The silent unit below demonstrates the common
+nonzero-variance selection. Do not independently filter each period: equal
+column counts alone would not ensure that they represent the same neurons.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment, compute_spatial_rates, decode_position
+from neurospatial.decoding import (
+    assembly_activation,
+    bin_spikes_in_time,
+    detect_assemblies,
+    explained_variance_reactivation,
+    pairwise_correlations,
+    reactivation_strength,
+)
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
+
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+env.units = "cm"
+positions, times = simulate_trajectory_ou(
+    env, duration=180.0, dt=1 / 30, speed_units="cm", seed=7
+)
+centers = np.array(
+    [
+        [30, 35],
+        [32, 37],
+        [34, 33],
+        [70, 70],
+        [72, 68],
+        [68, 72],
+        [50, 50],
+        [53, 50],
+        [50, 53],
+    ]
+)
+trains = [
+    generate_poisson_spikes(
+        PlaceCellModel(
+            env, center=center, width=12, max_rate=15, baseline_rate=0.5
+        ).firing_rate(positions, times),
+        times,
+        seed=10 + i,
+    )
+    for i, center in enumerate(centers)
+]
+trains.append(np.empty(0, dtype=np.float64))
+unit_ids = np.r_[np.arange(101, 110), 999]
+dt = 0.1
+windows = {"control": (0.0, 60.0), "template": (60.0, 120.0), "match": (120.0, 180.0)}
+counts, centers_by_period = {}, {}
+for period, (start, stop) in windows.items():
+    counts[period], centers_by_period[period] = bin_spikes_in_time(
+        trains, dt, t_start=start, t_stop=stop
+    )
+# Select once across every period, preserving original unit order.
+keep = np.logical_and.reduce([np.var(matrix, axis=0) > 0 for matrix in counts.values()])
+selected_ids = unit_ids[keep]
+selected_trains = [
+    train for train, retained in zip(trains, keep, strict=True) if retained
+]
+counts = {period: matrix[:, keep] for period, matrix in counts.items()}
+assert len(selected_ids) >= 3 and 999 not in selected_ids
+# Four-array encoding on the template; metadata carries the selected IDs.
+rates = compute_spatial_rates(
+    env,
+    selected_trains,
+    times,
+    positions,
+    unit_ids=selected_ids,
+    epochs=[windows["template"]],
+    spike_window=[(0.0, 180.0)],
+    bandwidth=5.0,
+    fill_value=0.0,
+)
+np.testing.assert_array_equal(rates.unit_ids, selected_ids)
+# Branch 1: maps + count columns in the same selected order.
+decoded = decode_position(
+    env, counts["match"], rates, dt, times=centers_by_period["match"]
+)
+assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
+np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
+# Branch 2: counts, not the decoded posterior.
+assemblies = detect_assemblies(counts["template"], algorithm="pca", rng=0)
+print("Retained unit IDs:", selected_ids.tolist())
+print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
+for pattern in assemblies.patterns:
+    print("Thresholded core member IDs:", selected_ids[pattern.member_indices].tolist())
+    activation = assembly_activation(counts["match"], pattern)
+    assert len(activation) == len(centers_by_period["match"])
+    strength = reactivation_strength(counts["template"], counts["match"], pattern)
+    print("Standardized activation mean/SD:", activation.mean(), activation.std())
+    print("Activation magnitude ratio (effect size):", strength)
+correlations = {
+    period: pairwise_correlations(matrix) for period, matrix in counts.items()
+}
+reactivation = explained_variance_reactivation(
+    correlations["template"],
+    correlations["match"],
+    control_correlations=correlations["control"],
+)
+print(
+    "EV, controlled REV (effect sizes):",
+    reactivation.explained_variance,
+    reactivation.reversed_ev,
+)
+assert np.isfinite(reactivation.explained_variance) and np.isfinite(
+    reactivation.reversed_ev
+)
+```
+
+`n_significant` counts dimensions above a random-matrix reference, not neurons
+with calibrated p-values. If no dimension passes, the algorithm may still
+return an exploratory pattern. Pattern `member_indices` are positions in the
+selected unit order; mapping them through `selected_ids` recovers the original
+labels. A pattern can have no core members at the default absolute-weight
+z-score cutoff, even when its dimension passes the reference.
+
+`assembly_activation` standardizes the projection within each period,
+removing absolute projection scale; its output does not give a tail
+probability. In contrast, `reactivation_strength` normalizes both count
+matrices with the template's neuron means/standard deviations and projects
+onto the same pattern without separate projection standardization. Its ratio
+preserves relative magnitude on that shared template scale, but remains an
+effect size rather than a calibrated tail probability.
+
+Controlled EV is `r(template, match | control)^2`, while controlled REV
+is `r(control, match | template)^2`. EV > REV is an effect-size comparison,
+not calibrated reactivation significance. Report control choice, preprocessing,
+unit selection and a separately justified null when a significance claim is
+needed.

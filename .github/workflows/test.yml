@@ -81,6 +81,12 @@ jobs:
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 
+      - name: Type-check lazy root exports
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        run: uv run mypy tests/typing/top_level_lazy_exports.py
+        env:
+          UV_PYTHON: python${{ matrix.python-version }}
+
       - name: Run tests with coverage
         run: |
           uv run pytest --cov=src/neurospatial --cov-report=xml --cov-report=term
