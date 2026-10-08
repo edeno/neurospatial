@@ -93,14 +93,12 @@ def from_pynapple(
     # actionable and consistent with ``to_pynapple``.
     _require_pynapple()
 
-    # Tsd / TsdFrame: a value time series -> (times, positions). Delegate to the
-    # shared position boundary adapter -- identical duck-type guard and float64
-    # coercion (including the ``.d`` alias fallback), so this stays a single
-    # implementation of that coercion.
+    # Tsd / TsdFrame: prefer .values, with the pynapple .d alias fallback.
     if hasattr(obj, "t") and (hasattr(obj, "values") or hasattr(obj, "d")):
-        from neurospatial._typing import as_times_positions
-
-        return as_times_positions(obj)
+        values = getattr(obj, "values", None)
+        if values is None:
+            values = obj.d
+        return np.asarray(obj.t, dtype=np.float64), np.asarray(values, dtype=np.float64)
 
     # IntervalSet: epochs -> (start, end). No public adapter equivalent, so this
     # branch keeps its own coercion.

@@ -56,7 +56,9 @@ class TestReadUnits:
         """A 3-unit table reads back the exact ragged arrays and ids."""
         from neurospatial.io.nwb import read_units
 
-        spike_trains, unit_ids = read_units(sample_nwb_with_units)
+        unit_data = read_units(sample_nwb_with_units)
+        spike_trains = unit_data.spike_times
+        unit_ids = unit_data.unit_ids
 
         assert list(unit_ids) == [10, 20, 30]
         assert len(spike_trains) == 3
@@ -68,7 +70,9 @@ class TestReadUnits:
         """unit_ids selects those units by id value, in request order."""
         from neurospatial.io.nwb import read_units
 
-        spike_trains, unit_ids = read_units(sample_nwb_with_units, unit_ids=[10, 30])
+        unit_data = read_units(sample_nwb_with_units, unit_ids=[10, 30])
+        spike_trains = unit_data.spike_times
+        unit_ids = unit_data.unit_ids
 
         assert list(unit_ids) == [10, 30]
         assert len(spike_trains) == 2
@@ -79,7 +83,8 @@ class TestReadUnits:
         """Subset ordering follows the request, not the table order."""
         from neurospatial.io.nwb import read_units
 
-        _, unit_ids = read_units(sample_nwb_with_units, unit_ids=[30, 10])
+        unit_data = read_units(sample_nwb_with_units, unit_ids=[30, 10])
+        unit_ids = unit_data.unit_ids
         assert list(unit_ids) == [30, 10]
 
     def test_read_units_unknown_id_raises(self, sample_nwb_with_units):
@@ -107,7 +112,9 @@ class TestReadUnits:
         unsorted = np.array([3.4, 0.1, 1.2, 0.5])
         nwbfile.add_unit(spike_times=unsorted, id=42)
 
-        spike_trains, unit_ids = read_units(nwbfile)
+        unit_data = read_units(nwbfile)
+        spike_trains = unit_data.spike_times
+        unit_ids = unit_data.unit_ids
 
         assert list(unit_ids) == [42]
         train = spike_trains[0]

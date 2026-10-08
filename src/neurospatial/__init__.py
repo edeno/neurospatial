@@ -28,8 +28,6 @@ peri_event_histogram, PeriEventResult : Peri-event analysis
     Compute and inspect a histogram aligned to event times.
 NeurospatialError : Base library exception
     Catch library-defined errors through one public exception hierarchy.
-Session, load_session : Session convenience recipe
-    Bundle or load an existing recording workflow.
 
 Submodule Organization
 ----------------------
@@ -258,8 +256,6 @@ if TYPE_CHECKING:
     from neurospatial.events.alignment import (
         peri_event_histogram as peri_event_histogram,
     )
-    from neurospatial.recording import Session as Session
-    from neurospatial.recording import load_session as load_session
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -300,8 +296,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "DecodingResult": ("decoding._result", "DecodingResult"),
     "peri_event_histogram": ("events.alignment", "peri_event_histogram"),
     "PeriEventResult": ("events._core", "PeriEventResult"),
-    "Session": ("recording", "Session"),
-    "load_session": ("recording", "load_session"),
 }
 
 
@@ -339,7 +333,6 @@ __all__ = [
     "Region",
     "RegionNotFoundError",
     "Regions",
-    "Session",
     "SpatialRateResult",
     "SpatialRatesResult",
     "animation",
@@ -353,7 +346,6 @@ __all__ = [
     "events",
     "io",
     "layout",
-    "load_session",
     "ops",
     "peri_event_histogram",
     "regions",

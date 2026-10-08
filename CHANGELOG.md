@@ -4,6 +4,8 @@
 
 ### Added
 
+- Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
+
 - Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity and training spike-window metadata. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction preserves the existing warning and likelihood behavior for non-finite maps.
 
 - Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
@@ -25,6 +27,12 @@
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed
+
+- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
+
+- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
+
+- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
 
 - **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
 
@@ -64,6 +72,10 @@
 
 ### Fixed — documentation
 
+- Include required unit labels in the manual `SimulationSession` constructor example.
+
+- Teach explicit simulator/NWB holder attributes and a complete file → selected epochs → population fields → decoder → summary/overlay workflow. A synthetic HDF5 example executes the published NWB recipe after file close with physical units, nondefault unit IDs and two analysis epochs; synchronized tutorials preserve the simulation-duration contract.
+
 - Preserve the existing shared-validator NumPy examples and parameter sections while adding timestamp/position diagnostics.
 
 - Teach explicit tracking arrays, typed precomputed-rate and count-array decoding handoffs, and one retained event cohort across gap-aware PSTHs, rasters, regressors and positioned tables. Keep event identifiers and selection masks visible, explain each helper's existing edge closure, and synchronize the updated tutorials.
@@ -95,6 +107,8 @@
 - Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
 
 ### Removed
+
+- **Breaking:** remove `Session`, `load_session` and `neurospatial.recording`, plus the unused `PositionLike` trajectory adapter and `validate_simulation`'s raw keyword form. NWB component readers and simulator holders expose arrays for explicit analysis calls; pynapple conversion still returns `(times, positions)`.
 
 - **Breaking:** remove the image-mask `bin_size` keyword shim and both view-result `peak_view_location` methods. Use `pixel_size` and the shared `peak_location()`/`peak_locations()` accessors.
 

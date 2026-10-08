@@ -1061,7 +1061,8 @@ from neurospatial.io.nwb import (
 # Read position data
 with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
-    positions, timestamps = read_position(nwbfile)
+    pos = read_position(nwbfile)
+    positions, timestamps = pos.positions, pos.times
     env = environment_from_position(nwbfile, bin_size=2.0, units="cm")
 
 # Write analysis results

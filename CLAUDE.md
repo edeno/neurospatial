@@ -135,8 +135,10 @@ The root lazily exposes `compute_spatial_rate(s)`, `SpatialRateResult` and
 `SpatialRatesResult`, `decode_position` and `DecodingResult`, and
 `peri_event_histogram` and `PeriEventResult`, alongside core spatial types,
 public exceptions and domain submodules. Static analyzers resolve concrete
-types; importing the root does not load decoding. `Session` and `load_session`
-remain available for current recording recipes.
+types; importing the root does not load decoding. Simulator and NWB readers
+return frozen holders: pass `.spike_times`, `.times`, `.positions`, and
+`.unit_ids` explicitly. NWB `.spike_window` preserves acquisition coverage;
+select analysis epochs separately with `read_intervals`.
 
 Use `neurospatial.encoding.SpikeTrains`, `neurospatial.behavior.restrict`, and
 `neurospatial.decoding.BayesianDecoder` / `bin_spikes_in_time` through their
@@ -827,8 +829,9 @@ Place a marker directly above a Python fence:
 - `<!-- docs-test: raises ValueError -->` checks an intentionally wrong call.
 
 Figures use the Agg backend and outputs go into temporary directories. Animation
-setup patches are restored after each test. Module doctests remain a separate
-check: `uv run pytest --doctest-modules src/neurospatial/ -n 0`.
+setup patches are restored after each test. NWB recipes marked `<!-- nwb-docs-test: run -->` execute against a real HDF5
+fixture in `tests/nwb/test_documented_workflow.py` with the NWB extra installed.
+Module doctests remain a separate check: `uv run pytest --doctest-modules src/neurospatial/ -n 0`.
 
 **More testing options:** [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
 

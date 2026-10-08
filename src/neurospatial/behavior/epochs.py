@@ -285,7 +285,7 @@ def restrict_spike_trains(
         One masked train per input train, in the same order. Always a plain
         ``list`` (type-stable), even when given a
         :class:`~neurospatial.encoding.SpikeTrains` -- ``SpikeTrains`` identity
-        is preserved instead by ``Session.restrict``.
+        can be preserved with explicit array selection and retained unit labels.
 
     Examples
     --------

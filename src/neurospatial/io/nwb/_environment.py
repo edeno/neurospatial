@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment.decorators import EnvironmentNotFittedError
+from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
@@ -24,25 +25,6 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.regions import Regions
 
-
-# NWB spells units out ("meters" is pynwb's default); map them to the
-# ``Environment.units`` registry values.
-_NWB_UNIT_ALIASES = {
-    "meter": "m",
-    "meters": "m",
-    "metre": "m",
-    "metres": "m",
-    "m": "m",
-    "centimeter": "cm",
-    "centimeters": "cm",
-    "cm": "cm",
-    "millimeter": "mm",
-    "millimeters": "mm",
-    "mm": "mm",
-    "pixel": "px",
-    "pixels": "px",
-    "px": "px",
-}
 
 # =============================================================================
 # Type definitions for JSON metadata structures
@@ -1248,11 +1230,12 @@ def environment_from_position(
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
-    positions, _timestamps = read_position(
+    position_data = read_position(
         nwbfile,
         processing_module=processing_module,
         position_name=position_name,
     )
+    positions = position_data.positions
 
     # Auto-detect units from SpatialSeries if not provided
     if units is None:
@@ -1335,5 +1318,4 @@ def _get_position_units(
             stacklevel=3,
         )
         return "cm"
-    unit = str(spatial_series.unit)
-    return _NWB_UNIT_ALIASES.get(unit.strip().lower(), unit)
+    return position_units_from_series(spatial_series) or str(spatial_series.unit)

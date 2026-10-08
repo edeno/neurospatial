@@ -31,14 +31,17 @@ class SimulationSession:
         at a specific time point.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds corresponding to each position.
-    spike_trains : list[NDArray[np.float64]]
+    spike_times : list[NDArray[np.float64]]
         List of spike time arrays, one per neuron. Each array contains the
         spike times (in seconds) for a single neuron.
     models : list[NeuralModel]
         Neural model instances used to generate the spikes. These implement
         the NeuralModel protocol and can be used to regenerate firing rates.
-    ground_truth : dict[str, Any]
-        True parameters for each cell, indexed by cell identifier. This
+    unit_ids : NDArray[np.int64], shape (n_units,)
+        Unit labels aligned one-to-one with spike_times and models. Simulators
+        generate np.arange(n_units).
+    ground_truth : dict[int, dict[str, Any]]
+        True parameters for each cell, keyed by integer unit label. This
         typically contains ground truth from each model's `.ground_truth`
         property, enabling validation of analysis methods.
     metadata : dict[str, Any]
@@ -84,13 +87,13 @@ class SimulationSession:
     ... ]
 
     >>> # Generate spikes
-    >>> spike_trains = generate_population_spikes(
+    >>> spike_times = generate_population_spikes(
     ...     models, times, positions
     ... )  # doctest: +SKIP
 
     >>> # Collect ground truth
     >>> ground_truth = {  # doctest: +SKIP
-    ...     f"cell_{i}": model.ground_truth for i, model in enumerate(models)
+    ...     i: model.ground_truth for i, model in enumerate(models)
     ... }
 
     >>> # Create session
@@ -98,17 +101,27 @@ class SimulationSession:
     ...     env=env,
     ...     positions=positions,
     ...     times=times,
-    ...     spike_trains=spike_trains,
+    ...     spike_times=spike_times,
+    ...     unit_ids=np.arange(len(spike_times), dtype=np.int64),
     ...     models=models,
     ...     ground_truth=ground_truth,
     ...     metadata={"duration": 60.0, "cell_type": "place"},
     ... )
 
+    >>> from neurospatial import compute_spatial_rates  # doctest: +SKIP
+    >>> rates = compute_spatial_rates(  # doctest: +SKIP
+    ...     session.env,
+    ...     session.spike_times,
+    ...     session.times,
+    ...     session.positions,
+    ...     unit_ids=session.unit_ids,
+    ... )
+
     >>> # Access fields with typed attributes
     >>> print(f"Session duration: {session.times[-1]:.1f}s")  # doctest: +SKIP
-    >>> print(f"Number of cells: {len(session.spike_trains)}")  # doctest: +SKIP
+    >>> print(f"Number of cells: {len(session.spike_times)}")  # doctest: +SKIP
     >>> print(
-    ...     f"Total spikes: {sum(len(st) for st in session.spike_trains)}"
+    ...     f"Total spikes: {sum(len(st) for st in session.spike_times)}"
     ... )  # doctest: +SKIP
 
     See Also
@@ -119,12 +132,22 @@ class SimulationSession:
     """
 
     env: Environment
-    positions: NDArray[np.float64]
+    spike_times: list[NDArray[np.float64]]
+    unit_ids: NDArray[np.int64]
     times: NDArray[np.float64]
-    spike_trains: list[NDArray[np.float64]]
+    positions: NDArray[np.float64]
     models: list[NeuralModel]
-    ground_truth: dict[str, Any]
+    ground_truth: dict[int, dict[str, Any]]
     metadata: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        n = len(self.spike_times)
+        if not (len(self.unit_ids) == len(self.models) == n):
+            raise ValueError(
+                f"spike_times has {n} units, unit_ids {len(self.unit_ids)}, models "
+                f"{len(self.models)}; these must match one-to-one.\n"
+                "Fix: build unit_ids as np.arange(len(spike_times))."
+            )
 
 
 def simulate_session(
@@ -234,7 +257,8 @@ def simulate_session(
         - env: Environment instance
         - positions: NDArray, shape (n_time, n_dims) - trajectory
         - times: NDArray, shape (n_time,) - time points
-        - spike_trains: list[NDArray] - spike times per cell
+        - spike_times: list[NDArray] - spike times per unit
+        - unit_ids: NDArray[np.int64] - integer unit labels
         - models: list[NeuralModel] - neural model instances
         - ground_truth: dict - true parameters for each cell
         - metadata: dict - session parameters
@@ -263,7 +287,7 @@ def simulate_session(
     >>> env.units = "cm"
     >>> session = simulate_session(env, duration=2.0, n_cells=3, show_progress=False)
     >>> positions = session.positions  # Typed access
-    >>> spike_trains = session.spike_trains  # IDE autocomplete
+    >>> spike_times = session.spike_times  # IDE autocomplete
     >>> ground_truth = session.ground_truth  # Discoverable
 
     >>> # Mixed cell types with custom trajectory parameters
@@ -538,7 +562,7 @@ def simulate_session(
         raise ValueError(f"Unknown cell_type: {cell_type}")
 
     # Generate spikes for all cells using the independent spike seed.
-    spike_trains = generate_population_spikes(
+    spike_times = generate_population_spikes(
         models,
         times,
         positions,
@@ -547,7 +571,7 @@ def simulate_session(
     )
 
     # Collect ground truth from each model
-    ground_truth = {f"cell_{i}": model.ground_truth for i, model in enumerate(models)}
+    ground_truth = {i: model.ground_truth for i, model in enumerate(models)}
 
     # Create metadata dict
     metadata = {
@@ -572,7 +596,8 @@ def simulate_session(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,

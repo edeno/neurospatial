@@ -772,7 +772,7 @@ from neurospatial.simulation import (
     simulate_trajectory_sinusoidal, # Sinusoidal motion
 
     # Session API
-    SimulationSession,              # Session container class
+    SimulationSession,              # Frozen spike_times/unit_ids/times/positions holder
     simulate_session,               # High-level session generation
 
     # Pre-configured example sessions
@@ -783,8 +783,8 @@ from neurospatial.simulation import (
     grid_cell_session,              # Grid cell session
 
     # Validation and visualization
-    validate_simulation,            # Validate simulation output
-    plot_session_summary,           # Plot session summary
+    validate_simulation,            # Holder-only; unit_ids= selects labels
+    plot_session_summary,           # Holder-only; unit_ids= selects labels
 )
 
 # Animation overlays for simulation
@@ -1035,13 +1035,17 @@ from neurospatial.io import (
 
 ### NWB Integration
 
-**Requires:** `uv add neurospatial[nwb-full]`
+**Requires:** `uv add neurospatial[nwb]`
 
 ```python
 from neurospatial.io.nwb import (
+    # Frozen, non-iterable holders
+    NWBPosition, NWBHeadDirection, NWBUnits,
+
     # Reading
-    read_position,           # Position → (positions, timestamps)
-    read_head_direction,     # CompassDirection → (angles, timestamps)
+    read_units,              # Units → spikes/IDs/obs_intervals/shared spike_window
+    read_position,           # Position → NWBPosition(times, positions, units)
+    read_head_direction,     # CompassDirection → NWBHeadDirection(times, headings)
     read_pose,               # PoseEstimation → (bodyparts, timestamps, skeleton)
     read_events,             # EventsTable → DataFrame
     read_intervals,          # TimeIntervals → DataFrame

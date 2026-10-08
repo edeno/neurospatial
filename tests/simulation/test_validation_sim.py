@@ -2,11 +2,64 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
-from neurospatial.simulation import simulate_session
+from neurospatial.simulation import PlaceCellModel, SimulationSession, simulate_session
 from neurospatial.simulation.validation import validate_simulation
+
+
+def test_select_by_label(simple_2d_env):
+    session = simulate_session(
+        simple_2d_env, duration=60, n_cells=5, seed=0, width=12, show_progress=False
+    )
+    full = validate_simulation(session)
+    selected = validate_simulation(session, unit_ids=[0, 2, 4])
+    for key in ("center_errors", "correlations"):
+        np.testing.assert_array_equal(selected[key], full[key][[0, 2, 4]])
+
+    labels = np.array([7, 11, 19, 23, 31], dtype=np.int64)
+    relabeled = replace(
+        session,
+        unit_ids=labels,
+        ground_truth={
+            int(label): session.ground_truth[i] for i, label in enumerate(labels)
+        },
+    )
+    reordered = validate_simulation(relabeled, unit_ids=[31, 7, 19])
+    for key in ("center_errors", "correlations"):
+        np.testing.assert_array_equal(reordered[key], full[key][[4, 0, 2]])
+    with pytest.raises(ValueError, match=r"99.*Valid labels:.*7.*11.*\n.*\nFix:"):
+        validate_simulation(relabeled, unit_ids=[99])
+    with pytest.raises(TypeError):
+        validate_simulation(env=session.env)
+
+
+def test_plot_session_summary_labels(simple_2d_env):
+    import matplotlib.pyplot as plt
+
+    from neurospatial.simulation import plot_session_summary
+
+    session = simulate_session(
+        simple_2d_env, duration=30, n_cells=5, seed=0, show_progress=False
+    )
+    fig, axes = plot_session_summary(session, unit_ids=[1, 3])
+    assert [ax.get_title() for ax in axes[2:4]] == ["Cell 1", "Cell 3"]
+    assert all(not ax.axison for ax in axes[4:8])
+    plt.close(fig)
+    relabeled = replace(session, unit_ids=np.array([7, 11, 19, 23, 31]))
+    fig, axes = plot_session_summary(relabeled, unit_ids=[31, 11])
+    assert [ax.get_title() for ax in axes[2:4]] == ["Cell 31", "Cell 11"]
+    assert [tick.get_text() for tick in axes[-1].get_yticklabels()] == [
+        "7",
+        "11",
+        "19",
+        "23",
+        "31",
+    ]
+    plt.close(fig)
 
 
 class TestValidateSimulation:
@@ -194,35 +247,7 @@ class TestValidateSimulation:
         # Check that thresholds are applied
         assert "passed" in result
 
-    def test_validate_simulation_individual_parameters(self, simple_2d_env):
-        """validate_simulation() should accept individual parameters instead of session."""
-        simple_2d_env.units = "cm"
-
-        # Create session
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Validate with individual parameters
-        result = validate_simulation(
-            env=session.env,
-            spike_times=session.spike_trains,
-            positions=session.positions,
-            times=session.times,
-            ground_truth=session.ground_truth,
-        )
-
-        # Should work the same way
-        assert "center_errors" in result
-        assert "correlations" in result
-        assert "passed" in result
-
-    def test_validate_simulation_with_cell_indices(self, simple_2d_env):
+    def test_validate_simulation_with_unit_ids(self, simple_2d_env):
         """validate_simulation() should validate only specific cells."""
         simple_2d_env.units = "cm"
 
@@ -236,7 +261,7 @@ class TestValidateSimulation:
         )
 
         # Validate only cells 0, 2, 4
-        result = validate_simulation(session, cell_indices=[0, 2, 4])
+        result = validate_simulation(session, unit_ids=[0, 2, 4])
 
         # Should only have 3 errors/correlations
         assert len(result["center_errors"]) == 3
@@ -358,15 +383,8 @@ class TestValidateSimulation:
             show_progress=False,
         )
 
-        # Try to validate without ground truth
         with pytest.raises(ValueError, match="ground_truth"):
-            validate_simulation(
-                env=session.env,
-                spike_times=session.spike_trains,
-                positions=session.positions,
-                times=session.times,
-                # Missing ground_truth
-            )
+            validate_simulation(replace(session, ground_truth={}))
 
 
 def test_default_center_error_threshold(simple_2d_env):
@@ -403,16 +421,22 @@ def test_detected_center_ignores_unresolved_bins():
     near_bin_1 = np.abs(positions[:, 0] - env.bin_centers[1, 0]) < 2.0
     spike_times = times[near_bin_1][::5]
 
-    result = validate_simulation(
+    session = SimulationSession(
         env=env,
         spike_times=[spike_times],
+        unit_ids=np.array([0], dtype=np.int64),
+        models=[
+            PlaceCellModel(env, center=env.bin_centers[1], width=5.0, max_rate=10.0)
+        ],
+        metadata={},
         positions=positions,
         times=times,
         ground_truth={
-            "cell_0": {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
+            0: {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
         },
     )
 
+    result = validate_simulation(session)
     assert result["center_errors"][0] == 0.0
 
 
@@ -424,14 +448,20 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
     positions = np.column_stack([50 + 40 * np.sin(times), np.zeros_like(times)])
     center = np.array([50.0, 0.0])
     near_center = np.linalg.norm(positions - center, axis=1) < 3.0
-    result = validate_simulation(
+    session = SimulationSession(
         env=hairpin_track_env,
         spike_times=[times[near_center][::5]],
+        unit_ids=np.array([0], dtype=np.int64),
+        models=[
+            PlaceCellModel(hairpin_track_env, center=center, width=15.0, max_rate=10.0)
+        ],
+        metadata={},
         positions=positions,
         times=times,
-        ground_truth={"cell_0": {"center": center, "width": 15.0, "max_rate": 10.0}},
+        ground_truth={0: {"center": center, "width": 15.0, "max_rate": 10.0}},
     )
 
+    result = validate_simulation(session)
     center_section = result["summary"].split("Field Correlations")[0]
     threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
     assert threshold == 10.0
@@ -486,7 +516,7 @@ class TestPlotSessionSummary:
 
         plt.close(fig)
 
-    def test_plot_session_summary_default_cell_ids(self, simple_2d_env):
+    def test_plot_session_summary_default_unit_ids(self, simple_2d_env):
         """plot_session_summary() should default to first 6 cells."""
         import matplotlib.pyplot as plt
 
@@ -509,8 +539,8 @@ class TestPlotSessionSummary:
 
         plt.close(fig)
 
-    def test_plot_session_summary_custom_cell_ids(self, simple_2d_env):
-        """plot_session_summary() should accept custom cell_ids."""
+    def test_plot_session_summary_custom_unit_ids(self, simple_2d_env):
+        """plot_session_summary() should accept custom unit_ids."""
         import matplotlib.pyplot as plt
 
         simple_2d_env.units = "cm"
@@ -526,7 +556,7 @@ class TestPlotSessionSummary:
         from neurospatial.simulation.validation import plot_session_summary
 
         # Plot specific cells
-        fig, _ = plot_session_summary(session, cell_ids=[0, 2, 5])
+        fig, _ = plot_session_summary(session, unit_ids=[0, 2, 5])
 
         assert fig is not None
 
@@ -579,8 +609,8 @@ class TestPlotSessionSummary:
 
         plt.close(fig)
 
-    def test_plot_session_summary_invalid_cell_ids(self, simple_2d_env):
-        """plot_session_summary() should raise error for invalid cell_ids."""
+    def test_plot_session_summary_invalid_unit_ids(self, simple_2d_env):
+        """plot_session_summary() should raise error for invalid unit_ids."""
         simple_2d_env.units = "cm"
 
         session = simulate_session(
@@ -594,8 +624,8 @@ class TestPlotSessionSummary:
         from neurospatial.simulation.validation import plot_session_summary
 
         # Try to plot non-existent cells
-        with pytest.raises(ValueError, match="cell_ids"):
-            plot_session_summary(session, cell_ids=[0, 10, 20])
+        with pytest.raises(ValueError, match="unit_ids"):
+            plot_session_summary(session, unit_ids=[0, 10, 20])
 
     def test_plot_session_summary_invalid_session_type(self):
         """plot_session_summary() should raise error for invalid session."""
@@ -643,8 +673,8 @@ class TestPlotSessionSummary:
 
         from neurospatial.simulation.validation import plot_session_summary
 
-        fig1, axes1 = plot_session_summary(session, cell_ids=[0, 1, 2])
-        fig2, axes2 = plot_session_summary(session, cell_ids=[0, 1, 2])
+        fig1, axes1 = plot_session_summary(session, unit_ids=[0, 1, 2])
+        fig2, axes2 = plot_session_summary(session, unit_ids=[0, 1, 2])
 
         # Same session should produce same structure
         assert fig1.get_size_inches()[0] == fig2.get_size_inches()[0]
@@ -675,7 +705,7 @@ class TestPlotSessionSummary:
         # Should emit UserWarning about truncation
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            fig, _ = plot_session_summary(session, cell_ids=list(range(10)))
+            fig, _ = plot_session_summary(session, unit_ids=list(range(10)))
 
             # Filter for just the truncation warning (other warnings may be emitted)
             truncation_warnings = [

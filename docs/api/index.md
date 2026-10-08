@@ -252,7 +252,7 @@ NWB (Neurodata Without Borders) read / write integration.
 
 **Key Functions:**
 
-- `read_environment()`, `read_position()`, `read_pose()`,
+- `read_environment()`, `read_position()`, `read_units()`, `read_head_direction()`, `read_pose()`,
   `read_events()`, `read_intervals()`, `read_trials()`: Read NWB
   components into neurospatial types
 - `write_environment()`, `write_place_field()`,
@@ -297,21 +297,20 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 
 - [Simulation Workflows Tutorial](../examples/15_simulation_workflows.ipynb): Comprehensive examples and quick start guide
 
-### Interoperability & Session Ergonomics
+### Interoperability and data holders
 
-Optional, session-first conveniences layered **on top of** the array-first API
+Named data holders and optional adapters for the array-first API
 (see the [Interoperability guide](../user-guide/interoperability.md)). The array
 path never depends on these; `import neurospatial` never imports pynapple or
 pynwb.
 
-**Session bundle** ([neurospatial.recording](neurospatial/recording.md)):
+**Simulator holder** ([neurospatial.simulation.session](neurospatial/simulation/session.md)):
 
-- `Session`: Frozen bundle of `env` + position + `spikes` (+ optional `epochs` /
-  `metadata`). `Session.from_arrays(...)` / `Session.from_nwb(...)` build it;
-  `.times` / `.positions` / `.env` / `.spikes` accessors expose the raw data;
-  `.with_environment(env)` and `.restrict(epochs)` return **new** sessions.
-- `load_session(path_or_nwbfile)`: Load a `Session` from an NWB path or open
-  `NWBFile` (dispatches to `Session.from_nwb`).
+- `SimulationSession`: Frozen attributes `env`, `spike_times`, `unit_ids`,
+  `times`, `positions`, `models`, integer-label `ground_truth`, and `metadata`.
+  Pass attributes explicitly to analyses.
+- `validate_simulation(sim, *, unit_ids=...)` and
+  `plot_session_summary(sim, *, unit_ids=...)` select simulation units by label.
 
 **Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
 
@@ -348,9 +347,19 @@ pynwb.
 
 **NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:
 
-- `read_units(nwbfile, *, unit_ids=None, lazy=False)`: `(trains, unit_ids)` from
-  the NWB `units` table. `read_position` / `read_pose` / `read_units` accept
-  `lazy=True` (handles valid only while the file is open).
+- `read_position(...)` → `NWBPosition(times, positions, units)` and
+  `read_head_direction(...)` → `NWBHeadDirection(times, headings)`.
+- `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
+  `NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`. Unit labels
+  are table IDs; `spike_window` intersects the selected units' acquisition
+  coverage. Choose analysis epochs with `read_intervals(nwbfile, "epochs")`.
+- Holders are frozen and cannot be tuple-unpacked. Position units describe
+  converted values; missing declarations are `None`. `read_position` /
+  `read_pose` / `read_units` accept `lazy=True` (handles valid only while the
+  file is open; eager arrays remain usable after close).
+- The [complete NWB recipe](../user-guide/interoperability.md#population-fields-decoding-and-a-truthful-overlay)
+  carries physical units, labels, selected epochs and acquisition coverage
+  through population fields, a fitted decoder, summary tables and overlays.
 - `write_spatial_rates(nwbfile, result)` / `read_place_field(nwbfile, env=None)`:
   Round-trip a `SpatialRatesResult` (firing rates / occupancy / unit ids /
   `unit_table` + a persisted, connected environment).

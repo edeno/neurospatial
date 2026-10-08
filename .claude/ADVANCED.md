@@ -38,10 +38,12 @@ with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
 
     # Position data
-    positions, timestamps = read_position(nwbfile)
+    pos = read_position(nwbfile)
+    positions, timestamps = pos.positions, pos.times
 
     # Head direction
-    angles, timestamps = read_head_direction(nwbfile)
+    hd = read_head_direction(nwbfile)
+    angles, timestamps = hd.headings, hd.times
 
     # Pose estimation (requires ndx-pose)
     bodyparts, timestamps, skeleton = read_pose(nwbfile, pose_estimation_name="DLC")

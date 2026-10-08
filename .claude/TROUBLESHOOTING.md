@@ -414,10 +414,12 @@ print(nwbfile.processing.keys())
 print(nwbfile.acquisition.keys())
 
 # If Position is in custom processing module
-positions, timestamps = read_position(nwbfile, processing_module="custom_module")
+pos = read_position(nwbfile, processing_module="custom_module")
+positions, timestamps = pos.positions, pos.times
 
 # If there are multiple SpatialSeries, specify which one
-positions, timestamps = read_position(nwbfile, position_name="position_xy")
+pos = read_position(nwbfile, position_name="position_xy")
+positions, timestamps = pos.positions, pos.times
 ```
 
 ### `ValueError: Place field '{name}' already exists` when writing to NWB

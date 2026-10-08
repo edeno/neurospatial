@@ -42,8 +42,6 @@ _EXPECTED_LAZY_ATTRS = {
     "DecodingResult": ("neurospatial.decoding._result", "DecodingResult"),
     "peri_event_histogram": ("neurospatial.events.alignment", "peri_event_histogram"),
     "PeriEventResult": ("neurospatial.events._core", "PeriEventResult"),
-    "Session": ("neurospatial.recording", "Session"),
-    "load_session": ("neurospatial.recording", "load_session"),
 }
 
 # Eager exports that must remain importable directly from the package.
@@ -121,7 +119,6 @@ def test_headline_exports_are_deferred_and_cached() -> None:
         assert "neurospatial.decoding" not in sys.modules
         assert "neurospatial.encoding.spatial" not in sys.modules
         assert "neurospatial.events.alignment" not in sys.modules
-        assert "neurospatial.recording" not in sys.modules
         assert not (_EXPECTED_LAZY_ATTRS.keys() & fresh.__dict__.keys())
         assert set(_EXPECTED_LAZY_ATTRS).issubset(dir(fresh))
 
