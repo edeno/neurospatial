@@ -109,7 +109,7 @@ Implementation phases and checkpoint follow-ups ship as separate PRs into `feat/
 - **3b, 3c, 3d**: each requires 3a. 3c also requires 2a, because both edit the PSTH code in `events/alignment.py`.
 - **3e**: requires 3d and 2b. 3d owns the new time-window keywords on `compute_pre_decision_metrics` and the VTE functions, and 3e only forwards them. 3e's `heading_from_velocity` change touches files 2b edits.
 - **4a**: requires all of Phases 2 and 3. It rewrites error sites that 2a and 2b touched. **4b** requires 4a, because 4b executes examples that depend on the four-array calls working.
-- **Checkpoint**: after 4b, before 5a (below). **4c** corrected the first checkpoint's duration and interpretation blockers; **4d** corrected the post-4c repeat's decoder-tutorial coordinates. The [post-4d repeat](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4D.md) passes; proceed to 5a after the checkpoint report/planning PR merges.
+- **Checkpoint**: after 4b, before 5a (below). **4c** corrected the first checkpoint's duration and interpretation blockers; **4d** corrected the post-4c repeat's decoder-tutorial coordinates. The [post-4d repeat](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4D.md) passes and PR #50 merged as c1433849; proceed to 5a.
 - **5a, then 5b; 6a, then 6b, then 6c; then 7.** 6a requires 5b, because the snapshot freezes the names 5a and 5b introduce. 7 requires 5b (threshold constants) and 6c.
 
 No feature flags are used.
@@ -154,8 +154,8 @@ reductions are not claimed because original counts are unavailable and new
 fixtures/check overhead differ. Existing later-phase tasks remain; Phase 7
 adds a bounded continuous heatmap pixel-centering correction (37.5 ms maximum
 offset in the four-row 100 ms probe), without reopening the cm-versus-bin
-blocker or claiming sub-bin timing from pixels. Merge the checkpoint
-report/planning PR, then start Phase 5a.
+blocker or claiming sub-bin timing from pixels. The checkpoint report/planning
+PR #50 merged as c1433849; Phase 5a can start.
 
 ## Open Questions
 
