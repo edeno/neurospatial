@@ -101,7 +101,7 @@ These are on `main`, which is the base of this branch:
 
 ## Rollout Strategy
 
-There are sixteen PRs into `feat/researcher-first`, then one release. Each phase file's header says what it **Requires**. The dependency graph:
+Implementation phases and checkpoint follow-ups ship as separate PRs into `feat/researcher-first`, then one release. Each phase file's header says what it **Requires**. The dependency graph:
 
 - **1** first: it enables CI on this branch and fixes a test that otherwise hangs the suite.
 - **2a, 2b**: each requires 1. They are independent of each other.
@@ -109,7 +109,7 @@ There are sixteen PRs into `feat/researcher-first`, then one release. Each phase
 - **3b, 3c, 3d**: each requires 3a. 3c also requires 2a, because both edit the PSTH code in `events/alignment.py`.
 - **3e**: requires 3d and 2b. 3d owns the new time-window keywords on `compute_pre_decision_metrics` and the VTE functions, and 3e only forwards them. 3e's `heading_from_velocity` change touches files 2b edits.
 - **4a**: requires all of Phases 2 and 3. It rewrites error sites that 2a and 2b touched. **4b** requires 4a, because 4b executes examples that depend on the four-array calls working.
-- **Checkpoint**: after 4b, before 5a (below).
+- **Checkpoint**: after 4b, before 5a (below). The [2026-10-07 review](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07.md) is held; **4c** corrects simulation duration and scientific documentation, then the checkpoint repeats.
 - **5a, then 5b; 6a, then 6b, then 6c; then 7.** 6a requires 5b, because the snapshot freezes the names 5a and 5b introduce. 7 requires 5b (threshold constants) and 6c.
 
 No feature flags are used.
@@ -124,6 +124,15 @@ No feature flags are used.
 - Compare against the October 2026 baseline: the UX review rated the experience CONFUSING, and all five design-review journeys were "painful".
 - Record each journey's call count and lines of code, and every place the agent had to read source code.
 - Findings become tasks under a "Checkpoint additions" heading at the top of the relevant later phase files, or form a new phase, before those phases start. If the journeys are not clearly easier, stop and revisit the design before continuing.
+
+**First checkpoint, 2026-10-07:** all five journeys executed from public docs
+with zero implementation/test reads. Overall UX improved to NEEDS_POLISH,
+but the track journey remained painful. The linear-track simulator ignored
+requested duration while metadata recorded it, the linearization tutorial
+misstated direction separation, and assembly/EV docs overstated significance.
+Phase 4c fixes those blocking findings. Later plans carry the remaining
+navigation, event-cohort, holder and native 1D plotting additions. Phase 5a
+requires a passing repeated checkpoint; this review alone does not pass it.
 
 ## Open Questions
 
@@ -147,6 +156,7 @@ Executor dry-runs measured the call sites and showed the original estimates were
 | 3e | about 1k lines |
 | 4a | about 1.5k lines |
 | 4b | about 1.5k lines |
+| 4c | bounded checkpoint corrections; estimate after inspecting the duration defect |
 | 5a | about 2k lines, mostly mechanical renames |
 | 5b | about 1.5k lines |
 | 6a | about 1.5k lines |

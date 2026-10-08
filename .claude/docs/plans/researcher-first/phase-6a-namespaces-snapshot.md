@@ -6,6 +6,24 @@
 
 Read [executing.md](executing.md) first: branch and PR workflow, definition of done, CHANGELOG-per-commit, and what to do when the plan and reality disagree. This file holds only what is specific to Phase 6a.
 
+## Checkpoint additions (2026-10-07)
+
+- Make the existing `detect_assemblies`, `assembly_activation`,
+  `pairwise_correlations`, `explained_variance_reactivation` and
+  `reactivation_strength` discoverable in the API index and a complete public
+  workflow. The checkpoint found them through public runtime help only.
+- Show simulation → encoding, then two explicit branches: decoding from rate
+  maps/counts and population statistics from counts. A posterior is not the
+  input to assembly/EV analyses. Preserve control-period context and distinguish
+  effect size, significant dimensions and thresholded core members using the
+  corrected Phase 4c wording.
+- Demonstrate a common nonzero-variance unit selection across all periods,
+  carrying the same unit order/IDs. Use a real self-contained example under
+  the executable-doc guard. Keep the four-array path; add no mandatory bundle,
+  new statistical algorithm or private-helper import.
+
+## Original scope
+
 This phase:
 
 - removes `main`'s governance remnants;

@@ -4,6 +4,26 @@
 
 [← back to PLAN.md](PLAN.md) · [executing a phase](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#error-message-contract)
 
+## Checkpoint additions (2026-10-07)
+
+- Add native 1D field plotting to this phase's output scope. A regular 1D
+  environment from `linear_track_session` computes rates successfully, but
+  `rates.plot(idx=0)` raises `NotImplementedError: pcolormesh requires 2D grids`.
+  Graph-track plotting already works; keep both supported paths.
+- Write a regression against the unmodified plotting call, then render a
+  labeled line over native 1D bin coordinates with firing rate in Hz. Exercise
+  single and population-result plotting and retain existing 2D/graph behavior.
+  This changes presentation only, with no scientific-array/default changes.
+- Keep existing tasks 7.1–7.4: the checkpoint reconfirmed unnamed population
+  aggregation, missing singular metrics/xarray, hidden table columns and empty
+  threshold/unit metadata. Do not reintroduce the rejected summed-occupancy claim.
+- Explain that HTML colorbar options currently do not render a numeric scale;
+  a labeled static plot and real timestamp frame labels provide a documented
+  recovery. Implementing HTML colorbars is optional polish, not a new blocker
+  or a claim that supported behavior regressed.
+
+## Original scope
+
 **Line numbers** were read on `main` at `da631a47`. Phases 1–6c land first, so re-locate each site by its symbol name. Every item below was **re-verified on `main`** by probe (60 s, 30 Hz trajectory, 3 units, four rate families).
 
 **Inputs to read first:**

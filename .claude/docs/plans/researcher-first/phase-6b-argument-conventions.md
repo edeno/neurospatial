@@ -6,6 +6,29 @@
 
 Read [executing.md](executing.md) first: branch and PR workflow, definition of done, CHANGELOG-per-commit, and what to do when the plan and reality disagree. This file holds only what is specific to Phase 6b.
 
+## Checkpoint additions (2026-10-07)
+
+- Replace the session decoder's ambiguous "pass the result as encoding_models"
+  note when splitting its modes. Give explicit executable rate-array/result
+  handoffs for the resulting public paths, preserving epochs and real decoder
+  timestamps rather than constructing a single grid across gaps.
+- Add one gap-aware event recipe selecting a shared cohort whose entire PSTH
+  window fits a recording/analysis window, then reuse those event timestamps
+  for PSTH, rasters, regressors and positioned-event tables. The checkpoint's
+  unselected inputs gave 2 PSTH events versus 4 raster/table rows. Show the
+  retained event identifiers/mask in the user's table using ordinary documented
+  array/DataFrame operations; do not require a new result field or time type.
+- Document current closure explicitly: PSTH excludes the stop edge; raster
+  alignment includes it; event-count/indicator windows include both edges and
+  may count a shared boundary event twice. A shared cohort does not imply
+  identical spike-edge inclusion. Preserve the deliberately deferred spike-only
+  helpers' signatures, dtypes and numerical contracts; this addition is an
+  executable composition recipe, not forced semantic unification.
+- Keep the joined graph-direction and population recipes runnable after the
+  argument-order changes, without importing private interval helpers.
+
+## Original scope
+
 This phase:
 
 - makes every signature follow the [input conventions](shared-contracts.md#input-conventions): `times` before `positions`, `env` first, spike parameters named `spike_times`;

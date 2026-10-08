@@ -1,6 +1,6 @@
 # Researcher-First Rebuild Implementation Plan
 
-**Status:** Phase 4b done (b908d1da, PR #45); next: researcher-workflow checkpoint before Phase 5a.
+**Status:** Phase 4b done (b908d1da, PR #45); researcher-workflow checkpoint held (2026-10-07); next: Phase 4c, then repeat the checkpoint before Phase 5a.
 
 Rebuild the valuable outcomes of the archived `feat/public-api-curation` branch on a fresh branch from `main`, putting researcher effort first. The result: the four-array call `compute_spatial_rate(env, spike_times, times, positions)` and its siblings work with no setup and handle recording gaps correctly. Every verified scientific bug is fixed. Errors say how to fix the problem. Every advertised example runs in CI. The public surface is coherent and discoverable, and it's protected by one snapshot test rather than a governance apparatus.
 
@@ -31,7 +31,8 @@ For agent invocation, **load only the slice you need**:
   - **Phase 4: errors and docs.**
     - [phase-4a-errors.md](phase-4a-errors.md) — `NeurospatialError`, first-run error messages, detection of silent mistakes.
     - [phase-4b-docs-that-run.md](phase-4b-docs-that-run.md) — docstring completeness; README, quickstart, CLAUDE.md and docstring examples executed in CI.
-  - **Checkpoint:** a researcher-workflow review must pass before Phase 5a ([overview → Rollout Strategy](overview.md#rollout-strategy)).
+    - [phase-4c-checkpoint-corrections.md](phase-4c-checkpoint-corrections.md) — checkpoint additions: truthful simulation duration, graph-direction explanations and statistical interpretation.
+  - **Checkpoint:** the [2026-10-07 review](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07.md) is held; repeat it after Phase 4c and pass before Phase 5a ([overview → Rollout Strategy](overview.md#rollout-strategy)).
   - **Phase 5: classification.**
     - [phase-5a-object-vector-frames.md](phase-5a-object-vector-frames.md) — the `label_cell_types` fix, the allocentric object-vector map and results, frame-specific functions, the simulator.
     - [phase-5b-significance-predicates.md](phase-5b-significance-predicates.md) — opt-in shuffle significance, one predicate contract, `has_place_field` and `is_place_cell(criterion=…)`, bias documentation.
