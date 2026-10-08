@@ -201,7 +201,7 @@ def validate_simulation(
     ):
         raise ValueError(
             "Must provide either 'session' or all of "
-            "('env', 'spike_trains', 'positions', 'times', 'ground_truth')"
+            "('env', 'spike_times', 'positions', 'times', 'ground_truth')"
         )
 
     # Determine which cells to validate

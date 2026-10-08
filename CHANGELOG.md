@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- Name the current `spike_times` keyword in simulation validation's missing-input diagnostic.
+
 - Name nonnumeric times/positions together in shared conversion errors, retaining shape/order problems from the convertible argument and providing Why/Fix guidance without changing valid arrays.
 
 - Share one swap-aware times/positions validator across encoding and environment trajectory APIs. Timestamp shape, finiteness, ordering and sample-count problems are reported together with a corrected call; missing position samples remain supported.
