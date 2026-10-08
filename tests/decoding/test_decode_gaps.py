@@ -3,7 +3,11 @@
 import numpy as np
 import pytest
 
-from neurospatial.decoding import decode_session, decode_session_summary
+from neurospatial.decoding import (
+    BayesianDecoder,
+    decode_session,
+    decode_session_summary,
+)
 from neurospatial.encoding import compute_spatial_rates
 
 
@@ -96,7 +100,7 @@ def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
     model = compute_spatial_rates(
         r.env, trains, r.times, r.positions, method="binned", fill_value=0.0
     ).firing_rates
-    result = decode_session(
-        r.env, trains, r.times, np.full_like(r.positions, 1e6), encoding_models=model
-    )
+    result = BayesianDecoder(
+        r.env, encoding_models=model, unit_ids=np.arange(len(trains))
+    ).predict(trains, r.times)
     assert len(result.times) == 7998

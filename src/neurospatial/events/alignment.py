@@ -634,9 +634,9 @@ def population_peri_event_histogram(
     # Shape: (n_units, n_events, n_bins)
     all_histograms = np.zeros((n_units, n_events, n_bins), dtype=np.float64)
 
-    for unit_idx, spike_times in enumerate(trains):
+    for unit_idx, train in enumerate(trains):
         all_histograms[unit_idx] = _count_peri_event_bins(
-            spike_times, event_times, window, bin_edges, bin_size
+            train, event_times, window, bin_edges, bin_size
         )
 
     # Compute per-unit mean and SEM across events

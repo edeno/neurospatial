@@ -22,6 +22,8 @@
 
 ### Changed
 
+- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
+
 - **Breaking:** standardize required trajectory pairs as `(times, positions)` in the sixteen behavior functions, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`; place `env` first in region coverage, field shape/coherence, point binning, circular place-field shuffling and video calibration. Rename the spike parameters on time binning, population PSTH, spike restriction and simulation validation to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
 
 - **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.

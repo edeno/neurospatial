@@ -2631,7 +2631,7 @@ def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
-    positions: NDArray[np.float64] | None = None,
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -2666,16 +2666,12 @@ def compute_spatial_rate(
         (e.g., created via ``Environment.from_samples()``).
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use:
@@ -3127,7 +3123,7 @@ def compute_spatial_rates(
     env: Environment,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
     times: NDArray[np.float64],
-    positions: NDArray[np.float64] | None = None,
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -3171,16 +3167,12 @@ def compute_spatial_rates(
         All formats are coerced to per-neuron spike trains via
         ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
         group must equal the group's index.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use. See ``compute_spatial_rate()`` for details. In addition

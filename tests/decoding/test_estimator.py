@@ -20,6 +20,7 @@ Tests
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import warnings
 
 import numpy as np
@@ -33,6 +34,7 @@ from neurospatial.decoding import (
     DecodingSummary,
     decode_session,
 )
+from neurospatial.decoding.session import _decode_with_models
 from neurospatial.encoding import SpikeTrains
 
 # ---------------------------------------------------------------------------
@@ -287,9 +289,7 @@ def test_epochs_restrict_encoding(sim) -> None:
     assert_array_equal(fitted.encoding_models, models)
     held_out = (mid, float(times[-1]))
     predicted = fitted.predict(spikes, times, epochs=held_out)
-    reference = decode_session(
-        env, spikes, times, encoding_models=models, dt=0.5, epochs=held_out
-    )
+    reference = _decode_with_models(env, spikes, times, models, dt=0.5, epochs=held_out)
     assert_array_equal(predicted.posterior, reference.posterior)
     full = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
     assert not np.array_equal(fitted.encoding_models, full.encoding_models)
@@ -769,9 +769,7 @@ class TestUnitAlignment:
     def test_predict_plain_arrays_stay_positional(self, sim) -> None:
         env, spikes, times, positions = sim
         decoder = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
-        ref = decode_session(
-            env, spikes, times, dt=0.5, encoding_models=decoder.encoding_models
-        )
+        ref = _decode_with_models(env, spikes, times, decoder.encoding_models, dt=0.5)
         assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
 
     def test_unlabelled_spike_trains_fit_pairs_by_position(
@@ -787,3 +785,48 @@ class TestUnitAlignment:
             decoder.predict(spikes[:3], times).posterior,
             atol=1e-12,
         )
+
+
+def test_positions_required_where_used(sim):
+    from neurospatial.decoding import decode_session_summary
+    from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+    for function in [
+        BayesianDecoder.fit,
+        BayesianDecoder.score,
+        decode_session,
+        decode_session_summary,
+        compute_spatial_rate,
+        compute_spatial_rates,
+    ]:
+        signature = inspect.signature(function)
+        assert signature.parameters["positions"].default is inspect.Parameter.empty
+    for function in [decode_session, decode_session_summary]:
+        assert "encoding_models" not in inspect.signature(function).parameters
+    assert list(inspect.signature(BayesianDecoder.predict).parameters) == [
+        "self",
+        "spike_times",
+        "times",
+        "epochs",
+        "spike_window",
+    ]
+    assert list(inspect.signature(BayesianDecoder.predict_summary).parameters) == [
+        "self",
+        "spike_times",
+        "times",
+        "epochs",
+        "spike_window",
+        "time_chunk",
+    ]
+    env, spikes, times, _ = sim
+    with pytest.raises(TypeError, match="positions"):
+        decode_session(env, spikes, times)
+
+
+def test_predict_matches_decode_session(sim):
+    env, spikes, times, positions = sim
+    decoder = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+    np.testing.assert_array_equal(
+        decoder.predict(spikes, times).posterior,
+        decode_session(env, spikes, times, positions, dt=0.5).posterior,
+    )

@@ -33,7 +33,7 @@ def recording():
 def test_missing_env_names_the_call(recording):
     r = recording
     with pytest.raises(TypeError, match="expects an Environment") as caught:
-        compute_spatial_rate(r.spike_times, r.times, r.positions)
+        compute_spatial_rate(r.spike_times, r.spike_times, r.times, r.positions)
     message = str(caught.value)
     assert "compute_spatial_rate" in message
     assert "ndarray" in message

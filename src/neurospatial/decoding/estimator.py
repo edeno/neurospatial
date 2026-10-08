@@ -294,7 +294,7 @@ warn_on_drop
         self,
         spike_times: SpikeTrainsLike,
         times: ArrayLike,
-        positions: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64],
         *,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
@@ -319,11 +319,12 @@ warn_on_drop
             later used to match predict-time spike trains to these models by
             label; an unlabelled input gets ``arange(n_units)``, and later inputs
             are then paired by position.
-        times : array-like, shape (n_frames,), or PositionLike
-            Training timestamps (seconds), or a ``PositionLike`` object carrying
-            both times and positions (then ``positions`` must be omitted).
-        positions : NDArray[np.float64], shape (n_frames, n_dims), optional
-            Training positions. Omit only when ``times`` is a ``PositionLike``.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+        positions : NDArray[np.float64], shape (n_frames, n_dims)
+            Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
         speed : NDArray[np.float64], shape (n_frames,), optional
             Precomputed speed, forwarded to the encoder. Only used when
             ``min_speed`` is set; auto-derived when ``None``.
@@ -398,7 +399,6 @@ warn_on_drop
             speed=speed,
             min_speed=min_speed,
             max_gap=self.max_gap,
-            encoding_models=None,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             context="BayesianDecoder.fit",
@@ -475,9 +475,8 @@ warn_on_drop
     ) -> DecodingResult:
         """Decode the full posterior for new spikes against the fitted models.
 
-        Delegates to :func:`~neurospatial.decoding.decode_session` with the
-        fitted ``encoding_models``, so the encode step is skipped and the
-        posterior is computed directly from those models.
+        Uses the fitted rate maps with the same per-run binning and posterior
+        calculation as :func:`~neurospatial.decoding.decode_session`.
 
         Parameters
         ----------
@@ -487,12 +486,10 @@ warn_on_drop
             group, or ``unit_ids`` given at construction), trains are matched
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
-        times : array-like, shape (n_frames,), or PositionLike
-            Tracking timestamps (seconds). Decode bins tile each run whose
-            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
-            Its positions are ignored. To decode without tracking samples,
-            pass ``times=np.arange(t0, t1, dt)``.
-
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -529,16 +526,15 @@ warn_on_drop
         ``spike_window``; no bin spans a pause, and spikes between runs are not
         counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial.decoding.session import decode_session
+        from neurospatial.decoding.session import _decode_with_models
 
         encoding_models = self._check_fitted()
-        return decode_session(
+        return _decode_with_models(
             self.env,
             self._align_to_fitted_units(spike_times, "predict"),
             times,
-            positions=None,
+            encoding_models,
             dt=self.dt,
-            encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             max_gap=self.max_gap,
@@ -557,8 +553,7 @@ warn_on_drop
     ) -> DecodingSummary:
         """Decode memory-safe per-time reductions for new spikes.
 
-        Delegates to :func:`~neurospatial.decoding.decode_session_summary` with
-        the fitted ``encoding_models``. Streams the time-binning and reduces the
+        Uses the fitted rate maps and streams time-binning, reducing the
         posterior block-by-block, so the full ``(n_time, n_bins)`` posterior is
         never materialized. The MAP estimate equals :meth:`predict`'s.
 
@@ -570,11 +565,10 @@ warn_on_drop
             group, or ``unit_ids`` given at construction), trains are matched
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
-        times : array-like, shape (n_frames,), or PositionLike
-            Tracking timestamps (seconds). Decode bins tile each run whose
-            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
-            Its positions are ignored. To decode without tracking samples,
-            pass ``times=np.arange(t0, t1, dt)``.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         time_chunk : int, default=1024
             Streaming block size (number of time bins per block). Must be a
             positive integer.
@@ -615,16 +609,15 @@ warn_on_drop
         ``spike_window``; no bin spans a pause, and spikes between runs are not
         counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial.decoding.session import decode_session_summary
+        from neurospatial.decoding.session import _decode_with_models_summary
 
         encoding_models = self._check_fitted()
-        return decode_session_summary(
+        return _decode_with_models_summary(
             self.env,
             self._align_to_fitted_units(spike_times, "predict_summary"),
             times,
-            positions=None,
+            encoding_models,
             dt=self.dt,
-            encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             max_gap=self.max_gap,
@@ -637,7 +630,7 @@ warn_on_drop
         self,
         spike_times: SpikeTrainsLike,
         times: ArrayLike,
-        positions: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64],
         *,
         epochs: Any = None,
         spike_window: Any = None,
@@ -668,13 +661,12 @@ warn_on_drop
             group, or ``unit_ids`` given at construction), trains are matched
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
-        times : array-like, shape (n_frames,), or PositionLike
-            Tracking timestamps (seconds). Decode bins tile each run whose
-            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
-            Its positions supply ground truth when ``positions`` is omitted.
-        positions : NDArray[np.float64], shape (n_frames, n_dims), optional
-            Ground-truth positions to score against. Omit only when ``times`` is
-            a ``PositionLike``.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+        positions : NDArray[np.float64], shape (n_frames, n_dims)
+            Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
         metric : {"median_error", "mean_error"}, default="median_error"
             Reduction over the per-time-bin errors. ``"median_error"`` ->
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
