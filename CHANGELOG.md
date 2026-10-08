@@ -64,6 +64,8 @@
 
 ### Removed
 
+- Remove the superseded public API curation plans and the test pinning the old root export list; the public API snapshot replaces that export contract.
+
 - Remove the deprecated `detect_cell_types`, `detect_hd_cells`, `detect_view_cells` and `detect_ovcs` methods; use `label_cell_types` or `classify`.
 
 - Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
