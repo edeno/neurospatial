@@ -23,6 +23,89 @@ HEADLINES = {
         "mean_vector_length": "mean_vector_length",
     },
 }
+TABLE_COLUMNS = {
+    "spatial": [
+        "peak_rate",
+        "spatial_info",
+        "sparsity",
+        "grid_score",
+        "border_score",
+        "peak_x",
+        "peak_y",
+        "cell_type",
+    ],
+    "view": [
+        "peak_rate",
+        "view_spatial_info",
+        "peak_x",
+        "peak_y",
+        "is_spatial_view_cell",
+    ],
+    "allocentric": [
+        "peak_rate",
+        "preferred_distance",
+        "preferred_direction_deg",
+        "preferred_direction",
+        "is_object_vector_cell",
+    ],
+    "egocentric": [
+        "peak_rate",
+        "preferred_distance",
+        "preferred_direction_deg",
+        "preferred_direction",
+        "is_object_vector_cell",
+    ],
+    "directional": [
+        "peak_rate",
+        "mean_vector_length",
+        "preferred_direction_deg",
+        "tuning_width_deg",
+        "preferred_direction",
+        "tuning_width",
+        "is_head_direction_cell",
+    ],
+}
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_summary_table_column_order_and_attrs(rate_family_results, family):
+    result = rate_family_results[family]
+    frame = result.summary_table()
+    assert frame.columns.tolist() == TABLE_COLUMNS[family]
+    assert "method" not in frame.columns
+    assert frame.attrs["units"]["peak_rate"] == "Hz"
+    if family in ("spatial", "view"):
+        assert frame.attrs["method"] == result.method
+    if family == "spatial":
+        assert "spatial_info" in frame.to_string(max_cols=6)
+        assert "cell_type" in frame.to_string(max_cols=6)
+        assert frame.attrs["units"]["spatial_info"] == "bits/spike"
+    if family in ("allocentric", "egocentric"):
+        assert frame.attrs["direction_frame"] == family
+        assert frame.attrs["units"]["preferred_direction"] == "rad"
+        assert frame.attrs["units"]["preferred_direction_deg"] == "deg"
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_thresholds_attrs_match_resolved_defaults(rate_family_results, family):
+    from neurospatial.encoding.directional import HEAD_DIRECTION_THRESHOLDS
+    from neurospatial.encoding.egocentric import OBJECT_VECTOR_THRESHOLDS
+    from neurospatial.encoding.spatial import PLACE_GRID_BORDER_THRESHOLDS
+    from neurospatial.encoding.view import VIEW_THRESHOLDS
+
+    constants = {
+        "spatial": PLACE_GRID_BORDER_THRESHOLDS,
+        "view": VIEW_THRESHOLDS,
+        "allocentric": OBJECT_VECTOR_THRESHOLDS,
+        "egocentric": OBJECT_VECTOR_THRESHOLDS,
+        "directional": HEAD_DIRECTION_THRESHOLDS,
+    }
+    result = rate_family_results[family]
+    defaults = dict(constants[family])
+    assert result.summary_table().attrs["classification_thresholds"] == defaults
+    assert result[0].summary_table().attrs["classification_thresholds"] == defaults
+    classifier = result.label_cell_types if family == "spatial" else result.classify
+    np.testing.assert_array_equal(classifier(), classifier(**defaults))
 
 
 @pytest.mark.parametrize("family", FAMILIES)

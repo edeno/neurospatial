@@ -333,17 +333,27 @@ def _directional_summary_frame(
         ]
     )
     columns = {
-        "preferred_direction": directions,
-        "preferred_direction_deg": np.degrees(directions),
-        "mean_vector_length": mvls,
-        "tuning_width": widths,
-        "tuning_width_deg": np.degrees(widths),
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "mean_vector_length": mvls,
+        "preferred_direction_deg": np.degrees(directions),
+        "tuning_width_deg": np.degrees(widths),
+        "preferred_direction": directions,
+        "tuning_width": widths,
         "is_head_direction_cell": _head_direction_classify(
             rates, occupancy, centers, counts, **HEAD_DIRECTION_THRESHOLDS
         ),
     }
-    return pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "mean_vector_length": "",
+        "preferred_direction": "rad",
+        "preferred_direction_deg": "deg",
+        "tuning_width": "rad",
+        "tuning_width_deg": "deg",
+    }
+    df.attrs["classification_thresholds"] = dict(HEAD_DIRECTION_THRESHOLDS)
+    return df
 
 
 @dataclass(frozen=True, repr=False)
@@ -458,6 +468,15 @@ class DirectionalRateResult(SpatialResultMixin):
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call head_direction_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
 
         Examples
         --------
@@ -1704,6 +1723,13 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call head_direction_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``preferred_directions()``, ``mean_vector_lengths()``, etc.).

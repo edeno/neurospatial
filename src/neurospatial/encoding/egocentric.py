@@ -142,16 +142,23 @@ def _object_vector_summary_frame(
     occupancy = _to_numpy(result.occupancy)
     peaks = np.atleast_2d(result.peak_location())
     columns = {
-        "preferred_distance": peaks[:, 0],
-        "preferred_direction": peaks[:, 1],
-        "preferred_direction_deg": np.degrees(peaks[:, 1]),
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "preferred_distance": peaks[:, 0],
+        "preferred_direction_deg": np.degrees(peaks[:, 1]),
+        "preferred_direction": peaks[:, 1],
         "is_object_vector_cell": _object_vector_classify(
             rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
         ),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["direction_frame"] = result.direction_frame
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "preferred_distance": result.env.units or "",
+        "preferred_direction": "rad",
+        "preferred_direction_deg": "deg",
+    }
+    df.attrs["classification_thresholds"] = dict(OBJECT_VECTOR_THRESHOLDS)
     return df
 
 
@@ -268,6 +275,16 @@ class ObjectVectorRateResult(SpatialResultMixin):
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        The direction frame is in ``df.attrs["direction_frame"]``.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
 
         Examples
         --------
@@ -1159,6 +1176,14 @@ class ObjectVectorRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        The direction frame is in ``df.attrs["direction_frame"]``.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``preferred_distances()``, ``classify()``, etc.).
@@ -1188,7 +1213,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['preferred_distance', 'preferred_direction', 'preferred_direction_deg', 'peak_rate', 'is_object_vector_cell']
+        ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name

@@ -164,14 +164,21 @@ def _view_summary_frame(
 
     peaks = np.atleast_2d(result.peak_location())
     columns = {
-        "peak_x": peaks[:, 0],
-        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
         "view_spatial_info": np.asarray(batch_spatial_information(rates, occupancy)),
+        "peak_x": peaks[:, 0],
+        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["method"] = result.method
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "view_spatial_info": "bits/spike",
+        "peak_x": result.env.units or "",
+        "peak_y": result.env.units or "",
+    }
+    df.attrs["classification_thresholds"] = dict(VIEW_THRESHOLDS)
     return df
 
 
@@ -301,6 +308,15 @@ class ViewRateResult(SpatialResultMixin):
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call spatial_view_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
 
         Examples
         --------
@@ -1032,6 +1048,13 @@ class ViewRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call spatial_view_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``view_spatial_information()``, ``classify()``, etc.).
@@ -1058,7 +1081,7 @@ class ViewRatesResult(SpatialResultMixin):
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_x', 'peak_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell', 'method']
+        ['peak_rate', 'view_spatial_info', 'peak_x', 'peak_y', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 

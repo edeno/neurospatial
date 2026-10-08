@@ -615,13 +615,13 @@ def _spatial_summary_frame(
     grid = batch_grid_scores(result.env, rates).scores
     border = batch_border_scores(result.env, rates).scores
     columns: dict[str, Any] = {
-        "peak_x": peaks[:, 0],
-        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_info": info,
         "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
         "grid_score": grid,
         "border_score": border,
+        "peak_x": peaks[:, 0],
+        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **_glm_summary_columns(result),
     }
     if include_classification:
@@ -630,6 +630,13 @@ def _spatial_summary_frame(
         )
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["method"] = result.method
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "spatial_info": "bits/spike",
+        "peak_x": result.env.units or "",
+        "peak_y": result.env.units or "",
+    }
+    df.attrs["classification_thresholds"] = dict(PLACE_GRID_BORDER_THRESHOLDS)
     return df
 
 
@@ -792,6 +799,15 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call place_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
 
         Examples
         --------
@@ -2407,6 +2423,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call place_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``spatial_information()``, ``grid_scores()``, etc.).
