@@ -11,9 +11,9 @@ egocentric encoding uses animal-centered coordinates where:
 
 Result Classes
 --------------
-EgocentricRateResult
+ObjectVectorRateResult
     Single-neuron egocentric rate map with convenience methods
-EgocentricRatesResult
+ObjectVectorRatesResult
     Multi-neuron egocentric rate maps with batch methods and iteration
 
 Compute Functions
@@ -36,7 +36,7 @@ This matches the convention in ``neurospatial.ops.egocentric``.
 Examples
 --------
 >>> import numpy as np
->>> from neurospatial.encoding.egocentric import EgocentricRateResult
+>>> from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
 >>> # Create environment representing egocentric polar space
 >>> from neurospatial import Environment
@@ -46,13 +46,14 @@ Examples
 >>> # Create result (typically from compute_egocentric_rate)
 >>> firing_rate = np.random.rand(env.n_bins) * 10
 >>> occupancy = np.ones(env.n_bins)
->>> result = EgocentricRateResult(
+>>> result = ObjectVectorRateResult(
 ...     firing_rate=firing_rate,
 ...     occupancy=occupancy,
 ...     env=env,
 ...     distance_range=(0.0, 50.0),
 ...     n_distance_bins=10,
 ...     n_direction_bins=12,
+...     direction_frame="egocentric",
 ... )
 
 References
@@ -79,12 +80,16 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _SILENCE_MIN_SECONDS,
     _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
+)
+from neurospatial.encoding._egocentric_binning import (
+    _object_vector_interval_mask as _object_vector_interval_mask,
 )
 from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -99,11 +104,13 @@ if TYPE_CHECKING:
 
 __all__ = [
     # Result classes
-    "EgocentricRateResult",
-    "EgocentricRatesResult",
+    "ObjectVectorRateResult",
+    "ObjectVectorRatesResult",
     # Compute functions
     "compute_egocentric_rate",
     "compute_egocentric_rates",
+    "compute_object_vector_rate",
+    "compute_object_vector_rates",
     # Convenience functions
     "is_object_vector_cell",
     "object_vector_score",
@@ -112,10 +119,10 @@ __all__ = [
 
 
 @dataclass(frozen=True, repr=False)
-class EgocentricRateResult(SpatialResultMixin):
-    """Result of egocentric rate computation for a single neuron.
+class ObjectVectorRateResult(SpatialResultMixin):
+    """Result of object-vector rate computation for a single neuron.
 
-    This class wraps an egocentric firing rate map (firing rate by distance
+    This class wraps an object-vector firing rate map (firing rate by distance
     and direction to object) with its associated metadata. Object-vector cells
     fire when the animal is at a specific distance and direction from an object.
 
@@ -139,6 +146,10 @@ class EgocentricRateResult(SpatialResultMixin):
         Number of distance bins in the egocentric grid.
     n_direction_bins : int
         Number of direction bins in the egocentric grid.
+
+    direction_frame : {"allocentric", "egocentric"}
+        Required reference frame for the direction to the object.
+        Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
 
     Attributes
     ----------
@@ -164,9 +175,10 @@ class EgocentricRateResult(SpatialResultMixin):
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
-    **Egocentric polar environment**: The ``env`` represents a polar
-    coordinate system centered on the animal. Each bin corresponds to a
-    (distance, direction) combination relative to the animal's heading.
+    **Reference frame**: ``direction_frame`` records how direction to the
+    object was computed: allocentric (0 = East, +pi/2 = North) or egocentric
+    (0 = ahead, +pi/2 = left). The object-to-animal vector is reversed: add
+    pi to ``preferred_direction()`` and wrap to [-pi, pi].
 
     Examples
     --------
@@ -192,7 +204,7 @@ class EgocentricRateResult(SpatialResultMixin):
 
     See Also
     --------
-    EgocentricRatesResult : Batch version for multiple neurons
+    ObjectVectorRatesResult : Batch version for multiple neurons
     compute_egocentric_rate : Function to compute this result
     """
 
@@ -202,6 +214,7 @@ class EgocentricRateResult(SpatialResultMixin):
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+    direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_id: int | str | None = None
 
     spike_window: NDArray[np.float64] | None = field(
@@ -312,7 +325,7 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Returns the direction component (second dimension) of the egocentric
         bin where the neuron shows maximum firing rate. Direction is in
-        radians using the egocentric coordinate convention.
+        radians in ``result.direction_frame``.
 
         Returns
         -------
@@ -334,10 +347,13 @@ class EgocentricRateResult(SpatialResultMixin):
         The direction is extracted from the egocentric environment's bin
         centers. The second component (index 1) represents direction.
 
-        **Coordinate convention**: This uses egocentric (animal-centered)
-        coordinates, NOT allocentric (world-centered) coordinates:
+        **Coordinate convention**: The result records which frame was used:
         - Egocentric: 0 = ahead of animal, +π/2 = left
         - Allocentric: 0 = East, +π/2 = North
+
+        Both measure animal-to-object direction. The object-centred
+        object-to-animal vector is ``preferred_direction() + pi``, wrapped
+        to [-pi, pi].
 
         Examples
         --------
@@ -366,7 +382,7 @@ class EgocentricRateResult(SpatialResultMixin):
         bin_centers: NDArray[np.float64] = self.env.bin_centers
         return float(bin_centers[peak_bin, 1])
 
-    def egocentric_spatial_information(self) -> float:
+    def spatial_information(self) -> float:
         """Compute egocentric spatial information (bits per spike).
 
         Egocentric spatial information quantifies how much information each
@@ -415,7 +431,7 @@ class EgocentricRateResult(SpatialResultMixin):
         >>> result = compute_egocentric_rate(
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
-        >>> info = result.egocentric_spatial_information()
+        >>> info = result.spatial_information()
         >>> print(f"Egocentric spatial info: {info:.2f} bits/spike")
         Egocentric spatial info: 0.83 bits/spike
 
@@ -467,7 +483,7 @@ class EgocentricRateResult(SpatialResultMixin):
         Returns
         -------
         bool
-            True if egocentric_spatial_information() > min_info, False otherwise.
+            True if spatial_information() > min_info, False otherwise.
 
         Notes
         -----
@@ -510,14 +526,14 @@ class EgocentricRateResult(SpatialResultMixin):
 
         See Also
         --------
-        egocentric_spatial_information : Compute the metric used for classification
+        spatial_information : Compute the metric used for classification
         """
-        return self.egocentric_spatial_information() > min_info
+        return self.spatial_information() > min_info
 
 
 @dataclass(frozen=True, repr=False)
-class EgocentricRatesResult(SpatialResultMixin):
-    """Result of egocentric rate computation for multiple neurons.
+class ObjectVectorRatesResult(SpatialResultMixin):
+    """Result of object-vector rate computation for multiple neurons.
 
     This class wraps egocentric firing rate maps for a population of neurons
     with shared metadata (occupancy, egocentric environment, bin parameters).
@@ -541,6 +557,10 @@ class EgocentricRatesResult(SpatialResultMixin):
         Number of distance bins in the egocentric grid.
     n_direction_bins : int
         Number of direction bins in the egocentric grid.
+
+    direction_frame : {"allocentric", "egocentric"}
+        Required reference frame for the direction to the object.
+        Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
 
     Attributes
     ----------
@@ -571,14 +591,14 @@ class EgocentricRatesResult(SpatialResultMixin):
     and cannot be modified afterward.
 
     **Iteration interface**: Supports ``len()``, indexing with ``[]``, and
-    iteration with ``for``. Each element is an ``EgocentricRateResult`` for
+    iteration with ``for``. Each element is an ``ObjectVectorRateResult`` for
     one neuron.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.egocentric import (
-    ...     EgocentricRateResult,
+    ...     ObjectVectorRateResult,
     ...     compute_egocentric_rates,
     ... )
 
@@ -600,7 +620,7 @@ class EgocentricRatesResult(SpatialResultMixin):
     >>> # Access fields
     >>> len(result)
     3
-    >>> isinstance(result[0], EgocentricRateResult)  # First neuron
+    >>> isinstance(result[0], ObjectVectorRateResult)  # First neuron
     True
 
     >>> # Iterate over neurons
@@ -610,7 +630,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
     See Also
     --------
-    EgocentricRateResult : Single-neuron version
+    ObjectVectorRateResult : Single-neuron version
     compute_egocentric_rates : Function to compute this result
     """
 
@@ -620,6 +640,7 @@ class EgocentricRatesResult(SpatialResultMixin):
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+    direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
@@ -636,7 +657,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
-        validate_unit_table(self.unit_table, n_units, context="EgocentricRatesResult")
+        validate_unit_table(self.unit_table, n_units, context="ObjectVectorRatesResult")
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -728,7 +749,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         """
         return len(self.firing_rates)  # type: ignore[arg-type]
 
-    def __getitem__(self, idx: int) -> EgocentricRateResult:
+    def __getitem__(self, idx: int) -> ObjectVectorRateResult:
         """Get single-neuron result by index.
 
         Parameters
@@ -738,7 +759,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Returns
         -------
-        EgocentricRateResult
+        ObjectVectorRateResult
             Egocentric rate result for the specified neuron.
 
         Examples
@@ -758,10 +779,10 @@ class EgocentricRatesResult(SpatialResultMixin):
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
         >>> single = result[0]
-        >>> isinstance(single, EgocentricRateResult)
+        >>> isinstance(single, ObjectVectorRateResult)
         True
         """
-        return EgocentricRateResult(
+        return ObjectVectorRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
             env=self.env,
@@ -770,14 +791,15 @@ class EgocentricRatesResult(SpatialResultMixin):
             n_direction_bins=self.n_direction_bins,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
             spike_window=self.spike_window,
+            direction_frame=self.direction_frame,
         )
 
-    def __iter__(self) -> Iterator[EgocentricRateResult]:
+    def __iter__(self) -> Iterator[ObjectVectorRateResult]:
         """Iterate over single-neuron results.
 
         Yields
         ------
-        EgocentricRateResult
+        ObjectVectorRateResult
             Egocentric rate result for each neuron in order.
 
         Examples
@@ -846,7 +868,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         See Also
         --------
         preferred_distances : Get distance preferences for all neurons
-        EgocentricRateResult.plot : Plot for single-neuron result
+        ObjectVectorRateResult.plot : Plot for single-neuron result
         """
         return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
@@ -897,7 +919,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        EgocentricRateResult.preferred_distance : Single-neuron version
+        ObjectVectorRateResult.preferred_distance : Single-neuron version
         preferred_directions : Get direction preferences for all neurons
         """
         firing_rates = _to_numpy(self.firing_rates)
@@ -914,7 +936,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Returns the direction component (second dimension) of the egocentric
         bin where each neuron shows maximum firing rate. Direction is in
-        radians using the egocentric coordinate convention.
+        radians in ``result.direction_frame``.
 
         Returns
         -------
@@ -958,7 +980,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        EgocentricRateResult.preferred_direction : Single-neuron version
+        ObjectVectorRateResult.preferred_direction : Single-neuron version
         preferred_distances : Get distance preferences for all neurons
         """
         firing_rates = _to_numpy(self.firing_rates)
@@ -970,7 +992,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         directions: NDArray[np.float64] = bin_centers[peak_idx, 1]
         return directions
 
-    def egocentric_spatial_information(self) -> NDArray[np.float64]:
+    def spatial_information(self) -> NDArray[np.float64]:
         """Egocentric spatial information for all neurons (bits per spike).
 
         Quantifies how much information each spike conveys about the animal's
@@ -1005,7 +1027,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         >>> result = compute_egocentric_rates(
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
-        >>> info = result.egocentric_spatial_information()
+        >>> info = result.spatial_information()
         >>> info.shape
         (3,)
         >>> print(f"Neuron with highest info: {np.argmax(info)}")
@@ -1013,7 +1035,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        EgocentricRateResult.egocentric_spatial_information : Single-neuron version
+        ObjectVectorRateResult.spatial_information : Single-neuron version
         classify : Classify neurons based on this metric
         """
         from neurospatial.encoding._metrics import batch_spatial_information
@@ -1033,7 +1055,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         ----------
         min_info : float, default=0.3
             Minimum egocentric spatial information threshold in bits/spike.
-            See EgocentricRateResult.is_object_vector_cell() for threshold rationale.
+            See ObjectVectorRateResult.is_object_vector_cell() for threshold rationale.
 
         Returns
         -------
@@ -1043,7 +1065,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Notes
         -----
-        Uses vectorized computation of egocentric_spatial_information() for
+        Uses vectorized computation of spatial_information() for
         efficiency with large populations.
 
         Examples
@@ -1072,10 +1094,10 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        EgocentricRateResult.is_object_vector_cell : Single-neuron classification
-        egocentric_spatial_information : The metric used for classification
+        ObjectVectorRateResult.is_object_vector_cell : Single-neuron classification
+        spatial_information : The metric used for classification
         """
-        info = self.egocentric_spatial_information()
+        info = self.spatial_information()
         return info > min_info
 
     def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
@@ -1206,7 +1228,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             resolve_unit_ids(
                 np.asarray(index_ids, dtype=object),
                 n_neurons,
-                context="EgocentricRatesResult.summary_table",
+                context="ObjectVectorRatesResult.summary_table",
             )
 
         # Compute all metrics
@@ -1351,7 +1373,7 @@ def compute_egocentric_rate(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
-) -> EgocentricRateResult:
+) -> ObjectVectorRateResult:
     """Compute egocentric firing rate for one neuron.
 
     This function computes a smoothed firing rate map in egocentric polar
@@ -1437,7 +1459,7 @@ def compute_egocentric_rate(
 
     Returns
     -------
-    EgocentricRateResult
+    ObjectVectorRateResult
         Result object containing:
 
         - ``firing_rate``: Firing rate by egocentric coordinates in Hz,
@@ -1459,7 +1481,7 @@ def compute_egocentric_rate(
     See Also
     --------
     compute_egocentric_rates : Batch version for multiple neurons
-    EgocentricRateResult : Result class with convenience methods
+    ObjectVectorRateResult : Result class with convenience methods
     compute_spatial_rate : Standard spatial rate (by animal position)
 
     Notes
@@ -1518,7 +1540,7 @@ def compute_egocentric_rate(
     (120,)
     >>> pref_dist = result.preferred_distance()
     >>> pref_dir = result.preferred_direction()
-    >>> info = result.egocentric_spatial_information()
+    >>> info = result.spatial_information()
     >>> is_object_vector_cell = result.is_object_vector_cell()
 
     >>> # Plot the egocentric rate map
@@ -1529,6 +1551,251 @@ def compute_egocentric_rate(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    if headings is None:
+        raise ValueError(
+            _format_error(
+                "compute_egocentric_rate: headings is required for egocentric bearing.",
+                why="animal-relative direction needs the heading at each sample",
+                fix="pass headings, or use compute_object_vector_rate without headings",
+            )
+        )
+    return _object_vector_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+        context="compute_egocentric_rate",
+    )
+
+
+def compute_object_vector_rate(
+    env: Environment | None,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+) -> ObjectVectorRateResult:
+    """Compute allocentric firing rate for one neuron.
+
+    This function computes a smoothed firing rate map in allocentric polar
+    coordinates (distance and direction to nearest object). This is the key
+    metric for identifying object-vector cells (OVCs).
+
+    Parameters
+    ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Animal position coordinates at each time sample. NaN values (in
+        positions or headings) are treated as missing data and excluded from
+        occupancy and firing-rate computation; callers do not need to
+        pre-filter tracking dropouts.
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for allocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the allocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the allocentric polar grid. Covers the
+        full circle (-π to π).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for allocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+
+    Returns
+    -------
+    ObjectVectorRateResult
+        Result object containing:
+
+        - ``firing_rate``: Firing rate by allocentric coordinates in Hz,
+          shape (n_bins,)
+        - ``occupancy``: Time in each allocentric bin in seconds,
+          shape (n_bins,)
+        - ``env``: The allocentric polar environment
+        - ``distance_range``: Distance range used
+        - ``n_distance_bins``: Number of distance bins
+        - ``n_direction_bins``: Number of direction bins
+
+    Raises
+    ------
+    ValueError
+        If ``metric="geodesic"`` but ``env`` is None.
+        If ``metric`` is not one of the valid options.
+        If inputs have mismatched lengths.
+
+    See Also
+    --------
+    compute_object_vector_rates : Batch version for multiple neurons
+    ObjectVectorRateResult : Result class with convenience methods
+    compute_spatial_rate : Standard spatial rate (by animal position)
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
+    The function uses the allocentric binning layer (``_egocentric_binning.py``)
+    to convert spike times to spike counts based on distance and direction to
+    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
+    the smoothed firing rate.
+
+    **Algorithm**:
+
+    1. Compute allocentric coordinates (distance, bearing) to nearest object
+       at each behavioral frame
+    2. Bin spikes by allocentric coordinates at spike time
+    3. Compute allocentric occupancy (time spent at each distance/direction)
+    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+
+    **Coordinate convention**: Direction uses allocentric (world-centered)
+    coordinates where 0=East, +π/2=North, -π/2=South.
+
+    **Place cells vs object-vector cells**: For place cells, firing is
+    determined by allocentric position. For OVCs, firing is determined by
+    allocentric relationship to objects. Computing place field using
+    ``compute_spatial_rate`` and OVC field using this function, then comparing
+    spatial information, can help distinguish cell types.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding import compute_object_vector_rate
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.arange(0.0, 40.0, 0.04)
+    >>> positions = rng.uniform(10, 90, (len(times), 2))
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> train = np.sort(rng.uniform(0, 39.9, 100))
+    >>> result = compute_object_vector_rate(None, train, times, positions, objects)
+    >>> result.direction_frame
+    'allocentric'
+    >>> result.firing_rate.shape
+    (120,)
+
+    References
+    ----------
+    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568(7752), 400-404.
+    """
+    return _object_vector_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        None,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+        context="compute_object_vector_rate",
+    )
+
+
+def _object_vector_rate(
+    env: Environment | None,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    context: str,
+) -> ObjectVectorRateResult:
+    """Compute either frame through the shared binning and smoothing path."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
@@ -1557,7 +1824,7 @@ def compute_egocentric_rate(
     if env is not None:
         validate_env_fitted(
             env,
-            context="compute_egocentric_rate",
+            context=context,
             arguments="spike_times, times, positions, headings, object_positions",
         )
 
@@ -1592,7 +1859,7 @@ def compute_egocentric_rate(
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
+    headings = None if headings is None else np.asarray(headings, dtype=np.float64)
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
@@ -1600,12 +1867,12 @@ def compute_egocentric_rate(
         times,
         positions=positions,
         headings=headings,
-        context="compute_egocentric_rate",
+        context=context,
         n_dims=env.n_dims if env is not None else None,
     )
     validate_spike_times(
         spike_times,
-        context="compute_egocentric_rate",
+        context=context,
     )
 
     # Reuse the batch binning path for the single-neuron API so egocentric
@@ -1651,7 +1918,8 @@ def compute_egocentric_rate(
         occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
-    return EgocentricRateResult(
+    return ObjectVectorRateResult(
+        direction_frame="allocentric" if headings is None else "egocentric",
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=polar_env,
@@ -1683,7 +1951,7 @@ def compute_egocentric_rates(
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-) -> EgocentricRatesResult:
+) -> ObjectVectorRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
     This is the batch version of ``compute_egocentric_rate(None)`` that efficiently
@@ -1791,7 +2059,7 @@ def compute_egocentric_rates(
 
     Returns
     -------
-    EgocentricRatesResult
+    ObjectVectorRatesResult
         Result object containing:
 
         - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
@@ -1814,7 +2082,7 @@ def compute_egocentric_rates(
     See Also
     --------
     compute_egocentric_rate : Single-neuron version
-    EgocentricRatesResult : Result class with batch methods
+    ObjectVectorRatesResult : Result class with batch methods
     compute_spatial_rates : Standard spatial rates (by animal position)
 
     Warns
@@ -1923,6 +2191,290 @@ def compute_egocentric_rates(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    if headings is None:
+        raise ValueError(
+            _format_error(
+                "compute_egocentric_rates: headings is required for egocentric bearing.",
+                why="animal-relative direction needs the heading at each sample",
+                fix="pass headings, or use compute_object_vector_rates without headings",
+            )
+        )
+    return _object_vector_rates(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
+        context="compute_egocentric_rates",
+    )
+
+
+def compute_object_vector_rates(
+    env: Environment | None,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> ObjectVectorRatesResult:
+    """Compute allocentric firing rates for multiple neurons.
+
+    This is the batch version of ``compute_allocentric_rate(None)`` that efficiently
+    processes multiple neurons with shared trajectory data. It precomputes
+    shared quantities (allocentric coordinates, occupancy) once and optionally
+    parallelizes spike counting with joblib.
+
+    Parameters
+    ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Animal position coordinates at each time sample. NaN values (in
+        positions or headings) are treated as missing data and excluded from
+        occupancy and firing-rate computation; callers do not need to
+        pre-filter tracking dropouts.
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for allocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the allocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the allocentric polar grid. Covers the
+        full circle (-pi to pi).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for allocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+
+    Returns
+    -------
+    ObjectVectorRatesResult
+        Result object containing:
+
+        - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
+        - ``occupancy``: Time in each allocentric bin in seconds, shape ``(n_bins,)``
+        - ``env``: The allocentric polar environment
+        - ``distance_range``: Distance range used
+        - ``n_distance_bins``: Number of distance bins
+        - ``n_direction_bins``: Number of direction bins
+
+        The result supports iteration: ``for single in result: ...``
+        and indexing: ``single = result[0]``.
+
+    Raises
+    ------
+    ValueError
+        If ``metric="geodesic"`` but ``env`` is None.
+        If ``metric`` is not one of the valid options.
+        If inputs have mismatched lengths.
+
+    See Also
+    --------
+    compute_allocentric_rate : Single-neuron version
+    ObjectVectorRatesResult : Result class with batch methods
+    compute_spatial_rates : Standard spatial rates (by animal position)
+
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
+    **Efficiency advantages over calling ``compute_allocentric_rate(None)`` in a loop**:
+
+    1. Object-vector coordinates (distance, bearing to nearest object) are
+       computed once and shared across all neurons
+    2. Occupancy is computed once and shared
+    3. Diffusion kernel (for ``diffusion_kde`` method) is computed once
+    4. Spike binning can be parallelized with joblib
+
+    **When to use batch vs single**:
+
+    - **Batch** (this function): Processing 3+ neurons, or any case where
+      efficiency matters. The overhead of precomputing shared quantities
+      is amortized over multiple neurons.
+    - **Single** (``compute_allocentric_rate``): Processing 1-2 neurons, or when
+      you need fine-grained control over individual neurons.
+
+    **Coordinate convention**: Direction uses allocentric (world-centered)
+    coordinates where 0=ahead, +pi/2=left, -pi/2=right.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding import compute_object_vector_rates
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.arange(0.0, 40.0, 0.04)
+    >>> positions = rng.uniform(10, 90, (len(times), 2))
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> train = np.sort(rng.uniform(0, 39.9, 100))
+    >>> result = compute_object_vector_rates(
+    ...     None, [train, train], times, positions, objects
+    ... )
+    >>> result.direction_frame
+    'allocentric'
+    >>> result.firing_rates.shape
+    (2, 120)
+
+    References
+    ----------
+    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568(7752), 400-404.
+    """
+    return _object_vector_rates(
+        env,
+        spike_times,
+        times,
+        positions,
+        None,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
+        context="compute_object_vector_rates",
+    )
+
+
+def _object_vector_rates(
+    env: Environment | None,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    context: str,
+) -> ObjectVectorRatesResult:
+    """Compute either frame through the shared binning and smoothing path."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
@@ -1950,7 +2502,7 @@ def compute_egocentric_rates(
     if env is not None:
         validate_env_fitted(
             env,
-            context="compute_egocentric_rates",
+            context=context,
             arguments="spike_times, times, positions, headings, object_positions",
         )
 
@@ -1993,14 +2545,14 @@ def compute_egocentric_rates(
     resolved_unit_ids = resolve_unit_ids(
         unit_ids,
         n_neurons,
-        context="compute_egocentric_rates",
+        context=context,
         input_ids=extracted_unit_ids,
     )
 
     # Convert inputs to arrays (1D required for times/headings)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
+    headings = None if headings is None else np.asarray(headings, dtype=np.float64)
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
@@ -2008,11 +2560,11 @@ def compute_egocentric_rates(
         times,
         positions=positions,
         headings=headings,
-        context="compute_egocentric_rates",
+        context=context,
         n_dims=env.n_dims if env is not None else None,
     )
     for i, st in enumerate(spike_times_list):
-        validate_spike_times(st, context=f"compute_egocentric_rates (neuron {i})")
+        validate_spike_times(st, context=f"{context} (neuron {i})")
 
     # Recording coverage uses tracked runs, independently of invalid frame bins.
     if (
@@ -2060,7 +2612,8 @@ def compute_egocentric_rates(
 
             firing_rates_result = jnp.asarray(firing_rates_result)
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
-        return EgocentricRatesResult(
+        return ObjectVectorRatesResult(
+            direction_frame="allocentric" if headings is None else "egocentric",
             firing_rates=firing_rates_result,
             occupancy=occupancy_result,
             env=polar_env,
@@ -2127,7 +2680,8 @@ def compute_egocentric_rates(
         occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
-    return EgocentricRatesResult(
+    return ObjectVectorRatesResult(
+        direction_frame="allocentric" if headings is None else "egocentric",
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=polar_env,
@@ -2222,7 +2776,7 @@ def object_vector_score(
     See Also
     --------
     is_object_vector_cell : Classify neuron as OVC
-    EgocentricRateResult.is_object_vector_cell : Classifier method on result object
+    ObjectVectorRateResult.is_object_vector_cell : Classifier method on result object
     """
     if max_distance_selectivity <= 1.0:
         raise ValueError(
@@ -2299,7 +2853,7 @@ def is_object_vector_cell(
     object-vector cell (OVC) using the egocentric-spatial-information criterion.
 
     This function delegates classification to
-    :meth:`EgocentricRateResult.is_object_vector_cell`, so the quick-check and
+    :meth:`ObjectVectorRateResult.is_object_vector_cell`, so the quick-check and
     the result-object classification always agree: a neuron is an OVC when its
     egocentric spatial information exceeds ``min_info`` (bits/spike).
 
@@ -2352,7 +2906,7 @@ def is_object_vector_cell(
     min_info : float, default=0.3
         Minimum egocentric spatial information threshold in bits/spike.
         Matches the default of
-        :meth:`EgocentricRateResult.is_object_vector_cell`.
+        :meth:`ObjectVectorRateResult.is_object_vector_cell`.
 
     Returns
     -------
@@ -2393,7 +2947,7 @@ def is_object_vector_cell(
     --------
     compute_egocentric_rate : Full egocentric rate computation
     object_vector_score : Compute OVC score from a tuning curve
-    EgocentricRateResult.is_object_vector_cell : OVC classification on result object
+    ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
     """
     try:
         result = compute_egocentric_rate(
@@ -2424,7 +2978,7 @@ def is_object_vector_cell(
 
 
 def plot_object_vector_tuning(
-    result: EgocentricRateResult,
+    result: ObjectVectorRateResult,
     ax: Axes | PolarAxes | None = None,
     *,
     show_peak: bool = True,
@@ -2440,7 +2994,7 @@ def plot_object_vector_tuning(
 
     Parameters
     ----------
-    result : EgocentricRateResult
+    result : ObjectVectorRateResult
         Result from ``compute_egocentric_rate(None)``.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure with polar projection.
@@ -2471,7 +3025,7 @@ def plot_object_vector_tuning(
 
     See Also
     --------
-    EgocentricRateResult.plot : Basic plotting on result object
+    ObjectVectorRateResult.plot : Basic plotting on result object
     """
     import matplotlib.pyplot as plt
     from matplotlib.projections.polar import PolarAxes as MPLPolarAxes

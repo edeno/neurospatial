@@ -18,7 +18,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
-from neurospatial.encoding.egocentric import EgocentricRatesResult
+from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.encoding.view import ViewRatesResult
 
@@ -267,7 +267,8 @@ def test_egocentric_rates_to_xarray_polar_coords():
         angle_bin_size=np.pi / 6,
     )
     n_neurons = 3
-    result = EgocentricRatesResult(
+    result = ObjectVectorRatesResult(
+        direction_frame="egocentric",
         firing_rates=rng.uniform(0, 10, (n_neurons, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),
         env=env,

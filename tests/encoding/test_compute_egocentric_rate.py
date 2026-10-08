@@ -10,7 +10,7 @@ Task 5.7: Implement compute_egocentric_rate(None) function
 - Support metric parameter
 - Optional env parameter (required for geodesic)
 - Apply smoothing via _smoothing.py
-- Return EgocentricRateResult
+- Return ObjectVectorRateResult
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class TestComputeEgocentricRateImport:
 
 
 class TestComputeEgocentricRateReturnsResult:
-    """Test that compute_egocentric_rate returns EgocentricRateResult."""
+    """Test that compute_egocentric_rate returns ObjectVectorRateResult."""
 
     def test_returns_egocentric_rate_result(
         self,
@@ -118,9 +118,9 @@ class TestComputeEgocentricRateReturnsResult:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """compute_egocentric_rate should return an EgocentricRateResult object."""
+        """compute_egocentric_rate should return an ObjectVectorRateResult object."""
         from neurospatial.encoding.egocentric import (
-            EgocentricRateResult,
+            ObjectVectorRateResult,
             compute_egocentric_rate,
         )
 
@@ -133,7 +133,7 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        assert isinstance(result, EgocentricRateResult)
+        assert isinstance(result, ObjectVectorRateResult)
 
     def test_firing_rate_shape(
         self,
@@ -649,17 +649,17 @@ class TestComputeEgocentricRatePrecomputation:
 
         times, positions, headings = trajectory_data
         call_count = 0
-        original = _egocentric_binning._compute_egocentric_coords
+        original = _egocentric_binning._compute_object_coords
 
-        def counting_compute_egocentric_coords(*args, **kwargs):
+        def counting_compute_object_coords(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             return original(*args, **kwargs)
 
         monkeypatch.setattr(
             _egocentric_binning,
-            "_compute_egocentric_coords",
-            counting_compute_egocentric_coords,
+            "_compute_object_coords",
+            counting_compute_object_coords,
         )
 
         compute_egocentric_rate(
@@ -758,7 +758,7 @@ class TestComputeEgocentricRateCorrectness:
 # ==============================================================================
 
 
-class TestComputeEgocentricRateResultMethods:
+class TestComputeObjectVectorRateResultMethods:
     """Test that result methods work correctly."""
 
     def test_plot_returns_axes(
@@ -827,13 +827,13 @@ class TestComputeEgocentricRateResultMethods:
         direction = result.preferred_direction()
         assert isinstance(direction, float)
 
-    def test_egocentric_spatial_information_returns_float(
+    def test_spatial_information_returns_float(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """egocentric_spatial_information() should return a float."""
+        """spatial_information() should return a float."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -845,7 +845,7 @@ class TestComputeEgocentricRateResultMethods:
             headings,
             object_positions,
         )
-        info = result.egocentric_spatial_information()
+        info = result.spatial_information()
         assert isinstance(info, float)
 
     def test_is_ovc_returns_bool(

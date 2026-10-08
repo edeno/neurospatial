@@ -659,7 +659,7 @@ def ovc_session() -> tuple[
     object is at that preferred egocentric (distance, direction), producing a
     non-degenerate egocentric rate map -- so both the free
     :func:`is_object_vector_cell` and
-    :meth:`EgocentricRateResult.is_object_vector_cell` return a meaningful,
+    :meth:`ObjectVectorRateResult.is_object_vector_cell` return a meaningful,
     equal boolean across thresholds.
 
     Returns

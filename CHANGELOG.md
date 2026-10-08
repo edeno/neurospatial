@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
+
+### Changed
+
+- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
 ### Fixed
 
 - Require the documented spatial-information threshold for every place, grid and border label. In the seeded 10-minute noise example, erroneous border labels fall from 19/20 to 0/20; label precedence and threshold values are unchanged.

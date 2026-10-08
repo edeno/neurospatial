@@ -2050,7 +2050,7 @@ class SpatialRatesResult(SpatialResultMixin):
         grid_scores : Compute grid scores
         border_scores : Compute border scores
         classify : Single-type place-cell boolean predicate
-        EgocentricRatesResult.classify : Sibling batch classifier
+        ObjectVectorRatesResult.classify : Sibling batch classifier
         ViewRatesResult.classify : Sibling batch classifier
 
         Examples
@@ -2155,7 +2155,7 @@ class SpatialRatesResult(SpatialResultMixin):
         A neuron is classified as a place cell if its spatial information
         meets the minimum threshold. This is the single-type boolean
         predicate ("is this a place cell") sibling of
-        :meth:`EgocentricRatesResult.classify` and
+        :meth:`ObjectVectorRatesResult.classify` and
         :meth:`ViewRatesResult.classify`.
 
         For multi-class labels (``"place"``/``"grid"``/``"border"``/
