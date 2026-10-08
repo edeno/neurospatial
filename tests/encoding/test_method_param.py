@@ -241,7 +241,8 @@ def test_method_in_projections(ovc_session):
         df = result.to_dataframe()
         assert "method" in df.columns and (df["method"] == "binned").all()
         table = result.summary_table()
-        assert "method" in table.columns and (table["method"] == "binned").all()
+        assert "method" not in table.columns
+        assert table.attrs["method"] == "binned"
 
 
 def test_method_in_xarray_attrs(ovc_session):

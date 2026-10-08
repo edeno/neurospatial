@@ -480,7 +480,21 @@ class DirectionalRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> table = result.summary_table()  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
         """
         return _directional_summary_frame(self, index=self._row_unit_ids().tolist())
 

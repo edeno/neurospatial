@@ -811,7 +811,20 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         Examples
         --------
-        >>> table = result.summary_table()  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
         """
         return _spatial_summary_frame(
             self,

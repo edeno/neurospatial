@@ -320,7 +320,21 @@ class ViewRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> table = result.summary_table()  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
         """
         return _view_summary_frame(self, index=self._row_unit_ids().tolist())
 
@@ -1659,7 +1673,7 @@ def compute_view_rates(
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
     >>> summary.shape
-    (3, 6)
+    (3, 5)
     >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
     >>> len(df) == 3 * env.n_bins

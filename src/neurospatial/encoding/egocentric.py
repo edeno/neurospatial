@@ -288,7 +288,24 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> table = result.summary_table()  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
         """
         return _object_vector_summary_frame(self, index=self._row_unit_ids().tolist())
 

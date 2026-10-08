@@ -84,6 +84,8 @@
 
 ### Fixed — documentation
 
+- Document singular/population table parity, readable column order, units/threshold metadata and singular xarray identity. The quickstart covers native 1D rate plots; animation guidance explains explicit overwrite opt-in and the current HTML numeric-colorbar limitation with an executable static-scale/timestamp-label recovery. Posterior plotting help records the centered continuous and short-clock edge conventions.
+
 - Include required unit labels in the manual `SimulationSession` constructor example.
 
 - Teach explicit simulator/NWB holder attributes and a complete file → selected epochs → population fields → decoder → summary/overlay workflow. A synthetic HDF5 example executes the published NWB recipe after file close with physical units, nondefault unit IDs and two analysis epochs; synchronized tutorials preserve the simulation-duration contract.

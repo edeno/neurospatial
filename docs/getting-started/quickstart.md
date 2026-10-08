@@ -71,16 +71,22 @@ argument; a tracking object cannot replace the timestamp array.
 numbers, then plot the map:
 
 ```python
-# Scalar headline metrics as a plain dict.
+# Scalar headline metrics include peak_firing_rate, spatial_info and sparsity.
 print(result.summary())
 # -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~9.3 Hz,
-#    ~300 s total occupancy (exact values depend on the simulation).
+#    spatial_info in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
 print("Spatial information (bits/spike):", result.spatial_information())
 print("Place candidate (information screen):", result.is_place_cell(criterion="spatial_info"))
 print("Has a detected field:", result.has_place_field())
+
+# One-row table has the same columns as a population rate table.
+table = result.summary_table()
+print(table)
+print("Metric units:", table.attrs["units"])
+print("Heuristic thresholds:", table.attrs["classification_thresholds"])
 
 # Plot the firing-rate map; returns a Matplotlib Axes you can further style.
 ax = result.plot()
@@ -98,6 +104,25 @@ circularly shifted spike trains. Call
 `is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
 for that verdict using the raw arrays. It costs about 1000 map recomputes by
 default. Results offer screens and field detection; they keep no raw arrays.
+
+### Native 1D fields
+
+Native 1D grids and graph tracks both support rate plots. A native grid plots
+firing rate in Hz over physical bin coordinates. Pass simulator arrays and
+labels explicitly, then choose a population row or its singular result:
+
+```python
+from neurospatial import compute_spatial_rates
+from neurospatial.simulation import linear_track_session
+
+sim = linear_track_session(duration=60, n_place_cells=3, seed=0)
+track_rates = compute_spatial_rates(
+    sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
+)
+ax = track_rates.plot(idx=0)  # Same field as track_rates[0].plot().
+ax.set_title(f"Unit {track_rates.unit_ids[0]}: native 1D firing rate")
+plt.show()
+```
 
 ## What just happened
 

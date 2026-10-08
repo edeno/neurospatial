@@ -514,7 +514,21 @@ class SpatialResultMixin(ResultMixin):
 
         Examples
         --------
-        >>> dataset = result.to_xarray()  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> single = result[0]
+        >>> dataset = single.to_xarray()  # doctest: +SKIP
+        >>> dataset.sizes["unit_id"]  # doctest: +SKIP
+        1
         """
         from neurospatial._results import build_population_dataset
 

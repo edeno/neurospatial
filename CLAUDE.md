@@ -111,10 +111,17 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 - **`summary_table()`** → **one row per unit**, **`unit_id`-indexed**, scalar
   metric columns (peak location/rate, spatial info, grid/border score, cell
   type, preferred direction/distance). The default a 1000-unit user wants.
-  Accepts an optional `unit_ids=` to relabel the index.
+  Singular and population rate results have identical columns. Population
+  tables accept `unit_ids=` to relabel the index. Constant `method`, physical
+  `units`, and `classification_thresholds` live in `df.attrs`; object-vector
+  tables also record `direction_frame` there. Primary metrics come first and
+  classification last, so both remain visible in truncated tables.
 - **`to_xarray()`** → labeled **`xr.Dataset`** (requires the optional `xarray`
   extra). **Two distinct shapes — never conflate them:**
-  - **Population rate results** → dims `("unit_id", "bin")`; `unit_id` is the
+  - **All rate results** → dims `("unit_id", "bin")`; singular results have
+    a one-unit axis. A standalone result without `unit_id` uses `<NA>`;
+    supply a label or index a population result for NetCDF-safe identity.
+    `unit_id` is the
     index coord (the real `result.unit_ids` labels — `.sel(unit_id=…)` selects
     by label), `bin_center_x`/`y`/`z` (or `bin_center_distance`/`angle` for
     polar/directional) are non-index coords on `bin`. Duplicate `unit_ids`
@@ -122,7 +129,10 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
   - **Decode results** (`DecodingResult`) → dims `("time", "bin")` (posterior
     over space per time bin; **no `unit_id` axis**). `attrs` carry
     `units` (when set) / env fingerprint / `software_version`.
-- **`summary()`** → flat dict of scalar headline metrics.
+- **`summary()`** → flat dict of scalar headline metrics. Population rates
+  name `n_units` and `max_peak_firing_rate`; `total_occupancy` counts the shared
+  occupancy map once. Singular rates keep `peak_firing_rate` and add cheap
+  information, sparsity or directional metrics for their family.
 - **`plot(ax=None, ...)`** → returns the `Axes`.
 - PSTH results (`PeriEventResult`, `PopulationPeriEventResult`) carry
   `ResultMixin` and implement `to_dataframe()` / `summary()` / `plot()`, plus
@@ -347,7 +357,7 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 env.clear_cache()  # Required before parallel rendering
 env.animate_fields(
     fields, frame_times=frame_times, speed=1.0,
-    backend="video", save_path="animation.mp4", n_workers=4
+    backend="video", save_path="animation.mp4", overwrite=True, n_workers=4
 )
 ```
 

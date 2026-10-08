@@ -516,7 +516,7 @@ def render_html(
         (smaller HTML, suitable for 500+ frames).
     frames_dir : str or Path or None, optional
         Directory to write frames when embed=False. Defaults to a sibling
-        directory based on save_path name (e.g., "animation_frames/").
+        directory based on save_path name (e.g., "animation/").
     n_workers : int or None, optional
         Number of parallel workers for frame rendering (embed=False only).
         Defaults to CPU count / 2.
