@@ -11,19 +11,38 @@ from scipy.stats import pearsonr
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
-    from neurospatial import Environment
     from neurospatial.simulation.session import SimulationSession
 
 
+def _select_unit_indices(
+    session: SimulationSession, unit_ids: list[int] | None
+) -> list[int]:
+    """Resolve unit labels to aligned spike/model rows."""
+    from neurospatial.simulation.session import SimulationSession
+
+    if not isinstance(session, SimulationSession):
+        raise TypeError(
+            f"session must be a SimulationSession instance, got {type(session).__name__}.\n"
+            "Why: validation and plotting need the simulator's ground truth.\n"
+            "Fix: pass the holder returned by simulate_session() or open_field_session()."
+        )
+    if unit_ids is None:
+        return list(range(len(session.unit_ids)))
+    valid_ids = session.unit_ids.tolist()
+    unknown = [label for label in unit_ids if label not in valid_ids]
+    if unknown:
+        raise ValueError(
+            f"unit_ids contains unknown labels {unknown}. Valid labels: {valid_ids}.\n"
+            "Why: unit_ids selects labels, not row indices.\n"
+            "Fix: choose unit_ids from session.unit_ids."
+        )
+    return [valid_ids.index(label) for label in unit_ids]
+
+
 def validate_simulation(
-    session: SimulationSession | None = None,
+    session: SimulationSession,
     *,
-    env: Environment | None = None,
-    spike_times: list[NDArray[np.float64]] | None = None,
-    positions: NDArray[np.float64] | None = None,
-    times: NDArray[np.float64] | None = None,
-    ground_truth: dict[str, Any] | None = None,
-    cell_indices: list[int] | None = None,
+    unit_ids: list[int] | None = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     max_center_error: float | None = None,
     min_correlation: float | None = None,
@@ -38,20 +57,11 @@ def validate_simulation(
 
     Parameters
     ----------
-    session : SimulationSession | None, optional
-        Complete simulation session. If provided, extracts all needed parameters.
-    env : Environment | None, optional
-        Spatial environment (required if session not provided).
-    spike_times : list[NDArray[np.float64]] | None, optional
-        List of spike time arrays (required if session not provided).
-    positions : NDArray[np.float64] | None, optional
-        Trajectory positions, shape (n_time, n_dims) (required if session not provided).
-    times : NDArray[np.float64] | None, optional
-        Time points, shape (n_time,) (required if session not provided).
-    ground_truth : dict[str, Any] | None, optional
-        Ground truth parameters for each cell (required if session not provided).
-    cell_indices : list[int] | None, optional
-        Indices of cells to validate. If None, validates all cells.
+    session : SimulationSession
+        Simulated recording with spikes, tracking and ground truth.
+    unit_ids : list[int] | None, optional
+        Unit labels from session.unit_ids to validate, in requested order.
+        None validates all units.
     method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
         Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
@@ -86,7 +96,7 @@ def validate_simulation(
     Raises
     ------
     ValueError
-        If neither session nor all individual parameters are provided.
+        If unit_ids contains unknown labels.
     ValueError
         If ground_truth is missing or incomplete.
 
@@ -140,7 +150,7 @@ def validate_simulation(
 
     >>> results = validate_simulation(  # doctest: +SKIP
     ...     session,
-    ...     cell_indices=[0, 1, 2],  # Only first 3 cells
+    ...     unit_ids=[0, 1, 2],  # Only first 3 cells
     ...     show_plots=True,
     ... )  # results['plots'] contains matplotlib figure
 
@@ -176,46 +186,13 @@ def validate_simulation(
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
 
-    # Parse input parameters
-    if session is not None:
-        # Import here to avoid circular dependency
-        from neurospatial.simulation.session import SimulationSession
-
-        # Validate session type (proper isinstance check)
-        if not isinstance(session, SimulationSession):
-            raise TypeError(
-                f"session must be a SimulationSession instance, got {type(session).__name__}"
-            )
-
-        env = session.env
-        spike_times = session.spike_times
-        positions = session.positions
-        times = session.times
-        ground_truth = session.ground_truth
-    elif (
-        env is None
-        or spike_times is None
-        or positions is None
-        or times is None
-        or ground_truth is None
-    ):
-        raise ValueError(
-            "Must provide either 'session' or all of "
-            "('env', 'spike_times', 'positions', 'times', 'ground_truth')"
-        )
-
-    # Determine which cells to validate
+    cell_indices = _select_unit_indices(session, unit_ids)
+    env = session.env
+    spike_times = session.spike_times
+    positions = session.positions
+    times = session.times
+    ground_truth = session.ground_truth
     n_cells = len(spike_times)
-    if cell_indices is None:
-        cell_indices = list(range(n_cells))
-    else:
-        # Validate cell_indices range
-        invalid_indices = [idx for idx in cell_indices if idx < 0 or idx >= n_cells]
-        if invalid_indices:
-            raise ValueError(
-                f"cell_indices contains invalid indices {invalid_indices}. "
-                f"Valid range is [0, {n_cells - 1}] for {n_cells} cells."
-            )
 
     # Set default thresholds
     if max_center_error is None:
@@ -265,11 +242,12 @@ def validate_simulation(
         detected_center = env.bin_centers[peak_bin]
 
         # Get ground truth center
-        cell_key = cell_idx
+        cell_key = int(session.unit_ids[cell_idx])
         if cell_key not in ground_truth:
             raise ValueError(
-                f"Ground truth missing for {cell_key}. "
-                f"Available keys: {list(ground_truth.keys())}"
+                f"ground_truth missing for unit_id {cell_key}. "
+                f"Available keys: {list(ground_truth.keys())}.\n"
+                "Fix: supply ground_truth keyed by every selected session.unit_ids label."
             )
 
         gt = ground_truth[cell_key]
@@ -456,7 +434,8 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
 
 def plot_session_summary(
     session: SimulationSession,
-    cell_ids: list[int] | None = None,
+    *,
+    unit_ids: list[int] | None = None,
     figsize: tuple[float, float] = (15, 10),
 ) -> tuple[Figure, NDArray]:
     """Create comprehensive visualization of simulation session.
@@ -469,8 +448,8 @@ def plot_session_summary(
     ----------
     session : SimulationSession
         Complete simulation session from simulate_session().
-    cell_ids : list[int] | None, optional
-        Specific cells to plot rate maps for. If None, plots first 6 cells
+    unit_ids : list[int] | None, optional
+        Unit labels from session.unit_ids to plot. If None, plots first 6 units
         (or fewer if session has < 6 cells). Default: None.
     figsize : tuple[float, float], optional
         Figure size in inches (width, height). Default: (15, 10).
@@ -487,7 +466,7 @@ def plot_session_summary(
     TypeError
         If session is not a SimulationSession instance.
     ValueError
-        If cell_ids contains indices outside valid range [0, n_cells-1].
+        If unit_ids contains unknown labels.
 
     Examples
     --------
@@ -517,7 +496,7 @@ def plot_session_summary(
     Plot specific cells:
 
     >>> fig, axes = plot_session_summary(
-    ...     session, cell_ids=[0, 5, 10, 15]
+    ...     session, unit_ids=[0, 5, 10, 15]
     ... )  # doctest: +SKIP
     ... # Shows rate maps for cells 0, 5, 10, 15 only
 
@@ -557,45 +536,25 @@ def plot_session_summary(
 
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
-    from neurospatial.simulation.session import SimulationSession
 
-    # Validate session type
-    if not isinstance(session, SimulationSession):
-        raise TypeError(
-            f"session must be a SimulationSession instance, got {type(session).__name__}. "
-            f"Create a session using simulate_session() or SimulationSession(...)"
+    cell_indices = _select_unit_indices(session, unit_ids)
+    if unit_ids is None:
+        cell_indices = cell_indices[:6]
+    elif len(cell_indices) > 6:
+        import warnings
+
+        warnings.warn(
+            f"unit_ids has {len(cell_indices)} units. Only first 6 will be plotted.",
+            UserWarning,
+            stacklevel=2,
         )
+        cell_indices = cell_indices[:6]
 
-    # Extract session data
     env = session.env
     positions = session.positions
     times = session.times
     spike_trains = session.spike_times
     n_cells = len(spike_trains)
-
-    # Determine which cells to plot
-    if cell_ids is None:
-        # Default to first 6 cells (or fewer if session has < 6)
-        cell_ids = list(range(min(6, n_cells)))
-    else:
-        # Validate cell_ids range
-        invalid_ids = [cid for cid in cell_ids if cid < 0 or cid >= n_cells]
-        if invalid_ids:
-            raise ValueError(
-                f"cell_ids contains invalid indices {invalid_ids}. "
-                f"Valid range is [0, {n_cells - 1}] for {n_cells} cells."
-            )
-
-    # Limit to 6 cells for visualization clarity
-    if len(cell_ids) > 6:
-        import warnings
-
-        warnings.warn(
-            f"cell_ids has {len(cell_ids)} cells. Only first 6 will be plotted.",
-            UserWarning,
-            stacklevel=2,
-        )
-        cell_ids = cell_ids[:6]
 
     # Create figure with GridSpec for flexible layout
     fig = plt.figure(figsize=figsize)
@@ -653,12 +612,13 @@ Traj: {metadata.get("trajectory_method", "ou")}
     )
 
     # Plots 3-8: Rate maps for selected cells
-    for i, cell_id in enumerate(cell_ids):
+    for i, cell_idx in enumerate(cell_indices):
+        cell_id = int(session.unit_ids[cell_idx])
         if i >= len(axes_rates):
             break
 
         ax = axes_rates[i]
-        spike_times = spike_trains[cell_id]
+        spike_times = spike_trains[cell_idx]
 
         if len(spike_times) == 0:
             # Empty spike train
@@ -729,7 +689,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
                 ax.set_ylabel("Rate (Hz)")
 
     # Hide unused rate map subplots
-    for i in range(len(cell_ids), len(axes_rates)):
+    for i in range(len(cell_indices), len(axes_rates)):
         axes_rates[i].axis("off")
 
     # Plot 9: Raster plot
@@ -741,7 +701,8 @@ Traj: {metadata.get("trajectory_method", "ou")}
             )
 
     ax_raster.set_xlabel("Time (s)")
-    ax_raster.set_ylabel("Cell ID")
+    ax_raster.set_ylabel("Unit ID")
+    ax_raster.set_yticks(np.arange(n_cells), labels=session.unit_ids)
     ax_raster.set_title("Raster Plot", fontweight="bold")
     ax_raster.set_xlim(times[0], times[-1])
     ax_raster.set_ylim(-0.5, n_cells - 0.5)

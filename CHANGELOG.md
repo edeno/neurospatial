@@ -26,6 +26,8 @@
 
 ### Changed
 
+- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
+
 - **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
 
 - **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
