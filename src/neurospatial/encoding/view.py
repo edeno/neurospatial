@@ -419,7 +419,8 @@ class ViewRateResult(SpatialResultMixin):
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        or is_spatial_view_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
 
         Unlike head direction cells which use both mean vector length and
         Rayleigh test, view cell classification is typically based solely
@@ -966,7 +967,8 @@ class ViewRatesResult(SpatialResultMixin):
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        or is_spatial_view_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
 
         Uses vectorized computation of view_spatial_information() for
         efficiency with large populations.

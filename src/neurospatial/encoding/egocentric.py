@@ -433,8 +433,10 @@ class ObjectVectorRateResult(SpatialResultMixin):
         in the seeded 10-minute fixture. Low counts can resemble tuning.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
-        For a shuffle test, call object_vector_cell_significance (allocentric) or egocentric_object_vector_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
+        egocentric_object_vector_cell_significance(...) (egocentric)
+        or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
 
         **Object-vector vs place cells**: Both may show high spatial
         information. Compare polar tuning in the appropriate direction frame
@@ -473,6 +475,17 @@ class ObjectVectorRateResult(SpatialResultMixin):
         True
         >>> result.is_object_vector_cell(min_info=0.5)
         True
+
+        Uniform random spikes passing this screen illustrate finite-count
+        information bias, rather than an object-vector cell identity.
+        The allocentric circular-shift verdict tests the same untuned train:
+
+        >>> from neurospatial.encoding import is_object_vector_cell
+        >>> is_object_vector_cell(
+        ...     None, spike_times, times, positions, object_positions,
+        ...     criterion="shuffle", n_shuffles=50, rng=0,
+        ... )
+        False
 
         See Also
         --------
@@ -1019,8 +1032,10 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         in the seeded 10-minute fixture. Low counts can resemble tuning.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
-        For a shuffle test, call object_vector_cell_significance (allocentric) or egocentric_object_vector_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
+        egocentric_object_vector_cell_significance(...) (egocentric)
+        or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
 
         Uses vectorized computation of spatial_information() for
         efficiency with large populations.

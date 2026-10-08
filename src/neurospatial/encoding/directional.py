@@ -883,11 +883,12 @@ class DirectionalRateResult(SpatialResultMixin):
         minutes (about 30, 60, 150, 300 and 600 spikes). This is empirical
         evidence, not calibration for another occupancy distribution.
         Related plug-in information has approximate upward bias
-        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-
-        shift test and its assumptions rather than relying on the screen.
+        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
+        test and its assumptions rather than relying on the screen.
         None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
         For a shuffle test, call head_direction_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        or is_head_direction_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
         """
         min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
         alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
@@ -1527,11 +1528,12 @@ class DirectionalRatesResult(SpatialResultMixin):
         minutes (about 30, 60, 150, 300 and 600 spikes). This is empirical
         evidence, not calibration for another occupancy distribution.
         Related plug-in information has approximate upward bias
-        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-
-        shift test and its assumptions rather than relying on the screen.
+        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
+        test and its assumptions rather than relying on the screen.
         None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
         For a shuffle test, call head_direction_cell_significance(...)
-        with the raw arrays; a result does not keep the arrays it was computed from.
+        or is_head_direction_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
         """
         min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
         alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
