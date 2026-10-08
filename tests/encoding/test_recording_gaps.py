@@ -94,7 +94,8 @@ def test_spatial_all_methods_recover_rate(two_epoch_recording, method):
     assert result.occupancy.sum() == pytest.approx(199.96, abs=1e-6)
 
 
-def test_is_place_cell_forwards_time_windows(continuous_recording, monkeypatch):
+@pytest.mark.parametrize("name", ["has_place_field", "is_place_cell"])
+def test_place_predicates_forward_time_windows(continuous_recording, monkeypatch, name):
     import neurospatial.encoding.spatial as spatial
 
     r = continuous_recording
@@ -107,7 +108,7 @@ def test_is_place_cell_forwards_time_windows(continuous_recording, monkeypatch):
         return result
 
     monkeypatch.setattr(spatial, "compute_spatial_rate", track_rate)
-    answer = spatial.is_place_cell(
+    answer = getattr(spatial, name)(
         r.env,
         r.spike_times,
         r.times,
@@ -115,6 +116,7 @@ def test_is_place_cell_forwards_time_windows(continuous_recording, monkeypatch):
         epochs=[(0, 100)],
         spike_window=(0, 1200),
         max_gap=1.0,
+        **({"criterion": "spatial_info"} if name == "is_place_cell" else {}),
     )
     kwargs, result = seen[0]
     assert kwargs["epochs"] == [(0, 100)]

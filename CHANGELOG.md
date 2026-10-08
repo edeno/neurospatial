@@ -14,6 +14,8 @@
 
 ### Changed
 
+- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
+
 - Default `ObjectVectorCellModel` to allocentric direction tuning without headings. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
 
 - Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
@@ -45,6 +47,8 @@
 - Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
 
 ### Removed
+
+- Remove the deprecated `detect_cell_types`, `detect_hd_cells`, `detect_view_cells` and `detect_ovcs` methods; use `label_cell_types` or `classify`.
 
 - Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
 

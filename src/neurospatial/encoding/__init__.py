@@ -111,6 +111,7 @@ from neurospatial.encoding.spatial import (
     compute_spatial_rate,
     compute_spatial_rates,
     detect_place_fields,
+    has_place_field,
     is_place_cell,
     place_cell_significance,
 )
@@ -192,6 +193,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_field_emd",
     "detect_place_fields",
     "is_place_cell",
+    "has_place_field",
     "rate_map_centroid",
     "field_shape_metrics",
     "field_shift_distance",
