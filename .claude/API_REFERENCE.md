@@ -292,6 +292,17 @@ from neurospatial.encoding import (
     ObjectVectorRateResult,                   # Result with preferred_distance(), preferred_direction()
     ObjectVectorRatesResult,                  # Population result
 
+    # Field detection and explicit cell criteria
+    has_place_field,                        # A detected field, not cell identity
+    is_place_cell,                          # Required criterion="spatial_info" | "shuffle"
+    is_head_direction_cell,                 # Default threshold screen or opt-in shuffle
+    is_spatial_view_cell,                   # Default threshold screen or opt-in shuffle
+    place_cell_significance,                # Population circular shifts, spatial info
+    head_direction_cell_significance,       # Population circular shifts, MVL
+    spatial_view_cell_significance,         # Population circular shifts, view info
+    object_vector_cell_significance,        # Allocentric polar information
+    egocentric_object_vector_cell_significance, # Heading-relative polar information
+
     # Metrics (available on result objects or standalone)
     spatial_information,                    # Spatial info (bits/spike)
     sparsity,                               # Spatial sparsity
@@ -306,6 +317,21 @@ from neurospatial.encoding import (
     compute_viewshed,                       # Compute visible bins
 )
 ```
+
+The five significance functions take their family's raw positional arrays and
+explicit encoder keywords plus `unit_ids`, `n_shuffles=1000`, `min_shift=20.0`
+and `rng`. They return `{unit_label: ShuffleTestResult}` in input order; compare
+`p_value < alpha` (default level 0.05). Matching integer seeds and labels preserve
+single/population/reordered streams. They copy array inputs before recomputing
+and shift only inside the observed encoder's valid recording runs. Place GLM
+significance raises because pooled REML couples the units.
+
+Free predicates accept `criterion="shuffle"`, `alpha`, `n_shuffles`, `min_shift`,
+`rng` and `unit_id`. Other-mode keywords raise rather than being ignored.
+Thresholds are `min_info` (place 0.5, view 0.5, both object frames 0.3) or
+`min_mvl` (HD 0.4); HD's `alpha` applies in both modes. Method thresholds are
+keyword-only and resolve `None` through named read-only constants. Methods and
+`classify` have threshold criteria only and do not store input arrays.
 
 ### Backend Parameter
 
@@ -600,6 +626,7 @@ from neurospatial.stats.shuffle import (
     shuffle_posterior_weighted_circular,  # Weighted circular posterior
     shuffle_trials,                 # Shuffle trial labels
     shuffle_spikes_isi,             # Shuffle inter-spike intervals
+    shuffle_spike_times_circular,   # Shift a train on joined valid windows
 
     # P-value computation
     compute_shuffle_pvalue,         # P-value from null distribution

@@ -127,13 +127,26 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 
 - **Single-unit predicate:** free functions and result methods share each
   family's threshold rule. The shipped free predicates are exactly
-  `is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`
+  `is_place_cell` (required `criterion="spatial_info" | "shuffle"`),
+  `is_head_direction_cell`, `is_object_vector_cell`
   (allocentric), `is_egocentric_object_vector_cell`, and
   `is_spatial_view_cell`. There are **no** `is_border_cell` / `is_grid_cell`
   predicates — `border` and `grid` are reachable only as *labels* via
   `SpatialRatesResult.label_cell_types()` (see below), not as predicate
   functions. Object-vector results use `is_object_vector_cell()` in their
   recorded `direction_frame`; they have no separate egocentric method.
+- **Field detection:** `has_place_field` (free and method) keeps the detector's
+  behavior; a detected field is not a cell-type verdict.
+- **Raw-array shuffle computations:** `place_cell_significance`,
+  `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and `egocentric_object_vector_cell_significance`
+  return label-keyed `ShuffleTestResult` objects. Free cell predicates accept
+  `criterion="shuffle"`; seeded streams agree across single/population calls
+  when `unit_id` matches. Wrong-mode keywords raise together.
+- **Result methods and batch classifiers:** threshold screens only; results
+  keep no raw input arrays or recompute closures. Threshold defaults resolve
+  from private read-only family constants, with inclusive `>=` comparisons
+  (Rayleigh p-values remain `< alpha`).
 - **Batch boolean predicate:** `result.classify(*, ...) -> NDArray[bool]` on
   every plural result class — a **single-type** is-this-cell-type predicate.
 - **Batch multi-class labeler:** `SpatialRatesResult.label_cell_types(*, ...)
@@ -267,6 +280,9 @@ result = compute_spatial_rate(
     fill_value=0.0,  # Replace any NaN bins with 0 Hz for the decoding golden path
 )
 firing_rate = result.firing_rate  # Access firing rate from result object
+has_field = result.has_place_field()  # Field detection, not cell identity
+candidate = result.is_place_cell(criterion="spatial_info")  # Fast, biased screen
+# For a shuffle verdict use is_place_cell(..., criterion="shuffle") on raw arrays.
 
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 # Result also has: result.occupancy, result.env, result.spatial_information(), etc.

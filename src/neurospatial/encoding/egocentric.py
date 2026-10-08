@@ -41,9 +41,9 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -60,6 +60,11 @@ from neurospatial.encoding._binning import (
 from neurospatial.encoding._egocentric_binning import (
     _object_vector_interval_mask as _object_vector_interval_mask,
 )
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+)
 from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
@@ -69,6 +74,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 __all__ = [
@@ -81,11 +87,16 @@ __all__ = [
     "compute_object_vector_rate",
     "compute_object_vector_rates",
     # Convenience functions
+    "egocentric_object_vector_cell_significance",
     "is_egocentric_object_vector_cell",
     "is_object_vector_cell",
+    "object_vector_cell_significance",
     "object_vector_score",
     "plot_object_vector_tuning",
 ]
+
+
+OBJECT_VECTOR_THRESHOLDS = MappingProxyType({"min_info": 0.3})
 
 
 @dataclass(frozen=True, repr=False)
@@ -390,50 +401,43 @@ class ObjectVectorRateResult(SpatialResultMixin):
         occupancy = _to_numpy(self.occupancy)
         return spatial_information(firing_rate, occupancy)
 
-    def is_object_vector_cell(self, min_info: float = 0.3) -> bool:
+    def is_object_vector_cell(self, *, min_info: float | None = None) -> bool:
         """Classify as object-vector cell based on spatial information in the recorded frame.
 
         Tests object-vector tuning in ``result.direction_frame``.
 
         A neuron is classified as a candidate in the recorded frame if its
-        spatial information exceeds the minimum threshold. OVCs fire when the
+        spatial information meets or exceeds the minimum threshold. OVCs fire when the
         animal is at a specific distance and direction from an object.
 
         Parameters
         ----------
-        min_info : float, default=0.3
+        min_info : float or None, default=None
             Minimum spatial information in the recorded frame threshold in bits/spike.
 
-            **How was 0.3 chosen?**
-
-            This threshold is based on values reported in rodent entorhinal
-            cortex studies (Hoydal et al., 2019). The lower threshold compared
-            to spatial view cells (0.5) reflects that:
-
-            - Egocentric polar coordinates have sparser sampling
-            - Object-vector fields can be broader than place fields
-            - The information calculation is sensitive to bin count
-
-            Empirically:
-
-            - Strong OVCs: 0.5-1.5+ bits/spike
-            - Moderate OVCs: 0.3-0.5 bits/spike
-            - Weak/non-OVCs: < 0.3 bits/spike
-
-            **When to adjust:**
-
-            - Different brain regions: May need 0.2-0.5
-            - Different bin counts: Fewer bins → higher info, adjust accordingly
-            - Noisy recordings: Consider 0.2 (more permissive)
-            - Publication quality: Use 0.5 or higher (more conservative)
 
         Returns
         -------
         bool
-            True if spatial_information() > min_info, False otherwise.
+            True if spatial_information() >= min_info, False otherwise.
 
         Notes
         -----
+        The 0.3 bits/spike default is this library's screening heuristic.
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
+        egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
+        0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
+        150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
+        and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
+        in the seeded 10-minute fixture. Low counts can resemble tuning.
+        For publication, report a circular-shift test and its assumptions.
+        None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
+        For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
+        egocentric_object_vector_cell_significance(...) (egocentric)
+        or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
+
         **Object-vector vs place cells**: Both may show high spatial
         information. Compare polar tuning in the appropriate direction frame
         with a Cartesian position map; an egocentric map is appropriate only
@@ -472,11 +476,31 @@ class ObjectVectorRateResult(SpatialResultMixin):
         >>> result.is_object_vector_cell(min_info=0.5)
         True
 
+        Uniform random spikes passing this screen illustrate finite-count
+        information bias, rather than an object-vector cell identity.
+        The allocentric circular-shift verdict tests the same untuned train:
+
+        >>> from neurospatial.encoding import is_object_vector_cell
+        >>> is_object_vector_cell(
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     object_positions,
+        ...     criterion="shuffle",
+        ...     n_shuffles=50,
+        ...     rng=0,
+        ... )
+        False
+
         See Also
         --------
         spatial_information : Compute the metric used for classification
         """
-        return self.spatial_information() > min_info
+        min_info = (
+            OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
+        )
+        return self.spatial_information() >= min_info
 
 
 @dataclass(frozen=True, repr=False)
@@ -981,18 +1005,18 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
-    def classify(self, *, min_info: float = 0.3) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as object-vector cells.
 
         Tests object-vector tuning in ``result.direction_frame``.
 
         A neuron is classified as a candidate in the recorded frame if its
-        spatial information exceeds the minimum threshold. This is the
+        spatial information meets or exceeds the minimum threshold. This is the
         single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
         ----------
-        min_info : float, default=0.3
+        min_info : float or None, default=None
             Minimum spatial information in the recorded frame threshold in bits/spike.
             See ObjectVectorRateResult.is_object_vector_cell() for threshold rationale.
 
@@ -1004,6 +1028,21 @@ class ObjectVectorRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        The 0.3 bits/spike default is this library's screening heuristic.
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
+        egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
+        0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
+        150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
+        and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
+        in the seeded 10-minute fixture. Low counts can resemble tuning.
+        For publication, report a circular-shift test and its assumptions.
+        None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
+        For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
+        egocentric_object_vector_cell_significance(...) (egocentric)
+        or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
+
         Uses vectorized computation of spatial_information() for
         efficiency with large populations.
 
@@ -1036,32 +1075,11 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         ObjectVectorRateResult.is_object_vector_cell : Single-neuron classification
         spatial_information : The metric used for classification
         """
-        info = self.spatial_information()
-        return info > min_info
-
-    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
-        """Deprecated alias for :meth:`classify`.
-
-        .. deprecated:: 0.6
-            ``detect_ovcs`` is deprecated since 0.6; use
-            :meth:`classify` instead. Removed in 0.7.
-
-        Parameters
-        ----------
-        min_info : float, default=0.3
-            Minimum spatial information in the recorded frame threshold in bits/spike.
-
-        Returns
-        -------
-        ndarray, shape (n_neurons,)
-            Boolean array where True indicates an object-vector cell.
-        """
-        warnings.warn(
-            "detect_ovcs is deprecated since 0.6, use classify; removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
+        min_info = (
+            OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        return self.classify(min_info=min_info)
+        info = self.spatial_information()
+        return info >= min_info
 
     def summary_table(
         self,
@@ -1715,6 +1733,28 @@ def compute_object_vector_rate(
     )
 
 
+def _validate_object_vector_metric(
+    env: Environment | None, metric: str, *, context: str
+) -> None:
+    """Validate public metric choices before coordinate construction."""
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            _format_error(
+                f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
+                why="Why: nearest-object distance uses a straight line or the environment graph",
+                fix="pass metric='euclidean', or metric='geodesic' with a fitted env",
+            )
+        )
+    if metric == "geodesic" and env is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: metric='geodesic' requires env parameter.",
+                why="Why: geodesic distance needs the environment's connectivity graph",
+                fix="pass a fitted env, or use metric='euclidean' with env=None",
+            )
+        )
+
+
 def _object_vector_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -1784,19 +1824,7 @@ def _object_vector_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    # Validate metric
-    valid_metrics = {"euclidean", "geodesic"}
-    if metric not in valid_metrics:
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
-        )
-
-    # Validate env requirement for geodesic
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
+    _validate_object_vector_metric(env, metric, context=context)
 
     _validate_smoothing_parameters(method, bandwidth)
 
@@ -2470,19 +2498,7 @@ def _object_vector_rates(
 
     _validate_smoothing_parameters(method, bandwidth)
 
-    # Validate metric
-    valid_metrics = {"euclidean", "geodesic"}
-    if metric not in valid_metrics:
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
-        )
-
-    # Validate env requirement for geodesic
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
+    _validate_object_vector_metric(env, metric, context=context)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
@@ -2781,12 +2797,19 @@ def object_vector_score(
 
 
 def is_object_vector_cell(
-    env: Environment,
+    env: Environment | None,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
+    criterion: Literal["threshold", "shuffle"] = "threshold",
+    min_info: float | None = None,
+    alpha: float | None = None,
+    n_shuffles: int | None = None,
+    min_shift: float | None = None,
+    rng: np.random.Generator | int | None = None,
+    unit_id: Hashable | None = None,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
@@ -2798,46 +2821,41 @@ def is_object_vector_cell(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
-    min_info: float = 0.3,
 ) -> bool:
-    """Quick check: Is this an object-vector cell?
-
-    For allocentric direction use ``is_object_vector_cell``; for bearing
-    relative to heading use ``is_egocentric_object_vector_cell``.
-
-    Convenience function for fast screening of neurons. Computes the allocentric
-    rate map for the supplied trajectory + spikes and classifies the cell as an
-    object-vector cell (OVC) using the spatial-information criterion.
-
-    This function delegates classification to
-    :meth:`ObjectVectorRateResult.is_object_vector_cell`, so the quick-check and
-    the result-object classification always agree: a neuron is an OVC when its
-    allocentric spatial information exceeds ``min_info`` (bits/spike).
-
-    For detailed metrics, use :func:`compute_object_vector_rate` and inspect
-    the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
-    etc.).
+    """Classify one neuron by the object_vector_cell screen or circular-shift test.
 
     Parameters
     ----------
-    env : Environment
-        Allocentric environment (used for geodesic metric and visualization).
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Spike times in seconds. Can be empty.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal position coordinates at each time sample.
-    object_positions : NDArray[np.float64], shape (n_objects, 2)
-        Object positions in allocentric coordinates.
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning.
+        (min_distance, max_distance) for allocentric binning. Distances outside
+        this range are not included in the rate map.
     n_distance_bins : int, default=10
-        Number of distance bins.
+        Number of distance bins in the allocentric polar grid.
     n_direction_bins : int, default=12
-        Number of direction bins (covers full circle).
+        Number of direction bins in the allocentric polar grid. Covers the
+        full circle (-π to π).
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric for computing distance to objects.
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -2856,35 +2874,76 @@ def is_object_vector_cell(
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
-        Estimator used for both the map and threshold verdict.
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for allocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
     bandwidth : float, default=5.0
-        Smoothing bandwidth for the chosen estimator.
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
     min_occupancy : float, default=0.0
-        Minimum dwell time (seconds) for a finite rate bin.
-    backend : {"numpy", "jax", "auto"}, default="numpy"
-        Array backend used by the encoder.
-    min_info : float, default=0.3
-        Minimum allocentric spatial information threshold in bits/spike.
-        Matches the default of
-        :meth:`ObjectVectorRateResult.is_object_vector_cell`.
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+
+    criterion : {"threshold", "shuffle"}, default="threshold"
+        Screen the observed statistic or test circular-shift significance.
+    min_info : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
 
     Returns
     -------
     bool
-        True if the neuron's allocentric spatial information exceeds
-        ``min_info``.
+        Whether the chosen criterion is met.
 
     Raises
     ------
     ValueError
-        If ``epochs`` or ``spike_window`` is malformed. The shared parser
-        reports all window problems together with an explanation and fix.
+        If the criterion, inputs, or mode-specific keywords are invalid.
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    The 0.3 bits/spike default is this library's screening heuristic.
+    Plug-in information is biased upward by approximately
+    (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
+    egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
+    0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
+    150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
+    and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
+    in the seeded 10-minute fixture. Low counts can resemble tuning.
+    For publication, report a circular-shift test and its assumptions.
+
+    Circular shifting costs about n_shuffles recomputes of the plural map.
+    Its null assumes stable firing statistics on the joined analyzed clock;
+    recording gaps and excluded epochs are never shift destinations.
+    Compare p_value < alpha; a significant association alone does not establish
+    cell identity. Results keep no raw arrays or recompute closures.
+    Threshold keywords belong only to the screen; shuffle keywords belong
+    only to the shuffle. Passing a keyword for the other mode raises.
+
+    See Also
+    --------
+    object_vector_cell_significance : Population significance on raw arrays.
+    compute_object_vector_rate : Compute the map without classification.
 
     Examples
     --------
@@ -2899,58 +2958,87 @@ def is_object_vector_cell(
     >>> result = is_object_vector_cell(None, spikes, times, positions, objects)
     >>> type(result)
     <class 'bool'>
-
-    See Also
-    --------
-    compute_object_vector_rate : Full rate computation
-    is_egocentric_object_vector_cell : Screen the other reference frame
-    object_vector_score : Compute OVC score from a tuning curve
-    ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
-
-    References
-    ----------
-    Høydal et al. (2019). Object-vector coding in the medial entorhinal
-    cortex. Nature, 568, 400-404. doi:10.1038/s41586-019-1077-7.
     """
-    try:
-        result = compute_object_vector_rate(
+    check_criterion(criterion, ("threshold", "shuffle"), call="is_object_vector_cell")
+    check_mode_keywords(
+        criterion,
+        threshold={"min_info": min_info},
+        shuffle={
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
+            "rng": rng,
+            "unit_id": unit_id,
+            "alpha": alpha,
+        },
+        call="is_object_vector_cell",
+    )
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = object_vector_cell_significance(
             env,
-            spike_times,
+            [spike_times],
             times,
             positions,
             object_positions,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
             backend=backend,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-        )
-    except ValueError as exc:
-        # Malformed windows are input errors, not negative classifications.
-        # Keep the shared normalizer's diagnostic and avoid parsing twice.
-        if str(exc).startswith("Invalid time window:"):
-            raise
-        return False
-    except RuntimeError:
-        return False
-
+        )[label]
+        return shuffle_result.p_value < level
+    min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
+    result = compute_object_vector_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+    )
     return result.is_object_vector_cell(min_info=min_info)
 
 
 def is_egocentric_object_vector_cell(
-    env: Environment,
+    env: Environment | None,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
+    criterion: Literal["threshold", "shuffle"] = "threshold",
+    min_info: float | None = None,
+    alpha: float | None = None,
+    n_shuffles: int | None = None,
+    min_shift: float | None = None,
+    rng: np.random.Generator | int | None = None,
+    unit_id: Hashable | None = None,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
@@ -2962,51 +3050,47 @@ def is_egocentric_object_vector_cell(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
-    min_info: float = 0.3,
 ) -> bool:
-    """Quick check: Is this an object-vector cell?
-
-    For allocentric direction use ``is_object_vector_cell``; for bearing
-    relative to heading use ``is_egocentric_object_vector_cell``.
-
-    Convenience function for fast screening of neurons. Computes the egocentric
-    rate map for the supplied trajectory + spikes and classifies the cell as an
-    object-vector cell (OVC) using the egocentric-spatial-information criterion.
-
-    This function delegates classification to
-    :meth:`ObjectVectorRateResult.is_object_vector_cell`, so the quick-check and
-    the result-object classification always agree: a neuron is an OVC when its
-    egocentric spatial information exceeds ``min_info`` (bits/spike).
-
-    For detailed metrics, use :func:`compute_egocentric_rate` and inspect
-    the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
-    etc.).
+    """Classify one neuron by the egocentric_object_vector_cell screen or circular-shift test.
 
     Parameters
     ----------
-    env : Environment
-        Allocentric environment (used for geodesic metric and visualization).
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Spike times in seconds. Can be empty.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal position coordinates at each time sample.
-    headings : NDArray[np.float64], shape (n_samples,)
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
         -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
-        transform is applied internally.
-    object_positions : NDArray[np.float64], shape (n_objects, 2)
-        Object positions in allocentric coordinates.
+        transform is applied internally; pass world-frame headings, not
+        animal-frame angles.
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning.
+        (min_distance, max_distance) for egocentric binning. Distances outside
+        this range are not included in the rate map.
     n_distance_bins : int, default=10
-        Number of distance bins.
+        Number of distance bins in the egocentric polar grid.
     n_direction_bins : int, default=12
-        Number of direction bins (covers full circle).
+        Number of direction bins in the egocentric polar grid. Covers the
+        full circle (-π to π).
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric for computing distance to objects.
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -3025,35 +3109,76 @@ def is_egocentric_object_vector_cell(
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
-        Estimator used for both the map and threshold verdict.
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for egocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
     bandwidth : float, default=5.0
-        Smoothing bandwidth for the chosen estimator.
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
     min_occupancy : float, default=0.0
-        Minimum dwell time (seconds) for a finite rate bin.
-    backend : {"numpy", "jax", "auto"}, default="numpy"
-        Array backend used by the encoder.
-    min_info : float, default=0.3
-        Minimum egocentric spatial information threshold in bits/spike.
-        Matches the default of
-        :meth:`ObjectVectorRateResult.is_object_vector_cell`.
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+
+    criterion : {"threshold", "shuffle"}, default="threshold"
+        Screen the observed statistic or test circular-shift significance.
+    min_info : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
 
     Returns
     -------
     bool
-        True if the neuron's egocentric spatial information exceeds
-        ``min_info``.
+        Whether the chosen criterion is met.
 
     Raises
     ------
     ValueError
-        If ``epochs`` or ``spike_window`` is malformed. The shared parser
-        reports all window problems together with an explanation and fix.
+        If the criterion, inputs, or mode-specific keywords are invalid.
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    The 0.3 bits/spike default is this library's screening heuristic.
+    Plug-in information is biased upward by approximately
+    (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
+    egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
+    0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
+    150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
+    and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
+    in the seeded 10-minute fixture. Low counts can resemble tuning.
+    For publication, report a circular-shift test and its assumptions.
+
+    Circular shifting costs about n_shuffles recomputes of the plural map.
+    Its null assumes stable firing statistics on the joined analyzed clock;
+    recording gaps and excluded epochs are never shift destinations.
+    Compare p_value < alpha; a significant association alone does not establish
+    cell identity. Results keep no raw arrays or recompute closures.
+    Threshold keywords belong only to the screen; shuffle keywords belong
+    only to the shuffle. Passing a keyword for the other mode raises.
+
+    See Also
+    --------
+    egocentric_object_vector_cell_significance : Population significance on raw arrays.
+    compute_egocentric_rate : Compute the map without classification.
 
     Examples
     --------
@@ -3070,48 +3195,73 @@ def is_egocentric_object_vector_cell(
     ... )
     >>> type(result)
     <class 'bool'>
-
-    See Also
-    --------
-    compute_egocentric_rate : Full rate computation
-    is_object_vector_cell : Screen the other reference frame
-    object_vector_score : Compute OVC score from a tuning curve
-    ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
-
-    References
-    ----------
-    Wang et al. (2018). Egocentric coding of external items in the lateral
-    entorhinal cortex. Science, 362, 945-949. doi:10.1126/science.aau4940.
     """
-    try:
-        result = compute_egocentric_rate(
+    check_criterion(
+        criterion, ("threshold", "shuffle"), call="is_egocentric_object_vector_cell"
+    )
+    check_mode_keywords(
+        criterion,
+        threshold={"min_info": min_info},
+        shuffle={
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
+            "rng": rng,
+            "unit_id": unit_id,
+            "alpha": alpha,
+        },
+        call="is_egocentric_object_vector_cell",
+    )
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = egocentric_object_vector_cell_significance(
             env,
-            spike_times,
+            [spike_times],
             times,
             positions,
             headings,
             object_positions,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
             backend=backend,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-        )
-    except ValueError as exc:
-        # Malformed windows are input errors, not negative classifications.
-        # Keep the shared normalizer's diagnostic and avoid parsing twice.
-        if str(exc).startswith("Invalid time window:"):
-            raise
-        return False
-    except RuntimeError:
-        return False
-
+        )[label]
+        return shuffle_result.p_value < level
+    min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
+    result = compute_egocentric_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+    )
     return result.is_object_vector_cell(min_info=min_info)
 
 
@@ -3224,3 +3374,552 @@ def plot_object_vector_tuning(
         plt.colorbar(mesh, ax=ax, label="Firing rate (Hz)")
 
     return ax
+
+
+def object_vector_cell_significance(
+    env: Environment | None,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test object vector tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for allocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the allocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the allocentric polar grid. Covers the
+        full circle (-pi to pi).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for allocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import object_vector_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = object_vector_cell_significance(
+    ...     env, trains, times, positions, objects, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._egocentric_binning import (
+        _compute_object_coords,
+        _coords_to_flat_bin_idx,
+        normalize_object_positions,
+    )
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="object_vector_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "distance_range": distance_range,
+        "n_distance_bins": n_distance_bins,
+        "n_direction_bins": n_direction_bins,
+        "metric": metric,
+        "max_gap": max_gap,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    if env is not None:
+        validate_env_fitted(
+            env,
+            context="object_vector_cell_significance",
+            arguments="spike_times, times, positions, object_positions",
+        )
+    validate_trajectory(
+        times, positions=positions, context="object_vector_cell_significance"
+    )
+    for train in trains:
+        validate_spike_times(train, context="object_vector_cell_significance")
+    _validate_object_vector_metric(
+        env, metric, context="object_vector_cell_significance"
+    )
+    object_positions = normalize_object_positions(object_positions)
+    distances, bearings = _compute_object_coords(
+        positions, None, object_positions, metric=metric, env=env
+    )
+    frame_bins = _coords_to_flat_bin_idx(
+        distances.ravel(),
+        bearings.ravel(),
+        distance_range,
+        n_distance_bins,
+        n_direction_bins,
+    )
+    mask = _object_vector_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_object_vector_rates(
+            env, shifted, times, positions, object_positions, **options
+        ).spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
+
+
+def egocentric_object_vector_cell_significance(
+    env: Environment | None,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test egocentric object vector tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
+        transform is applied internally; pass world-frame headings, not
+        animal-frame angles.
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for egocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the egocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the egocentric polar grid. Covers the
+        full circle (-pi to pi).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for egocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import egocentric_object_vector_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = egocentric_object_vector_cell_significance(
+    ...     env, trains, times, positions, headings, objects, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._egocentric_binning import (
+        _compute_object_coords,
+        _coords_to_flat_bin_idx,
+        normalize_object_positions,
+    )
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    headings = np.array(headings, dtype=np.float64, copy=True)
+    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="egocentric_object_vector_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "distance_range": distance_range,
+        "n_distance_bins": n_distance_bins,
+        "n_direction_bins": n_direction_bins,
+        "metric": metric,
+        "max_gap": max_gap,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    if env is not None:
+        validate_env_fitted(
+            env,
+            context="egocentric_object_vector_cell_significance",
+            arguments="spike_times, times, positions, headings, object_positions",
+        )
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context="egocentric_object_vector_cell_significance",
+    )
+    for train in trains:
+        validate_spike_times(
+            train, context="egocentric_object_vector_cell_significance"
+        )
+    _validate_object_vector_metric(
+        env, metric, context="egocentric_object_vector_cell_significance"
+    )
+    object_positions = normalize_object_positions(object_positions)
+    distances, bearings = _compute_object_coords(
+        positions, headings, object_positions, metric=metric, env=env
+    )
+    frame_bins = _coords_to_flat_bin_idx(
+        distances.ravel(),
+        bearings.ravel(),
+        distance_range,
+        n_distance_bins,
+        n_direction_bins,
+    )
+    mask = _object_vector_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_egocentric_rates(
+            env, shifted, times, positions, headings, object_positions, **options
+        ).spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

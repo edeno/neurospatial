@@ -421,6 +421,55 @@ The neurospatial metrics have been **validated** to match reference implementati
 - ✅ **Well-documented**: Comprehensive NumPy-style docstrings with examples
 - ✅ **Scientific validation**: Algorithms from peer-reviewed publications
 
+## Information bias and cell verdicts
+
+Plug-in information has approximate upward finite-count bias
+`(n_bins - 1) / (2 ln(2) N_spikes)`. This approximation describes independent
+multinomial sampling; occupancy imbalance, smoothing and temporal dependence
+change its magnitude. A fixed cutoff is a screening heuristic, and raw binning
+is not universally lower or more conservative than smoothed estimation.
+
+Measured on 20 independent untuned 0.5 Hz Poisson units with a 30 Hz OU
+trajectory in a 100 x 100 cm arena (trajectory seed 0, spikes seed 1):
+place/view maps used 5 cm bins and diffusion KDE with bandwidth 5;
+egocentric maps used the default binned 10 x 12 polar grid. Entries are
+counts flagged by the screen, not cells with ground-truth tuning.
+
+| Minutes (approximate spikes) | Egocentric information median / flags (0.3) | Place information median / flags (0.5) | Detected fields | View flags (0.5) | HD flags |
+| --- | --- | --- | --- | --- | --- |
+| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 20/20 | 19/20 | 0/20 |
+| 2 (60) | 1.41 / 20/20 | 0.53 / 15/20 | 20/20 | 19/20 | 0/20 |
+| 5 (150) | 0.70 / 20/20 | 0.22 / 0/20 | 20/20 | 0/20 | 0/20 |
+| 10 (300) | 0.41 / 20/20 | 0.11 / 0/20 | 20/20 | 0/20 | 0/20 |
+| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
+
+The allocentric object-vector information screen also flagged 20/20 in the
+10-minute fixture. HD's MVL screen weights firing rates, while its Rayleigh
+statistic weights spike counts (or reconstructs counts from rate times
+occupancy). The spike-angle distribution can reflect heading dwell time, so
+Rayleigh can be occupancy-biased; these empirical zero counts do not calibrate
+the combined screen for another occupancy distribution.
+
+`has_place_field()` preserves field detection. `is_place_cell()` requires
+`criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
+The other four cell predicates default to `criterion="threshold"` and allow
+opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
+screens; results keep no raw input arrays. Threshold comparisons are inclusive;
+shuffle and Rayleigh p-values must be strictly below `alpha`.
+
+For publication, report a shuffle test through the raw-array predicate or the
+matching `*_cell_significance` function, together with its estimator, windows,
+shift range, number of shuffles and seed. The shift null assumes stable firing
+statistics on the joined analyzed clock. Gaps, invalid samples and excluded
+epochs never receive shifted spikes. Stable integer seeds and matching unit
+labels give the same shifts alone, in a population and after reordering.
+The corrected upper-tail rank counts ties; its minimum p is `1/(n_shuffles+1)`
+when all null scores are finite. NaN observed scores give NaN p-values.
+The cost is about `n_shuffles` plural-map recomputes; significance rejects
+`method="glm"` because pooled REML couples units. Neither a significant polar
+association nor a chosen cutoff distinguishes an object-vector cell from a
+place-cell control by itself.
+
 ## Common Workflows
 
 ### Complete Place Cell Analysis Pipeline
@@ -460,9 +509,11 @@ sparse = sparsity(firing_rate, occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
 
-# 5. Classify as place cell
-is_place_cell = info > 0.5  # Standard threshold
-print(f"Place cell: {is_place_cell}")
+# 5. Explicit fast screen (biased at low counts)
+from neurospatial.encoding import is_place_cell
+candidate = is_place_cell(env, spike_times, times, positions, criterion="spatial_info")
+print(f"Place candidate: {candidate}")
+# For publication: criterion="shuffle" on these raw arrays.
 ```
 
 ### Population-Level Analysis

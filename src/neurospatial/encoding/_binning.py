@@ -290,7 +290,7 @@ def count_spikes_by_frame(
     return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
 
 
-def _resolve_interval_mask(
+def _spatial_interval_mask(
     env: Environment,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -370,7 +370,7 @@ def _emit_all_excluded_intervals_warning(
     Parameters
     ----------
     interval_mask : ndarray of bool, shape (n_samples - 1,)
-        Resolved validity from :func:`_resolve_interval_mask`. An empty mask
+        Resolved validity from :func:`_spatial_interval_mask`. An empty mask
         emits no warning.
     max_gap : float or None
         The active maximum-gap threshold (named in the message when set).
@@ -695,7 +695,7 @@ def bin_spike_train(
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
-        interval_mask = _resolve_interval_mask(
+        interval_mask = _spatial_interval_mask(
             env,
             times,
             positions,
@@ -844,7 +844,7 @@ def compute_occupancy(
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
-        interval_mask = _resolve_interval_mask(
+        interval_mask = _spatial_interval_mask(
             env,
             times,
             positions,
@@ -998,7 +998,7 @@ def bin_spike_trains(
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
-        interval_mask = _resolve_interval_mask(
+        interval_mask = _spatial_interval_mask(
             env,
             times,
             positions,

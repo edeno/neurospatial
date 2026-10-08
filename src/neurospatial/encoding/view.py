@@ -77,8 +77,9 @@ neurospatial.ops.visibility : Visibility and gaze computation
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -91,6 +92,11 @@ from neurospatial.encoding._binning import (
     _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
 )
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+)
 from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
@@ -98,6 +104,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 __all__ = [
@@ -109,7 +116,11 @@ __all__ = [
     "compute_view_rates",
     # Convenience functions
     "is_spatial_view_cell",
+    "spatial_view_cell_significance",
 ]
+
+
+VIEW_THRESHOLDS = MappingProxyType({"min_info": 0.5})
 
 
 @dataclass(frozen=True, repr=False)
@@ -362,17 +373,17 @@ class ViewRateResult(SpatialResultMixin):
             _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
         )
 
-    def is_spatial_view_cell(self, min_info: float = 0.5) -> bool:
+    def is_spatial_view_cell(self, *, min_info: float | None = None) -> bool:
         """Classify as spatial view cell based on view spatial information.
 
         A neuron is classified as a spatial view cell if its view spatial
-        information exceeds the minimum threshold. Spatial view cells fire
+        information meets or exceeds the minimum threshold. Spatial view cells fire
         when the animal *looks at* a specific location, regardless of where
         the animal is positioned.
 
         Parameters
         ----------
-        min_info : float, default=0.5
+        min_info : float or None, default=None
             Minimum view spatial information threshold in bits/spike.
 
             **How was 0.5 chosen?**
@@ -395,10 +406,22 @@ class ViewRateResult(SpatialResultMixin):
         Returns
         -------
         bool
-            True if view_spatial_information() > min_info, False otherwise.
+            True if view_spatial_information() >= min_info, False otherwise.
 
         Notes
         -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
+        screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
+        bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
+        minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
+        (about 150, 300 and 600 spikes). False positives grow at low counts.
+        For publication, report a circular-shift test and its assumptions.
+        None thresholds resolve through VIEW_THRESHOLDS.
+        For a shuffle test, call spatial_view_cell_significance(...)
+        or is_spatial_view_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
+
         Unlike head direction cells which use both mean vector length and
         Rayleigh test, view cell classification is typically based solely
         on spatial information because view fields don't have the circular
@@ -441,7 +464,8 @@ class ViewRateResult(SpatialResultMixin):
         view_spatial_information : Compute the spatial information metric
         peak_location : Get location of peak view response
         """
-        return self.view_spatial_information() > min_info
+        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
+        return self.view_spatial_information() >= min_info
 
 
 @dataclass(frozen=True, repr=False)
@@ -913,16 +937,16 @@ class ViewRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
-    def classify(self, *, min_info: float = 0.5) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as spatial view cells.
 
         A neuron is classified as a spatial view cell if its view spatial
-        information exceeds the minimum threshold. This is the single-type
+        information meets or exceeds the minimum threshold. This is the single-type
         boolean predicate ("is this a view cell") for the batch result.
 
         Parameters
         ----------
-        min_info : float, default=0.5
+        min_info : float or None, default=None
             Minimum view spatial information threshold in bits/spike.
             See ViewRateResult.is_spatial_view_cell() for threshold rationale.
 
@@ -934,6 +958,18 @@ class ViewRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
+        screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
+        bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
+        minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
+        (about 150, 300 and 600 spikes). False positives grow at low counts.
+        For publication, report a circular-shift test and its assumptions.
+        None thresholds resolve through VIEW_THRESHOLDS.
+        For a shuffle test, call spatial_view_cell_significance(...)
+        or is_spatial_view_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
+
         Uses vectorized computation of view_spatial_information() for
         efficiency with large populations.
 
@@ -965,32 +1001,9 @@ class ViewRatesResult(SpatialResultMixin):
         ViewRateResult.is_spatial_view_cell : Single-neuron classification
         view_spatial_information : The metric used for classification
         """
+        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
         info = self.view_spatial_information()
-        return info > min_info
-
-    def detect_view_cells(self, min_info: float = 0.5) -> NDArray[np.bool_]:
-        """Deprecated alias for :meth:`classify`.
-
-        .. deprecated:: 0.6
-            ``detect_view_cells`` is deprecated since 0.6; use
-            :meth:`classify` instead. Removed in 0.7.
-
-        Parameters
-        ----------
-        min_info : float, default=0.5
-            Minimum view spatial information threshold in bits/spike.
-
-        Returns
-        -------
-        ndarray, shape (n_neurons,)
-            Boolean array where True indicates a spatial view cell.
-        """
-        warnings.warn(
-            "detect_view_cells is deprecated since 0.6, use classify; removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.classify(min_info=min_info)
+        return info >= min_info
 
     def summary_table(
         self,
@@ -1876,42 +1889,63 @@ def is_spatial_view_cell(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
+    criterion: Literal["threshold", "shuffle"] = "threshold",
+    min_info: float | None = None,
+    alpha: float | None = None,
+    n_shuffles: int | None = None,
+    min_shift: float | None = None,
+    rng: np.random.Generator | int | None = None,
+    unit_id: Hashable | None = None,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
-    min_info: float = 0.5,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
-    """Quick check: Is this a spatial view cell?
-
-    Convenience function for fast screening of neurons. Computes view field
-    and checks if the neuron meets spatial view cell criteria based on
-    view spatial information.
-
-    For detailed metrics, use ``compute_view_rate()`` and inspect the result's
-    methods (``is_spatial_view_cell()``, ``view_spatial_information()``, etc.).
+    """Classify one neuron by the spatial_view_cell screen or circular-shift test.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment defining the discretization.
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Times of spikes.
-    times : NDArray[np.float64], shape (n_time,)
-        Timestamps for each behavioral sample.
-    positions : NDArray[np.float64], shape (n_time, 2)
-        Animal positions in allocentric coordinates.
-    headings : NDArray[np.float64], shape (n_time,)
-        Animal heading at each time (radians, **allocentric world-frame
-        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π]).
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
+        ``positions`` to project the gaze cone outwards into the
+        allocentric arena.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
-        Method for computing viewed location.
+        Method for computing viewed location:
+
+        - **fixed_distance**: Point at fixed distance in gaze direction.
+          Fast and simple, good default for most analyses.
+        - **ray_cast**: Intersection with environment boundary. More
+          realistic for environments with walls.
+        - **boundary**: Nearest boundary point in gaze direction.
+
     view_distance : float, default=10.0
-        Distance for fixed_distance gaze model.
+        Distance for fixed_distance gaze model (environment units).
+        Ignored for ray_cast and boundary models.
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from head direction to actual gaze direction (radians).
+        Positive values indicate gaze to the left of heading.
+        If None (default), gaze is aligned with head direction.
+        Use this for eye-tracking data in primate spatial view cell studies
+        where gaze direction differs from head direction.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -1930,28 +1964,74 @@ def is_spatial_view_cell(
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Rate map smoothing method.
+        Smoothing method to use:
+
+        - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
+          Respects environment boundaries (walls, obstacles).
+        - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
+        - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
+
     bandwidth : float, default=5.0
-        Smoothing bandwidth in environment units.
-    min_info : float, default=0.5
-        Minimum view spatial information threshold in bits/spike.
+        Smoothing bandwidth in the same units as bin_size. Larger values
+        produce more smoothing.
+    min_occupancy : float, default=0.0
+        Minimum view occupancy (seconds) for a bin to be included. Bins with
+        view occupancy below this threshold are set to NaN.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+
+    criterion : {"threshold", "shuffle"}, default="threshold"
+        Screen the observed statistic or test circular-shift significance.
+    min_info : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
 
     Returns
     -------
     bool
-        True if neuron passes spatial view cell criteria.
+        Whether the chosen criterion is met.
 
     Raises
     ------
     ValueError
-        If ``epochs`` or ``spike_window`` is malformed. The shared parser
-        reports all window problems together with an explanation and fix.
+        If the criterion, inputs, or mode-specific keywords are invalid.
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    Plug-in information is biased upward by approximately
+    (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
+    screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
+    bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
+    minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
+    (about 150, 300 and 600 spikes). False positives grow at low counts.
+    For publication, report a circular-shift test and its assumptions.
+
+    Circular shifting costs about n_shuffles recomputes of the plural map.
+    Its null assumes stable firing statistics on the joined analyzed clock;
+    recording gaps and excluded epochs are never shift destinations.
+    Compare p_value < alpha; a significant association alone does not establish
+    cell identity. Results keep no raw arrays or recompute closures.
+    Threshold keywords belong only to the screen; shuffle keywords belong
+    only to the shuffle. Passing a keyword for the other mode raises.
+
+    See Also
+    --------
+    spatial_view_cell_significance : Population significance on raw arrays.
+    compute_view_rate : Compute the map without classification.
 
     Examples
     --------
@@ -1962,37 +2042,328 @@ def is_spatial_view_cell(
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> times = np.linspace(0, 40, 1000)
     >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
-    >>> spike_times = np.random.uniform(0, 40, 50)
+    >>> spike_times = np.sort(np.random.default_rng(0).uniform(0, 40, 50))
     >>> result = is_spatial_view_cell(env, spike_times, times, positions, headings)
     >>> type(result)
     <class 'bool'>
-
-    See Also
-    --------
-    compute_view_rate : Full view rate computation
-    ViewRateResult.is_spatial_view_cell : View cell classification on result object
     """
-    try:
-        result = compute_view_rate(
+    check_criterion(criterion, ("threshold", "shuffle"), call="is_spatial_view_cell")
+    check_mode_keywords(
+        criterion,
+        threshold={"min_info": min_info},
+        shuffle={
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
+            "rng": rng,
+            "unit_id": unit_id,
+            "alpha": alpha,
+        },
+        call="is_spatial_view_cell",
+    )
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = spatial_view_cell_significance(
             env,
-            spike_times,
+            [spike_times],
             times,
             positions,
             headings,
-            view_distance=view_distance,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
             gaze_model=gaze_model,
-            method=method,
-            bandwidth=bandwidth,
+            view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
             max_gap=max_gap,
             epochs=epochs,
             spike_window=spike_window,
-        )
-        return result.is_spatial_view_cell(min_info=min_info)
-    except ValueError as exc:
-        # Malformed windows are input errors, not negative classifications.
-        # Keep the shared normalizer's diagnostic and avoid parsing twice.
-        if str(exc).startswith("Invalid time window:"):
-            raise
-        return False
-    except RuntimeError:
-        return False
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )[label]
+        return shuffle_result.p_value < level
+    min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
+    result = compute_view_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+    )
+    return result.is_spatial_view_cell(min_info=min_info)
+
+
+def spatial_view_cell_significance(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test spatial view tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
+        ``positions`` to project the gaze cone outwards into the
+        allocentric arena.
+    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+        Method for computing viewed location:
+
+        - **fixed_distance**: Point at fixed distance in gaze direction.
+          Fast and simple, good default for most analyses.
+        - **ray_cast**: Intersection with environment boundary. More
+          realistic for environments with walls.
+        - **boundary**: Nearest boundary point in gaze direction.
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model (environment units).
+        Ignored for ray_cast and boundary models.
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from head direction to actual gaze direction (radians).
+        Positive values indicate gaze to the left of heading.
+        If None (default), gaze is aligned with head direction.
+        Use this for eye-tracking data in primate spatial view cell studies
+        where gaze direction differs from head direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Smoothing method to use. See ``compute_view_rate()`` for details.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in the same units as bin_size.
+    min_occupancy : float, default=0.0
+        Minimum view occupancy (seconds) for a bin to be included.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import spatial_view_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = spatial_view_cell_significance(
+    ...     env, trains, times, positions, headings, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+    from neurospatial.encoding._view_binning import (
+        _precompute_view_bins,
+        _view_interval_mask,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    headings = np.array(headings, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="spatial_view_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "gaze_model": gaze_model,
+        "view_distance": view_distance,
+        "gaze_offsets": gaze_offsets,
+        "max_gap": max_gap,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    validate_env_fitted(
+        env,
+        context="spatial_view_cell_significance",
+        arguments="spike_times, times, positions, headings",
+    )
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context="spatial_view_cell_significance",
+    )
+    for train in trains:
+        validate_spike_times(train, context="spatial_view_cell_significance")
+    frame_bins = _precompute_view_bins(
+        env,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=options["gaze_offsets"],
+    )
+    mask = _view_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_view_rates(
+            env, shifted, times, positions, headings, **options
+        ).view_spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

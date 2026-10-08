@@ -47,9 +47,9 @@ neurospatial.stats.circular : Circular statistics utilities
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -60,12 +60,19 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+    from neurospatial.stats.shuffle import ShuffleTestResult
+
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin
 from neurospatial.encoding._binning import (
     _SILENCE_MIN_SECONDS,
     _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
+)
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
 )
 from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -77,6 +84,7 @@ __all__ = [
     "compute_directional_rate",
     "compute_directional_rates",
     # Convenience functions
+    "head_direction_cell_significance",
     "is_head_direction_cell",
     "plot_head_direction_tuning",
 ]
@@ -135,6 +143,9 @@ def _half_max_halfwidth(
         prev_offset = offset
         prev_rate = r
     return float(np.nan)
+
+
+HEAD_DIRECTION_THRESHOLDS = MappingProxyType({"min_mvl": 0.4, "alpha": 0.05})
 
 
 @dataclass(frozen=True, repr=False)
@@ -793,18 +804,20 @@ class DirectionalRateResult(SpatialResultMixin):
         _, pval = rayleigh_test(centers[valid], weights=counts[valid])
         return pval
 
-    def is_head_direction_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
+    def is_head_direction_cell(
+        self, *, min_mvl: float | None = None, alpha: float | None = None
+    ) -> bool:
         """Classify as head direction cell.
 
         A neuron is classified as a head direction (HD) cell if it meets
         both of the following criteria (Taube et al., 1990):
 
-        1. Mean vector length (MVL) > min_mvl (default 0.4)
+        1. Mean vector length (MVL) >= min_mvl (default 0.4)
         2. Rayleigh test p-value < alpha (default 0.05)
 
         Parameters
         ----------
-        min_mvl : float, default=0.4
+        min_mvl : float or None, default=None
             Minimum mean vector length threshold.
 
             **How was 0.4 chosen?**
@@ -823,7 +836,7 @@ class DirectionalRateResult(SpatialResultMixin):
             - Noisy recordings: Consider 0.3 (more permissive)
             - Publication quality: Use 0.5 (more conservative)
 
-        alpha : float, default=0.05
+        alpha : float or None, default=None
             Significance level for Rayleigh test. A neuron must have a
             p-value below this threshold to be classified as an HD cell.
 
@@ -861,10 +874,30 @@ class DirectionalRateResult(SpatialResultMixin):
         Taube, J.S., Muller, R.U., & Ranck, J.B. (1990). Head-direction cells
             recorded from the postsubiculum in freely moving rats. I.
             Description and quantitative analysis. J Neurosci, 10(2), 420-435.
-        """
-        return self.mean_vector_length() > min_mvl and self.rayleigh_pvalue() < alpha
 
-    def interpretation(self, min_mvl: float = 0.4) -> str:
+        Notes
+        -----
+        The MVL cutoff is a screening heuristic. MVL weights firing rates;
+        Rayleigh weights spike counts (or reconstructs them from rate times
+        occupancy). The spike-angle distribution can reflect heading dwell
+        time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+        The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+        1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+        This is empirical evidence, not calibration for another occupancy
+        distribution.
+        Related plug-in information has approximate upward bias
+        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
+        test and its assumptions rather than relying on the screen.
+        None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
+        For a shuffle test, call head_direction_cell_significance(...)
+        or is_head_direction_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
+        """
+        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
+        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+        return self.mean_vector_length() >= min_mvl and self.rayleigh_pvalue() < alpha
+
+    def interpretation(self, min_mvl: float | None = None) -> str:
         """Human-readable interpretation of head direction metrics.
 
         Provides a comprehensive summary of the neuron's directional tuning
@@ -874,9 +907,10 @@ class DirectionalRateResult(SpatialResultMixin):
 
         Parameters
         ----------
-        min_mvl : float, default=0.4
+        min_mvl : float or None, default=None
             Minimum mean vector length threshold for HD cell classification.
-            Same parameter as in :meth:`is_head_direction_cell`.
+            Same parameter as in :meth:`is_head_direction_cell`; None resolves
+            to HEAD_DIRECTION_THRESHOLDS["min_mvl"] (0.4).
 
         Returns
         -------
@@ -926,7 +960,8 @@ class DirectionalRateResult(SpatialResultMixin):
         rayleigh_pvalue : Statistical significance
         """
         lines = []
-        alpha = 0.05  # Fixed significance level for Rayleigh test
+        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
+        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"]
 
         mvl = self.mean_vector_length()
         pval = self.rayleigh_pvalue()
@@ -1441,14 +1476,14 @@ class DirectionalRatesResult(SpatialResultMixin):
         return widths
 
     def classify(
-        self, *, min_mvl: float = 0.4, alpha: float = 0.05
+        self, *, min_mvl: float | None = None, alpha: float | None = None
     ) -> NDArray[np.bool_]:
         """Classify neurons as head direction cells.
 
         A neuron is classified as a head direction (HD) cell if it meets
         both criteria (Taube et al., 1990):
 
-        1. Mean vector length (MVL) > min_mvl (default 0.4)
+        1. Mean vector length (MVL) >= min_mvl (default 0.4)
         2. Rayleigh test p-value < alpha (default 0.05)
 
         This is the single-type boolean predicate ("is this an HD cell") for
@@ -1456,9 +1491,9 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Parameters
         ----------
-        min_mvl : float, default=0.4
+        min_mvl : float or None, default=None
             Minimum mean vector length threshold.
-        alpha : float, default=0.05
+        alpha : float or None, default=None
             Significance level for Rayleigh test.
 
         Returns
@@ -1489,42 +1524,32 @@ class DirectionalRatesResult(SpatialResultMixin):
         See Also
         --------
         DirectionalRateResult.is_head_direction_cell : Single-neuron method
+
+        Notes
+        -----
+        The MVL cutoff is a screening heuristic. MVL weights firing rates;
+        Rayleigh weights spike counts (or reconstructs them from rate times
+        occupancy). The spike-angle distribution can reflect heading dwell
+        time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+        The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+        1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+        This is empirical evidence, not calibration for another occupancy
+        distribution.
+        Related plug-in information has approximate upward bias
+        (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
+        test and its assumptions rather than relying on the screen.
+        None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
+        For a shuffle test, call head_direction_cell_significance(...)
+        or is_head_direction_cell(..., criterion="shuffle") with the raw
+        arrays; a result does not keep the arrays it was computed from.
         """
+        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
+        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
         n_neurons = len(self)
         is_hd = np.empty(n_neurons, dtype=np.bool_)
-
         for i in range(n_neurons):
             is_hd[i] = self[i].is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
-
         return is_hd
-
-    def detect_hd_cells(
-        self, min_mvl: float = 0.4, alpha: float = 0.05
-    ) -> NDArray[np.bool_]:
-        """Deprecated alias for :meth:`classify`.
-
-        .. deprecated:: 0.6
-            ``detect_hd_cells`` is deprecated since 0.6; use
-            :meth:`classify` instead. Removed in 0.7.
-
-        Parameters
-        ----------
-        min_mvl : float, default=0.4
-            Minimum mean vector length threshold.
-        alpha : float, default=0.05
-            Significance level for Rayleigh test.
-
-        Returns
-        -------
-        numpy.ndarray
-            Boolean array of shape (n_neurons,). True indicates an HD cell.
-        """
-        warnings.warn(
-            "detect_hd_cells is deprecated since 0.6, use classify; removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.classify(min_mvl=min_mvl, alpha=alpha)
 
     def summary_table(
         self,
@@ -2298,62 +2323,56 @@ def is_head_direction_cell(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
+    criterion: Literal["threshold", "shuffle"] = "threshold",
+    min_mvl: float | None = None,
+    alpha: float | None = None,
+    n_shuffles: int | None = None,
+    min_shift: float | None = None,
+    rng: np.random.Generator | int | None = None,
+    unit_id: Hashable | None = None,
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     spike_window: Any = None,
-    min_mvl: float = 0.4,
-    alpha: float = 0.05,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
-    """Quick check: Is this a head direction cell?
-
-    Convenience function for fast screening of neurons. Computes directional
-    tuning and checks if the neuron meets HD cell criteria.
-
-    For detailed metrics, use ``compute_directional_rate()`` and inspect
-    the result's methods (``is_head_direction_cell()``, ``mean_vector_length()``, etc.).
-
-    .. note::
-
-       Like :func:`compute_directional_rate`, this function is the documented
-       exception to the v0.4 canonical "env first" argument order for
-       encoding functions (see :ref:`canonical-argument-order` in the
-       project guide). Heading is a circular angular variable, not a
-       position in a spatial environment, so this signature is
-       heading-domain native and intentionally takes no
-       :class:`Environment`. Sister classifiers
-       (:func:`is_object_vector_cell`, :func:`is_spatial_view_cell`) keep
-       their env-first signatures because they operate on spatial
-       (allocentric) firing fields.
+    """Classify one neuron by the head_direction_cell screen or circular-shift test.
 
     Parameters
     ----------
-    spike_times : ndarray of shape (n_spikes,)
-        Times of spikes (same time units as times).
-    times : ndarray of shape (n_frames,)
-        Timestamps corresponding to each head direction sample.
-    headings : ndarray of shape (n_frames,)
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to ``[-π, π]`` (or ``[0, 360°]`` when
-        ``angle_unit="deg"``). Units determined by ``angle_unit``.
+        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
 
-        **Movement heading vs. head direction.** This classifier expects the
-        animal's *head direction* (where the head points). A velocity-derived
-        heading (e.g. from
-        :func:`neurospatial.ops.egocentric.heading_from_velocity`) is the
-        direction of *movement*, which equals head direction only when the
-        animal moves the way it faces. Calling a cell a "head direction cell"
-        from movement heading is a common methodological mislabel — keep the
-        two distinct.
+        **Movement heading vs. head direction.** This function expects the
+        animal's *head direction* (where the head points, typically from a
+        head-mounted LED pair or pose tracking). A velocity-derived heading
+        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        is the direction of *movement*, which equals head direction only when
+        the animal moves the way it faces. Feeding movement heading here and
+        reporting the result as a "head direction cell" is a common
+        methodological mislabel — keep the two distinct.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
+        Default produces 60 bins (6° resolution).
     bandwidth : float or None, default=None
-        Gaussian smoothing bandwidth. Units match ``angle_unit``.
+        Gaussian smoothing bandwidth for the tuning curve. Units match
+        ``angle_unit``. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of headings and bin_size.
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
+
+        - 'rad': angles in radians
+        - 'deg': angles in degrees
+
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -2371,27 +2390,65 @@ def is_head_direction_cell(
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
-    min_mvl : float, default=0.4
-        Minimum mean vector length threshold.
-    alpha : float, default=0.05
-        Significance level for Rayleigh test.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
+        - 'auto': Use JAX if available, otherwise NumPy
+
+    criterion : {"threshold", "shuffle"}, default="threshold"
+        Screen the observed statistic or test circular-shift significance.
+    min_mvl : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
 
     Returns
     -------
     bool
-        True if neuron passes HD cell criteria.
+        Whether the chosen criterion is met.
 
     Raises
     ------
     ValueError
-        If ``epochs`` or ``spike_window`` is malformed. The shared parser
-        reports all window problems together with an explanation and fix.
+        If the criterion, inputs, or mode-specific keywords are invalid.
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    The MVL cutoff is a screening heuristic. MVL weights firing rates;
+    Rayleigh weights spike counts (or reconstructs them from rate times
+    occupancy). The spike-angle distribution can reflect heading dwell
+    time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+    The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+    1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+    This is empirical evidence, not calibration for another occupancy
+    distribution.
+    Related plug-in information has approximate upward bias
+    (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-
+    shift test and its assumptions rather than relying on the screen.
+
+    Circular shifting costs about n_shuffles recomputes of the plural map.
+    Its null assumes stable firing statistics on the joined analyzed clock;
+    recording gaps and excluded epochs are never shift destinations.
+    Compare p_value < alpha; a significant association alone does not establish
+    cell identity. Results keep no raw arrays or recompute closures.
+    Threshold keywords belong only to the screen; shuffle keywords belong
+    only to the shuffle. Passing a keyword for the other mode raises.
+
+    See Also
+    --------
+    head_direction_cell_significance : Population significance on raw arrays.
+    compute_directional_rate : Compute the map without classification.
 
     Examples
     --------
@@ -2404,45 +2461,57 @@ def is_head_direction_cell(
     >>> result = is_head_direction_cell(spike_times, times, headings)
     >>> type(result)
     <class 'bool'>
-
-    See Also
-    --------
-    compute_directional_rate : Full directional rate computation
-    DirectionalRateResult.is_head_direction_cell : HD cell classification on result object
     """
-    from neurospatial.encoding._validation import validate_classifier_trajectory
-
-    # Validate inputs OUTSIDE the try so genuine input errors propagate
-    # (a typo such as angle_unit="degrees" must surface as a ValueError,
-    # not be swallowed by the except below into a False classification).
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-    validate_classifier_trajectory(
-        spike_times, times, headings, context="is_head_direction_cell"
+    check_criterion(criterion, ("threshold", "shuffle"), call="is_head_direction_cell")
+    check_mode_keywords(
+        criterion,
+        threshold={"min_mvl": min_mvl},
+        shuffle={
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
+            "rng": rng,
+            "unit_id": unit_id,
+        },
+        call="is_head_direction_cell",
     )
-
-    try:
-        result = compute_directional_rate(
-            spike_times,
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        level = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+        shuffle_result = head_direction_cell_significance(
+            [spike_times],
             times,
             headings,
+            unit_ids=[label],
+            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
+            if n_shuffles is None
+            else n_shuffles,
+            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
+            if min_shift is None
+            else min_shift,
+            rng=rng,
             bin_size=bin_size,
             bandwidth=bandwidth,
             angle_unit=angle_unit,
             max_gap=max_gap,
             epochs=epochs,
             spike_window=spike_window,
-        )
-    except ValueError as exc:
-        # Malformed windows are input errors, not negative classifications.
-        # Keep the shared normalizer's diagnostic and avoid parsing twice.
-        if str(exc).startswith("Invalid time window:"):
-            raise
-        return False
-    except RuntimeError:
-        # Computation passed validation but produced no usable tuning
-        # (e.g. no spikes in any visited bin) -> not an HD cell.
-        return False
+            backend=backend,
+        )[label]
+        return shuffle_result.p_value < level
+    min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
+    alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+    result = compute_directional_rate(
+        spike_times,
+        times,
+        headings,
+        bin_size=bin_size,
+        bandwidth=bandwidth,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        backend=backend,
+    )
     return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
 
@@ -2602,3 +2671,227 @@ def plot_head_direction_tuning(
         )
 
     return ax
+
+
+def head_direction_cell_significance(
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float = np.pi / 30,
+    bandwidth: float | None = None,
+    angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test head direction tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
+
+        **Movement heading vs. head direction.** This function expects the
+        animal's *head direction* (where the head points, typically from a
+        head-mounted LED pair or pose tracking). A velocity-derived heading
+        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        is the direction of *movement*, which equals head direction only when
+        the animal moves the way it faces. Feeding movement heading here and
+        reporting the result as a "head direction cell" is a common
+        methodological mislabel — keep the two distinct.
+    bin_size : float, default=π/30 (6 degrees)
+        Width of angular bins. Units match ``angle_unit``.
+        Default produces 60 bins (6° resolution).
+    bandwidth : float or None, default=None
+        Gaussian smoothing bandwidth for the tuning curves. Units match
+        ``angle_unit``. If None, no smoothing is applied.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
+
+        - 'rad': angles in radians
+        - 'deg': angles in degrees
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    n_jobs : int, default=1
+        Number of parallel jobs for spike binning. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import head_direction_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = head_direction_cell_significance(
+    ...     trains, times, headings, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._directional_binning import (
+        _directional_interval_mask,
+        directional_frame_bins,
+    )
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    headings = np.array(headings, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="head_direction_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "bin_size": bin_size,
+        "bandwidth": bandwidth,
+        "angle_unit": angle_unit,
+        "max_gap": max_gap,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    validate_trajectory(
+        times, headings=headings, context="head_direction_cell_significance"
+    )
+    for train in trains:
+        validate_spike_times(train, context="head_direction_cell_significance")
+    frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
+    mask = _directional_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_directional_rates(
+            shifted, times, headings, **options
+        ).mean_vector_lengths()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
