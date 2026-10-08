@@ -349,14 +349,17 @@ class SpatialResultMixin(ResultMixin):
         :meth:`neurospatial._results.ResultMixin.summary` for spatial results.
         Reports the number of bins, peak firing rate, and total occupancy.
         For batch results (with ``firing_rates``), the peak is the maximum
-        across all neurons and ``n_neurons`` is included.
+        across all units as ``max_peak_firing_rate`` and ``n_units`` is included.
 
         Returns
         -------
         dict
             Mapping with keys ``n_bins`` (int), ``peak_firing_rate`` (float,
             Hz), and ``total_occupancy`` (float, seconds). Batch results also
-            include ``n_neurons`` (int). ``spike_window`` is the normalized
+            include ``n_units`` (int) and use ``max_peak_firing_rate`` for
+            the maximum per-unit peak. Total occupancy is seconds in the
+            shared map, never summed over units. Singular results add cheap
+            family metrics; grid/border scores are excluded from the repr. ``spike_window`` is the normalized
             acquisition-window list or None, and ``spike_window_assumed``
             records whether coverage was assumed.
 
@@ -375,7 +378,7 @@ class SpatialResultMixin(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['method', 'n_bins', 'peak_firing_rate', 'spike_window', 'spike_window_assumed', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_info', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
@@ -389,17 +392,20 @@ class SpatialResultMixin(ResultMixin):
         else:
             peak_value = float(np.nanmax(np.asarray(self.peak_firing_rate())))
 
-        out: dict[str, Any] = {
-            "n_bins": int(rates.shape[-1]),
-            "peak_firing_rate": peak_value,
-            "total_occupancy": float(np.nansum(occupancy)),
-            "spike_window_assumed": self.spike_window_assumed,
-            "spike_window": None
-            if self.spike_window is None
-            else self.spike_window.tolist(),
-        }
+        out: dict[str, Any] = {}
         if rates.ndim > 1:
-            out["n_neurons"] = int(rates.shape[0])
+            out["n_units"] = int(rates.shape[0])
+        out["n_bins"] = int(rates.shape[-1])
+        out["max_peak_firing_rate" if rates.ndim > 1 else "peak_firing_rate"] = (
+            peak_value
+        )
+        if rates.ndim == 1:
+            out.update(self._headline_metrics())
+        out["total_occupancy"] = float(np.nansum(occupancy))
+        out["spike_window_assumed"] = self.spike_window_assumed
+        out["spike_window"] = (
+            None if self.spike_window is None else self.spike_window.tolist()
+        )
         # Carry the estimator on result classes that record it (the spatial/view
         # rate results); egocentric/directional/place-field results have no
         # `method` field and are left unchanged.
@@ -408,6 +414,10 @@ class SpatialResultMixin(ResultMixin):
         if hasattr(self, "direction_frame"):
             out["direction_frame"] = self.direction_frame
         return out
+
+    def _headline_metrics(self) -> dict[str, float]:
+        """O(n_bins) singular metrics displayed by summary and repr."""
+        return {}
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of per-bin firing rate and occupancy.

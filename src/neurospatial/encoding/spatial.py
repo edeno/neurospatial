@@ -664,6 +664,15 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=False, repr=False, compare=False, kw_only=True
     )
 
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {"spatial_info": float("nan"), "sparsity": float("nan")}
+        return {
+            "spatial_info": float(self.spatial_information()),
+            "sparsity": float(self.sparsity()),
+        }
+
     def __post_init__(self) -> None:
         if self.unit_id is None:
             object.__setattr__(self, "_unit_ids_generated", True)

@@ -202,6 +202,18 @@ class ObjectVectorRateResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {
+                "preferred_distance": float("nan"),
+                "preferred_direction": float("nan"),
+            }
+        return {
+            "preferred_distance": float(self.preferred_distance()),
+            "preferred_direction": float(self.preferred_direction()),
+        }
+
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: egocentric results index polar bins

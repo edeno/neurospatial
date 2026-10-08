@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial.encoding._base import SpatialResultMixin
+from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _SILENCE_MIN_SECONDS,
     _SILENCE_MIN_UNITS,
@@ -249,6 +249,18 @@ class DirectionalRateResult(SpatialResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {
+                "preferred_direction": float("nan"),
+                "mean_vector_length": float("nan"),
+            }
+        return {
+            "preferred_direction": float(self.preferred_direction()),
+            "mean_vector_length": float(self.mean_vector_length()),
+        }
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:

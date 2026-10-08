@@ -238,6 +238,12 @@ class ViewRateResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {"view_spatial_info": float("nan")}
+        return {"view_spatial_info": float(self.view_spatial_information())}
+
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field (firing rate by viewed location).
 

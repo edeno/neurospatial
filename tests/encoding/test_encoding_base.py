@@ -751,6 +751,6 @@ class TestSummaryEmptyResult:
         s = result.summary()
 
         assert isinstance(s, dict)
-        assert s["n_neurons"] == 0
+        assert s["n_units"] == 0
         # Peak over no neurons is undefined -> NaN, not a crash.
-        assert np.isnan(s["peak_firing_rate"])
+        assert np.isnan(s["max_peak_firing_rate"])

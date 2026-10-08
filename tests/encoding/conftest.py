@@ -9,6 +9,46 @@ import numpy as np
 import pytest
 
 
+@pytest.fixture(scope="module")
+def rate_family_inputs():
+    from neurospatial import Environment
+
+    times = np.arange(1800) / 30.0
+    positions = 50 + 40 * np.column_stack(
+        [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
+    )
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    velocity = np.gradient(positions, times, axis=0)
+    headings = np.arctan2(velocity[:, 1], velocity[:, 0])
+    rng = np.random.default_rng(0)
+    spikes = [np.sort(rng.uniform(0, times[-1], count)) for count in (200, 50, 300)]
+    return env, times, positions, headings, spikes, np.array([[30.0, 30.0]])
+
+
+@pytest.fixture(scope="module")
+def rate_family_results(rate_family_inputs):
+    from neurospatial.encoding import (
+        compute_directional_rates,
+        compute_egocentric_rates,
+        compute_object_vector_rates,
+        compute_spatial_rates,
+        compute_view_rates,
+    )
+
+    env, times, positions, headings, spikes, objects = rate_family_inputs
+    return {
+        "spatial": compute_spatial_rates(env, spikes, times, positions),
+        "view": compute_view_rates(env, spikes, times, positions, headings),
+        "allocentric": compute_object_vector_rates(
+            env, spikes, times, positions, objects
+        ),
+        "egocentric": compute_egocentric_rates(
+            env, spikes, times, positions, headings, objects
+        ),
+        "directional": compute_directional_rates(spikes, times, headings),
+    }
+
+
 def _ou_trajectory(duration_s, seed, fs=30.0, arena=100.0):
     """Reflect an Ornstein-Uhlenbeck velocity trajectory inside a square."""
     rng = np.random.default_rng(seed)
