@@ -76,7 +76,6 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -281,26 +280,6 @@ class ViewRateResult(SpatialResultMixin):
         peak_location : Get location of peak view response
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
-
-    def peak_view_location(self) -> NDArray[np.float64]:
-        """Deprecated alias for :meth:`peak_location`.
-
-        .. deprecated:: 0.6
-            ``peak_view_location`` is deprecated since 0.6; use
-            :meth:`peak_location` instead. Removed in 0.7.
-
-        Returns
-        -------
-        ndarray, shape (n_dims,)
-            Spatial coordinates of the bin with maximum firing rate.
-        """
-        warnings.warn(
-            "peak_view_location is deprecated since 0.6, use peak_location; "
-            "removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.peak_location()
 
     def view_spatial_information(self) -> float:
         """Skaggs spatial information based on view occupancy (bits per spike).
@@ -859,27 +838,6 @@ class ViewRatesResult(SpatialResultMixin):
                 peak_idx = int(np.nanargmax(firing_rates[i]))
                 peak_locs[i] = self.env.bin_centers[peak_idx]
         return peak_locs
-
-    def peak_view_location(self) -> NDArray[np.float64]:
-        """Deprecated alias for :meth:`peak_locations`.
-
-        .. deprecated:: 0.6
-            ``peak_view_location`` is deprecated since 0.6; use
-            :meth:`peak_locations` instead. Removed in 0.7.
-
-        Returns
-        -------
-        ndarray, shape (n_neurons, n_dims)
-            Spatial coordinates of the bins with maximum firing rate for
-            each neuron.
-        """
-        warnings.warn(
-            "peak_view_location is deprecated since 0.6, use peak_locations; "
-            "removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.peak_locations()
 
     def view_spatial_information(self) -> NDArray[np.float64]:
         """View spatial information for all neurons (bits per spike).

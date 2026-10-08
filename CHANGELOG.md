@@ -72,6 +72,8 @@
 
 ### Removed
 
+- **Breaking:** remove the image-mask `bin_size` keyword shim and both view-result `peak_view_location` methods. Use `pixel_size` and the shared `peak_location()`/`peak_locations()` accessors.
+
 - **Breaking:** remove root decoder/binner, spike-container and epoch-selection re-exports; import them from their domains. Drop public normalizers, event validators, animation internals/protocols, duplicate calibration and renderer helpers, and cache plumbing. Delete the probability-space Poisson wrapper, `integrated_absolute_rotation`, `Affine3D`, `SpikeOverlay` and surrogate compatibility imports.
 
 - Remove the superseded public API curation plans and the test pinning the old root export list; the public API snapshot replaces that export contract.
