@@ -30,6 +30,8 @@
 
 ### Changed
 
+- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
+
 - **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
 
 - **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.

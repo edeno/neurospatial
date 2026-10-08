@@ -290,21 +290,14 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     json_path = path_obj.with_suffix(".json")
     npz_path = path_obj.with_suffix(".npz")
 
-    # Refuse to clobber an existing environment unless explicitly allowed. The
-    # atomic .tmp + replace write below protects against a partial save, not
-    # against overwriting the wrong target -- without this guard a single
-    # accidental re-run silently destroys a saved env (and any hand-placed
-    # regions), with no way to recover it.
-    if not overwrite:
-        existing = [str(p) for p in (json_path, npz_path) if p.exists()]
-        if existing:
-            raise FileExistsError(
-                _format_error(
-                    f"Refusing to overwrite existing environment file(s): {', '.join(existing)}. Pass overwrite=True to replace them, or choose a different path.",
-                    fix="call env.to_file(path, overwrite=True) to replace both .json and .npz, or choose a new path",
-                    why="Why: an environment is stored as paired metadata and array files.",
-                )
-            )
+    from neurospatial._validation import check_writable
+
+    check_writable(
+        [json_path, npz_path],
+        overwrite=overwrite,
+        what="environment file(s)",
+        argument="path",
+    )
 
     # Ensure parent directory exists
     json_path.parent.mkdir(parents=True, exist_ok=True)

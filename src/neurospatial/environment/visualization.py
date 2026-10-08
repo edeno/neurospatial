@@ -550,6 +550,7 @@ class EnvironmentVisualization:
         frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
+        overwrite: bool = False,
         speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
@@ -599,6 +600,9 @@ class EnvironmentVisualization:
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
             - .html: standalone HTML player (no dependencies)
             - None: display interactively (napari or widget depending on context)
+        overwrite : bool, default=False
+            Allow replacing existing video/HTML files and nonempty HTML frames
+            directories. By default, an existing target raises before rendering.
         speed : float, default=1.0
             Playback speed relative to real-time:
 
@@ -724,6 +728,8 @@ class EnvironmentVisualization:
 
         Raises
         ------
+        FileExistsError
+            If an output already exists and overwrite is False.
         RuntimeError
             If environment is not fitted (use factory methods like
             Environment.from_samples())
@@ -902,6 +908,7 @@ class EnvironmentVisualization:
             fields=fields,
             backend=backend,
             save_path=save_path,
+            overwrite=overwrite,
             speed=speed,
             cmap=cmap,
             vmin=vmin,

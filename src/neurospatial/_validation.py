@@ -9,10 +9,14 @@ into downstream computations.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._exceptions import _format_error
 
 
 def validate_finite(
@@ -218,3 +222,37 @@ def format_times_positions_error(
         + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
         "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
     )
+
+
+def check_writable(
+    paths: Sequence[Path], *, overwrite: bool, what: str, argument: str
+) -> None:
+    """Refuse existing files/nonempty directories unless overwrite is explicit.
+
+    Parameters
+    ----------
+    paths : sequence of pathlib.Path
+        All targets an export will write.
+    overwrite : bool
+        Whether existing outputs may be replaced.
+    what : str
+        Description of the outputs for the diagnostic.
+    argument : str
+        Path argument name used in corrected-call guidance.
+
+    Raises
+    ------
+    FileExistsError
+        If a file or nonempty directory exists and overwrite is False.
+    """
+    if overwrite:
+        return
+    existing = [p for p in paths if (p.is_dir() and any(p.iterdir())) or p.is_file()]
+    if existing:
+        raise FileExistsError(
+            _format_error(
+                f"Refusing to overwrite existing {what}: {', '.join(map(str, existing))}.",
+                fix=f"pass overwrite=True to replace {'it' if len(existing) == 1 else 'them'}, "
+                f"or choose a different {argument}.",
+            )
+        )
