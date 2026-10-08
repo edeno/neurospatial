@@ -4,6 +4,8 @@
 
 ### Added
 
+- Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
+
 - Snapshot all public namespace names and function signatures in one sorted, reviewable file, with a unified diff and explicit regeneration command for intentional API changes.
 
 - Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.

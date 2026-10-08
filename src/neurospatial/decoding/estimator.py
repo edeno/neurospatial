@@ -21,6 +21,7 @@ track or a masked open field, not just a rectangular grid.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -296,6 +297,7 @@ warn_on_drop
         times: ArrayLike,
         positions: NDArray[np.float64],
         *,
+        unit_ids: NDArray[Any] | Sequence[Any] | None = None,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         epochs: Any = None,
@@ -325,6 +327,11 @@ warn_on_drop
             ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         positions : NDArray[np.float64], shape (n_frames, n_dims)
             Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
+        unit_ids : ndarray or sequence, optional
+            One distinct label per spike train. If the spike group carries labels,
+            these must match exactly in the same order. Caller-supplied labels
+            enable label alignment for labelled prediction inputs; generated
+            ``arange`` labels pair by position.
         speed : NDArray[np.float64], shape (n_frames,), optional
             Precomputed speed, forwarded to the encoder. Only used when
             ``min_speed`` is set; auto-derived when ``None``.
@@ -374,12 +381,19 @@ warn_on_drop
         ... )
         """
         from neurospatial._intervals import resolve_time_windows
+        from neurospatial._results import resolve_unit_ids
         from neurospatial.decoding.session import _build_encoding_model
         from neurospatial.encoding._spikes import as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
         trains, extracted_ids = as_spike_trains_with_ids(spike_times)
+        resolved_ids = resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=extracted_ids,
+            context="BayesianDecoder.fit",
+        )
 
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
@@ -406,16 +420,11 @@ warn_on_drop
             spike_window=resolved_spike_window,
         )[1]
 
-        unit_ids = (
-            extracted_ids
-            if extracted_ids is not None
-            else np.arange(firing_rates.shape[0])
-        )
         return replace(
             self,
             encoding_models=firing_rates,
-            unit_ids=unit_ids,
-            _unit_ids_generated=extracted_ids is None,
+            unit_ids=resolved_ids,
+            _unit_ids_generated=unit_ids is None and extracted_ids is None,
         )
 
     def _align_to_fitted_units(

@@ -830,3 +830,36 @@ def test_predict_matches_decode_session(sim):
         decoder.predict(spikes, times).posterior,
         decode_session(env, spikes, times, positions, dt=0.5).posterior,
     )
+
+
+def test_fit_unit_ids_enable_label_alignment(sim, make_spike_group):
+    env, spikes, times, positions = sim
+    trains = spikes[:3]
+    decoder = BayesianDecoder(env, dt=0.5).fit(
+        trains, times, positions, unit_ids=[10, 11, 12]
+    )
+    reordered = make_spike_group(trains[::-1], index=[12, 11, 10])
+    np.testing.assert_array_equal(
+        decoder.predict(reordered, times).posterior,
+        decoder.predict(trains, times).posterior,
+    )
+    with pytest.raises(ValueError) as caught:
+        decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
+    assert "missing: [12]" in str(caught.value)
+    assert "unexpected: [13]" in str(caught.value)
+
+
+def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
+    env, spikes, times, positions = sim
+    group = make_spike_group(spikes[:2], index=[10, 20])
+    decoder = BayesianDecoder(env, dt=0.5)
+    with pytest.raises(ValueError) as caught:
+        decoder.fit(group, times, positions, unit_ids=[20, 10])
+    for text in ["[20, 10]", "[10, 20]", "Fix:"]:
+        assert text in str(caught.value)
+    accepted = decoder.fit(group, times, positions, unit_ids=[10, 20])
+    np.testing.assert_array_equal(accepted.unit_ids, [10, 20])
+    supplied = decoder.fit(spikes[:2], times, positions, unit_ids=[20, 10])
+    np.testing.assert_array_equal(supplied.unit_ids, [20, 10])
+    with pytest.raises(ValueError, match="unique"):
+        decoder.fit(spikes[:3], times, positions, unit_ids=[3, 3, 7])
