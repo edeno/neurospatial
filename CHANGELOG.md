@@ -4,6 +4,8 @@
 
 ### Added
 
+- Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.
+
 - Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
 
 - Add opt-in `criterion="shuffle"` to all five raw-array cell predicates, with explicit stream labels and p-value levels. Mode-specific keywords raise together when they would be ignored; result methods and batch classifiers remain threshold screens without retained inputs.

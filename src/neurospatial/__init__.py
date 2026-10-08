@@ -227,7 +227,7 @@ Create environment from polygon::
 
 import logging
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
@@ -241,6 +241,25 @@ from neurospatial._exceptions import (
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
+
+if TYPE_CHECKING:
+    # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
+    from neurospatial.decoding._result import DecodingResult as DecodingResult
+    from neurospatial.decoding.posterior import decode_position as decode_position
+    from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
+    from neurospatial.encoding.spatial import SpatialRatesResult as SpatialRatesResult
+    from neurospatial.encoding.spatial import (
+        compute_spatial_rate as compute_spatial_rate,
+    )
+    from neurospatial.encoding.spatial import (
+        compute_spatial_rates as compute_spatial_rates,
+    )
+    from neurospatial.events._core import PeriEventResult as PeriEventResult
+    from neurospatial.events.alignment import (
+        peri_event_histogram as peri_event_histogram,
+    )
+    from neurospatial.recording import Session as Session
+    from neurospatial.recording import load_session as load_session
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
