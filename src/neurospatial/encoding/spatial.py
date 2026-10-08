@@ -2027,8 +2027,8 @@ class SpatialRatesResult(SpatialResultMixin):
 
         **Classification priority** (higher takes precedence):
 
-        1. **Grid cell**: grid_score >= min_grid_score
-        2. **Border cell**: border_score >= min_border_score
+        1. **Grid cell**: grid_score >= min_grid_score and spatial_info >= min_spatial_info
+        2. **Border cell**: border_score >= min_border_score and spatial_info >= min_spatial_info
         3. **Place cell**: spatial_info >= min_spatial_info (and not grid/border)
         4. **Unclassified**: Does not meet any criteria
 
@@ -2099,18 +2099,14 @@ class SpatialRatesResult(SpatialResultMixin):
                     f"(one per neuron), got shape {border_scores_arr.shape}"
                 )
 
+        tuned = spatial_info >= min_spatial_info
         labels = np.full(n_neurons, "unclassified", dtype="<U14")
-        is_place = spatial_info >= min_spatial_info
-        is_border = (~np.isnan(border_scores_arr)) & (
-            border_scores_arr >= min_border_score
-        )
-        is_grid = (~np.isnan(grid_scores_arr)) & (grid_scores_arr >= min_grid_score)
 
         # Priority: grid > border > place > unclassified (assign in reverse so
         # higher-priority labels overwrite lower ones).
-        labels[is_place] = "place"
-        labels[is_border] = "border"
-        labels[is_grid] = "grid"
+        labels[tuned] = "place"
+        labels[tuned & (border_scores_arr >= min_border_score)] = "border"
+        labels[tuned & (grid_scores_arr >= min_grid_score)] = "grid"
 
         return labels
 

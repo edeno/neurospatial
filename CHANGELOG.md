@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Require the documented spatial-information threshold for every place, grid and border label. In the seeded 10-minute noise example, erroneous border labels fall from 19/20 to 0/20; label precedence and threshold values are unchanged.
+
 - Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
 
 ### Fixed — documentation
