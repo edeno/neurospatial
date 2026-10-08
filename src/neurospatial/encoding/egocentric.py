@@ -1526,7 +1526,7 @@ def compute_egocentric_rate(
         raise ValueError(
             _format_error(
                 "compute_egocentric_rate: headings is required for egocentric bearing.",
-                why="animal-relative direction needs the heading at each sample",
+                why="Why: animal-relative direction needs the heading at each sample",
                 fix="pass headings, or use compute_object_vector_rate without headings",
             )
         )
@@ -2168,7 +2168,7 @@ def compute_egocentric_rates(
         raise ValueError(
             _format_error(
                 "compute_egocentric_rates: headings is required for egocentric bearing.",
-                why="animal-relative direction needs the heading at each sample",
+                why="Why: animal-relative direction needs the heading at each sample",
                 fix="pass headings, or use compute_object_vector_rates without headings",
             )
         )

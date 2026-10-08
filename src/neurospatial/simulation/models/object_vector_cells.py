@@ -8,13 +8,16 @@ Key Features
 ------------
 - **Distance tuning**: Gaussian tuning around preferred distance from objects
 - **Direction tuning**: Optional von Mises (circular Gaussian) tuning around
-  preferred egocentric direction
+  preferred direction in the configured frame
 - **Object selectivity**: Respond to any object, nearest object, or specific object
 - **Distance metrics**: Euclidean (straight-line) or geodesic (path through graph)
 
 Coordinate Conventions
 ----------------------
-**Egocentric direction (when ``preferred_direction`` is specified)**:
+**Allocentric direction (default)**: 0 = East and +pi/2 = North.
+Set ``direction_frame="egocentric"`` for heading-relative tuning.
+
+**Egocentric direction (when explicitly selected)**:
 - 0 radians = object is directly ahead of animal
 - π/2 radians = object is to the left
 - -π/2 radians = object is to the right
@@ -45,14 +48,14 @@ Create a simple object-vector cell:
 ...     distance_width=5.0,
 ... )
 
-Create a directionally-tuned OVC (fires when object is ahead):
+Create a directionally-tuned allocentric OVC (fires when the object is East):
 
 >>> ovc_directional = ObjectVectorCellModel(
 ...     env=env,
 ...     object_positions=objects,
 ...     preferred_distance=10.0,
 ...     distance_width=5.0,
-...     preferred_direction=0.0,  # Object ahead
+...     preferred_direction=0.0,  # Object East of the animal
 ...     direction_kappa=4.0,  # ~30° half-width
 ... )
 
@@ -85,6 +88,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 
@@ -111,11 +115,14 @@ class ObjectVectorCellModel:
     distance_width : float
         Distance tuning width (standard deviation of Gaussian).
     preferred_direction : float | None, optional
-        Preferred egocentric direction in radians (default: None).
-        If None, responds to objects at preferred distance in any direction.
-        If specified, uses von Mises directional tuning and **requires headings**
-        in ``firing_rate()`` method.
-        Convention: 0=ahead, π/2=left, -π/2=right, ±π=behind.
+        Preferred animal-to-object direction in radians (default: None).
+        If None, responds at the preferred distance in any direction.
+        Otherwise applies von Mises tuning in ``direction_frame``.
+    direction_frame : {"allocentric", "egocentric"}, default="allocentric"
+        Allocentric: 0 = East, +pi/2 = North; no headings needed.
+        Egocentric: 0 = ahead, +pi/2 = left; directional tuning requires
+        headings in ``firing_rate()``. The reverse object-to-animal vector
+        has preferred direction plus pi, wrapped to [-pi, pi].
     direction_kappa : float, optional
         Direction tuning concentration parameter (default: 4.0).
         Higher values = sharper tuning. κ=4 ≈ 30° half-width at half-max.
@@ -148,7 +155,7 @@ class ObjectVectorCellModel:
     distance_width : float
         Distance tuning width.
     preferred_direction : float | None
-        Preferred egocentric direction (radians) or None.
+        Preferred direction in the configured frame (radians) or None.
     direction_kappa : float
         Direction tuning concentration.
     max_rate : float
@@ -224,6 +231,7 @@ class ObjectVectorCellModel:
         preferred_distance: float,
         distance_width: float,
         preferred_direction: float | None = None,
+        direction_frame: Literal["allocentric", "egocentric"] = "allocentric",
         direction_kappa: float = 4.0,
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
@@ -231,6 +239,14 @@ class ObjectVectorCellModel:
         specific_object_index: int | None = None,
         metric: Literal["euclidean", "geodesic"] = "euclidean",
     ) -> None:
+        if direction_frame not in ("allocentric", "egocentric"):
+            raise ValueError(
+                _format_error(
+                    f"Unknown direction_frame={direction_frame!r}.",
+                    why="Why: direction tuning needs an allocentric or egocentric reference frame",
+                    fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
+                )
+            )
         # Convert and validate object_positions
         object_positions = np.asarray(object_positions, dtype=np.float64)
         if object_positions.ndim != 2:
@@ -326,6 +342,7 @@ class ObjectVectorCellModel:
         self.preferred_distance = preferred_distance
         self.distance_width = distance_width
         self.preferred_direction = preferred_direction
+        self.direction_frame = direction_frame
         self.direction_kappa = direction_kappa
         self.max_rate = max_rate
         self.baseline_rate = baseline_rate
@@ -368,8 +385,8 @@ class ObjectVectorCellModel:
             Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,), optional
             Animal heading in radians (allocentric convention: 0=East).
-            **Required when ``preferred_direction`` is set during initialization.**
-            If None and ``preferred_direction`` is set, will raise ValueError.
+            Required only for ``direction_frame="egocentric"`` when
+            ``preferred_direction`` is set. Allocentric models ignore headings.
 
         Returns
         -------
@@ -379,7 +396,7 @@ class ObjectVectorCellModel:
         Raises
         ------
         ValueError
-            If ``preferred_direction`` is set but ``headings`` is None.
+            If egocentric directional tuning needs headings and none are supplied.
 
         Notes
         -----
@@ -396,9 +413,18 @@ class ObjectVectorCellModel:
         n_objects = len(self.object_positions)
 
         # Validate headings if directional tuning is enabled
-        if self.preferred_direction is not None and headings is None:
-            msg = "headings is required when preferred_direction is set"
-            raise ValueError(msg)
+        if (
+            self.direction_frame == "egocentric"
+            and self.preferred_direction is not None
+            and headings is None
+        ):
+            raise ValueError(
+                _format_error(
+                    "headings is required for egocentric directional tuning.",
+                    why="Why: animal-relative bearing needs the heading at each sample",
+                    fix='pass headings to firing_rate(), or configure direction_frame="allocentric"',
+                )
+            )
 
         # Compute distances from positions to all objects
         # Shape: (n_time, n_objects)
@@ -441,13 +467,16 @@ class ObjectVectorCellModel:
 
         # Apply directional tuning if specified
         if self.preferred_direction is not None:
-            assert headings is not None
-
             # Compute bearing to each object
             # Shape: (n_time, n_objects)
-            bearings = compute_egocentric_bearing(
-                positions, headings, self.object_positions
-            )
+            if self.direction_frame == "allocentric":
+                delta = self.object_positions[None, :, :] - positions[:, None, :]
+                bearings = np.arctan2(delta[:, :, 1], delta[:, :, 0])
+            else:
+                assert headings is not None
+                bearings = compute_egocentric_bearing(
+                    positions, headings, self.object_positions
+                )
 
             # Apply von Mises directional tuning
             # von Mises: exp(κ * cos(θ - θ_pref)) / exp(κ)
@@ -493,6 +522,7 @@ class ObjectVectorCellModel:
             - 'preferred_distance': float - preferred distance from object
             - 'distance_width': float - distance tuning width
             - 'preferred_direction': float | None - preferred direction (radians)
+            - 'direction_frame': str - allocentric or egocentric direction
             - 'direction_kappa': float - direction tuning concentration
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
@@ -521,6 +551,7 @@ class ObjectVectorCellModel:
             "preferred_distance": self.preferred_distance,
             "distance_width": self.distance_width,
             "preferred_direction": self.preferred_direction,
+            "direction_frame": self.direction_frame,
             "direction_kappa": self.direction_kappa,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,

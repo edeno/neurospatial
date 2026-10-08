@@ -1106,6 +1106,7 @@ class TestEgocentricRateConvention:
         env, positions, times, headings = trajectory
         object_positions = np.array([[20.0, 20.0]])  # object at arena center
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
@@ -1178,6 +1179,7 @@ class TestEgocentricRateNaNHandling:
         headings = heading_from_velocity(positions, times, min_speed=2.0)
         object_positions = np.array([[20.0, 20.0]])
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,

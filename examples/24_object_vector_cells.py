@@ -169,7 +169,7 @@ plt.show()
 preferred_distance = 20.0
 preferred_direction = np.pi / 2  # to the left
 
-ovc_model = ObjectVectorCellModel(
+ovc_model = ObjectVectorCellModel(direction_frame="egocentric", 
     env=env,
     object_positions=object_positions,
     preferred_distance=preferred_distance,
@@ -402,8 +402,8 @@ print(f"  OVC score:        {ovc_score:.3f}")
 print(f"  Place cell score: {pc_score:.3f}")
 
 # Egocentric spatial information (bits/spike, Skaggs in polar coords)
-ovc_egoc_info = ovc_result.egocentric_spatial_information()
-pc_egoc_info = pc_result.egocentric_spatial_information()
+ovc_egoc_info = ovc_result.spatial_information()
+pc_egoc_info = pc_result.spatial_information()
 
 # Allocentric spatial information (bits/spike, Skaggs over the arena)
 ovc_alloc_info = ovc_place_result.spatial_information()
@@ -434,7 +434,7 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 #    smoothed tuning.
 # 2. **Manual two-criterion check** on the *smoothed* tuning we
 #    already computed: ``object_vector_score`` plus
-#    ``egocentric_spatial_information``. Smoothing buys a much cleaner
+#    ``spatial_information``. Smoothing buys a much cleaner
 #    score but requires picking smoothing parameters explicitly, so
 #    thresholds need to be tuned to your recording.
 #
@@ -487,7 +487,7 @@ if pc_is_ovc:
 # small absolute scores typical of smoothed egocentric polar maps;
 # 1.0 bits/spike is well above the library's 0.3-default but
 # comfortably below the strong-OVC range (0.5-1.5+) the
-# ``EgocentricRateResult.is_object_vector_cell`` docstring discusses.
+# ``ObjectVectorRateResult.is_object_vector_cell`` docstring discusses.
 # Tune both to your recording.
 score_threshold = 0.1
 info_threshold = 1.0
@@ -529,10 +529,10 @@ print(f"  Place cell -> {pc_passes}")
 # ### API
 # - ``ObjectVectorCellModel`` simulates a ground-truth OVC with
 #   configurable distance / direction tuning
-# - ``compute_egocentric_rate`` returns an ``EgocentricRateResult`` with
+# - ``compute_egocentric_rate`` returns an ``ObjectVectorRateResult`` with
 #   ``firing_rate``, ``occupancy``, and tuning summaries
 #   (``preferred_distance``, ``preferred_direction``,
-#   ``egocentric_spatial_information``)
+#   ``spatial_information``)
 # - ``object_vector_score`` collapses a tuning curve into a single
 #   selectivity score in [0, 1]
 # - ``is_object_vector_cell`` is a one-shot screening function that

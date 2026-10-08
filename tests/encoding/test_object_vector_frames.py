@@ -45,6 +45,7 @@ def test_egocentric_recovers_ahead_ovc(ou_env, ou_10min, obj):
     times, positions, headings = ou_10min
     model = ObjectVectorCellModel(
         ou_env,
+        direction_frame="egocentric",
         object_positions=obj,
         preferred_distance=20,
         distance_width=5,
