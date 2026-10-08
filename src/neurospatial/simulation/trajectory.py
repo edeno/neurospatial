@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+from neurospatial._exceptions import _format_error
 
 logger = logging.getLogger(__name__)
 
@@ -622,7 +623,8 @@ def simulate_trajectory_laps(
     env : Environment
         The spatial environment.
     n_laps : int
-        Number of complete laps (outbound + inbound).
+        Number of one-way traversals, alternating outbound and inbound,
+        starting outbound. Two traversals make one out-and-back cycle.
     speed_mean : float, optional
         Mean speed in environment units/second (default: 0.1).
     speed_std : float, optional
@@ -696,7 +698,70 @@ def simulate_trajectory_laps(
     --------
     simulate_trajectory_ou : Realistic random exploration
     simulate_trajectory_sinusoidal : Simple periodic motion (1D)
+    simulate_session : Fit a requested number of traversals into a session duration
     """
+    return _simulate_trajectory_laps(
+        env,
+        n_laps,
+        speed_mean=speed_mean,
+        speed_std=speed_std,
+        outbound_path=outbound_path,
+        inbound_path=inbound_path,
+        pause_duration=pause_duration,
+        sampling_frequency=sampling_frequency,
+        seed=seed,
+        return_metadata=return_metadata,
+    )
+
+
+def _simulate_trajectory_laps(
+    env: Environment,
+    n_laps: int,
+    *,
+    speed_mean: float = 0.1,
+    speed_std: float = 0.02,
+    outbound_path: list[int] | None = None,
+    inbound_path: list[int] | None = None,
+    pause_duration: float = 0.5,
+    sampling_frequency: float = 500.0,
+    seed: int | None = None,
+    return_metadata: bool = False,
+    duration: float | None = None,
+) -> (
+    tuple[NDArray[np.float64], NDArray[np.float64]]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+):
+    """Shared lap engine; sessions allocate samples before generating positions."""
+    if duration is not None:
+        for name, value, positive in [
+            ("duration", duration, True),
+            ("sampling_frequency", sampling_frequency, True),
+            ("speed_mean", speed_mean, True),
+            ("speed_std", speed_std, False),
+            ("pause_duration", pause_duration, False),
+        ]:
+            if not np.isfinite(value) or (value <= 0 if positive else value < 0):
+                bound = "positive" if positive else "non-negative"
+                raise ValueError(
+                    _format_error(
+                        f"{name} must be finite and {bound}, got {value}.",
+                        why="Why: Lap session timing requires finite sample budgets and speeds.",
+                        fix=f"Set {name} to a finite {bound} value.",
+                    )
+                )
+        if (
+            not isinstance(n_laps, (int, np.integer))
+            or isinstance(n_laps, bool)
+            or n_laps <= 0
+        ):
+            raise ValueError(
+                _format_error(
+                    f"n_laps must be a positive integer, got {n_laps}.",
+                    why="Why: Each requested one-way traversal needs its own sample allocation.",
+                    fix="Set n_laps=2 for one out-and-back cycle.",
+                )
+            )
+
     # Validate parameters
     if n_laps <= 0:
         msg = f"n_laps must be positive (got {n_laps})"
@@ -763,6 +828,51 @@ def simulate_trajectory_laps(
     # Time step
     dt = 1.0 / sampling_frequency
 
+    lap_sample_counts = None
+    if duration is not None:
+        # Allocate the requested clock first, keeping fixed pauses and at least
+        # two samples per traversal so both path endpoints are represented.
+        total_samples = int(np.ceil(duration * sampling_frequency))
+        if (total_samples - 1) / sampling_frequency >= duration:
+            total_samples -= 1
+        pause_samples = int(pause_duration * sampling_frequency)
+        minimum_samples = 2 * n_laps + pause_samples * (n_laps - 1)
+        if total_samples < minimum_samples:
+            raise ValueError(
+                _format_error(
+                    f"duration={duration} s cannot fit n_laps={n_laps} traversals "
+                    f"with pause_duration={pause_duration} s at "
+                    f"sampling_frequency={sampling_frequency} Hz.",
+                    why=f"Why: Fixed pauses and two endpoints per traversal require {minimum_samples} samples.",
+                    fix=f"Increase duration to at least {minimum_samples / sampling_frequency:g} seconds, "
+                    "or reduce n_laps or pause_duration.",
+                )
+            )
+
+        # Speed draws shape relative traversal durations. Absolute speeds follow
+        # from the available time; no speed-driven trajectory is generated and
+        # then rescaled or truncated.
+        distances_by_direction = [
+            np.linalg.norm(np.diff(env.bin_centers[path], axis=0), axis=1).sum()
+            for path in (outbound_path, inbound_path)
+        ]
+        weights = np.array(
+            [
+                distances_by_direction[lap_idx % 2]
+                / max(rng.normal(speed_mean, speed_std), 0.01)
+                for lap_idx in range(n_laps)
+            ]
+        )
+        if not np.any(weights):
+            weights = np.ones(n_laps)
+        extra_samples = total_samples - minimum_samples
+        shares = extra_samples * (weights / weights.sum())
+        extras = np.floor(shares).astype(np.int_)
+        remaining = extra_samples - int(extras.sum())
+        order = np.argsort(-(shares - extras), kind="stable")
+        extras[order[:remaining]] += 1
+        lap_sample_counts = extras + 2
+
     # Build trajectory by concatenating laps
     all_positions = []
     all_times = []
@@ -787,14 +897,14 @@ def simulate_trajectory_laps(
         distances = np.linalg.norm(np.diff(path_positions, axis=0), axis=1)
         total_distance = np.sum(distances)
 
-        # Compute time to traverse path (with speed variability)
-        speed = rng.normal(speed_mean, speed_std)
-        # Ensure positive speed with absolute minimum
-        speed = max(speed, 0.01)
-        path_duration = total_distance / speed
-
-        # Number of samples for this path
-        n_samples = max(2, int(path_duration / dt))
+        if lap_sample_counts is None:
+            # Direct calls retain their speed-driven timing and RNG draws.
+            speed = rng.normal(speed_mean, speed_std)
+            speed = max(speed, 0.01)
+            path_duration = total_distance / speed
+            n_samples = max(2, int(path_duration / dt))
+        else:
+            n_samples = int(lap_sample_counts[lap_idx])
 
         # Interpolate positions along path
         # Create cumulative distances
@@ -847,6 +957,9 @@ def simulate_trajectory_laps(
     # Concatenate all segments
     positions = np.vstack(all_positions)
     times = np.concatenate(all_times)
+    if duration is not None:
+        # One clock avoids accumulated rounding at lap/pause boundaries.
+        times = np.arange(len(positions), dtype=np.float64) / sampling_frequency
     lap_ids = np.array(all_lap_ids, dtype=np.int_)
     directions = np.array(all_directions)
     lap_boundaries = np.array(lap_boundaries_list, dtype=np.int_)

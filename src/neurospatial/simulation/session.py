@@ -149,7 +149,9 @@ def simulate_session(
     env : Environment
         The spatial environment.
     duration : float
-        Session duration in seconds.
+        Session duration in seconds. For ``trajectory_method='laps'``, samples
+        occur at ``k / sampling_frequency`` in ``[0, duration)``; the final
+        sample is within one sample period of ``duration``.
     n_cells : int, optional
         Number of neurons to simulate (default: 50).
     cell_type : {'place', 'boundary', 'grid', 'mixed'}, optional
@@ -184,7 +186,17 @@ def simulate_session(
 
         - speed_mean : float - Mean speed for OU process (default varies by method)
         - coherence_time : float - Temporal coherence for OU process
-        - n_laps : int - Number of laps for 'laps' trajectory method
+        - n_laps : int - Number of one-way traversals for 'laps' (default: 10),
+          alternating outbound/inbound starting outbound
+        - sampling_frequency : float - Lap samples per second (default: 500)
+        - pause_duration : float - Pause between traversals (default: 0.5 s),
+          rounded down to whole samples
+        - speed_mean, speed_std : float - For laps, speed draws (clipped below
+          at 0.01 environment units/s) determine relative traversal times.
+          Absolute speeds are determined by duration, path lengths and n_laps.
+          Every traversal retains at least two samples; fixed pauses are
+          reserved first, then remaining samples are allocated in proportion
+          to path length divided by the sampled speed.
 
         **Place cell parameters** (cell_type='place' or 'mixed'):
 
@@ -237,6 +249,9 @@ def simulate_session(
         If coverage is not one of: 'uniform', 'random'.
     ValueError
         If grid cells requested but environment is not 2D.
+    ValueError
+        If lap duration is non-finite or too short for fixed pauses and two
+        samples per traversal, or lap timing parameters are invalid.
 
     Examples
     --------
@@ -294,7 +309,7 @@ def simulate_session(
     )
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
-        simulate_trajectory_laps,
+        _simulate_trajectory_laps,
         simulate_trajectory_ou,
         simulate_trajectory_sinusoidal,
     )
@@ -417,9 +432,10 @@ def simulate_session(
         # Extract n_laps separately to avoid duplicate keyword argument
         n_laps = kwargs.pop("n_laps", 10)
         laps_kwargs = {k: v for k, v in kwargs.items() if k != "return_metadata"}
-        result = simulate_trajectory_laps(
+        result = _simulate_trajectory_laps(
             env,
             n_laps=n_laps,
+            duration=duration,
             seed=trajectory_seed,
             return_metadata=False,
             **laps_kwargs,
@@ -543,6 +559,13 @@ def simulate_session(
         "seed": seed,
         **kwargs,  # Include any additional parameters
     }
+    if trajectory_method == "laps":
+        metadata.update(
+            n_laps=n_laps,
+            sampling_frequency=kwargs.get("sampling_frequency", 500.0),
+            pause_duration=kwargs.get("pause_duration", 0.5),
+            sampling_convention="k / sampling_frequency in [0, duration)",
+        )
 
     # Return SimulationSession
     return SimulationSession(

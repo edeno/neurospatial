@@ -196,7 +196,8 @@ def linear_track_session(
     Parameters
     ----------
     duration : float, optional
-        Session duration in seconds (default: 240.0).
+        Session duration in seconds (default: 240.0). Samples at 500 Hz cover
+        ``[0, duration)``; the final sample is within 0.002 s of ``duration``.
     track_length : float, optional
         Track length in cm (default: 200.0).
     bin_size : float, optional
@@ -204,7 +205,8 @@ def linear_track_session(
     n_place_cells : int, optional
         Number of place cells (default: 40).
     n_laps : int, optional
-        Number of back-and-forth laps (default: 20).
+        Number of one-way traversals (default: 20), alternating outbound and
+        inbound starting outbound. Two traversals form one out-and-back cycle.
     seed : int | None, optional
         Random seed for reproducibility (default: None).
 
@@ -226,6 +228,9 @@ def linear_track_session(
         If duration, track_length, bin_size, n_place_cells, or n_laps are non-positive.
     ValueError
         If bin_size >= track_length (would create too few bins).
+    ValueError
+        If duration is non-finite or too short for the requested traversals:
+        at least two samples per traversal and 0.5 s between traversals.
 
     Examples
     --------
@@ -264,13 +269,17 @@ def linear_track_session(
     - Track length: 200 cm - standard linear track length
     - Bin size: 1 cm - fine spatial resolution for 1D
     - Number of cells: 40 - typical hippocampal CA1 recording
-    - Number of laps: 20 - provides good spatial coverage
+    - Number of traversals: 20 - ten out-and-back cycles
 
     **Trajectory**:
 
     Uses lap-based trajectory generation with automatic path finding. The
-    animal runs back and forth along the track, with speed variations and
-    brief pauses at endpoints to simulate realistic behavior.
+    animal runs back and forth along the track, preserving all ``n_laps``
+    traversals and fixed 0.5 s pauses between them. Remaining samples are
+    distributed using seeded relative speed variations; absolute speeds are
+    determined by ``duration`` and the traversal count, with no imposed speed
+    cap. Infeasible sample budgets raise an error rather than dropping laps.
+    Metadata records the requested duration and the sampling convention.
 
     **Coverage**:
 
@@ -351,7 +360,8 @@ def tmaze_alternation_session(
     Parameters
     ----------
     duration : float, optional
-        Session duration in seconds (default: 300.0).
+        Session duration in seconds (default: 300.0). Samples at 500 Hz cover
+        ``[0, duration)``; the final sample is within 0.002 s of ``duration``.
     n_trials : int, optional
         Number of alternation trials (default: 20).
     n_place_cells : int, optional
@@ -375,6 +385,9 @@ def tmaze_alternation_session(
     ------
     ValueError
         If duration, n_trials, or n_place_cells are non-positive.
+    ValueError
+        If duration is non-finite or too short for two samples per traversal
+        and fixed 0.5 s pauses between the ``n_trials`` traversals.
 
     Examples
     --------
@@ -441,6 +454,11 @@ def tmaze_alternation_session(
     Uses lap-based trajectory generation. The animal alternates between
     left and right arms according to a perfect alternation pattern,
     starting with a random first choice determined by the seed.
+
+    Session timing preserves ``n_trials`` one-way traversals and fixed 0.5 s
+    pauses between them. Absolute speeds follow from the requested duration;
+    seeded speed draws determine relative traversal times. Metadata records
+    duration and the sampling convention; infeasible sample budgets raise.
 
     **Trial Metadata**:
 

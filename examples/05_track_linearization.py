@@ -25,7 +25,7 @@
 # - Convert between N-D position coordinates and 1D linear position
 # - Work with complex maze structures (plus maze, figure-8)
 # - Understand the difference between 1D and N-D environments
-# - Use linearization for trajectory-dependent neural analysis
+# - Combine linearized coordinates and explicit labels for directional neural analysis
 #
 # **Estimated time: 25-30 minutes**
 
@@ -42,7 +42,7 @@
 #
 # For these environments, **linearization** maps 2D positions onto a 1D track coordinate. This is essential for:
 #
-# - **Trajectory-dependent analysis**: Distinguish left vs right journeys on the same physical location
+# - **Direction-conditioned analysis**: Combine track coordinates with explicit journey labels
 # - **Place field analysis**: Better capture spatially-tuned neurons on tracks
 # - **Sequence detection**: Identify replay and theta sequences
 # - **Directional coding**: Separate opposing movement directions
@@ -166,9 +166,9 @@ print(f"Layout type: {env_1d.layout._layout_type_tag}")
 # The key difference:
 #
 # - **2D/N-D Environment**: Bins represent regions in physical space
-# - **1D Environment**: Bins represent positions along a trajectory
+# - **GraphLayout Environment**: Bins represent locations along track edges
 #
-# **Critical insight**: On a linear track, the same physical location (e.g., X=50 cm) is visited twice per lap (going left vs going right). A 1D linearized environment gives these **different bin indices** based on trajectory!
+# **Critical insight**: Revisiting the same point on this single-edge track gives the same coordinate and bin in either direction. Linearization describes geometry; direction-specific fields also need explicit trial or movement labels. Branch assignment on more complex graphs depends on the graph and projection settings.
 
 # %%
 if env_1d is not None:
@@ -194,7 +194,7 @@ else:
 # - **`to_linear(nd_position)`**: Convert 2D position → 1D linear coordinate
 # - **`linear_to_nd(linear_position)`**: Convert 1D coordinate → 2D position
 #
-# These methods consider trajectory, not just spatial location!
+# These methods convert between physical position and the graph's ordered track coordinates. They do not label inbound/outbound trials.
 
 # %%
 if env_1d is not None and env_1d.is_linearized_track:
@@ -206,7 +206,7 @@ if env_1d is not None and env_1d.is_linearized_track:
         f"Linear position range: [{linear_positions.min():.1f}, {linear_positions.max():.1f}]"
     )
 
-    # Show how same X position maps to different linear positions
+    # Show repeated visits near the same X position
     mid_track_x = 50.0
     mid_indices = np.where(np.abs(linear_track_data[:, 0] - mid_track_x) < 1.0)[0][:10]
 
@@ -235,14 +235,14 @@ if env_1d is not None and env_1d.is_linearized_track:
     axes[1].plot(linear_positions, linewidth=2, color="orange")
     axes[1].set_xlabel("Time (samples)")
     axes[1].set_ylabel("Linear Position")
-    axes[1].set_title("1D Linearized Position Over Time (trajectory-aware)")
+    axes[1].set_title("Track Coordinate Over Time")
     axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
-    print("\nKey insight: Linear position continuously increases,")
-    print("even when X position oscillates back and forth!")
+    print("\nKey insight: Track coordinates decrease during a return traversal.")
+    print("Use explicit direction labels to separate outbound and inbound firing.")
 else:
     print("Skipping visualization (track-linearization not available)")
 
@@ -428,8 +428,8 @@ ax.set_aspect("equal")
 plt.tight_layout()
 plt.show()
 
-print("\nNote: Center appears multiple times in linearization!")
-print("This captures the different trajectories through the center.")
+print("\nNote: Edge order arranges the graph's track-coordinate axis.")
+print("It does not supply a trial or direction label at the center.")
 
 
 # %% [markdown]
@@ -549,12 +549,12 @@ print("\nNotice: Cell fires specifically when animal moves toward north arm")
 print("But NOT when returning from north arm through the same physical space!")
 
 # %% [markdown]
-# ### Problem: 2D Analysis Misses Trajectory Dependence
+# ### Pooled Spatial Maps Average Across Directions
 #
-# If we compute a firing rate map in 2D space, we lose the trajectory information:
+# A map computed without direction labels pools outbound and inbound occupancy. This happens on both a 2D grid and a graph track.
 
 # %%
-# Create 2D environment (wrong for this analysis!)
+# Create a 2D environment for a direction-pooled comparison
 env_2d = Environment.from_samples(
     positions=plus_maze_data, bin_size=8.0, name="PlusMaze2D"
 )
@@ -584,7 +584,7 @@ print(f"2D firing rate map: {env_2d.n_bins} bins")
 print(f"Peak firing rate: {firing_rate_2d.max():.2f} Hz")
 
 # %%
-# Visualize 2D firing rate (problematic)
+# Visualize the direction-pooled 2D firing rate
 fig, ax = plt.subplots(figsize=(10, 10))
 
 # Plot firing rate
@@ -613,19 +613,19 @@ ax.plot(
 
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("2D Firing Rate Map (WRONG: averages over trajectories!)")
+ax.set_title("2D Firing Rate Map (pooled across directions)")
 ax.set_aspect("equal")
 plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
 plt.tight_layout()
 plt.show()
 
 print("\nProblem: 2D map averages over outbound and inbound journeys")
-print("Result: Diluted place field, lost trajectory information")
+print("Direction-dependent firing needs a separate label, regardless of layout.")
 
 # %% [markdown]
-# ### Solution: 1D Linearization Preserves Trajectory
+# ### Graph Coordinates Also Pool Directions Without Labels
 #
-# Now let's see how 1D linearization handles this correctly:
+# The graph representation follows the track geometry. The calculation below still pools directions because it uses no direction labels; a higher peak can reflect different binning rather than recovered direction dependence.
 
 # %%
 if env_plus is not None and env_plus.is_linearized_track:
@@ -653,7 +653,7 @@ if env_plus is not None and env_plus.is_linearized_track:
 
     print(f"1D firing rate map: {env_plus.n_bins} bins")
     print(f"Peak firing rate: {firing_rate_1d.max():.2f} Hz")
-    print("\nNotice: Peak rate is higher (not diluted by averaging)")
+    print("\nThis graph map also pools outbound and inbound occupancy.")
 else:
     print("Skipping 1D analysis (track-linearization not available)")
 
@@ -680,16 +680,78 @@ if env_plus is not None and env_plus.is_linearized_track:
 
     ax.set_xlabel("Linear Position (bin index)")
     ax.set_ylabel("Firing Rate (Hz)")
-    ax.set_title("1D Linearized Firing Rate (CORRECT: preserves trajectory)")
+    ax.set_title("Graph-Track Firing Rate (pooled across directions)")
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
-    print("\nSuccess: Clear, localized place field on north arm")
-    print("Outbound and inbound trajectories are separated!")
+    print("\nGraph geometry localizes the field to track bins.")
+    print("Outbound and inbound firing are still pooled in this map.")
 else:
     print("Skipping visualization (track-linearization not available)")
+
+# %% [markdown]
+# ## Direction-Specific Fields Need Explicit Trial Labels
+#
+# This complete example combines an explicit graph, out-and-back trials and direction labels. Geometric coordinates repeat on the return path, while the two direction-conditioned maps recover their separately planted centers within one 5 cm bin. The same recipe is executed in the [workflows guide](../../user-guide/workflows/#direction-specific-fields-on-a-graph-track).
+
+# %%
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+from shapely.geometry import Polygon
+
+from neurospatial import Environment
+from neurospatial.behavior import goal_pair_direction_labels, segment_trials
+from neurospatial.encoding import compute_directional_place_fields
+from neurospatial.simulation import generate_poisson_spikes
+
+# A 100 cm track: graph coordinates describe geometry, not running direction.
+graph = nx.Graph()
+graph.add_node(0, pos=(0.0, 0.0))
+graph.add_node(1, pos=(100.0, 0.0))
+graph.add_edge(0, 1, distance=100.0)
+env = Environment.from_graph(graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0)
+env.units = "cm"
+repeated = np.array([[25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [50.0, 0.0], [25.0, 0.0]])
+np.testing.assert_allclose(env.to_linear(repeated), repeated[:, 0])
+repeated_bins = env.bin_at(repeated)
+assert repeated_bins[0] == repeated_bins[-1] and repeated_bins[1] == repeated_bins[-2]
+
+# Six out-and-back cycles in 60 seconds, with different planted field centers.
+times = np.arange(0.0, 60.0, 0.05)
+phase = (times % 10.0) / 10.0
+x = 10.0 + 80.0 * (1.0 - np.abs(2.0 * phase - 1.0))
+positions = np.column_stack([x, np.zeros_like(x)])
+planted_center = np.where(phase < 0.5, 60.0, 40.0)
+intensity = 0.5 + 25.0 * np.exp(-0.5 * ((x - planted_center) / 10.0) ** 2)
+spikes = generate_poisson_spikes(intensity, times, seed=7)
+
+# Explicit trials supply the direction labels; both maps use the same graph.
+env.regions.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
+env.regions.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
+position_bins = env.bin_sequence(times, positions, dedup=False)
+outbound = segment_trials(
+    position_bins, times, env, start_region="home", end_regions=["goal"]
+)
+inbound = segment_trials(
+    position_bins, times, env, start_region="goal", end_regions=["home"]
+)
+labels = goal_pair_direction_labels(times, outbound + inbound)
+fields = compute_directional_place_fields(env, spikes, times, positions, labels)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
+for ax, label, truth in zip(
+    axes, ["home→goal", "goal→home"], [60.0, 40.0], strict=True
+):
+    field = fields.firing_rates[label]
+    recovered = env.bin_centers[np.nanargmax(field), 0]
+    assert abs(recovered - truth) <= 5.0  # Recover each planted center within one bin.
+    env.plot_field(field, ax=ax, colorbar_label="Firing rate (Hz)")
+    ax.set_title(f"{label}: peak {recovered:.1f} cm")
+    print(f"{label}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
+plt.show()
 
 # %% [markdown]
 # ## When to Use 1D vs N-D Environments
@@ -699,13 +761,14 @@ else:
 # | Linear tracks | Open field arenas |
 # | Mazes with defined paths | Water mazes |
 # | Track-based tasks | Free exploration |
-# | Trajectory-dependent analysis | Purely spatial analysis |
+# | Coordinates along constrained paths | Coordinates in continuous arenas |
 # | Sequence detection | Grid cell analysis |
 # | Theta sequences, replay | Head direction independence |
 #
-# **Key question**: Does your analysis care about the trajectory/history, or just current location?
-# - **Trajectory matters** → Use 1D linearization
-# - **Location only** → Use N-D grids
+# **Key question**: Is movement constrained to an explicit track graph or an open arena?
+# - **Track geometry** → Use GraphLayout coordinates
+# - **Open arena** → Use N-D grids
+# - **Direction or trial matters** → Supply explicit labels with either layout
 
 # %% [markdown]
 # ## Checking if Environment is 1D
@@ -768,33 +831,33 @@ else:
     bins = env_2d.bin_at(plus_maze_data[:10])
 
 # %% [markdown]
-# ### Pitfall 2: Using 2D environments for trajectory-dependent analysis
+# ### Pitfall 2: Pooling directions when firing depends on direction
 #
-# As we saw, this averages over different trajectories and loses information!
+# Both grids and graph tracks pool directions unless the analysis receives explicit direction or trial labels. See the joined graph-track recipe below and [directional place fields](../21_directional_place_fields/).
 
 # %% [markdown]
-# ### Pitfall 3: Not providing track_graph for complex mazes
+# ### Pitfall 3: Omitting the graph for a constrained track
 #
-# For simple tracks, auto-inference works. For complex mazes with branches, provide an explicit graph structure to ensure correct topology.
+# `from_graph()` requires an explicit graph, including edge distances. Specify branch geometry and edge order deliberately; coordinates alone do not encode the animal's trial choice.
 
 # %% [markdown]
-# ### Pitfall 4: Forgetting that linearization is trajectory-dependent
+# ### Pitfall 4: Treating geometric coordinates as a direction label
 #
-# The same physical location maps to different linear positions depending on trajectory! This is a feature, not a bug.
+# On a single-edge track, opposite traversals revisit the same coordinates and bins. On branched graphs, consult the graph/projection settings rather than assuming universal direction separation or monotonic coordinates.
 
 # %% [markdown]
 # ## Key Takeaways
 #
 # 1. **1D linearization** maps 2D/3D positions onto a 1D track coordinate
 # 2. **GraphLayout** creates 1D linearized environments (requires `track-linearization`)
-# 3. **Use `from_graph()`** factory method with position data and optional track structure
-# 4. **Trajectory-aware**: Same physical location → different linear positions based on path
+# 3. **Use `from_graph()`** with an explicit graph and edge ordering
+# 4. **Geometry and direction differ**: Repeated track locations share bins; direction-conditioned fields require explicit labels
 # 5. **Essential for track tasks**: Plus mazes, T-mazes, linear tracks, figure-8s
 # 6. **Check `env.is_linearized_track`** before calling linearization methods
 # 7. **Methods**:
 #    - `to_linear(nd_position)` - Convert to 1D
 #    - `linear_to_nd(linear_position)` - Convert back to N-D
-# 8. **Benefits**: Trajectory-dependent analysis, sequence detection, better place fields
+# 8. **Benefits**: Track geometry and distances; combine with trial labels for direction-conditioned fields
 #
 # ## Next Steps
 #

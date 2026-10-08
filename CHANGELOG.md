@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
+
 ### Fixed — documentation
+
+- Explain graph linearization as geometric coordinates rather than direction separation. The synchronized track tutorial and an executable graph/trial recipe use explicit direction labels and recover separate planted field centers within one bin.
+
+- Distinguish standardized assembly activity and EV/REV effect sizes from calibrated significance, document controlled REV correctly, and explain that selected dimensions can have no thresholded core members. Statistical calculations are unchanged.
 
 - Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
 

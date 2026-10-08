@@ -39,7 +39,9 @@ Typical Workflows
 2. Detect assemblies:
 
    >>> result = detect_assemblies(spike_counts, algorithm="ica")  # doctest: +SKIP
-   >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
+   >>> print(
+   ...     f"Found {result.n_significant} dimensions above threshold"
+   ... )  # doctest: +SKIP
 
 3. Analyze assembly patterns:
 
@@ -129,7 +131,7 @@ class AssemblyPattern(ResultMixin):
         Weight of each neuron in this assembly. Higher absolute values
         indicate stronger participation. Sign indicates activation direction.
     member_indices : NDArray[np.int64]
-        Indices of neurons with significant weights (above z_threshold).
+        Indices of neurons whose absolute-weight z-scores exceed z_threshold.
         These are the "core" members of the assembly.
     explained_variance_ratio : float
         Fraction of total variance explained by this assembly pattern.
@@ -145,9 +147,13 @@ class AssemblyPattern(ResultMixin):
 
     **Member Selection**:
 
-    Members are selected by z-scoring weights and thresholding. The default
-    threshold of 2.0 means neurons with weights > 2 standard deviations from
-    the mean are considered significant members.
+    Members are selected by z-scoring absolute weights across neurons and
+    thresholding. With the default cutoff of 2.0, an absolute weight must be
+    more than two standard deviations above their mean to be selected.
+    This is a heuristic weight cutoff,
+    not a calibrated per-neuron significance test. A detected pattern can have
+    no core members even when its underlying dimension exceeds the
+    Marchenko-Pastur threshold.
 
     Examples
     --------
@@ -186,9 +192,11 @@ class AssemblyDetectionResult(ResultMixin):
     method : str
         Detection method used ('ica', 'pca', or 'nmf').
     n_significant : int
-        Number of statistically significant assemblies (above Marchenko-Pastur
-        threshold). This may differ from len(patterns) if n_components was
-        specified manually.
+        Number of PCA eigenvalues above the Marchenko-Pastur reference
+        threshold. This counts retained dimensions, not assemblies with
+        thresholded core members. It may differ from len(patterns), for example
+        when n_components was specified manually or no eigenvalue exceeds
+        the threshold and the algorithm returns one exploratory component.
     eigenvalues : NDArray[np.float64]
         Eigenvalues from PCA, useful for scree plots.
     threshold : float
@@ -198,27 +206,31 @@ class AssemblyDetectionResult(ResultMixin):
     -----
     **Significance Determination**:
 
-    The number of significant assemblies is determined by the Marchenko-Pastur
-    theorem from random matrix theory. Eigenvalues above the threshold are
-    unlikely to arise from random correlations.
+    ``n_significant`` counts eigenvalues above the Marchenko-Pastur reference
+    threshold. This dimension-selection criterion does not assign a p-value
+    to a pattern, a neuron weight, or an activation time bin. A selected
+    dimension can produce a pattern with an empty ``member_indices`` array.
 
     **Activation Interpretation**:
 
-    Activation values are z-scored, so:
-    - activation > 2: strong assembly activation
-    - activation < -2: strong assembly suppression
-    - activation ≈ 0: baseline activity
+    ``activations`` carries the detection algorithm's projection scale, which
+    differs between PCA, ICA and NMF. Use :func:`assembly_activation` to obtain
+    a standardized projection for a chosen pattern and period. Standardized
+    values describe relative activity; they do not by themselves establish
+    significance or biological assembly identity.
 
     Examples
     --------
     >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
-    >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
+    >>> print(
+    ...     f"Found {result.n_significant} dimensions above threshold"
+    ... )  # doctest: +SKIP
     >>> print(f"Method: {result.method}")  # doctest: +SKIP
     >>>
     >>> # Plot activation of first assembly
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
     >>> plt.plot(result.activations[0])  # doctest: +SKIP
-    >>> plt.ylabel("Activation (z-score)")  # doctest: +SKIP
+    >>> plt.ylabel("Activation (algorithm projection scale)")  # doctest: +SKIP
     """
 
     patterns: list[AssemblyPattern]
@@ -246,11 +258,12 @@ class ExplainedVarianceResult(ResultMixin):
     Attributes
     ----------
     explained_variance : float
-        Explained variance (EV) - fraction of match period correlations
-        explained by template period correlations. Range [0, 1].
+        Squared correlation between template and match correlation vectors,
+        partialled for the baseline control when one is supplied. Range [0, 1].
     reversed_ev : float
-        Reversed explained variance (REV) - fraction of template period
-        correlations explained by match period. Used as control.
+        With a baseline control, the squared partial correlation between
+        control and match vectors, partialled for the template. Without a
+        control, equals explained_variance by construction.
     partial_correlation : float
         Partial correlation between template and match, controlling for
         baseline correlations (if control provided).
@@ -261,23 +274,24 @@ class ExplainedVarianceResult(ResultMixin):
     -----
     **Interpretation**:
 
-    - EV > REV: Forward reactivation (template patterns appear in match)
-    - EV ≈ REV: No directional reactivation
-    - EV >> 0: Strong correlation structure preserved
-
-    **Typical Values** (from Kudrimoti et al., 1999):
-
-    - Significant reactivation: EV > 0.1
-    - Strong reactivation: EV > 0.3
-    - Control periods: EV ≈ 0
+    With a baseline control, EV > REV describes more template-related than
+    baseline-related correlation structure in the match period. Without that
+    control, EV == REV, so the comparison provides no directional evidence.
+    These are effect sizes, not p-values: a fixed cutoff such as EV > 0.1 or
+    EV > 0.3 does not establish statistical significance. Statistical inference
+    needs a suitable null/control analysis for the recording and question.
+    An in-sample or synthetic demonstration does not establish biological
+    reactivation or held-out decoding accuracy.
 
     Examples
     --------
     >>> result = explained_variance_reactivation(
-    ...     corr_behavior, corr_sleep
+    ...     corr_behavior, corr_sleep, control_correlations=corr_pre_behavior
     ... )  # doctest: +SKIP
     >>> if result.explained_variance > result.reversed_ev:  # doctest: +SKIP
-    ...     print("Forward reactivation detected!")  # doctest: +SKIP
+    ...     print(
+    ...         "Template-related effect exceeds the baseline-related effect"
+    ...     )  # doctest: +SKIP
     """
 
     explained_variance: float
@@ -305,10 +319,11 @@ def marchenko_pastur_threshold(
     n_time_bins: int,
 ) -> float:
     """
-    Compute Marchenko-Pastur threshold for significant eigenvalues.
+    Compute the Marchenko-Pastur reference threshold for eigenvalues.
 
-    Eigenvalues of the correlation matrix above this threshold are unlikely
-    to arise from random correlations, indicating true structure in the data.
+    Eigenvalues of the correlation matrix above this reference edge are used
+    to select dimensions under the random-matrix model. This returns a
+    threshold, not a calibrated p-value for a finite recording.
 
     Parameters
     ----------
@@ -322,8 +337,8 @@ def marchenko_pastur_threshold(
     Returns
     -------
     float
-        Upper bound of eigenvalue distribution for random matrix.
-        Eigenvalues above this are statistically significant.
+        Upper reference edge of the random-matrix eigenvalue distribution.
+        The detector counts eigenvalues exceeding this edge.
 
     Notes
     -----
@@ -341,8 +356,11 @@ def marchenko_pastur_threshold(
 
     **Interpretation**:
 
-    - Eigenvalues > threshold: likely reflect true correlations
-    - Eigenvalues < threshold: consistent with random noise
+    - Eigenvalues > threshold: dimensions selected by the reference criterion
+    - Eigenvalues < threshold: dimensions not selected by that criterion
+
+    Selection depends on the reference model's assumptions; it does not
+    establish a biological assembly or assign significance to its members.
 
     **Requirements**:
 
@@ -408,8 +426,8 @@ def detect_assemblies(
     """
     Detect cell assemblies from population spike counts.
 
-    Identifies groups of neurons that fire together more than expected by
-    chance, using dimensionality reduction on the correlation structure.
+    Extracts population activity patterns using dimensionality reduction on
+    the correlation structure and a random-matrix dimension-selection rule.
 
     Parameters
     ----------
@@ -433,12 +451,15 @@ def detect_assemblies(
         - int: Fixed number of components
 
     z_threshold : float, default=2.0
-        Z-score threshold for assembly membership. Neurons with weight
-        z-scores above this are considered assembly members.
+        Z-score threshold for assembly membership. Neurons with absolute-weight
+        z-scores above this are selected as core members.
 
-        - 2.0: Standard threshold (p < 0.05, two-tailed)
-        - 2.5: Conservative threshold
-        - 1.5: Liberal threshold
+        - 2.0: Default heuristic weight cutoff
+        - 2.5: Select fewer core members
+        - 1.5: Select more core members
+
+        These cutoffs do not supply per-neuron p-values. A selected dimension
+        may yield a pattern with no weights above the chosen cutoff.
 
     rng : int or np.random.Generator, optional
         Random seed or generator for reproducibility. Affects ICA and NMF
@@ -487,7 +508,9 @@ def detect_assemblies(
     --------
     >>> # Basic usage
     >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
-    >>> print(f"Found {result.n_significant} assemblies")  # doctest: +SKIP
+    >>> print(
+    ...     f"Found {result.n_significant} dimensions above threshold"
+    ... )  # doctest: +SKIP
 
     >>> # With specific number of components
     >>> result = detect_assemblies(spike_counts, n_components=5)  # doctest: +SKIP
@@ -832,8 +855,10 @@ def assembly_activation(
     Returns
     -------
     activation : NDArray[np.float64], shape (n_time_bins,)
-        Activation strength at each time bin. Values are z-scored,
-        so activation > 2 indicates strong assembly activation.
+        Projection standardized to zero mean and unit standard deviation
+        within this period (all zeros for a constant projection). Large
+        magnitudes indicate unusual activity relative to that period's mean;
+        they do not supply calibrated tail probabilities.
 
     Raises
     ------
@@ -852,16 +877,35 @@ def assembly_activation(
         a(t) = \\sum_i w_i \\cdot z_i(t)
 
     where :math:`w_i` are pattern weights and :math:`z_i(t)` are
-    z-scored spike counts.
+    z-scored spike counts when ``z_score_input=True``. The projected series
+    is then standardized again within the supplied period, even when
+    ``z_score_input=False``. Use :func:`reactivation_strength` to compare
+    magnitudes between periods against a shared template baseline.
 
     **Interpretation**:
 
-    - activation > 2: strong assembly activation (p < 0.05)
-    - activation < -2: strong assembly suppression
-    - activation ≈ 0: baseline activity
+    - activation > 2: more than two standard deviations above this period's mean
+    - activation < -2: more than two standard deviations below this period's mean
+    - activation ≈ 0: near this period's mean projection
+
+    Standardization does not make an arbitrary activity distribution normal.
+    A threshold of 2 is a descriptive activity cutoff, not an automatic
+    p < 0.05 test. Assess significance using a suitable null/control analysis.
 
     Examples
     --------
+    A sparse one-neuron projection has 10% of bins above 2 despite unit variance:
+
+    >>> import numpy as np
+    >>> from neurospatial.decoding import AssemblyPattern, assembly_activation
+    >>> counts = np.concatenate([np.zeros(90), np.ones(10)])[:, None]
+    >>> pattern = AssemblyPattern(np.array([1.0]), np.array([0]), 1.0)
+    >>> activation = assembly_activation(counts, pattern)
+    >>> np.allclose([activation.mean(), activation.std()], [0.0, 1.0])
+    True
+    >>> float(np.mean(activation > 2.0))
+    0.1
+
     >>> # Detect assemblies during behavior
     >>> result = detect_assemblies(counts_behavior)  # doctest: +SKIP
     >>> pattern = result.patterns[0]  # doctest: +SKIP
@@ -1139,9 +1183,11 @@ def explained_variance_reactivation(
 
         REV = r_{partial}(control, match \\mid template)^2
 
-    For genuine reactivation, EV should exceed REV. Without a control
-    there is no asymmetry to break, so ``EV == REV`` by construction (the
-    control is what makes the EV/REV comparison meaningful).
+    With a control, EV exceeding REV indicates a larger template-related
+    effect than baseline-related effect in the match period; it is not a
+    calibrated significance test. Without a control there is no asymmetry to
+    break, so ``EV == REV`` by construction. Neither a fixed EV cutoff nor
+    EV > REV alone establishes significant reactivation.
 
     **Partial Correlation**:
 
