@@ -1063,7 +1063,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
 
 
 class TestObjectVectorRateResultIsOVC:
-    """Test is_object_vector_cell() method of ObjectVectorRateResult."""
+    """Test is_egocentric_object_vector_cell() method of ObjectVectorRateResult."""
 
     def test_is_ovc_returns_bool(
         self,
@@ -1071,7 +1071,7 @@ class TestObjectVectorRateResultIsOVC:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() returns a bool."""
+        """Test that is_egocentric_object_vector_cell() returns a bool."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         result = ObjectVectorRateResult(
@@ -1084,8 +1084,8 @@ class TestObjectVectorRateResultIsOVC:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.is_object_vector_cell()
-        assert isinstance(is_object_vector_cell, bool)
+        is_egocentric_object_vector_cell = result.is_object_vector_cell()
+        assert isinstance(is_egocentric_object_vector_cell, bool)
 
     def test_is_ovc_accepts_min_info_parameter(
         self,
@@ -1093,7 +1093,7 @@ class TestObjectVectorRateResultIsOVC:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() accepts min_info parameter."""
+        """Test that is_egocentric_object_vector_cell() accepts min_info parameter."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         result = ObjectVectorRateResult(
@@ -1116,7 +1116,7 @@ class TestObjectVectorRateResultIsOVC:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() has default min_info=0.3.
+        """Test that is_egocentric_object_vector_cell() has default min_info=0.3.
 
         This lower threshold (compared to view cells at 0.5) reflects that
         egocentric fields can be sparser and the information calculation
@@ -1144,7 +1144,7 @@ class TestObjectVectorRateResultIsOVC:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() returns True for high spatial information.
+        """Test that is_egocentric_object_vector_cell() returns True for high spatial information.
 
         A highly selective neuron (fires only in one bin) should have
         high egocentric spatial information and be classified as OVC.
@@ -1174,7 +1174,7 @@ class TestObjectVectorRateResultIsOVC:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() returns False for uniform firing.
+        """Test that is_egocentric_object_vector_cell() returns False for uniform firing.
 
         A neuron with uniform firing rate has zero spatial information
         and should not be classified as OVC.
@@ -1203,7 +1203,7 @@ class TestObjectVectorRateResultIsOVC:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that is_object_vector_cell() classification depends on threshold.
+        """Test that is_egocentric_object_vector_cell() classification depends on threshold.
 
         A neuron should be classified differently depending on
         the min_info threshold used.
@@ -1674,8 +1674,8 @@ class TestObjectVectorRatesResultClassify:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.classify()
-        assert isinstance(is_object_vector_cell, np.ndarray)
+        is_egocentric_object_vector_cell = result.classify()
+        assert isinstance(is_egocentric_object_vector_cell, np.ndarray)
 
     def test_classify_shape(
         self,
@@ -1696,8 +1696,10 @@ class TestObjectVectorRatesResultClassify:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.classify()
-        assert is_object_vector_cell.shape == (5,)  # 5 neurons in batch_firing_rates
+        is_egocentric_object_vector_cell = result.classify()
+        assert is_egocentric_object_vector_cell.shape == (
+            5,
+        )  # 5 neurons in batch_firing_rates
 
     def test_classify_returns_bool(
         self,
@@ -1718,8 +1720,8 @@ class TestObjectVectorRatesResultClassify:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.classify()
-        assert is_object_vector_cell.dtype == np.bool_
+        is_egocentric_object_vector_cell = result.classify()
+        assert is_egocentric_object_vector_cell.dtype == np.bool_
 
     def test_classify_accepts_min_info(
         self,
@@ -1773,7 +1775,7 @@ class TestObjectVectorRatesResultClassify:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that classify() matches single-neuron is_object_vector_cell() method."""
+        """Test that classify() matches single-neuron is_egocentric_object_vector_cell() method."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2125,7 +2127,7 @@ class TestObjectVectorRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should have is_object_vector_cell column."""
+        """summary_table() should have is_egocentric_object_vector_cell column."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2139,7 +2141,7 @@ class TestObjectVectorRatesResultSummaryTable:
         )
 
         df = result.summary_table()
-        assert "is_object_vector_cell" in df.columns
+        assert "is_egocentric_object_vector_cell" in df.columns
 
     def test_summary_table_default_unit_ids(
         self,
@@ -2308,7 +2310,7 @@ class TestObjectVectorRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() is_object_vector_cell should match classify()."""
+        """summary_table() is_egocentric_object_vector_cell should match classify()."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2323,7 +2325,9 @@ class TestObjectVectorRatesResultSummaryTable:
 
         df = result.summary_table()
         expected = result.classify()  # Uses default min_info=0.3
-        np.testing.assert_array_equal(df["is_object_vector_cell"].values, expected)
+        np.testing.assert_array_equal(
+            df["is_egocentric_object_vector_cell"].values, expected
+        )
 
     def test_summary_table_empty_result(
         self,
@@ -2353,7 +2357,7 @@ class TestObjectVectorRatesResultSummaryTable:
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
         assert "peak_rate" in df.columns
-        assert "is_object_vector_cell" in df.columns
+        assert "is_egocentric_object_vector_cell" in df.columns
 
     def test_summary_table_single_neuron(
         self,
@@ -2383,12 +2387,12 @@ class TestObjectVectorRatesResultSummaryTable:
 
 
 # =============================================================================
-# Free is_object_vector_cell function (delegation to result method)
+# Free is_egocentric_object_vector_cell function (delegation to result method)
 # =============================================================================
 
 
 class TestIsObjectVectorCellFreeFunction:
-    """The free is_object_vector_cell now delegates to the result method."""
+    """The free is_egocentric_object_vector_cell now delegates to the result method."""
 
     def test_ovc_free_function_agrees_with_result_method(
         self,
@@ -2404,7 +2408,7 @@ class TestIsObjectVectorCellFreeFunction:
         """Free function == ObjectVectorRateResult.is_object_vector_cell."""
         from neurospatial.encoding.egocentric import (
             compute_egocentric_rate,
-            is_object_vector_cell,
+            is_egocentric_object_vector_cell,
         )
 
         env, spike_times, times, positions, headings, object_positions = ovc_session
@@ -2431,7 +2435,7 @@ class TestIsObjectVectorCellFreeFunction:
 
         outcomes: set[bool] = set()
         for min_info in thresholds:
-            free = is_object_vector_cell(
+            free = is_egocentric_object_vector_cell(
                 env,
                 spike_times,
                 times,
@@ -2465,17 +2469,17 @@ class TestIsObjectVectorCellFreeFunction:
         """The old score_threshold/min_peak_rate kwargs no longer exist."""
         import inspect
 
-        from neurospatial.encoding.egocentric import is_object_vector_cell
+        from neurospatial.encoding.egocentric import is_egocentric_object_vector_cell
 
         env, spike_times, times, positions, headings, object_positions = ovc_session
 
-        sig = inspect.signature(is_object_vector_cell)
+        sig = inspect.signature(is_egocentric_object_vector_cell)
         assert "min_info" in sig.parameters
         assert "score_threshold" not in sig.parameters
         assert "min_peak_rate" not in sig.parameters
 
         with pytest.raises(TypeError):
-            is_object_vector_cell(
+            is_egocentric_object_vector_cell(
                 env,
                 spike_times,
                 times,
@@ -2485,7 +2489,7 @@ class TestIsObjectVectorCellFreeFunction:
                 score_threshold=0.3,
             )
         with pytest.raises(TypeError):
-            is_object_vector_cell(
+            is_egocentric_object_vector_cell(
                 env,
                 spike_times,
                 times,

@@ -112,6 +112,7 @@ __all__ = [
     "compute_object_vector_rate",
     "compute_object_vector_rates",
     # Convenience functions
+    "is_egocentric_object_vector_cell",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",
@@ -2834,6 +2835,168 @@ def is_object_vector_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    min_info: float = 0.3,
+) -> bool:
+    """Quick check: Is this an object-vector cell?
+
+    For allocentric direction use ``is_object_vector_cell``; for bearing
+    relative to heading use ``is_egocentric_object_vector_cell``.
+
+    Convenience function for fast screening of neurons. Computes the allocentric
+    rate map for the supplied trajectory + spikes and classifies the cell as an
+    object-vector cell (OVC) using the spatial-information criterion.
+
+    This function delegates classification to
+    :meth:`ObjectVectorRateResult.is_object_vector_cell`, so the quick-check and
+    the result-object classification always agree: a neuron is an OVC when its
+    allocentric spatial information exceeds ``min_info`` (bits/spike).
+
+    For detailed metrics, use :func:`compute_egocentric_rate` and inspect
+    the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
+    etc.).
+
+    Parameters
+    ----------
+    env : Environment
+        Allocentric environment (used for geodesic metric and visualization).
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Spike times in seconds. Can be empty.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : NDArray[np.float64], shape (n_samples, 2)
+        Animal position coordinates at each time sample.
+    object_positions : NDArray[np.float64], shape (n_objects, 2)
+        Object positions in allocentric coordinates.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for egocentric binning.
+    n_distance_bins : int, default=10
+        Number of distance bins.
+    n_direction_bins : int, default=12
+        Number of direction bins (covers full circle).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Estimator used for both the map and threshold verdict.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for the chosen estimator.
+    min_occupancy : float, default=0.0
+        Minimum dwell time (seconds) for a finite rate bin.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Array backend used by the encoder.
+    min_info : float, default=0.3
+        Minimum allocentric spatial information threshold in bits/spike.
+        Matches the default of
+        :meth:`ObjectVectorRateResult.is_object_vector_cell`.
+
+    Returns
+    -------
+    bool
+        True if the neuron's allocentric spatial information exceeds
+        ``min_info``.
+
+    Raises
+    ------
+    ValueError
+        If ``epochs`` or ``spike_window`` is malformed. The shared parser
+        reports all window problems together with an explanation and fix.
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding import is_object_vector_cell
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.arange(0, 40, 0.04)
+    >>> positions = rng.uniform(10, 90, (len(times), 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, len(times))
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> result = is_object_vector_cell(None, spikes, times, positions, objects)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_object_vector_rate : Full rate computation
+    is_egocentric_object_vector_cell : Screen the other reference frame
+    object_vector_score : Compute OVC score from a tuning curve
+    ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
+    References
+    ----------
+    Høydal et al. (2019). Object-vector coding in the medial entorhinal
+    cortex. Nature, 568, 400-404. doi:10.1038/s41586-019-1077-7.
+    """
+    try:
+        result = compute_object_vector_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            object_positions,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            metric=metric,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+    except ValueError as exc:
+        # Malformed windows are input errors, not negative classifications.
+        # Keep the shared normalizer's diagnostic and avoid parsing twice.
+        if str(exc).startswith("Invalid time window:"):
+            raise
+        return False
+    except RuntimeError:
+        return False
+
+    return result.is_object_vector_cell(min_info=min_info)
+
+
+def is_egocentric_object_vector_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
@@ -2844,9 +3007,16 @@ def is_object_vector_cell(
     max_gap: float | None = 0.5,
     epochs: Any = None,
     spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
     min_info: float = 0.3,
 ) -> bool:
     """Quick check: Is this an object-vector cell?
+
+    For allocentric direction use ``is_object_vector_cell``; for bearing
+    relative to heading use ``is_egocentric_object_vector_cell``.
 
     Convenience function for fast screening of neurons. Computes the egocentric
     rate map for the supplied trajectory + spikes and classifies the cell as an
@@ -2903,6 +3073,14 @@ def is_object_vector_cell(
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Estimator used for both the map and threshold verdict.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for the chosen estimator.
+    min_occupancy : float, default=0.0
+        Minimum dwell time (seconds) for a finite rate bin.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Array backend used by the encoder.
     min_info : float, default=0.3
         Minimum egocentric spatial information threshold in bits/spike.
         Matches the default of
@@ -2929,25 +3107,29 @@ def is_object_vector_cell(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.egocentric import is_object_vector_cell
-    >>> positions = np.random.rand(1000, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> times = np.linspace(0, 60, 1000)
-    >>> headings = np.random.uniform(-np.pi, np.pi, 1000)
+    >>> from neurospatial.encoding import is_egocentric_object_vector_cell
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.arange(0, 40, 0.04)
+    >>> positions = rng.uniform(10, 90, (len(times), 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, len(times))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spike_times = np.random.uniform(0, 60, 100)
-    >>> result = is_object_vector_cell(
-    ...     env, spike_times, times, positions, headings, objects
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> result = is_egocentric_object_vector_cell(
+    ...     None, spikes, times, positions, headings, objects
     ... )
     >>> type(result)
     <class 'bool'>
 
     See Also
     --------
-    compute_egocentric_rate : Full egocentric rate computation
+    compute_egocentric_rate : Full rate computation
+    is_object_vector_cell : Screen the other reference frame
     object_vector_score : Compute OVC score from a tuning curve
     ObjectVectorRateResult.is_object_vector_cell : OVC classification on result object
+    References
+    ----------
+    Wang et al. (2018). Egocentric coding of external items in the lateral
+    entorhinal cortex. Science, 362, 945-949. doi:10.1126/science.aau4940.
     """
     try:
         result = compute_egocentric_rate(
@@ -2961,6 +3143,10 @@ def is_object_vector_cell(
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             metric=metric,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
             max_gap=max_gap,
             epochs=epochs,
             spike_window=spike_window,

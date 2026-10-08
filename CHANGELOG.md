@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add `is_egocentric_object_vector_cell` for heading-relative tuning. `is_object_vector_cell` now measures allocentric direction without a headings argument; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
+
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed

@@ -62,6 +62,7 @@ from neurospatial.encoding.egocentric import (
     compute_egocentric_rates,
     compute_object_vector_rate,
     compute_object_vector_rates,
+    is_egocentric_object_vector_cell,
     is_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
@@ -158,6 +159,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "plot_phase_precession",
     "theta_phase",
     # Object-vector cell analysis
+    "is_egocentric_object_vector_cell",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",

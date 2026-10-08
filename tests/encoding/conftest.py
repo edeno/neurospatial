@@ -90,7 +90,7 @@ def frame_family(request):
     predicate_name = {
         "directional": "is_head_direction_cell",
         "view": "is_spatial_view_cell",
-        "egocentric": "is_object_vector_cell",
+        "egocentric": "is_egocentric_object_vector_cell",
     }[name]
 
     def args(recording, spikes=None, *, occupancy=False, kernel=False):
@@ -658,7 +658,7 @@ def ovc_session() -> tuple[
     consistent egocentric bearing. Spikes are concentrated whenever the
     object is at that preferred egocentric (distance, direction), producing a
     non-degenerate egocentric rate map -- so both the free
-    :func:`is_object_vector_cell` and
+    :func:`is_egocentric_object_vector_cell` and
     :meth:`ObjectVectorRateResult.is_object_vector_cell` return a meaningful,
     equal boolean across thresholds.
 

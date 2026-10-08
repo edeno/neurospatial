@@ -957,9 +957,9 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_object_vector_cell = result.classify()
-        assert len(is_object_vector_cell) == len(spike_times_list)
-        assert is_object_vector_cell.dtype == bool
+        is_egocentric_object_vector_cell = result.classify()
+        assert len(is_egocentric_object_vector_cell) == len(spike_times_list)
+        assert is_egocentric_object_vector_cell.dtype == bool
 
     def test_summary_table_method_works(self, trajectory_data, spike_times_list):
         """Test that summary_table (per-unit) and to_dataframe (dense) work."""

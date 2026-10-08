@@ -135,3 +135,54 @@ def test_egocentric_requires_nonnull_headings():
         encoding.compute_egocentric_rate(
             None, [], [0, 0.1], [[0, 0], [0, 0]], None, [[10, 0]]
         )
+
+
+@pytest.mark.parametrize("frame", ["allocentric", "egocentric"])
+@pytest.mark.parametrize("method", ["binned", "gaussian_kde"])
+def test_free_predicates_match_methods(
+    frame, method, ou_env, ou_2min, noise_trains, obj
+):
+    times, positions, headings = ou_2min
+    extra = () if frame == "allocentric" else (headings,)
+    family = "object_vector" if frame == "allocentric" else "egocentric"
+    predicate = getattr(
+        encoding,
+        f"is_{'' if frame == 'allocentric' else 'egocentric_'}object_vector_cell",
+    )
+    trains = noise_trains(120)[:2]
+    kwargs = dict(
+        method=method,
+        bandwidth=1,
+        min_occupancy=0.05,
+        epochs=[0, 100],
+        spike_window=[5, 105],
+    )
+    plural = getattr(encoding, f"compute_{family}_rates")(
+        ou_env, trains, times, positions, *extra, obj, **kwargs
+    )
+    for i, train in enumerate(trains):
+        single = getattr(encoding, f"compute_{family}_rate")(
+            ou_env, train, times, positions, *extra, obj, **kwargs
+        )
+        for threshold in (0.3, 1.0):
+            verdict = predicate(
+                ou_env,
+                train,
+                times,
+                positions,
+                *extra,
+                obj,
+                min_info=threshold,
+                **kwargs,
+            )
+            assert verdict == single.is_object_vector_cell(min_info=threshold)
+            assert verdict == plural.classify(min_info=threshold)[i]
+
+
+def test_frame_predicate_signatures_are_truthful():
+    allocentric = inspect.signature(encoding.is_object_vector_cell).parameters
+    assert "headings" not in allocentric and "direction_frame" not in allocentric
+    egocentric = inspect.signature(encoding.is_egocentric_object_vector_cell).parameters
+    assert egocentric["headings"].default is inspect.Parameter.empty
+    with pytest.raises(TypeError, match="headings"):
+        encoding.is_object_vector_cell(None, [], [], [], [], headings=[])

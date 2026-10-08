@@ -854,7 +854,7 @@ class TestComputeObjectVectorRateResultMethods:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """is_object_vector_cell() should return a bool."""
+        """is_egocentric_object_vector_cell() should return a bool."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -866,8 +866,8 @@ class TestComputeObjectVectorRateResultMethods:
             headings,
             object_positions,
         )
-        is_object_vector_cell = result.is_object_vector_cell()
-        assert isinstance(is_object_vector_cell, (bool, np.bool_))
+        is_egocentric_object_vector_cell = result.is_object_vector_cell()
+        assert isinstance(is_egocentric_object_vector_cell, (bool, np.bool_))
 
 
 # ==============================================================================
