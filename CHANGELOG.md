@@ -8,6 +8,8 @@
 
 ### Fixed — documentation
 
+- Correct both decoder tutorial posterior overlays to use spatial bins and the MAP line's plotted time coordinates. Synchronized examples and an executable continuous/gapped-clock recipe preserve physical coordinates for accuracy metrics and separate position plots.
+
 - Explain graph linearization as geometric coordinates rather than direction separation. The synchronized track tutorial and an executable graph/trial recipe use explicit direction labels and recover separate planted field centers within one bin.
 
 - Distinguish standardized assembly activity and EV/REV effect sizes from calibrated significance, document controlled REV correctly, and explain that selected dimensions can have no thresholded core members. Statistical calculations are unchanged.

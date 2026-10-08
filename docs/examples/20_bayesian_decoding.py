@@ -252,26 +252,23 @@ print(
 )
 
 # %%
-# Plot the decoded posterior with the true trajectory overlaid.
+# Plot posterior rows and the true trajectory in the same spatial-bin coordinates.
 fig, ax = plt.subplots(figsize=(14, 5))
 n_show = min(500, result.n_time_bins)
 result.plot(ax=ax, show_map=True, colorbar=True)
-# Match the posterior's horizontal axis if recording gaps switch it to bin indices.
-plot_times = (
-    np.arange(result.n_time_bins)
-    if ax.get_xlabel().startswith("Time bin")
-    else result.times
-)
+# show_map=True draws the MAP line first. Reuse its x coordinates: seconds for
+# continuous recordings, time-bin indices when dashed markers indicate gaps.
+plot_times = ax.lines[0].get_xdata()
+actual_track_bins = env.bin_at(actual_track)
 ax.plot(
     plot_times[:n_show],
-    actual_track[:n_show, 0],
+    actual_track_bins[:n_show],
     color=COLORS["cyan"],
     linewidth=2,
     linestyle="--",
-    label="Actual position",
+    label="Actual spatial bin",
 )
 ax.set_xlim(plot_times[0], plot_times[n_show - 1])
-ax.set_ylabel("Position (cm)")
 ax.set_title("decode_session: posterior, MAP (white), actual (cyan)", fontweight="bold")
 ax.legend(loc="upper right")
 plt.tight_layout()
@@ -282,6 +279,15 @@ plt.show()
 # this notebook opens up the same pipeline so you can see (and customize) each
 # stage — and then builds on it for trajectory analysis and replay significance
 # testing.
+#
+# The posterior heatmap's y-axis is **spatial-bin index**, including on a track
+# measured in centimeters. Convert physical actual positions with `env.bin_at`
+# before overlaying them; changing the axis label does not change its coordinates.
+# Keep `actual_track` and `result.map_position` in centimeters for accuracy metrics
+# and separate physical-coordinate plots. For gapped recordings, use only actual
+# positions aligned to `result.times`, which omit the missing intervals. See the
+# [continuous/gapped overlay recipe](../../user-guide/workflows/#overlaying-actual-position-on-a-posterior)
+# for a small exact example.
 
 # %% [markdown]
 # ---
@@ -431,27 +437,32 @@ print(f"Max uncertainty (uniform): {np.log2(env.n_bins):.2f} bits")
 
 # %% [markdown]
 # ### Visualize Decoding Results
+#
+# The posterior plot uses spatial bins. Its MAP line supplies the plotting time
+# coordinates, so an actual-position overlay stays aligned even when gaps switch
+# the x-axis from seconds to time-bin indices. The physical comparisons below
+# continue to use centimeters.
 
 # %%
-# Plot posterior probability as heatmap (first 100 time bins)
+# Plot posterior probability as heatmap (first 500 time bins)
 fig, ax = plt.subplots(figsize=(14, 5))
 
-n_show = 500  # Number of time bins to show
+n_show = min(500, result.n_time_bins)
 result.plot(ax=ax, show_map=True, colorbar=True)
-ax.set_xlim(0, n_show * dt)
+plot_times = ax.lines[0].get_xdata()
+ax.set_xlim(plot_times[0], plot_times[n_show - 1])
 
-# Overlay actual position
+# Convert physical actual positions to the posterior's spatial bins.
+actual_position_bins = env.bin_at(actual_positions)
 ax.plot(
-    time_bin_centers[:n_show],
-    actual_positions[:n_show, 0],
+    plot_times[:n_show],
+    actual_position_bins[:n_show],
     color=COLORS["cyan"],
     linewidth=2,
     linestyle="--",
-    label="Actual position",
+    label="Actual spatial bin",
 )
 
-ax.set_xlabel("Time (s)")
-ax.set_ylabel("Position (cm)")
 ax.set_title(
     "Decoded Posterior with MAP Estimate (white) and Actual Position (cyan)",
     fontweight="bold",
