@@ -74,3 +74,22 @@ def test_old_order_raises(name, recording):
         args = (times, positions)
     with pytest.raises(ValueError, match="did you pass"):
         function(*args, **kwargs)
+
+
+def test_1d_column_swap_no_longer_silent():
+    times = np.arange(600) / 30
+    positions = (50 + 45 * np.sin(np.linspace(0, 6 * np.pi, 600)))[:, None]
+    env = Environment.from_samples(np.linspace(0, 100, 500)[:, None], bin_size=2.0)
+    goal = np.array([95.0])
+
+    with pytest.raises(
+        ValueError, match="did you pass positions before times"
+    ) as caught:
+        behavior.compute_path_efficiency(env, positions, times[:, None], goal)
+    message = str(caught.value)
+    assert "got shape (600, 1)" in message
+    assert "Why:" in message and "Fix:" in message
+
+    correct = behavior.compute_path_efficiency(env, times, positions, goal)
+    assert np.isfinite(correct.efficiency)
+    assert 0 < correct.efficiency < 1
