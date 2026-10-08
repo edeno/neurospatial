@@ -285,8 +285,8 @@ print("-" * 50)
 
 # The convenience function combines calibration and validation
 calibration_easy = calibrate_video(
-    video_path,
     env,
+    video_path,
     scale_bar=(p1_px, p2_px, known_length_cm),
 )
 
@@ -358,8 +358,8 @@ print("\nMethod 2: Using calibrate_video() convenience function")
 print("-" * 50)
 
 calibration_lm_easy = calibrate_video(
-    video_path,
     env,
+    video_path,
     landmarks_px=landmarks_px,
     landmarks_env=landmarks_env,
 )

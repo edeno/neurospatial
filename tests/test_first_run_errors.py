@@ -33,7 +33,7 @@ def recording():
 def test_missing_env_names_the_call(recording):
     r = recording
     with pytest.raises(TypeError, match="expects an Environment") as caught:
-        compute_spatial_rate(r.spike_times, r.times, r.positions)
+        compute_spatial_rate(r.spike_times, r.spike_times, r.times, r.positions)
     message = str(caught.value)
     assert "compute_spatial_rate" in message
     assert "ndarray" in message
@@ -61,8 +61,8 @@ def test_trajectory_reports_length_and_dimensions_together(recording):
     with pytest.raises(ValueError) as caught:
         compute_spatial_rate(r.env, r.spike_times, r.times, positions)
     message = str(caught.value)
-    assert "times length (1800)" in message
-    assert "positions length (1799)" in message
+    assert "times has 1800" in message
+    assert "positions has 1799" in message
     assert "2-D" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
     assert message.splitlines()[-1].startswith("Fix: ")
@@ -83,7 +83,7 @@ def test_egocentric_population_reports_length_and_dimensions_together(recording)
         )
     message = str(caught.value)
     assert "compute_egocentric_rates" in message
-    assert "positions length (1799)" in message
+    assert "positions has 1799" in message
     assert "2-D" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 

@@ -922,7 +922,7 @@ def _simulate_trajectory_laps(
         # This handles edge cases where interpolation might go slightly outside
         from neurospatial.ops import map_points_to_bins
 
-        bin_indices = map_points_to_bins(lap_positions, env, tie_break="lowest_index")
+        bin_indices = map_points_to_bins(env, lap_positions, tie_break="lowest_index")
         # Use bin centers to ensure all positions are valid
         lap_positions = env.bin_centers[bin_indices]
 

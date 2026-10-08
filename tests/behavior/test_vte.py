@@ -233,7 +233,7 @@ class TestHeadSweepFromPositions:
             ]
         )
 
-        result = head_sweep_from_positions(positions, times, min_speed=5.0)
+        result = head_sweep_from_positions(times, positions, min_speed=5.0)
 
         # Straight line -> constant heading -> head sweep ≈ 0
         assert result < 0.1  # Allow small numerical error
@@ -256,7 +256,7 @@ class TestHeadSweepFromPositions:
                 y[i] = 55
         positions = np.column_stack([x, y])
 
-        result = head_sweep_from_positions(positions, times, min_speed=0.1)
+        result = head_sweep_from_positions(times, positions, min_speed=0.1)
 
         # Zigzag should have significant head sweep
         assert result > 0.5  # At least some rotation
@@ -275,7 +275,7 @@ class TestHeadSweepFromPositions:
             ]
         )
 
-        result = head_sweep_from_positions(positions, times, min_speed=5.0)
+        result = head_sweep_from_positions(times, positions, min_speed=5.0)
 
         # Stationary -> no valid headings -> head sweep = 0
         assert result == 0.0
@@ -886,8 +886,8 @@ def test_compute_vte_session_env_first(t_maze_environment):
     # Signature: env must be the first positional parameter.
     params = list(inspect.signature(compute_vte_session).parameters)
     assert params[0] == "env"
-    assert params[1] == "positions"
-    assert params[2] == "times"
+    assert params[1] == "times"
+    assert params[2] == "positions"
 
     # Build a slow head-scanning trajectory approaching the center region.
     n = 60
@@ -910,8 +910,8 @@ def test_compute_vte_session_env_first(t_maze_environment):
     # Positional (env, positions, times) call runs without error.
     result = compute_vte_session(
         env,
-        positions,
         times,
+        positions,
         decision_region="center",
         trials=trials,
         window_duration=0.5,
@@ -956,8 +956,8 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
         warnings.simplefilter("ignore", UserWarning)
         result = compute_vte_session(
             env,
-            positions,
             times,
+            positions,
             decision_region="decision",
             trials=[Trial(5.0, 9.9, "start", "decision", True)],
             window_duration=1.0,
@@ -981,8 +981,8 @@ def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
     with pytest.warns(UserWarning, match=r"only 2 sample\(s\)"):
         result = compute_vte_session(
             env,
-            positions,
             times,
+            positions,
             decision_region="decision",
             trials=[Trial(5.2, 9.9, "start", "decision", True)],
             window_duration=1.0,

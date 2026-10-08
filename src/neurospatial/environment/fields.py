@@ -836,8 +836,8 @@ class EnvironmentFields:
         bin_indices = cast(
             "NDArray[np.int64]",
             map_points_to_bins(
-                points,
                 cast("Environment", self),
+                points,
                 tie_break="lowest_index",
                 return_dist=False,
             ),

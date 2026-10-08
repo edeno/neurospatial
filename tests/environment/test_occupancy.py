@@ -374,7 +374,7 @@ class TestOccupancyValidation:
 
         # Swapped: positions passed as `times` -> must be a 1-D shape error, and
         # must NOT be the monotonicity message.
-        with pytest.raises(ValueError, match=r"1-dimensional") as exc:
+        with pytest.raises(ValueError, match=r"1-D") as exc:
             env.occupancy(positions, times)
         assert "monotonic" not in str(exc.value).lower()
 
@@ -384,7 +384,7 @@ class TestOccupancyValidation:
         times = np.array([0.0, 2.0, 1.0])  # decreasing at index 1
         positions = np.array([[5.0, 5.0], [6.0, 6.0], [7.0, 7.0]])
 
-        with pytest.raises(ValueError, match=r"monotonically increasing"):
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
             env.occupancy(times, positions)
 
 

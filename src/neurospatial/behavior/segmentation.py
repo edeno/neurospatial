@@ -791,8 +791,8 @@ def _detect_runs_between_regions_contiguous(
 
 
 def segment_by_velocity(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     min_speed: float,
     *,
     min_duration: float = 0.5,
@@ -811,10 +811,10 @@ def segment_by_velocity(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Continuous position samples (e.g., in cm).
     min_speed : float
         Velocity threshold for movement classification (units/second).
         Samples with velocity > ``min_speed`` are considered movement.
@@ -901,7 +901,7 @@ def segment_by_velocity(
     >>> times = np.linspace(0, 20, len(trajectory))
     >>> # Segment by velocity
     >>> segments = segment_by_velocity(
-    ...     trajectory, times, min_speed=2.0, min_duration=0.5
+    ...     times, trajectory, min_speed=2.0, min_duration=0.5
     ... )
     >>> len(segments) > 0  # Should detect movement period
     True
@@ -912,6 +912,11 @@ def segment_by_velocity(
     ...     assert duration >= 0.5  # min_duration enforced
     """
     # Validate inputs
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="segment_by_velocity"
+    )
     if len(positions) != len(times):
         raise ValueError(
             f"positions and times must have same length. "

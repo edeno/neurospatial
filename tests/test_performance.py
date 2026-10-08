@@ -202,7 +202,7 @@ class TestSpatialQueryPerformance:
 
         # Benchmark batch query
         start = time.perf_counter()
-        bin_indices = map_points_to_bins(query_points, env)
+        bin_indices = map_points_to_bins(env, query_points)
         elapsed = time.perf_counter() - start
 
         # Should complete in <50ms for 10k queries on 2500 bins

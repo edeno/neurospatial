@@ -1318,7 +1318,7 @@ class TestCacheManagement:
 
         # Create KDTree cache by calling map_points_to_bins
         points = np.array([[5.0, 5.0]])
-        map_points_to_bins(points, cache_test_env)
+        map_points_to_bins(cache_test_env, points)
 
         # Verify cache exists
         assert hasattr(cache_test_env, "_kdtree_cache")
@@ -1394,7 +1394,7 @@ class TestCacheManagement:
         _ = cache_test_env.get_bin_attributes()
         _ = cache_test_env.get_edge_attributes()
         # linearization_properties only exists for 1D environments - skip for 2D grid
-        map_points_to_bins(np.array([[5.0, 5.0]]), cache_test_env)
+        map_points_to_bins(cache_test_env, np.array([[5.0, 5.0]]))
 
         # Keys for the three method-form caches.
         diff_key = "_versioned_cache___differential_operator_cached"

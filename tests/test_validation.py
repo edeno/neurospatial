@@ -8,6 +8,92 @@ import pytest
 from neurospatial._validation import validate_finite, validate_lengths
 
 
+def test_swapped_times_positions_names_swap():
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(np.zeros((3, 2)), np.arange(2.0), call="f")
+    message = str(caught.value)
+    assert "did you pass positions before times" in message
+    assert "f(..., times, positions, ...)" in message
+    assert "same length" in message
+    assert "got shape (3, 2)" in message
+    assert "Why:" in message and "Fix:" in message
+    assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
+
+
+def test_positions_first_order_names_reverse_swap():
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(
+            np.zeros((3, 2)),
+            np.arange(3.0),
+            call="compute_trajectory_curvature",
+            order="positions, times",
+        )
+    assert "did you pass times before positions" in str(caught.value)
+    assert "compute_trajectory_curvature(..., positions, times, ...)" in str(
+        caught.value
+    )
+
+
+def test_unsorted_times_reports_first_decrease():
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions([0, 1, 0.5, 2], np.zeros((4, 2)), call="f")
+    assert "index 1" in str(caught.value)
+    assert "1.0 -> 0.5" in str(caught.value)
+
+
+@pytest.mark.parametrize("times", [[np.nan], [np.inf], [-np.inf]])
+def test_single_nonfinite_timestamp_rejected(times):
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError, match=r"1 non-finite.*index 0"):
+        validate_times_positions(times, [[0.0]], call="f")
+
+
+def test_times_positions_preserves_duplicates_and_missing_positions():
+    from neurospatial._validation import validate_times_positions
+
+    t, p = validate_times_positions([0, 0, 1], [[0], [np.nan], [2]], call="f")
+    np.testing.assert_array_equal(t, [0, 0, 1])
+    np.testing.assert_array_equal(p, [[0], [np.nan], [2]])
+    assert t.dtype == p.dtype == np.float64
+
+
+def test_numeric_conversion_errors_are_named_together():
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(["bad-time"], [["bad-position"]], call="f")
+    message = str(caught.value)
+    assert "times" in message and "positions" in message
+    assert "bad-time" in message and "bad-position" in message
+    assert "Why:" in message and "Fix:" in message
+    assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
+
+
+@pytest.mark.parametrize(
+    "times, positions, other_problem",
+    [
+        ([1, 0], [["bad"], ["bad"]], "monotonically non-decreasing"),
+        (["bad"], np.zeros((1, 2, 1)), "got shape (1, 2, 1)"),
+    ],
+)
+def test_conversion_errors_keep_other_argument_problems(
+    times, positions, other_problem
+):
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(times, positions, call="f")
+    assert other_problem in str(caught.value)
+    assert "numeric" in str(caught.value)
+
+
 class TestValidateFinite:
     """Tests for ``validate_finite``."""
 

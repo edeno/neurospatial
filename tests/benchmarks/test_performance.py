@@ -291,7 +291,7 @@ class TestSpatialQueryPerformance:
         positions, _, _ = benchmark_data_medium
 
         result = benchmark(
-            map_points_to_bins, positions, medium_env, tie_break="lowest_index"
+            map_points_to_bins, medium_env, positions, tie_break="lowest_index"
         )
 
         assert len(result) == len(positions)

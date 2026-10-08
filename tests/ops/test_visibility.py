@@ -745,7 +745,7 @@ class TestVisibilityOccupancy:
         headings = np.zeros(3)
         times = np.array([0.0, 1.0, 2.0])
 
-        occupancy = visibility_occupancy(env, trajectory, headings, times)
+        occupancy = visibility_occupancy(env, times, trajectory, headings)
 
         assert occupancy.shape == (env.n_bins,)
         # All values should be non-negative
@@ -768,7 +768,7 @@ class TestVisibilityOccupancy:
         headings = np.zeros(n_samples)
         times = np.linspace(0, 10, n_samples)
 
-        occupancy = visibility_occupancy(env, trajectory, headings, times)
+        occupancy = visibility_occupancy(env, times, trajectory, headings)
 
         # Visible bins should have occupancy close to 10 seconds
         # (accounting for frame duration)

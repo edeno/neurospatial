@@ -17,6 +17,10 @@ from numpy.testing import assert_allclose
 
 from neurospatial import Environment
 from neurospatial.decoding import DecodingResult, bin_spikes_in_time, decode_position
+from neurospatial.decoding.session import (
+    _decode_with_models,
+    _decode_with_models_summary,
+)
 from neurospatial.encoding import compute_spatial_rates
 
 # ---------------------------------------------------------------------------
@@ -159,8 +163,6 @@ class TestDecodeSessionGoldenPath:
         """
         import pytest
 
-        from neurospatial.decoding import decode_session
-
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=5, duration=10.0
         )
@@ -172,20 +174,11 @@ class TestDecodeSessionGoldenPath:
             bad_times = times.copy()
             bad_times[3] = bad_value
             with pytest.raises(ValueError, match="finite"):
-                decode_session(
-                    env,
-                    spike_times,
-                    bad_times,
-                    positions,
-                    dt=0.1,
-                    encoding_models=models,
-                )
+                _decode_with_models(env, spike_times, bad_times, models, dt=0.1)
 
     def test_non_1d_times_raise_clear_error(self) -> None:
         """A 2-D `times` array raises a clear shape error, not a cryptic one."""
         import pytest
-
-        from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=5, duration=10.0
@@ -195,14 +188,7 @@ class TestDecodeSessionGoldenPath:
         ).firing_rates
 
         with pytest.raises(ValueError, match="1-D"):
-            decode_session(
-                env,
-                spike_times,
-                times.reshape(-1, 1),
-                positions,
-                dt=0.1,
-                encoding_models=models,
-            )
+            _decode_with_models(env, spike_times, times.reshape(-1, 1), models, dt=0.1)
 
     def test_map_tracks_trajectory(self) -> None:
         """MAP position should track the true trajectory (median error < 25 cm on 100-cm track)."""
@@ -376,13 +362,8 @@ class TestDecodeSessionEncodingModelsPassthrough:
         precomputed = rates_result.firing_rates  # (n_neurons, n_bins)
 
         # Call with precomputed models
-        result_precomputed = decode_session(
-            env,
-            spike_times,
-            times,
-            positions,
-            dt=dt,
-            encoding_models=precomputed,
+        result_precomputed = _decode_with_models(
+            env, spike_times, times, precomputed, dt=dt
         )
 
         # Call without (fit internally, same params)
@@ -402,54 +383,6 @@ class TestDecodeSessionEncodingModelsPassthrough:
             result_fitted.posterior,
             atol=1e-10,
             err_msg="Precomputed encoding_models gave different result from fitted models",
-        )
-
-    def test_precomputed_models_skip_fit(self) -> None:
-        """Passing encoding_models= skips encoding step (different params irrelevant)."""
-        from neurospatial.decoding import decode_session
-
-        env, spike_times, times, positions = _make_linear_track_sim(
-            n_neurons=5, duration=5.0, seed=13
-        )
-        dt = 0.05
-        times_arr = np.asarray(times, dtype=np.float64)
-
-        precomputed = compute_spatial_rates(
-            env,
-            spike_times,
-            times_arr,
-            positions,
-            bandwidth=5.0,
-            method="diffusion_kde",
-            min_occupancy=0.0,
-            fill_value=0.0,
-        ).firing_rates
-
-        # Using precomputed with different bandwidth param — bandwidth is ignored
-        result1 = decode_session(
-            env,
-            spike_times,
-            times,
-            positions,
-            dt=dt,
-            encoding_models=precomputed,
-            bandwidth=999.0,  # ignored
-        )
-        result2 = decode_session(
-            env,
-            spike_times,
-            times,
-            positions,
-            dt=dt,
-            encoding_models=precomputed,
-            bandwidth=1.0,  # also ignored
-        )
-
-        assert_allclose(
-            result1.posterior,
-            result2.posterior,
-            atol=1e-12,
-            err_msg="encoding_models passthrough should ignore bandwidth param",
         )
 
 
@@ -503,8 +436,6 @@ class TestDecodeSessionOutOfWindowWarning:
         """encoding_models= branch (skips compute_spatial_rates) still warns."""
         import pytest
 
-        from neurospatial.decoding import decode_session
-
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=5
         )
@@ -527,14 +458,7 @@ class TestDecodeSessionOutOfWindowWarning:
         ms_spikes = [s * 1000.0 for s in spike_times]
 
         with pytest.warns(UserWarning, match=self._MATCH):
-            decode_session(
-                env,
-                ms_spikes,
-                times,
-                positions,
-                dt=0.1,
-                encoding_models=models,
-            )
+            _decode_with_models(env, ms_spikes, times, models, dt=0.1)
 
     def test_single_warning_in_non_passthrough_branch(self) -> None:
         """encoding_models=None branch emits exactly ONE out-of-window warning.
@@ -726,7 +650,6 @@ class TestDecodeSessionDtype:
 
     def test_passthrough_branch_float32_reaches_working_set(self, monkeypatch) -> None:
         """float64 encoding_models + dtype=float32 → decode_position gets float32."""
-        from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=8, duration=8.0, seed=5
@@ -744,15 +667,7 @@ class TestDecodeSessionDtype:
         assert models64.dtype == np.float64
 
         seen = self._spy_decode_position(monkeypatch)
-        decode_session(
-            env,
-            spike_times,
-            times,
-            positions,
-            dt=0.1,
-            encoding_models=models64,
-            dtype=np.float32,
-        )
+        _decode_with_models(env, spike_times, times, models64, dt=0.1, dtype=np.float32)
 
         # dtype is authoritative end-to-end: float64-in is cast down to float32.
         assert seen["models_dtype"] == np.float32
@@ -836,7 +751,6 @@ class TestDecodeSessionDtype:
 
     def test_precomputed_models_decode_within_tol(self) -> None:
         """Precomputed float32 vs float64 encoding_models decode within tol."""
-        from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=7
@@ -860,12 +774,8 @@ class TestDecodeSessionDtype:
         assert models32.dtype == np.float32
         assert models64.dtype == np.float64
 
-        result32 = decode_session(
-            env, spike_times, times, positions, dt=dt, encoding_models=models32
-        )
-        result64 = decode_session(
-            env, spike_times, times, positions, dt=dt, encoding_models=models64
-        )
+        result32 = _decode_with_models(env, spike_times, times, models32, dt=dt)
+        result64 = _decode_with_models(env, spike_times, times, models64, dt=dt)
 
         assert_allclose(
             result32.map_position,
@@ -1149,7 +1059,6 @@ class TestDecodeSessionSummaryStreaming:
         from neurospatial.decoding import (
             bin_spikes_in_time,
             decode_position_summary,
-            decode_session_summary,
         )
 
         env, spike_times, times, positions = _make_linear_track_sim(
@@ -1167,14 +1076,8 @@ class TestDecodeSessionSummaryStreaming:
         ref = decode_position_summary(
             env, counts, models, dt, times=centers, time_chunk=50
         )
-        got = decode_session_summary(
-            env,
-            spike_times,
-            times,
-            positions,
-            dt=dt,
-            encoding_models=models,
-            time_chunk=50,
+        got = _decode_with_models_summary(
+            env, spike_times, times, models, dt=dt, time_chunk=50
         )
         self._assert_summary_equal(got, ref)
 

@@ -205,7 +205,7 @@ class TestBorderFunctionality:
         firing_rate[north_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         # North should have high coverage, south should be low
         assert coverage["north"] > 0.8
@@ -227,7 +227,7 @@ class TestBorderFunctionality:
 
         field_bins = np.array([0, 1, 2])
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         assert isinstance(coverage, dict)
 
@@ -251,7 +251,7 @@ class TestBorderFunctionality:
 
         # Only compute for region1 and region2
         coverage = compute_region_coverage(
-            field_bins, env, regions=["region1", "region2"]
+            env, field_bins, regions=["region1", "region2"]
         )
 
         # Should only return specified regions

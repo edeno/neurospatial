@@ -263,7 +263,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate spikes (no progress bar for tests)
         spike_trains = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         # Should return list of spike arrays
@@ -282,7 +282,7 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         assert len(spike_trains) == n_cells
@@ -304,7 +304,7 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         # Check that at least some cells generate spikes
@@ -330,10 +330,10 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains1 = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
         spike_trains2 = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         # Check that all spike trains are identical
@@ -351,7 +351,7 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         # Check all spikes are within [times[0], times[-1]]
@@ -372,7 +372,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate without progress bar
         generate_population_spikes(
-            place_cells, positions, times, seed=42, show_progress=False
+            place_cells, times, positions, seed=42, show_progress=False
         )
 
         # Check no progress bar output (this is approximate test)
@@ -394,8 +394,8 @@ class TestGeneratePopulationSpikes:
         refractory_period = 0.003  # 3ms
         spike_trains = generate_population_spikes(
             place_cells,
-            positions,
             times,
+            positions,
             refractory_period=refractory_period,
             seed=42,
             show_progress=False,
@@ -419,8 +419,8 @@ class TestGeneratePopulationSpikes:
 
         spike_trains = generate_population_spikes(
             [model],
-            positions,
             times,
+            positions,
             seed=42,
             show_progress=False,
         )
@@ -441,8 +441,8 @@ class TestGeneratePopulationSpikes:
 
         spike_trains = generate_population_spikes(
             [model],
-            positions,
             times,
+            positions,
             headings=headings,
             seed=42,
             show_progress=False,

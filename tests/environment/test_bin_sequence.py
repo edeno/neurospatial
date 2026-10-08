@@ -459,7 +459,7 @@ class TestBinSequenceValidation:
         positions = np.array([[2.5], [7.5], [2.5], [7.5]])
 
         # Should raise ValueError for non-monotonic times
-        with pytest.raises(ValueError, match="monotonically increasing"):
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
             env.bin_sequence(times, positions)
 
 

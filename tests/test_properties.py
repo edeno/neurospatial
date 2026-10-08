@@ -792,7 +792,7 @@ class TestRateMapCoherenceProperties:
         # Create random firing rate
         firing_rate = rng.uniform(0, 10, size=env.n_bins)
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Property: -1 <= coherence <= 1 (correlation coefficient range)
         if not np.isnan(coherence):
@@ -819,7 +819,7 @@ class TestRateMapCoherenceProperties:
         squared_distance = np.sum((env.bin_centers - center) ** 2, axis=1)
         firing_rate = 10.0 * np.exp(-squared_distance / (2 * 5.0**2))
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # On a complete grid, this smooth field must correlate positively
         # with its neighboring-bin average. Keep the original lower bound.

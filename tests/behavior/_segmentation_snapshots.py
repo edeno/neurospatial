@@ -44,7 +44,7 @@ def capture_segmentation_outputs(pause, laps):
             max_duration=2000,
         ),
         "segment_by_velocity": segment_by_velocity(
-            p.positions, p.times, min_speed=5.0, min_duration=0.1
+            p.times, p.positions, min_speed=5.0, min_duration=0.1
         ),
         "detect_laps_region": detect_laps(
             lap_recording.position_bins,
@@ -89,26 +89,26 @@ def capture_segmentation_outputs(pause, laps):
             p.position_bins, labels, p.times
         ),
         "extract_pre_decision_window": extract_pre_decision_window(
-            p.positions, p.times, entry_time=100.5, window_duration=2.0
+            p.times, p.positions, entry_time=100.5, window_duration=2.0
         ),
         "compute_pre_decision_metrics": compute_pre_decision_metrics(
-            p.positions, p.times, entry_time=100.5, window_duration=2.0
+            p.times, p.positions, entry_time=100.5, window_duration=2.0
         ),
         "compute_decision_analysis": compute_decision_analysis(
             p.env,
-            p.positions,
             p.times,
+            p.positions,
             decision_region="target",
             goal_regions=["source", "target"],
             pre_window=2.0,
         ),
         "compute_vte_trial": compute_vte_trial(
-            p.positions, p.times, entry_time=100.5, window_duration=2.0
+            p.times, p.positions, entry_time=100.5, window_duration=2.0
         ),
         "compute_vte_session": compute_vte_session(
             p.env,
-            p.positions,
             p.times,
+            p.positions,
             decision_region="target",
             trials=trials,
             window_duration=2.0,

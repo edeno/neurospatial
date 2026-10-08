@@ -68,7 +68,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
-    from neurospatial._typing import PositionLike, SpikeTrainsLike
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -580,6 +580,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
 
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
+
     Notes
     -----
     This is a frozen dataclass (immutable). All fields are set at construction
@@ -656,7 +660,13 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=None, kw_only=True, compare=False
     )
 
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
     def __post_init__(self) -> None:
+        if self.unit_id is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
         # all absent for a ratio method. n_units=None -> the singular per-unit slice.
@@ -1143,7 +1153,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         # Cast to EnvironmentProtocol for type checker (Environment implements it)
         env = cast("EnvironmentProtocol", self.env)
-        return compute_region_coverage(field_bins, env, regions=regions)
+        return compute_region_coverage(env, field_bins, regions=regions)
 
     def has_place_field(
         self,
@@ -1371,6 +1381,10 @@ class SpatialRatesResult(SpatialResultMixin):
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
 
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
+
     Notes
     -----
     This is a frozen dataclass (immutable). All fields are set at construction
@@ -1479,7 +1493,13 @@ class SpatialRatesResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
     def __post_init__(self) -> None:
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
@@ -1573,6 +1593,7 @@ class SpatialRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            _unit_ids_generated=self._unit_ids_generated,
             spike_window=self.spike_window,
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
@@ -2630,8 +2651,8 @@ def _compute_glm_spatial_rates(
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
-    times: NDArray[np.float64] | PositionLike,
-    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -2666,16 +2687,12 @@ def compute_spatial_rate(
         (e.g., created via ``Environment.from_samples()``).
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use:
@@ -2969,14 +2986,6 @@ default="diffusion_kde"
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
 
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
-    # normalizing to plain float64 arrays here at the public entry. The array
-    # path is unchanged byte-for-byte (plain arrays pass straight through).
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
-
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
@@ -3134,8 +3143,8 @@ default="diffusion_kde"
 def compute_spatial_rates(
     env: Environment,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
-    times: NDArray[np.float64] | PositionLike,
-    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -3179,16 +3188,12 @@ def compute_spatial_rates(
         All formats are coerced to per-neuron spike trains via
         ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
         group must equal the group's index.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use. See ``compute_spatial_rate()`` for details. In addition
@@ -3553,12 +3558,9 @@ default="diffusion_kde"
         context="compute_spatial_rates",
         input_ids=extracted_unit_ids,
     )
-
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame) OR explicit (times, positions) arrays. Array path unchanged.
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
+    result_unit_ids = (
+        None if unit_ids is None and extracted_unit_ids is None else resolved_unit_ids
+    )
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
@@ -3682,7 +3684,7 @@ default="diffusion_kde"
             env=env,
             method=method,
             bandwidth=None,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
             # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
             # diagnostics are the float64 fit result and are kept float64 -- so
             # they do not lose precision (deviance/coefficients) and rates[i]
@@ -3734,7 +3736,7 @@ default="diffusion_kde"
             env=env,
             method=method,
             bandwidth=bandwidth,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
         )
 
     # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
@@ -3797,7 +3799,7 @@ default="diffusion_kde"
         env=env,
         method=method,
         bandwidth=bandwidth,
-        unit_ids=resolved_unit_ids,
+        unit_ids=result_unit_ids,
     )
 
 

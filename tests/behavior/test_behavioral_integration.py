@@ -39,12 +39,12 @@ class TestVTEDecisionAnalysisIntegration:
 
         # Extract window using decision_analysis
         window_positions, window_times = extract_pre_decision_window(
-            positions, times, entry_time, window_duration
+            times, positions, entry_time, window_duration
         )
 
         # Compute head sweep from window
         head_sweep_from_window = head_sweep_from_positions(
-            window_positions, window_times, min_speed=1.0
+            window_times, window_positions, min_speed=1.0
         )
 
         # Head sweep should be > 0 for oscillating trajectory
@@ -106,8 +106,8 @@ class TestVTEDecisionAnalysisIntegration:
         # Run VTE session - should use same entry detection
         result = compute_vte_session(
             env,
-            trajectory,
             times,
+            trajectory,
             decision_region="decision",
             trials=trials,
             window_duration=0.5,
@@ -189,8 +189,8 @@ class TestVTERoundTrip:
         # Run VTE session
         result = compute_vte_session(
             env,
-            positions_array,
             times_array,
+            positions_array,
             decision_region="decision",
             trials=trials,
             window_duration=0.8,
@@ -229,7 +229,7 @@ class TestPathEfficiencyPathProgressConsistency:
         goal = np.array([90.0, 50.0])
 
         efficiency = compute_path_efficiency(
-            env, trajectory, times, goal, metric="euclidean"
+            env, times, trajectory, goal, metric="euclidean"
         ).efficiency
 
         # Should be very close to 1.0 for straight path
@@ -310,7 +310,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
         # Path efficiency should be low (traveled much more than needed)
         efficiency = compute_path_efficiency(
-            env, trajectory, times, goal, metric="euclidean"
+            env, times, trajectory, goal, metric="euclidean"
         ).efficiency
         assert efficiency < 0.1  # Should be very inefficient
 
@@ -340,8 +340,8 @@ class TestGoalDirectedConsistency:
         )
         goal = np.array([100.0, 50.0])
 
-        bias = goal_bias(positions, times, goal, min_speed=1.0)
-        rates = approach_rate(positions, times, goal, metric="euclidean")
+        bias = goal_bias(times, positions, goal, min_speed=1.0)
+        rates = approach_rate(times, positions, goal, metric="euclidean")
 
         # Approaching: bias > 0, mean rate < 0
         assert bias > 0.5
@@ -365,7 +365,7 @@ class TestGoalDirectedConsistency:
             ]
         )
 
-        bias = goal_bias(positions, times, center, min_speed=1.0)
+        bias = goal_bias(times, positions, center, min_speed=1.0)
 
         # Should be near zero for circular path
         assert abs(bias) < 0.3
@@ -415,7 +415,7 @@ class TestDecisionAnalysisConsistency:
         )
 
         metrics = compute_pre_decision_metrics(
-            positions, times, entry_time=2.0, window_duration=1.5, min_speed=0.1
+            times, positions, entry_time=2.0, window_duration=1.5, min_speed=0.1
         )
 
         # Should have high heading variance (changing direction frequently)

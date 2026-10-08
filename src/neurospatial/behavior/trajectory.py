@@ -518,8 +518,8 @@ def compute_home_range(
 
 
 def mean_square_displacement(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
@@ -535,10 +535,10 @@ def mean_square_displacement(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions in continuous space.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps corresponding to each sample in the trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).
@@ -626,7 +626,7 @@ def mean_square_displacement(
     >>>
     >>> # Compute MSD with Euclidean distance (default)
     >>> result = mean_square_displacement(
-    ...     positions, times, metric="euclidean", max_tau=5.0
+    ...     times, positions, metric="euclidean", max_tau=5.0
     ... )
     >>> len(result.lags) > 0
     True
@@ -652,6 +652,11 @@ def mean_square_displacement(
     .. [4] Traja documentation: https://traja.readthedocs.io/
     """
     # Coerce array-likes (e.g. Python lists) before any .ndim access.
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="mean_square_displacement"
+    )
     try:
         positions = np.asarray(positions, dtype=float)
     except (TypeError, ValueError) as e:
@@ -890,17 +895,12 @@ def compute_trajectory_curvature(
         return _compute_trajectory_curvature_contiguous(
             positions, None, smooth_window=smooth_window
         )
+    from neurospatial._validation import validate_times_positions
     from neurospatial.environment.trajectory import observed_runs
 
-    positions = np.asarray(positions)
-    times = np.asarray(times, dtype=np.float64)
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have the same length; got "
-            f"{len(positions)} and {len(times)}.\n"
-            "Why: each curvature sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position sample."
-        )
+    times, positions = validate_times_positions(
+        times, positions, call="compute_trajectory_curvature", order="positions, times"
+    )
     curvature: NDArray[np.float64] = np.full(len(positions), np.nan)
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
         curvature[run] = _compute_trajectory_curvature_contiguous(

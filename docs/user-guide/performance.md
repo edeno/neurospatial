@@ -84,10 +84,10 @@ tracking data when points outside the environment should return `-1` / `False`.
 from neurospatial.ops import map_points_to_bins
 
 # First nearest-neighbor query: builds KDTree
-bin_indices = map_points_to_bins(points, env)  # Slower (tree construction)
+bin_indices = map_points_to_bins(env, points)  # Slower (tree construction)
 
 # Subsequent nearest-neighbor queries: use cached tree
-more_indices = map_points_to_bins(more_points, env)  # Fast
+more_indices = map_points_to_bins(env, more_points)  # Fast
 
 # Clear KDTree cache when you want to free memory
 env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
@@ -111,7 +111,7 @@ env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 from neurospatial.ops import map_points_to_bins
 
 # Uses cached KDTree
-bin_indices = map_points_to_bins(points, env)
+bin_indices = map_points_to_bins(env, points)
 
 # Clear only KDTree cache (selective clearing)
 env.clear_cache(kdtree=True, kernels=False, cached_properties=False)

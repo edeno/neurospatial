@@ -6,8 +6,6 @@ Verifies, in the default env (no pynapple installed):
   shapes (surfacing ids): an iterate-yields-trains double (the future
   ``SpikeTrains``) AND a ``UserDict``-based double (a real pynapple ``TsGroup``,
   whose iteration yields KEYS, not trains).
-- ``compute_spatial_rate`` / ``compute_spatial_rates`` accept a duck-typed
-  ``PositionLike`` and produce results byte-for-byte identical to the array path.
 - Unit ids from a group flow into ``SpatialRatesResult.unit_ids``,
   while the firing rates stay identical to the plain-array input.
 """
@@ -18,24 +16,8 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+from neurospatial.encoding import compute_spatial_rates
 from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
-
-
-class _FakeTsdFrame:
-    """Duck-typed ``PositionLike`` (pynapple ``TsdFrame`` stand-in)."""
-
-    def __init__(self, t: np.ndarray, values: np.ndarray) -> None:
-        self._t = t
-        self._values = values
-
-    @property
-    def t(self) -> np.ndarray:
-        return self._t
-
-    @property
-    def values(self) -> np.ndarray:
-        return self._values
 
 
 class _FakeTsGroup:
@@ -122,37 +104,8 @@ def test_as_spike_trains_with_ids_mapping_group_extracts_by_index(
 
 
 # ---------------------------------------------------------------------------
-# compute_spatial_rate(s): PositionLike + array-path parity
+# Explicit timestamp/position arrays
 # ---------------------------------------------------------------------------
-
-
-def test_compute_spatial_rate_positionlike_matches_arrays(session) -> None:
-    env, times, positions, spikes = session
-
-    from_arrays = compute_spatial_rate(env, spikes[0], times, positions, bandwidth=5.0)
-    from_poslike = compute_spatial_rate(
-        env, spikes[0], _FakeTsdFrame(times, positions), bandwidth=5.0
-    )
-
-    np.testing.assert_array_equal(from_arrays.firing_rate, from_poslike.firing_rate)
-
-
-def test_compute_spatial_rate_missing_positions_raises(session) -> None:
-    env, times, _positions, spikes = session
-    with pytest.raises(ValueError, match="no `positions`"):
-        compute_spatial_rate(env, spikes[0], times)
-
-
-def test_compute_spatial_rates_positionlike_matches_arrays(session) -> None:
-    env, times, positions, spikes = session
-
-    from_arrays = compute_spatial_rates(env, spikes, times, positions, bandwidth=5.0)
-    from_poslike = compute_spatial_rates(
-        env, spikes, _FakeTsdFrame(times, positions), bandwidth=5.0
-    )
-
-    np.testing.assert_array_equal(from_arrays.firing_rates, from_poslike.firing_rates)
-    np.testing.assert_array_equal(from_arrays.unit_ids, from_poslike.unit_ids)
 
 
 # ---------------------------------------------------------------------------

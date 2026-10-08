@@ -19,7 +19,7 @@ def validate_simulation(
     session: SimulationSession | None = None,
     *,
     env: Environment | None = None,
-    spike_trains: list[NDArray[np.float64]] | None = None,
+    spike_times: list[NDArray[np.float64]] | None = None,
     positions: NDArray[np.float64] | None = None,
     times: NDArray[np.float64] | None = None,
     ground_truth: dict[str, Any] | None = None,
@@ -42,7 +42,7 @@ def validate_simulation(
         Complete simulation session. If provided, extracts all needed parameters.
     env : Environment | None, optional
         Spatial environment (required if session not provided).
-    spike_trains : list[NDArray[np.float64]] | None, optional
+    spike_times : list[NDArray[np.float64]] | None, optional
         List of spike time arrays (required if session not provided).
     positions : NDArray[np.float64] | None, optional
         Trajectory positions, shape (n_time, n_dims) (required if session not provided).
@@ -188,24 +188,24 @@ def validate_simulation(
             )
 
         env = session.env
-        spike_trains = session.spike_trains
+        spike_times = session.spike_trains
         positions = session.positions
         times = session.times
         ground_truth = session.ground_truth
     elif (
         env is None
-        or spike_trains is None
+        or spike_times is None
         or positions is None
         or times is None
         or ground_truth is None
     ):
         raise ValueError(
             "Must provide either 'session' or all of "
-            "('env', 'spike_trains', 'positions', 'times', 'ground_truth')"
+            "('env', 'spike_times', 'positions', 'times', 'ground_truth')"
         )
 
     # Determine which cells to validate
-    n_cells = len(spike_trains)
+    n_cells = len(spike_times)
     if cell_indices is None:
         cell_indices = list(range(n_cells))
     else:
@@ -234,10 +234,10 @@ def validate_simulation(
 
     # Validate each cell
     for i, cell_idx in enumerate(cell_indices):
-        spike_times = spike_trains[cell_idx]
+        train = spike_times[cell_idx]
 
         # Skip cells with no spikes (cannot compute place field)
-        if len(spike_times) == 0:
+        if len(train) == 0:
             center_errors[i] = np.nan
             correlations[i] = np.nan
             continue
@@ -246,7 +246,7 @@ def validate_simulation(
         detected_field = np.asarray(
             compute_spatial_rate(
                 env,
-                spike_times,
+                train,
                 times,
                 positions,
                 method=method,

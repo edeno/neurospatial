@@ -251,7 +251,7 @@ def restrict(
 
 
 def restrict_spike_trains(
-    trains: Sequence[NDArray[np.float64]],
+    spike_times: Sequence[NDArray[np.float64]],
     epochs: Any,
     *,
     closed: _Closed = "both",
@@ -260,11 +260,11 @@ def restrict_spike_trains(
 
     Ragged per-unit spike times are not aligned to a common ``times`` axis, so
     each train is masked against itself: ``[t[in_epochs(t, epochs)] for t in
-    trains]``.
+    spike_times]``.
 
     Parameters
     ----------
-    trains : sequence of ndarray, or SpikeTrains
+    spike_times : sequence of ndarray, or SpikeTrains
         Per-unit 1-D spike-time arrays. A
         :class:`~neurospatial.encoding.SpikeTrains` container is accepted --
         iterating it yields the per-unit train arrays.
@@ -291,8 +291,8 @@ def restrict_spike_trains(
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import restrict_spike_trains
-    >>> trains = [np.array([0.1, 1.5, 2.9]), np.array([0.5, 3.0, 6.0])]
-    >>> restrict_spike_trains(trains, (1.0, 3.5))
+    >>> spike_times = [np.array([0.1, 1.5, 2.9]), np.array([0.5, 3.0, 6.0])]
+    >>> restrict_spike_trains(spike_times, (1.0, 3.5))
     [array([1.5, 2.9]), array([3.])]
     """
     # Normalize the intervals ONCE (not per train): a malformed epochs raises up
@@ -301,7 +301,7 @@ def restrict_spike_trains(
     # re-normalization that ``in_epochs`` would repeat on every call.
     intervals = as_intervals(epochs, name="epochs")
     out: list[NDArray[np.float64]] = []
-    for train in trains:
+    for train in spike_times:
         t = np.asarray(train, dtype=np.float64)
         out.append(t[_mask_in_intervals(t, intervals, closed=closed)])
     return out

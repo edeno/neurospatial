@@ -116,7 +116,7 @@ positions, times = simulate_trajectory_ou(
 dt = float(times[1] - times[0])
 
 # Compute heading from velocity (radians, world frame: 0=East, +pi/2=North)
-headings = heading_from_velocity(positions, times, min_speed=2.0, bandwidth=3.0)
+headings = heading_from_velocity(times, positions, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {len(times)} samples, {times[-1]:.1f}s")
 print(

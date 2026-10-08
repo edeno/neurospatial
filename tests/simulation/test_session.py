@@ -428,8 +428,8 @@ class TestSimulateSession:
         # Reproduce spikes using the trajectory seed (the old collision path).
         collision_spikes = generate_population_spikes(
             session.models,
-            session.positions,
             session.times,
+            session.positions,
             seed=seed,
             show_progress=False,
         )

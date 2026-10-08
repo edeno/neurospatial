@@ -34,7 +34,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import as_intervals
-from neurospatial._validation import validate_finite
+from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -424,47 +424,13 @@ class EnvironmentTrajectory:
         ... )
 
         """
-        # Input validation
-        times = np.asarray(times, dtype=np.float64)
-        positions = np.asarray(positions, dtype=np.float64)
-
-        # Check array shapes FIRST. A swapped occupancy(positions, times) call
-        # would otherwise run np.diff on the 2-D positions array and raise the
-        # misleading "times must be monotonically increasing", pointing the user
-        # at their (fine) timestamps instead of the real argument-order mistake.
-        if times.ndim != 1:
-            raise ValueError(
-                f"times must be a 1-dimensional array, got shape {times.shape}. "
-                "The argument order is occupancy(times, positions) -- did you "
-                "pass positions first?"
-            )
-
+        times, positions = validate_times_positions(
+            times, positions, call="Environment.occupancy"
+        )
         if positions.ndim != 2:
             raise ValueError(
                 f"positions must be 2-dimensional array (n_samples, n_dims), "
                 f"got shape {positions.shape}"
-            )
-
-        if len(times) != len(positions):
-            raise ValueError(
-                f"times and positions must have same length. "
-                f"Got times: {len(times)}, positions: {len(positions)}"
-            )
-
-        # Reject non-finite timestamps before the monotonicity check. Without
-        # this, a NaN makes every np.diff comparison False, so the monotonicity
-        # check below would raise the self-contradictory "0 decreasing
-        # interval(s)".
-        times = validate_finite(times, name="times")
-
-        # Validate monotonicity of timestamps
-        if len(times) > 1 and not np.all(np.diff(times) >= 0):
-            decreasing_indices = np.where(np.diff(times) < 0)[0]
-            raise ValueError(
-                "times must be monotonically increasing (non-decreasing). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"  # Show first 5
-                + (" ..." if len(decreasing_indices) > 5 else "")
             )
 
         # Validate positions dimensionality
@@ -762,25 +728,13 @@ class EnvironmentTrajectory:
         ``bin_sequence_with_runs``: always computes both bins and runs;
         the public methods choose which fields of the result to expose.
         """
-        # Input validation
-        times = np.asarray(times, dtype=np.float64)
-        positions = np.asarray(positions, dtype=np.float64)
-
-        # Reject non-finite timestamps up front (see occupancy() for rationale).
-        times = validate_finite(times, name="times")
-
-        # Validate positions is 2D (consistent with occupancy())
+        times, positions = validate_times_positions(
+            times, positions, call="Environment.bin_sequence"
+        )
         if positions.ndim != 2:
             raise ValueError(
                 f"positions must be a 2-dimensional array (n_samples, n_dims), "
                 f"got shape {positions.shape}"
-            )
-
-        # Validate lengths match
-        if len(times) != len(positions):
-            raise ValueError(
-                f"times and positions must have the same length. "
-                f"Got times: {len(times)}, positions: {len(positions)}"
             )
 
         # Validate dimensions match environment
@@ -789,16 +743,6 @@ class EnvironmentTrajectory:
             raise ValueError(
                 f"positions must have {n_dims} dimensions to match environment. "
                 f"Got positions.shape[1] = {positions.shape[1]}"
-            )
-
-        # Check for monotonic timestamps (raise error for consistency with occupancy())
-        if len(times) > 1 and not np.all(np.diff(times) >= 0):
-            decreasing_indices = np.where(np.diff(times) < 0)[0]
-            raise ValueError(
-                "times must be monotonically increasing (non-decreasing). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"
-                + (" ..." if len(decreasing_indices) > 5 else "")
             )
 
         mask = interval_valid_mask(

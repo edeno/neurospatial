@@ -1,4 +1,4 @@
-"""Scale-safety asserts for memory-safe summary decoding (Task 2.1).
+"""Scale-safety asserts for memory-safe summary decoding.
 
 These tests use ``tracemalloc`` to assert that ``decode_position_summary``
 never allocates a full ``(n_time, n_bins)`` posterior, and that
@@ -11,6 +11,8 @@ from __future__ import annotations
 import tracemalloc
 
 import numpy as np
+
+from neurospatial.decoding.session import _decode_with_models_summary
 
 
 def _inputs(env, *, n_time, n_neurons=10, seed=0):
@@ -103,7 +105,6 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
     from neurospatial.decoding import (
         bin_spikes_in_time,
         decode_position_summary,
-        decode_session_summary,
     )
 
     # Use a small-bin env so the per-block posterior (time_chunk x n_bins) stays
@@ -119,9 +120,6 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
     dt = 0.025
     duration = 500.0  # 500 s / 25 ms = 20000 time bins
     times = np.arange(0.0, duration, dt / 2.0)  # 2x oversampled trajectory
-    lo = env.bin_centers.min(axis=0)
-    hi = env.bin_centers.max(axis=0)
-    positions = rng.uniform(lo, hi, (len(times), env.n_dims))
     # Precompute small encoding models so both paths skip the (slow) KDE encode
     # and we isolate the binning+decode memory behavior.
     encoding_models = rng.uniform(0.5, 12.0, (n_neurons, env.n_bins))
@@ -148,13 +146,12 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
 
     # --- Streamed: decode_session_summary bins block-by-block. ---
     tracemalloc.reset_peak()
-    summ = decode_session_summary(
+    summ = _decode_with_models_summary(
         env,
         spike_times,
         times,
-        positions,
+        encoding_models,
         dt=dt,
-        encoding_models=encoding_models,
         time_chunk=512,
         warn_on_drop=False,
     )

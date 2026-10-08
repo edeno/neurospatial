@@ -61,38 +61,38 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         Trial(100.0, r.times[-1], "source", "target", True),
     ]
     session = compute_vte_session(
-        env, r.positions, r.times, decision_region="decision", trials=trials
+        env, r.times, r.positions, decision_region="decision", trials=trials
     )
     assert session.trial_results, "The session golden must exercise real metrics."
     heading_clock = float(np.median(np.diff(r.times))) if legacy_heading else r.times
     return {
-        "heading_from_velocity": heading_from_velocity(r.positions, heading_clock),
+        "heading_from_velocity": heading_from_velocity(heading_clock, r.positions),
         "heading_from_velocity_smoothed": heading_from_velocity(
-            r.positions, heading_clock, bandwidth=2.0, min_speed=5.0
+            heading_clock, r.positions, bandwidth=2.0, min_speed=5.0
         ),
-        "pre_decision_heading_stats": pre_decision_heading_stats(r.positions, r.times),
-        "pre_decision_speed_stats": pre_decision_speed_stats(r.positions, r.times),
-        "head_sweep_from_positions": head_sweep_from_positions(r.positions, r.times),
+        "pre_decision_heading_stats": pre_decision_heading_stats(r.times, r.positions),
+        "pre_decision_speed_stats": pre_decision_speed_stats(r.times, r.positions),
+        "head_sweep_from_positions": head_sweep_from_positions(r.times, r.positions),
         "heading_direction_labels": heading_direction_labels(r.positions, r.times),
         "heading_direction_precomputed": heading_direction_labels(
             speed=np.ones(len(r.times)) * 10, heading=r.headings
         ),
         "compute_path_efficiency": compute_path_efficiency(
-            r.env, r.positions, r.times, goal, metric="euclidean", reference_speed=10
+            r.env, r.times, r.positions, goal, metric="euclidean", reference_speed=10
         ),
         "compute_path_efficiency_geodesic": compute_path_efficiency(
-            r.env, r.positions, r.times, goal, reference_speed=10
+            r.env, r.times, r.positions, goal, reference_speed=10
         ),
         "instantaneous_goal_alignment": instantaneous_goal_alignment(
-            r.positions, r.times, goal
+            r.times, r.positions, goal
         ),
-        "goal_bias": goal_bias(r.positions, r.times, goal),
-        "approach_rate": approach_rate(r.positions, r.times, goal),
+        "goal_bias": goal_bias(r.times, r.positions, goal),
+        "approach_rate": approach_rate(r.times, r.positions, goal),
         "approach_rate_geodesic": approach_rate(
-            r.positions, r.times, goal, metric="geodesic", env=r.env
+            r.times, r.positions, goal, metric="geodesic", env=r.env
         ),
         "compute_goal_directed_metrics": compute_goal_directed_metrics(
-            r.env, r.positions, r.times, goal, goal_radius=5
+            r.env, r.times, r.positions, goal, goal_radius=5
         ),
         "compute_trajectory_curvature": compute_trajectory_curvature(
             r.positions, times=r.times
@@ -108,10 +108,10 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             positions=r.positions,
         ).to_dict("list"),
         "compute_pre_decision_metrics": compute_pre_decision_metrics(
-            r.positions, r.times, entry_time=100.0, window_duration=2.0
+            r.times, r.positions, entry_time=100.0, window_duration=2.0
         ),
         "compute_vte_trial": compute_vte_trial(
-            r.positions, r.times, entry_time=100.0, window_duration=2.0
+            r.times, r.positions, entry_time=100.0, window_duration=2.0
         ),
         "compute_vte_session": session,
     }

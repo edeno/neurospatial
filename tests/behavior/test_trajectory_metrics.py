@@ -309,7 +309,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API with Euclidean distance (default)
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=5.0
+            times, positions, metric="euclidean", max_tau=5.0
         )
         tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -329,7 +329,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API with Euclidean distance
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=5.0
+            times, positions, metric="euclidean", max_tau=5.0
         )
         _tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -346,7 +346,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=5.0
+            times, positions, metric="euclidean", max_tau=5.0
         )
         _tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -359,7 +359,7 @@ class TestMeanSquareDisplacement:
         times = np.linspace(0, 10, 50)
 
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=3.0
+            times, positions, metric="euclidean", max_tau=3.0
         )
         tau_values, _ = _msd.lags, _msd.msd
 
@@ -372,7 +372,7 @@ class TestMeanSquareDisplacement:
         times = np.linspace(0, 10, 50)
 
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=5.0
+            times, positions, metric="euclidean", max_tau=5.0
         )
         tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -385,7 +385,7 @@ class TestMeanSquareDisplacement:
         times = np.linspace(0, 10, 50)
 
         # Euclidean (default)
-        _msd = mean_square_displacement(positions, times, max_tau=5.0)
+        _msd = mean_square_displacement(times, positions, max_tau=5.0)
         tau_values, msd_values = _msd.lags, _msd.msd
         assert isinstance(tau_values, np.ndarray)
         assert isinstance(msd_values, np.ndarray)
@@ -394,7 +394,7 @@ class TestMeanSquareDisplacement:
         env = Environment.from_samples(positions, bin_size=5.0)
         bin_positions = env.bin_centers[env.bin_at(positions)]
         _msd = mean_square_displacement(
-            bin_positions, times, metric="geodesic", env=env, max_tau=5.0
+            times, bin_positions, metric="geodesic", env=env, max_tau=5.0
         )
         tau_geo, msd_geo = _msd.lags, _msd.msd
         assert isinstance(tau_geo, np.ndarray)
@@ -424,7 +424,7 @@ class TestTrajectoryMetricsIntegration:
 
         # MSD uses continuous positions
         _msd = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=10.0
+            times, positions, metric="euclidean", max_tau=10.0
         )
         tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -603,7 +603,7 @@ class TestArrayLikeNormalization:
         """mean_square_displacement must accept a valid Python list-of-lists."""
         positions_list = [[float(i), 0.0] for i in range(10)]
         times_list = [float(i) * 0.1 for i in range(10)]
-        result = mean_square_displacement(positions_list, times_list)
+        result = mean_square_displacement(times_list, positions_list)
         assert hasattr(result, "lags")
         assert hasattr(result, "msd")
 
@@ -612,7 +612,7 @@ class TestArrayLikeNormalization:
         positions_list = [[float(i), 0.0] for i in range(10)]
         times_list = [float(i) * 0.1 for i in range(10)]
         try:
-            mean_square_displacement(positions_list, times_list)
+            mean_square_displacement(times_list, positions_list)
         except AttributeError:
             pytest.fail(
                 "mean_square_displacement raised AttributeError on list input — "
@@ -625,10 +625,10 @@ class TestArrayLikeNormalization:
         """mean_square_displacement raises ValueError/TypeError (not AttributeError) for 1-D input."""
         times_list = [0.0, 0.1, 0.2]
         with pytest.raises((ValueError, TypeError)):
-            mean_square_displacement([0.0, 1.0, 2.0], times_list)  # 1D flat list
+            mean_square_displacement(times_list, [0.0, 1.0, 2.0])  # 1D flat list
 
     def test_msd_non_numeric_raises_domain_error(self):
         """mean_square_displacement raises TypeError (not AttributeError) for non-numeric input."""
         times_list = [0.0, 0.1, 0.2]
         with pytest.raises((TypeError, ValueError)):
-            mean_square_displacement([["a", "b"], ["c", "d"], ["e", "f"]], times_list)
+            mean_square_displacement(times_list, [["a", "b"], ["c", "d"], ["e", "f"]])

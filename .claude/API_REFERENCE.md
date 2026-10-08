@@ -53,6 +53,12 @@ func(
 
 #### Egocentric Operations (bearing, distance to targets)
 
+Required behavior trajectories use `(times, positions)` or
+`(env, times, positions)` when an environment is needed. `heading_from_velocity`
+uses `(times, positions)` too. Optional-timestamp functions keep their documented
+positions-first slot. Analyses accept explicit tracking arrays; pynapple users
+pass `tsd.t, tsd.values`.
+
 ```python
 func(
     positions,              # 1. Animal positions (where animal is)
@@ -188,6 +194,13 @@ from neurospatial import (
 Root workflows load lazily and expose concrete types to IDEs and mypy.
 `SpikeTrains` comes from `encoding`, `restrict` from `behavior`, and
 `BayesianDecoder` / `bin_spikes_in_time` from `decoding`.
+
+`BayesianDecoder.from_rates(rates)` accepts an existing `SpatialRatesResult`.
+Use `fit(spike_times, times, positions, unit_ids=...)` to build maps, then
+`predict(spike_times, times)` without tracking positions. Explicit unit labels
+must agree with any labels carried by the spike group. `decode_session` always
+requires positions and builds its own maps; explicit count arrays and rate
+arrays go to `decode_position`.
 
 ## Core Classes
 

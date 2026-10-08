@@ -85,7 +85,7 @@ class SimulationSession:
 
     >>> # Generate spikes
     >>> spike_trains = generate_population_spikes(
-    ...     models, positions, times
+    ...     models, times, positions
     ... )  # doctest: +SKIP
 
     >>> # Collect ground truth
@@ -540,8 +540,8 @@ def simulate_session(
     # Generate spikes for all cells using the independent spike seed.
     spike_trains = generate_population_spikes(
         models,
-        positions,
         times,
+        positions,
         seed=spike_seed,
         show_progress=show_progress,
     )

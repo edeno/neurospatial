@@ -1280,7 +1280,7 @@ class TestSpatialRateResultRegionCoverage:
         peak_rate = np.nanmax(firing_rate)
         field_mask = firing_rate >= threshold * peak_rate
         field_bins = np.where(field_mask)[0]
-        expected = crc_func(field_bins, env_with_regions)
+        expected = crc_func(env_with_regions, field_bins)
 
         coverage = result.region_coverage(threshold=threshold)
         for region in expected:

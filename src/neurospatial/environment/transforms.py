@@ -81,7 +81,7 @@ class EnvironmentTransforms:
             ... )  # doctest: +SKIP
             >>> coarse = env.rebin(factor=2)  # doctest: +SKIP
             >>> coarse_indices = map_points_to_bins(
-            ...     env.bin_centers, coarse
+            ...     coarse, env.bin_centers
             ... )  # doctest: +SKIP
             >>> coarse_field = np.bincount(  # doctest: +SKIP
             ...     coarse_indices, weights=field, minlength=coarse.n_bins
@@ -131,7 +131,7 @@ class EnvironmentTransforms:
         >>> # Aggregate a field to the coarsened grid
         >>> from neurospatial.ops.binning import map_points_to_bins
         >>> occupancy = np.random.rand(env.n_bins) * 100
-        >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
+        >>> coarse_indices = map_points_to_bins(coarse, env.bin_centers)
         >>> coarse_occupancy = np.bincount(
         ...     coarse_indices, weights=occupancy, minlength=coarse.n_bins
         ... )

@@ -692,7 +692,7 @@ class TestComputeViewRateInputValidation:
         positions = np.random.rand(500, 2) * 100  # Wrong length
         headings = np.random.uniform(0, 2 * np.pi, 1000)
 
-        with pytest.raises(ValueError, match=r"times length.*positions length"):
+        with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_view_rate(
                 simple_env,
                 spike_times,
@@ -1210,7 +1210,7 @@ class TestComputeViewRatesInputValidation:
         headings = np.random.uniform(0, 2 * np.pi, 1000)
         spike_times_list = [np.array([1.0, 2.5])]
 
-        with pytest.raises(ValueError, match=r"times length.*positions length"):
+        with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_view_rates(
                 simple_env,
                 spike_times_list,
@@ -1740,7 +1740,7 @@ class TestComputeViewRateNaNHandling:
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )
-        headings = heading_from_velocity(positions, times, min_speed=2.0)
+        headings = heading_from_velocity(times, positions, min_speed=2.0)
         rng = np.random.default_rng(3)
         rates = 5.0 + 5.0 * rng.random(len(times))
         spike_times = generate_poisson_spikes(rates, times, seed=7)

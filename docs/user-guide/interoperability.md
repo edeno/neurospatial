@@ -60,7 +60,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 15))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 
 # Rate maps and a one-call decode, straight from arrays.
@@ -192,7 +192,7 @@ rates = compute_spatial_rates(env, st, times, positions)
 `restrict`, `in_epochs`, and `restrict_spike_trains` select time windows.
 `restrict(times, *arrays, epochs=...)` slices `times` and any number of arrays
 **aligned to it** by the same in-epoch mask; `in_epochs(t, epochs)` returns the
-boolean mask; and `restrict_spike_trains(trains, epochs)` masks *ragged* trains
+boolean mask; and `restrict_spike_trains(spike_times, epochs)` masks *ragged* trains
 (each unit by its own timestamps).
 
 ```python
@@ -278,17 +278,15 @@ start, end = from_pynapple(intervalset)        # IntervalSet -> (start, end)
 tsd = to_pynapple(result)                       # from a DecodingResult
 ```
 
-You often do not even need the adapter: a raw `TsGroup` (spikes) or `Tsd` /
-`TsdFrame` (position) flows **directly** into the compute functions, which accept
-the pynapple-group and position-source surfaces:
+A raw `TsGroup` can supply spikes and unit labels directly. Pass tracking as
+two explicit arrays, `tsdframe.t` and `tsdframe.values`, with timestamps first:
 
 ```python
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.decoding import decode_session
 
-# Pass pynapple objects straight through — no manual conversion.
-rates = compute_spatial_rates(env, tsgroup, tsdframe)
-result = decode_session(env, tsgroup, tsdframe, dt=0.1)
+rates = compute_spatial_rates(env, tsgroup, tsdframe.t, tsdframe.values)
+result = decode_session(env, tsgroup, tsdframe.t, tsdframe.values, dt=0.1)
 ```
 
 ## NWB interop

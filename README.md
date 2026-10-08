@@ -213,7 +213,7 @@ cell = PlaceCellModel(env, center=np.array([30.0, 30.0]), width=8.0,
 
 # 4. Generate the spike train from the cell's firing model + trajectory.
 spike_times = generate_population_spikes(
-    [cell], positions_t, times, seed=42, show_progress=False,
+    [cell], times, positions_t, seed=42, show_progress=False,
 )[0]
 
 # 5. Recover the place field from spikes + trajectory.

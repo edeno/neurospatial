@@ -185,7 +185,7 @@ Allocentric ↔ egocentric coordinate transforms.
 
 **Key Functions:**
 
-- `heading_from_velocity(positions, times)`, `heading_from_body_orientation()`:
+- `heading_from_velocity(times, positions)`, `heading_from_body_orientation()`:
   Derive head direction from tracking data
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions
@@ -324,7 +324,7 @@ pynwb.
 - `restrict(times, *arrays, epochs=...)`: Slice `times` and time-aligned arrays
   to a set of epochs.
 - `in_epochs(t, epochs)`: Boolean mask, `True` where `t` falls in any epoch.
-- `restrict_spike_trains(trains, epochs)`: Mask ragged per-unit trains, each by
+- `restrict_spike_trains(spike_times, epochs)`: Mask ragged per-unit trains, each by
   its own timestamps.
 
 **Bayesian decoder object** ([neurospatial.decoding.estimator](neurospatial/decoding/estimator.md)):
@@ -332,6 +332,13 @@ pynwb.
 - `BayesianDecoder`: Frozen `fit(...)` → `predict(...)` / `predict_summary(...)`
   / `score(...)` wrapper over `decode_session` (byte-exact). Decodes through the
   `Environment`, so linearized-track / geodesic decoding works.
+- `BayesianDecoder.from_rates(rates, dt=...)`: Fitted decoder from a
+  `SpatialRatesResult`, preserving unit identity and training spike-window
+  provenance. Prediction takes spikes and array timestamps; supplied labels
+  align by identity, generated labels pair by position.
+- `fit(spike_times, times, positions, unit_ids=...)` requires tracking positions;
+  explicit labels must match a labelled spike group's values and order.
+  `decode_session` also requires positions and computes its own encoding maps.
 
 **pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
 

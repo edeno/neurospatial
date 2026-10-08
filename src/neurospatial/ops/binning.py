@@ -45,7 +45,7 @@ class TieBreakStrategy(Enum):
     >>> import numpy as np
     >>> # Use enum for autocomplete and type safety
     >>> result = map_points_to_bins(
-    ...     points, env, tie_break=TieBreakStrategy.CLOSEST_CENTER
+    ...     env, points, tie_break=TieBreakStrategy.CLOSEST_CENTER
     ... )  # doctest: +SKIP
     """
 
@@ -112,8 +112,8 @@ def _typical_bin_spacing(env: Environment) -> float:
 
 
 def map_points_to_bins(
-    points: NDArray[np.float64],
     env: Environment,
+    points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy
     | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
@@ -134,10 +134,10 @@ def map_points_to_bins(
 
     Parameters
     ----------
-    points : NDArray[np.float64], shape (n_points, n_dims)
-        Continuous coordinates to map to bins.
     env : Environment
         Environment containing the bin discretization.
+    points : NDArray[np.float64], shape (n_points, n_dims)
+        Continuous coordinates to map to bins.
     tie_break : TieBreakStrategy or {"lowest_index", "closest_center"}, default=TieBreakStrategy.LOWEST_INDEX
         Strategy for resolving ties when a point is equidistant from multiple
         bin centers. Can pass either a TieBreakStrategy enum member or a string.
@@ -193,23 +193,23 @@ def map_points_to_bins(
     >>> data = np.random.randn(1000, 2) * 10  # doctest: +SKIP
     >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
     >>> points = np.array([[0.0, 0.0], [10.0, 10.0], [50.0, 50.0]])  # doctest: +SKIP
-    >>> bins = map_points_to_bins(points, env)  # doctest: +SKIP
+    >>> bins = map_points_to_bins(env, points)  # doctest: +SKIP
     >>> bins  # doctest: +SKIP
     array([ 42,  89,  -1])
 
     >>> # Get distances too
     >>> bins, dists = map_points_to_bins(
-    ...     points, env, return_dist=True
+    ...     env, points, return_dist=True
     ... )  # doctest: +SKIP
     >>> dists  # doctest: +SKIP
     array([0.23, 0.45, inf])
 
     >>> # Filter outliers with absolute threshold
-    >>> bins = map_points_to_bins(points, env, max_distance=15.0)  # doctest: +SKIP
+    >>> bins = map_points_to_bins(env, points, max_distance=15.0)  # doctest: +SKIP
 
     >>> # Filter outliers with relative threshold (adapts to bin size)
     >>> bins = map_points_to_bins(
-    ...     points, env, max_distance_factor=1.5
+    ...     env, points, max_distance_factor=1.5
     ... )  # doctest: +SKIP
 
     Notes
@@ -806,8 +806,8 @@ def resample_field(
     dst_to_src_indices = cast(
         "NDArray[np.int64]",
         map_points_to_bins(
-            dst_env.bin_centers,
             src_env,
+            dst_env.bin_centers,
             tie_break=TieBreakStrategy.LOWEST_INDEX,
         ),
     )

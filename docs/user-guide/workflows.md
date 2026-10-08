@@ -178,7 +178,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 25))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 
 # Step 2: Decode position in a single call (encode -> bin -> decode).
@@ -293,6 +293,61 @@ inspecting the binned spike counts — use the manual three-call path
 walk-through, plus trajectory analysis and shuffle-based significance testing
 for replay detection, is covered in
 [example 20](../examples/20_bayesian_decoding.ipynb).
+
+### Reusing rate maps on a recording with gaps
+
+`decode_session` requires tracking and computes its own maps. For maps already
+computed on a training epoch, use `BayesianDecoder.from_rates(rates)`; prediction
+takes spike times and a plain timestamp array. An explicit array handoff uses
+`rates.firing_rates` with binned counts. This example decodes the second recording
+run through both routes. It bins only that run and uses each decoder's returned
+timestamps, so the 10–20 s pause is never represented by a decode bin.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment, compute_spatial_rates, decode_position
+from neurospatial.decoding import BayesianDecoder, bin_spikes_in_time
+
+times = np.r_[np.arange(300) / 30, 20 + np.arange(300) / 30]
+phase = np.arange(600) / 30
+positions = 10 + 5 * np.c_[np.sin(phase), np.cos(phase)]
+env = Environment.from_samples(positions, bin_size=2.0)
+spike_times = [times[::10], times[::15]]
+recording_windows = np.array([[0.0, 10.0], [20.0, 30.0]])
+train, test = (0.0, 10.0), (20.0, 30.0)
+dt = 0.1
+
+rates = compute_spatial_rates(
+    env, spike_times, times, positions, epochs=train,
+    spike_window=recording_windows, fill_value=0.0, unit_ids=[101, 202],
+)
+decoder = BayesianDecoder.from_rates(rates, dt=dt)
+result = decoder.predict(
+    spike_times, times, epochs=test, spike_window=recording_windows,
+)
+
+# Clip the analysis epoch to the observed run, then bin that epoch alone.
+counts, centers = bin_spikes_in_time(
+    spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
+)
+array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers)
+np.testing.assert_array_equal(result.times, array_result.times)
+np.testing.assert_array_equal(result.posterior, array_result.posterior)
+assert np.all((result.times >= 20.0) & (result.times < 30.0))
+print("Decode bins:", len(result.times), "unit order:", rates.unit_ids.tolist())
+```
+
+Use `BayesianDecoder(env).fit(spike_times, times, positions, unit_ids=...)` when
+the decoder should build the maps. A labelled spike group and explicit `unit_ids`
+must agree in order and value. Prediction matches labels only when both inputs
+carry caller-supplied identity; generated row numbers retain positional pairing.
+The training spike window carried on the decoder is provenance. Supply the
+prediction recording's observation windows explicitly to `predict`.
+
+The count-array route has already applied its time selection upstream. For
+multiple recording runs, bin each run independently and retain the corresponding
+centers; a single start/stop grid would span the pauses.
 
 ## Workflow 3: Region-Based Analysis
 
@@ -559,70 +614,6 @@ for ax, label, truth in zip(axes, ["home→goal", "goal→home"], [60.0, 40.0], 
 plt.show()
 ```
 
-## Common Patterns
-
-### Pattern: Handling Edge Cases
-
-```python
-# Always check for valid bins
-bin_indices = env.bin_at(positions)
-valid = bin_indices != -1  # -1 indicates point outside environment
-
-# Use only valid data
-valid_positions = positions[valid]
-valid_bins = bin_indices[valid]
-
-# Or handle invalid gracefully
-firing_rate = np.full(env.n_bins, np.nan)
-valid_occupancy = occupancy_time > min_threshold
-firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[valid_occupancy]
-```
-
-### Pattern: Batch Processing
-
-<!-- docs-test: run setup=workflows_batch_processing_compute_spatial_rates -->
-```python
-from neurospatial.encoding import compute_spatial_rates
-
-# Process multiple units efficiently with the batch API.
-spike_trains_by_unit_id = load_all_neurons()
-unit_ids = list(spike_trains_by_unit_id.keys())
-spike_times = list(spike_trains_by_unit_id.values())
-
-result = compute_spatial_rates(
-    env, spike_times, times, positions, unit_ids=unit_ids
-)
-firing_rate_maps = result.firing_rates  # Shape: (n_units, n_bins)
-```
-
-`compute_spatial_rates` handles spike-to-position interpolation, occupancy
-normalization, and smoothing for the whole population in one call, returning a
-`SpatialRatesResult` whose `unit_ids` line up with `firing_rates`. Prefer it
-over a manual per-neuron loop.
-
-### Pattern: Progressive Refinement
-
-```python
-# Start with coarse binning for quick overview
-env_coarse = Environment.from_samples(positions, bin_size=10.0)
-# ... analyze ...
-
-# Refine in regions of interest
-env_fine = Environment.from_samples(
-    positions,
-    bin_size=2.0,
-    infer_active_bins=True,
-    dilate=True
-)
-# ... detailed analysis ...
-```
-
-## See Also
-
-- [Environment API](../api/neurospatial/environment/index.md): Complete method documentation
-- [Regions Guide](regions.md): Working with ROIs
-- [Example Notebooks](../examples/index.md): Interactive tutorials
-
 ## Workflow 6: Shared Units for Decoding and Population Statistics
 
 Simulate a labeled population, estimate spatial maps from four raw arrays,
@@ -776,3 +767,148 @@ is `r(control, match | template)^2`. EV > REV is an effect-size comparison,
 not calibrated reactivation significance. Report control choice, preprocessing,
 unit selection and a separately justified null when a significance claim is
 needed.
+
+## Workflow 7: One Event Cohort Across a Gapped Recording
+
+Choose events whose entire peri-event window fits both the spike recording and
+the analysis epochs. Keep the original identifiers and selection mask in a
+table, then reuse the selected timestamps for every view of those events. A
+PSTH can otherwise retain fewer events than a raster or positioned-event table.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from neurospatial.events import (
+    add_positions, align_spikes_to_events, peri_event_histogram,
+    event_count_in_window, event_indicator,
+)
+
+times = np.r_[np.arange(100) / 10, 20 + np.arange(100) / 10]
+positions = np.c_[times, np.zeros(len(times))]
+spike_times = np.array([4.0, 5.0, 6.0, 24.0, 25.0, 26.0])
+events = pd.DataFrame({
+    "event_id": ["reward-a", "reward-b", "reward-c", "reward-d"],
+    "timestamp": [5.0, 9.5, 25.0, 29.5],
+})
+spike_window = np.array([[0.0, 10.0], [20.0, 30.0]])
+epochs = np.array([[1.0, 9.0], [21.0, 29.0]])
+window = (-1.0, 1.0)
+starts = events["timestamp"].to_numpy() + window[0]
+stops = events["timestamp"].to_numpy() + window[1]
+
+fits_recording = (
+    (starts[:, None] >= spike_window[:, 0])
+    & (stops[:, None] <= spike_window[:, 1])
+).any(axis=1)
+fits_analysis = (
+    (starts[:, None] >= epochs[:, 0]) & (stops[:, None] <= epochs[:, 1])
+).any(axis=1)
+events["retained"] = fits_recording & fits_analysis
+selected = events.loc[events["retained"]].copy()
+event_times = selected["timestamp"].to_numpy()
+
+psth = peri_event_histogram(
+    spike_times, event_times, window=window, bin_size=0.2,
+    epochs=epochs, spike_window=spike_window,
+)
+aligned = align_spikes_to_events(spike_times, event_times, window=window)
+fig, ax = plt.subplots()
+ax.eventplot(aligned, lineoffsets=np.arange(len(event_times)))
+ax.set_yticks(np.arange(len(event_times)), selected["event_id"])
+ax.set_xlabel("Time from event (s)")
+
+regressors = pd.DataFrame({
+    "timestamp": times,
+    "event_count": event_count_in_window(times, event_times, window=window),
+    "event_present": event_indicator(times, event_times, window=window),
+})
+positioned = add_positions(selected, times=times, positions=positions, epochs=epochs)
+table = events.join(positioned[["x", "y"]])
+assert psth.n_events == len(aligned) == len(positioned) == 2
+assert selected["event_id"].tolist() == ["reward-a", "reward-c"]
+assert regressors["event_count"].dtype == np.int64
+assert regressors["event_present"].dtype == np.bool_
+print(table.to_string(index=False))
+
+# The cohort is shared; the helpers keep their documented edge rules.
+assert psth.histogram.sum() == 2.0  # Average of two spikes per event.
+assert [len(row) for row in aligned] == [3, 3]  # Includes the +1 s spike.
+assert event_count_in_window(
+    np.array([4.0, 6.0]), np.array([5.0]), window=window,
+).tolist() == [1, 1]  # Both adjacent windows include the boundary event.
+plt.close(fig)
+```
+
+PSTHs count spikes on `[event + start, event + stop)` and exclude the stop edge.
+Raster alignment includes that stop edge. Event-count and indicator windows
+include both edges, so neighboring sample windows can count the same boundary
+event twice. Sharing the event cohort preserves event identity and inclusion;
+it does not make these spike-edge rules identical. Regressors describe the
+selected events at each sample; restrict their sample rows to your modeling
+epochs when fitting a model.
+
+## Common Patterns
+
+### Pattern: Handling Edge Cases
+
+```python
+# Always check for valid bins
+bin_indices = env.bin_at(positions)
+valid = bin_indices != -1  # -1 indicates point outside environment
+
+# Use only valid data
+valid_positions = positions[valid]
+valid_bins = bin_indices[valid]
+
+# Or handle invalid gracefully
+firing_rate = np.full(env.n_bins, np.nan)
+valid_occupancy = occupancy_time > min_threshold
+firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[valid_occupancy]
+```
+
+### Pattern: Batch Processing
+
+<!-- docs-test: run setup=workflows_batch_processing_compute_spatial_rates -->
+```python
+from neurospatial.encoding import compute_spatial_rates
+
+# Process multiple units efficiently with the batch API.
+spike_trains_by_unit_id = load_all_neurons()
+unit_ids = list(spike_trains_by_unit_id.keys())
+spike_times = list(spike_trains_by_unit_id.values())
+
+result = compute_spatial_rates(
+    env, spike_times, times, positions, unit_ids=unit_ids
+)
+firing_rate_maps = result.firing_rates  # Shape: (n_units, n_bins)
+```
+
+`compute_spatial_rates` handles spike-to-position interpolation, occupancy
+normalization, and smoothing for the whole population in one call, returning a
+`SpatialRatesResult` whose `unit_ids` line up with `firing_rates`. Prefer it
+over a manual per-neuron loop.
+
+### Pattern: Progressive Refinement
+
+```python
+# Start with coarse binning for quick overview
+env_coarse = Environment.from_samples(positions, bin_size=10.0)
+# ... analyze ...
+
+# Refine in regions of interest
+env_fine = Environment.from_samples(
+    positions,
+    bin_size=2.0,
+    infer_active_bins=True,
+    dilate=True
+)
+# ... detailed analysis ...
+```
+
+## See Also
+
+- [Environment API](../api/neurospatial/environment/index.md): Complete method documentation
+- [Regions Guide](regions.md): Working with ROIs
+- [Example Notebooks](../examples/index.md): Interactive tutorials

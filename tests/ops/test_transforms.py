@@ -508,8 +508,8 @@ class TestBoundsMismatchWarning:
         # Environment needs 100x100 cm - should warn
         with pytest.warns(UserWarning, match="[Bb]ounds.*extend|exceed"):
             calibrate_video(
-                video_path,
                 env,
+                video_path,
                 cm_per_px=1.0,
             )
 

@@ -1087,7 +1087,7 @@ class TestEgocentricRateConvention:
         positions, times = simulate_trajectory_ou(
             env, duration=1500.0, speed_units="cm", seed=7
         )
-        headings = heading_from_velocity(positions, times, min_speed=2.0)
+        headings = heading_from_velocity(times, positions, min_speed=2.0)
         return env, positions, times, headings
 
     @pytest.mark.slow
@@ -1176,7 +1176,7 @@ class TestEgocentricRateNaNHandling:
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )
-        headings = heading_from_velocity(positions, times, min_speed=2.0)
+        headings = heading_from_velocity(times, positions, min_speed=2.0)
         object_positions = np.array([[20.0, 20.0]])
         model = ObjectVectorCellModel(
             direction_frame="egocentric",
