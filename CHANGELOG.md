@@ -72,6 +72,8 @@
 
 ### Fixed — documentation
 
+- Include required unit labels in the manual `SimulationSession` constructor example.
+
 - Teach explicit simulator/NWB holder attributes and a complete file → selected epochs → population fields → decoder → summary/overlay workflow. A synthetic HDF5 example executes the published NWB recipe after file close with physical units, nondefault unit IDs and two analysis epochs; synchronized tutorials preserve the simulation-duration contract.
 
 - Preserve the existing shared-validator NumPy examples and parameter sections while adding timestamp/position diagnostics.

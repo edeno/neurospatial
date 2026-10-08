@@ -102,6 +102,7 @@ class SimulationSession:
     ...     positions=positions,
     ...     times=times,
     ...     spike_times=spike_times,
+    ...     unit_ids=np.arange(len(spike_times), dtype=np.int64),
     ...     models=models,
     ...     ground_truth=ground_truth,
     ...     metadata={"duration": 60.0, "cell_type": "place"},
