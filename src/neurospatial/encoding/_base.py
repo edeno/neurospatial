@@ -492,48 +492,45 @@ class SpatialResultMixin(ResultMixin):
 
         return pd.DataFrame(data)
 
-    def summary_table(self) -> pd.DataFrame:
-        """Per-unit scalar summary, one row per unit, ``unit_id``-indexed.
+    def to_xarray(self) -> Any:
+        """Export a labeled Dataset with dimensions (unit_id, bin).
 
-        Complements :meth:`to_dataframe` (dense, one row per ``(unit, bin)``)
-        as the **per-unit summary** terminal verb: one row per unit with scalar
-        metric columns (peak location, peak rate, and the spatial metrics each
-        result class can compute). This is the table a many-neuron user wants
-        for filtering, sorting, and population summaries.
-
-        The base implementation provides the shared columns
-        (``peak_*`` coordinates and ``peak_rate``); concrete batch result
-        classes extend it with their domain metrics (spatial information,
-        grid/border scores, cell type, preferred direction, etc.).
+        A singular result has one unit. A standalone result with no unit_id
+        uses <NA>; pass a unit_id or index a population result for a NetCDF-safe
+        label. Occupancy is shared across units. Coordinates, method metadata,
+        physical units, direction frame and acquisition windows are retained.
 
         Returns
         -------
-        pandas.DataFrame
-            One row per unit, indexed by ``unit_id``, with at least
-            ``peak_<coord>`` columns and ``peak_rate`` (float, Hz).
+        xarray.Dataset
+            Firing rates, shared occupancy, unit labels and bin coordinates.
+
+        Raises
+        ------
+        ImportError
+            If the optional xarray dependency is unavailable.
+        ValueError
+            If labels are duplicated or coordinates/occupancy do not match rates.
+
+        Examples
+        --------
+        >>> dataset = result.to_xarray()  # doctest: +SKIP
         """
-        import pandas as pd
+        from neurospatial._results import build_population_dataset
 
-        row_unit_ids = self._row_unit_ids()
-        peaks = np.atleast_2d(self.peak_location())
-        peak_rates = np.atleast_1d(self.peak_firing_rate())
+        rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
+        env = getattr(self, "env", None)
+        return build_population_dataset(
+            np.atleast_2d(rates),
+            self._row_unit_ids(),
+            env=env,
+            bin_centers=None
+            if env is not None
+            else np.asarray(self.bin_centers, dtype=np.float64),  # type: ignore[attr-defined]
+            occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),  # type: ignore[attr-defined]
+            attrs=self._xarray_attrs(),
+        )
 
-        data: dict[str, Any] = {}
-        coord_names = list(self._bin_center_columns().keys())
-        n_dims = peaks.shape[1]
-        for d in range(n_dims):
-            # Reuse the bin-center vocabulary for peak columns:
-            # bin_center_x -> peak_x, bin_center_distance -> peak_distance.
-            if d < len(coord_names):
-                col = "peak_" + coord_names[d].removeprefix("bin_center_")
-            else:
-                col = f"peak_coord_{d}"
-            data[col] = peaks[:, d]
-        data["peak_rate"] = peak_rates
-        # Carry the estimator (spatial/view rate results only), one value per
-        # unit. Absent on results with no `method` field.
-        if hasattr(self, "method"):
-            data["method"] = self.method
-
-        df = pd.DataFrame(data, index=pd.Index(row_unit_ids, name="unit_id"))
-        return df
+    def _xarray_attrs(self) -> dict[str, Any]:
+        """Family metadata; concrete rate results override this hook."""
+        return {}

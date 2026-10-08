@@ -122,6 +122,59 @@ __all__ = [
 VIEW_THRESHOLDS = MappingProxyType({"min_info": 0.5})
 
 
+def _view_xarray_attrs(result: ViewRateResult | ViewRatesResult) -> dict[str, Any]:
+    """Shared serialization metadata for this rate family."""
+    from neurospatial._results import (
+        env_fingerprint,
+        software_version,
+        units_attr,
+    )
+
+    attrs: dict[str, Any] = {
+        **units_attr(result.env),
+        "method": result.method,
+        "bandwidth": result.bandwidth,
+        "env": env_fingerprint(result.env),
+        "software_version": software_version(),
+    }
+    attrs["spike_window_assumed"] = int(result.spike_window_assumed)
+    if result.spike_window is not None:
+        attrs["spike_window"] = result.spike_window.ravel()
+    return attrs
+
+
+def _view_classify(
+    rates: NDArray, occupancy: NDArray, *, min_info: float
+) -> NDArray[np.bool_]:
+    """The shared information-threshold rule for this rate family."""
+    from neurospatial.encoding._metrics import batch_spatial_information
+
+    return np.asarray(batch_spatial_information(rates, occupancy)) >= min_info
+
+
+def _view_summary_frame(
+    result: ViewRateResult | ViewRatesResult, *, index: Sequence[Hashable]
+) -> pd.DataFrame:
+    """Build identical metric columns for single and population results."""
+    import pandas as pd
+
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = _to_numpy(result.occupancy)
+    from neurospatial.encoding._metrics import batch_spatial_information
+
+    peaks = np.atleast_2d(result.peak_location())
+    columns = {
+        "peak_x": peaks[:, 0],
+        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
+        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "view_spatial_info": np.asarray(batch_spatial_information(rates, occupancy)),
+        "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
+    }
+    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["method"] = result.method
+    return df
+
+
 @dataclass(frozen=True, repr=False)
 class ViewRateResult(SpatialResultMixin):
     """Result of view rate computation for a single neuron.
@@ -237,6 +290,23 @@ class ViewRateResult(SpatialResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _view_xarray_attrs(self)
+
+    def summary_table(self) -> pd.DataFrame:
+        """Per-unit metrics with the same columns as the population table.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Examples
+        --------
+        >>> table = result.summary_table()  # doctest: +SKIP
+        """
+        return _view_summary_frame(self, index=self._row_unit_ids().tolist())
 
     def _headline_metrics(self) -> dict[str, float]:
         """Cheap, NaN-safe metrics for the singular summary."""
@@ -450,7 +520,13 @@ class ViewRateResult(SpatialResultMixin):
         peak_location : Get location of peak view response
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return self.view_spatial_information() >= min_info
+        return bool(
+            _view_classify(
+                np.atleast_2d(_to_numpy(self.firing_rate)),
+                _to_numpy(self.occupancy),
+                min_info=min_info,
+            )[0]
+        )
 
 
 @dataclass(frozen=True, repr=False)
@@ -570,6 +646,9 @@ class ViewRatesResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _view_xarray_attrs(self)
+
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
@@ -580,59 +659,6 @@ class ViewRatesResult(SpatialResultMixin):
             resolve_unit_ids(self.unit_ids, n_units),
         )
         validate_unit_table(self.unit_table, n_units, context="ViewRatesResult")
-
-    def to_xarray(self) -> Any:
-        """Convert the view fields to a labeled :class:`xarray.Dataset`.
-
-        Wraps the ``(n_units, n_bins)`` view firing-rate matrix in a labeled
-        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
-        ``unit_id`` index coordinate holds the real per-unit identity labels
-        (:attr:`unit_ids`); the ``bin`` dimension carries non-index
-        ``bin_center_x`` / ``bin_center_y`` (and ``bin_center_z`` for 3-D)
-        coordinates derived from the (Cartesian) environment.
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with data var ``firing_rate`` (Hz, dims
-            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
-            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
-            ``bin_center_*`` coords on ``bin``, and ``attrs`` carrying
-            ``units``, ``bandwidth``, ``env`` fingerprint, and
-            ``software_version``.
-
-        Raises
-        ------
-        ValueError
-            If :attr:`unit_ids` contains duplicate labels.
-        ImportError
-            If ``xarray`` is not installed (optional dependency).
-        """
-        from neurospatial._results import (
-            build_population_dataset,
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
-
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "method": self.method,
-            "bandwidth": self.bandwidth,
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-        }
-        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
-        if self.spike_window is not None:
-            attrs["spike_window"] = self.spike_window.ravel()
-        return build_population_dataset(
-            rates,
-            np.asarray(self.unit_ids),
-            env=self.env,
-            occupancy=np.asarray(self.occupancy, dtype=np.float64),
-            attrs=attrs,
-        )
 
     def __len__(self) -> int:
         """Return the number of units.
@@ -966,8 +992,9 @@ class ViewRatesResult(SpatialResultMixin):
         view_spatial_information : The metric used for classification
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        info = self.view_spatial_information()
-        return info >= min_info
+        return _view_classify(
+            _to_numpy(self.firing_rates), _to_numpy(self.occupancy), min_info=min_info
+        )
 
     def summary_table(
         self,
@@ -1048,8 +1075,6 @@ class ViewRatesResult(SpatialResultMixin):
         view_spatial_information : Get spatial information for all units
         classify : Classify units as view cells
         """
-        import pandas as pd
-
         n_neurons = len(self)
 
         if unit_ids is None:
@@ -1066,28 +1091,7 @@ class ViewRatesResult(SpatialResultMixin):
                 context="ViewRatesResult.summary_table",
             )
 
-        # Compute all metrics
-        peak_locs = self.peak_locations()
-        firing_rates = _to_numpy(self.firing_rates)
-        peak_rates = np.nanmax(firing_rates, axis=1) if n_neurons > 0 else np.array([])
-        view_info = self.view_spatial_information()
-        is_spatial_view_cell = self.classify()
-
-        # Determine dimensionality for peak location columns
-        # View encoding is typically 2D, but handle 1D for robustness
-        n_dims = peak_locs.shape[1] if peak_locs.ndim > 1 else 1
-
-        # Build DataFrame
-        data: dict[str, Any] = {
-            "peak_x": peak_locs[:, 0],
-            "peak_y": peak_locs[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
-            "peak_rate": peak_rates,
-            "view_spatial_info": view_info,
-            "is_spatial_view_cell": is_spatial_view_cell,
-            "method": self.method,
-        }
-
-        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
+        return _view_summary_frame(self, index=index_ids)
 
 
 # =============================================================================

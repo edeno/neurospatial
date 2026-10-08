@@ -520,6 +520,119 @@ def _index_per_unit(value: Any, idx: int) -> Any:
     return arr[idx].item()
 
 
+def _spatial_xarray_attrs(
+    result: SpatialRateResult | SpatialRatesResult,
+) -> dict[str, Any]:
+    """Shared serialization metadata for this rate family."""
+    from neurospatial._results import (
+        env_fingerprint,
+        software_version,
+        units_attr,
+    )
+
+    attrs: dict[str, Any] = {
+        **units_attr(result.env),
+        "method": result.method,
+        "env": env_fingerprint(result.env),
+        "software_version": software_version(),
+        "spike_window_assumed": int(result.spike_window_assumed),
+    }
+    # Guard on the value, not on ``method``: NetCDF attributes cannot hold
+    # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
+    # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
+    # ``bandwidth is not None`` guards exactly that serialization precondition
+    # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
+    # correct even if a ratio result ever carried a ``None`` bandwidth.
+    if result.spike_window is not None:
+        attrs["spike_window"] = result.spike_window.ravel()
+    if result.bandwidth is not None:
+        attrs["bandwidth"] = result.bandwidth
+    return attrs
+
+
+def _label_from_scores(
+    spatial_info: NDArray,
+    grid: NDArray,
+    border: NDArray,
+    *,
+    min_spatial_info: float,
+    min_grid_score: float,
+    min_border_score: float,
+) -> NDArray[np.str_]:
+    """Apply the established information gate and grid/border/place precedence."""
+    tuned = spatial_info >= min_spatial_info
+    labels = np.full(len(spatial_info), "unclassified", dtype="<U14")
+    labels[tuned] = "place"
+    labels[tuned & (border >= min_border_score)] = "border"
+    labels[tuned & (grid >= min_grid_score)] = "grid"
+    return labels
+
+
+def _glm_summary_columns(
+    result: SpatialRateResult | SpatialRatesResult,
+) -> dict[str, Any]:
+    """Existing GAM diagnostics, broadcasting scalar slices to a table row."""
+    data: dict[str, Any] = {}
+    if result.method == "glm":
+        data["penalty"] = result.penalty
+        data["rank"] = result.rank
+        data["deviance"] = np.asarray(result.deviance)
+        data["converged"] = result.converged
+        data["n_iter"] = result.n_iter
+        data["reml_objective"] = result.reml_objective
+        data["reml_at_boundary"] = result.reml_at_boundary
+        data["pooled"] = result.pooled
+        # Per-unit provenance mask only exists for the per-unit (pooled=False)
+        # path; skip it (rather than write an all-None column) otherwise.
+        if result.penalty_selected_by_reml is not None:
+            data["penalty_selected_by_reml"] = np.asarray(
+                result.penalty_selected_by_reml
+            )
+
+    return data
+
+
+def _spatial_summary_frame(
+    result: SpatialRateResult | SpatialRatesResult,
+    *,
+    index: Sequence[Hashable],
+    include_classification: bool,
+) -> pd.DataFrame:
+    """Build spatial metric columns for single and population results."""
+    import pandas as pd
+
+    from neurospatial.encoding._metrics import (
+        batch_border_scores,
+        batch_grid_scores,
+        batch_sparsity,
+        batch_spatial_information,
+    )
+
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = _to_numpy(result.occupancy)
+    peaks = np.atleast_2d(result.peak_location())
+    info = np.asarray(batch_spatial_information(rates, occupancy))
+    grid = batch_grid_scores(result.env, rates).scores
+    border = batch_border_scores(result.env, rates).scores
+    columns: dict[str, Any] = {
+        "peak_x": peaks[:, 0],
+        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
+        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "spatial_info": info,
+        "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
+        "grid_score": grid,
+        "border_score": border,
+        **_glm_summary_columns(result),
+    }
+    if include_classification:
+        columns["cell_type"] = _label_from_scores(
+            info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS
+        )
+    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["method"] = result.method
+    return df
+
+
 @dataclass(frozen=True, repr=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
@@ -663,6 +776,32 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     _unit_ids_generated: bool = field(
         default=False, repr=False, compare=False, kw_only=True
     )
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _spatial_xarray_attrs(self)
+
+    def summary_table(self, include_classification: bool = True) -> pd.DataFrame:
+        """Per-unit metrics with the same columns as the population table.
+
+        Parameters
+        ----------
+        include_classification : bool, default=True
+            Include the fixed-threshold cell-type label.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Examples
+        --------
+        >>> table = result.summary_table()  # doctest: +SKIP
+        """
+        return _spatial_summary_frame(
+            self,
+            index=self._row_unit_ids().tolist(),
+            include_classification=include_classification,
+        )
 
     def _headline_metrics(self) -> dict[str, float]:
         """Cheap, NaN-safe metrics for the singular summary."""
@@ -1506,6 +1645,9 @@ class SpatialRatesResult(SpatialResultMixin):
         default=False, repr=False, compare=False, kw_only=True
     )
 
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _spatial_xarray_attrs(self)
+
     def __post_init__(self) -> None:
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
@@ -1751,101 +1893,6 @@ class SpatialRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
-
-    def to_xarray(self) -> Any:
-        """Convert the firing-rate maps to a labeled :class:`xarray.Dataset`.
-
-        Wraps the ``(n_units, n_bins)`` firing-rate matrix in a labeled
-        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
-        ``unit_id`` index coordinate holds the real per-unit identity labels
-        (:attr:`unit_ids`), enabling label-based selection. The ``bin``
-        dimension carries non-index ``bin_center_x`` / ``bin_center_y``
-        (and ``bin_center_z`` for 3-D envs) coordinates.
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with:
-
-            - data var ``firing_rate`` (Hz), dims ``("unit_id", "bin")``.
-            - data var ``occupancy`` (seconds), dims ``("bin",)``.
-            - index coord ``unit_id`` = :attr:`unit_ids`.
-            - non-index coords ``bin_center_x`` / ``bin_center_y`` /
-              ``bin_center_z`` on ``bin`` (per env dimensionality).
-            - ``attrs``: ``method``, ``env`` fingerprint, ``software_version``,
-              ``units`` (when set), and ``bandwidth`` (only for the ratio methods;
-              omitted for ``method="glm"``, whose ``bandwidth`` is ``None`` and is
-              not NetCDF-serializable).
-
-        Raises
-        ------
-        ValueError
-            If :attr:`unit_ids` contains duplicate labels (label-based
-            ``.sel(unit_id=...)`` requires uniqueness).
-        ImportError
-            If ``xarray`` is not installed. xarray is an optional dependency;
-            install it with ``pip install neurospatial[xarray]`` or
-            ``pip install xarray``.
-
-        Notes
-        -----
-        ``xarray`` is imported lazily inside this method, so it never becomes
-        an import-time dependency of ``neurospatial``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.spatial import compute_spatial_rates
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
-        >>> result = compute_spatial_rates(
-        ...     env, spike_times, times, positions, bandwidth=10.0
-        ... )
-        >>> ds = result.to_xarray()  # doctest: +SKIP
-        >>> ds["firing_rate"].dims  # doctest: +SKIP
-        ('unit_id', 'bin')
-        >>> ds.sel(unit_id=result.unit_ids[0])  # doctest: +SKIP
-
-        See Also
-        --------
-        spatial_information : Per-neuron Skaggs spatial information.
-        """
-        from neurospatial._results import (
-            build_population_dataset,
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
-
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "method": self.method,
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-            "spike_window_assumed": int(self.spike_window_assumed),
-        }
-        # Guard on the value, not on ``method``: NetCDF attributes cannot hold
-        # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
-        # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
-        # ``bandwidth is not None`` guards exactly that serialization precondition
-        # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
-        # correct even if a ratio result ever carried a ``None`` bandwidth.
-        if self.spike_window is not None:
-            attrs["spike_window"] = self.spike_window.ravel()
-        if self.bandwidth is not None:
-            attrs["bandwidth"] = self.bandwidth
-        return build_population_dataset(
-            rates,
-            np.asarray(self.unit_ids),
-            env=self.env,
-            occupancy=np.asarray(self.occupancy, dtype=np.float64),
-            attrs=attrs,
-        )
 
     def spatial_information(self) -> NDArray[np.float64] | Any:
         """Skaggs spatial information (bits per spike) for all neurons.
@@ -2237,12 +2284,14 @@ class SpatialRatesResult(SpatialResultMixin):
                 raise ValueError(
                     f"border_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {border_scores_arr.shape}"
                 )
-        tuned = spatial_info >= min_spatial_info
-        labels = np.full(n_neurons, "unclassified", dtype="<U14")
-        labels[tuned] = "place"
-        labels[tuned & (border_scores_arr >= min_border_score)] = "border"
-        labels[tuned & (grid_scores_arr >= min_grid_score)] = "grid"
-        return labels
+        return _label_from_scores(
+            spatial_info,
+            grid_scores_arr,
+            border_scores_arr,
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
 
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as place cells (single-type boolean predicate).
@@ -2408,8 +2457,6 @@ class SpatialRatesResult(SpatialResultMixin):
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
         """
-        import pandas as pd
-
         n_neurons = len(self)
 
         if unit_ids is None:
@@ -2426,58 +2473,9 @@ class SpatialRatesResult(SpatialResultMixin):
                 context="SpatialRatesResult.summary_table",
             )
 
-        # Compute peak locations
-        peaks = self.peak_location()
-        n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
-
-        # Compute grid/border scores ONCE and reuse them for both the score
-        # columns and label_cell_types(), avoiding a double recompute (the
-        # expensive batch_grid_scores/batch_border_scores each run once).
-        grid_scores_arr = self.grid_scores().scores
-        border_scores_arr = self.border_scores().scores
-
-        # Build data dictionary
-        data: dict[str, Any] = {
-            "peak_x": peaks[:, 0],
-            "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
-            "peak_rate": self.peak_firing_rate(),
-            "spatial_info": self.spatial_information(),
-            "sparsity": self.sparsity(),
-            "grid_score": grid_scores_arr,
-            "border_score": border_scores_arr,
-        }
-
-        if include_classification:
-            data["cell_type"] = self.label_cell_types(
-                grid_scores=grid_scores_arr,
-                border_scores=border_scores_arr,
-            )
-
-        data["method"] = self.method
-
-        # GAM columns, only for ``method="glm"``. ``deviance`` is per-unit; the
-        # batch-scalar diagnostics broadcast to every row. ``penalty`` /
-        # ``reml_objective`` / ``reml_at_boundary`` broadcast when scalar and
-        # become per-unit columns when they are ``(n_units,)`` vectors
-        # (``pooled=False``). Keyed on ``method`` (the single "is this glm?"
-        # discriminant, matching the NWB writer), not on a GAM field's None-ness.
-        if self.method == "glm":
-            data["penalty"] = self.penalty
-            data["rank"] = self.rank
-            data["deviance"] = np.asarray(self.deviance)
-            data["converged"] = self.converged
-            data["n_iter"] = self.n_iter
-            data["reml_objective"] = self.reml_objective
-            data["reml_at_boundary"] = self.reml_at_boundary
-            data["pooled"] = self.pooled
-            # Per-unit provenance mask only exists for the per-unit (pooled=False)
-            # path; skip it (rather than write an all-None column) otherwise.
-            if self.penalty_selected_by_reml is not None:
-                data["penalty_selected_by_reml"] = np.asarray(
-                    self.penalty_selected_by_reml
-                )
-
-        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
+        return _spatial_summary_frame(
+            self, index=index_ids, include_classification=include_classification
+        )
 
 
 # ==============================================================================

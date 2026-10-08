@@ -391,3 +391,15 @@ def test_build_population_dataset_rejects_duplicate_unit_ids():
         build_population_dataset(
             np.zeros((3, 4)), np.asarray([1, "a", 1], dtype=object)
         )
+
+
+@pytest.mark.parametrize(
+    "family", ("spatial", "view", "allocentric", "egocentric", "directional")
+)
+def test_singular_to_xarray_matches_batch_row(rate_family_results, family):
+    xr = pytest.importorskip("xarray")
+    result = rate_family_results[family]
+    for i in range(3):
+        xr.testing.assert_identical(
+            result[i].to_xarray(), result.to_xarray().isel(unit_id=[i])
+        )
