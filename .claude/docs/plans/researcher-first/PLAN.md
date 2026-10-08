@@ -1,6 +1,6 @@
 # Researcher-First Rebuild Implementation Plan
 
-**Status:** Phase 4d done (d819fbb8, PR #49); researcher-workflow checkpoint remains held pending revalidation (post-4c review, 2026-10-07, PR #48); next: repeat the researcher-workflow checkpoint before Phase 5a.
+**Status:** Phase 4d done (d819fbb8, PR #49); repeated researcher-workflow checkpoint passed (post-4d review, 2026-10-07); next: Phase 5a after the checkpoint report/planning PR merges.
 
 Rebuild the valuable outcomes of the archived `feat/public-api-curation` branch on a fresh branch from `main`, putting researcher effort first. The result: the four-array call `compute_spatial_rate(env, spike_times, times, positions)` and its siblings work with no setup and handle recording gaps correctly. Every verified scientific bug is fixed. Errors say how to fix the problem. Every advertised example runs in CI. The public surface is coherent and discoverable, and it's protected by one snapshot test rather than a governance apparatus.
 
@@ -33,7 +33,7 @@ For agent invocation, **load only the slice you need**:
     - [phase-4b-docs-that-run.md](phase-4b-docs-that-run.md) — docstring completeness; README, quickstart, CLAUDE.md and docstring examples executed in CI.
     - [phase-4c-checkpoint-corrections.md](phase-4c-checkpoint-corrections.md) — checkpoint additions: truthful simulation duration, graph-direction explanations and statistical interpretation.
     - [phase-4d-decoder-plot-docs.md](phase-4d-decoder-plot-docs.md) — repeated-checkpoint addition: truthful decoder posterior/actual overlays and coordinate labels.
-  - **Checkpoint:** the [post-4c review](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4C.md) closes the original blockers but is held for Phase 4d; repeat after that correction and pass before Phase 5a ([overview → Rollout Strategy](overview.md#rollout-strategy)).
+  - **Checkpoint:** the [post-4d review](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4D.md) passes all five journeys with zero source fallbacks and closes the earlier holds; proceed to Phase 5a after the report/planning PR merges ([overview → Rollout Strategy](overview.md#rollout-strategy)).
   - **Phase 5: classification.**
     - [phase-5a-object-vector-frames.md](phase-5a-object-vector-frames.md) — the `label_cell_types` fix, the allocentric object-vector map and results, frame-specific functions, the simulator.
     - [phase-5b-significance-predicates.md](phase-5b-significance-predicates.md) — opt-in shuffle significance, one predicate contract, `has_place_field` and `is_place_cell(criterion=…)`, bias documentation.

@@ -22,6 +22,32 @@
   recovery. Implementing HTML colorbars is optional polish, not a new blocker
   or a claim that supported behavior regressed.
 
+### Post-4d checkpoint addition: continuous posterior image centering
+
+The [passing post-4d checkpoint](../../../../docs/reviews/RESEARCHER_WORKFLOW_CHECKPOINT_2026-10-07_POST_4D.md)
+inspected only public Matplotlib runtime objects. For a four-row continuous
+decoder clock `[10.05, 10.15, 10.25, 10.35]` seconds,
+`AxesImage.get_extent()` reports x boundaries `[10.05, 10.35]`, giving image
+column centers `[10.0875, 10.1625, 10.2375, 10.3125]`. The maximum discrepancy
+from the correct actual/MAP line timestamps is 37.5 ms. Gapped bin-index
+extent `[-0.5, 3.5]` centers correctly on `[0, 1, 2, 3]`.
+
+- Add a regression against the unmodified continuous plotting call, deriving
+  image-column centers from the public extent and comparing them with the
+  decoder timestamps. Use the same known four-row, 100 ms posterior fixture;
+  the measured 37.5 ms is evidence, not a value to tune toward.
+- Make the default continuous image edges center columns on the provided
+  timestamps. Retain correct spatial-bin centers, actual/MAP line data and
+  labels, gapped row-index plotting/gap markers, explicit extent overrides
+  and existing 2D/result behavior. Include short-clock cases supported by the
+  public plotting contract; determine their documented edge convention from
+  current help before implementation.
+- Keep posterior arrays, map positions, decoder clocks, physical error
+  calculations and scientific defaults unchanged. This is bounded presentation
+  work and does not reopen Phase 4d's repaired physical-coordinate/bin-index
+  contradiction. The passing checkpoint makes no sub-bin timing claim from
+  heatmap pixels.
+
 ## Original scope
 
 **Line numbers** were read on `main` at `da631a47`. Phases 1–6c land first, so re-locate each site by its symbol name. Every item below was **re-verified on `main`** by probe (60 s, 30 Hz trajectory, 3 units, four rate families).
