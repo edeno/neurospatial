@@ -208,6 +208,59 @@ plt.show()
 `.times`. See [`decoding_error`](../api/neurospatial/decoding/index.md) and
 related helpers for accuracy metrics.
 
+### Overlaying actual position on a posterior
+
+`DecodingResult.plot(show_map=True)` uses **spatial-bin indices** on its y-axis.
+Actual positions and `result.map_position` carry physical coordinates, such as
+centimeters. Convert actual positions with `env.bin_at` for a posterior overlay;
+keep their physical coordinates for error metrics and position-versus-time plots.
+
+On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
+gaps it uses time-bin indices and marks the breaks with dashed lines. Reusing
+the MAP line's x coordinates keeps the actual overlay on the same axis in both
+cases. Supply actual positions aligned to the returned decoder rows; do not
+create or interpolate observations inside a tracking pause.
+
+This exact four-row posterior uses 5 cm bins. It represents perfect decoding
+for both clocks below, so the actual and MAP overlays must coincide. The
+gapped example contains no decoder rows between 10.15 and 20.05 seconds.
+
+<!-- docs-test: run -->
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+from neurospatial import Environment
+from neurospatial.decoding import DecodingResult, median_decoding_error
+
+env = Environment.from_samples(
+    np.linspace(0.0, 100.0, 21)[:, None], bin_size=5.0, units="cm"
+)
+actual = np.array([[20.0], [80.0], [40.0], [60.0]])
+actual_bins = env.bin_at(actual)
+posterior = np.zeros((len(actual), env.n_bins))
+posterior[np.arange(len(actual)), actual_bins] = 1.0
+clocks = {
+    "Continuous": 10.05 + np.arange(4) * 0.1,
+    "Gapped": np.array([10.05, 10.15, 20.05, 20.15]),
+}
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
+for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
+    result = DecodingResult(posterior, env, decoder_times)
+    result.plot(ax=ax, show_map=True, colorbar=True)
+    map_line = ax.lines[0]  # The MAP line precedes recording-gap markers.
+    plot_times = map_line.get_xdata()
+    actual_line = ax.plot(plot_times, actual_bins, "c--", label="Actual spatial bin")[0]
+    expected_x = decoder_times if name == "Continuous" else np.arange(len(actual))
+    np.testing.assert_array_equal(actual_line.get_xdata(), expected_x)
+    np.testing.assert_array_equal(actual_line.get_ydata(), map_line.get_ydata())
+    np.testing.assert_array_equal(actual_line.get_ydata(), [4, 16, 8, 12])
+    assert median_decoding_error(result.map_position, actual) == 0.0
+    ax.set_title(name)
+    ax.legend()
+plt.show()
+```
+
 ### Long sessions / thousands of units: stream the decode
 
 `decode_session` materializes the full `(n_time, n_bins)` posterior. For long
