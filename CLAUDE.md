@@ -123,6 +123,25 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
   `summary_table()` on the population class. They do **not** implement
   `to_xarray()`.
 
+### Root and domain imports
+
+The root lazily exposes `compute_spatial_rate(s)`, `SpatialRateResult` and
+`SpatialRatesResult`, `decode_position` and `DecodingResult`, and
+`peri_event_histogram` and `PeriEventResult`, alongside core spatial types,
+public exceptions and domain submodules. Static analyzers resolve concrete
+types; importing the root does not load decoding. `Session` and `load_session`
+remain available for current recording recipes.
+
+Use `neurospatial.encoding.SpikeTrains`, `neurospatial.behavior.restrict`, and
+`neurospatial.decoding.BayesianDecoder` / `bin_spikes_in_time` through their
+owning domains. The phase-precession callable is `compute_phase_precession`;
+`encoding.phase_precession` is its module. Built-in overlays use `EventOverlay`
+for spikes/events; video calibration types come from `ops`. Normalizers,
+validation helpers and renderer/cache internals are not domain-root exports.
+The public names/signatures are checked by `tests/test_public_api_snapshot.py`;
+intentional changes regenerate `tests/data/public_api.txt` with
+`NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.py`.
+
 ### Cell-type API (one learnable rule)
 
 - **Single-unit predicate:** free functions and result methods share each
@@ -270,7 +289,7 @@ neighbors = env.neighbors(int(bin_idx[0]))
 ### 2. Compute Place Fields
 
 ```python
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 
 # Compute place field for one neuron (returns SpatialRateResult)
 result = compute_spatial_rate(
@@ -349,7 +368,7 @@ env.animate_fields(
 ### 5. Compute Peri-Event Histogram (PSTH)
 
 ```python
-from neurospatial.events import peri_event_histogram
+from neurospatial import peri_event_histogram
 
 # Compute PSTH around reward events
 result = peri_event_histogram(

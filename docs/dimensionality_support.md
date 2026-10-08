@@ -253,7 +253,7 @@ else:
 ## 3D Support Status
 
 **Implemented:**
-- ✅ 3D affine transformations (`AffineND`, `Affine3D`)
+- ✅ 3D affine transformations (`AffineND`)
 - ✅ 3D rotation matrices (scipy integration)
 - ✅ Transform estimation from point pairs (Procrustes analysis)
 - ✅ Environment transformation with dimension validation

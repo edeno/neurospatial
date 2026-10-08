@@ -26,7 +26,7 @@ transformed_points = transform(points_2d)
 
 ## 3D Affine Transformations
 
-For 3D environments, use `AffineND` or the convenience alias `Affine3D`:
+For 3D environments, use `AffineND`:
 
 <!-- docs-test: run -->
 ```python

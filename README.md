@@ -191,7 +191,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 from neurospatial.simulation import generate_population_spikes
 from neurospatial.simulation.models import PlaceCellModel
 from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -482,7 +482,7 @@ firing_rates = place_cell.firing_rate(positions, times)
 spike_times = generate_poisson_spikes(firing_rates, times, seed=42)
 
 # Validate with neurospatial analysis
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 result = compute_spatial_rate(env, spike_times, times, positions)
 detected_field = result.firing_rate
 
@@ -537,7 +537,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.animation import subsample_frames
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial import compute_spatial_rates
 
 # Assumes you already have:
 #   positions:   shape (n_samples, 2) animal trajectory

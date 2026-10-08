@@ -60,6 +60,8 @@
 
 ### Documentation
 
+- Update root/domain imports and hard-break migration guidance, and make population covariance APIs discoverable from the API index. Add an executable simulation → encoding recipe with separate decoding and population-statistics branches, one shared unit selection and explicit baseline-controlled EV/REV interpretation.
+
 - Document recording-window metadata on the spatial result classes now exposed at the root; their existing GLM diagnostics and constructor fields are covered by the public docstring checks.
 
 - Clarify that the head-direction MVL screen weights firing rates and its Rayleigh test weights spike counts, with a rate-times-occupancy fallback. The numerical Rayleigh calculation is unchanged.

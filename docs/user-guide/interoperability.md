@@ -168,7 +168,7 @@ result).
 ```python
 import numpy as np
 import pandas as pd
-from neurospatial import SpikeTrains
+from neurospatial.encoding import SpikeTrains
 
 st = SpikeTrains(
     [np.array([0.1, 1.5, 2.9]), np.array([0.5, 3.0, 6.0])],
@@ -196,8 +196,7 @@ boolean mask; and `restrict_spike_trains(trains, epochs)` masks *ragged* trains
 (each unit by its own timestamps).
 
 ```python
-from neurospatial import restrict
-from neurospatial.behavior import in_epochs, restrict_spike_trains
+from neurospatial.behavior import restrict, in_epochs, restrict_spike_trains
 
 run_epochs = np.array([[1.0, 4.0], [7.0, 9.0]])   # (n_intervals, 2)
 
