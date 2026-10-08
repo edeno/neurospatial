@@ -78,13 +78,21 @@ when bins are far apart in 2D space. See
 
 ### Object-vector cell (OVC)
 
-A neuron that fires whenever a specific object is at a specific
-distance and egocentric direction from the animal. The tuning curve
-is a 2D firing-rate map indexed by (distance, egocentric bearing) —
-the *object-vector*. See
-[`compute_egocentric_rate`](api/index.md),
+A neuron tuned to distance and allocentric direction relative to an object
+(Høydal et al., 2019). The analysis uses animal-to-object direction:
+0 = East and +pi/2 = North. Add pi and wrap to obtain the reverse,
+object-to-animal vector. See [`compute_object_vector_rate`](api/index.md),
 [`is_object_vector_cell`](api/index.md), and
 [`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
+
+### Egocentric object-vector (bearing) cell
+
+A neuron tuned to object bearing relative to the animal's heading
+(Wang et al., 2018): 0 = ahead and +pi/2 = left. This frame requires headings;
+it is separate from world-relative object-vector tuning. See
+[`compute_egocentric_rate`](api/index.md) and
+[`is_egocentric_object_vector_cell`](api/index.md). Both map families return
+`ObjectVectorRateResult(s)` and record `direction_frame`.
 
 ### Occupancy
 

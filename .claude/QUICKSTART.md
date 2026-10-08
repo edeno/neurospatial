@@ -446,9 +446,30 @@ env = Environment.from_polar_egocentric(
 
 ### Object-Vector Cells
 
-Analyze cells that encode distance and direction to objects in egocentric coordinates:
+Analyze animal-to-object distance and direction in a chosen reference frame.
+Allocentric direction is world-relative (0 = East, +pi/2 = North); egocentric
+bearing is heading-relative (0 = ahead, +pi/2 = left). Results record
+`direction_frame`; the reverse object-to-animal vector adds pi and wraps.
+
+**Compute allocentric rate field (no headings):**
+
+<!-- docs-test: run setup=quickstart_ovc_classify_single -->
+```python
+from neurospatial.encoding import compute_object_vector_rate, is_object_vector_cell
+
+allocentric = compute_object_vector_rate(
+    None, spike_times, times, positions, object_positions,
+)
+assert allocentric.direction_frame == "allocentric"
+print(allocentric.spatial_information())
+print(is_object_vector_cell(None, spike_times, times, positions, object_positions))
+```
 
 **Compute egocentric rate field (single neuron):**
+
+Use `is_egocentric_object_vector_cell(env, spike_times, times, positions,
+headings, object_positions)` for a free heading-relative candidate screen.
+Result methods screen tuning in the recorded frame.
 
 ```python
 from neurospatial.encoding import compute_egocentric_rate
@@ -456,7 +477,7 @@ from neurospatial.encoding import compute_egocentric_rate
 # Define object positions in allocentric (world) coordinates
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
-# Compute egocentric polar field (returns EgocentricRateResult)
+# Compute egocentric polar field (returns ObjectVectorRateResult)
 # `env` is the first positional arg; pass None for euclidean distance,
 # or pass the allocentric Environment for metric="geodesic".
 result = compute_egocentric_rate(
@@ -513,7 +534,7 @@ df = result.summary_table()
 ```python
 from neurospatial.encoding import compute_egocentric_rate
 
-# Singular methods live on the single-neuron EgocentricRateResult
+# Singular methods live on the single-neuron ObjectVectorRateResult
 single = compute_egocentric_rate(
     None,  # env (required only for metric="geodesic")
     spike_times, times, positions, headings, object_positions,
@@ -542,13 +563,13 @@ ovc = ObjectVectorCellModel(
     object_positions=object_positions,
     preferred_distance=20.0,        # Peak at 20 cm
     distance_width=8.0,             # Gaussian width
-    preferred_direction=np.pi/4,    # 45° left (optional)
+    preferred_direction=np.pi/4,    # Northeast (allocentric default)
     direction_kappa=4.0,            # Direction tuning sharpness
     max_rate=30.0,                  # Peak firing rate (Hz)
 )
 
 # Generate firing rates along trajectory
-rates = ovc.firing_rate(positions, headings=headings)
+rates = ovc.firing_rate(positions)  # allocentric default needs no headings
 
 # Generate spikes
 spike_times = generate_poisson_spikes(rates, times, seed=42)

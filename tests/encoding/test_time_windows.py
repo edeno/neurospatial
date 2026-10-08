@@ -262,8 +262,8 @@ def direct_rate_result_factory(continuous_recording):
         DirectionalRatesResult,
     )
     from neurospatial.encoding.egocentric import (
-        EgocentricRateResult,
-        EgocentricRatesResult,
+        ObjectVectorRateResult,
+        ObjectVectorRatesResult,
     )
     from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
     from neurospatial.encoding.view import ViewRateResult, ViewRatesResult
@@ -272,7 +272,7 @@ def direct_rate_result_factory(continuous_recording):
         "spatial": (SpatialRateResult, SpatialRatesResult),
         "directional": (DirectionalRateResult, DirectionalRatesResult),
         "view": (ViewRateResult, ViewRatesResult),
-        "egocentric": (EgocentricRateResult, EgocentricRatesResult),
+        "egocentric": (ObjectVectorRateResult, ObjectVectorRatesResult),
     }
 
     def make_result(family, plural):
@@ -302,6 +302,8 @@ def direct_rate_result_factory(continuous_recording):
             (2, env.n_bins) if plural else env.n_bins
         )
         kwargs["occupancy"] = np.ones(env.n_bins)
+        if family == "egocentric":
+            kwargs["direction_frame"] = "egocentric"
         return classes[family][int(plural)](**kwargs)
 
     return make_result

@@ -2,7 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add `is_egocentric_object_vector_cell` for heading-relative tuning. `is_object_vector_cell` now measures allocentric direction without a headings argument; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
+
+- Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
+
+### Changed
+
+- Default `ObjectVectorCellModel` to allocentric direction tuning without headings. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
+
+- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
+
+- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
 ### Fixed
+
+- Normalize allocentric object bearings exactly like zero-heading egocentric bearings at direction-bin boundaries, and make invalid-environment guidance omit headings for allocentric calls. Result help consistently describes the recorded frame.
+
+- Require the documented spatial-information threshold for every place, grid and border label. In the seeded 10-minute noise example, erroneous border labels fall from 19/20 to 0/20; label precedence and threshold values are unchanged.
 
 - Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
 
@@ -17,6 +35,8 @@
 - Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
 
 ### Documentation
+
+- Teach allocentric and egocentric object-vector analysis separately in the guides, migration notes, glossary and synchronized tutorial. Public examples record the frame and use the appropriate heading-free or heading-required call; executable docstrings cover the new APIs.
 
 - Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
 

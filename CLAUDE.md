@@ -125,13 +125,15 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 
 ### Cell-type API (one learnable rule)
 
-- **Single-unit predicate:** `is_<celltype>_cell(...)` exists BOTH as a free
-  function and as a result method. The shipped predicates are exactly
-  `is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`, and
+- **Single-unit predicate:** free functions and result methods share each
+  family's threshold rule. The shipped free predicates are exactly
+  `is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`
+  (allocentric), `is_egocentric_object_vector_cell`, and
   `is_spatial_view_cell`. There are **no** `is_border_cell` / `is_grid_cell`
   predicates — `border` and `grid` are reachable only as *labels* via
   `SpatialRatesResult.label_cell_types()` (see below), not as predicate
-  functions.
+  functions. Object-vector results use `is_object_vector_cell()` in their
+  recorded `direction_frame`; they have no separate egocentric method.
 - **Batch boolean predicate:** `result.classify(*, ...) -> NDArray[bool]` on
   every plural result class — a **single-type** is-this-cell-type predicate.
 - **Batch multi-class labeler:** `SpatialRatesResult.label_cell_types(*, ...)
@@ -155,7 +157,7 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
   `peak_locations()`: directional results (`DirectionalRateResult` /
   `DirectionalRatesResult`) use `preferred_direction()` /
   `preferred_directions()` (angle, radians); egocentric/object-vector results
-  (`EgocentricRateResult` / `EgocentricRatesResult`) use
+  (`ObjectVectorRateResult` / `ObjectVectorRatesResult`) use
   `preferred_distance()` / `preferred_distances()` and `preferred_direction()`
   / `preferred_directions()` (polar radius + angle). A Cartesian
   `peak_locations()` is intentionally not provided for these.
@@ -387,19 +389,20 @@ distances = compute_egocentric_distance(
 ### 8. Compute Object-Vector Field
 
 ```python
-from neurospatial.encoding import compute_egocentric_rate
+from neurospatial.encoding import compute_object_vector_rate, compute_egocentric_rate
 
-# Compute firing field in egocentric polar coordinates (returns EgocentricRateResult)
-result = compute_egocentric_rate(
-    env, spike_times, times, positions, headings, object_positions,
-    distance_range=(0.0, 50.0),  # min/max distance to object (cm)
-    n_distance_bins=10,          # radial resolution
-    n_direction_bins=12,         # angular resolution (full circle)
+# World-frame direction to the object: 0 = East, +pi/2 = North; no headings.
+allocentric = compute_object_vector_rate(
+    env, spike_times, times, positions, object_positions,
+    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
 )
-# result.firing_rate: firing rate in egocentric polar bins
-# result.env: the egocentric polar environment
-# result.occupancy: time spent in each bin
-# result.preferred_distance(), result.preferred_direction(): peak location
+# Animal-relative bearing: 0 = ahead, +pi/2 = left; headings required.
+egocentric = compute_egocentric_rate(
+    env, spike_times, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
+)
+# Both return ObjectVectorRateResult and record result.direction_frame.
+# preferred_direction() measures animal -> object; add pi for object -> animal.
 ```
 
 **Egocentric polar environments are a DISTINCT type.**

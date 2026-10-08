@@ -1003,7 +1003,7 @@ class TestEgocentricCoordinates:
     def test_bearing_zero_ahead(self):
         """Object directly ahead should have bearing 0."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin facing East (heading=0), object at (10, 0)
@@ -1011,7 +1011,7 @@ class TestEgocentricCoordinates:
         headings = np.array([0.0])
         object_positions = np.array([[10.0, 0.0]])
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions, headings, object_positions
         )
 
@@ -1021,7 +1021,7 @@ class TestEgocentricCoordinates:
     def test_bearing_left(self):
         """Object to the left should have bearing ~pi/2."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin facing East (heading=0), object at (0, 10)
@@ -1029,7 +1029,7 @@ class TestEgocentricCoordinates:
         headings = np.array([0.0])
         object_positions = np.array([[0.0, 10.0]])
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions, headings, object_positions
         )
 
@@ -1039,7 +1039,7 @@ class TestEgocentricCoordinates:
     def test_bearing_right(self):
         """Object to the right should have bearing ~-pi/2."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin facing East (heading=0), object at (0, -10)
@@ -1047,7 +1047,7 @@ class TestEgocentricCoordinates:
         headings = np.array([0.0])
         object_positions = np.array([[0.0, -10.0]])
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions, headings, object_positions
         )
 
@@ -1057,7 +1057,7 @@ class TestEgocentricCoordinates:
     def test_nearest_object_selection(self):
         """Nearest object should be selected at each timepoint."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin, object1 at (5,0), object2 at (10,0)
@@ -1065,7 +1065,7 @@ class TestEgocentricCoordinates:
         headings = np.array([0.0])
         object_positions = np.array([[5.0, 0.0], [10.0, 0.0]])
 
-        distances, _bearings = _compute_egocentric_coords(
+        distances, _bearings = _compute_object_coords(
             positions, headings, object_positions
         )
 
@@ -1192,7 +1192,7 @@ class TestEgocentricNaNHandling:
     def test_object_outside_env_geodesic(self, env_with_hole: Environment):
         """Object outside environment should produce NaN distance with geodesic."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin (inside env), object in upper-right quadrant (outside)
@@ -1201,7 +1201,7 @@ class TestEgocentricNaNHandling:
         # Object outside the L-shaped environment (in the hole)
         object_positions = np.array([[75.0, 75.0]])
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions,
             headings,
             object_positions,
@@ -1217,7 +1217,7 @@ class TestEgocentricNaNHandling:
     def test_mixed_nan_finite_distances(self, env_with_hole: Environment):
         """With mixed NaN/finite distances, should select nearest valid object."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin (inside env)
@@ -1232,7 +1232,7 @@ class TestEgocentricNaNHandling:
             ]
         )
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions,
             headings,
             object_positions,
@@ -1251,7 +1251,7 @@ class TestEgocentricNaNHandling:
     def test_all_objects_outside_env_geodesic(self, env_with_hole: Environment):
         """When all objects are outside env, should return NaN distance."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal at origin (inside env)
@@ -1265,7 +1265,7 @@ class TestEgocentricNaNHandling:
             ]
         )
 
-        distances, bearings = _compute_egocentric_coords(
+        distances, bearings = _compute_object_coords(
             positions,
             headings,
             object_positions,
@@ -1281,7 +1281,7 @@ class TestEgocentricNaNHandling:
     def test_position_outside_env_geodesic(self, env_with_hole: Environment):
         """When animal position is outside env, should return NaN distance."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Animal in the hole (outside env)
@@ -1290,7 +1290,7 @@ class TestEgocentricNaNHandling:
         # Object inside env
         object_positions = np.array([[25.0, 25.0]])
 
-        distances, _bearings = _compute_egocentric_coords(
+        distances, _bearings = _compute_object_coords(
             positions,
             headings,
             object_positions,
@@ -1304,7 +1304,7 @@ class TestEgocentricNaNHandling:
     def test_mixed_valid_invalid_positions_geodesic(self, env_with_hole: Environment):
         """With some positions outside env, should handle NaN distances correctly."""
         from neurospatial.encoding._egocentric_binning import (
-            _compute_egocentric_coords,
+            _compute_object_coords,
         )
 
         # Time 0: inside env, Time 1: outside env
@@ -1318,7 +1318,7 @@ class TestEgocentricNaNHandling:
         # Object inside env
         object_positions = np.array([[30.0, 25.0]])
 
-        distances, _bearings = _compute_egocentric_coords(
+        distances, _bearings = _compute_object_coords(
             positions,
             headings,
             object_positions,

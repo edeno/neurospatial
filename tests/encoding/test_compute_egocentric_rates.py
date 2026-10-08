@@ -111,9 +111,9 @@ class TestComputeEgocentricRatesReturnsResult:
     """Tests for return type and shapes."""
 
     def test_returns_egocentric_rates_result(self, trajectory_data, spike_times_list):
-        """Test that function returns EgocentricRatesResult."""
+        """Test that function returns ObjectVectorRatesResult."""
         from neurospatial.encoding.egocentric import (
-            EgocentricRatesResult,
+            ObjectVectorRatesResult,
             compute_egocentric_rates,
         )
 
@@ -126,7 +126,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert isinstance(result, EgocentricRatesResult)
+        assert isinstance(result, ObjectVectorRatesResult)
 
     def test_firing_rates_shape(self, trajectory_data, spike_times_list):
         """Test firing_rates has shape (n_neurons, n_bins)."""
@@ -403,9 +403,9 @@ class TestComputeEgocentricRatesNeuronIteration:
         assert len(result) == len(spike_times_list)
 
     def test_getitem_returns_single_result(self, trajectory_data, spike_times_list):
-        """Test that result[i] returns EgocentricRateResult."""
+        """Test that result[i] returns ObjectVectorRateResult."""
         from neurospatial.encoding.egocentric import (
-            EgocentricRateResult,
+            ObjectVectorRateResult,
             compute_egocentric_rates,
         )
 
@@ -419,7 +419,7 @@ class TestComputeEgocentricRatesNeuronIteration:
         )
 
         single = result[0]
-        assert isinstance(single, EgocentricRateResult)
+        assert isinstance(single, ObjectVectorRateResult)
 
     def test_iteration_yields_all_neurons(self, trajectory_data, spike_times_list):
         """Test that iteration yields all neurons."""
@@ -847,7 +847,7 @@ class TestComputeEgocentricRatesCorrectness:
 # =============================================================================
 
 
-class TestComputeEgocentricRatesResultMethods:
+class TestComputeObjectVectorRatesResultMethods:
     """Tests for result class method integration."""
 
     def test_plot_method_works(self, trajectory_data, spike_times_list):
@@ -957,9 +957,9 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_object_vector_cell = result.classify()
-        assert len(is_object_vector_cell) == len(spike_times_list)
-        assert is_object_vector_cell.dtype == bool
+        is_egocentric_object_vector_cell = result.classify()
+        assert len(is_egocentric_object_vector_cell) == len(spike_times_list)
+        assert is_egocentric_object_vector_cell.dtype == bool
 
     def test_summary_table_method_works(self, trajectory_data, spike_times_list):
         """Test that summary_table (per-unit) and to_dataframe (dense) work."""

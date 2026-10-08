@@ -56,10 +56,13 @@ from neurospatial.encoding.directional import (
 
 # Egocentric rate (object vector cells)
 from neurospatial.encoding.egocentric import (
-    EgocentricRateResult,
-    EgocentricRatesResult,
+    ObjectVectorRateResult,
+    ObjectVectorRatesResult,
     compute_egocentric_rate,
     compute_egocentric_rates,
+    compute_object_vector_rate,
+    compute_object_vector_rates,
+    is_egocentric_object_vector_cell,
     is_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
@@ -133,10 +136,12 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_directional_rate",
     "compute_directional_rates",
     # Egocentric rate (object vector cells)
-    "EgocentricRateResult",
-    "EgocentricRatesResult",
+    "ObjectVectorRateResult",
+    "ObjectVectorRatesResult",
     "compute_egocentric_rate",
     "compute_egocentric_rates",
+    "compute_object_vector_rate",
+    "compute_object_vector_rates",
     # Spatial rate (place/grid/border cells)
     "SpatialRateResult",
     "SpatialRatesResult",
@@ -154,6 +159,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "plot_phase_precession",
     "theta_phase",
     # Object-vector cell analysis
+    "is_egocentric_object_vector_cell",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",

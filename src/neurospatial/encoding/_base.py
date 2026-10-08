@@ -405,6 +405,8 @@ class SpatialResultMixin(ResultMixin):
         # `method` field and are left unchanged.
         if hasattr(self, "method"):
             out["method"] = self.method
+        if hasattr(self, "direction_frame"):
+            out["direction_frame"] = self.direction_frame
         return out
 
     def to_dataframe(self) -> pd.DataFrame:

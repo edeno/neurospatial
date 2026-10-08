@@ -53,6 +53,7 @@ class TestObjectVectorCellModelCreation:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
@@ -71,6 +72,7 @@ class TestObjectVectorCellModelCreation:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
@@ -98,6 +100,7 @@ class TestObjectVectorCellModelCreation:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
@@ -118,6 +121,7 @@ class TestObjectVectorCellModelCreation:
         single_object = np.array([[50.0, 50.0]])
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=single_object,
             preferred_distance=10.0,
@@ -149,6 +153,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"preferred_distance.*non-negative"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=-5.0,
@@ -163,6 +168,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"distance_width.*positive"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -171,6 +177,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"distance_width.*positive"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -185,6 +192,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"max_rate.*positive"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -200,6 +208,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"baseline_rate.*non-negative"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -215,6 +224,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"baseline_rate.*less than.*max_rate"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -231,6 +241,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"direction_kappa.*positive"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -249,6 +260,7 @@ class TestParameterValidation:
             ValueError, match=r"object_selectivity.*any.*nearest.*specific"
         ):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -264,6 +276,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"metric.*euclidean.*geodesic"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
@@ -279,6 +292,7 @@ class TestParameterValidation:
 
         with pytest.raises(ValueError, match=r"object_positions.*2D"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=np.array([25.0, 25.0]),  # 1D, not 2D
                 preferred_distance=10.0,
@@ -295,6 +309,7 @@ class TestParameterValidation:
 
         with pytest.warns(UserWarning, match=r"outside.*environment"):
             ObjectVectorCellModel(
+                direction_frame="egocentric",
                 env=env,
                 object_positions=outside_objects,
                 preferred_distance=10.0,
@@ -318,6 +333,7 @@ class TestFiringRateDistanceTuning:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -336,6 +352,7 @@ class TestFiringRateDistanceTuning:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -357,6 +374,7 @@ class TestFiringRateDistanceTuning:
         preferred_distance = 10.0
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
@@ -394,6 +412,7 @@ class TestFiringRateDistanceTuning:
         distance_width = 5.0
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
@@ -445,6 +464,7 @@ class TestFiringRateDirectionTuning:
         preferred_direction = 0.0  # Object should be ahead (egocentric)
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
@@ -483,6 +503,7 @@ class TestFiringRateDirectionTuning:
         direction_kappa = 4.0  # ~30 degree half-width
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
@@ -529,6 +550,7 @@ class TestFiringRateDirectionTuning:
 
         object_pos = np.array([[50.0, 50.0]])
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
@@ -566,6 +588,7 @@ class TestFiringRateDirectionTuning:
 
         object_pos = np.array([[50.0, 50.0]])
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
@@ -614,6 +637,7 @@ class TestObjectSelectivity:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
@@ -644,6 +668,7 @@ class TestObjectSelectivity:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
@@ -669,6 +694,7 @@ class TestObjectSelectivity:
 
         # Respond only to object 1 (at x=75)
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
@@ -708,6 +734,7 @@ class TestGeodesicDistance:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -729,6 +756,7 @@ class TestGeodesicDistance:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -759,6 +787,7 @@ class TestGroundTruth:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -799,6 +828,7 @@ class TestGroundTruth:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -831,6 +861,7 @@ class TestProtocolCompliance:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -846,6 +877,7 @@ class TestProtocolCompliance:
         )
 
         model = ObjectVectorCellModel(
+            direction_frame="egocentric",
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
@@ -862,3 +894,47 @@ class TestProtocolCompliance:
         times = np.array([0.0])
         rates = model.firing_rate(positions, times)
         assert isinstance(rates, np.ndarray)
+
+
+def test_allocentric_model_needs_no_headings():
+    from neurospatial import Environment
+    from neurospatial.simulation import ObjectVectorCellModel
+
+    env = Environment.from_samples(np.array([[0, 0], [50, 50], [100, 100]]), bin_size=5)
+    model = ObjectVectorCellModel(
+        env,
+        object_positions=np.array([[50, 50]]),
+        preferred_distance=20,
+        distance_width=5,
+        preferred_direction=np.pi,
+    )
+    positions = np.array([[70, 50], [30, 50]])
+    rates = model.firing_rate(positions)
+    assert rates[0] == pytest.approx(model.max_rate)
+    assert rates[0] > rates[1]
+    assert model.ground_truth["direction_frame"] == "allocentric"
+    np.testing.assert_array_equal(
+        rates, model.firing_rate(positions, headings=np.array([1, 2]))
+    )
+
+
+def test_egocentric_model_requires_headings():
+    from neurospatial import Environment
+    from neurospatial.simulation import ObjectVectorCellModel
+
+    env = Environment.from_samples(np.array([[0, 0], [50, 50], [100, 100]]), bin_size=5)
+    model = ObjectVectorCellModel(
+        env,
+        object_positions=np.array([[50, 50]]),
+        preferred_distance=20,
+        distance_width=5,
+        preferred_direction=0,
+        direction_frame="egocentric",
+    )
+    with pytest.raises(ValueError) as caught:
+        model.firing_rate(np.array([[30, 50]]))
+    assert 'direction_frame="allocentric"' in str(caught.value)
+    assert "Why:" in str(caught.value) and "Fix:" in str(caught.value)
+    assert model.firing_rate(np.array([[30, 50]]), headings=np.array([0]))[
+        0
+    ] == pytest.approx(model.max_rate)

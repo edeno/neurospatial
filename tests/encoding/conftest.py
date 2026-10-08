@@ -9,6 +9,94 @@ import numpy as np
 import pytest
 
 
+def _ou_trajectory(duration_s, seed, fs=30.0, arena=100.0):
+    """Reflect an Ornstein-Uhlenbeck velocity trajectory inside a square."""
+    rng = np.random.default_rng(seed)
+    n, dt = int(duration_s * fs), 1.0 / fs
+    pos = np.empty((n, 2))
+    pos[0] = arena / 2
+    velocity = np.zeros(2)
+    for i in range(1, n):
+        velocity += -velocity * dt + 15.0 * np.sqrt(2.0 * dt) * rng.standard_normal(2)
+        point = pos[i - 1] + velocity * dt
+        for dimension in range(2):
+            if point[dimension] < 0 or point[dimension] > arena:
+                velocity[dimension] = -velocity[dimension]
+                point[dimension] = np.clip(point[dimension], 0, arena)
+        pos[i] = point
+    vel = np.gradient(pos, dt, axis=0)
+    return np.arange(n) * dt, pos, np.arctan2(vel[:, 1], vel[:, 0])
+
+
+@pytest.fixture(scope="session")
+def ou_10min():
+    return _ou_trajectory(600.0, seed=0)
+
+
+@pytest.fixture(scope="session")
+def ou_2min():
+    return _ou_trajectory(120.0, seed=0)
+
+
+@pytest.fixture(scope="session")
+def noise_trains():
+    def generate(duration, seed=1):
+        rng = np.random.default_rng(seed)
+        return [
+            np.sort(rng.uniform(0, duration, rng.poisson(0.5 * duration)))
+            for _ in range(20)
+        ]
+
+    return generate
+
+
+@pytest.fixture(scope="session")
+def obj():
+    return np.array([[50.0, 50.0]])
+
+
+@pytest.fixture(scope="session")
+def ou_env(ou_10min):
+    from neurospatial import Environment
+
+    return Environment.from_samples(ou_10min[1], bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def ou_2min_env(ou_2min):
+    from neurospatial import Environment
+
+    return Environment.from_samples(ou_2min[1], bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def allocentric_field_spikes(ou_env, ou_10min, obj):
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    times, positions, _ = ou_10min
+    model = PlaceCellModel(ou_env, center=obj[0] + [20, 0], width=6, max_rate=10)
+    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+
+
+@pytest.fixture(scope="session")
+def egocentric_ovc_spikes(ou_env, ou_10min, obj):
+    from neurospatial.simulation import ObjectVectorCellModel, generate_poisson_spikes
+
+    times, positions, headings = ou_10min
+    model = ObjectVectorCellModel(
+        ou_env,
+        object_positions=obj,
+        preferred_distance=20,
+        distance_width=5,
+        preferred_direction=0.0,
+        direction_frame="egocentric",
+        max_rate=10,
+    )
+    return generate_poisson_spikes(
+        model.firing_rate(positions, headings=headings), times, seed=5
+    )
+
+
 @pytest.fixture(params=["directional", "view", "egocentric"])
 def frame_family(request):
     """Real rate and binning functions with shared family-specific arguments."""
@@ -21,7 +109,7 @@ def frame_family(request):
     predicate_name = {
         "directional": "is_head_direction_cell",
         "view": "is_spatial_view_cell",
-        "egocentric": "is_object_vector_cell",
+        "egocentric": "is_egocentric_object_vector_cell",
     }[name]
 
     def args(recording, spikes=None, *, occupancy=False, kernel=False):
@@ -589,8 +677,8 @@ def ovc_session() -> tuple[
     consistent egocentric bearing. Spikes are concentrated whenever the
     object is at that preferred egocentric (distance, direction), producing a
     non-degenerate egocentric rate map -- so both the free
-    :func:`is_object_vector_cell` and
-    :meth:`EgocentricRateResult.is_object_vector_cell` return a meaningful,
+    :func:`is_egocentric_object_vector_cell` and
+    :meth:`ObjectVectorRateResult.is_object_vector_cell` return a meaningful,
     equal boolean across thresholds.
 
     Returns
