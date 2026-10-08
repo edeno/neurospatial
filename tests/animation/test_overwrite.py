@@ -65,11 +65,11 @@ def test_html_refuses_existing_file_and_frames_dir(animation_data, tmp_path):
     _export(
         animation_data, path, "html", embed=False, frames_dir=frames, overwrite=True
     )
-    assert "<html" in path.read_text()
+    assert "<html" in path.read_text(encoding="utf-8")
     assert list(frames.glob("*.png"))
     path.write_bytes(b"keep")
     _export(animation_data, path, "html", overwrite=True)
-    assert "data:image/png;base64," in path.read_text()
+    assert "data:image/png;base64," in path.read_text(encoding="utf-8")
 
 
 def test_empty_frames_directory_is_writable(animation_data, tmp_path):

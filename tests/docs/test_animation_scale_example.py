@@ -14,7 +14,7 @@ def test_static_scale_and_html_timestamps_render(monkeypatch, tmp_path):
     path = ROOT / "docs/user-guide/animation.md"
     block = next(
         block
-        for block in collect_blocks(path.read_text(), str(path))
+        for block in collect_blocks(path.read_text(encoding="utf-8"), str(path))
         if "scaled_rates.html" in block.code
     )
     monkeypatch.chdir(tmp_path)
@@ -25,7 +25,7 @@ def test_static_scale_and_html_timestamps_render(monkeypatch, tmp_path):
         assert ax.collections[0].norm.vmin == 0.0
         assert ax.collections[0].norm.vmax == 10.0
         assert ax.figure.axes[1].get_ylabel() == "Firing rate (Hz)"
-        html = Path("scaled_rates.html").read_text()
+        html = Path("scaled_rates.html").read_text(encoding="utf-8")
         match = re.search(r"const frames = (\[.*?\]);", html, re.S)
         assert match is not None
         frames = json.loads(match[1])
