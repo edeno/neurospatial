@@ -642,7 +642,6 @@ src/neurospatial/
 ├── annotation/     # Interactive video and track-graph annotation
 ├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
 ├── regions/        # Standalone region containers, operations, I/O, and plotting
-├── recording.py    # Session bundle and NWB session loader
 └── composite.py    # Multi-environment composition
 
 tests/                 # More than 9,000 automated tests across the package

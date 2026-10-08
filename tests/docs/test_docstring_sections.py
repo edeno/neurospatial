@@ -10,8 +10,6 @@ import neurospatial
 
 from ._flagship import FLAGSHIP, resolve
 
-_EXEMPT: frozenset[str] = frozenset()
-
 
 def _sections(doc: str) -> dict[str, str]:
     parts = re.split(r"(?m)^([A-Z][A-Za-z ]*)\n-{3,}\n", inspect.cleandoc(doc))
@@ -46,8 +44,6 @@ def _public_objects() -> list[str]:
 
 @pytest.mark.parametrize("dotted", _public_objects())
 def test_public_docstring_sections_and_parameters(dotted):
-    if dotted in _EXEMPT:
-        return
     obj = resolve(dotted)
     sections = _sections(inspect.getdoc(obj) or "")
     parameters = {
@@ -75,11 +71,6 @@ def test_public_docstring_sections_and_parameters(dotted):
     assert parameters <= documented, (
         f"{dotted}: undocumented parameters {sorted(parameters - documented)}"
     )
-
-
-@pytest.mark.parametrize("dotted", sorted(_EXEMPT))
-def test_exempt_public_names_still_resolve(dotted):
-    assert callable(resolve(dotted)), f"remove obsolete exemption {dotted}"
 
 
 def test_function_parameters_cannot_be_documented_only_as_attributes(monkeypatch):

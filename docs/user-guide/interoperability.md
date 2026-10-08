@@ -5,13 +5,10 @@ NumPy arrays and needs **no optional dependencies** — you build an
 [`Environment`](environments.md), pass spike times / timestamps / positions as
 arrays, and get results back as arrays (or result objects that wrap them).
 
-The pieces on this page — the pynapple and NWB adapters, the
-[`Session`](#bundle-your-data-with-session) bundle,
-[`SpikeTrains`](#spiketrains-and-epoch-selection), and the
-[`BayesianDecoder`](#bayesiandecoder) object — are **optional conveniences**.
-They form a *session-first* ergonomic layer that sits **on top of** the array
-path, never replacing it. The compute functions are the same either way, so you
-can move between the two freely.
+Loaders and simulators return frozen holders with named attributes. Pass
+those attributes explicitly to analysis functions; timestamps always precede
+positions. The pynapple adapters, [`SpikeTrains`](#spiketrains-and-epoch-selection)
+and [`BayesianDecoder`](#bayesiandecoder) preserve unit identity at array handoffs.
 
 !!! info "The array path is always available"
     `import neurospatial` never imports `pynapple` or `pynwb`. The array path is
@@ -28,16 +25,14 @@ pip install neurospatial[nwb]        # NWB read/write (pynwb)
 ## Array-first stays primary
 
 Everything below runs on plain arrays with a bare `pip install neurospatial`.
-The example first computes rate maps and decodes position **array-first**, then
-shows the *same* analysis bundled with `Session` and driven through the
-`BayesianDecoder` object — all composing with the **identical** compute
-functions.
+The example computes rate maps and decodes position from arrays, then
+uses the same arrays with a fitted decoder.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
 
-from neurospatial import Environment, Session
+from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.decoding import BayesianDecoder, decode_session, decoding_error
 from neurospatial.simulation import (
@@ -70,17 +65,6 @@ actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 print(f"array-first median error: "
       f"{np.nanmedian(decoding_error(result.map_position, actual)):.1f} cm")
 
-# --- Session bundle: the SAME arrays, grouped for discoverability ----------
-sess = Session.from_arrays(
-    env=env, times=times, positions=positions, spike_times=spike_times
-)
-# Accessors expose the raw arrays; compute stays functional (bundle, not
-# god-object) — pass the bundle's fields straight to the same function.
-rates_via_session = compute_spatial_rates(
-    sess.env, sess.spikes, sess.times, sess.positions
-)
-assert np.array_equal(rates.firing_rates, rates_via_session.firing_rates)
-
 # --- BayesianDecoder: optional wrapper, byte-exact vs decode_session -------
 decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
 prediction = decoder.predict(spike_times, times)
@@ -89,72 +73,31 @@ error = decoder.score(spike_times, times, positions, metric="median_error")
 print(f"BayesianDecoder.score median error: {error:.1f} cm")
 ```
 
-The array-first and session-first paths are not alternatives to choose between —
-they *compose*. Bundle your data with `Session` for discoverability, then hand
-`sess.env` / `sess.spikes` / `sess.times` / `sess.positions` to any function in
-the library.
+## Simulator attributes feed analyses
 
-## Bundle your data with `Session`
+A `SimulationSession` carries `env`, `spike_times`, `unit_ids`, `times`,
+`positions`, `models`, integer-label `ground_truth` and `metadata`. Its field
+bindings are frozen; spike arrays, labels and models must align one-to-one.
+Unit labels also select the ground truth for validation and the rate panels
+for plotting.
 
-A `Session` groups the objects an analysis revolves around — the spatial `env`,
-the animal's position (`times` + `positions`), the population `spikes` (with
-unit identity), optional `epochs`, and free-form `metadata` — into a single
-immutable, discoverable bundle.
-
-```python
-from neurospatial import Session
-
-sess = Session.from_arrays(
-    env=env,
-    times=times,
-    positions=positions,
-    spike_times=spike_times,
-    unit_ids=None,        # defaults to np.arange(n_units)
-    unit_table=None,      # optional per-unit metadata DataFrame
-    metadata={"subject": "rat042", "session": "run1"},
-)
-
-# Accessors expose the raw arrays (and a SpikeTrains).
-sess.times       # (n_samples,) timestamps
-sess.positions   # (n_samples, n_dims) coordinates
-sess.env         # the Environment (or None)
-sess.spikes      # a SpikeTrains carrying unit_ids / unit_table
-```
-
-`Session` is a **discoverability bundle, not a god-object**: it carries data and
-exposes the raw arrays, but holds **no** heavy analysis methods. Compute stays
-functional — you pass the bundle's fields to the same free functions:
-
+<!-- docs-test: run -->
 ```python
 from neurospatial.encoding import compute_spatial_rates
+from neurospatial.simulation import open_field_session, validate_simulation
 
+sim = open_field_session(duration=60, n_place_cells=5, seed=0)
 rates = compute_spatial_rates(
-    sess.env, sess.spikes, sess.times, sess.positions
+    sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
 )
+assert set(sim.ground_truth) == set(sim.unit_ids)
+print(rates.summary_table().index.tolist())
+validation = validate_simulation(sim, unit_ids=[0, 2, 4])
 ```
 
-The bundle is **frozen**. The two "modifiers" return a **new** `Session` and
-never mutate the original:
-
-```python
-# Attach or swap the environment (returns a new Session).
-sess = sess.with_environment(env)
-
-# Restrict to epochs (returns a new Session). The spike restriction is
-# identity-preserving: it trims spikes per unit but never drops units, so
-# unit_ids and unit_table ride along unchanged.
-run_epochs = np.array([[0.0, 30.0], [60.0, 90.0]])
-run = sess.restrict(run_epochs)
-```
-
-To load a session straight from an NWB file, use `load_session` (see
-[NWB interop](#nwb-interop)):
-
-```python
-from neurospatial import load_session
-
-sess = load_session("session.nwb")   # requires the `nwb` extra
-```
+`plot_session_summary(sim, unit_ids=[1, 3])` uses the same label selection.
+Analysis functions take arrays; the validation and summary plot functions
+need the simulator holder because it carries simulation-specific data.
 
 ## `SpikeTrains` and epoch selection
 
@@ -298,44 +241,104 @@ and round-trip a `SpatialRatesResult` back into one.
     `pip install neurospatial[nwb]`. As with pynapple, `import neurospatial`
     never imports `pynwb`; the readers import it only when called.
 
-The quickest entry point is `Session.from_nwb` / `load_session`, which reads the
-units, position, and (if present) a persisted environment into a `Session`:
+Read components explicitly. These readers return frozen, non-iterable holders:
 
+| Reader | Holder attributes |
+| --- | --- |
+| `read_position` | `NWBPosition.times`, `.positions`, `.units` |
+| `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians) |
+| `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window` |
+
+Position values already include the stored conversion and offset. Recognized
+unit aliases become `m`, `cm`, `mm` or `px` without scaling those values again.
+Other nonempty declarations remain visible; `None` means no unit was declared.
+Choose the physical unit explicitly in that case before creating an environment.
+`environment_from_position` retains its warned cm fallback when used without
+an explicit unit.
+
+### Population fields, decoding and a truthful overlay
+
+This recipe reads eager arrays from `session.nwb`, selects the named `epochs`
+table's rows tagged `run`, and uses those windows in both encoding and decoding.
+Adapt the table name, tags and 5-unit bin size to your experiment. Epochs are
+an explicit analysis choice; readers do not infer them from spike times.
+
+`units.spike_window` is acquisition coverage: the intersection of observation
+intervals for the units selected by `read_units(..., unit_ids=...)`. It can differ
+from the chosen analysis epochs. If the file has no `obs_intervals` column, it
+is `None` and analysis results report assumed spike coverage. A recorded empty
+intersection stays empty and analyses reject it; read units with different
+coverage in separate calls if their shared window is too short.
+
+<!-- nwb-docs-test: run -->
 ```python
-from neurospatial import Session, load_session
-
-sess = Session.from_nwb("session.nwb")
-sess = load_session("session.nwb")            # dispatches to Session.from_nwb
-```
-
-For finer control, read individual components. `read_units` returns
-`(trains, unit_ids)` — the standard spike input for the batch functions:
-
-```python
+import matplotlib.pyplot as plt
+import numpy as np
 from pynwb import NWBHDF5IO
-from neurospatial.io.nwb import read_units, read_position, read_pose
+
+from neurospatial import Environment, compute_spatial_rates
+from neurospatial.decoding import BayesianDecoder
+from neurospatial.io.nwb import read_intervals, read_position, read_units
 
 with NWBHDF5IO("session.nwb", "r") as io:
-    nwbfile = io.read()
-    trains, unit_ids = read_units(nwbfile)
-    positions, timestamps = read_position(nwbfile)
+    file = io.read()
+    units = read_units(file)  # Or unit_ids=[7, 11] to select table labels.
+    pos = read_position(file)
+    epoch_table = read_intervals(file, "epochs")
+    chosen = epoch_table["tags"].map(lambda tags: "run" in tags)
+    epochs = epoch_table.loc[chosen, ["start_time", "stop_time"]].to_numpy(dtype=float)
+
+# Eager arrays and interval metadata remain usable after the file closes.
+position_units = pos.units
+if position_units is None:
+    raise ValueError("Choose position_units explicitly from the experiment's physical units.")
+env = Environment.from_samples(pos.positions, bin_size=5.0, units=position_units)
+rates = compute_spatial_rates(
+    env, units.spike_times, pos.times, pos.positions, unit_ids=units.unit_ids,
+    epochs=epochs, spike_window=units.spike_window, fill_value=0.0,
+)
+rate_table = rates.summary_table()
+print(rate_table)
+
+# Reuse the maps and their unit labels; train order is retained for these arrays.
+decoder = BayesianDecoder.from_rates(rates, dt=0.2)
+result = decoder.predict(
+    units.spike_times, pos.times, epochs=epochs, spike_window=units.spike_window,
+)
+print(result.summary())
+
+# result.times contains only observed-run bins; do not make a clock across gaps.
+actual = np.column_stack([
+    np.interp(result.times, pos.times, pos.positions[:, dim])
+    for dim in range(env.n_dims)
+])
+ax = result.plot(show_map=True, colorbar=True)
+plot_times = ax.lines[0].get_xdata()  # Seconds on continuous clocks, indices across gaps.
+actual_line = ax.plot(plot_times, env.bin_at(actual), "c--", label="Actual spatial bin")[0]
+ax.legend()
+plt.show()
 ```
 
-`read_units`, `read_position`, and `read_pose` accept `lazy=True`, which returns
-handles that materialize their data only when sliced or `np.asarray`-ed — useful
-for large recordings.
+The posterior plot's y-axis is spatial-bin indices; physical positions belong
+in separate position plots or accuracy metrics. The actual overlay shares the
+MAP line's x coordinates, including the index axis used across gaps. See the
+[decoder plotting recipe](workflows.md#overlaying-actual-position-on-a-posterior)
+for the continuous/gapped-clock comparison. If an environment was already
+persisted in the file, use `read_environment(file)` inside the `with` block
+instead of inferring bins, with its coordinates matching the position channel.
+
+`read_units`, `read_position`, and `read_pose` accept `lazy=True` for large files.
+Lazy position reads require identity conversion and offset.
 
 !!! warning "Lazy handles are only valid while the file is open"
-    A `lazy=True` handle reads from the open `NWBFile` / `NWBHDF5IO`. Materialize
-    it (index it or `np.asarray` it) **inside** the `with NWBHDF5IO(...)` block;
-    `lazy=False` (the default) returns arrays that stay valid after the file
-    closes.
+    Slice or materialize lazy arrays inside the `with NWBHDF5IO(...)` block.
+    Eager arrays (the default), IDs and observation-window metadata remain
+    valid after close.
 
 ```python
 with NWBHDF5IO("session.nwb", "r") as io:
-    nwbfile = io.read()
-    trains, unit_ids = read_units(nwbfile, lazy=True)
-    first_unit = np.asarray(trains[0])   # materialize WHILE the file is open
+    units = read_units(io.read(), lazy=True)
+    first_unit = np.asarray(units.spike_times[0])
 ```
 
 ### Round-tripping rate maps
@@ -370,17 +373,15 @@ with NWBHDF5IO("session.nwb", "r") as io:
 
 - **[Complete Workflows](workflows.md)**: End-to-end encode / decode examples
 - **[Spatial Analysis](spatial-analysis.md)**: Occupancy, fields, and trajectory operations
-- **[API Reference](../api/index.md)**: `Session`, `SpikeTrains`, `BayesianDecoder`, and the interop adapters
+- **[API Reference](../api/index.md)**: NWB holders, `SpikeTrains`, `BayesianDecoder`, and the interop adapters
 - **[Loading from NWB notebook](../examples/27_loading_from_nwb.ipynb)**: A worked NWB read example
 
 ## Next Steps
 
-- **Bundle a session**: wrap your arrays in `Session.from_arrays(...)` and pass
-  its fields to the compute functions you already use.
+- **Read components**: select units and epochs explicitly, then pass holder
+  attributes and acquisition coverage to your analysis.
 - **Filter and restrict**: attach a `unit_table` to `SpikeTrains` and select
   cells with `.filter(...)`; carve out running epochs with `restrict(...)`.
 - **Decode as an object**: reach for `BayesianDecoder` when you want a
   `fit` / `predict` / `score` surface — remembering it is byte-exact with
   `decode_session`.
-</content>
-</invoke>

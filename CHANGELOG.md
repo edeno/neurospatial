@@ -72,6 +72,8 @@
 
 ### Fixed — documentation
 
+- Teach explicit simulator/NWB holder attributes and a complete file → selected epochs → population fields → decoder → summary/overlay workflow. A synthetic HDF5 example executes the published NWB recipe after file close with physical units, nondefault unit IDs and two analysis epochs; synchronized tutorials preserve the simulation-duration contract.
+
 - Preserve the existing shared-validator NumPy examples and parameter sections while adding timestamp/position diagnostics.
 
 - Teach explicit tracking arrays, typed precomputed-rate and count-array decoding handoffs, and one retained event cohort across gap-aware PSTHs, rasters, regressors and positioned tables. Keep event identifiers and selection masks visible, explain each helper's existing edge closure, and synchronize the updated tutorials.
@@ -104,7 +106,7 @@
 
 ### Removed
 
-- **Breaking:** remove `Session`, `load_session` and `neurospatial.recording`, plus the unused `PositionLike` trajectory adapter. NWB component readers and simulator holders expose arrays for explicit analysis calls; pynapple conversion still returns `(times, positions)`.
+- **Breaking:** remove `Session`, `load_session` and `neurospatial.recording`, plus the unused `PositionLike` trajectory adapter and `validate_simulation`'s raw keyword form. NWB component readers and simulator holders expose arrays for explicit analysis calls; pynapple conversion still returns `(times, positions)`.
 
 - **Breaking:** remove the image-mask `bin_size` keyword shim and both view-result `peak_view_location` methods. Use `pixel_size` and the shared `peak_location()`/`peak_locations()` accessors.
 
