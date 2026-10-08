@@ -58,6 +58,8 @@
 
 ### Documentation
 
+- Document recording-window metadata on the spatial result classes now exposed at the root; their existing GLM diagnostics and constructor fields are covered by the public docstring checks.
+
 - Clarify that the head-direction MVL screen weights firing rates and its Rayleigh test weights spike counts, with a rate-times-occupancy fallback. The numerical Rayleigh calculation is unchanged.
 
 - Update cell-criterion migration, README/quickstart, API references, glossary and neuroscience guidance. Execute six new flagship docstrings and synchronize the view, heading and object-vector tutorials; the object-vector tutorial reports its estimator/criterion and adds seeded shuffle results alongside an explicit place-cell control.
