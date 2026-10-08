@@ -96,7 +96,11 @@ def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None
         or n_shuffles < 1
     ):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
-    if not np.isscalar(min_shift) or not np.isfinite(min_shift) or min_shift < 0:
+    if (
+        not isinstance(min_shift, (int, float, np.integer, np.floating))
+        or not np.isfinite(min_shift)
+        or min_shift < 0
+    ):
         problems.append(f"min_shift={min_shift!r} must be finite and non-negative")
     if problems:
         raise ValueError(

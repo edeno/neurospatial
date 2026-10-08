@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add five raw-array circular-shift significance functions for place, head-direction, spatial-view and both object-vector frames. Shared valid-window masks, copied inputs and label-keyed random streams preserve recording coverage and seeded single/population agreement.
+
 - Add seeded circular spike-time shifts over joined valid recording windows. Shifts preserve retained spike counts and compressed-clock circular spacings without placing spikes in gaps.
 
 - Add `is_egocentric_object_vector_cell` for heading-relative tuning. `is_object_vector_cell` now measures allocentric direction without a headings argument; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.

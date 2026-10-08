@@ -50,6 +50,24 @@ __all__ = [
 ]
 
 
+def _view_interval_mask(
+    times: NDArray[np.float64],
+    *,
+    start_bin: NDArray[np.intp],
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+) -> NDArray[np.bool_]:
+    """Apply the shared recording/frame gates for this rate family."""
+    return interval_valid_mask(
+        times,
+        start_bin=start_bin,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+
+
 def _precompute_view_bins(
     env: Environment,
     positions: NDArray[np.float64],
@@ -265,7 +283,7 @@ def compute_occupancy(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
     )
-    mask = interval_valid_mask(
+    mask = _view_interval_mask(
         times,
         start_bin=view_bins,
         max_gap=max_gap,
@@ -401,7 +419,7 @@ def bin_view_spike_train(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
     )
-    mask = interval_valid_mask(
+    mask = _view_interval_mask(
         times,
         start_bin=view_bins,
         max_gap=max_gap,
@@ -555,7 +573,7 @@ def bin_view_spike_trains(
     )
 
     n_bins = env.n_bins
-    mask = interval_valid_mask(
+    mask = _view_interval_mask(
         times,
         start_bin=view_bins,
         max_gap=max_gap,

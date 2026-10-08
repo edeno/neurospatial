@@ -77,7 +77,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -98,6 +98,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 __all__ = [
@@ -109,6 +110,7 @@ __all__ = [
     "compute_view_rates",
     # Convenience functions
     "is_spatial_view_cell",
+    "spatial_view_cell_significance",
 ]
 
 
@@ -1996,3 +1998,261 @@ def is_spatial_view_cell(
         return False
     except RuntimeError:
         return False
+
+
+def spatial_view_cell_significance(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test spatial view tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Strictly increasing sample timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Animal position samples aligned with times, in environment length units.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
+        ``positions`` to project the gaze cone outwards into the
+        allocentric arena.
+    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+        Method for computing viewed location:
+
+        - **fixed_distance**: Point at fixed distance in gaze direction.
+          Fast and simple, good default for most analyses.
+        - **ray_cast**: Intersection with environment boundary. More
+          realistic for environments with walls.
+        - **boundary**: Nearest boundary point in gaze direction.
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model (environment units).
+        Ignored for ray_cast and boundary models.
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from head direction to actual gaze direction (radians).
+        Positive values indicate gaze to the left of heading.
+        If None (default), gaze is aligned with head direction.
+        Use this for eye-tracking data in primate spatial view cell studies
+        where gaze direction differs from head direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Smoothing method to use. See ``compute_view_rate()`` for details.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in the same units as bin_size.
+    min_occupancy : float, default=0.0
+        Minimum view occupancy (seconds) for a bin to be included.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import spatial_view_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = spatial_view_cell_significance(
+    ...     env, trains, times, positions, headings, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+    from neurospatial.encoding._view_binning import (
+        _precompute_view_bins,
+        _view_interval_mask,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    headings = np.array(headings, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="spatial_view_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "gaze_model": gaze_model,
+        "view_distance": view_distance,
+        "gaze_offsets": gaze_offsets,
+        "max_gap": max_gap,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    if env is not None:
+        validate_env_fitted(
+            env,
+            context="spatial_view_cell_significance",
+            arguments="spike_times, times, positions, headings",
+        )
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context="spatial_view_cell_significance",
+    )
+    for train in trains:
+        validate_spike_times(train, context="spatial_view_cell_significance")
+    frame_bins = _precompute_view_bins(
+        env,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=options["gaze_offsets"],
+    )
+    mask = _view_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_view_rates(
+            env, shifted, times, positions, headings, **options
+        ).view_spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

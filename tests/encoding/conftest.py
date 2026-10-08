@@ -97,6 +97,94 @@ def egocentric_ovc_spikes(ou_env, ou_10min, obj):
     )
 
 
+@pytest.fixture(scope="session")
+def strong_field_spikes(ou_2min_env, ou_2min, obj):
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    times, positions, _ = ou_2min
+    model = PlaceCellModel(ou_2min_env, center=obj[0] + [20, 0], width=10, max_rate=20)
+    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+
+
+@pytest.fixture
+def significance_recording():
+    from types import SimpleNamespace
+
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(7)
+    times = np.arange(0, 60, 0.1)
+    xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    return SimpleNamespace(
+        env=Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5),
+        times=times,
+        positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
+        headings=np.sin(times / 5),
+        objects=np.array([[50.0, 50.0]]),
+        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [40, 55, 65]],
+        speed=np.full(len(times), 5.0),
+        gaze_offsets=np.zeros(len(times)),
+    )
+
+
+@pytest.fixture(
+    params=[
+        "place",
+        "head_direction",
+        "view",
+        "object_vector",
+        "egocentric_object_vector",
+    ]
+)
+def significance_family(request):
+    import importlib
+    from types import SimpleNamespace
+
+    name = request.param
+    module_name = {
+        "place": "spatial",
+        "head_direction": "directional",
+        "view": "view",
+        "object_vector": "egocentric",
+        "egocentric_object_vector": "egocentric",
+    }[name]
+    compute_name = {
+        "place": "compute_spatial_rates",
+        "head_direction": "compute_directional_rates",
+        "view": "compute_view_rates",
+        "object_vector": "compute_object_vector_rates",
+        "egocentric_object_vector": "compute_egocentric_rates",
+    }[name]
+    significance_name = (
+        "spatial_view_cell_significance"
+        if name == "view"
+        else f"{name}_cell_significance"
+    )
+    module = importlib.import_module(f"neurospatial.encoding.{module_name}")
+
+    def args(recording, trains=None):
+        trains = recording.trains if trains is None else trains
+        if name == "head_direction":
+            return (trains, recording.times, recording.headings)
+        result = (recording.env, trains, recording.times, recording.positions)
+        if name in ("view", "egocentric_object_vector"):
+            result += (recording.headings,)
+        if "object_vector" in name:
+            result += (recording.objects,)
+        return result
+
+    defaults = {"bandwidth": None} if name == "head_direction" else {"method": "binned"}
+    return SimpleNamespace(
+        name=name,
+        module=module,
+        function=getattr(module, significance_name),
+        compute=getattr(module, compute_name),
+        compute_name=compute_name,
+        args=args,
+        defaults=defaults,
+    )
+
+
 @pytest.fixture(params=["directional", "view", "egocentric"])
 def frame_family(request):
     """Real rate and binning functions with shared family-specific arguments."""

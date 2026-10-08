@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -64,9 +64,11 @@ if TYPE_CHECKING:
     from neurospatial._typing import PositionLike, SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    "place_cell_significance",
     # Result classes
     "SpatialRateResult",
     "SpatialRatesResult",
@@ -2836,7 +2838,7 @@ default="diffusion_kde"
     )
     from neurospatial.encoding._binning import (
         _emit_all_excluded_intervals_warning,
-        _resolve_interval_mask,
+        _spatial_interval_mask,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -2920,7 +2922,7 @@ default="diffusion_kde"
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-    interval_mask = _resolve_interval_mask(
+    interval_mask = _spatial_interval_mask(
         env,
         times,
         positions_2d,
@@ -3385,7 +3387,7 @@ default="diffusion_kde"
         _SILENCE_MIN_SECONDS,
         _SILENCE_MIN_UNITS,
         _emit_all_excluded_intervals_warning,
-        _resolve_interval_mask,
+        _spatial_interval_mask,
         _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
@@ -3504,7 +3506,7 @@ default="diffusion_kde"
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-    interval_mask = _resolve_interval_mask(
+    interval_mask = _spatial_interval_mask(
         env,
         times,
         positions_2d,
@@ -4871,3 +4873,336 @@ def _detect_subfields(
 
     # No subfields found
     return [field_bins]
+
+
+def place_cell_significance(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
+    bandwidth: float | None = None,
+    min_occupancy: float | None = None,
+    fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
+    pooled: bool = True,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = False,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test place tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : sequence of arrays or 2D array
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        group must equal the group's index.
+    times : ndarray, shape (n_samples,)
+        Strictly increasing sample timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Animal position samples aligned with times, in environment length units.
+    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
+        Estimator to use. See ``compute_spatial_rate()`` for details. In addition
+        to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
+        (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
+        everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
+        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
+        the batched entry point the decoder consumes; ``method="glm"`` flows
+        through both the decoder (``decode_session`` / ``BayesianDecoder``) and
+        NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
+        ``diffusion_kde`` and ``binned`` are
+        matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
+        O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
+        ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
+        (≈ O(n_units·n_bins·rank²) + O(n_units·rank³)), repeated across Newton
+        iterations and REML λ candidates, so keep ``rank`` modest for large
+        populations (see ``compute_spatial_rate`` for details). Only
+        ``gaussian_kde`` builds a dense O(n_bins²) kernel.
+    bandwidth : float | None, default=None
+        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
+        ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
+        with ``method="glm"``.
+    fill_value : float | None, default=None
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN is preserved so existing callers see no behavior change.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path:
+        zero-rate maps compose directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
+        scrubbing. ``occupancy`` is unaffected, so callers can still recover which
+        bins were masked via ``result.occupancy < min_occupancy``. Mutually
+        exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
+        selects ``λ`` by REML, which raises ``ValueError`` on pathologically
+        under-sampled data where no ``λ`` yields a converged fit (see
+        ``compute_spatial_rate``). Mutually exclusive with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap; an out-of-range value is
+        clamped (never rejected) to the effective rank reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) One **shared** smoothing penalty
+        ``λ`` for the whole population (``True``, the default) or an **independent
+        per-unit** ``λ`` (``False``). Under ``pooled=False`` the REML search runs
+        once per informative unit (cost ~ one REML per neuron), so
+        ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary`` become
+        ``(n_units,)`` vectors and ``penalty_selected_by_reml`` a per-unit mask;
+        zero-spike units fall back to the pooled ``λ`` over the informative units
+        (``penalty_selected_by_reml=False``, ``reml_objective=nan``). A fixed
+        ``penalty`` beats ``pooled`` (scalar ``λ``); ``pooled`` is a no-op at
+        ``penalty_rank == 0`` or when no unit spikes. ``pooled=False`` with a ratio
+        method raises ``ValueError``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set; auto-derived from
+        the trajectory when ``None``. See ``min_speed``. A wrong-length array
+        raises ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the (shared) occupancy denominator AND
+        every per-neuron spike numerator using ONE shared per-interval speed
+        gate, so firing rates stay correct. When ``None`` (default) NO speed
+        filtering is applied and the output is byte-for-byte identical to
+        before. Auto-speed uses a FORWARD difference (matching the
+        ``time_allocation="start"`` occupancy semantics):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
+        for geodesic / linearized-track environments.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
+    warn_on_drop : bool, default=False
+        Report dropped spikes in the observed fit when True. Null-fit warnings are suppressed.
+    dtype : {np.float32, np.float64}, default=np.float64
+        Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
+        ``np.float32`` halves the stored rate-map array. The rate computation
+        is still performed in float64 and only the final result is cast, so
+        float32 values match float64 within float32 tolerance.
+        ``decode_session`` / ``decode_session_summary`` now accept their own
+        ``dtype`` parameter (default float64) that honors float32 end-to-end --
+        the encoding-model working set AND the posterior -- so
+        ``decode_session(dtype=np.float32)`` halves the decode working set on
+        the golden path. Default ``np.float64`` leaves every existing caller
+        byte-for-byte unchanged. Any other dtype raises ``ValueError``.
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import place_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = place_cell_significance(
+    ...     env, trains, times, positions, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+
+    from neurospatial._exceptions import _format_error
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._binning import _spatial_interval_mask
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    if method == "glm":
+        raise ValueError(
+            _format_error(
+                "place_cell_significance does not support method='glm'.",
+                why="Why: pooled REML couples units, so shifted single-unit fits would not be the observed model",
+                fix="pass method='diffusion_kde', 'gaussian_kde' or 'binned'",
+            )
+        )
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="place_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "fill_value": fill_value,
+        "penalty": penalty,
+        "rank": rank,
+        "pooled": pooled,
+        "speed": speed,
+        "min_speed": min_speed,
+        "max_gap": max_gap,
+        "n_jobs": n_jobs,
+        "backend": backend,
+        "warn_on_drop": warn_on_drop,
+        "dtype": dtype,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    if env is not None:
+        validate_env_fitted(
+            env,
+            context="place_cell_significance",
+            arguments="spike_times, times, positions",
+        )
+    validate_trajectory(times, positions=positions, context="place_cell_significance")
+    for train in trains:
+        validate_spike_times(train, context="place_cell_significance")
+    mask = _spatial_interval_mask(
+        env,
+        times,
+        positions,
+        speed=options["speed"],
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_spatial_rates(
+            env, shifted, times, positions, **options
+        ).spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

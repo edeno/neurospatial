@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -59,6 +59,8 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
+
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin
@@ -77,6 +79,7 @@ __all__ = [
     "compute_directional_rate",
     "compute_directional_rates",
     # Convenience functions
+    "head_direction_cell_significance",
     "is_head_direction_cell",
     "plot_head_direction_tuning",
 ]
@@ -2602,3 +2605,226 @@ def plot_head_direction_tuning(
         )
 
     return ax
+
+
+def head_direction_cell_significance(
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float = np.pi / 30,
+    bandwidth: float | None = None,
+    angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test head direction tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
+    times : ndarray, shape (n_samples,)
+        Strictly increasing sample timestamps in seconds.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
+
+        **Movement heading vs. head direction.** This function expects the
+        animal's *head direction* (where the head points, typically from a
+        head-mounted LED pair or pose tracking). A velocity-derived heading
+        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        is the direction of *movement*, which equals head direction only when
+        the animal moves the way it faces. Feeding movement heading here and
+        reporting the result as a "head direction cell" is a common
+        methodological mislabel — keep the two distinct.
+    bin_size : float, default=π/30 (6 degrees)
+        Width of angular bins. Units match ``angle_unit``.
+        Default produces 60 bins (6° resolution).
+    bandwidth : float or None, default=None
+        Gaussian smoothing bandwidth for the tuning curves. Units match
+        ``angle_unit``. If None, no smoothing is applied.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
+
+        - 'rad': angles in radians
+        - 'deg': angles in degrees
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    n_jobs : int, default=1
+        Number of parallel jobs for spike binning. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
+        - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import head_direction_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = head_direction_cell_significance(
+    ...     trains, times, headings, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._directional_binning import (
+        _directional_interval_mask,
+        directional_frame_bins,
+    )
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_pvalues,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    headings = np.array(headings, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="head_direction_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "bin_size": bin_size,
+        "bandwidth": bandwidth,
+        "angle_unit": angle_unit,
+        "max_gap": max_gap,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    options.update(
+        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    )
+    validate_trajectory(
+        times, headings=headings, context="head_direction_cell_significance"
+    )
+    for train in trains:
+        validate_spike_times(train, context="head_direction_cell_significance")
+    frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
+    mask = _directional_interval_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_directional_rates(
+            shifted, times, headings, **options
+        ).mean_vector_lengths()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

@@ -6,7 +6,7 @@ import hashlib
 import warnings
 from collections.abc import Callable, Hashable
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -33,7 +33,7 @@ def _entropy(rng: np.random.Generator | int | None) -> int:
     if isinstance(rng, np.random.Generator):
         return int(rng.integers(2**63))
     if rng is None:
-        return int(np.random.SeedSequence().entropy)
+        return int(cast("int", np.random.SeedSequence().entropy))
     return int(rng)
 
 
