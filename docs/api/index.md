@@ -149,8 +149,8 @@ consistent units and column order across template, match and control periods:
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
 - `explained_variance_reactivation()`: EV and controlled REV effect sizes;
   pass an explicit baseline control and avoid treating EV > REV as a p-value
-- `reactivation_strength()`: Ratio of mean absolute standardized activations;
-  an effect size rather than a significance verdict
+- `reactivation_strength()`: Ratio of mean absolute projections on one shared
+  template-normalized scale; an effect size rather than a significance verdict
 
 See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 

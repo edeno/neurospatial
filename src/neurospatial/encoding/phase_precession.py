@@ -30,7 +30,7 @@ Common Use Cases
 Use for detailed analysis and publication::
 
     from neurospatial.encoding.phase_precession import (
-        phase_precession,
+        compute_phase_precession,
         plot_phase_precession,
     )
 
@@ -120,7 +120,7 @@ def theta_phase(
 
     See Also
     --------
-    phase_precession : Consumes spike phases (in radians) from this function.
+    compute_phase_precession : Consumes spike phases (in radians) from this function.
     has_phase_precession : Quick boolean precession screen.
 
     Notes
@@ -138,7 +138,7 @@ def theta_phase(
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import (
     ...     theta_phase,
-    ...     phase_precession,
+    ...     compute_phase_precession,
     ... )
     >>> # Synthesize a pure 8 Hz theta sinusoid sampled at 1 kHz.
     >>> sampling_rate = 1000.0
@@ -149,7 +149,7 @@ def theta_phase(
     True
     >>> bool(phase.min() >= 0 and phase.max() < 2 * np.pi)
     True
-    >>> # Phases are drop-in for phase_precession (no reshaping):
+    >>> # Phases are drop-in for compute_phase_precession (no reshaping):
     >>> positions = np.linspace(0, 50, phase.size)
     >>> result = compute_phase_precession(positions, phase, rng=0)
     >>> isinstance(result.slope, float)
@@ -545,7 +545,7 @@ def compute_phase_precession(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding.phase_precession import phase_precession
+    >>> from neurospatial.encoding.phase_precession import compute_phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
     >>> result = compute_phase_precession(positions, phases, rng=0)
@@ -670,7 +670,7 @@ def has_phase_precession(
 
     See Also
     --------
-    phase_precession : Full analysis with metrics.
+    compute_phase_precession : Full analysis with metrics.
 
     Notes
     -----
@@ -784,7 +784,7 @@ def plot_phase_precession(
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import (
-    ...     phase_precession,
+    ...     compute_phase_precession,
     ...     plot_phase_precession,
     ... )
     >>> positions = np.linspace(0, 50, 100)

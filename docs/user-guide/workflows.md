@@ -763,10 +763,15 @@ selected unit order; mapping them through `selected_ids` recovers the original
 labels. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference.
 
-`assembly_activation` standardizes the projection within each period. An
-activation magnitude or the ratio from `reactivation_strength` does not give a
-tail probability; separate standardization also removes absolute projection
-scale. Controlled EV is `r(template, match | control)^2`, while controlled REV
+`assembly_activation` standardizes the projection within each period,
+removing absolute projection scale; its output does not give a tail
+probability. In contrast, `reactivation_strength` normalizes both count
+matrices with the template's neuron means/standard deviations and projects
+onto the same pattern without separate projection standardization. Its ratio
+preserves relative magnitude on that shared template scale, but remains an
+effect size rather than a calibrated tail probability.
+
+Controlled EV is `r(template, match | control)^2`, while controlled REV
 is `r(control, match | template)^2`. EV > REV is an effect-size comparison,
 not calibrated reactivation significance. Report control choice, preprocessing,
 unit selection and a separately justified null when a significance claim is
