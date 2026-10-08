@@ -250,8 +250,9 @@ print(f"True preferred direction: {np.degrees(preferred):.0f}° (HD cell)")
 #
 # ``is_head_direction_cell`` is the standalone classifier used for
 # screening. It applies the standard MVL ≥ 0.4 and Rayleigh p < 0.05
-# criteria. Rate-weighted Rayleigh can be occupancy-biased; for a calibrated
-# circular-shift verdict use head_direction_cell_significance on raw arrays.
+# criteria. MVL weights firing rates; Rayleigh weights spike counts and can
+# be occupancy-biased. For a calibrated circular-shift verdict use
+# head_direction_cell_significance on raw arrays.
 
 # %%
 hd_is_hd = is_head_direction_cell(

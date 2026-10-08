@@ -52,9 +52,11 @@
 
 ### Documentation
 
+- Clarify that the head-direction MVL screen weights firing rates and its Rayleigh test weights spike counts, with a rate-times-occupancy fallback. The numerical Rayleigh calculation is unchanged.
+
 - Update cell-criterion migration, README/quickstart, API references, glossary and neuroscience guidance. Execute six new flagship docstrings and synchronize the view, heading and object-vector tutorials; the object-vector tutorial reports its estimator/criterion and adds seeded shuffle results alongside an explicit place-cell control.
 
-- Document finite-count information bias and the measured noise-screen results in every cell predicate, field detector and batch classifier. Explain occupancy bias in rate-weighted Rayleigh tests, circular-shift assumptions and the need for calibrated publication verdicts; retain the uniform-spike example and show its shuffle rejection.
+- Document finite-count information bias and the measured noise-screen results in every cell predicate, field detector and batch classifier. Explain occupancy bias in Rayleigh tests weighted by spike counts, circular-shift assumptions and the need for calibrated publication verdicts; retain the uniform-spike example and show its shuffle rejection.
 
 - Teach allocentric and egocentric object-vector analysis separately in the guides, migration notes, glossary and synchronized tutorial. Public examples record the frame and use the appropriate heading-free or heading-required call; executable docstrings cover the new APIs.
 

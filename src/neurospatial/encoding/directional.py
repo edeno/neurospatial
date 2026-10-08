@@ -877,11 +877,14 @@ class DirectionalRateResult(SpatialResultMixin):
 
         Notes
         -----
-        The MVL cutoff is a screening heuristic. Rate-weighted MVL's
-        Rayleigh test is occupancy-biased; its numerical formula is unchanged.
-        It flagged 0/20 untuned 0.5 Hz Poisson units at 1, 2, 5, 10 and 20
-        minutes (about 30, 60, 150, 300 and 600 spikes). This is empirical
-        evidence, not calibration for another occupancy distribution.
+        The MVL cutoff is a screening heuristic. MVL weights firing rates;
+        Rayleigh weights spike counts (or reconstructs them from rate times
+        occupancy). The spike-angle distribution can reflect heading dwell
+        time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+        The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+        1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+        This is empirical evidence, not calibration for another occupancy
+        distribution.
         Related plug-in information has approximate upward bias
         (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
         test and its assumptions rather than relying on the screen.
@@ -1524,11 +1527,14 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Notes
         -----
-        The MVL cutoff is a screening heuristic. Rate-weighted MVL's
-        Rayleigh test is occupancy-biased; its numerical formula is unchanged.
-        It flagged 0/20 untuned 0.5 Hz Poisson units at 1, 2, 5, 10 and 20
-        minutes (about 30, 60, 150, 300 and 600 spikes). This is empirical
-        evidence, not calibration for another occupancy distribution.
+        The MVL cutoff is a screening heuristic. MVL weights firing rates;
+        Rayleigh weights spike counts (or reconstructs them from rate times
+        occupancy). The spike-angle distribution can reflect heading dwell
+        time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+        The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+        1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+        This is empirical evidence, not calibration for another occupancy
+        distribution.
         Related plug-in information has approximate upward bias
         (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-shift
         test and its assumptions rather than relying on the screen.
@@ -2419,11 +2425,14 @@ def is_head_direction_cell(
 
     Notes
     -----
-    The MVL cutoff is a screening heuristic. Rate-weighted MVL's
-    Rayleigh test is occupancy-biased; its numerical formula is unchanged.
-    It flagged 0/20 untuned 0.5 Hz Poisson units at 1, 2, 5, 10 and 20
-    minutes (about 30, 60, 150, 300 and 600 spikes). This is empirical
-    evidence, not calibration for another occupancy distribution.
+    The MVL cutoff is a screening heuristic. MVL weights firing rates;
+    Rayleigh weights spike counts (or reconstructs them from rate times
+    occupancy). The spike-angle distribution can reflect heading dwell
+    time, so Rayleigh can be occupancy-biased. Its formula is unchanged.
+    The combined screen flagged 0/20 untuned 0.5 Hz Poisson units at
+    1, 2, 5, 10 and 20 minutes (about 30, 60, 150, 300 and 600 spikes).
+    This is empirical evidence, not calibration for another occupancy
+    distribution.
     Related plug-in information has approximate upward bias
     (n_bins - 1) / (2 ln(2) N_spikes). For publication, report a circular-
     shift test and its assumptions rather than relying on the screen.

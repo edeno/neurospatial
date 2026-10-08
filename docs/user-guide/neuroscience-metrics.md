@@ -444,9 +444,11 @@ counts flagged by the screen, not cells with ground-truth tuning.
 | 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
 
 The allocentric object-vector information screen also flagged 20/20 in the
-10-minute fixture. HD's Rayleigh statistic uses rate-weighted MVL and is
-occupancy-biased; these empirical zero counts do not calibrate it for another
-occupancy distribution.
+10-minute fixture. HD's MVL screen weights firing rates, while its Rayleigh
+statistic weights spike counts (or reconstructs counts from rate times
+occupancy). The spike-angle distribution can reflect heading dwell time, so
+Rayleigh can be occupancy-biased; these empirical zero counts do not calibrate
+the combined screen for another occupancy distribution.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
 `criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
