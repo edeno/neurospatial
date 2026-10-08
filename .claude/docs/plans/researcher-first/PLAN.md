@@ -1,6 +1,6 @@
 # Researcher-First Rebuild Implementation Plan
 
-**Status:** Phase 4c done (d900d073, PR #47); repeated researcher-workflow checkpoint held (2026-10-07, posterior-plot coordinate mismatch); next: Phase 4d, then repeat the checkpoint before Phase 5a.
+**Status:** Phase 4d done (d819fbb8, PR #49); researcher-workflow checkpoint remains held pending revalidation (post-4c review, 2026-10-07, PR #48); next: repeat the researcher-workflow checkpoint before Phase 5a.
 
 Rebuild the valuable outcomes of the archived `feat/public-api-curation` branch on a fresh branch from `main`, putting researcher effort first. The result: the four-array call `compute_spatial_rate(env, spike_times, times, positions)` and its siblings work with no setup and handle recording gaps correctly. Every verified scientific bug is fixed. Errors say how to fix the problem. Every advertised example runs in CI. The public surface is coherent and discoverable, and it's protected by one snapshot test rather than a governance apparatus.
 
