@@ -16,7 +16,6 @@ if TYPE_CHECKING:
         compute_spatial_rate,
         compute_spatial_rates,
         decode_position,
-        load_session,
         peri_event_histogram,
     )
     from neurospatial.decoding._result import DecodingResult as ConcreteDecodingResult
@@ -27,13 +26,11 @@ if TYPE_CHECKING:
         SpatialRatesResult as ConcreteSpatialRatesResult,
     )
     from neurospatial.events._core import PeriEventResult as ConcretePeriEventResult
-    from neurospatial.recording import Session as ConcreteSession
 
     assert_type(neurospatial.SpatialRateResult, type[ConcreteSpatialRateResult])
     assert_type(neurospatial.SpatialRatesResult, type[ConcreteSpatialRatesResult])
     assert_type(neurospatial.DecodingResult, type[ConcreteDecodingResult])
     assert_type(neurospatial.PeriEventResult, type[ConcretePeriEventResult])
-    assert_type(neurospatial.Session, type[ConcreteSession])
 
     times = np.arange(10, dtype=np.float64)
     positions = np.zeros((10, 2), dtype=np.float64)
@@ -54,4 +51,3 @@ if TYPE_CHECKING:
     assert_type(
         peri_event_histogram(spikes, events, (-0.5, 0.5)), ConcretePeriEventResult
     )
-    assert_type(load_session("session.nwb"), ConcreteSession)

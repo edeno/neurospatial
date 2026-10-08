@@ -25,9 +25,7 @@ def open_nwbfile(
 ) -> Iterator[NWBFile]:
     """Yield an open ``NWBFile`` from a path, or pass through an open one.
 
-    The single place NWB file **opening** lives, so callers (e.g.
-    :meth:`neurospatial.recording.Session.from_nwb`) never import pynwb
-    themselves: pynwb is imported lazily here via :func:`_require_pynwb`.
+    NWB file opening imports pynwb lazily here via :func:`_require_pynwb`.
 
     Parameters
     ----------

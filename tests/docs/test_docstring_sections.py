@@ -10,7 +10,7 @@ import neurospatial
 
 from ._flagship import FLAGSHIP, resolve
 
-_EXEMPT = frozenset({"neurospatial.load_session"})
+_EXEMPT: frozenset[str] = frozenset()
 
 
 def _sections(doc: str) -> dict[str, str]:
