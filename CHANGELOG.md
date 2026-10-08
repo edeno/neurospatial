@@ -4,6 +4,8 @@
 
 ### Added
 
+- Snapshot all public namespace names and function signatures in one sorted, reviewable file, with a unified diff and explicit regeneration command for intentional API changes.
+
 - Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.
 
 - Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
