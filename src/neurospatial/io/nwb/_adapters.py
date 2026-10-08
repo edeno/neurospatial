@@ -23,6 +23,35 @@ from numpy.typing import NDArray
 DEFAULT_STARTING_TIME: float = 0.0
 
 
+# NWB spells units out ("meters" is pynwb's default); map them to the
+# ``Environment.units`` registry values.
+_NWB_UNIT_ALIASES = {
+    "meter": "m",
+    "meters": "m",
+    "metre": "m",
+    "metres": "m",
+    "m": "m",
+    "centimeter": "cm",
+    "centimeters": "cm",
+    "cm": "cm",
+    "millimeter": "mm",
+    "millimeters": "mm",
+    "mm": "mm",
+    "pixel": "px",
+    "pixels": "px",
+    "px": "px",
+}
+
+
+def position_units_from_series(series: Any) -> str | None:
+    """Return declared position units without assuming a fallback or rescaling."""
+    unit = getattr(series, "unit", None)
+    if unit is None or not str(unit).strip():
+        return None
+    declaration = str(unit)
+    return _NWB_UNIT_ALIASES.get(declaration.strip().lower(), declaration)
+
+
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     """
     Extract timestamps from a time series-like object.

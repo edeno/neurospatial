@@ -50,7 +50,7 @@ def open_nwbfile(
     --------
     >>> from neurospatial.io.nwb._core import open_nwbfile
     >>> with open_nwbfile("session.nwb") as nwbfile:  # doctest: +SKIP
-    ...     positions, timestamps = read_position(nwbfile)
+    ...     pos = read_position(nwbfile)
     """
     if isinstance(path_or_file, (str, os.PathLike)):
         pynwb = _require_pynwb()

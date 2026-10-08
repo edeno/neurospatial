@@ -451,8 +451,12 @@ class TestReadPositionLazy:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             nwb = io.read()
-            pos_lazy, ts_lazy = read_position(nwb, lazy=True)
-            pos_eager, ts_eager = read_position(nwb, lazy=False)
+            position_data = read_position(nwb, lazy=True)
+            pos_lazy = position_data.positions
+            ts_lazy = position_data.times
+            position_data = read_position(nwb, lazy=False)
+            pos_eager = position_data.positions
+            ts_eager = position_data.times
 
             # The lazy handle is NOT a plain fully-loaded ndarray.
             assert not isinstance(pos_lazy, np.ndarray)
@@ -476,7 +480,9 @@ class TestReadPositionLazy:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             nwb = io.read()
-            pos_default, ts_default = read_position(nwb)  # default lazy=False
+            position_data = read_position(nwb)
+            pos_default = position_data.positions
+            ts_default = position_data.times  # default lazy=False
             series = nwb.processing["behavior"]["Position"]["position"]
             raw_pos = np.asarray(series.data[:], dtype=np.float64)
             raw_ts = np.asarray(series.timestamps[:], dtype=np.float64)
@@ -541,8 +547,12 @@ class TestReadUnitsLazy:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             nwb = io.read()
-            lazy_trains, lazy_ids = read_units(nwb, lazy=True)
-            eager_trains, eager_ids = read_units(nwb, lazy=False)
+            unit_data = read_units(nwb, lazy=True)
+            lazy_trains = unit_data.spike_times
+            lazy_ids = unit_data.unit_ids
+            unit_data = read_units(nwb, lazy=False)
+            eager_trains = unit_data.spike_times
+            eager_ids = unit_data.unit_ids
 
             np.testing.assert_array_equal(lazy_ids, eager_ids)
             assert len(lazy_trains) == len(eager_trains)
@@ -554,7 +564,9 @@ class TestReadUnitsLazy:
     def test_eager_default_unchanged(self, nwb_with_units):
         from neurospatial.io.nwb import read_units
 
-        trains, ids = read_units(nwb_with_units)  # default lazy=False
+        unit_data = read_units(nwb_with_units)
+        trains = unit_data.spike_times
+        ids = unit_data.unit_ids  # default lazy=False
         np.testing.assert_array_equal(ids, [10, 20, 30])
         assert all(isinstance(t, np.ndarray) for t in trains)
         np.testing.assert_array_equal(trains[0], [0.1, 0.5, 1.2, 3.4])

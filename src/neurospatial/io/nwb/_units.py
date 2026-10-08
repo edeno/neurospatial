@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.io.nwb._core import _require_pynwb
+from neurospatial.io.nwb._holders import NWBUnits
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -73,7 +74,7 @@ def read_units(
     *,
     unit_ids: Sequence[int] | None = None,
     lazy: bool = False,
-) -> tuple[list[NDArray[np.float64] | Any], NDArray]:
+) -> NWBUnits:
     """
     Read spike-time arrays from an NWB ``units`` table.
 
@@ -96,12 +97,9 @@ def read_units(
 
     Returns
     -------
-    spike_trains : list of NDArray[np.float64] or lazy handles
-        One sorted 1-D array of spike times (seconds) per unit, aligned with
-        ``unit_ids`` -- materialized arrays when ``lazy=False``, lazy handles
-        when ``lazy=True``.
-    unit_ids : NDArray
-        The unit identifiers, aligned with ``spike_trains``.
+    NWBUnits
+        Frozen, non-iterable holder with ``spike_times`` (sorted arrays or lazy
+        handles), aligned table ``unit_ids``, and acquisition-window metadata.
 
     Raises
     ------
@@ -113,11 +111,8 @@ def read_units(
 
     Notes
     -----
-    The returned ``spike_trains`` / ``unit_ids`` tuple is the standard input
-    for downstream population analyses: temporally bin the trains into a
-    spike-count matrix and pass it, with a place-field model, to
-    :func:`neurospatial.decoding.decode_position` to reconstruct the animal's
-    trajectory.
+    Pass ``units.spike_times`` and ``units.unit_ids`` explicitly to population
+    analyses. The holder has no tuple-unpacking compatibility interface.
 
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Materialize them (``np.asarray`` or indexing) inside the
@@ -136,10 +131,10 @@ def read_units(
     ... )
     >>> nwbfile.add_unit(spike_times=[0.1, 0.5, 1.2], id=7)
     >>> nwbfile.add_unit(spike_times=[0.3, 0.9], id=11)
-    >>> spike_trains, unit_ids = read_units(nwbfile)
-    >>> unit_ids
+    >>> units = read_units(nwbfile)
+    >>> units.unit_ids
     array([ 7, 11])
-    >>> spike_trains[0]
+    >>> units.spike_times[0]
     array([0.1, 0.5, 1.2])
     """
     _require_pynwb()
@@ -187,4 +182,4 @@ def read_units(
         spike_trains = [
             np.sort(np.asarray(units[i, "spike_times"], dtype=np.float64)) for i in rows
         ]
-    return spike_trains, out_ids
+    return NWBUnits(spike_trains, out_ids, None, None)

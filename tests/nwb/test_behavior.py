@@ -23,7 +23,9 @@ class TestReadPosition:
         """Test reading position data from NWB file."""
         from neurospatial.io.nwb import read_position
 
-        positions, timestamps = read_position(sample_nwb_with_position)
+        position_data = read_position(sample_nwb_with_position)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         # Check shapes
         assert positions.shape == (1000, 2)
@@ -43,7 +45,9 @@ class TestReadPosition:
         """Test that read data matches the original data in the NWB file."""
         from neurospatial.io.nwb import read_position
 
-        positions, timestamps = read_position(sample_nwb_with_position)
+        position_data = read_position(sample_nwb_with_position)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         # Get original data directly from NWB
         original_position = sample_nwb_with_position.processing["behavior"]["Position"]
@@ -77,7 +81,8 @@ class TestReadPosition:
         custom_module.add(position)
 
         # Read with explicit module
-        positions, _timestamps = read_position(nwbfile, processing_module="tracking")
+        position_data = read_position(nwbfile, processing_module="tracking")
+        positions = position_data.positions
 
         assert positions.shape == (50, 2)
         np.testing.assert_array_almost_equal(positions, np.ones((50, 2)) * 42.0)
@@ -89,10 +94,11 @@ class TestReadPosition:
         from neurospatial.io.nwb import read_position
 
         # Request specific series by name
-        positions, _timestamps = read_position(
+        position_data = read_position(
             sample_nwb_with_position_multiple_series,
             position_name="body",
         )
+        positions = position_data.positions
 
         # Check we got the 'body' series (500 samples)
         assert positions.shape == (500, 2)
@@ -138,9 +144,8 @@ class TestReadPosition:
 
         # Enable logging capture
         with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            positions, _timestamps = read_position(
-                sample_nwb_with_position_multiple_series
-            )
+            position_data = read_position(sample_nwb_with_position_multiple_series)
+            positions = position_data.positions
 
         # Should use 'body' (first alphabetically)
         assert positions.shape == (500, 2)
@@ -181,7 +186,9 @@ class TestReadPosition:
         )
         nwbfile.add_acquisition(position)
 
-        positions, timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         assert positions.shape == (100, 2)
         assert timestamps.shape == (100,)
@@ -226,7 +233,8 @@ class TestReadPosition:
         )
         behavior_module.add(position_behavior)
 
-        positions, _timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
 
         # Should get behavior module Position (value 99.0), not analysis (value 10.0)
         np.testing.assert_array_almost_equal(positions, np.ones((50, 2)) * 99.0)
@@ -254,7 +262,9 @@ class TestReadPosition:
         )
         behavior_module.add(position)
 
-        positions, timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         assert positions.shape == (100, 1)
         assert timestamps.shape == (100,)
@@ -283,7 +293,9 @@ class TestReadPosition:
         )
         behavior_module.add(position)
 
-        positions, timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         assert positions.shape == (100, 3)
         assert timestamps.shape == (100,)
@@ -313,7 +325,9 @@ class TestReadPosition:
         )
         behavior_module.add(position)
 
-        positions, timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         assert positions.shape == (100, 2)
         assert timestamps.shape == (100,)
@@ -346,7 +360,9 @@ class TestReadPosition:
         )
         behavior_module.add(position)
 
-        positions, timestamps = read_position(nwbfile)
+        position_data = read_position(nwbfile)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         assert positions.shape == (100, 2)
         assert timestamps.shape == (100,)
@@ -380,7 +396,9 @@ class TestReadHeadDirection:
         """Test reading head direction data from NWB file."""
         from neurospatial.io.nwb import read_head_direction
 
-        angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
+        head_direction_data = read_head_direction(sample_nwb_with_head_direction)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         # Check shapes
         assert angles.shape == (1000,)
@@ -402,7 +420,9 @@ class TestReadHeadDirection:
         """Test that read data matches the original data in the NWB file."""
         from neurospatial.io.nwb import read_head_direction
 
-        angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
+        head_direction_data = read_head_direction(sample_nwb_with_head_direction)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         # Get original data directly from NWB
         original_compass = sample_nwb_with_head_direction.processing["behavior"][
@@ -438,7 +458,8 @@ class TestReadHeadDirection:
         custom_module.add(compass)
 
         # Read with explicit module
-        angles, _timestamps = read_head_direction(nwbfile, processing_module="tracking")
+        head_direction_data = read_head_direction(nwbfile, processing_module="tracking")
+        angles = head_direction_data.headings
 
         assert angles.shape == (50,)
         np.testing.assert_array_almost_equal(angles, np.ones(50) * 1.5)
@@ -478,7 +499,8 @@ class TestReadHeadDirection:
         behavior_module.add(compass)
 
         # Request specific series by name
-        angles, _timestamps = read_head_direction(nwbfile, compass_name="beta")
+        head_direction_data = read_head_direction(nwbfile, compass_name="beta")
+        angles = head_direction_data.headings
 
         # Check we got the 'beta' series (200 samples, value 2.0)
         assert angles.shape == (200,)
@@ -565,7 +587,8 @@ class TestReadHeadDirection:
 
         # Enable logging capture
         with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            angles, _timestamps = read_head_direction(nwbfile)
+            head_direction_data = read_head_direction(nwbfile)
+            angles = head_direction_data.headings
 
         # Should use 'alpha' (first alphabetically)
         assert angles.shape == (50,)
@@ -600,7 +623,9 @@ class TestReadHeadDirection:
         )
         nwbfile.add_acquisition(compass)
 
-        angles, timestamps = read_head_direction(nwbfile)
+        head_direction_data = read_head_direction(nwbfile)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         assert angles.shape == (100,)
         assert timestamps.shape == (100,)
@@ -645,7 +670,8 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass_behavior)
 
-        angles, _timestamps = read_head_direction(nwbfile)
+        head_direction_data = read_head_direction(nwbfile)
+        angles = head_direction_data.headings
 
         # Should get behavior module (value 2.5), not analysis (value 0.5)
         np.testing.assert_array_almost_equal(angles, np.ones(50) * 2.5)
@@ -675,7 +701,9 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass)
 
-        angles, timestamps = read_head_direction(nwbfile)
+        head_direction_data = read_head_direction(nwbfile)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         assert angles.shape == (100,)
         assert timestamps.shape == (100,)
@@ -708,7 +736,9 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass)
 
-        angles, timestamps = read_head_direction(nwbfile)
+        head_direction_data = read_head_direction(nwbfile)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         assert angles.shape == (100,)
         assert timestamps.shape == (100,)
@@ -758,7 +788,9 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass)
 
-        angles, timestamps = read_head_direction(nwbfile)
+        head_direction_data = read_head_direction(nwbfile)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         # Should be flattened to 1D
         assert angles.shape == (100,)
@@ -775,7 +807,11 @@ class TestReadHeadDirectionUnitsAndVectors:
         """A degree-unit series is converted to radians on read."""
         from neurospatial.io.nwb import read_head_direction
 
-        angles, timestamps = read_head_direction(sample_nwb_with_head_direction_degrees)
+        head_direction_data = read_head_direction(
+            sample_nwb_with_head_direction_degrees
+        )
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         np.testing.assert_allclose(angles, [0.0, np.pi / 2, np.pi], atol=1e-9)
         assert angles.shape == timestamps.shape
@@ -786,7 +822,11 @@ class TestReadHeadDirectionUnitsAndVectors:
         """An (n, 2) unit-vector series yields n angles via arctan2, not 2n."""
         from neurospatial.io.nwb import read_head_direction
 
-        angles, timestamps = read_head_direction(sample_nwb_with_head_direction_vectors)
+        head_direction_data = read_head_direction(
+            sample_nwb_with_head_direction_vectors
+        )
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         n_samples = 100
         assert angles.shape == (n_samples,)
@@ -804,7 +844,8 @@ class TestReadHeadDirectionUnitsAndVectors:
         """A radians 1-D series is returned unchanged (no regression)."""
         from neurospatial.io.nwb import read_head_direction
 
-        angles, _ = read_head_direction(sample_nwb_with_head_direction)
+        head_direction_data = read_head_direction(sample_nwb_with_head_direction)
+        angles = head_direction_data.headings
 
         original = sample_nwb_with_head_direction.processing["behavior"][
             "CompassDirection"
@@ -879,7 +920,8 @@ class TestReadScaledSeries:
     ):
         from neurospatial.io.nwb import read_position
 
-        positions, _ = read_position(make_scaled_position_nwb())
+        position_data = read_position(make_scaled_position_nwb())
+        positions = position_data.positions
 
         np.testing.assert_allclose(positions.min(axis=0), [0.1, 0.1], rtol=1e-12)
         np.testing.assert_allclose(positions.max(axis=0), [1.1, 1.1], rtol=1e-12)
@@ -892,7 +934,8 @@ class TestReadScaledSeries:
         assert "Fix:" in str(excinfo.value)
 
         nwbfile = make_scaled_position_nwb(conversion=1.0, offset=0.0)
-        positions, _ = read_position(nwbfile, lazy=True)
+        position_data = read_position(nwbfile, lazy=True)
+        positions = position_data.positions
         series = nwbfile.processing["behavior"]["Position"].spatial_series["position"]
         assert positions is series.data
 
@@ -917,6 +960,7 @@ class TestReadScaledSeries:
             name="behavior", description="Behavior data"
         ).add(compass)
 
-        angles, _ = read_head_direction(empty_nwb)
+        head_direction_data = read_head_direction(empty_nwb)
+        angles = head_direction_data.headings
 
         np.testing.assert_allclose(angles, np.deg2rad(2 * stored), rtol=1e-12)

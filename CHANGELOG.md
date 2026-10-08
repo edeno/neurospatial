@@ -26,6 +26,8 @@
 
 ### Changed
 
+- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
+
 - **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
 
 - **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.

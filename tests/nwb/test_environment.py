@@ -34,7 +34,8 @@ class TestEnvironmentFromPosition:
         from neurospatial.io.nwb import environment_from_position, read_position
 
         # Get position data for comparison
-        positions, _ = read_position(sample_nwb_with_position)
+        position_data = read_position(sample_nwb_with_position)
+        positions = position_data.positions
 
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
 

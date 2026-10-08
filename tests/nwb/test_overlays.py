@@ -48,7 +48,9 @@ class TestPositionOverlayFromNwb:
         overlay = position_overlay_from_nwb(sample_nwb_with_position)
 
         # Get original data for comparison
-        positions, timestamps = read_position(sample_nwb_with_position)
+        position_data = read_position(sample_nwb_with_position)
+        positions = position_data.positions
+        timestamps = position_data.times
 
         np.testing.assert_array_almost_equal(overlay.positions, positions)
         np.testing.assert_array_almost_equal(overlay.times, timestamps)
@@ -357,7 +359,9 @@ class TestHeadDirectionOverlayFromNwb:
         overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
 
         # Get original data for comparison
-        angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
+        head_direction_data = read_head_direction(sample_nwb_with_head_direction)
+        angles = head_direction_data.headings
+        timestamps = head_direction_data.times
 
         np.testing.assert_array_almost_equal(overlay.headings, angles)
         np.testing.assert_array_almost_equal(overlay.times, timestamps)
