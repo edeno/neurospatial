@@ -220,8 +220,8 @@ def generate_poisson_spikes(
 
 def generate_population_spikes(
     models: list[NeuralModel],
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     headings: NDArray[np.float64] | None = None,
     refractory_period: float = 0.002,
@@ -298,7 +298,7 @@ def generate_population_spikes(
     ...     env, duration=120.0, seed=42, speed_units="cm"
     ... )
     >>> spike_trains = generate_population_spikes(
-    ...     place_cells, positions, times, seed=42, show_progress=False
+    ...     place_cells, times, positions, seed=42, show_progress=False
     ... )
     >>>
     >>> # Verify output structure
@@ -320,7 +320,7 @@ def generate_population_spikes(
     Generate spikes quietly (no progress bar):
 
     >>> spike_trains_quiet = generate_population_spikes(
-    ...     place_cells, positions, times, seed=42, show_progress=False
+    ...     place_cells, times, positions, seed=42, show_progress=False
     ... )
 
     See Also
@@ -348,6 +348,11 @@ def generate_population_spikes(
     Use ``show_progress=False`` in tight loops or tests to avoid overhead.
     """
     # Initialize random seed handling
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="generate_population_spikes"
+    )
     base_seed = seed
 
     # Pre-allocate spike trains list
@@ -425,7 +430,7 @@ def _compute_model_firing_rate(
                 return np.zeros(len(times), dtype=np.float64)
             from neurospatial.ops.egocentric import heading_from_velocity
 
-            headings = heading_from_velocity(positions, times, min_speed=0.0)
+            headings = heading_from_velocity(times, positions, min_speed=0.0)
         rates = model_any.firing_rate(headings, positions=positions, times=times)
     elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
         rates = model_any.firing_rate(positions, times, headings=headings)

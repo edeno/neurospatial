@@ -60,7 +60,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 15))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 
 # Rate maps and a one-call decode, straight from arrays.

@@ -154,7 +154,7 @@ class TestPathEfficiency:
 
         times = np.linspace(0.0, 1.0, len(positions))
         return compute_path_efficiency(
-            env, positions, times, goal, metric="euclidean"
+            env, times, positions, goal, metric="euclidean"
         ).efficiency
 
     def test_straight_path_efficiency_is_one(self):
@@ -299,8 +299,8 @@ class TestTimeEfficiency:
         # Actual time = 10 seconds
         # Efficiency = 5/10 = 0.5
         eff = time_efficiency(
-            positions,
             times,
+            positions,
             reference_speed=reference_speed,
             optimal_distance=100.0,
         )
@@ -347,10 +347,8 @@ class TestErrorHandling:
         times = np.linspace(0, 5, 10)  # Wrong length!
         goal = np.array([50.0, 0.0])
 
-        with pytest.raises(
-            ValueError, match="positions and times must have same length"
-        ):
-            compute_path_efficiency(env, positions, times, goal)
+        with pytest.raises(ValueError, match="same length"):
+            compute_path_efficiency(env, times, positions, goal)
 
     def test_empty_trajectory_error(self):
         """Test helpful error for empty trajectory."""

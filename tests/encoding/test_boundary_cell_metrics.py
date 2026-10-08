@@ -391,7 +391,7 @@ class TestComputeRegionCoverage:
 
         from neurospatial.encoding.border import compute_region_coverage
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         # North wall should have high coverage, others should be low
         # Note: walls overlap at corners, so east/west have ~0.22 coverage from corner overlap
@@ -430,7 +430,7 @@ class TestComputeRegionCoverage:
 
         # Only compute for region1 and region2
         coverage = compute_region_coverage(
-            field_bins, env, regions=["region1", "region2"]
+            env, field_bins, regions=["region1", "region2"]
         )
 
         # Should only return specified regions
@@ -456,7 +456,7 @@ class TestComputeRegionCoverage:
 
         from neurospatial.encoding.border import compute_region_coverage
 
-        coverage = compute_region_coverage(field_bins, env, regions=None)
+        coverage = compute_region_coverage(env, field_bins, regions=None)
 
         # Should return all regions
         assert set(coverage.keys()) == {"region1", "region2"}
@@ -478,7 +478,7 @@ class TestComputeRegionCoverage:
 
         from neurospatial.encoding.border import compute_region_coverage
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         # Empty region should have 0.0 coverage
         assert coverage["far_away"] == 0.0
@@ -496,7 +496,7 @@ class TestComputeRegionCoverage:
         from neurospatial.encoding.border import compute_region_coverage
 
         with pytest.raises(ValueError, match="Region 'nonexistent' not found"):
-            compute_region_coverage(field_bins, env, regions=["nonexistent"])
+            compute_region_coverage(env, field_bins, regions=["nonexistent"])
 
     def test_region_coverage_full_coverage(self) -> None:
         """Test region coverage when field covers entire region."""
@@ -519,7 +519,7 @@ class TestComputeRegionCoverage:
 
         from neurospatial.encoding.border import compute_region_coverage
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         # Should have perfect coverage
         assert coverage["center"] == 1.0
@@ -546,7 +546,7 @@ class TestComputeRegionCoverage:
 
         from neurospatial.encoding.border import compute_region_coverage
 
-        coverage = compute_region_coverage(field_bins, env)
+        coverage = compute_region_coverage(env, field_bins)
 
         # North should have full coverage, south should have zero
         assert coverage["north"] == 1.0

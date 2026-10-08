@@ -162,7 +162,7 @@ def count_spikes_in_time_bins(
 
 
 def bin_spikes_in_time(
-    spike_trains: Sequence[NDArray[np.float64]],
+    spike_times: Sequence[NDArray[np.float64]],
     dt: float,
     t_start: float | None = None,
     t_stop: float | None = None,
@@ -179,7 +179,7 @@ def bin_spikes_in_time(
 
     Parameters
     ----------
-    spike_trains : Sequence[NDArray[np.float64]]
+    spike_times : Sequence[NDArray[np.float64]]
         One 1-D array of spike times per neuron. Arrays may have different
         lengths (different numbers of spikes); a neuron with no spikes is
         allowed and yields an all-zero row/column. Times are in the same
@@ -241,12 +241,12 @@ def bin_spikes_in_time(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.decoding import bin_spikes_in_time, decode_position
-    >>> spike_trains = [
+    >>> spike_times = [
     ...     np.array([0.01, 0.06, 0.07]),  # neuron 0
     ...     np.array([0.03, 0.09]),  # neuron 1
     ... ]
     >>> counts, bin_centers = bin_spikes_in_time(
-    ...     spike_trains, dt=0.025, t_start=0.0, t_stop=0.1
+    ...     spike_times, dt=0.025, t_start=0.0, t_stop=0.1
     ... )
     >>> counts
     array([[1, 0],
@@ -270,7 +270,7 @@ def bin_spikes_in_time(
     True
     """
     dt = validate_dt(dt)
-    trains = [np.asarray(s, dtype=np.float64) for s in spike_trains]
+    trains = [np.asarray(s, dtype=np.float64) for s in spike_times]
     if epochs is not None:
         if t_start is not None or t_stop is not None:
             raise ValueError(

@@ -30,7 +30,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
-    from neurospatial._typing import PositionLike, SpikeTrainsLike
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.environment import Environment
 
@@ -293,7 +293,7 @@ warn_on_drop
     def fit(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
         positions: NDArray[np.float64] | None = None,
         *,
         speed: NDArray[np.float64] | None = None,
@@ -468,7 +468,7 @@ warn_on_drop
     def predict(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
         *,
         epochs: Any = None,
         spike_window: Any = None,
@@ -549,7 +549,7 @@ warn_on_drop
     def predict_summary(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
         *,
         epochs: Any = None,
         spike_window: Any = None,
@@ -636,7 +636,7 @@ warn_on_drop
     def score(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
         positions: NDArray[np.float64] | None = None,
         *,
         epochs: Any = None,
@@ -724,7 +724,7 @@ warn_on_drop
         ``spike_window``; no bin spans a pause, and spikes between runs are not
         counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial._typing import as_times_positions
+        from neurospatial._validation import validate_times_positions
 
         # Validate the reduction (`metric`) and error metric (`distance`) up
         # front, BEFORE any decode -- a typo should raise cheaply, not after a
@@ -742,9 +742,9 @@ warn_on_drop
 
         self._check_fitted()
 
-        # Normalize the ground-truth track to arrays so a PositionLike scores
-        # like the explicit (times, positions) pair.
-        times_arr, positions_arr = as_times_positions(times, positions)
+        times_arr, positions_arr = validate_times_positions(
+            times, positions, call="BayesianDecoder.score"
+        )
 
         result = self.predict(
             spike_times, times_arr, epochs=epochs, spike_window=spike_window

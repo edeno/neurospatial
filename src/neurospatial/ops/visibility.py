@@ -1148,9 +1148,9 @@ def compute_viewshed_trajectory(
 
 def visibility_occupancy(
     env: Environment,
+    times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
-    times: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
@@ -1177,6 +1177,11 @@ def visibility_occupancy(
     NDArray[np.float64], shape (n_bins,)
         Total time (seconds) each bin was visible.
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="visibility_occupancy"
+    )
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)

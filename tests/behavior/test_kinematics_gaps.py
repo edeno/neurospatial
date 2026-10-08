@@ -61,7 +61,7 @@ def test_speed_stats_exclude_pause(two_epoch_recording):
             for s in (slice(0, 5000), slice(5000, 10000))
         ]
     )
-    mean, minimum = pre_decision_speed_stats(r.positions, r.times)
+    mean, minimum = pre_decision_speed_stats(r.times, r.positions)
     assert mean == pytest.approx(np.mean(expected), rel=1e-12, abs=0)
     assert minimum == pytest.approx(np.min(expected), rel=1e-12, abs=0)
 
@@ -69,10 +69,10 @@ def test_speed_stats_exclude_pause(two_epoch_recording):
 def test_head_sweep_sums_runs(two_epoch_recording):
     r = two_epoch_recording
     expected = sum(
-        head_sweep_from_positions(r.positions[s], r.times[s])
+        head_sweep_from_positions(r.times[s], r.positions[s])
         for s in (slice(0, 5000), slice(5000, 10000))
     )
-    actual = head_sweep_from_positions(r.positions, r.times)
+    actual = head_sweep_from_positions(r.times, r.positions)
     assert expected > 0
     assert actual == pytest.approx(expected, rel=1e-12, abs=0)
 
@@ -81,8 +81,8 @@ def test_path_efficiency_nan_across_pause(two_epoch_recording):
     r = two_epoch_recording
     result = compute_path_efficiency(
         r.env,
-        r.positions,
         r.times,
+        r.positions,
         r.positions[-1],
         metric="euclidean",
         reference_speed=10,
@@ -93,7 +93,7 @@ def test_path_efficiency_nan_across_pause(two_epoch_recording):
     assert np.isfinite(result.shortest_length)
     assert np.isfinite(result.time_efficiency)
     first = compute_path_efficiency(
-        r.env, r.positions[:5000], r.times[:5000], r.positions[4999], metric="euclidean"
+        r.env, r.times[:5000], r.positions[:5000], r.positions[4999], metric="euclidean"
     )
     assert np.isfinite(first.traveled_length)
     assert np.isfinite(first.efficiency)
@@ -129,12 +129,12 @@ def test_goal_alignment_nan_outside_runs(two_epoch_recording):
     r = two_epoch_recording
     selected = [0, 1, 4999, 5000, 5001]
     actual = instantaneous_goal_alignment(
-        r.positions[selected], r.times[selected], r.positions[-1], min_speed=0
+        r.times[selected], r.positions[selected], r.positions[-1], min_speed=0
     )
     assert np.isnan(actual[2])
     assert np.isfinite(actual[[0, 1, 3, 4]]).all()
     full = instantaneous_goal_alignment(
-        r.positions, r.times, r.positions[-1], min_speed=0
+        r.times, r.positions, r.positions[-1], min_speed=0
     )
     velocity = r.positions[4999] - r.positions[4998]
     goal_vector = r.positions[-1] - r.positions[4999]
@@ -146,7 +146,7 @@ def test_goal_alignment_nan_outside_runs(two_epoch_recording):
 
 def test_approach_rate_masks_backward_gap(two_epoch_recording):
     r = two_epoch_recording
-    actual = approach_rate(r.positions, r.times, r.positions[-1])
+    actual = approach_rate(r.times, r.positions, r.positions[-1])
     assert np.isnan(actual[5000])
     assert np.isfinite(actual[[4999, 5001]]).all()
 
@@ -166,7 +166,7 @@ def test_curvature_and_smoothing_are_per_run(two_epoch_recording):
 )
 def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
     r = two_epoch_recording
-    result = function(r.positions, r.times, epochs=(500, 600))
+    result = function(positions=r.positions, times=r.times, epochs=(500, 600))
     assert np.isnan(result).all()
 
 
@@ -200,8 +200,8 @@ def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
     r = two_epoch_recording
     result = compute_goal_directed_metrics(
         r.env,
-        r.positions,
         r.times,
+        r.positions,
         r.positions[5000],
         goal_radius=0,
         epochs=(500, 600),
@@ -217,21 +217,21 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
     entry, duration = 10.0, 6.0
     selected = (times >= entry - duration) & (times < entry)
     expected_mean, expected_min = pre_decision_speed_stats(
-        positions[selected], times[selected], max_gap=None
+        times[selected], positions[selected], max_gap=None
     )
     expected_heading = pre_decision_heading_stats(
-        positions[selected], times[selected], max_gap=None
+        times[selected], positions[selected], max_gap=None
     )
     metrics = compute_pre_decision_metrics(
-        positions, times, entry, duration, max_gap=None
+        times, positions, entry, duration, max_gap=None
     )
     assert metrics.mean_speed == expected_mean
     assert metrics.min_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
-    trial = compute_vte_trial(positions, times, entry, duration, max_gap=None)
+    trial = compute_vte_trial(times, positions, entry, duration, max_gap=None)
     assert trial.mean_speed == expected_mean
     expected_sweep = head_sweep_from_positions(
-        positions[selected], times[selected], max_gap=None
+        times[selected], positions[selected], max_gap=None
     )
     assert expected_sweep > 0
     assert trial.head_sweep_magnitude == expected_sweep
@@ -248,17 +248,17 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     selected = (times >= entry - duration) & (times < entry)
     assert np.sum(selected) >= 3
     expected_speed = pre_decision_speed_stats(
-        positions[selected], times[selected], max_gap=None
+        times[selected], positions[selected], max_gap=None
     )[0]
     expected_sweep = head_sweep_from_positions(
-        positions[selected], times[selected], max_gap=None
+        times[selected], positions[selected], max_gap=None
     )
     assert expected_sweep > 0
     with pytest.warns(UserWarning, match="No variation"):
         result = compute_vte_session(
             env,
-            positions,
             times,
+            positions,
             decision_region="decision",
             trials=[Trial(times[0], times[-1], "source", "target", True)],
             window_duration=duration,

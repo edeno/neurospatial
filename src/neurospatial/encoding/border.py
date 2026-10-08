@@ -130,7 +130,7 @@ def border_score(
     >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[
     ...     0
     ... ]  # doctest: +SKIP
-    >>> coverage = compute_region_coverage(field_bins, env)  # doctest: +SKIP
+    >>> coverage = compute_region_coverage(env, field_bins)  # doctest: +SKIP
     >>> for wall_name in [
     ...     "north_wall",
     ...     "south_wall",
@@ -319,8 +319,8 @@ def border_score(
 
 
 def compute_region_coverage(
-    field_bins: NDArray[np.int64],
     env: EnvironmentProtocol,
+    field_bins: NDArray[np.int64],
     *,
     regions: list[str] | None = None,
 ) -> dict[str, float]:
@@ -370,7 +370,7 @@ def compute_region_coverage(
     >>> field_bins = np.where(firing_rate > 0)[0]
     >>>
     >>> # Compute coverage per wall
-    >>> coverage = compute_region_coverage(field_bins, env)
+    >>> coverage = compute_region_coverage(env, field_bins)
     >>> for wall, cov in sorted(coverage.items()):
     ...     print(f"{wall}: {cov:.1%}")  # doctest: +SKIP
     east: 0.0%

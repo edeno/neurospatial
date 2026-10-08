@@ -43,8 +43,8 @@ VTE analysis:
 >>> from neurospatial.behavior import compute_vte_session
 >>> result = compute_vte_session(
 ...     env,
-...     positions,
 ...     times,
+...     positions,
 ...     decision_region="center",
 ...     trials=trials,
 ...     window_duration=1.0,
@@ -315,8 +315,8 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
 
 
 def head_sweep_from_positions(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
     max_gap: float | None = 0.5,
@@ -363,9 +363,14 @@ def head_sweep_from_positions(
     >>> # Straight line trajectory (low head sweep)
     >>> times = np.linspace(0, 2, 20)
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.ones(20) * 50])
-    >>> head_sweep_from_positions(positions, times, min_speed=1.0)  # doctest: +SKIP
+    >>> head_sweep_from_positions(times, positions, min_speed=1.0)  # doctest: +SKIP
     0.0
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="head_sweep_from_positions"
+    )
     from neurospatial.environment.trajectory import observed_runs
     from neurospatial.ops.egocentric import heading_from_velocity
 
@@ -377,8 +382,8 @@ def head_sweep_from_positions(
     # pause, so an all-below-min_speed (all-NaN) heading is expected here, not an
     # error; head_sweep_magnitude handles the NaN.
     headings = heading_from_velocity(
-        positions,
         times,
+        positions,
         min_speed=min_speed,
         allow_all_nan=True,
         max_gap=max_gap,
@@ -551,8 +556,8 @@ def classify_vte(
 
 
 def compute_vte_trial(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
     *,
@@ -606,13 +611,18 @@ def compute_vte_trial(
     >>> times = np.linspace(0, 3, 90)
     >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
     >>> result = compute_vte_trial(
-    ...     positions, times, entry_time=2.0, window_duration=1.0
+    ...     times, positions, entry_time=2.0, window_duration=1.0
     ... )
     >>> result.window_start
     1.0
     >>> result.window_end
     2.0
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_vte_trial"
+    )
     from neurospatial.behavior.decisions import (
         extract_pre_decision_window,
         pre_decision_speed_stats,
@@ -620,8 +630,8 @@ def compute_vte_trial(
 
     # Extract pre-decision window
     window_positions, window_times = extract_pre_decision_window(
-        positions,
         times,
+        positions,
         entry_time,
         window_duration,
         max_gap=max_gap,
@@ -633,8 +643,8 @@ def compute_vte_trial(
 
     # Compute head sweep magnitude
     head_sweep = head_sweep_from_positions(
-        window_positions,
         window_times,
+        window_positions,
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
@@ -646,7 +656,7 @@ def compute_vte_trial(
         min_spd = 0.0
     else:
         mean_spd, min_spd = pre_decision_speed_stats(
-            window_positions, window_times, max_gap=max_gap, epochs=epochs
+            window_times, window_positions, max_gap=max_gap, epochs=epochs
         )
 
     return VTETrialResult(
@@ -664,8 +674,8 @@ def compute_vte_trial(
 
 def compute_vte_session(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     decision_region: str,
     trials: list[Trial],
@@ -732,8 +742,8 @@ def compute_vte_session(
     >>> from neurospatial.behavior import compute_vte_session
     >>> result = compute_vte_session(
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     decision_region="center",
     ...     trials=trials,
     ...     window_duration=1.0,
@@ -742,6 +752,11 @@ def compute_vte_session(
     ...     f"VTE trials: {result.n_vte_trials}/{len(result.trial_results)}"
     ... )  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_vte_session"
+    )
     from neurospatial.behavior.decisions import (
         decision_region_entry_time,
         extract_pre_decision_window,
@@ -784,8 +799,8 @@ def compute_vte_session(
         # Extract the pre-decision window from this trial's samples only, so
         # it stops at the trial start.
         window_positions, window_times = extract_pre_decision_window(
-            trial_positions,
             trial_times,
+            trial_positions,
             entry_time,
             window_duration,
             max_gap=max_gap,
@@ -807,8 +822,8 @@ def compute_vte_session(
 
         # Compute head sweep magnitude
         head_sweep = head_sweep_from_positions(
-            window_positions,
             window_times,
+            window_positions,
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
@@ -816,7 +831,7 @@ def compute_vte_session(
 
         # Compute speed statistics
         mean_spd, min_spd = pre_decision_speed_stats(
-            window_positions, window_times, max_gap=max_gap, epochs=epochs
+            window_times, window_positions, max_gap=max_gap, epochs=epochs
         )
 
         raw_head_sweeps.append(head_sweep)

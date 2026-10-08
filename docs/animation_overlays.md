@@ -190,8 +190,8 @@ from neurospatial.animation import VideoOverlay, calibrate_video
 
 # Calibrate video to environment coordinates
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     landmarks_px=arena_corners_px,    # Video pixel coordinates
     landmarks_env=arena_corners_env,  # Environment cm coordinates
 )
@@ -423,8 +423,8 @@ from neurospatial.animation import calibrate_video
 
 # Two endpoints of a scale bar (e.g., ruler in video)
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     scale_bar=((100, 200), (300, 200), 50.0),  # px1, px2, length_cm
 )
 ```
@@ -456,8 +456,8 @@ corners_env = np.array([
 ])
 
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     landmarks_px=corners_px,
     landmarks_env=corners_env,
 )
@@ -474,8 +474,8 @@ from neurospatial.animation import calibrate_video
 
 # 4 pixels = 1 cm
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     cm_per_px=0.25,
 )
 ```

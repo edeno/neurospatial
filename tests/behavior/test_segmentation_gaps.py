@@ -98,7 +98,7 @@ def test_trials_do_not_span_pause(pause_track):
 
 def test_velocity_epochs_do_not_span_pause(pause_track):
     r = pause_track
-    epochs = segment_by_velocity(r.positions, r.times, min_speed=5, min_duration=0.1)
+    epochs = segment_by_velocity(r.times, r.positions, min_speed=5, min_duration=0.1)
     assert epochs
     assert all(run.end_time <= 99.9 or run.start_time >= 1100 for run in epochs)
 
@@ -199,8 +199,10 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
         data = r.positions
         arguments = ()
         options = {"min_speed": 5, "min_duration": 0.1}
-    actual = function(data, r.times, *arguments, epochs=(0, 100), **options)
-    expected = function(data[selected], r.times[selected], *arguments, **options)
+    pair = (r.times, data) if kind == "velocity" else (data, r.times)
+    sliced_pair = tuple(array[selected] for array in pair)
+    actual = function(*pair, *arguments, epochs=(0, 100), **options)
+    expected = function(*sliced_pair, *arguments, **options)
     assert len(actual) == len(expected)
     for a, b in zip(actual, expected, strict=True):
         assert a.start_time == b.start_time
@@ -214,12 +216,12 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
 def test_pre_decision_window_stays_in_run(pause_track):
     r = pause_track
     positions, times = extract_pre_decision_window(
-        r.positions, r.times, entry_time=1100.5, window_duration=1001
+        r.times, r.positions, entry_time=1100.5, window_duration=1001
     )
     np.testing.assert_array_equal(times, r.times[1000:1005])
     np.testing.assert_array_equal(positions, r.positions[1000:1005])
     metrics = compute_pre_decision_metrics(
-        r.positions, r.times, entry_time=1100.5, window_duration=1001
+        r.times, r.positions, entry_time=1100.5, window_duration=1001
     )
     assert metrics.n_samples == 5
     assert metrics.window_duration <= 0.5
@@ -230,7 +232,7 @@ def test_pre_decision_window_stays_in_run(pause_track):
 def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
     r = pause_track
     positions, times = extract_pre_decision_window(
-        r.positions, r.times, entry_time=entry, window_duration=1001
+        r.times, r.positions, entry_time=entry, window_duration=1001
     )
     assert positions.shape == (0, 2)
     assert times.shape == (0,)
@@ -243,8 +245,8 @@ def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
 def test_window_callers_forward_epochs(pause_track, function):
     r = pause_track
     result = function(
-        r.positions,
         r.times,
+        r.positions,
         entry_time=1100.5,
         window_duration=1001,
         epochs=(0, 100),
@@ -261,7 +263,7 @@ def test_window_callers_forward_epochs(pause_track, function):
 def test_vte_trial_uses_only_entry_run(pause_track):
     r = pause_track
     result = compute_vte_trial(
-        r.positions, r.times, entry_time=1100.5, window_duration=1001
+        r.times, r.positions, entry_time=1100.5, window_duration=1001
     )
     assert result.mean_speed == 0
     assert result.min_speed == 0
@@ -279,8 +281,8 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
     with pytest.warns(UserWarning, match="No variation"):
         result = compute_vte_session(
             r.env,
-            positions,
             r.times,
+            positions,
             decision_region="target",
             trials=[trial],
             window_duration=1001,
@@ -294,8 +296,8 @@ def test_decision_analysis_forwards_windows(pause_track):
     r = pause_track
     result = compute_decision_analysis(
         r.env,
-        r.positions,
         r.times,
+        r.positions,
         decision_region="target",
         goal_regions=["source", "target"],
         pre_window=1001,
@@ -308,7 +310,7 @@ def test_decision_analysis_forwards_windows(pause_track):
 def test_max_gap_none_preserves_requested_window(pause_track):
     r = pause_track
     _, times = extract_pre_decision_window(
-        r.positions, r.times, entry_time=1100.5, window_duration=1001, max_gap=None
+        r.times, r.positions, entry_time=1100.5, window_duration=1001, max_gap=None
     )
     assert times.size == 10
     assert times[0] == 99.5

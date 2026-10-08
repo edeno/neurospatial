@@ -433,7 +433,7 @@ class TestSimulateTrajectoryLaps:
         # contains() in a loop, and it validates that positions can be mapped
         from neurospatial.ops import map_points_to_bins
 
-        bin_indices = map_points_to_bins(positions, simple_2d_env)
+        bin_indices = map_points_to_bins(simple_2d_env, positions)
 
         # All bin indices should be valid (>= 0)
         assert np.all(bin_indices >= 0), "Some positions could not be mapped to bins"

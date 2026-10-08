@@ -28,8 +28,8 @@ if TYPE_CHECKING:
 
 
 def calibrate_video(
-    video_path: str | Path,
     env: Environment,
+    video_path: str | Path,
     *,
     scale_bar: tuple[tuple[float, float], tuple[float, float], float] | None = None,
     landmarks_px: NDArray[np.float64] | None = None,
@@ -121,8 +121,8 @@ def calibrate_video(
     >>>
     >>> # Using scale bar method (scientific coordinates, Y-up)
     >>> calibration = calibrate_video(  # doctest: +SKIP
-    ...     "session.mp4",
     ...     env,
+    ...     "session.mp4",
     ...     scale_bar=((100, 200), (300, 200), 50.0),  # 200px = 50cm
     ... )
     >>>
@@ -132,23 +132,23 @@ def calibrate_video(
     ... )  # doctest: +SKIP
     >>> corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])  # doctest: +SKIP
     >>> calibration = calibrate_video(  # doctest: +SKIP
-    ...     "session.mp4",
     ...     env,
+    ...     "session.mp4",
     ...     landmarks_px=corners_px,
     ...     landmarks_env=corners_env,
     ... )
     >>>
     >>> # Using direct scale factor (most common)
     >>> calibration = calibrate_video(  # doctest: +SKIP
-    ...     "session.mp4",
     ...     env,
+    ...     "session.mp4",
     ...     cm_per_px=0.25,
     ... )
     >>>
     >>> # If overlay appears inverted, toggle flip_y
     >>> calibration = calibrate_video(  # doctest: +SKIP
-    ...     "session.mp4",
     ...     env,
+    ...     "session.mp4",
     ...     cm_per_px=0.25,
     ...     flip_y=False,  # For pixel-space environments
     ... )

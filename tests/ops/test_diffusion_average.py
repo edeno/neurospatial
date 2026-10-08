@@ -129,7 +129,7 @@ def _partial_coverage_pair():
     )
     idx = np.asarray(
         map_points_to_bins(
-            dst.bin_centers, src, tie_break=TieBreakStrategy.LOWEST_INDEX
+            src, dst.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
         )
     )
     outside = idx < 0

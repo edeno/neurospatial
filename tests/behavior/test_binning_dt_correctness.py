@@ -402,8 +402,8 @@ class TestSafeGatherVoronoiLabels:
 
         result = compute_decision_analysis(
             env,
-            traj,
             times,
+            traj,
             decision_region="center",
             goal_regions=["left", "right"],
         )
@@ -427,7 +427,7 @@ class TestDtGuards:
         times = duplicate_timestamps(n=11, total=5.0)
 
         with pytest.raises(ValueError, match="times"):
-            segment_by_velocity(positions, times, min_speed=2.0)
+            segment_by_velocity(times, positions, min_speed=2.0)
 
     def test_detect_runs_between_regions_duplicate_timestamp_raises(self):
         x = np.linspace(0, 100, 50)
@@ -470,7 +470,7 @@ class TestDtGuards:
         goal = np.array([100.0, 0.0])
 
         with pytest.raises(ValueError, match="times"):
-            approach_rate(positions, times, goal)
+            approach_rate(times, positions, goal)
 
     def test_approach_rate_nonfinite_times_raises(self):
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
@@ -478,7 +478,7 @@ class TestDtGuards:
         goal = np.array([100.0, 0.0])
 
         with pytest.raises(ValueError, match="times"):
-            approach_rate(positions, times, goal)
+            approach_rate(times, positions, goal)
 
     def test_mean_square_displacement_all_duplicate_times_raises(self):
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
@@ -486,7 +486,7 @@ class TestDtGuards:
         times = np.zeros(11)
 
         with pytest.raises(ValueError, match="increasing"):
-            mean_square_displacement(positions, times, metric="euclidean")
+            mean_square_displacement(times, positions, metric="euclidean")
 
     def test_mean_square_displacement_tolerates_single_duplicate(self):
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
@@ -495,7 +495,7 @@ class TestDtGuards:
         times[5] = times[4]
 
         result = mean_square_displacement(
-            positions, times, metric="euclidean", max_tau=5.0
+            times, positions, metric="euclidean", max_tau=5.0
         )
 
         assert len(result.lags) > 0
@@ -542,7 +542,7 @@ class TestPathEfficiencyCorrectness:
         times = np.linspace(0.0, 2.0, len(traj))
         goal = right[0]
 
-        result = compute_path_efficiency(env, traj, times, goal, metric="geodesic")
+        result = compute_path_efficiency(env, times, traj, goal, metric="geodesic")
 
         assert np.isinf(result.shortest_length)
         assert np.isnan(result.efficiency)
@@ -590,8 +590,8 @@ class TestPathEfficiencyCorrectness:
 
         result = compute_path_efficiency(
             env,
-            traj,
             times,
+            traj,
             goal,
             metric="geodesic",
             reference_speed=reference_speed,
@@ -600,14 +600,14 @@ class TestPathEfficiencyCorrectness:
         # The reported time efficiency must match the geodesic optimal distance,
         # not the (shorter) Euclidean straight line.
         expected_geodesic = time_efficiency(
-            traj,
             times,
+            traj,
             reference_speed=reference_speed,
             optimal_distance=result.shortest_length,
         )
         euclidean_value = time_efficiency(
-            traj,
             times,
+            traj,
             reference_speed=reference_speed,
             optimal_distance=euclidean_dist,
         )
@@ -620,8 +620,8 @@ class TestPathEfficiencyCorrectness:
         times = np.linspace(0.0, 5.0, 11)
 
         eff = time_efficiency(
-            positions,
             times,
+            positions,
             reference_speed=10.0,
             optimal_distance=np.inf,
         )

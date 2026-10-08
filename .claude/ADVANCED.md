@@ -170,8 +170,8 @@ from neurospatial.ops.transforms import VideoCalibration, calibrate_from_landmar
 
 # Method 1: Scale bar calibration (recommended)
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     scale_bar=((100, 200), (300, 200), 50.0),  # Two points + known length (cm)
 )
 
@@ -179,17 +179,17 @@ calibration = calibrate_video(
 corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]])  # Video pixels
 corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])       # Environment cm
 calibration = calibrate_video(
-    "session.mp4",
     env,
+    "session.mp4",
     landmarks_px=corners_px,
     landmarks_env=corners_env,
 )
 
 # Method 3: Direct scale factor (most common)
-calibration = calibrate_video("session.mp4", env, cm_per_px=0.25)
+calibration = calibrate_video(env, "session.mp4", cm_per_px=0.25)
 
 # If overlay appears inverted, toggle flip_y
-calibration = calibrate_video("session.mp4", env, cm_per_px=0.25, flip_y=False)
+calibration = calibrate_video(env, "session.mp4", cm_per_px=0.25, flip_y=False)
 ```
 
 ### Video Overlay Usage
@@ -506,7 +506,7 @@ viewsheds = compute_viewshed_trajectory(
 
 # Accumulate time each bin was visible
 occupancy = visibility_occupancy(
-    env, viewsheds, times=timestamps  # Weighted by time spent
+    env=env, positions=viewsheds, times=timestamps  # Weighted by time spent
 )
 ```
 

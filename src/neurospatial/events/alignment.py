@@ -463,7 +463,7 @@ def peri_event_histogram(
 
 
 def population_peri_event_histogram(
-    spike_trains: Sequence[NDArray[np.float64]] | SpikeTrainsLike,
+    spike_times: Sequence[NDArray[np.float64]] | SpikeTrainsLike,
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     *,
@@ -480,7 +480,7 @@ def population_peri_event_histogram(
 
     Parameters
     ----------
-    spike_trains : sequence of NDArray[np.float64], or pynapple TsGroup
+    spike_times : sequence of NDArray[np.float64], or pynapple TsGroup
         Spike times in seconds, one 1-D array of shape (n_spikes_for_unit,)
         per unit, or a labelled spike group such as a pynapple ``TsGroup``.
         A group's index becomes the result's ``unit_ids``.
@@ -504,7 +504,7 @@ def population_peri_event_histogram(
         when the recording has gaps or edges inside your event windows.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per unit in the
-        same order as ``spike_trains``. Stored on the result's ``unit_ids``
+        same order as ``spike_times``. Stored on the result's ``unit_ids``
         field. Defaults to ``np.arange(n_units)``, or to the group's index for
         a labelled group. A wrong-length or repeated value raises
         ``ValueError``, and so does a value that differs from a labelled
@@ -527,7 +527,7 @@ def population_peri_event_histogram(
     Raises
     ------
     ValueError
-        If spike_trains is empty, event_times is empty, window is inverted,
+        If spike_times is empty, event_times is empty, window is inverted,
         bin_size is non-positive, time windows are invalid, or all events are
         dropped.
 
@@ -549,13 +549,13 @@ def population_peri_event_histogram(
 
     Compute population PSTH for multi-unit recording:
 
-    >>> spike_trains = [
+    >>> spike_times = [
     ...     np.array([9.8, 10.1, 10.3]),  # Unit 1
     ...     np.array([9.9, 10.0, 10.5, 10.8]),  # Unit 2
     ... ]
     >>> stim_times = np.array([10.0, 20.0, 30.0])
     >>> result = population_peri_event_histogram(
-    ...     spike_trains, stim_times, window=(-0.5, 1.0), bin_size=0.1
+    ...     spike_times, stim_times, window=(-0.5, 1.0), bin_size=0.1
     ... )
     >>> print(f"{result.n_units} units, {result.n_events} events")
     2 units, 3 events
@@ -568,7 +568,7 @@ def population_peri_event_histogram(
     # yields its keys, not its trains).
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
 
-    trains, extracted_ids = as_spike_trains_with_ids(spike_trains)
+    trains, extracted_ids = as_spike_trains_with_ids(spike_times)
 
     # Validate spike_trains
     if len(trains) == 0:

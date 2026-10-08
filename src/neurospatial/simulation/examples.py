@@ -789,7 +789,7 @@ def boundary_cell_session(
 
     # Generate spikes for all cells
     spike_trains = generate_population_spikes(
-        models, positions, times, seed=seed, show_progress=False
+        models, times, positions, seed=seed, show_progress=False
     )
 
     # Create metadata
@@ -1020,7 +1020,7 @@ def grid_cell_session(
 
     # Generate spikes for all cells
     spike_trains = generate_population_spikes(
-        models, positions, times, seed=seed, show_progress=False
+        models, times, positions, seed=seed, show_progress=False
     )
 
     # Create metadata

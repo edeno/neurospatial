@@ -211,7 +211,7 @@ class TestValidateSimulation:
         # Validate with individual parameters
         result = validate_simulation(
             env=session.env,
-            spike_trains=session.spike_trains,
+            spike_times=session.spike_trains,
             positions=session.positions,
             times=session.times,
             ground_truth=session.ground_truth,
@@ -362,7 +362,7 @@ class TestValidateSimulation:
         with pytest.raises(ValueError, match="ground_truth"):
             validate_simulation(
                 env=session.env,
-                spike_trains=session.spike_trains,
+                spike_times=session.spike_trains,
                 positions=session.positions,
                 times=session.times,
                 # Missing ground_truth
@@ -405,7 +405,7 @@ def test_detected_center_ignores_unresolved_bins():
 
     result = validate_simulation(
         env=env,
-        spike_trains=[spike_times],
+        spike_times=[spike_times],
         positions=positions,
         times=times,
         ground_truth={
@@ -426,7 +426,7 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
     near_center = np.linalg.norm(positions - center, axis=1) < 3.0
     result = validate_simulation(
         env=hairpin_track_env,
-        spike_trains=[times[near_center][::5]],
+        spike_times=[times[near_center][::5]],
         positions=positions,
         times=times,
         ground_truth={"cell_0": {"center": center, "width": 15.0, "max_rate": 10.0}},

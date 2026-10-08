@@ -68,7 +68,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
-    from neurospatial._typing import PositionLike, SpikeTrainsLike
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -1143,7 +1143,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         # Cast to EnvironmentProtocol for type checker (Environment implements it)
         env = cast("EnvironmentProtocol", self.env)
-        return compute_region_coverage(field_bins, env, regions=regions)
+        return compute_region_coverage(env, field_bins, regions=regions)
 
     def has_place_field(
         self,
@@ -2630,7 +2630,7 @@ def _compute_glm_spatial_rates(
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
-    times: NDArray[np.float64] | PositionLike,
+    times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
@@ -2969,14 +2969,6 @@ default="diffusion_kde"
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
 
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
-    # normalizing to plain float64 arrays here at the public entry. The array
-    # path is unchanged byte-for-byte (plain arrays pass straight through).
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
-
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
@@ -3134,7 +3126,7 @@ default="diffusion_kde"
 def compute_spatial_rates(
     env: Environment,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
-    times: NDArray[np.float64] | PositionLike,
+    times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
@@ -3553,12 +3545,6 @@ default="diffusion_kde"
         context="compute_spatial_rates",
         input_ids=extracted_unit_ids,
     )
-
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame) OR explicit (times, positions) arrays. Array path unchanged.
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)

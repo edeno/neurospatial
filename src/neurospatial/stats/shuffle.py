@@ -549,8 +549,8 @@ def shuffle_place_fields_circular(
 
 
 def shuffle_place_fields_circular_2d(
-    encoding_models: NDArray[np.float64],
     env: Environment,
+    encoding_models: NDArray[np.float64],
     *,
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
@@ -600,7 +600,7 @@ def shuffle_place_fields_circular_2d(
     ...     (3, env.n_bins)
     ... )  # doctest: +SKIP
     >>> for i, shuffled in enumerate(  # doctest: +SKIP
-    ...     shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=3, rng=42)
+    ...     shuffle_place_fields_circular_2d(env, encoding_models, n_shuffles=3, rng=42)
     ... ):
     ...     print(f"Shuffle {i}: shape={shuffled.shape}")
     Shuffle 0: shape=(3, 36)

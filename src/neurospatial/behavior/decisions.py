@@ -49,8 +49,8 @@ Decision analysis:
 >>> from neurospatial.behavior import compute_decision_analysis
 >>> result = compute_decision_analysis(
 ...     env,
-...     positions,
 ...     times,
+...     positions,
 ...     decision_region="center",
 ...     goal_regions=["left", "right"],
 ...     pre_window=1.0,
@@ -351,8 +351,8 @@ def decision_region_entry_time(
 
 
 def extract_pre_decision_window(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
     *,
@@ -402,10 +402,15 @@ def extract_pre_decision_window(
     Examples
     --------
     >>> window_pos, window_times = extract_pre_decision_window(
-    ...     positions, times, entry_time=5.0, window_duration=2.0
+    ...     times, positions, entry_time=5.0, window_duration=2.0
     ... )  # doctest: +SKIP
     >>> # Returns data from t=3.0 to t<5.0
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="extract_pre_decision_window"
+    )
     positions = np.asarray(positions)
     times = np.asarray(times)
     if len(positions) != len(times):
@@ -425,8 +430,8 @@ def extract_pre_decision_window(
 
 
 def pre_decision_heading_stats(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
     max_gap: float | None = 0.5,
@@ -480,11 +485,16 @@ def pre_decision_heading_stats(
     Examples
     --------
     >>> mean_dir, circ_var, mrl = pre_decision_heading_stats(
-    ...     positions, times, min_speed=5.0
+    ...     times, positions, min_speed=5.0
     ... )  # doctest: +SKIP
     >>> if circ_var > 0.5:
     ...     print("High heading variability")  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="pre_decision_heading_stats"
+    )
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     positions = np.asarray(positions)
@@ -497,8 +507,8 @@ def pre_decision_heading_stats(
         return 0.0, 1.0, 0.0
 
     headings, speed = _velocity_heading_and_speed(
-        positions,
         times,
+        positions,
         interval_mask=interval_mask,
     )
     valid_headings = headings[speed >= min_speed]
@@ -521,8 +531,8 @@ def pre_decision_heading_stats(
 
 
 def pre_decision_speed_stats(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -562,11 +572,16 @@ def pre_decision_speed_stats(
     Examples
     --------
     >>> mean_speed, min_speed = pre_decision_speed_stats(
-    ...     positions, times
+    ...     times, positions
     ... )  # doctest: +SKIP
     >>> if min_speed < 1.0:
     ...     print("Animal paused during pre-decision window")  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="pre_decision_speed_stats"
+    )
     positions = np.asarray(positions)
     times = np.asarray(times)
 
@@ -589,8 +604,8 @@ def pre_decision_speed_stats(
 
 
 def compute_pre_decision_metrics(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
     *,
@@ -637,15 +652,20 @@ def compute_pre_decision_metrics(
     Examples
     --------
     >>> metrics = compute_pre_decision_metrics(
-    ...     positions, times, entry_time=5.0, window_duration=2.0
+    ...     times, positions, entry_time=5.0, window_duration=2.0
     ... )  # doctest: +SKIP
     >>> if metrics.suggests_deliberation():
     ...     print("Possible VTE behavior")  # doctest: +SKIP
     """
     # Extract window
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_pre_decision_metrics"
+    )
     window_pos, window_times = extract_pre_decision_window(
-        positions,
         times,
+        positions,
         entry_time,
         window_duration,
         max_gap=max_gap,
@@ -666,12 +686,12 @@ def compute_pre_decision_metrics(
 
     # Compute heading stats
     mean_dir, circ_var, mrl = pre_decision_heading_stats(
-        window_pos, window_times, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        window_times, window_pos, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     # Compute speed stats
     mean_speed, min_speed_val = pre_decision_speed_stats(
-        window_pos, window_times, max_gap=max_gap, epochs=epochs
+        window_times, window_pos, max_gap=max_gap, epochs=epochs
     )
 
     # Actual window duration
@@ -952,8 +972,8 @@ def _detect_boundary_crossings_contiguous(
 
 def compute_decision_analysis(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     decision_region: str,
     goal_regions: list[str],
@@ -1014,13 +1034,18 @@ def compute_decision_analysis(
     --------
     >>> result = compute_decision_analysis(
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     decision_region="center",
     ...     goal_regions=["left", "right"],
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_decision_analysis"
+    )
     positions = np.asarray(positions)
     times = np.asarray(times)
 
@@ -1058,8 +1083,8 @@ def compute_decision_analysis(
 
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(
-        positions,
         times,
+        positions,
         entry_time,
         pre_window,
         min_speed=min_speed,

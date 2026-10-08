@@ -1740,7 +1740,7 @@ class TestComputeViewRateNaNHandling:
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )
-        headings = heading_from_velocity(positions, times, min_speed=2.0)
+        headings = heading_from_velocity(times, positions, min_speed=2.0)
         rng = np.random.default_rng(3)
         rates = 5.0 + 5.0 * rng.random(len(times))
         spike_times = generate_poisson_spikes(rates, times, seed=7)

@@ -103,7 +103,7 @@ class HeadDirectionCellModel:
     ... )
     >>>
     >>> # Compute heading from velocity
-    >>> headings = heading_from_velocity(positions, times, min_speed=1.0)
+    >>> headings = heading_from_velocity(times, positions, min_speed=1.0)
     >>>
     >>> # Compute HD cell firing
     >>> hd_cell = HeadDirectionCellModel(preferred_direction=0.0)

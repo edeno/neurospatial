@@ -680,7 +680,7 @@ def _validate_velocity_times(
         raise ValueError(
             f"times must be numeric timestamps; got {times!r}.\n"
             "Why: velocities need seconds between consecutive samples.\n"
-            "Fix: pass heading_from_velocity(positions, times) with a numeric "
+            "Fix: pass heading_from_velocity(times, positions) with a numeric "
             "1-D timestamp array, one timestamp per position."
         ) from error
     problems = []
@@ -710,7 +710,7 @@ def _validate_velocity_times(
             "; ".join(problems) + ".\n"
             "Why: each position needs a finite timestamp and a positive "
             "elapsed interval for velocity.\n"
-            "Fix: pass heading_from_velocity(positions, times) with a 1-D "
+            "Fix: pass heading_from_velocity(times, positions) with a 1-D "
             "timestamp array of matching length; remove non-finite samples "
             "and sort/de-duplicate positions and times together."
         )
@@ -718,8 +718,8 @@ def _validate_velocity_times(
 
 
 def _velocity_heading_and_speed(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     interval_mask: NDArray[np.bool_],
     bandwidth: float = 0.0,
@@ -743,6 +743,11 @@ def _velocity_heading_and_speed(
         Radians and position units per second. The final interval's velocity
         is repeated at each run's last sample; samples in no run are NaN.
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="_velocity_heading_and_speed"
+    )
     from neurospatial._intervals import run_sample_bounds
     from neurospatial._validation import validate_finite
 
@@ -774,8 +779,8 @@ def _velocity_heading_and_speed(
 
 
 def heading_from_velocity(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -866,17 +871,22 @@ def heading_from_velocity(
 
     >>> t = np.linspace(0, 10, 100)
     >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
-    >>> headings = heading_from_velocity(positions, t)
+    >>> headings = heading_from_velocity(t, positions)
     >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
     True
 
     Trajectory moving North:
 
     >>> positions = np.column_stack([np.zeros_like(t), t * 10])
-    >>> headings = heading_from_velocity(positions, t)
+    >>> headings = heading_from_velocity(t, positions)
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="heading_from_velocity"
+    )
     from neurospatial._intervals import run_sample_bounds
     from neurospatial.environment.trajectory import observed_interval_mask
 
@@ -884,7 +894,7 @@ def heading_from_velocity(
     times = _validate_velocity_times(times, len(positions))
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     heading, speed = _velocity_heading_and_speed(
-        positions, times, interval_mask=interval_mask, bandwidth=bandwidth
+        times, positions, interval_mask=interval_mask, bandwidth=bandwidth
     )
     in_run = np.r_[interval_mask, False] | np.r_[False, interval_mask]
     low_speed_mask = speed < min_speed

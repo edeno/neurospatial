@@ -704,7 +704,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Uniform rate → zero variance → coherence undefined (NaN)
         assert np.isnan(coherence), f"Expected NaN for uniform rate, got {coherence}"
@@ -724,7 +724,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Random noise should have low coherence
         assert coherence < 0.5, (
@@ -750,7 +750,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Smooth field should have high coherence
         assert coherence > 0.7, (
@@ -768,7 +768,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Should return NaN (no variance)
         assert np.isnan(coherence), f"Expected NaN for zero firing, got {coherence}"
@@ -787,7 +787,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Should handle NaNs gracefully (compute coherence on valid bins only)
         assert not np.isnan(coherence) or np.all(np.isnan(firing_rate)), (
@@ -808,8 +808,8 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence_pearson = rate_map_coherence(firing_rate, env, method="pearson")
-        coherence_spearman = rate_map_coherence(firing_rate, env, method="spearman")
+        coherence_pearson = rate_map_coherence(env, firing_rate, method="pearson")
+        coherence_spearman = rate_map_coherence(env, firing_rate, method="spearman")
 
         # Both should be valid
         assert -1.0 <= coherence_pearson <= 1.0
@@ -825,7 +825,7 @@ class TestRateMapCoherence:
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
 
         # Should return scalar
         assert np.ndim(coherence) == 0, "Coherence should be scalar"
@@ -844,7 +844,7 @@ class TestRateMapCoherence:
 
             from neurospatial.encoding._field_metrics import rate_map_coherence
 
-            coherence = rate_map_coherence(firing_rate, env)
+            coherence = rate_map_coherence(env, firing_rate)
 
             # Coherence should be in valid range or NaN
             if not np.isnan(coherence):
@@ -1181,7 +1181,7 @@ class TestFieldShapeMetrics:
 
         from neurospatial.encoding._field_metrics import field_shape_metrics
 
-        shape = field_shape_metrics(firing_rate, field_bins, env)
+        shape = field_shape_metrics(env, firing_rate, field_bins)
 
         # Circular field should have reasonably low eccentricity
         # Random sampling makes perfect circles unlikely, so use generous threshold
@@ -1213,7 +1213,7 @@ class TestFieldShapeMetrics:
 
             from neurospatial.encoding._field_metrics import field_shape_metrics
 
-            shape = field_shape_metrics(firing_rate, field_bins, env)
+            shape = field_shape_metrics(env, firing_rate, field_bins)
 
             # Elongated field should have high eccentricity
             assert shape["eccentricity"] > 0.3
@@ -1234,7 +1234,7 @@ class TestFieldShapeMetrics:
 
         with np.testing.suppress_warnings() as sup:
             sup.filter(UserWarning, "field_shape_metrics currently only supports 2D")
-            shape = field_shape_metrics(firing_rate, field_bins, env)
+            shape = field_shape_metrics(env, firing_rate, field_bins)
 
         # Should return NaN values
         assert np.isnan(shape["eccentricity"])
@@ -2025,7 +2025,7 @@ class TestRateMapCoherenceEdgeCases:
         firing_rate = rng.random(env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"firing_rate\.shape must be"):
-            rate_map_coherence(firing_rate, env)
+            rate_map_coherence(env, firing_rate)
 
     def test_rate_map_coherence_all_nan_returns_nan(self):
         """Test rate_map_coherence returns NaN when all values are NaN."""
@@ -2037,7 +2037,7 @@ class TestRateMapCoherenceEdgeCases:
 
         firing_rate = np.full(env.n_bins, np.nan)
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
         assert np.isnan(coherence)
 
     def test_rate_map_coherence_insufficient_points_returns_nan(self):
@@ -2052,7 +2052,7 @@ class TestRateMapCoherenceEdgeCases:
         firing_rate = np.full(env.n_bins, np.nan)
         firing_rate[0] = 1.0
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
         assert np.isnan(coherence)
 
     def test_rate_map_coherence_zero_variance_returns_nan(self):
@@ -2070,7 +2070,7 @@ class TestRateMapCoherenceEdgeCases:
         # Constant firing rate (zero variance)
         firing_rate = np.ones(env.n_bins) * 5.0
 
-        coherence = rate_map_coherence(firing_rate, env)
+        coherence = rate_map_coherence(env, firing_rate)
         # May return NaN for zero variance
         assert isinstance(coherence, (float, np.floating))
 
@@ -2087,7 +2087,7 @@ class TestRateMapCoherenceEdgeCases:
         with pytest.raises(
             ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
         ):
-            rate_map_coherence(firing_rate, env, method="invalid")
+            rate_map_coherence(env, firing_rate, method="invalid")
 
 
 class TestSelectivityEdgeCases:
@@ -2202,7 +2202,7 @@ class TestFieldShapeMetricsEdgeCases:
         firing_rate = rng.random(env.n_bins)
         field_bins = np.array([], dtype=np.int64)
 
-        result = field_shape_metrics(firing_rate, field_bins, env)
+        result = field_shape_metrics(env, firing_rate, field_bins)
 
         # Should return dict with NaN values
         assert isinstance(result, dict)
@@ -2219,7 +2219,7 @@ class TestFieldShapeMetricsEdgeCases:
         firing_rate = np.full(env.n_bins, np.nan)
         field_bins = np.array([10, 20, 30])
 
-        result = field_shape_metrics(firing_rate, field_bins, env)
+        result = field_shape_metrics(env, firing_rate, field_bins)
 
         # Should return dict with NaN values
         assert isinstance(result, dict)

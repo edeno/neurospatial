@@ -178,7 +178,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 25))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 
 # Step 2: Decode position in a single call (encode -> bin -> decode).

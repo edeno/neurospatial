@@ -260,7 +260,7 @@ from neurospatial.behavior.navigation import compute_path_efficiency
 
 # Compute path efficiency for a trajectory
 result = compute_path_efficiency(
-    env, positions, times, goal_position,
+    env, times, positions, goal_position,
     metric="geodesic",       # Respects walls/obstacles
     reference_speed=20.0,    # Optional: for time efficiency
 )
@@ -282,7 +282,7 @@ if result.is_efficient(threshold=0.8):
 from neurospatial.behavior.navigation import compute_goal_directed_metrics, goal_bias
 
 # Compute full goal-directed analysis
-result = compute_goal_directed_metrics(env, positions, times, goal_position)
+result = compute_goal_directed_metrics(env, times, positions, goal_position)
 
 # Access results
 print(f"Goal bias: {result.goal_bias:.2f}")  # Range [-1, 1]
@@ -293,7 +293,7 @@ if result.is_goal_directed(threshold=0.3):
     print("Goal-directed navigation detected!")
 
 # Quick goal bias calculation
-bias = goal_bias(positions, times, goal_position, min_speed=5.0)
+bias = goal_bias(times, positions, goal_position, min_speed=5.0)
 # bias > 0: approaching goal; bias < 0: moving away
 ```
 
@@ -305,7 +305,7 @@ from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 # Analyze VTE behavior at decision points across a session
 result = compute_vte_session(
-    env, positions, times,
+    env, times, positions,
     decision_region="center",  # Region name in env.regions
     trials=trials,
     window_duration=1.0,       # Pre-decision window (seconds)
@@ -324,7 +324,7 @@ for trial in result.trial_results:
 
 # Single trial analysis (no z-scoring)
 single_result = compute_vte_trial(
-    positions, times,
+    times, positions,
     entry_time=5.0,        # Time of decision region entry
     window_duration=1.0,
     min_speed=5.0,
@@ -343,7 +343,7 @@ from neurospatial.behavior.decisions import (
 
 # Full decision analysis for a trial
 result = compute_decision_analysis(
-    env, positions, times,
+    env, times, positions,
     decision_region="center",
     goal_regions=["left", "right"],
     pre_window=1.0,
@@ -383,7 +383,7 @@ import numpy as np
 
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
-headings = heading_from_velocity(positions, times, min_speed=5.0, bandwidth=3.0)  # cm/s
+headings = heading_from_velocity(times, positions, min_speed=5.0, bandwidth=3.0)  # cm/s
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)
@@ -809,7 +809,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[animal1, animal2])
 from neurospatial.animation import calibrate_video, VideoOverlay
 
 # Calibrate video to environment coordinates
-calibration = calibrate_video("session.mp4", env, cm_per_px=0.25)
+calibration = calibrate_video(env, "session.mp4", cm_per_px=0.25)
 
 # Create video overlay
 video_overlay = VideoOverlay(

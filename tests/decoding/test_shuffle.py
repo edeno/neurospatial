@@ -710,7 +710,7 @@ class TestShufflePlaceFieldsCircular2D:
         n_shuffles = 10
         shuffles = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=n_shuffles, rng=42
+                env_2d, encoding_models_2d, n_shuffles=n_shuffles, rng=42
             )
         )
         assert len(shuffles) == n_shuffles
@@ -723,7 +723,7 @@ class TestShufflePlaceFieldsCircular2D:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         for shuffled in shuffle_place_fields_circular_2d(
-            encoding_models_2d, env_2d, n_shuffles=10, rng=42
+            env_2d, encoding_models_2d, n_shuffles=10, rng=42
         ):
             for i in range(encoding_models_2d.shape[0]):
                 original_sorted = sorted(encoding_models_2d[i, :].tolist())
@@ -738,12 +738,12 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
@@ -759,12 +759,12 @@ class TestShufflePlaceFieldsCircular2D:
         rng2 = np.random.default_rng(42)
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=rng1
+                env_2d, encoding_models_2d, n_shuffles=5, rng=rng1
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=rng2
+                env_2d, encoding_models_2d, n_shuffles=5, rng=rng2
             )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
@@ -778,12 +778,12 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=123
+                env_2d, encoding_models_2d, n_shuffles=5, rng=123
             )
         )
         any_different = any(
@@ -800,7 +800,7 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=None
+                env_2d, encoding_models_2d, n_shuffles=5, rng=None
             )
         )
         assert len(shuffles) == 5
@@ -820,7 +820,7 @@ class TestShufflePlaceFieldsCircular2D:
         with pytest.raises(ValueError, match="2D"):
             list(
                 shuffle_place_fields_circular_2d(
-                    encoding_models, env_1d, n_shuffles=5, rng=42
+                    env_1d, encoding_models, n_shuffles=5, rng=42
                 )
             )
 
@@ -839,7 +839,7 @@ class TestShufflePlaceFieldsCircular2D:
         with pytest.raises(ValueError, match="inactive bins"):
             list(
                 shuffle_place_fields_circular_2d(
-                    encoding_models, env, n_shuffles=5, rng=42
+                    env, encoding_models, n_shuffles=5, rng=42
                 )
             )
 

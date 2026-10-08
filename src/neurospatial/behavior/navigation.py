@@ -1201,8 +1201,11 @@ def heading_direction_labels(
                 "must be provided."
             )
 
-        positions_arr = np.asarray(positions, dtype=np.float64)
-        times_arr = np.asarray(times, dtype=np.float64)
+        from neurospatial._validation import validate_times_positions
+
+        times_arr, positions_arr = validate_times_positions(
+            times, positions, call="heading_direction_labels", order="positions, times"
+        )
         n_samples = len(times_arr)
 
         from neurospatial.behavior._kinematics import interval_velocity
@@ -1382,8 +1385,8 @@ def shortest_path_length(
 
 
 def time_efficiency(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     reference_speed: float,
     optimal_distance: float,
@@ -1414,10 +1417,15 @@ def time_efficiency(
     Examples
     --------
     >>> eff = time_efficiency(
-    ...     positions, times, reference_speed=20.0, optimal_distance=50.0
+    ...     times, positions, reference_speed=20.0, optimal_distance=50.0
     ... )  # doctest: +SKIP
     >>> print(f"Time efficiency: {eff:.1%}")  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="time_efficiency"
+    )
     if len(positions) < 2:
         return np.nan
 
@@ -1613,8 +1621,8 @@ def subgoal_efficiency(
 
 def compute_path_efficiency(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
@@ -1667,9 +1675,14 @@ def compute_path_efficiency(
 
     Examples
     --------
-    >>> result = compute_path_efficiency(env, positions, times, goal)  # doctest: +SKIP
+    >>> result = compute_path_efficiency(env, times, positions, goal)  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_path_efficiency"
+    )
     if len(positions) != len(times):
         raise ValueError(
             f"positions and times must have same length. "
@@ -1700,8 +1713,8 @@ def compute_path_efficiency(
     time_eff = None
     if reference_speed is not None and len(positions) >= 2:
         time_eff = time_efficiency(
-            positions,
             times,
+            positions,
             reference_speed=reference_speed,
             optimal_distance=shortest,
         )
@@ -1799,8 +1812,8 @@ def goal_direction(
 
 
 def instantaneous_goal_alignment(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
@@ -1848,10 +1861,15 @@ def instantaneous_goal_alignment(
     >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
     >>> times = np.linspace(0, 10, 21)
     >>> goal = np.array([100.0, 0.0])
-    >>> alignment = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
+    >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
     >>> bool(np.nanmean(alignment) > 0.9)
     True
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="instantaneous_goal_alignment"
+    )
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     positions = np.asarray(positions)
@@ -1865,8 +1883,8 @@ def instantaneous_goal_alignment(
         return np.full(len(positions), np.nan)
 
     velocity_heading, speed = _velocity_heading_and_speed(
-        positions,
         times,
+        positions,
         interval_mask=interval_mask,
     )
     velocity_heading[speed < min_speed] = np.nan
@@ -1879,8 +1897,8 @@ def instantaneous_goal_alignment(
 
 
 def goal_bias(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
@@ -1930,11 +1948,14 @@ def goal_bias(
     >>> positions = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
     >>> times = np.linspace(0, 10, 101)
     >>> goal = np.array([100.0, 0.0])
-    >>> goal_bias(positions, times, goal, min_speed=0.0) > 0.8
+    >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
     True
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(times, positions, call="goal_bias")
     alignment = instantaneous_goal_alignment(
-        positions, times, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     valid_alignment = alignment[~np.isnan(alignment)]
@@ -1946,8 +1967,8 @@ def goal_bias(
 
 
 def approach_rate(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
@@ -2009,10 +2030,13 @@ def approach_rate(
     >>> positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
     >>> times = np.linspace(0, 5, 11)
     >>> goal = np.array([100.0, 0.0])
-    >>> rates = approach_rate(positions, times, goal)
+    >>> rates = approach_rate(times, positions, goal)
     >>> bool(np.nanmean(rates) < 0)  # Negative = approaching
     True
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(times, positions, call="approach_rate")
     positions = np.asarray(positions)
     times = np.asarray(times)
     goal = np.asarray(goal)
@@ -2056,8 +2080,8 @@ def approach_rate(
 
 def compute_goal_directed_metrics(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
@@ -2114,10 +2138,15 @@ def compute_goal_directed_metrics(
     Examples
     --------
     >>> result = compute_goal_directed_metrics(
-    ...     env, positions, times, goal
+    ...     env, times, positions, goal
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_goal_directed_metrics"
+    )
     positions = np.asarray(positions)
     times = np.asarray(times)
     goal = np.asarray(goal)
@@ -2130,11 +2159,11 @@ def compute_goal_directed_metrics(
         )
 
     bias = goal_bias(
-        positions, times, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     rates = approach_rate(
-        positions, times, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
+        times, positions, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
     )
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 

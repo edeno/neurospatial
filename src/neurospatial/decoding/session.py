@@ -28,7 +28,6 @@ _DROP_WARN_THRESHOLD = 0.5
 _SUMMARY_DEFAULT_TIME_CHUNK = 1024
 
 if TYPE_CHECKING:
-    from neurospatial._typing import PositionLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.environment import Environment
 
@@ -95,7 +94,7 @@ def _warn_if_spikes_out_of_window(
 def decode_session(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike | PositionLike,
+    times: ArrayLike,
     positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
@@ -388,7 +387,7 @@ def decode_session(
 def _build_encoding_model(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike | PositionLike,
+    times: ArrayLike,
     positions: NDArray[np.float64] | None,
     *,
     dt: float,
@@ -432,7 +431,6 @@ def _build_encoding_model(
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
-    from neurospatial._typing import _is_position_like, as_times_positions
     from neurospatial.decoding._binning import validate_dt
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
@@ -468,30 +466,7 @@ def _build_encoding_model(
     # Normalize to the canonical numpy scalar type for downstream casts.
     dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
-    # --- Normalize inputs ---
-    # Boundary adapters: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame) OR explicit (times, positions) arrays, and a SpikeTrainsLike
-    # group OR the canonical array formats. The scientific core below is
-    # array-only; a plain-array caller is byte-for-byte unchanged. Decoding
-    # results carry no unit axis, so extracted unit ids are intentionally
-    # dropped here (identity is surfaced by the encoding path, not the decode).
-    #
-    # The position track is required only for the ENCODE step. When
-    # ``encoding_models`` is supplied (passthrough decode) the positions are
-    # never touched, so a caller may omit ``positions`` entirely — the
-    # fitted-model decode path (e.g. ``BayesianDecoder.predict``) has no
-    # position track to pass. In that one case we normalize only ``times``
-    # (still handling a PositionLike, whose positions are simply unused);
-    # otherwise the full ``(times, positions)`` normalization runs unchanged, so
-    # every existing caller is byte-for-byte identical.
-    if (
-        positions is None
-        and encoding_models is not None
-        and not _is_position_like(times)
-    ):
-        times = np.asarray(times, dtype=np.float64)
-    else:
-        times, positions = as_times_positions(times, positions)
+    # Normalize array timestamps and spike groups at the boundary.
     trains, _ = as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
@@ -615,7 +590,7 @@ def _build_encoding_model(
 def _encode_and_bin(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike | PositionLike,
+    times: ArrayLike,
     positions: NDArray[np.float64] | None,
     *,
     dt: float,
@@ -681,7 +656,7 @@ def _encode_and_bin(
 def decode_session_summary(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike | PositionLike,
+    times: ArrayLike,
     positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
