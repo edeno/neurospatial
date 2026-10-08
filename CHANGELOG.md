@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- Name nonnumeric times/positions together in shared conversion errors, retaining shape/order problems from the convertible argument and providing Why/Fix guidance without changing valid arrays.
+
 - Share one swap-aware times/positions validator across encoding and environment trajectory APIs. Timestamp shape, finiteness, ordering and sample-count problems are reported together with a corrected call; missing position samples remain supported.
 
 - Explain invalid circular-shift windows with a valid `windows=` call, preserving all row/shape problems from shared interval normalization.
@@ -59,6 +61,8 @@
 - Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
 
 ### Fixed — documentation
+
+- Preserve the existing shared-validator NumPy examples and parameter sections while adding timestamp/position diagnostics.
 
 - Teach explicit tracking arrays, typed precomputed-rate and count-array decoding handoffs, and one retained event cohort across gap-aware PSTHs, rasters, regressors and positioned tables. Keep event identifiers and selection masks visible, explain each helper's existing edge closure, and synchronize the updated tutorials.
 

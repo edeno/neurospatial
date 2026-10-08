@@ -64,6 +64,36 @@ def test_times_positions_preserves_duplicates_and_missing_positions():
     assert t.dtype == p.dtype == np.float64
 
 
+def test_numeric_conversion_errors_are_named_together():
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(["bad-time"], [["bad-position"]], call="f")
+    message = str(caught.value)
+    assert "times" in message and "positions" in message
+    assert "bad-time" in message and "bad-position" in message
+    assert "Why:" in message and "Fix:" in message
+    assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
+
+
+@pytest.mark.parametrize(
+    "times, positions, other_problem",
+    [
+        ([1, 0], [["bad"], ["bad"]], "monotonically non-decreasing"),
+        (["bad"], np.zeros((1, 2, 1)), "got shape (1, 2, 1)"),
+    ],
+)
+def test_conversion_errors_keep_other_argument_problems(
+    times, positions, other_problem
+):
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(times, positions, call="f")
+    assert other_problem in str(caught.value)
+    assert "numeric" in str(caught.value)
+
+
 class TestValidateFinite:
     """Tests for ``validate_finite``."""
 
