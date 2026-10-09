@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+import pytest
 
 from neurospatial.encoding._significance import (
     _stream_key,
@@ -79,3 +80,13 @@ def test_observed_warning_once_null_warnings_suppressed():
             rng=7,
         )
     assert len(caught) == 1
+
+
+def test_shuffle_result_owns_a_read_only_null():
+    observed = np.array([[3.0]])
+    null = np.array([[[1.0]], [[2.0]]])
+    result = to_shuffle_results(observed, null, np.array([5]))[5]
+    with pytest.raises(ValueError, match="read-only"):
+        result.null_scores[0] = 99.0
+    null[0, 0, 0] = 99.0
+    assert result.null_scores[0] == 1.0

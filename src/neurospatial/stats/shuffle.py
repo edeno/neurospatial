@@ -942,11 +942,12 @@ class ShuffleTestResult:
         The score computed from the original (non-shuffled) data.
     null_scores : NDArray[np.float64]
         Array of scores computed from shuffled data, forming the null
-        distribution.
+        distribution. Stored as a read-only float64 copy.
     p_value : float
         Monte Carlo p-value with correction: (k + 1) / (n + 1) where k is
-        the count of null scores at least as extreme as observed and n is
-        the number of shuffles.
+        the count of finite null scores at least as extreme as observed and
+        n is the number of finite null scores (``n_shuffles`` unless some
+        shuffles produced NaN).
     z_score : float
         Standard score: (observed - mean(null)) / std(null). NaN if null
         has zero variance.
@@ -990,6 +991,12 @@ class ShuffleTestResult:
     z_score: float
     shuffle_type: str
     n_shuffles: int
+
+    def __post_init__(self) -> None:
+        """Own the null distribution as a read-only copy."""
+        null = np.array(self.null_scores, dtype=np.float64, copy=True)
+        null.flags.writeable = False
+        object.__setattr__(self, "null_scores", null)
 
     @property
     def is_significant(self) -> bool:

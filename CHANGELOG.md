@@ -58,6 +58,9 @@
 
 ### Fixed
 
+- `ShuffleTestResult` stores `null_scores` as a read-only copy, and its
+  p-value documentation names the finite-null denominator the significance
+  functions use.
 - `DecodingResult(...)` checks that the posterior is 2-D with one column
   per `env` bin and that `times` has one entry per posterior row, instead of
   silently mapping columns to the wrong bin centers. The `times` checks that
