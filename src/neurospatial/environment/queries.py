@@ -230,8 +230,9 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If the environment is not fitted.
-        IndexError
-            If any bin index is out of range.
+        BinIndexOutOfRangeError
+            If any bin index is outside ``[0, n_bins)``, including negative
+            indices (a ``ValueError`` subclass).
 
         Examples
         --------
@@ -247,9 +248,13 @@ class EnvironmentQueries:
         (3, 2)
 
         """
-        return np.asarray(
-            self.bin_centers[np.asarray(bin_indices, dtype=int)], dtype=np.float64
-        )
+        indices = np.asarray(bin_indices, dtype=int)
+        out_of_range = (indices < 0) | (indices >= self.n_bins)
+        if np.any(out_of_range):
+            raise BinIndexOutOfRangeError(
+                int(indices[out_of_range].flat[0]), n_bins=self.n_bins
+            )
+        return np.asarray(self.bin_centers[indices], dtype=np.float64)
 
     @check_fitted
     def neighbors(self: SelfEnv, bin_index: int | ArrayLike) -> list[int]:

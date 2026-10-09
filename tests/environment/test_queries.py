@@ -208,6 +208,15 @@ class TestBinCenterOf:
 
         assert centers.shape == (3, small_2d_env.n_dims)
 
+    @pytest.mark.parametrize("bad", [-1, "n_bins", [0, -2]])
+    def test_bin_center_of_rejects_out_of_range(self, small_2d_env, bad):
+        """A negative index must not silently wrap to the last bins."""
+        from neurospatial import BinIndexOutOfRangeError
+
+        index = small_2d_env.n_bins if bad == "n_bins" else bad
+        with pytest.raises(BinIndexOutOfRangeError):
+            small_2d_env.bin_center_of(index)
+
     def test_bin_center_of_all_bins(self, small_2d_env):
         """Test bin_center_of for all bins."""
         all_indices = np.arange(small_2d_env.n_bins)

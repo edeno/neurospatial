@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- **Breaking:** `Environment.bin_center_of` raises `BinIndexOutOfRangeError`
+  for indices outside `[0, n_bins)`, like the graph queries. Negative indices
+  previously wrapped silently to the last bins, and indices past the end
+  raised NumPy's `IndexError`.
 - `DecodingSummary.plot` breaks its entropy and MAP lines at recording gaps
   instead of drawing a straight segment across the pause.
 - **Behavior change:** spatial rates count a spike whose interpolated
