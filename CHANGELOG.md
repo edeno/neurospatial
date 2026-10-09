@@ -58,6 +58,9 @@
 
 ### Fixed
 
+- The all-intervals-excluded, spikes-outside-tracking, out-of-bin and
+  `min_occupancy`-masks-all warnings point at the user's calling line instead
+  of a line inside neurospatial, for every rate family.
 - `object_vector_cell_significance` and
   `egocentric_object_vector_cell_significance` build the polar grid and each
   frame's polar bin once per call instead of once per shuffle: about 3x

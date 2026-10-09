@@ -339,14 +339,12 @@ def count_frames_and_occupancy(
         epochs=epochs,
         spike_window=spike_window,
     )
-    stacklevel = _external_stacklevel() + 1
     _emit_all_excluded_intervals_warning(
         mask,
         max_gap=max_gap,
         min_speed=None,
         epochs=epochs,
         spike_window=spike_window,
-        stacklevel=stacklevel,
         suppress_hint="",
     )
     if len(times):
@@ -363,7 +361,6 @@ def count_frames_and_occupancy(
             float(times[-1]),
             all_spikes,
             scope="across all neurons " if len(spike_times_list) > 1 else "",
-            stacklevel=stacklevel,
             suppress_hint="",
         )
     occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
@@ -480,7 +477,6 @@ def _resolve_spatial_interval_mask(
             min_speed=min_speed,
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
-            stacklevel=3,
         )
     return interval_mask, resolved_epochs, resolved_spike_window
 
@@ -492,7 +488,6 @@ def _emit_all_excluded_intervals_warning(
     min_speed: float | None,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-    stacklevel: int = 2,
     suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning when the interval filter excludes ALL intervals.
@@ -513,8 +508,6 @@ def _emit_all_excluded_intervals_warning(
         The active speed threshold (named in the message when set).
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Active normalized time windows, named in the message when supplied.
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
     suppress_hint : str, optional
         Closing sentence naming how to silence the warning; empty for callers
         without a ``warn_on_drop`` parameter.
@@ -565,7 +558,7 @@ def _emit_all_excluded_intervals_warning(
             f"{suppress_hint}"
         ).rstrip(),
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -637,7 +630,6 @@ def _emit_time_window_warning(
     all_spike_times: NDArray[np.float64] | None,
     *,
     scope: str = "",
-    stacklevel: int = 2,
     suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning for time-window spike drops if the fraction exceeds threshold.
@@ -655,8 +647,6 @@ def _emit_time_window_warning(
         are omitted from the message.
     scope : str, optional
         Extra phrase inserted into the message (e.g. "across all neurons ").
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
     suppress_hint : str, optional
         Closing sentence naming how to silence the warning; empty for callers
         without a ``warn_on_drop`` parameter.
@@ -683,7 +673,7 @@ def _emit_time_window_warning(
             f"Dropped spikes do not contribute. {suppress_hint}"
         ).rstrip(),
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -692,7 +682,6 @@ def _emit_inactive_bin_warning(
     n_after_time: int,
     *,
     scope: str = "",
-    stacklevel: int = 2,
 ) -> None:
     """Emit a UserWarning for inactive-bin spike drops if the fraction exceeds threshold.
 
@@ -704,8 +693,6 @@ def _emit_inactive_bin_warning(
         Spikes that survived the time-window filter (denominator).
     scope : str, optional
         Extra phrase inserted into the message (e.g. "across all neurons ").
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
     """
     if n_after_time == 0 or n_bin_dropped == 0:
         return
@@ -721,7 +708,7 @@ def _emit_inactive_bin_warning(
         f"Dropped spikes do not contribute. "
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -883,12 +870,10 @@ def bin_spike_train(
             t_min,
             t_max,
             spike_times,
-            stacklevel=2,
         )
         _emit_inactive_bin_warning(
             n_bin_dropped,
             n_after_time,
-            stacklevel=2,
         )
 
     return spike_counts
@@ -1251,7 +1236,6 @@ def bin_spike_trains(
                 t_max,
                 all_spikes_cat,
                 scope="across all neurons ",
-                stacklevel=2,
             )
 
         if total_after_time > 0 and total_bin_dropped > 0:
@@ -1259,7 +1243,6 @@ def bin_spike_trains(
                 total_bin_dropped,
                 total_after_time,
                 scope="across all neurons ",
-                stacklevel=2,
             )
 
     return spike_counts, occupancy
