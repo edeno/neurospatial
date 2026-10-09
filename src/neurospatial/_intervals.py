@@ -49,6 +49,19 @@ def _parse_intervals(
                 f"length, got shapes {starts.shape} and {stops.shape}"
             ]
         rows = np.column_stack([starts, stops])
+    elif (
+        isinstance(value, (tuple, list))
+        and len(value) == 2
+        and all(isinstance(v, np.ndarray) and v.ndim == 1 for v in value)
+    ):
+        # The retired parallel (starts, stops) form. With two length-2 arrays
+        # it also has shape (2, 2), so reading it as rows would be silent.
+        return None, [
+            f"{name} is a pair of 1-D arrays, the retired parallel "
+            f"(starts, stops) form; pass np.column_stack([starts, stops]) for "
+            f"those windows, or np.asarray(rows) if each array is one "
+            f"[start, stop) row"
+        ]
     else:
         try:
             rows = np.asarray(value, dtype=np.float64)

@@ -331,7 +331,9 @@
   acquisition windows as well.
 - `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
   same window parser as spatial analyses. Nested sequences always describe
-  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.
+  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form,
+  and a tuple or list of two 1-D NumPy arrays raises (naming
+  `np.column_stack([starts, stops])`) instead of being read as two rows.
   Overlapping or touching rows merge, zero-width and empty window sets raise
   with a fix, and `epochs=None` leaves data unrestricted. Point membership
   still uses the requested `closed=` setting on the normalized windows.

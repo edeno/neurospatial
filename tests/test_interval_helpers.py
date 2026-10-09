@@ -80,6 +80,27 @@ def test_as_intervals_errors_follow_contract(value, detail):
     assert "\nFix:" in message
 
 
+@pytest.mark.parametrize("n", [2, 3])
+@pytest.mark.parametrize("container", [tuple, list])
+def test_as_intervals_rejects_parallel_start_stop_arrays(n, container):
+    """Two 1-D arrays are the retired (starts, ends) form, never two rows.
+
+    At n=2 the pair also has shape (2, 2), so reading it as rows would silently
+    analyze [[0, 10], [5, 15]] instead of [[0, 5], [10, 15]].
+    """
+    from neurospatial._intervals import as_intervals
+
+    starts = np.arange(n) * 10.0
+    value = container([starts, starts + 5.0])
+    with pytest.raises(ValueError) as exc:
+        as_intervals(value, name="epochs")
+    message = str(exc.value)
+    assert "parallel" in message
+    assert "np.column_stack([starts, stops])" in message
+    assert "Why:" in message
+    assert "\nFix:" in message
+
+
 def test_as_intervals_reports_every_problem():
     from neurospatial._intervals import as_intervals, resolve_time_windows
 
