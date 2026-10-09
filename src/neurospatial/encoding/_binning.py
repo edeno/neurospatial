@@ -567,7 +567,6 @@ def _warn_if_population_silent(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
-    stacklevel: int = 3,
 ) -> None:
     """Warn once if every unit is silent for >= 60 s of tracked time.
 
@@ -613,7 +612,7 @@ def _warn_if_population_silent(
         f"was not recording then, pass spike_window=(start, stop) so that time "
         f"is excluded from occupancy.",
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 

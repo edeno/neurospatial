@@ -2601,7 +2601,6 @@ def _object_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        stacklevel=4,
     )
 
     # Handle edge case: no neurons
