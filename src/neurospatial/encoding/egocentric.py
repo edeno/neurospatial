@@ -96,6 +96,21 @@ __all__ = [
 OBJECT_VECTOR_THRESHOLDS = MappingProxyType({"min_info": 0.3})
 
 
+def _check_direction_frame(direction_frame: str, *, context: str) -> None:
+    """Reject a direction frame that downstream code would misread."""
+    if direction_frame not in ("allocentric", "egocentric"):
+        raise ValueError(
+            _format_error(
+                f"{context}: unknown direction_frame={direction_frame!r}.",
+                why=(
+                    "Why: preferred directions, plots and exports interpret "
+                    "angles in the recorded frame."
+                ),
+                fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
+            )
+        )
+
+
 def _egocentric_xarray_attrs(
     result: ObjectVectorRateResult | ObjectVectorRatesResult,
 ) -> dict[str, Any]:
@@ -261,6 +276,9 @@ class ObjectVectorRateResult(SpatialResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+
+    def __post_init__(self) -> None:
+        _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _egocentric_xarray_attrs(self)
@@ -748,6 +766,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
+        _check_direction_frame(self.direction_frame, context="ObjectVectorRatesResult")
         n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(
             self,

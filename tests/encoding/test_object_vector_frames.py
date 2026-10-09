@@ -256,3 +256,29 @@ def test_binned_object_vector_warns_when_min_occupancy_masks_everything(
             min_occupancy=1e6,
         )
     assert sum("masks ALL" in str(w.message) for w in record) == 1
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_results_reject_unknown_direction_frame(continuous_recording, plural):
+    """Plotting would draw an unknown frame as egocentric; reject it instead."""
+    import dataclasses
+
+    from neurospatial.encoding import (
+        compute_object_vector_rate,
+        compute_object_vector_rates,
+    )
+
+    r = continuous_recording
+    compute = compute_object_vector_rates if plural else compute_object_vector_rate
+    result = compute(
+        r.env,
+        [r.spike_times] if plural else r.spike_times,
+        r.times,
+        r.positions,
+        np.array([[50.0, 50.0]]),
+        distance_range=(0, 100),
+        method="binned",
+    )
+    with pytest.raises(ValueError, match="direction_frame") as exc:
+        dataclasses.replace(result, direction_frame="ego")
+    assert "Fix:" in str(exc.value)

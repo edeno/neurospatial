@@ -58,6 +58,9 @@
 
 ### Fixed
 
+- `ObjectVectorRateResult` and `ObjectVectorRatesResult` reject a
+  `direction_frame` other than `"allocentric"` or `"egocentric"`; plots
+  previously drew any other value as egocentric.
 - `spatial_view_cell_significance` computes the gaze geometry once per
   call instead of once per shuffle. With `gaze_model="ray_cast"` on 3,000
   samples, 10 shuffles drop from 6.95 s to 0.64 s with identical observed
