@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- Kinematic speeds treat a zero-length interval (duplicate timestamps) as
+  undefined (NaN) instead of infinite, so `pre_decision_speed_stats`, goal
+  approach rates and heading labels no longer absorb an `inf` or a
+  divide-by-zero warning.
 - **Breaking:** `Environment.bin_center_of` raises `BinIndexOutOfRangeError`
   for indices outside `[0, n_bins)`, like the graph queries. Negative indices
   previously wrapped silently to the last bins, and indices past the end

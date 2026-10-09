@@ -267,3 +267,22 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     assert len(result.trial_results) == 1
     assert result.trial_results[0].mean_speed == expected_speed
     assert result.trial_results[0].head_sweep_magnitude == expected_sweep
+
+
+def test_duplicate_timestamps_give_undefined_not_infinite_speed():
+    """A zero-length interval has no velocity; it must not become inf."""
+    import warnings
+
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.behavior.decisions import pre_decision_speed_stats
+
+    times = np.array([0.0, 0.1, 0.1, 0.2, 0.3])
+    positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.5, 0.0], [2.5, 0.0], [3.5, 0.0]])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        velocity = interval_velocity(times, positions, np.ones(4, dtype=bool))
+        mean_speed, max_speed = pre_decision_speed_stats(times, positions)
+    assert np.all(np.isnan(velocity[1]))
+    np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
+    assert mean_speed == pytest.approx(10.0)
+    assert max_speed == pytest.approx(10.0)
