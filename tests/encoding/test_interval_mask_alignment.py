@@ -325,11 +325,6 @@ def test_oob_alignment_against_reference(env_1d, oob_trajectory) -> None:
     keep = mask[interval]
     ref_pos = np.interp(spike_times[keep], times, positions[:, 0]).reshape(-1, 1)
     ref_bins = env_1d.bin_at(ref_pos)
-    # An unresolved interpolated position falls back to the interval's start
-    # bin, where that interval's occupancy is credited.
-    ref_bins = np.where(
-        ref_bins >= 0, ref_bins, env_1d.bin_at(positions[interval[keep]])
-    )
     ref_counts = np.bincount(ref_bins[ref_bins >= 0], minlength=env_1d.n_bins).astype(
         np.float64
     )
@@ -420,11 +415,6 @@ def test_combined_mask_alignment(env_1d) -> None:
     keep = mask[interval]
     ref_pos = np.interp(spike_times[keep], times, positions[:, 0]).reshape(-1, 1)
     ref_bins = env_1d.bin_at(ref_pos)
-    # An unresolved interpolated position falls back to the interval's start
-    # bin, where that interval's occupancy is credited.
-    ref_bins = np.where(
-        ref_bins >= 0, ref_bins, env_1d.bin_at(positions[interval[keep]])
-    )
     ref_counts = np.bincount(ref_bins[ref_bins >= 0], minlength=env_1d.n_bins).astype(
         np.float64
     )
@@ -468,11 +458,6 @@ def test_max_gap_none_aligned_and_matches_pre_fix(env_1d, gap_trajectory) -> Non
     keep = mask[interval]
     ref_pos = np.interp(spike_times[keep], times, positions[:, 0]).reshape(-1, 1)
     ref_bins = env_1d.bin_at(ref_pos)
-    # An unresolved interpolated position falls back to the interval's start
-    # bin, where that interval's occupancy is credited.
-    ref_bins = np.where(
-        ref_bins >= 0, ref_bins, env_1d.bin_at(positions[interval[keep]])
-    )
     ref_counts = np.bincount(ref_bins[ref_bins >= 0], minlength=env_1d.n_bins).astype(
         np.float64
     )
@@ -712,36 +697,3 @@ def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> N
     for i, spikes in enumerate(spike_trains):
         single = bin_spike_train(env_1d, spikes, times, positions, warn_on_drop=False)
         np.testing.assert_array_equal(batch_counts[i], single)
-
-
-def test_spike_before_untracked_sample_counts_in_start_bin():
-    """An interval's time and spikes belong to the same bin.
-
-    Occupancy credits interval [t_k, t_k+1) to the bin at sample k. A spike in
-    that interval whose interpolated position is undefined (the next sample is
-    NaN) is counted in that same bin rather than dropped.
-    """
-    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
-    times = np.array([0.0, 0.1, 0.2, 0.3])
-    positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
-    counts = bin_spike_train(env, np.array([0.05, 0.25]), times, positions)
-    start_bins = env.bin_at(positions[[0, 2]])
-    expected = np.zeros(env.n_bins)
-    expected[start_bins] = 1.0
-    np.testing.assert_array_equal(counts, expected)
-
-
-def test_isolated_tracking_dropouts_do_not_bias_rate():
-    """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
-    rng = np.random.default_rng(0)
-    times = np.arange(0, 600, 0.02)
-    positions = np.c_[50 + 40 * np.sin(times / 7), 50 + 40 * np.cos(times / 11)]
-    env = Environment.from_samples(positions, bin_size=5.0)
-    spikes = np.sort(rng.uniform(0, 599, 3000))
-    positions[rng.random(len(times)) < 0.2] = np.nan
-    result = compute_spatial_rate(
-        env, spikes, times, positions, method="binned", bandwidth=1e-6
-    )
-    occupied = result.occupancy > 1
-    pooled = np.nansum(result.firing_rate[occupied] * result.occupancy[occupied])
-    assert pooled / result.occupancy[occupied].sum() == pytest.approx(5.0, rel=0.05)

@@ -79,13 +79,6 @@
   raised NumPy's `IndexError`.
 - `DecodingSummary.plot` breaks its entropy and MAP lines at recording gaps
   instead of drawing a straight segment across the pause.
-- **Behavior change:** spatial rates count a spike whose interpolated
-  position is undefined or outside the environment (for example, the next
-  tracking sample is NaN) in its interval's start bin, where that interval's
-  occupancy is credited, instead of dropping it. A 5 Hz unit with 20%
-  isolated NaN frames now measures 5 Hz instead of 3.97 Hz. The inactive-bin
-  warning now fires only for caller-supplied interval masks that admit
-  intervals starting outside the environment.
 - neurospatial exceptions survive pickling, so errors raised in worker
   processes reach the caller with their original message and attributes;
   previously several failed to unpickle or repeated their message.

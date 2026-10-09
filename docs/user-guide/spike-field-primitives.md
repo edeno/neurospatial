@@ -186,7 +186,7 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 # UserWarning: "X spikes fall outside trajectory time range [0.0, 50.0] and were excluded"
 ```
 
-Each spike's position is interpolated between the two tracking samples around it, and that interval's time is credited to the bin of its first sample. When the interpolated position is undefined or outside the environment (for example, the next sample is a NaN tracking dropout), the spike is counted in that same first-sample bin, so a dropout cannot remove spikes while keeping their time.
+Similarly, spikes whose interpolated positions fall outside the environment bounds are filtered with a warning.
 
 ### 1D Trajectories
 
