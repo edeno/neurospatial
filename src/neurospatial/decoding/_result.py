@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, _coord_dim_names
 
 if TYPE_CHECKING:
@@ -112,10 +113,44 @@ class DecodingResult(ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Take ownership of input arrays as read-only copies."""
+        """Take ownership of input arrays as read-only copies, checking shapes."""
         object.__setattr__(self, "posterior", _read_only_copy(self.posterior))
         if self.times is not None:
             object.__setattr__(self, "times", _read_only_copy(self.times, np.float64))
+        problems = []
+        if self.posterior.ndim != 2:
+            problems.append(
+                f"posterior must be 2-D (n_time_bins, n_bins), got shape "
+                f"{self.posterior.shape}"
+            )
+        elif self.posterior.shape[1] != self.env.n_bins:
+            problems.append(
+                f"posterior has {self.posterior.shape[1]} columns but env has "
+                f"n_bins={self.env.n_bins}"
+            )
+        if (
+            self.times is not None
+            and self.posterior.ndim == 2
+            and self.times.shape != (self.posterior.shape[0],)
+        ):
+            problems.append(
+                f"times has shape {self.times.shape}, expected "
+                f"({self.posterior.shape[0]},) to match the posterior's time bins"
+            )
+        if problems:
+            raise ValueError(
+                _format_error(
+                    "DecodingResult: " + "; ".join(problems) + ".",
+                    why=(
+                        "Why: posterior column j is the probability of "
+                        "env.bin_centers[j], and row i belongs to times[i]."
+                    ),
+                    fix=(
+                        "pass the env the posterior was decoded on and one "
+                        "time per posterior row"
+                    ),
+                )
+            )
         if self.spike_window is not None:
             object.__setattr__(
                 self, "spike_window", _read_only_copy(self.spike_window, np.float64)

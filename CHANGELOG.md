@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- `DecodingResult(...)` checks that the posterior is 2-D with one column
+  per `env` bin and that `times` has one entry per posterior row, instead of
+  silently mapping columns to the wrong bin centers. The `times` checks that
+  `to_xarray()` used to apply now fire at construction.
 - Smoothing, `gradient`, `divergence` and `heat_kernel_wavelet_basis` on a
   non-grid environment read from NWB explain that the round trip does not
   restore cell geometry and name the original layout, instead of advising a

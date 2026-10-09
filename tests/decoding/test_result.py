@@ -629,3 +629,27 @@ class TestDecodePositionOwnership:
         ((_, fields),) = record_owned_posterior
         expected = {f.name for f in dataclasses.fields(DecodingResult)} - {"posterior"}
         assert set(fields) == expected
+
+
+@pytest.mark.parametrize(
+    ("posterior_shape", "n_times", "detail"),
+    [
+        pytest.param((10, 3), 10, "n_bins", id="columns-not-env-bins"),
+        pytest.param((10,), 10, "2-D", id="one-dimensional"),
+        pytest.param((10, None), 4, "times", id="times-length"),
+    ],
+)
+def test_constructor_rejects_misaligned_shapes(posterior_shape, n_times, detail):
+    """A misaligned posterior would map columns to the wrong bin centers."""
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+
+    env = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 50, (500, 2)), bin_size=5.0
+    )
+    shape = tuple(env.n_bins if s is None else s for s in posterior_shape)
+    with pytest.raises(ValueError, match=detail) as exc:
+        DecodingResult(
+            posterior=np.ones(shape), env=env, times=np.arange(float(n_times))
+        )
+    assert "Fix:" in str(exc.value)
