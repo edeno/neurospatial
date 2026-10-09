@@ -33,3 +33,27 @@ def test_plot_marks_recording_gaps(continuous_recording, kind):
         assert not dashed
         np.testing.assert_array_equal(ax.lines[0].get_xdata(), times)
     plt.close(ax.figure)
+
+
+@pytest.mark.parametrize("quantity", ["entropy", "map"])
+def test_summary_plot_breaks_lines_at_recording_gaps(continuous_recording, quantity):
+    """A summary line must not draw a straight segment across a pause."""
+    from neurospatial.decoding import decode_position_summary
+
+    env = continuous_recording.env
+    times = np.r_[0.0125 + 0.025 * np.arange(5), 1100.0125 + 0.025 * np.arange(5)]
+    rng = np.random.default_rng(0)
+    summary = decode_position_summary(
+        env,
+        rng.poisson(1.0, (len(times), 3)),
+        rng.uniform(1.0, 10.0, (3, env.n_bins)),
+        dt=0.025,
+        times=times,
+    )
+    ax = summary.plot(quantity=quantity)
+    for line in ax.get_lines():
+        x = np.asarray(line.get_xdata(), dtype=float)
+        y = np.asarray(line.get_ydata(), dtype=float)
+        assert np.isnan(x[5]) and np.isnan(y[5])
+        np.testing.assert_array_equal(np.delete(x, 5), times)
+    plt.close(ax.figure)

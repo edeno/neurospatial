@@ -31,6 +31,17 @@ def _read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     return owned
 
 
+def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
+    """Indices ``i`` where a pause separates ``times[i]`` and ``times[i + 1]``.
+
+    A step longer than 1.5 times the shortest step marks a recording break.
+    """
+    if times is None or times.size < 2:
+        return np.empty(0, dtype=np.intp)
+    d = np.diff(times)
+    return np.flatnonzero(d > 1.5 * np.min(d))
+
+
 @dataclass(frozen=True, repr=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
@@ -435,10 +446,7 @@ class DecodingResult(ResultMixin):
 
         # Compute extent for proper axis labeling
         # extent = [left, right, bottom, top]
-        breaks = np.empty(0, dtype=np.intp)
-        if self.times is not None and self.times.size >= 2:
-            d = np.diff(self.times)
-            breaks = np.flatnonzero(d > 1.5 * np.min(d))
+        breaks = _recording_breaks(self.times)
         if self.times is not None and breaks.size == 0:
             # Use actual time values
             t_min = float(self.times[0])
@@ -1102,7 +1110,9 @@ class DecodingSummary(ResultMixin):
 
         Since there is no full posterior to display as a heatmap, this plots a
         per-time scalar over time: either the posterior entropy (default) or
-        the MAP position coordinate(s).
+        the MAP position coordinate(s). Lines break at recording gaps (a step
+        longer than 1.5 times the shortest time step), so no segment is drawn
+        across a pause.
 
         Parameters
         ----------
@@ -1131,13 +1141,24 @@ class DecodingSummary(ResultMixin):
             x = np.arange(self.n_time_bins, dtype=np.float64)
             x_label = "Time bin"
 
+        # A NaN after each recording break stops a line from drawing a
+        # straight segment across the pause; the axis keeps real time.
+        breaks = _recording_breaks(self.times) + 1
+
+        def broken(values: NDArray[Any]) -> NDArray[np.float64]:
+            return np.insert(np.asarray(values, dtype=np.float64), breaks, np.nan)
+
+        x = broken(x)
+
         if quantity == "entropy":
-            ax.plot(x, self.posterior_entropy, **kwargs)
+            ax.plot(x, broken(self.posterior_entropy), **kwargs)
             ax.set_ylabel("Posterior entropy (bits)")
             ax.set_title("Posterior entropy over time")
         elif quantity == "map":
             for i, name in enumerate(self._dim_names()):
-                ax.plot(x, self.map_position[:, i], label=f"map_{name}", **kwargs)
+                ax.plot(
+                    x, broken(self.map_position[:, i]), label=f"map_{name}", **kwargs
+                )
             ax.set_ylabel("MAP position")
             ax.set_title("MAP position over time")
             ax.legend()

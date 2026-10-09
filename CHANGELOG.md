@@ -58,6 +58,8 @@
 
 ### Fixed
 
+- `DecodingSummary.plot` breaks its entropy and MAP lines at recording gaps
+  instead of drawing a straight segment across the pause.
 - **Behavior change:** spatial rates count a spike whose interpolated
   position is undefined or outside the environment (for example, the next
   tracking sample is NaN) in its interval's start bin, where that interval's
