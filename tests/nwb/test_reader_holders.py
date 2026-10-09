@@ -170,3 +170,17 @@ def test_disjoint_unit_coverage_is_explicitly_empty(empty_nwb):
         compute_spatial_rates(
             env, units.spike_times, times, positions, spike_window=units.spike_window
         )
+
+
+@pytest.mark.parametrize(
+    ("unit_ids", "obs_intervals"),
+    [
+        (np.array([7, 11]), None),
+        (np.array([7]), [np.empty((0, 2)), np.empty((0, 2))]),
+    ],
+)
+def test_units_holder_rejects_misaligned_fields(unit_ids, obs_intervals):
+    from neurospatial.io.nwb import NWBUnits
+
+    with pytest.raises(ValueError, match="one-to-one"):
+        NWBUnits([np.array([0.1])], unit_ids, obs_intervals, None)

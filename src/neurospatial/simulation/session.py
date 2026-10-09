@@ -148,6 +148,20 @@ class SimulationSession:
                 f"{len(self.models)}; these must match one-to-one.\n"
                 "Fix: build unit_ids as np.arange(len(spike_times))."
             )
+        if len(self.times) != len(self.positions):
+            raise ValueError(
+                f"times has {len(self.times)} samples but positions has "
+                f"{len(self.positions)}; they must match one-to-one.\n"
+                "Fix: pass one position row per timestamp."
+            )
+        labels = {int(label) for label in self.unit_ids}
+        if set(self.ground_truth) != labels:
+            raise ValueError(
+                f"ground_truth is keyed by {sorted(self.ground_truth)} but "
+                f"unit_ids are {sorted(labels)}; they must match one-to-one.\n"
+                "Fix: key ground_truth by each unit's label, "
+                "{label: model.ground_truth}."
+            )
 
 
 def simulate_session(

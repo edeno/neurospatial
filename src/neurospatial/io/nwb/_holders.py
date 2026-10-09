@@ -92,3 +92,13 @@ class NWBUnits:
     unit_ids: NDArray[np.int64]
     obs_intervals: list[NDArray[np.float64]] | None
     spike_window: NDArray[np.float64] | None
+
+    def __post_init__(self) -> None:
+        n = len(self.spike_times)
+        n_obs = n if self.obs_intervals is None else len(self.obs_intervals)
+        if not (len(self.unit_ids) == n_obs == n):
+            raise ValueError(
+                f"spike_times has {n} units, unit_ids {len(self.unit_ids)}, "
+                f"obs_intervals {n_obs}; these must match one-to-one.\n"
+                "Fix: pass one unit_id and one obs_intervals entry per spike train."
+            )

@@ -659,3 +659,29 @@ class TestSimulateSession:
                 n_cells=3,
                 show_progress=False,
             )
+
+
+@pytest.mark.parametrize(
+    ("change", "detail"),
+    [
+        ({"times": np.array([0.0, 0.1, 0.2])}, "times"),
+        ({"ground_truth": {7: {}}}, "ground_truth"),
+    ],
+)
+def test_session_rejects_misaligned_samples_and_ground_truth(
+    simple_2d_env, change, detail
+):
+    """Misaligned holders would silently pair the wrong samples or models."""
+    model = PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))
+    fields = {
+        "env": simple_2d_env,
+        "positions": np.array([[50.0, 50.0], [51.0, 51.0]]),
+        "times": np.array([0.0, 0.1]),
+        "spike_times": [np.array([0.05])],
+        "unit_ids": np.array([0], dtype=np.int64),
+        "models": [model],
+        "ground_truth": {0: model.ground_truth},
+        "metadata": {},
+    }
+    with pytest.raises(ValueError, match=detail):
+        SimulationSession(**{**fields, **change})
