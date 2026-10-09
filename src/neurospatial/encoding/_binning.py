@@ -215,11 +215,15 @@ def _bin_spike_train_with_stats(
     Returns
     -------
     spike_counts : ndarray, shape (n_bins,)
-        Counts after time, interval and interpolated-position gates.
+        Counts after the time and interval gates. Each spike is binned at its
+        interpolated position, or at its interval's start sample when that
+        position is undefined or outside the environment.
     n_time_dropped : int
         Spikes outside ``[times[0], times[-1])``.
     n_bin_dropped : int
-        Interval-valid spikes whose interpolated positions are outside bins.
+        Interval-valid spikes whose interpolated position and interval start
+        sample are both outside bins (possible only with a caller mask that
+        skips the bounds gate).
     n_total : int
         Input spike count.
     n_after_time : int
@@ -239,7 +243,9 @@ def _bin_spike_train_with_stats(
 
     if len(spike_times_valid) > 0:
         spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
-        spike_times_valid = spike_times_valid[interval_mask[spike_interval]]
+        in_valid_interval = interval_mask[spike_interval]
+        spike_times_valid = spike_times_valid[in_valid_interval]
+        spike_interval = spike_interval[in_valid_interval]
 
     n_after_time = len(spike_times_valid)
 
@@ -256,6 +262,13 @@ def _bin_spike_train_with_stats(
         spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
 
     spike_bins = env.bin_at(spike_positions)
+    # Occupancy credits each interval to the bin at its start sample. When the
+    # interpolated position is undefined or outside (e.g. the next sample is a
+    # NaN tracking dropout), count the spike in that same start bin, so the
+    # interval's time and spikes stay in one bin instead of losing the spike.
+    unresolved = spike_bins < 0
+    if np.any(unresolved):
+        spike_bins[unresolved] = env.bin_at(positions[spike_interval[unresolved]])
     valid_bins = spike_bins[spike_bins >= 0]
     n_bin_dropped = n_after_time - len(valid_bins)
 
@@ -701,8 +714,8 @@ def _emit_inactive_bin_warning(
         return
     warnings.warn(
         f"{n_bin_dropped}/{n_after_time} spikes "
-        f"({100 * frac:.0f}%) {scope}interpolated to positions outside "
-        f"the active environment bins (bin index -1). "
+        f"({100 * frac:.0f}%) {scope}fell in intervals whose positions are "
+        f"outside the active environment bins (bin index -1). "
         f"Check that positions are in the same coordinate frame as the "
         f"environment and that spike_times and times share units (both seconds). "
         f"Dropped spikes do not contribute. "

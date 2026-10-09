@@ -2918,7 +2918,10 @@ default="diffusion_kde"
     **Algorithm**:
 
     1. Map trajectory positions to spatial bins
-    2. Interpolate spike positions from trajectory using spike times
+    2. Interpolate spike positions from trajectory using spike times; a
+       spike whose interpolated position is undefined (e.g. the next sample
+       is a NaN tracking dropout) is placed at its interval's start sample,
+       the bin that interval's occupancy is credited to
     3. Count spikes in each spatial bin
     4. Compute occupancy (time spent in each bin)
     5. Apply smoothing (method-dependent, see ``_smoothing.py``)

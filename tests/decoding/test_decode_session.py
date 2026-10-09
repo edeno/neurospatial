@@ -514,49 +514,6 @@ class TestDecodeSessionOutOfWindowWarning:
             f"{[str(w.message) for w in matching]}"
         )
 
-    def test_inactive_bin_warning_survives_golden_path(self) -> None:
-        """The encoder's inactive-bin warning reaches the user via decode_session.
-
-        Spikes whose interpolated positions fall outside the environment (e.g.
-        positions in the wrong coordinate frame) are an independent footgun from
-        the time-window units mismatch. The encoder warns about it; decode_session
-        must not swallow that warning in the encoding_models=None branch.
-        """
-        import warnings
-
-        from neurospatial.decoding import decode_session
-
-        env, _spike_times, times, positions = _make_linear_track_sim(
-            n_neurons=10, duration=10.0, seed=55
-        )
-        # In-window spikes (no time-window drop). The interval STARTS stay
-        # in-bounds (so the interval-valid mask keeps them), but every other
-        # sample jumps far outside the [0, 100] environment. We place every
-        # spike at the MIDPOINT of a valid (even-indexed) interval, so each
-        # spike interpolates toward the far excursion and maps to an inactive
-        # bin. This exercises the inactive-bin drop path (distinct from the
-        # interval mask, which gates by the start sample).
-        positions_wrong_frame = positions.copy()
-        positions_wrong_frame[1::2] = 1000.0
-        n_frames = len(times)
-        # Midpoints of intervals 0, 2, 4, ... (those starting at in-bounds
-        # samples); each interpolates to ~500 → out of the environment.
-        even_starts = np.arange(0, n_frames - 1, 2)
-        midpoints = 0.5 * (times[even_starts] + times[even_starts + 1])
-        oob_spikes = [midpoints.copy() for _ in range(10)]
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            decode_session(env, oob_spikes, times, positions_wrong_frame, dt=0.1)
-
-        inactive = [
-            w for w in caught if "interpolated to positions outside" in str(w.message)
-        ]
-        assert inactive, (
-            "decode_session should surface the encoder's inactive-bin warning, "
-            f"got: {[str(w.message) for w in caught]}"
-        )
-
     def test_warn_on_drop_false_silences(self) -> None:
         """warn_on_drop=False silences BOTH decode_session and the encoder."""
         import warnings
