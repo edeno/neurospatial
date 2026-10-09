@@ -196,11 +196,20 @@ def read_units(
     obs_intervals: list[NDArray[np.float64]] | None = None
     spike_window: NDArray[np.float64] | None = None
     if "obs_intervals" in units.colnames:
+        # NWB allows a unit with no observation rows (never observed); pynwb
+        # returns those as shape (0,), so keep them as explicit (0, 2) arrays.
         obs_intervals = [
             np.asarray(units[row, "obs_intervals"], dtype=np.float64) for row in rows
         ]
+        obs_intervals = [
+            np.empty((0, 2)) if intervals.size == 0 else intervals
+            for intervals in obs_intervals
+        ]
         spike_window = np.empty((0, 2), dtype=np.float64)
         for i, intervals in enumerate(obs_intervals):
+            if intervals.size == 0:
+                spike_window = intervals
+                break
             normalized = as_intervals(
                 intervals, name=f"obs_intervals[{int(out_ids[i])}]"
             )

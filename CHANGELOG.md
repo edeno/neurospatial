@@ -62,6 +62,10 @@
   model) raise `ValueError` when the speed, gap, window and `min_occupancy`
   gates leave no occupied bin, instead of returning a model that decodes
   every time bin as a uniform posterior.
+- `read_units` reads files in which a unit has no `obs_intervals` rows (a
+  unit that was never observed); that unit's coverage is an empty `(0, 2)`
+  array, so the shared `spike_window` is empty unless it is excluded with
+  `unit_ids=`.
 
 - Center continuous posterior image columns on decoder timestamps, preserving MAP/actual overlays, gapped index clocks and explicit extent overrides. Two-column plots use their timestamp spacing; a single column has a documented 1-second display width, with no changes to posterior arrays or clocks.
 
