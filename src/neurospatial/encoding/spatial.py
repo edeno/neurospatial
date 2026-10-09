@@ -2908,8 +2908,10 @@ default="diffusion_kde"
     Notes
     -----
     An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
 
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
@@ -3397,8 +3399,10 @@ default="diffusion_kde"
     Notes
     -----
     An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
 
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
@@ -4287,8 +4291,10 @@ def compute_directional_place_fields(
     Notes
     -----
     An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
-    are removed from the spike counts and the occupancy.
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
 
     Each interval carries the direction label of its start sample. Separate
     runs of the same label become analysis epochs on the original trajectory,

@@ -388,7 +388,8 @@ def _spatial_interval_mask(
     trajectory inside each neuron's kernel call. The single-neuron path uses it
     too, keeping one code path.
 
-    The bounds gate always applies, even when gap and speed checks are off.
+    The bounds gate always applies, even when gap and speed checks are off,
+    and requires both of an interval's samples to be inside the environment.
 
     Parameters
     ----------
@@ -416,17 +417,24 @@ def _spatial_interval_mask(
     """
     from neurospatial.environment.trajectory import interval_valid_mask
 
-    return interval_valid_mask(
+    sample_bins = env.bin_at(positions)
+    mask = interval_valid_mask(
         times,
         positions,
         cast("EnvironmentProtocol", env),
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=env.bin_at(positions),
+        start_bin=sample_bins,
         epochs=epochs,
         spike_window=spike_window,
     )
+    # Complete-case rule: spikes are placed by interpolating between an
+    # interval's two samples, so an interval counts only when both samples are
+    # tracked inside the environment. One whose end sample is a dropout (NaN)
+    # or outside is left out of the spike counts and the occupancy alike,
+    # rather than imputing where the animal was.
+    return mask & (sample_bins[1:] >= 0)
 
 
 def _resolve_spatial_interval_mask(

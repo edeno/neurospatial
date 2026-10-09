@@ -318,6 +318,8 @@ def test_oob_alignment_against_reference(env_1d, oob_trajectory) -> None:
 
     mask = interval_valid_mask(times, positions, env_1d)
     assert not mask[oob_interval]
+    # Complete-case rule: the interval's end sample must also be tracked.
+    mask &= env_1d.bin_at(positions)[1:] >= 0
 
     interval = np.clip(
         np.searchsorted(times, spike_times, side="right") - 1, 0, len(times) - 2
@@ -407,6 +409,8 @@ def test_combined_mask_alignment(env_1d) -> None:
     mask = interval_valid_mask(
         times, positions, env_1d, speed=resolved, min_speed=min_speed
     )
+    # Complete-case rule: the interval's end sample must also be tracked.
+    mask &= env_1d.bin_at(positions)[1:] >= 0
 
     # Reference numerator and denominator from the SAME mask.
     interval = np.clip(
@@ -697,3 +701,40 @@ def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> N
     for i, spikes in enumerate(spike_trains):
         single = bin_spike_train(env_1d, spikes, times, positions, warn_on_drop=False)
         np.testing.assert_array_equal(batch_counts[i], single)
+
+
+def test_interval_ending_in_dropout_is_excluded_from_both_sides():
+    """Complete-case rule: an interval counts only if both samples are tracked.
+
+    Interval [t_k, t_k+1) whose end sample is a NaN dropout has no observed
+    position for its spikes, so its spikes and its time are both left out
+    rather than imputing where the animal was.
+    """
+    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    times = np.array([0.0, 0.1, 0.2, 0.3])
+    positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
+    spikes = np.array([0.05, 0.25])
+    counts = bin_spike_train(env, spikes, times, positions, warn_on_drop=False)
+    occupancy = compute_occupancy(env, times, positions)
+    in_last = int(env.bin_at(np.array([[45.0]]))[0])
+    expected_counts = np.zeros(env.n_bins)
+    expected_counts[in_last] = 1.0
+    np.testing.assert_array_equal(counts, expected_counts)
+    assert occupancy.sum() == pytest.approx(0.1)
+    assert occupancy[in_last] == pytest.approx(0.1)
+
+
+def test_isolated_tracking_dropouts_do_not_bias_rate():
+    """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 600, 0.02)
+    positions = np.c_[50 + 40 * np.sin(times / 7), 50 + 40 * np.cos(times / 11)]
+    env = Environment.from_samples(positions, bin_size=5.0)
+    spikes = np.sort(rng.uniform(0, 599, 3000))
+    positions[rng.random(len(times)) < 0.2] = np.nan
+    result = compute_spatial_rate(
+        env, spikes, times, positions, method="binned", bandwidth=1e-6
+    )
+    occupied = result.occupancy > 1
+    pooled = np.nansum(result.firing_rate[occupied] * result.occupancy[occupied])
+    assert pooled / result.occupancy[occupied].sum() == pytest.approx(5.0, rel=0.05)

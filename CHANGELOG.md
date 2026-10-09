@@ -58,6 +58,12 @@
 
 ### Fixed
 
+- **Behavior change:** spatial rates use only intervals whose two tracking
+  samples both lie inside the environment. An interval ending in a dropout
+  (NaN) or outside was previously kept in the occupancy while its spikes
+  were dropped, biasing rates low (20% isolated NaN frames read a 5 Hz unit
+  as 3.97 Hz); it is now excluded from spikes and occupancy alike, which
+  recovers 5 Hz without imputing positions.
 - The all-intervals-excluded, spikes-outside-tracking, out-of-bin and
   `min_occupancy`-masks-all warnings point at the user's calling line instead
   of a line inside neurospatial, for every rate family.
