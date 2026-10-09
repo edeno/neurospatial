@@ -602,6 +602,16 @@ def _decode_with_models(
     )._evolve(spike_window=resolved_spike_window)
 
 
+_SUMMARY_TIME_CHUNK_NONE_MSG = (
+    "time_chunk=None is not allowed for decode_session_summary: this "
+    "streamed summary decoder bins time and reduces the posterior one "
+    "time-block at a time, and None would materialize the full "
+    "(n_time, n_bins) posterior, defeating its purpose. Use "
+    "decode_session if you want the full posterior, or pass a positive "
+    "time_chunk (default 1024) here."
+)
+
+
 def decode_session_summary(
     env: Environment,
     spike_times: Any,
@@ -728,14 +738,7 @@ warn_on_drop, dtype
     from neurospatial.decoding.posterior import _validate_time_chunk
 
     if decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK) is None:
-        raise ValueError(
-            "time_chunk=None is not allowed for decode_session_summary: this "
-            "streamed summary decoder bins time and reduces the posterior one "
-            "time-block at a time, and None would materialize the full "
-            "(n_time, n_bins) posterior, defeating its purpose. Use "
-            "decode_session if you want the full posterior, or pass a positive "
-            "time_chunk (default 1024) here."
-        )
+        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
     _validate_time_chunk(
         decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
     )
@@ -815,14 +818,7 @@ def _decode_with_models_summary(
     likelihood_method: Literal["poisson"] = "poisson"
 
     if time_chunk is None:
-        raise ValueError(
-            "time_chunk=None is not allowed for decode_session_summary: this "
-            "streamed summary decoder bins time and reduces the posterior one "
-            "time-block at a time, and None would materialize the full "
-            "(n_time, n_bins) posterior, defeating its purpose. Use "
-            "decode_session if you want the full posterior, or pass a positive "
-            "time_chunk (default 1024) here."
-        )
+        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
     trains, firing_rates, bin_left, bin_right = _prepare_session_decode(

@@ -1182,9 +1182,7 @@ def visibility_occupancy(
     times, positions = validate_times_positions(
         times, positions, call="visibility_occupancy"
     )
-    positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
 
     n_time = len(times)
     occupancy = np.zeros(env.n_bins, dtype=np.float64)

@@ -411,15 +411,6 @@ def extract_pre_decision_window(
     times, positions = validate_times_positions(
         times, positions, call="extract_pre_decision_window"
     )
-    positions = np.asarray(positions)
-    times = np.asarray(times)
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length; got "
-            f"{len(positions)} and {len(times)}.\n"
-            "Why: each trajectory sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position sample on the same clock."
-        )
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
         if times[run.start] <= entry_time <= times[run.stop - 1]:
             run_times = times[run]
@@ -495,12 +486,8 @@ def pre_decision_heading_stats(
     times, positions = validate_times_positions(
         times, positions, call="pre_decision_heading_stats"
     )
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
-
-    positions = np.asarray(positions)
-    times = np.asarray(times)
-
     from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
@@ -582,19 +569,10 @@ def pre_decision_speed_stats(
     times, positions = validate_times_positions(
         times, positions, call="pre_decision_speed_stats"
     )
-    positions = np.asarray(positions)
-    times = np.asarray(times)
 
     from neurospatial.behavior._kinematics import interval_velocity
     from neurospatial.environment.trajectory import observed_interval_mask
 
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have the same length; got "
-            f"{len(positions)} and {len(times)}.\n"
-            "Why: every speed interval needs aligned position samples.\n"
-            "Fix: pass one timestamp per position sample."
-        )
     mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if not mask.any():
         return np.nan, np.nan
@@ -1046,16 +1024,6 @@ def compute_decision_analysis(
     times, positions = validate_times_positions(
         times, positions, call="compute_decision_analysis"
     )
-    positions = np.asarray(positions)
-    times = np.asarray(times)
-
-    # Validate inputs
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
 
     # Validate regions exist
     if decision_region not in env.regions:

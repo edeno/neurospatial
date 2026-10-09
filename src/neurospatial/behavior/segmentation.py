@@ -654,8 +654,6 @@ def detect_runs_between_regions(
     validate_finite(times, name="times")
 
     position_bins = np.asarray(position_bins, dtype=np.int64)
-
-    position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
     results: list[Run] = []
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
@@ -917,22 +915,12 @@ def segment_by_velocity(
     times, positions = validate_times_positions(
         times, positions, call="segment_by_velocity"
     )
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got {len(positions)} and {len(times)}"
-        )
-
     if min_speed <= 0:
         raise ValueError(f"min_speed must be positive. Got {min_speed}")
 
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
 
-    validate_finite(times, name="times")
-
-    positions = np.asarray(positions)
-    times = np.asarray(times, dtype=np.float64)
     results: list[Run] = []
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
         results.extend(

@@ -25,7 +25,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
-from neurospatial._validation import validate_finite
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -657,35 +656,10 @@ def mean_square_displacement(
     times, positions = validate_times_positions(
         times, positions, call="mean_square_displacement"
     )
-    try:
-        positions = np.asarray(positions, dtype=float)
-    except (TypeError, ValueError) as e:
-        actual_type = type(positions).__name__
-        raise TypeError(
-            f"positions must be a numeric array-like object (e.g., numpy array, "
-            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-        ) from e
-
-    # Coerce times array-like before any indexing or arithmetic.
-    try:
-        times = np.asarray(times, dtype=float)
-    except (TypeError, ValueError) as e:
-        actual_type = type(times).__name__
-        raise TypeError(
-            f"times must be a numeric array-like object (e.g., numpy array, "
-            f"list of floats). Got {actual_type}: {times!r}"
-        ) from e
-
     # Input validation
     if positions.ndim != 2:
         raise ValueError(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length, "
-            f"got {len(positions)} and {len(times)}"
         )
 
     if metric not in ("euclidean", "geodesic"):
@@ -696,8 +670,6 @@ def mean_square_displacement(
             "metric='geodesic' requires env parameter. "
             "Use metric='euclidean' if env is not available."
         )
-
-    validate_finite(times, name="times")
 
     n_samples = len(positions)
 

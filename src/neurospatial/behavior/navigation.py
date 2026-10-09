@@ -116,7 +116,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
-from neurospatial._validation import validate_finite
 from neurospatial.behavior.segmentation import _positive_dt
 
 if TYPE_CHECKING:
@@ -1429,13 +1428,6 @@ def time_efficiency(
     if len(positions) < 2:
         return np.nan
 
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
-
     if not np.isfinite(optimal_distance):
         return np.nan
 
@@ -1683,12 +1675,6 @@ def compute_path_efficiency(
     times, positions = validate_times_positions(
         times, positions, call="compute_path_efficiency"
     )
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
 
     from neurospatial.environment.trajectory import observed_interval_mask
 
@@ -1872,8 +1858,6 @@ def instantaneous_goal_alignment(
     )
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
-    positions = np.asarray(positions)
-    times = np.asarray(times)
     goal = np.asarray(goal)
 
     from neurospatial.environment.trajectory import observed_interval_mask
@@ -2037,8 +2021,6 @@ def approach_rate(
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(times, positions, call="approach_rate")
-    positions = np.asarray(positions)
-    times = np.asarray(times)
     goal = np.asarray(goal)
 
     if metric == "geodesic" and env is None:
@@ -2047,14 +2029,6 @@ def approach_rate(
             "Provide the Environment instance, or use metric='euclidean' "
             "for straight-line distances."
         )
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}."
-        )
-
-    validate_finite(times, name="times")
 
     if metric == "euclidean":
         goal_vec = goal_vector(positions, goal)
@@ -2147,16 +2121,7 @@ def compute_goal_directed_metrics(
     times, positions = validate_times_positions(
         times, positions, call="compute_goal_directed_metrics"
     )
-    positions = np.asarray(positions)
-    times = np.asarray(times)
     goal = np.asarray(goal)
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
 
     bias = goal_bias(
         times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
