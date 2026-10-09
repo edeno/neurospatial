@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- Unit labels of mixed types keep their types: `unit_ids=[1, "u"]` no
+  longer turns `1` into the string `"1"`. Result keys, indexed results,
+  labelled spike groups and shuffle random streams all use the label as
+  given, so a unit's seeded null is the same in single and population calls.
 - **Behavior change:** spatial rates use only intervals whose two tracking
   samples both lie inside the environment. An interval ending in a dropout
   (NaN) or outside was previously kept in the occupancy while its spikes

@@ -54,7 +54,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
@@ -1773,7 +1773,7 @@ class SpatialRatesResult(SpatialResultMixin):
             env=self.env,
             method=self.method,
             bandwidth=self.bandwidth,
-            unit_id=np.asarray(self.unit_ids)[idx].item(),
+            unit_id=label_at(self.unit_ids, idx),
             _unit_ids_generated=self._unit_ids_generated,
             spike_window=self.spike_window,
             coefficients=coefficients,

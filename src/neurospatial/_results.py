@@ -49,6 +49,31 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
+def as_label_array(labels: Any) -> NDArray[Any]:
+    """Convert unit labels to an array without changing any label's type.
+
+    ``np.asarray([1, "u"])`` would turn the integer ``1`` into the string
+    ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
+    label a unit is reported, looked up and seeded under. Labels of more than
+    one kind are kept in an object array; homogeneous labels keep their
+    natural dtype.
+    """
+    if isinstance(labels, np.ndarray):
+        return labels
+    values = list(labels)
+    array = np.asarray(values)
+    if array.ndim == 1 and len({np.asarray(v).dtype.kind for v in values}) > 1:
+        array = np.empty(len(values), dtype=object)
+        array[:] = values
+    return array
+
+
+def label_at(unit_ids: Any, index: int) -> Any:
+    """Return one label as a plain Python value, whatever the array's dtype."""
+    value = np.asarray(unit_ids)[index]
+    return value.item() if isinstance(value, np.generic) else value
+
+
 def resolve_unit_ids(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     n_units: int,
@@ -89,7 +114,7 @@ def resolve_unit_ids(
         does not equal ``n_units``, or if any label repeats.
     """
     if unit_ids is not None and input_ids is not None:
-        given, carried = np.asarray(unit_ids), np.asarray(input_ids)
+        given, carried = as_label_array(unit_ids), as_label_array(input_ids)
         if given.shape != carried.shape or not np.array_equal(given, carried):
             raise ValueError(
                 f"{context or 'This call'} got unit_ids={given.tolist()}, but the "
@@ -105,7 +130,7 @@ def resolve_unit_ids(
     if unit_ids is None:
         return np.arange(n_units)
 
-    resolved = np.asarray(unit_ids)
+    resolved = as_label_array(unit_ids)
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
         raise ValueError(
