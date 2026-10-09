@@ -46,6 +46,34 @@ def test_directional_place_fields_record_spike_window():
     assert result.occupancy["A"].sum() == pytest.approx(0.6, abs=1e-12)
 
 
+@pytest.mark.parametrize(
+    ("epochs", "expected"),
+    [
+        ([(0.0, 0.5)], 0.5),
+        ([(1.5, 2.0)], 0.4),
+        # Spans the "other" stretch: intersecting gives 0.5 + 0.3 s, while
+        # replacing the label windows would give the full 1.1 s.
+        ([(0.5, 1.6)], 0.8),
+    ],
+)
+def test_caller_epochs_intersect_label_windows(epochs, expected):
+    """Caller epochs restrict each direction's windows; neither replaces the other."""
+    times = np.arange(20) / 10
+    positions = np.c_[np.linspace(1, 19, 20)]
+    env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
+    labels = np.array(["A"] * 10 + ["other"] * 3 + ["A"] * 7)
+    result = compute_directional_place_fields(
+        env,
+        np.array([0.05, 1.05, 1.55]),
+        times,
+        positions,
+        labels,
+        method="binned",
+        epochs=epochs,
+    )
+    assert result.occupancy["A"].sum() == pytest.approx(expected, abs=1e-12)
+
+
 class TestDirectionalPlaceFieldsDataclass:
     """Tests for the DirectionalPlaceFields dataclass."""
 

@@ -524,6 +524,14 @@ class TestDecodingSummaryTerminalVerbs:
         from matplotlib.axes import Axes
 
         assert isinstance(ax, Axes)
+        (line,) = ax.get_lines()
+        np.testing.assert_array_equal(line.get_xdata(), summ.times)
+        np.testing.assert_array_equal(line.get_ydata(), summ.posterior_entropy)
+
+        map_lines = summ.plot(quantity="map").get_lines()
+        assert len(map_lines) == summ.map_position.shape[1]
+        for i, map_line in enumerate(map_lines):
+            np.testing.assert_array_equal(map_line.get_ydata(), summ.map_position[:, i])
 
     def test_to_xarray_dims(self, small_2d_env):
         pytest.importorskip("xarray")
