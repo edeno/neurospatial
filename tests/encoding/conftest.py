@@ -220,9 +220,13 @@ def significance_family(request):
         function=getattr(module, significance_name),
         compute=getattr(module, compute_name),
         compute_name=compute_name,
-        # The rate function each significance null calls; view reuses its
-        # precomputed gaze bins through the private implementation.
-        statistic_name="_compute_view_rates" if name == "view" else compute_name,
+        # The rate function each significance null calls; view and
+        # object-vector nulls reuse trajectory geometry through private ones.
+        statistic_name={
+            "view": "_compute_view_rates",
+            "object_vector": "_object_vector_rates",
+            "egocentric_object_vector": "_object_vector_rates",
+        }.get(name, compute_name),
         args=args,
         defaults=defaults,
     )

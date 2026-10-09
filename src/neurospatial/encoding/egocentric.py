@@ -2528,8 +2528,14 @@ def _object_vector_rates(
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
+    frame_bins: NDArray[np.int64] | None = None,
+    polar_env: EgocentricPolarEnvironment | None = None,
 ) -> ObjectVectorRatesResult:
-    """Compute either frame through the shared binning and smoothing path."""
+    """Compute either frame through the shared binning and smoothing path.
+
+    ``frame_bins`` and ``polar_env`` reuse trajectory-only geometry computed by
+    a caller that bins many spike sets on one trajectory (the shuffle null).
+    """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
@@ -2685,6 +2691,8 @@ def _object_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        frame_bins=frame_bins,
+        polar_env=polar_env,
     )
 
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
@@ -3479,6 +3487,7 @@ def _object_vector_significance(
     from neurospatial.encoding._egocentric_binning import (
         _compute_object_coords,
         _coords_to_flat_bin_idx,
+        _create_egocentric_environment,
         normalize_object_positions,
     )
     from neurospatial.encoding._significance import (
@@ -3558,16 +3567,29 @@ def _object_vector_significance(
     )
     windows = run_time_bounds(times, mask)
 
+    # The polar grid and each frame's polar bin depend only on the trajectory,
+    # so every shuffle reuses them instead of rebuilding them.
+    polar_env = _create_egocentric_environment(
+        distance_range, n_distance_bins, n_direction_bins
+    )
+
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        if headings is None:
-            rates = compute_object_vector_rates(
-                env, shifted, times, positions, object_positions, **options
-            )
-        else:
-            rates = compute_egocentric_rates(
-                env, shifted, times, positions, headings, object_positions, **options
-            )
-        return rates.spatial_information()
+        return _object_vector_rates(
+            env,
+            shifted,
+            times,
+            positions,
+            headings,
+            object_positions,
+            **options,
+            context=(
+                "compute_object_vector_rates"
+                if headings is None
+                else "compute_egocentric_rates"
+            ),
+            frame_bins=frame_bins,
+            polar_env=polar_env,
+        ).spatial_information()
 
     observed, null = run_shuffle_test(
         statistic,

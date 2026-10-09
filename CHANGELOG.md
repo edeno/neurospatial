@@ -58,6 +58,11 @@
 
 ### Fixed
 
+- `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` build the polar grid and each
+  frame's polar bin once per call instead of once per shuffle: about 3x
+  faster (0.24 s to 0.08 s for 10 units, 20 shuffles, 60,000 samples) with
+  identical results.
 - Kinematic speeds treat a zero-length interval (duplicate timestamps) as
   undefined (NaN) instead of infinite, so `pre_decision_speed_stats`, goal
   approach rates and heading labels no longer absorb an `inf` or a
