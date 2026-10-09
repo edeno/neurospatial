@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2026-01-08 (Encoding API updated to use result classes)
+**Last Updated**: 2026-10-09 (time windows, recording gaps and v0.6 naming contract)
 
 ---
 
@@ -747,7 +747,7 @@ This documentation is organized into focused modules:
 | ValueError: no active bins | "When Things Break" above |
 | Tests fail | [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing) |
 | Pre-commit hooks fail | [TROUBLESHOOTING.md - Pre-commit](.claude/TROUBLESHOOTING.md#pre-commit-hooks-fail-on-commit) |
-| Memory warning | [TROUBLESHOOTING.md - ResourceWarning](.claude/TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) |
+| Memory warning | [TROUBLESHOOTING.md - Creating large grid](.claude/TROUBLESHOOTING.md#userwarning-creating-large-grid) |
 | Type errors | [PATTERNS.md - Mypy](.claude/PATTERNS.md#mypy-type-checking-requirements) |
 | Slow napari animations | [PROFILING.md - Common Performance Issues](.claude/PROFILING.md#common-performance-issues) |
 
@@ -862,7 +862,7 @@ Module doctests remain a separate check: `uv run pytest --doctest-modules src/ne
 - Visualization (interactive animation with napari, video export, HTML players)
 - NWB integration (read/write NeurodataWithoutBorders files - optional)
 
-**Current Version:** v0.3.x (Domain-centric package reorganization)
+**Current Version:** v0.8.0 (unreleased changes in CHANGELOG.md)
 
 ---
 

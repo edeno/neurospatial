@@ -356,4 +356,4 @@ estimated_mb = _estimate_grid_memory_mb(grid_shape, dtype=np.float64)
 print(f"Estimated memory: {estimated_mb:.1f} MB")
 ```
 
-**Memory warnings trigger at 100MB.** See [TROUBLESHOOTING.md - ResourceWarning](TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) for fixes.
+**Memory warnings trigger at 100MB.** See [TROUBLESHOOTING.md - Creating large grid](TROUBLESHOOTING.md#userwarning-creating-large-grid) for fixes.

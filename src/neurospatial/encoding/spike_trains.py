@@ -1,6 +1,6 @@
 """The :class:`SpikeTrains` ragged-spike-train container.
 
-``SpikeTrains`` is the single new container Phase 3 adds. It is justified
+``SpikeTrains`` is the library's one spike container. It is justified
 because ragged per-unit spike times genuinely do not fit a rectangular array;
 every other neurospatial surface stays array-first (or ``xarray`` for labeled
 grids). The container bundles the per-unit trains with their identity labels
@@ -11,8 +11,8 @@ metadata-driven :meth:`SpikeTrains.filter`.
 Interop role
 ------------
 ``SpikeTrains`` **duck-types as a** ``SpikeTrainsLike`` **group** so it flows
-straight into the batch encoding/decoding functions through the Phase 3.1
-spike-input adapter (:func:`neurospatial.encoding.as_spike_trains_with_ids`).
+straight into the batch encoding/decoding functions through the shared
+spike-input adapter (``neurospatial.encoding._spikes.as_spike_trains_with_ids``).
 That adapter detects a group via a non-callable ``.index`` and then extracts
 trains in one of two ways:
 

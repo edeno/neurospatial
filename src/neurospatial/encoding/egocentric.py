@@ -2959,7 +2959,7 @@ def is_object_vector_cell(
     min_info : float or None, default=None
         Inclusive screen cutoff; None resolves to the family threshold constant.
     alpha : float or None, default=None
-        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
         Number of circular shifts in shuffle mode; None resolves to 1000.
     min_shift : float or None, default=None
@@ -3012,7 +3012,6 @@ def is_object_vector_cell(
     >>> rng = np.random.default_rng(42)
     >>> times = np.arange(0, 40, 0.04)
     >>> positions = rng.uniform(10, 90, (len(times), 2))
-    >>> headings = rng.uniform(-np.pi, np.pi, len(times))
     >>> objects = np.array([[50.0, 50.0]])
     >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
     >>> result = is_object_vector_cell(None, spikes, times, positions, objects)
@@ -3189,7 +3188,7 @@ def is_egocentric_object_vector_cell(
     min_info : float or None, default=None
         Inclusive screen cutoff; None resolves to the family threshold constant.
     alpha : float or None, default=None
-        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
         Number of circular shifts in shuffle mode; None resolves to 1000.
     min_shift : float or None, default=None

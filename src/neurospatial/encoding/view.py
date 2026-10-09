@@ -1989,7 +1989,7 @@ def is_spatial_view_cell(
     min_info : float or None, default=None
         Inclusive screen cutoff; None resolves to the family threshold constant.
     alpha : float or None, default=None
-        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
         Number of circular shifts in shuffle mode; None resolves to 1000.
     min_shift : float or None, default=None

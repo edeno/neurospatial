@@ -4865,6 +4865,21 @@ def is_place_cell(
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
+    criterion : {"spatial_info", "shuffle"}
+        Screen the observed statistic or test circular-shift significance.
+    min_info : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
         Estimator to use:
 
@@ -4909,7 +4924,7 @@ def is_place_cell(
         (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
         bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
         bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN is preserved so existing callers see no behavior change.
+        default), NaN bins stay NaN.
         Pass ``fill_value=0.0`` for the recommended decoding golden path: a
         zero-rate map composes directly with
         :func:`~neurospatial.decoding.posterior.decode_position` without manual
@@ -4959,8 +4974,7 @@ def is_place_cell(
         periods are excluded from BOTH the spike numerator AND the occupancy
         denominator using ONE shared per-interval speed gate, so the firing
         rate stays correct (gating only one side would bias the rate). When
-        ``None`` (the default) NO speed filtering is applied and the output is
-        byte-for-byte identical to before.
+        ``None`` (the default) no speed filtering is applied.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
         ``None``, speed is derived with a FORWARD difference to match the
@@ -5016,21 +5030,6 @@ def is_place_cell(
         ``min_speed``) are intentional exclusions and do NOT trigger this
         warning.
 
-    criterion : {"spatial_info", "shuffle"}
-        Screen the observed statistic or test circular-shift significance.
-    min_info : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
-    alpha : float or None, default=None
-        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
-    rng : numpy.random.Generator, int or None, default=None
-        Shuffle random source; an integer seed with the same unit label is stable
-        across single and population calls.
-    unit_id : hashable or None, default=None
-        Shuffle stream label; None uses label 0. Match the population's label.
 
     Returns
     -------
