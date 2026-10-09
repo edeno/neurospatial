@@ -1002,3 +1002,35 @@ def test_from_rates_nan_bins_use_existing_decoder_contract(sim):
         expected = decode_position(env, counts, maps, 0.5, times=centers)
     np.testing.assert_array_equal(actual.posterior, expected.posterior)
     assert np.isnan(maps[0, 0])
+
+
+@pytest.mark.parametrize(
+    "fit_kwargs",
+    [
+        pytest.param({"min_speed": 1e6}, id="speed-gate-excludes-all"),
+    ],
+)
+def test_fit_without_surviving_data_raises(sim, fit_kwargs) -> None:
+    """A model fit on no data would decode every time bin as uniform."""
+    env, spike_times, times, positions = sim
+    with (
+        warnings.catch_warnings(),
+        pytest.raises(ValueError, match=r"no occupied bin") as exc,
+    ):
+        warnings.simplefilter("ignore")
+        BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
+            spike_times, times, positions, **fit_kwargs
+        )
+    assert "Fix:" in str(exc.value)
+
+
+def test_min_occupancy_masking_every_bin_raises(sim) -> None:
+    env, spike_times, times, positions = sim
+    with (
+        warnings.catch_warnings(),
+        pytest.raises(ValueError, match=r"min_occupancy"),
+    ):
+        warnings.simplefilter("ignore")
+        BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
+            spike_times, times, positions
+        )

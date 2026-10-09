@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
 from neurospatial.decoding._binning import count_spikes_in_time_bins
 
@@ -552,7 +553,7 @@ def _build_encoding_model(
         "NDArray[np.float64]",
         np.asarray(rates_result.firing_rates, dtype=dtype),
     )
-    return _prepare_session_decode(
+    prepared = _prepare_session_decode(
         trains,
         times_arr,
         firing_rates,
@@ -564,6 +565,27 @@ def _build_encoding_model(
         dtype=dtype,
         context=context,
     )
+    # After the decode-bin check, whose error names epochs/max_gap precisely:
+    # time bins can exist while speed or occupancy gates leave no trained bin.
+    occupancy = np.asarray(rates_result.occupancy)
+    if not np.any((occupancy > 0) & (occupancy >= (min_occupancy or 0.0))):
+        raise ValueError(
+            _format_error(
+                f"{context}: the encoding model has no occupied bin, so every "
+                f"decode time bin would get a uniform posterior.",
+                why=(
+                    "Why: the gates (max_gap, min_speed, epochs, spike_window "
+                    "and min_occupancy) left no training interval with time "
+                    "in any kept bin."
+                ),
+                fix=(
+                    "check that times, epochs and spike_window share one "
+                    "clock in seconds, lower min_speed or min_occupancy, or "
+                    "pass max_gap=None for coarsely sampled tracking"
+                ),
+            )
+        )
+    return prepared
 
 
 def _decode_with_models(
