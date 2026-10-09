@@ -282,3 +282,25 @@ def test_results_reject_unknown_direction_frame(continuous_recording, plural):
     with pytest.raises(ValueError, match="direction_frame") as exc:
         dataclasses.replace(result, direction_frame="ego")
     assert "Fix:" in str(exc.value)
+
+
+@pytest.mark.parametrize("call", ["significance", "shuffle_predicate"])
+def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
+    """Missing headings must not silently switch to the allocentric analysis."""
+    from neurospatial.encoding import (
+        egocentric_object_vector_cell_significance,
+        is_egocentric_object_vector_cell,
+    )
+
+    r = continuous_recording
+    args = (r.env, r.spike_times, r.times, r.positions, None, np.array([[50.0, 50.0]]))
+    with pytest.raises(ValueError, match="headings is required") as exc:
+        if call == "significance":
+            egocentric_object_vector_cell_significance(
+                *args, distance_range=(0, 100), n_shuffles=3, rng=0
+            )
+        else:
+            is_egocentric_object_vector_cell(
+                *args, criterion="shuffle", n_shuffles=3, rng=0
+            )
+    assert "Fix:" in str(exc.value)

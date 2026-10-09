@@ -3459,6 +3459,7 @@ def _object_vector_significance(
     object_positions: NDArray[np.float64],
     *,
     context: str,
+    direction_frame: Literal["allocentric", "egocentric"],
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
@@ -3476,11 +3477,27 @@ def _object_vector_significance(
     min_shift: float,
     rng: np.random.Generator | int | None,
 ) -> dict[Hashable, ShuffleTestResult]:
-    """Shared body of the allocentric (``headings=None``) and egocentric tests."""
+    """Shared body of the allocentric and egocentric object-vector tests.
+
+    ``direction_frame`` names the analysis; it is never inferred from whether
+    ``headings`` is missing, so an egocentric call without headings raises.
+    """
+    egocentric = direction_frame == "egocentric"
+    if egocentric and headings is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: headings is required for egocentric bearing.",
+                why="Why: animal-relative direction needs the heading at each sample",
+                fix=(
+                    "pass headings, or use object_vector_cell_significance "
+                    "without headings"
+                ),
+            )
+        )
     arguments = (
-        "spike_times, times, positions, object_positions"
-        if headings is None
-        else "spike_times, times, positions, headings, object_positions"
+        "spike_times, times, positions, headings, object_positions"
+        if egocentric
+        else "spike_times, times, positions, object_positions"
     )
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
@@ -3506,7 +3523,7 @@ def _object_vector_significance(
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
-    if headings is not None:
+    if egocentric:
         headings = np.array(headings, dtype=np.float64, copy=True)
     object_positions = np.array(object_positions, dtype=np.float64, copy=True)
     ids = np.array(
@@ -3583,9 +3600,9 @@ def _object_vector_significance(
             object_positions,
             **options,
             context=(
-                "compute_object_vector_rates"
-                if headings is None
-                else "compute_egocentric_rates"
+                "compute_egocentric_rates"
+                if egocentric
+                else "compute_object_vector_rates"
             ),
             frame_bins=frame_bins,
             polar_env=polar_env,
@@ -3771,6 +3788,7 @@ def object_vector_cell_significance(
         None,
         object_positions,
         context="object_vector_cell_significance",
+        direction_frame="allocentric",
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -3965,6 +3983,7 @@ def egocentric_object_vector_cell_significance(
         headings,
         object_positions,
         context="egocentric_object_vector_cell_significance",
+        direction_frame="egocentric",
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
