@@ -87,14 +87,13 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
-    _SILENCE_MIN_SECONDS,
-    _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
 )
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
+    resolve_shuffle_settings,
 )
 from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -1782,18 +1781,14 @@ def compute_view_rates(
                 f"times length ({n_samples})"
             )
 
-    # Recording coverage uses tracked runs, independently of invalid frame bins.
-    if (
-        resolved_spike_window is None
-        and n_neurons >= _SILENCE_MIN_UNITS
-        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
-    ):
-        observed_mask = interval_valid_mask(
-            times, max_gap=max_gap, epochs=resolved_epochs
-        )
-        _warn_if_population_silent(
-            spike_times_list, run_time_bounds(times, observed_mask)
-        )
+    # Recording coverage uses tracked runs, independently of speed or frame bins.
+    _warn_if_population_silent(
+        spike_times_list,
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
 
     # Handle edge case: no neurons
     if n_neurons == 0:
@@ -2075,12 +2070,7 @@ def is_spatial_view_cell(
             positions,
             headings,
             unit_ids=[label],
-            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
-            if n_shuffles is None
-            else n_shuffles,
-            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
-            if min_shift is None
-            else min_shift,
+            **resolve_shuffle_settings(n_shuffles, min_shift),
             rng=rng,
             gaze_model=gaze_model,
             view_distance=view_distance,
@@ -2272,11 +2262,11 @@ def spatial_view_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
     from neurospatial.encoding._significance import (
         run_shuffle_test,
-        shuffle_pvalues,
+        snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -2285,10 +2275,7 @@ def spatial_view_cell_significance(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import (
-        _precompute_view_bins,
-        _view_interval_mask,
-    )
+    from neurospatial.encoding._view_binning import _precompute_view_bins
 
     trains, input_ids = as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
@@ -2316,16 +2303,11 @@ def spatial_view_cell_significance(
         "n_jobs": n_jobs,
         "backend": backend,
     }
-    options = {
-        key: value.copy()
-        if isinstance(value, np.ndarray)
-        else np.array(value, copy=True)
-        if isinstance(value, (list, tuple))
-        else value
-        for key, value in options.items()
-    }
-    options.update(
-        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    options = snapshot_options(
+        options,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        unit_ids=ids,
     )
     validate_env_fitted(
         env,
@@ -2348,7 +2330,7 @@ def spatial_view_cell_significance(
         view_distance=view_distance,
         gaze_offsets=options["gaze_offsets"],
     )
-    mask = _view_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
@@ -2371,4 +2353,4 @@ def spatial_view_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
+    return to_shuffle_results(observed, null, ids)

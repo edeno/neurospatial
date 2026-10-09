@@ -169,6 +169,7 @@ def test_frame_analysis_mask_is_shared_once(
     frame_family, continuous_recording, monkeypatch, n_units
 ):
     f, r = frame_family, continuous_recording
+    from neurospatial.encoding import _binning as encoding_binning
     from neurospatial.environment import trajectory
 
     original = trajectory.interval_valid_mask
@@ -188,6 +189,7 @@ def test_frame_analysis_mask_is_shared_once(
 
     monkeypatch.setattr(trajectory, "interval_valid_mask", track)
     monkeypatch.setattr(f.binning, "interval_valid_mask", track, raising=False)
+    monkeypatch.setattr(encoding_binning, "interval_valid_mask", track)
     monkeypatch.setattr(f.module, "resolve_time_windows", track_parser)
     result = (f.single if n_units is None else f.plural)(
         *f.args(r, r.spike_times if n_units is None else [r.spike_times] * n_units),

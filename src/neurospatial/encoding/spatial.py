@@ -61,6 +61,7 @@ from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
+    resolve_shuffle_settings,
 )
 
 if TYPE_CHECKING:
@@ -2963,15 +2964,13 @@ default="diffusion_kde"
     >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
     True
     """
-    from neurospatial._intervals import resolve_time_windows
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_intervals_warning,
-        _spatial_interval_mask,
+        _resolve_spatial_interval_mask,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -3045,27 +3044,17 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-    interval_mask = _spatial_interval_mask(
+    interval_mask, _, resolved_spike_window = _resolve_spatial_interval_mask(
         env,
         times,
-        positions_2d,
+        positions,
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
     )
-    if warn_on_drop:
-        _emit_all_excluded_intervals_warning(
-            interval_mask,
-            max_gap=max_gap,
-            min_speed=min_speed,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-            stacklevel=2,
-        )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -3498,17 +3487,13 @@ default="diffusion_kde"
     >>> len(result2)
     2
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _SILENCE_MIN_SECONDS,
-        _SILENCE_MIN_UNITS,
-        _emit_all_excluded_intervals_warning,
-        _spatial_interval_mask,
+        _resolve_spatial_interval_mask,
         _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
@@ -3523,7 +3508,6 @@ default="diffusion_kde"
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.environment.trajectory import interval_valid_mask
 
     validate_env_fitted(
         env, context="compute_spatial_rates", arguments="spike_times, times, positions"
@@ -3622,42 +3606,28 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-    interval_mask = _spatial_interval_mask(
-        env,
+    interval_mask, resolved_epochs, resolved_spike_window = (
+        _resolve_spatial_interval_mask(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            warn_on_drop=warn_on_drop,
+        )
+    )
+
+    # Recording coverage uses tracked runs, independently of speed or frame bins.
+    _warn_if_population_silent(
+        spike_times_list,
         times,
-        positions_2d,
-        speed=resolved_speed,
-        min_speed=min_speed,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
     )
-    if warn_on_drop:
-        _emit_all_excluded_intervals_warning(
-            interval_mask,
-            max_gap=max_gap,
-            min_speed=min_speed,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-            stacklevel=2,
-        )
-
-    # Recording coverage is a separate concern from speed/bounds filtering.
-    # Short recordings or populations below the heuristic threshold cannot
-    # produce a silence warning, so they need no separate observed mask.
-    if (
-        resolved_spike_window is None
-        and n_neurons >= _SILENCE_MIN_UNITS
-        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
-    ):
-        observed_mask = interval_valid_mask(
-            times, max_gap=max_gap, epochs=resolved_epochs
-        )
-        _warn_if_population_silent(
-            spike_times_list, run_time_bounds(times, observed_mask)
-        )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
     # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
@@ -5134,12 +5104,7 @@ def is_place_cell(
             times,
             positions,
             unit_ids=[label],
-            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
-            if n_shuffles is None
-            else n_shuffles,
-            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
-            if min_shift is None
-            else min_shift,
+            **resolve_shuffle_settings(n_shuffles, min_shift),
             rng=rng,
             method=method,
             bandwidth=bandwidth,
@@ -5687,7 +5652,7 @@ def place_cell_significance(
     from neurospatial.encoding._binning import _spatial_interval_mask, resolve_speed
     from neurospatial.encoding._significance import (
         run_shuffle_test,
-        shuffle_pvalues,
+        snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -5735,16 +5700,11 @@ def place_cell_significance(
         "warn_on_drop": warn_on_drop,
         "dtype": dtype,
     }
-    options = {
-        key: value.copy()
-        if isinstance(value, np.ndarray)
-        else np.array(value, copy=True)
-        if isinstance(value, (list, tuple))
-        else value
-        for key, value in options.items()
-    }
-    options.update(
-        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    options = snapshot_options(
+        options,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        unit_ids=ids,
     )
     validate_env_fitted(
         env,
@@ -5784,4 +5744,4 @@ def place_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
+    return to_shuffle_results(observed, null, ids)

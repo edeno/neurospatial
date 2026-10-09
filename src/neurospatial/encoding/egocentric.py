@@ -53,17 +53,13 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
-    _SILENCE_MIN_SECONDS,
-    _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
-)
-from neurospatial.encoding._egocentric_binning import (
-    _object_vector_interval_mask as _object_vector_interval_mask,
 )
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
+    resolve_shuffle_settings,
 )
 from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -2600,18 +2596,15 @@ def _object_vector_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"{context} (neuron {i})")
 
-    # Recording coverage uses tracked runs, independently of invalid frame bins.
-    if (
-        resolved_spike_window is None
-        and n_neurons >= _SILENCE_MIN_UNITS
-        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
-    ):
-        observed_mask = interval_valid_mask(
-            times, max_gap=max_gap, epochs=resolved_epochs
-        )
-        _warn_if_population_silent(
-            spike_times_list, run_time_bounds(times, observed_mask), stacklevel=4
-        )
+    # Recording coverage uses tracked runs, independently of speed or frame bins.
+    _warn_if_population_silent(
+        spike_times_list,
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        stacklevel=4,
+    )
 
     # Handle edge case: no neurons
     if n_neurons == 0:
@@ -3049,12 +3042,7 @@ def is_object_vector_cell(
             positions,
             object_positions,
             unit_ids=[label],
-            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
-            if n_shuffles is None
-            else n_shuffles,
-            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
-            if min_shift is None
-            else min_shift,
+            **resolve_shuffle_settings(n_shuffles, min_shift),
             rng=rng,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
@@ -3289,12 +3277,7 @@ def is_egocentric_object_vector_cell(
             headings,
             object_positions,
             unit_ids=[label],
-            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
-            if n_shuffles is None
-            else n_shuffles,
-            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
-            if min_shift is None
-            else min_shift,
+            **resolve_shuffle_settings(n_shuffles, min_shift),
             rng=rng,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
@@ -3441,6 +3424,145 @@ def plot_object_vector_tuning(
         plt.colorbar(mesh, ax=ax, label="Firing rate (Hz)")
 
     return ax
+
+
+def _object_vector_significance(
+    env: Environment | None,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    context: str,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
+    metric: Literal["euclidean", "geodesic"],
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float,
+    min_occupancy: float,
+    n_jobs: int,
+    backend: Literal["numpy", "jax", "auto"],
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    n_shuffles: int,
+    min_shift: float,
+    rng: np.random.Generator | int | None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Shared body of the allocentric (``headings=None``) and egocentric tests."""
+    arguments = (
+        "spike_times, times, positions, object_positions"
+        if headings is None
+        else "spike_times, times, positions, headings, object_positions"
+    )
+    from neurospatial._intervals import resolve_time_windows
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._egocentric_binning import (
+        _compute_object_coords,
+        _coords_to_flat_bin_idx,
+        normalize_object_positions,
+    )
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        snapshot_options,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    if headings is not None:
+        headings = np.array(headings, dtype=np.float64, copy=True)
+    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context=context,
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "distance_range": distance_range,
+        "n_distance_bins": n_distance_bins,
+        "n_direction_bins": n_direction_bins,
+        "metric": metric,
+        "max_gap": max_gap,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "n_jobs": n_jobs,
+        "backend": backend,
+    }
+    options = snapshot_options(
+        options,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        unit_ids=ids,
+    )
+    if env is not None:
+        validate_env_fitted(
+            env,
+            context=context,
+            arguments=arguments,
+        )
+    validate_trajectory(times, positions=positions, headings=headings, context=context)
+    for train in trains:
+        validate_spike_times(train, context=context)
+    _validate_object_vector_metric(env, metric, context=context)
+    object_positions = normalize_object_positions(object_positions)
+    distances, bearings = _compute_object_coords(
+        positions, headings, object_positions, metric=metric, env=env
+    )
+    frame_bins = _coords_to_flat_bin_idx(
+        distances.ravel(),
+        bearings.ravel(),
+        distance_range,
+        n_distance_bins,
+        n_direction_bins,
+    )
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        if headings is None:
+            rates = compute_object_vector_rates(
+                env, shifted, times, positions, object_positions, **options
+            )
+        else:
+            rates = compute_egocentric_rates(
+                env, shifted, times, positions, headings, object_positions, **options
+            )
+        return rates.spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, ids)
 
 
 def object_vector_cell_significance(
@@ -3603,112 +3725,31 @@ def object_vector_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._egocentric_binning import (
-        _compute_object_coords,
-        _coords_to_flat_bin_idx,
-        normalize_object_positions,
-    )
-    from neurospatial.encoding._significance import (
-        run_shuffle_test,
-        shuffle_pvalues,
-        to_shuffle_results,
-    )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
-    from neurospatial.encoding._validation import (
-        validate_env_fitted,
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="object_vector_cell_significance",
-        ),
-        copy=True,
-    )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    options: dict[str, Any] = {
-        "distance_range": distance_range,
-        "n_distance_bins": n_distance_bins,
-        "n_direction_bins": n_direction_bins,
-        "metric": metric,
-        "max_gap": max_gap,
-        "method": method,
-        "bandwidth": bandwidth,
-        "min_occupancy": min_occupancy,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
-    options = {
-        key: value.copy()
-        if isinstance(value, np.ndarray)
-        else np.array(value, copy=True)
-        if isinstance(value, (list, tuple))
-        else value
-        for key, value in options.items()
-    }
-    options.update(
-        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
-    )
-    if env is not None:
-        validate_env_fitted(
-            env,
-            context="object_vector_cell_significance",
-            arguments="spike_times, times, positions, object_positions",
-        )
-    validate_trajectory(
-        times, positions=positions, context="object_vector_cell_significance"
-    )
-    for train in trains:
-        validate_spike_times(train, context="object_vector_cell_significance")
-    _validate_object_vector_metric(
-        env, metric, context="object_vector_cell_significance"
-    )
-    object_positions = normalize_object_positions(object_positions)
-    distances, bearings = _compute_object_coords(
-        positions, None, object_positions, metric=metric, env=env
-    )
-    frame_bins = _coords_to_flat_bin_idx(
-        distances.ravel(),
-        bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
-    mask = _object_vector_interval_mask(
+    return _object_vector_significance(
+        env,
+        spike_times,
         times,
-        start_bin=frame_bins,
+        positions,
+        None,
+        object_positions,
+        context="object_vector_cell_significance",
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-    )
-    windows = run_time_bounds(times, mask)
-
-    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return compute_object_vector_rates(
-            env, shifted, times, positions, object_positions, **options
-        ).spatial_information()
-
-    observed, null = run_shuffle_test(
-        statistic,
-        trains,
-        windows,
-        ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
 
 
 def egocentric_object_vector_cell_significance(
@@ -3878,115 +3919,28 @@ def egocentric_object_vector_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._egocentric_binning import (
-        _compute_object_coords,
-        _coords_to_flat_bin_idx,
-        normalize_object_positions,
-    )
-    from neurospatial.encoding._significance import (
-        run_shuffle_test,
-        shuffle_pvalues,
-        to_shuffle_results,
-    )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
-    from neurospatial.encoding._validation import (
-        validate_env_fitted,
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    headings = np.array(headings, dtype=np.float64, copy=True)
-    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="egocentric_object_vector_cell_significance",
-        ),
-        copy=True,
-    )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    options: dict[str, Any] = {
-        "distance_range": distance_range,
-        "n_distance_bins": n_distance_bins,
-        "n_direction_bins": n_direction_bins,
-        "metric": metric,
-        "max_gap": max_gap,
-        "method": method,
-        "bandwidth": bandwidth,
-        "min_occupancy": min_occupancy,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
-    options = {
-        key: value.copy()
-        if isinstance(value, np.ndarray)
-        else np.array(value, copy=True)
-        if isinstance(value, (list, tuple))
-        else value
-        for key, value in options.items()
-    }
-    options.update(
-        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
-    )
-    if env is not None:
-        validate_env_fitted(
-            env,
-            context="egocentric_object_vector_cell_significance",
-            arguments="spike_times, times, positions, headings, object_positions",
-        )
-    validate_trajectory(
+    return _object_vector_significance(
+        env,
+        spike_times,
         times,
-        positions=positions,
-        headings=headings,
+        positions,
+        headings,
+        object_positions,
         context="egocentric_object_vector_cell_significance",
-    )
-    for train in trains:
-        validate_spike_times(
-            train, context="egocentric_object_vector_cell_significance"
-        )
-    _validate_object_vector_metric(
-        env, metric, context="egocentric_object_vector_cell_significance"
-    )
-    object_positions = normalize_object_positions(object_positions)
-    distances, bearings = _compute_object_coords(
-        positions, headings, object_positions, metric=metric, env=env
-    )
-    frame_bins = _coords_to_flat_bin_idx(
-        distances.ravel(),
-        bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
-    mask = _object_vector_interval_mask(
-        times,
-        start_bin=frame_bins,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-    )
-    windows = run_time_bounds(times, mask)
-
-    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return compute_egocentric_rates(
-            env, shifted, times, positions, headings, object_positions, **options
-        ).spatial_information()
-
-    observed, null = run_shuffle_test(
-        statistic,
-        trains,
-        windows,
-        ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)

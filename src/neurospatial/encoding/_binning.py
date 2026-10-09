@@ -28,8 +28,11 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import resolve_time_windows
-from neurospatial.environment.trajectory import start_allocated_occupancy
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial.environment.trajectory import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -290,6 +293,49 @@ def count_spikes_by_frame(
     return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
 
 
+def count_frames_and_occupancy(
+    spike_times_list: Sequence[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    frame_bins: NDArray[np.intp],
+    n_bins: int,
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+    n_jobs: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Count every unit's spikes and the shared occupancy over one frame mask.
+
+    Returns
+    -------
+    spike_counts : ndarray, shape (n_units, n_bins)
+    occupancy : ndarray, shape (n_bins,)
+    """
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
+    spike_counts = np.zeros((len(spike_times_list), n_bins), dtype=np.float64)
+    if len(spike_times_list) and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(count_spikes_by_frame)(spikes, times, frame_bins, mask, n_bins)
+            for spikes in spike_times_list
+        )
+        spike_counts = np.asarray(results, dtype=np.float64)
+    else:
+        for i, spikes in enumerate(spike_times_list):
+            spike_counts[i] = count_spikes_by_frame(
+                spikes, times, frame_bins, mask, n_bins
+            )
+    return spike_counts, occupancy
+
+
 def _spatial_interval_mask(
     env: Environment,
     times: NDArray[np.float64],
@@ -349,6 +395,46 @@ def _spatial_interval_mask(
         epochs=epochs,
         spike_window=spike_window,
     )
+
+
+def _resolve_spatial_interval_mask(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    warn_on_drop: bool,
+) -> tuple[NDArray[np.bool_], NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """Normalize time windows, build the shared mask and warn if it is empty.
+
+    Returns ``(interval_mask, epochs, spike_window)`` with the windows
+    normalized. The all-excluded warning is attributed to the public caller.
+    """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    interval_mask = _spatial_interval_mask(
+        env,
+        times,
+        positions.reshape(-1, 1) if positions.ndim == 1 else positions,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    if warn_on_drop:
+        _emit_all_excluded_intervals_warning(
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            stacklevel=3,
+        )
+    return interval_mask, resolved_epochs, resolved_spike_window
 
 
 def _emit_all_excluded_intervals_warning(
@@ -435,20 +521,35 @@ _SILENCE_MIN_SECONDS = 60.0
 
 def _warn_if_population_silent(
     spike_trains: Sequence[NDArray[np.float64]],
-    observed_runs: NDArray[np.float64],
+    times: NDArray[np.float64],
     *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
     stacklevel: int = 3,
 ) -> None:
     """Warn once if every unit is silent for >= 60 s of tracked time.
 
-    ``observed_runs`` are the maximal runs of intervals passing the max_gap and
-    epochs gates (``run_time_bounds``). A silent stretch is measured inside a
-    single run, from the run start to the first spike, between consecutive
+    Skipped when the caller passed ``spike_window`` (recording coverage is then
+    explicit), for populations below ``_SILENCE_MIN_UNITS`` and for recordings
+    shorter than ``_SILENCE_MIN_SECONDS``. Otherwise silence is measured over
+    the maximal runs of intervals passing the max_gap and epochs gates
+    (``run_time_bounds``), independently of speed or frame-bin validity: inside
+    a single run, from the run start to the first spike, between consecutive
     spikes of the merged train, and from the last spike to the run end, so a
     stretch never spans an untracked pause.
     """
     n_units = len(spike_trains)
-    if n_units < _SILENCE_MIN_UNITS or observed_runs.shape[0] == 0:
+    if (
+        spike_window is not None
+        or n_units < _SILENCE_MIN_UNITS
+        or times[-1] - times[0] < _SILENCE_MIN_SECONDS
+    ):
+        return
+    observed_runs = run_time_bounds(
+        times, interval_valid_mask(times, max_gap=max_gap, epochs=epochs)
+    )
+    if observed_runs.shape[0] == 0:
         return
     nonempty = [np.asarray(s, dtype=np.float64) for s in spike_trains if len(s)]
     spikes = np.concatenate(nonempty) if nonempty else np.empty(0, dtype=np.float64)

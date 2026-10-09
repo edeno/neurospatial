@@ -32,7 +32,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.encoding._binning import count_spikes_by_frame
+from neurospatial.encoding._binning import (
+    count_frames_and_occupancy,
+    count_spikes_by_frame,
+)
 from neurospatial.encoding._validation import validate_times as _validate_times
 from neurospatial.environment.trajectory import (
     interval_valid_mask,
@@ -48,24 +51,6 @@ __all__ = [
     "bin_view_spike_trains",
     "compute_occupancy",
 ]
-
-
-def _view_interval_mask(
-    times: NDArray[np.float64],
-    *,
-    start_bin: NDArray[np.intp],
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
-    spike_window: NDArray[np.float64] | None,
-) -> NDArray[np.bool_]:
-    """Apply the shared recording/frame gates for this rate family."""
-    return interval_valid_mask(
-        times,
-        start_bin=start_bin,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-    )
 
 
 def _precompute_view_bins(
@@ -283,7 +268,7 @@ def compute_occupancy(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
     )
-    mask = _view_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=view_bins,
         max_gap=max_gap,
@@ -419,7 +404,7 @@ def bin_view_spike_train(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
     )
-    mask = _view_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=view_bins,
         max_gap=max_gap,
@@ -552,7 +537,6 @@ def bin_view_spike_trains(
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
-    n_neurons = len(spike_times_list)
 
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -573,26 +557,14 @@ def bin_view_spike_trains(
     )
 
     n_bins = env.n_bins
-    mask = _view_interval_mask(
+    spike_counts, occupancy = count_frames_and_occupancy(
+        spike_times_list,
         times,
-        start_bin=view_bins,
+        view_bins,
+        n_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        n_jobs=n_jobs,
     )
-    occupancy = start_allocated_occupancy(view_bins, np.diff(times), mask, n_bins)
-    spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
-    if n_neurons and n_jobs != 1:
-        from joblib import Parallel, delayed
-
-        results = Parallel(n_jobs=n_jobs)(
-            delayed(count_spikes_by_frame)(spikes, times, view_bins, mask, n_bins)
-            for spikes in spike_times_list
-        )
-        spike_counts = np.asarray(results, dtype=np.float64)
-    else:
-        for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = count_spikes_by_frame(
-                spikes, times, view_bins, mask, n_bins
-            )
     return spike_counts, occupancy
