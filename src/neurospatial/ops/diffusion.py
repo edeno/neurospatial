@@ -1279,6 +1279,8 @@ def diffusion_kernel(
 
 def _finite_volume_geometry(
     env: EnvironmentProtocol,
+    *,
+    operation: str = "diffusion_kernel",
 ) -> tuple[nx.Graph, NDArray[np.float64]]:
     """Dispatch to the per-geometry finite-volume builder.
 
@@ -1306,10 +1308,40 @@ def _finite_volume_geometry(
     try:
         builder = builders[engine]
     except KeyError:
-        raise NotImplementedError(
-            f"diffusion kernel unsupported for layout {engine!r}. Supported "
-            f"layouts: {sorted(builders)} (and egocentric polar)."
-        ) from None
+        from neurospatial._exceptions import _format_error
+
+        original = getattr(env.layout, "_build_params_used", {}).get(
+            "original_layout_type"
+        )
+        if engine == "_ReconstructedLayout" and original:
+            message = _format_error(
+                f"{operation} needs finite-volume cell geometry, which is not "
+                f"available for this {original} environment read from NWB.",
+                why=(
+                    "Why: read_environment restores bin centers, connectivity "
+                    "and bin measures for non-grid layouts, but not the layout "
+                    "engine that defines cell faces."
+                ),
+                fix=(
+                    f"rebuild the environment with the factory and {original} "
+                    f"layout parameters that created it, and run {operation} "
+                    "on that; grid layouts read from NWB support it directly"
+                ),
+            )
+        else:
+            message = _format_error(
+                f"{operation} needs finite-volume cell geometry, which layout "
+                f"{engine!r} does not provide.",
+                why=(
+                    f"Why: supported layouts are {sorted(builders)} and "
+                    "egocentric polar."
+                ),
+                fix=(
+                    "build the environment with a factory method, e.g. "
+                    "Environment.from_samples(positions, bin_size=...)"
+                ),
+            )
+        raise NotImplementedError(message) from None
     return builder(env)
 
 

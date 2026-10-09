@@ -2239,3 +2239,42 @@ def test_empty_unit_warns_and_assumes_cm(make_scaled_position_nwb):
         warnings.simplefilter("error")
         env = environment_from_position(nwbfile, bin_size=50.0, units="cm")
     assert env.units == "cm"
+
+
+@pytest.fixture
+def hexagonal_env_from_nwb(empty_nwb):
+    """A hexagonal environment after an in-memory NWB write/read round trip."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    env = Environment.from_layout(
+        kind="Hexagonal",
+        layout_params={"hexagon_width": 5.0, "dimension_ranges": [(0, 50), (0, 50)]},
+    )
+    write_environment(empty_nwb, env)
+    return read_environment(empty_nwb)
+
+
+@pytest.mark.parametrize("operation", ["gradient", "divergence", "smooth", "basis"])
+def test_finite_volume_ops_on_nwb_layout_explain_the_round_trip(
+    hexagonal_env_from_nwb, operation
+):
+    """The fix must name the NWB round trip, not a factory the user never skipped."""
+    from neurospatial.ops.basis import heat_kernel_wavelet_basis
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = hexagonal_env_from_nwb
+    calls = {
+        "gradient": lambda: gradient(env, np.ones(env.n_bins)),
+        "divergence": lambda: divergence(
+            env, np.ones(env.connectivity.number_of_edges())
+        ),
+        "smooth": lambda: env.smooth(np.ones(env.n_bins), bandwidth=5.0),
+        "basis": lambda: heat_kernel_wavelet_basis(env, centers=np.array([0])),
+    }
+    with pytest.raises(NotImplementedError) as exc:
+        calls[operation]()
+    message = str(exc.value)
+    assert "read from NWB" in message
+    assert "Hexagonal" in message
+    assert "\nFix:" in message

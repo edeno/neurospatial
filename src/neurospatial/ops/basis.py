@@ -584,15 +584,9 @@ def _diffusion_generator(env: Environment) -> sparse.csr_matrix:
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
     from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
 
-    try:
-        graph, volumes = _finite_volume_geometry(cast("EnvironmentProtocol", env))
-    except NotImplementedError as err:
-        raise NotImplementedError(
-            f"heat_kernel_wavelet_basis needs finite-volume cell geometry, which "
-            f"layout {type(env.layout).__name__!r} does not provide ({err}).\n"
-            "Fix: build the environment with a factory method, e.g. "
-            "Environment.from_samples(positions, bin_size=...)."
-        ) from err
+    graph, volumes = _finite_volume_geometry(
+        cast("EnvironmentProtocol", env), operation="heat_kernel_wavelet_basis"
+    )
     weights = _assemble_W(graph, env.n_bins)
     degree = sparse.diags(np.asarray(weights.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)

@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- Smoothing, `gradient`, `divergence` and `heat_kernel_wavelet_basis` on a
+  non-grid environment read from NWB explain that the round trip does not
+  restore cell geometry and name the original layout, instead of advising a
+  factory method the user never skipped.
 - `BayesianDecoder.fit` (and the session decoders that build an encoding
   model) raise `ValueError` when the speed, gap, window and `min_occupancy`
   gates leave no occupied bin, instead of returning a model that decodes
