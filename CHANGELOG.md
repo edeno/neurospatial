@@ -58,6 +58,9 @@
 
 ### Fixed
 
+- Object-vector and egocentric `method="binned"` rates keep bins whose
+  occupancy equals `min_occupancy`, as every other rate path does, and warn
+  when `min_occupancy` masks every occupied bin.
 - `ShuffleTestResult` stores `null_scores` as a read-only copy, and its
   p-value documentation names the finite-null denominator the significance
   functions use.

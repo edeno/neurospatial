@@ -61,6 +61,7 @@ from neurospatial.encoding._significance import (
     check_mode_keywords,
     resolve_shuffle_settings,
 )
+from neurospatial.encoding._smoothing import _warn_if_fully_masked
 from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
@@ -1293,25 +1294,21 @@ def _raw_polar_rate(
     Returns
     -------
     ndarray of shape (n_bins,), dtype float64
-        Firing rate per bin in Hz. Bins whose occupancy does not exceed the
-        threshold are NaN (undefined, not zero).
+        Firing rate per bin in Hz. Unvisited bins and bins below
+        ``min_occupancy`` are NaN (undefined, not zero).
 
     Notes
     -----
-    Masking convention (shared across the encoding smoothing paths): a bin is
-    valid iff the occupancy quantity used as the firing-rate denominator is
-    *strictly greater than* ``max(min_occupancy, 0.0)``. Here the denominator
-    is the raw per-bin occupancy (this is the unsmoothed ``binned`` polar
-    path), so the raw occupancy is thresholded. When ``min_occupancy`` is 0
-    (the default) this reduces to "valid iff ``occupancy > 0``", matching the
-    smoothed-density threshold used by the KDE paths in ``_smoothing.py``.
+    Masking convention (shared with ``_smoothing._apply_min_occupancy_mask``):
+    a bin is valid iff its raw occupancy is positive and at least
+    ``min_occupancy``, so ``result.occupancy < min_occupancy`` is exactly the
+    masked set.
     """
     occ = np.asarray(occupancy, dtype=np.float64)
     counts = np.asarray(spike_counts, dtype=np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
         rate = counts / occ
-    occupancy_threshold = max(min_occupancy, 0.0)
-    valid = occ > occupancy_threshold
+    valid = (occ > 0.0) & (occ >= min_occupancy)
     return np.where(valid, rate, np.nan)
 
 
@@ -1353,6 +1350,7 @@ def _egocentric_firing_rate(
     from neurospatial.encoding._backend import is_jax_available
 
     if method == "binned":
+        _warn_if_fully_masked(occupancy, min_occupancy)
         rate = _raw_polar_rate(spike_counts, occupancy, min_occupancy)
         if backend == "jax" and is_jax_available():
             import jax.numpy as jnp
@@ -2676,6 +2674,7 @@ def _object_vector_rates(
     # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
     firing_rates: ArrayLike
     if method == "binned":
+        _warn_if_fully_masked(occupancy, min_occupancy)
         firing_rates = np.stack(
             [
                 _raw_polar_rate(counts, occupancy, min_occupancy)
