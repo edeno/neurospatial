@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- `spatial_view_cell_significance` computes the gaze geometry once per
+  call instead of once per shuffle. With `gaze_model="ray_cast"` on 3,000
+  samples, 10 shuffles drop from 6.95 s to 0.64 s with identical observed
+  scores, null scores and p-values.
 - Object-vector and egocentric `method="binned"` rates keep bins whose
   occupancy equals `min_occupancy`, as every other rate path does, and warn
   when `min_occupancy` masks every occupied bin.

@@ -428,6 +428,7 @@ def bin_view_spike_trains(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
+    view_bins: NDArray[np.intp] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains by viewed location.
 
@@ -478,6 +479,10 @@ def bin_view_spike_trains(
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
+    view_bins : ndarray of int, shape (n_samples,), optional
+        Viewed bin per sample from ``_precompute_view_bins`` for exactly these
+        samples and gaze settings. Passing it skips the gaze computation, so a
+        caller that bins many spike sets on one trajectory computes it once.
 
     Returns
     -------
@@ -545,16 +550,18 @@ def bin_view_spike_trains(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="bin_view_spike_trains")
 
-    # Precompute view bins ONCE (shared across all neurons)
+    # Precompute view bins ONCE (shared across all neurons) unless the caller
+    # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
-    view_bins = _precompute_view_bins(
-        env,
-        positions,
-        headings,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
-    )
+    if view_bins is None:
+        view_bins = _precompute_view_bins(
+            env,
+            positions,
+            headings,
+            gaze_model=gaze_model,
+            view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
+        )
 
     n_bins = env.n_bins
     spike_counts, occupancy = count_frames_and_occupancy(

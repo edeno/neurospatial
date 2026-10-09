@@ -1694,6 +1694,49 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    return _compute_view_rates(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
+    )
+
+
+def _compute_view_rates(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    view_bins: NDArray[np.intp] | None = None,
+) -> ViewRatesResult:
+    """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
@@ -1841,6 +1884,7 @@ def compute_view_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        view_bins=view_bins,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -2339,9 +2383,11 @@ def spatial_view_cell_significance(
     )
     windows = run_time_bounds(times, mask)
 
+    # The gaze geometry depends only on the trajectory, so every shuffle
+    # reuses frame_bins instead of recomputing it (ray casting dominates).
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return compute_view_rates(
-            env, shifted, times, positions, headings, **options
+        return _compute_view_rates(
+            env, shifted, times, positions, headings, **options, view_bins=frame_bins
         ).view_spatial_information()
 
     observed, null = run_shuffle_test(

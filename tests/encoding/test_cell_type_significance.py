@@ -68,7 +68,7 @@ def test_significance_uses_only_observed_windows(
     significance_family, significance_recording, monkeypatch
 ):
     f, r = significance_family, significance_recording
-    compute = getattr(f.module, f.compute_name)
+    compute = getattr(f.module, f.statistic_name)
     recorded = []
 
     def capture(*args, **kwargs):
@@ -76,7 +76,7 @@ def test_significance_uses_only_observed_windows(
         recorded.append([train.copy() for train in trains])
         return compute(*args, **kwargs)
 
-    monkeypatch.setattr(f.module, f.compute_name, capture)
+    monkeypatch.setattr(f.module, f.statistic_name, capture)
     f.function(
         *f.args(r),
         epochs=[[0, 20], [30, 60]],
@@ -148,7 +148,7 @@ def test_significance_isolated_from_caller_mutation(
         kwargs["method"] = "gaussian_kde"
     clean = f.function(*f.args(r), n_shuffles=4, rng=0, **kwargs)
     target = kwargs[argument] if argument in kwargs else getattr(r, argument)
-    compute = getattr(f.module, f.compute_name)
+    compute = getattr(f.module, f.statistic_name)
     calls = 0
 
     def mutate_after_observation(*args, **parameters):
@@ -166,7 +166,7 @@ def test_significance_isolated_from_caller_mutation(
         calls += 1
         return result
 
-    monkeypatch.setattr(f.module, f.compute_name, mutate_after_observation)
+    monkeypatch.setattr(f.module, f.statistic_name, mutate_after_observation)
     protected = f.function(*f.args(r), n_shuffles=4, rng=0, **kwargs)
     for uid in clean:
         assert protected[uid].p_value == clean[uid].p_value
