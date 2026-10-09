@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.environment.trajectory import (
+    _external_stacklevel,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -293,6 +294,9 @@ def count_spikes_by_frame(
     return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
 
 
+_WARN_ON_DROP_HINT = "Set warn_on_drop=False to suppress this warning."
+
+
 def count_frames_and_occupancy(
     spike_times_list: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
@@ -306,6 +310,10 @@ def count_frames_and_occupancy(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Count every unit's spikes and the shared occupancy over one frame mask.
 
+    Warns, at the caller's call site, when the gates exclude every interval or
+    when most spikes fall outside the tracked time (the same checks the
+    spatial family applies under ``warn_on_drop=True``).
+
     Returns
     -------
     spike_counts : ndarray, shape (n_units, n_bins)
@@ -318,6 +326,33 @@ def count_frames_and_occupancy(
         epochs=epochs,
         spike_window=spike_window,
     )
+    stacklevel = _external_stacklevel() + 1
+    _emit_all_excluded_intervals_warning(
+        mask,
+        max_gap=max_gap,
+        min_speed=None,
+        epochs=epochs,
+        spike_window=spike_window,
+        stacklevel=stacklevel,
+        suppress_hint="",
+    )
+    if len(times):
+        all_spikes = (
+            np.concatenate(spike_times_list)
+            if spike_times_list
+            else np.empty(0, dtype=np.float64)
+        )
+        outside = ~((all_spikes >= times[0]) & (all_spikes < times[-1]))
+        _emit_time_window_warning(
+            int(outside.sum()),
+            all_spikes.size,
+            float(times[0]),
+            float(times[-1]),
+            all_spikes,
+            scope="across all neurons " if len(spike_times_list) > 1 else "",
+            stacklevel=stacklevel,
+            suppress_hint="",
+        )
     occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
     spike_counts = np.zeros((len(spike_times_list), n_bins), dtype=np.float64)
     if len(spike_times_list) and n_jobs != 1:
@@ -445,6 +480,7 @@ def _emit_all_excluded_intervals_warning(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     stacklevel: int = 2,
+    suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning when the interval filter excludes ALL intervals.
 
@@ -466,6 +502,9 @@ def _emit_all_excluded_intervals_warning(
         Active normalized time windows, named in the message when supplied.
     stacklevel : int, optional
         ``warnings.warn`` stacklevel.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning; empty for callers
+        without a ``warn_on_drop`` parameter.
     """
     if interval_mask.size == 0:
         return
@@ -506,10 +545,12 @@ def _emit_all_excluded_intervals_warning(
     fix_part = ("; ".join(fixes) + ". ") if fixes else ""
 
     warnings.warn(
-        f"Interval filtering excluded ALL trajectory intervals "
-        f"({gate_part}); the rate map is empty. "
-        f"{fix_part}"
-        f"Set warn_on_drop=False to suppress this warning.",
+        (
+            f"Interval filtering excluded ALL trajectory intervals "
+            f"({gate_part}); the rate map is empty. "
+            f"{fix_part}"
+            f"{suppress_hint}"
+        ).rstrip(),
         UserWarning,
         stacklevel=stacklevel,
     )
@@ -585,6 +626,7 @@ def _emit_time_window_warning(
     *,
     scope: str = "",
     stacklevel: int = 2,
+    suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning for time-window spike drops if the fraction exceeds threshold.
 
@@ -603,6 +645,9 @@ def _emit_time_window_warning(
         Extra phrase inserted into the message (e.g. "across all neurons ").
     stacklevel : int, optional
         ``warnings.warn`` stacklevel.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning; empty for callers
+        without a ``warn_on_drop`` parameter.
     """
     if n_total == 0 or n_time_dropped == 0:
         return
@@ -617,13 +662,14 @@ def _emit_time_window_warning(
     else:
         range_part = ""
     warnings.warn(
-        f"{n_time_dropped}/{n_total} spike_times "
-        f"({100 * frac:.0f}%) {scope}fell outside the position time "
-        f"window [{t_min:.6g}, {t_max:.6g}]; "
-        f"{range_part}"
-        f"Check that spike_times and times share units (both seconds). "
-        f"Dropped spikes do not contribute. "
-        f"Set warn_on_drop=False to suppress this warning.",
+        (
+            f"{n_time_dropped}/{n_total} spike_times "
+            f"({100 * frac:.0f}%) {scope}fell outside the position time "
+            f"window [{t_min:.6g}, {t_max:.6g}]; "
+            f"{range_part}"
+            f"Check that spike_times and times share units (both seconds). "
+            f"Dropped spikes do not contribute. {suppress_hint}"
+        ).rstrip(),
         UserWarning,
         stacklevel=stacklevel,
     )
