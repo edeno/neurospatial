@@ -144,21 +144,27 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
 
     Inherits from :class:`ValueError` so existing ``except ValueError``
     blocks keep working.
+
+    Parameters
+    ----------
+    message : str
+        What differs between the environments.
+    fix : str, optional
+        The ``Fix:`` line for this mismatch. The default names no specific
+        remedy; raise sites pass the fix for their own check.
+    first, second : object, optional
+        The two mismatched objects, kept as attributes for inspection.
     """
 
     def __init__(
         self,
         message: str,
         *,
+        fix: str = "use environments that share the property named above.",
         first: object | None = None,
         second: object | None = None,
     ) -> None:
-        super().__init__(
-            _format_error(
-                message,
-                fix="use environments with matching n_dims and bins; recompute encoding_models on the decoding env.",
-            )
-        )
+        super().__init__(_format_error(message, fix=fix))
         self.first = first
         self.second = second
 

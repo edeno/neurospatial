@@ -67,7 +67,10 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     TypeError
         If subenvs is wrong type or contains non-Environment objects.
     ValueError
-        If subenvs is empty, environments not fitted, or have mismatched dimensions.
+        If subenvs is empty or environments are not fitted.
+    IncompatibleEnvironmentError
+        If the environments have mismatched dimensions (a ``ValueError``
+        subclass).
 
     """
     # Type check
@@ -104,14 +107,13 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
         if env.n_dims != first_ndims:
             raise IncompatibleEnvironmentError(
                 f"[E1003] All sub-environments must share the same n_dims. "
-                f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}.\n"
-                "\n"
-                "Common cause: Mixing environments with different dimensionalities "
-                "(e.g., 2D position data and 3D spatial data).\n"
-                "\n"
-                "To fix:\n"
-                "  1. Check that all position data arrays have the same number of columns\n"
-                "  2. Verify each environment's n_dims property before creating the composite"
+                f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}. A common "
+                "cause is mixing 2D position data with 3D spatial data.",
+                fix=(
+                    "build every sub-environment from position arrays with the "
+                    "same number of columns, and check each env.n_dims before "
+                    "creating the composite."
+                ),
             )
 
     return list(subenvs)  # Normalize to list
@@ -211,8 +213,10 @@ class CompositeEnvironment:
         TypeError
             If subenvs is not a list or tuple, or if any element is not an Environment instance.
         ValueError
-            If subenvs is empty, if any environment is not fitted, or if environments
-            have different dimensionalities.
+            If subenvs is empty or if any environment is not fitted.
+        IncompatibleEnvironmentError
+            If environments have different dimensionalities (a ``ValueError``
+            subclass).
 
         Common Pitfalls
         ---------------

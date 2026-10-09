@@ -1692,8 +1692,8 @@ def _validate_inputs(
     if encoding_models.ndim == 2 and encoding_models.shape[1] != env.n_bins:
         raise IncompatibleEnvironmentError(
             f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
-            f"but env has {env.n_bins} active bins. Recompute the place "
-            f"fields on this environment before decoding."
+            f"but env has {env.n_bins} active bins.",
+            fix="recompute the place fields on the decoding environment.",
         )
 
     # Check prior if provided. Convert to ndarray first because the

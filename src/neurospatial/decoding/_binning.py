@@ -294,7 +294,7 @@ def bin_spikes_in_time(
         longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
         raise ValueError(
             _format_error(
-                f"Window span ({longest}) is smaller than one bin dt ({dt}); no whole time bin fits. Why: each window must contain a full bin.\nFix: use a smaller dt or widen the time windows.",
+                f"Window span ({longest}) is smaller than one bin dt ({dt}); no whole time bin fits.",
                 fix=f"use dt <= {longest:g} or widen the time windows",
                 why="Why: each analyzed window must contain at least one full time bin.",
             )
