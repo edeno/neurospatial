@@ -380,6 +380,10 @@ class DecodingResult(ResultMixin):
         with dashed lines marking the breaks. Without ``times``, the x-axis
         also shows bin indices. With only two timestamps, a gap cannot be
         distinguished from a larger uniform bin width, so time is used.
+        For a uniform continuous clock, image edges extend half a bin beyond
+        the first and last center. A single timestamp uses a 1-second display
+        width centered on that timestamp; this width is a plotting convention.
+        An explicit ``extent=`` overrides these default edges.
 
         The MAP trajectory (``show_map=True``) shows the bin with highest
         posterior probability at each time step as a white line.
@@ -404,7 +408,15 @@ class DecodingResult(ResultMixin):
             # Use actual time values
             t_min = float(self.times[0])
             t_max = float(self.times[-1])
-            extent = [t_min, t_max, -0.5, self.posterior.shape[1] - 0.5]
+            width = (
+                (t_max - t_min) / (self.times.size - 1) if self.times.size > 1 else 1.0
+            )
+            extent = [
+                t_min - width / 2,
+                t_max + width / 2,
+                -0.5,
+                self.posterior.shape[1] - 0.5,
+            ]
             x_label = "Time (s)"
         else:
             # Use bin indices

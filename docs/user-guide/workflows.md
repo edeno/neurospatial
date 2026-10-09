@@ -215,6 +215,12 @@ Actual positions and `result.map_position` carry physical coordinates, such as
 centimeters. Convert actual positions with `env.bin_at` for a posterior overlay;
 keep their physical coordinates for error metrics and position-versus-time plots.
 
+On a uniform continuous decoder clock, image columns center on the returned
+timestamps: image edges extend half a bin past the first and last center.
+Two timestamps use their actual spacing; one timestamp uses a 1-second
+display width centered on that timestamp. Explicit `extent=` overrides these
+edges. Posterior values, MAP positions and timestamps are unchanged.
+
 On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
 gaps it uses time-bin indices and marks the breaks with dashed lines. Reusing
 the MAP line's x coordinates keeps the actual overlay on the same axis in both

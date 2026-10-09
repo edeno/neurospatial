@@ -143,6 +143,7 @@ def animate_fields(
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
+    overwrite: bool = False,
     overlays: list[OverlayProtocol] | None = None,
     frame_times: NDArray[np.float64],  # REQUIRED - no default
     speed: float = DEFAULT_SPEED,  # NEW: replaces fps in public API
@@ -193,6 +194,9 @@ def animate_fields(
         Animation backend to use.
     save_path : str, optional
         Output path for video/HTML backends.
+    overwrite : bool, default=False
+        Allow replacing existing video/HTML files and nonempty HTML frames
+        directories. By default, an existing target raises before rendering.
     overlays : list of PositionOverlay, BodypartOverlay, HeadDirectionOverlay, or VideoOverlay, optional
         Dynamic overlays to render on top of spatial fields. Supports position
         trajectories, multi-animal pose tracking, head direction visualization,
@@ -239,6 +243,8 @@ def animate_fields(
 
     Raises
     ------
+    FileExistsError
+        If an output already exists and overwrite is False.
     RuntimeError
         If environment is not fitted
     ValueError
@@ -542,6 +548,7 @@ def animate_fields(
             env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
+            overwrite=overwrite,
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
@@ -558,6 +565,7 @@ def animate_fields(
             env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
+            overwrite=overwrite,
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,

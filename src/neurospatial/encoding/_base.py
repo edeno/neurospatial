@@ -349,14 +349,17 @@ class SpatialResultMixin(ResultMixin):
         :meth:`neurospatial._results.ResultMixin.summary` for spatial results.
         Reports the number of bins, peak firing rate, and total occupancy.
         For batch results (with ``firing_rates``), the peak is the maximum
-        across all neurons and ``n_neurons`` is included.
+        across all units as ``max_peak_firing_rate`` and ``n_units`` is included.
 
         Returns
         -------
         dict
             Mapping with keys ``n_bins`` (int), ``peak_firing_rate`` (float,
             Hz), and ``total_occupancy`` (float, seconds). Batch results also
-            include ``n_neurons`` (int). ``spike_window`` is the normalized
+            include ``n_units`` (int) and use ``max_peak_firing_rate`` for
+            the maximum per-unit peak. Total occupancy is seconds in the
+            shared map, never summed over units. Singular results add cheap
+            family metrics; grid/border scores are excluded from the repr. ``spike_window`` is the normalized
             acquisition-window list or None, and ``spike_window_assumed``
             records whether coverage was assumed.
 
@@ -375,7 +378,7 @@ class SpatialResultMixin(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['method', 'n_bins', 'peak_firing_rate', 'spike_window', 'spike_window_assumed', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_info', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
@@ -389,17 +392,20 @@ class SpatialResultMixin(ResultMixin):
         else:
             peak_value = float(np.nanmax(np.asarray(self.peak_firing_rate())))
 
-        out: dict[str, Any] = {
-            "n_bins": int(rates.shape[-1]),
-            "peak_firing_rate": peak_value,
-            "total_occupancy": float(np.nansum(occupancy)),
-            "spike_window_assumed": self.spike_window_assumed,
-            "spike_window": None
-            if self.spike_window is None
-            else self.spike_window.tolist(),
-        }
+        out: dict[str, Any] = {}
         if rates.ndim > 1:
-            out["n_neurons"] = int(rates.shape[0])
+            out["n_units"] = int(rates.shape[0])
+        out["n_bins"] = int(rates.shape[-1])
+        out["max_peak_firing_rate" if rates.ndim > 1 else "peak_firing_rate"] = (
+            peak_value
+        )
+        if rates.ndim == 1:
+            out.update(self._headline_metrics())
+        out["total_occupancy"] = float(np.nansum(occupancy))
+        out["spike_window_assumed"] = self.spike_window_assumed
+        out["spike_window"] = (
+            None if self.spike_window is None else self.spike_window.tolist()
+        )
         # Carry the estimator on result classes that record it (the spatial/view
         # rate results); egocentric/directional/place-field results have no
         # `method` field and are left unchanged.
@@ -408,6 +414,10 @@ class SpatialResultMixin(ResultMixin):
         if hasattr(self, "direction_frame"):
             out["direction_frame"] = self.direction_frame
         return out
+
+    def _headline_metrics(self) -> dict[str, float]:
+        """O(n_bins) singular metrics displayed by summary and repr."""
+        return {}
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of per-bin firing rate and occupancy.
@@ -482,48 +492,59 @@ class SpatialResultMixin(ResultMixin):
 
         return pd.DataFrame(data)
 
-    def summary_table(self) -> pd.DataFrame:
-        """Per-unit scalar summary, one row per unit, ``unit_id``-indexed.
+    def to_xarray(self) -> Any:
+        """Export a labeled Dataset with dimensions (unit_id, bin).
 
-        Complements :meth:`to_dataframe` (dense, one row per ``(unit, bin)``)
-        as the **per-unit summary** terminal verb: one row per unit with scalar
-        metric columns (peak location, peak rate, and the spatial metrics each
-        result class can compute). This is the table a many-neuron user wants
-        for filtering, sorting, and population summaries.
-
-        The base implementation provides the shared columns
-        (``peak_*`` coordinates and ``peak_rate``); concrete batch result
-        classes extend it with their domain metrics (spatial information,
-        grid/border scores, cell type, preferred direction, etc.).
+        A singular result has one unit. A standalone result with no unit_id
+        uses <NA>; pass a unit_id or index a population result for a NetCDF-safe
+        label. Occupancy is shared across units. Coordinates, method metadata,
+        physical units, direction frame and acquisition windows are retained.
 
         Returns
         -------
-        pandas.DataFrame
-            One row per unit, indexed by ``unit_id``, with at least
-            ``peak_<coord>`` columns and ``peak_rate`` (float, Hz).
+        xarray.Dataset
+            Firing rates, shared occupancy, unit labels and bin coordinates.
+
+        Raises
+        ------
+        ImportError
+            If the optional xarray dependency is unavailable.
+        ValueError
+            If labels are duplicated or coordinates/occupancy do not match rates.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> single = result[0]
+        >>> dataset = single.to_xarray()  # doctest: +SKIP
+        >>> dataset.sizes["unit_id"]  # doctest: +SKIP
+        1
         """
-        import pandas as pd
+        from neurospatial._results import build_population_dataset
 
-        row_unit_ids = self._row_unit_ids()
-        peaks = np.atleast_2d(self.peak_location())
-        peak_rates = np.atleast_1d(self.peak_firing_rate())
+        rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
+        env = getattr(self, "env", None)
+        return build_population_dataset(
+            np.atleast_2d(rates),
+            self._row_unit_ids(),
+            env=env,
+            bin_centers=None
+            if env is not None
+            else np.asarray(self.bin_centers, dtype=np.float64),  # type: ignore[attr-defined]
+            occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),  # type: ignore[attr-defined]
+            attrs=self._xarray_attrs(),
+        )
 
-        data: dict[str, Any] = {}
-        coord_names = list(self._bin_center_columns().keys())
-        n_dims = peaks.shape[1]
-        for d in range(n_dims):
-            # Reuse the bin-center vocabulary for peak columns:
-            # bin_center_x -> peak_x, bin_center_distance -> peak_distance.
-            if d < len(coord_names):
-                col = "peak_" + coord_names[d].removeprefix("bin_center_")
-            else:
-                col = f"peak_coord_{d}"
-            data[col] = peaks[:, d]
-        data["peak_rate"] = peak_rates
-        # Carry the estimator (spatial/view rate results only), one value per
-        # unit. Absent on results with no `method` field.
-        if hasattr(self, "method"):
-            data["method"] = self.method
-
-        df = pd.DataFrame(data, index=pd.Index(row_unit_ids, name="unit_id"))
-        return df
+    def _xarray_attrs(self) -> dict[str, Any]:
+        """Family metadata; concrete rate results override this hook."""
+        return {}

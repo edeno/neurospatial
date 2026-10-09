@@ -4,6 +4,8 @@
 
 ### Added
 
+- Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
+
 - Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
 
 - Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity and training spike-window metadata. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction preserves the existing warning and likelihood behavior for non-finite maps.
@@ -28,6 +30,12 @@
 
 ### Changed
 
+- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
+
+- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
+
+- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
+
 - **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
 
 - **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
@@ -50,6 +58,10 @@
 
 ### Fixed
 
+- Center continuous posterior image columns on decoder timestamps, preserving MAP/actual overlays, gapped index clocks and explicit extent overrides. Two-column plots use their timestamp spacing; a single column has a documented 1-second display width, with no changes to posterior arrays or clocks.
+
+- Plot native 1D rate maps as labeled lines over physical bin coordinates, including singular/population results and NaN breaks. Existing graph-track and 2D plotting paths are retained; rate arrays are unchanged.
+
 - Name the current `spike_times` keyword in simulation validation's missing-input diagnostic.
 
 - Name nonnumeric times/positions together in shared conversion errors, retaining shape/order problems from the convertible argument and providing Why/Fix guidance without changing valid arrays.
@@ -71,6 +83,8 @@
 - Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
 
 ### Fixed — documentation
+
+- Document singular/population table parity, readable column order, units/threshold metadata and singular xarray identity. The quickstart covers native 1D rate plots; animation guidance explains explicit overwrite opt-in and the current HTML numeric-colorbar limitation with an executable static-scale/timestamp-label recovery. Posterior plotting help records the centered continuous and short-clock edge conventions.
 
 - Include required unit labels in the manual `SimulationSession` constructor example.
 

@@ -166,7 +166,7 @@ class TestFfmpegLargeFrameCount:
                 call_args = mock_run.call_args[0][0]  # Get command list
                 # Check essential ffmpeg arguments are present
                 assert "ffmpeg" in call_args[0]
-                assert "-y" in call_args  # Overwrite
+                assert "-n" in call_args  # Default refuses overwrite
                 assert "-framerate" in call_args
                 assert "-i" in call_args  # Input pattern
 

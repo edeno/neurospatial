@@ -99,6 +99,69 @@ __all__ = [
 OBJECT_VECTOR_THRESHOLDS = MappingProxyType({"min_info": 0.3})
 
 
+def _egocentric_xarray_attrs(
+    result: ObjectVectorRateResult | ObjectVectorRatesResult,
+) -> dict[str, Any]:
+    """Shared serialization metadata for this rate family."""
+    from neurospatial._results import (
+        env_fingerprint,
+        software_version,
+        units_attr,
+    )
+
+    attrs: dict[str, Any] = {
+        **units_attr(result.env),
+        "direction_frame": result.direction_frame,
+        "env": env_fingerprint(result.env),
+        "software_version": software_version(),
+    }
+    attrs["spike_window_assumed"] = int(result.spike_window_assumed)
+    if result.spike_window is not None:
+        attrs["spike_window"] = result.spike_window.ravel()
+    return attrs
+
+
+def _object_vector_classify(
+    rates: NDArray, occupancy: NDArray, *, min_info: float
+) -> NDArray[np.bool_]:
+    """The shared information-threshold rule for this rate family."""
+    from neurospatial.encoding._metrics import batch_spatial_information
+
+    return np.asarray(batch_spatial_information(rates, occupancy)) >= min_info
+
+
+def _object_vector_summary_frame(
+    result: ObjectVectorRateResult | ObjectVectorRatesResult,
+    *,
+    index: Sequence[Hashable],
+) -> pd.DataFrame:
+    """Build identical metric columns for single and population results."""
+    import pandas as pd
+
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = _to_numpy(result.occupancy)
+    peaks = np.atleast_2d(result.peak_location())
+    columns = {
+        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "preferred_distance": peaks[:, 0],
+        "preferred_direction_deg": np.degrees(peaks[:, 1]),
+        "preferred_direction": peaks[:, 1],
+        "is_object_vector_cell": _object_vector_classify(
+            rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
+        ),
+    }
+    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["direction_frame"] = result.direction_frame
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "preferred_distance": result.env.units or "",
+        "preferred_direction": "rad",
+        "preferred_direction_deg": "deg",
+    }
+    df.attrs["classification_thresholds"] = dict(OBJECT_VECTOR_THRESHOLDS)
+    return df
+
+
 @dataclass(frozen=True, repr=False)
 class ObjectVectorRateResult(SpatialResultMixin):
     """Result of object-vector rate computation for a single neuron.
@@ -201,6 +264,62 @@ class ObjectVectorRateResult(SpatialResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _egocentric_xarray_attrs(self)
+
+    def summary_table(self) -> pd.DataFrame:
+        """Per-unit metrics with the same columns as the population table.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        The direction frame is in ``df.attrs["direction_frame"]``.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
+        """
+        return _object_vector_summary_frame(self, index=self._row_unit_ids().tolist())
+
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {
+                "preferred_distance": float("nan"),
+                "preferred_direction": float("nan"),
+            }
+        return {
+            "preferred_distance": float(self.preferred_distance()),
+            "preferred_direction": float(self.preferred_direction()),
+        }
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -500,7 +619,13 @@ class ObjectVectorRateResult(SpatialResultMixin):
         min_info = (
             OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        return self.spatial_information() >= min_info
+        return bool(
+            _object_vector_classify(
+                np.atleast_2d(_to_numpy(self.firing_rate)),
+                _to_numpy(self.occupancy),
+                min_info=min_info,
+            )[0]
+        )
 
 
 @dataclass(frozen=True, repr=False)
@@ -620,6 +745,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         default=None, kw_only=True, compare=False
     )
 
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _egocentric_xarray_attrs(self)
+
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
@@ -637,59 +765,6 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         # via env, not a world-coordinate Environment.
         bin_centers: NDArray[np.float64] = self.env.bin_centers
         return bin_centers
-
-    def to_xarray(self) -> Any:
-        """Convert the object-vector fields to a labeled :class:`xarray.Dataset`.
-
-        Wraps the ``(n_units, n_bins)`` object-vector firing-rate matrix in a
-        labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
-        ``unit_id`` index coordinate holds the real per-unit identity labels
-        (:attr:`unit_ids`). Because the environment is an
-        :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
-        (``bin_centers[:, 0]`` is distance, ``bin_centers[:, 1]`` is angle in
-        radians), the ``bin`` dimension carries ``bin_center_distance`` and
-        ``bin_center_angle`` non-index coordinates (not ``x`` / ``y``).
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with data var ``firing_rate`` (Hz, dims
-            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
-            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
-            ``bin_center_distance`` / ``bin_center_angle`` coords on ``bin``,
-            and ``attrs`` carrying ``units``, ``env`` fingerprint, and
-            ``software_version``.
-
-        Raises
-        ------
-        ValueError
-            If :attr:`unit_ids` contains duplicate labels.
-        ImportError
-            If ``xarray`` is not installed (optional dependency).
-        """
-        from neurospatial._results import (
-            build_population_dataset,
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
-
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-        }
-        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
-        if self.spike_window is not None:
-            attrs["spike_window"] = self.spike_window.ravel()
-        return build_population_dataset(
-            rates,
-            np.asarray(self.unit_ids),
-            env=self.env,
-            occupancy=np.asarray(self.occupancy, dtype=np.float64),
-            attrs=attrs,
-        )
 
     def __len__(self) -> int:
         """Return the number of units.
@@ -1078,8 +1153,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         min_info = (
             OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        info = self.spatial_information()
-        return info >= min_info
+        return _object_vector_classify(
+            _to_numpy(self.firing_rates), _to_numpy(self.occupancy), min_info=min_info
+        )
 
     def summary_table(
         self,
@@ -1117,6 +1193,14 @@ class ObjectVectorRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        The direction frame is in ``df.attrs["direction_frame"]``.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``preferred_distances()``, ``classify()``, etc.).
@@ -1146,7 +1230,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['preferred_distance', 'preferred_direction', 'preferred_direction_deg', 'peak_rate', 'is_object_vector_cell']
+        ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name
@@ -1170,8 +1254,6 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         preferred_distances : Batch preferred distance computation
         preferred_directions : Batch preferred direction computation
         """
-        import pandas as pd
-
         n_neurons = len(self)
 
         if unit_ids is None:
@@ -1188,22 +1270,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
                 context="ObjectVectorRatesResult.summary_table",
             )
 
-        # Compute all metrics
-        pref_dists = self.preferred_distances()
-        pref_dirs = self.preferred_directions()
-        peak_rates = self.peak_firing_rate()
-        is_object_vector_cell = self.classify()
-
-        # Build DataFrame
-        data: dict[str, Any] = {
-            "preferred_distance": pref_dists,
-            "preferred_direction": pref_dirs,
-            "preferred_direction_deg": np.degrees(pref_dirs),
-            "peak_rate": peak_rates,
-            "is_object_vector_cell": is_object_vector_cell,
-        }
-
-        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
+        return _object_vector_summary_frame(self, index=index_ids)
 
 
 def _raw_polar_rate(

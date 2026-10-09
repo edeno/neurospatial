@@ -390,22 +390,17 @@ class TestSpatialResultMixin:
         """summary_table() uses NA (not 0) as the index when unit_id is None (I6)."""
         import pandas as pd
 
-        from neurospatial.encoding._base import SpatialResultMixin
-
-        @dataclass
-        class MockSingleResult(SpatialResultMixin):
-            firing_rate: NDArray[np.float64]
-            occupancy: NDArray[np.float64]
-            env: Environment
-            unit_id: int | None = None
+        from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = simple_env.n_bins
         firing_rate = np.zeros(n_bins)
         firing_rate[n_bins // 2] = 10.0
-        result = MockSingleResult(
+        result = SpatialRateResult(
             firing_rate=firing_rate,
             occupancy=np.ones(n_bins),
             env=simple_env,
+            method="binned",
+            bandwidth=0.0,
         )
         table = result.summary_table()
         assert len(table) == 1
@@ -751,6 +746,6 @@ class TestSummaryEmptyResult:
         s = result.summary()
 
         assert isinstance(s, dict)
-        assert s["n_neurons"] == 0
+        assert s["n_units"] == 0
         # Peak over no neurons is undefined -> NaN, not a crash.
-        assert np.isnan(s["peak_firing_rate"])
+        assert np.isnan(s["max_peak_firing_rate"])
