@@ -200,17 +200,39 @@ def shuffle_spike_times_circular(
     inside = (idx >= 0) & (spike_times < normalized[np.maximum(idx, 0), 1])
     idx = idx[inside]
     compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
-    generator = _ensure_rng(rng)
+    # Validation above runs at call time; only the draws are lazy.
+    return _circular_shift_draws(
+        compressed,
+        normalized,
+        offsets,
+        total,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        generator=_ensure_rng(rng),
+    )
+
+
+def _circular_shift_draws(
+    compressed: NDArray[np.float64],
+    windows: NDArray[np.float64],
+    offsets: NDArray[np.float64],
+    total: float,
+    *,
+    n_shuffles: int,
+    min_shift: float,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Yield shifted spike trains from validated, compressed-clock inputs."""
     for _ in range(n_shuffles):
         wrapped = np.mod(
             compressed + generator.uniform(min_shift, total - min_shift), total
         )
         j = np.minimum(
-            np.searchsorted(offsets, wrapped, side="right") - 1, len(normalized) - 1
+            np.searchsorted(offsets, wrapped, side="right") - 1, len(windows) - 1
         )
-        shifted = normalized[j, 0] + (wrapped - offsets[j])
+        shifted = windows[j, 0] + (wrapped - offsets[j])
         # A sum on a large absolute clock may round up to an excluded stop.
-        shifted = np.minimum(shifted, np.nextafter(normalized[j, 1], normalized[j, 0]))
+        shifted = np.minimum(shifted, np.nextafter(windows[j, 1], windows[j, 0]))
         yield np.sort(shifted)
 
 
