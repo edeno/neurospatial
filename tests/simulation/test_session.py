@@ -685,3 +685,22 @@ def test_session_rejects_misaligned_samples_and_ground_truth(
     }
     with pytest.raises(ValueError, match=detail):
         SimulationSession(**{**fields, **change})
+
+
+def test_session_rejects_duplicate_unit_ids(simple_2d_env):
+    """Two cells labelled 7 would both be validated against ground_truth[7]."""
+    models = [
+        PlaceCellModel(simple_2d_env, center=np.array([20.0, 20.0])),
+        PlaceCellModel(simple_2d_env, center=np.array([80.0, 80.0])),
+    ]
+    with pytest.raises(ValueError, match="unique"):
+        SimulationSession(
+            env=simple_2d_env,
+            positions=np.array([[50.0, 50.0], [51.0, 51.0]]),
+            times=np.array([0.0, 0.1]),
+            spike_times=[np.array([0.05]), np.array([0.06])],
+            unit_ids=np.array([7, 7], dtype=np.int64),
+            models=models,
+            ground_truth={7: models[0].ground_truth},
+            metadata={},
+        )

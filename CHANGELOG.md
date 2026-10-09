@@ -95,6 +95,8 @@
 - `SimulationSession` checks that `times` and `positions` have one row per
   sample and that `ground_truth` is keyed by exactly the `unit_ids`, so
   relabeling units with `dataclasses.replace` must re-key `ground_truth` too.
+  Duplicate `unit_ids` are rejected, since two cells sharing a label would
+  both be validated against one ground truth.
   `NWBUnits` checks that `unit_ids` and `obs_intervals` align with
   `spike_times`.
 - `ObjectVectorRateResult` and `ObjectVectorRatesResult` reject a
