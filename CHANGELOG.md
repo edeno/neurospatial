@@ -58,6 +58,9 @@
 
 ### Fixed
 
+- neurospatial exceptions survive pickling, so errors raised in worker
+  processes reach the caller with their original message and attributes;
+  previously several failed to unpickle or repeated their message.
 - `SimulationSession` checks that `times` and `positions` have one row per
   sample and that `ground_truth` is keyed by exactly the `unit_ids`, so
   relabeling units with `dataclasses.replace` must re-key `ground_truth` too.
