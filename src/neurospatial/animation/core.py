@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._protocols import EnvironmentProtocol
 
-# Playback speed limits (Task 1.1)
+# Playback speed limits
 MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
 MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
@@ -497,7 +497,7 @@ def animate_fields(
 
         return render_napari(
             env,  # type: ignore[arg-type]  # Backend signatures pending update
-            fields,  # Now accepts arrays after Task 2.1
+            fields,
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,

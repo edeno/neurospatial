@@ -553,8 +553,10 @@ def read_environment(
     a KDTree-based layout is used. This provides nearest-neighbor point mapping
     over the stored bin centers and connectivity, and restores the stored
     per-bin measures, edge vectors and (for graph tracks) 1-D grid edges. It
-    does not rebuild the original layout engine, so smoothing and binned rate
-    maps are not available on it. Files written before schema 1.1 have no
+    does not rebuild the original layout engine, so smoothing, binned rate
+    maps, ``ops.calculus.gradient``/``divergence`` and
+    ``ops.basis.heat_kernel_wavelet_basis`` are not available on it; rebuild
+    the environment with its original factory for those. Files written before schema 1.1 have no
     stored measures; their bin sizes are estimated from bin spacing.
 
     Examples

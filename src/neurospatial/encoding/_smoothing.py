@@ -811,6 +811,8 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
     """
     if min_occupancy <= 0.0:
         return
+    from neurospatial.environment.trajectory import _external_stacklevel
+
     occupancy = np.asarray(occupancy, dtype=np.float64)
     occupied = occupancy > 0.0
     n_occupied = int(np.count_nonzero(occupied))
@@ -826,7 +828,7 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
             "too large for this session. Lower it (or use the default 0.0 for no "
             "occupancy masking).",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
 

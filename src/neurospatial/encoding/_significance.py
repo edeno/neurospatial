@@ -37,6 +37,32 @@ def _entropy(rng: np.random.Generator | int | None) -> int:
     return int(rng)
 
 
+def resolve_shuffle_settings(
+    n_shuffles: int | None, min_shift: float | None
+) -> dict[str, Any]:
+    """Fill unset shuffle-predicate settings from ``_SHUFFLE_DEFAULTS``."""
+    return {
+        "n_shuffles": int(_SHUFFLE_DEFAULTS["n_shuffles"])
+        if n_shuffles is None
+        else n_shuffles,
+        "min_shift": _SHUFFLE_DEFAULTS["min_shift"] if min_shift is None else min_shift,
+    }
+
+
+def snapshot_options(options: dict[str, Any], **fixed: Any) -> dict[str, Any]:
+    """Copy array-like options so caller mutation cannot leak into the null."""
+    snapshot = {
+        key: value.copy()
+        if isinstance(value, np.ndarray)
+        else np.array(value, copy=True)
+        if isinstance(value, (list, tuple))
+        else value
+        for key, value in options.items()
+    }
+    snapshot.update(fixed)
+    return snapshot
+
+
 def run_shuffle_test(
     statistic: Callable[[list[NDArray[np.float64]]], ArrayLike],
     spike_times: list[NDArray[np.float64]],
@@ -91,17 +117,16 @@ def shuffle_pvalues(
 def to_shuffle_results(
     observed: NDArray[np.float64],
     null: NDArray[np.float64],
-    p: NDArray[np.float64],
     unit_ids: NDArray[Any],
-    column: int = 0,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Return independent per-unit score arrays in caller label order."""
+    p = shuffle_pvalues(observed, null)
     result = {}
     for i, label in enumerate(unit_ids):
-        scores = null[:, i, column].copy()
+        scores = null[:, i, 0].copy()
         finite = scores[np.isfinite(scores)]
         std = float(np.std(finite)) if finite.size else float("nan")
-        obs = float(observed[i, column])
+        obs = float(observed[i, 0])
         z = (
             (obs - float(np.mean(finite))) / std
             if finite.size and std > 0
@@ -111,7 +136,7 @@ def to_shuffle_results(
             ShuffleTestResult(
                 observed_score=obs,
                 null_scores=scores,
-                p_value=float(p[i, column]),
+                p_value=float(p[i, 0]),
                 z_score=z,
                 shuffle_type="circular_time_shift",
                 n_shuffles=len(scores),

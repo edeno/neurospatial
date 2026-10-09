@@ -52,7 +52,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.encoding._binning import count_spikes_by_frame
+from neurospatial.encoding._binning import (
+    count_frames_and_occupancy,
+    count_spikes_by_frame,
+)
 from neurospatial.encoding._validation import validate_times as _validate_times
 from neurospatial.environment.trajectory import (
     interval_valid_mask,
@@ -381,24 +384,6 @@ def _coords_to_flat_bin_idx(
     return flat_bin_idx
 
 
-def _object_vector_interval_mask(
-    times: NDArray[np.float64],
-    *,
-    start_bin: NDArray[np.int64],
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
-    spike_window: NDArray[np.float64] | None,
-) -> NDArray[np.bool_]:
-    """Use the same frame/window validity for both object-vector directions."""
-    return interval_valid_mask(
-        times,
-        start_bin=start_bin,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-    )
-
-
 def compute_egocentric_occupancy(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -566,7 +551,7 @@ def compute_egocentric_occupancy(
         n_direction_bins,
     )
 
-    mask = _object_vector_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
@@ -726,7 +711,7 @@ def bin_egocentric_spike_train(
         n_distance_bins,
         n_direction_bins,
     )
-    mask = _object_vector_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
@@ -753,6 +738,8 @@ def bin_egocentric_spike_trains(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
+    frame_bins: NDArray[np.int64] | None = None,
+    polar_env: EgocentricPolarEnvironment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], EgocentricPolarEnvironment]:
     """Bin multiple spike trains by egocentric coordinates.
 
@@ -806,6 +793,12 @@ def bin_egocentric_spike_trains(
         public encoders accept and normalize the other supported input forms.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
+    frame_bins : ndarray of int, shape (n_samples,), optional
+        Polar bin per sample for exactly these samples and binning settings.
+        Passing it skips the egocentric coordinate computation.
+    polar_env : EgocentricPolarEnvironment, optional
+        The polar environment for these binning settings, reused instead of
+        rebuilt. Callers that bin many spike sets on one trajectory pass both.
 
     Returns
     -------
@@ -857,7 +850,6 @@ def bin_egocentric_spike_trains(
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
-    n_neurons = len(spike_times_list)
 
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
@@ -882,53 +874,43 @@ def bin_egocentric_spike_trains(
     _validate_times(times, context="bin_egocentric_spike_trains")
 
     # Create egocentric environment
-    polar_env = _create_egocentric_environment(
-        distance_range, n_distance_bins, n_direction_bins
-    )
+    if polar_env is None:
+        polar_env = _create_egocentric_environment(
+            distance_range, n_distance_bins, n_direction_bins
+        )
     n_bins = polar_env.n_bins
 
-    # Compute egocentric coordinates ONCE (shared across all neurons)
-    nearest_distances, nearest_bearings = _compute_object_coords(
-        positions,
-        headings,
-        object_positions,
-        metric=metric,
-        env=env,
-    )
+    if frame_bins is None:
+        # Compute egocentric coordinates ONCE (shared across all neurons)
+        nearest_distances, nearest_bearings = _compute_object_coords(
+            positions,
+            headings,
+            object_positions,
+            metric=metric,
+            env=env,
+        )
 
-    # Flatten
-    nearest_distances = nearest_distances.ravel()
-    nearest_bearings = nearest_bearings.ravel()
+        # Flatten
+        nearest_distances = nearest_distances.ravel()
+        nearest_bearings = nearest_bearings.ravel()
 
-    # Precompute bin indices for all behavioral frames
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances,
-        nearest_bearings,
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
+        # Precompute bin indices for all behavioral frames
+        frame_bins = _coords_to_flat_bin_idx(
+            nearest_distances,
+            nearest_bearings,
+            distance_range,
+            n_distance_bins,
+            n_direction_bins,
+        )
 
-    mask = _object_vector_interval_mask(
+    spike_counts, occupancy = count_frames_and_occupancy(
+        spike_times_list,
         times,
-        start_bin=bin_indices,
+        frame_bins,
+        n_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        n_jobs=n_jobs,
     )
-    occupancy = start_allocated_occupancy(bin_indices, np.diff(times), mask, n_bins)
-    spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
-    if n_neurons and n_jobs != 1:
-        from joblib import Parallel, delayed
-
-        results = Parallel(n_jobs=n_jobs)(
-            delayed(count_spikes_by_frame)(spikes, times, bin_indices, mask, n_bins)
-            for spikes in spike_times_list
-        )
-        spike_counts = np.asarray(results, dtype=np.float64)
-    else:
-        for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = count_spikes_by_frame(
-                spikes, times, bin_indices, mask, n_bins
-            )
     return spike_counts, occupancy, polar_env

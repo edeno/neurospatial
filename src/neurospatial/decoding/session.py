@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
 from neurospatial.decoding._binning import count_spikes_in_time_bins
 
@@ -552,7 +553,7 @@ def _build_encoding_model(
         "NDArray[np.float64]",
         np.asarray(rates_result.firing_rates, dtype=dtype),
     )
-    return _prepare_session_decode(
+    prepared = _prepare_session_decode(
         trains,
         times_arr,
         firing_rates,
@@ -564,6 +565,27 @@ def _build_encoding_model(
         dtype=dtype,
         context=context,
     )
+    # After the decode-bin check, whose error names epochs/max_gap precisely:
+    # time bins can exist while speed or occupancy gates leave no trained bin.
+    occupancy = np.asarray(rates_result.occupancy)
+    if not np.any((occupancy > 0) & (occupancy >= (min_occupancy or 0.0))):
+        raise ValueError(
+            _format_error(
+                f"{context}: the encoding model has no occupied bin, so every "
+                f"decode time bin would get a uniform posterior.",
+                why=(
+                    "Why: the gates (max_gap, min_speed, epochs, spike_window "
+                    "and min_occupancy) left no training interval with time "
+                    "in any kept bin."
+                ),
+                fix=(
+                    "check that times, epochs and spike_window share one "
+                    "clock in seconds, lower min_speed or min_occupancy, or "
+                    "pass max_gap=None for coarsely sampled tracking"
+                ),
+            )
+        )
+    return prepared
 
 
 def _decode_with_models(
@@ -600,6 +622,16 @@ def _decode_with_models(
     return decode_position(
         env, counts, firing_rates, dt, times=centers, dtype=dtype, **decode_kwargs
     )._evolve(spike_window=resolved_spike_window)
+
+
+_SUMMARY_TIME_CHUNK_NONE_MSG = (
+    "time_chunk=None is not allowed for decode_session_summary: this "
+    "streamed summary decoder bins time and reduces the posterior one "
+    "time-block at a time, and None would materialize the full "
+    "(n_time, n_bins) posterior, defeating its purpose. Use "
+    "decode_session if you want the full posterior, or pass a positive "
+    "time_chunk (default 1024) here."
+)
 
 
 def decode_session_summary(
@@ -728,14 +760,7 @@ warn_on_drop, dtype
     from neurospatial.decoding.posterior import _validate_time_chunk
 
     if decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK) is None:
-        raise ValueError(
-            "time_chunk=None is not allowed for decode_session_summary: this "
-            "streamed summary decoder bins time and reduces the posterior one "
-            "time-block at a time, and None would materialize the full "
-            "(n_time, n_bins) posterior, defeating its purpose. Use "
-            "decode_session if you want the full posterior, or pass a positive "
-            "time_chunk (default 1024) here."
-        )
+        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
     _validate_time_chunk(
         decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
     )
@@ -815,14 +840,7 @@ def _decode_with_models_summary(
     likelihood_method: Literal["poisson"] = "poisson"
 
     if time_chunk is None:
-        raise ValueError(
-            "time_chunk=None is not allowed for decode_session_summary: this "
-            "streamed summary decoder bins time and reduces the posterior one "
-            "time-block at a time, and None would materialize the full "
-            "(n_time, n_bins) posterior, defeating its purpose. Use "
-            "decode_session if you want the full posterior, or pass a positive "
-            "time_chunk (default 1024) here."
-        )
+        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
     trains, firing_rates, bin_left, bin_right = _prepare_session_decode(

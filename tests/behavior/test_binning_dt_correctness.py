@@ -304,6 +304,7 @@ class TestSafeGatherRegions:
             end_regions=["goal"],
             min_duration=0.1,
             max_duration=100.0,
+            max_gap=None,
         )
         trials_without = segment_trials(
             bins_without_oob,
@@ -313,6 +314,7 @@ class TestSafeGatherRegions:
             end_regions=["goal"],
             min_duration=0.1,
             max_duration=100.0,
+            max_gap=None,
         )
 
         # No trial should reach the goal because of the wrapped -1 sample.
@@ -406,6 +408,7 @@ class TestSafeGatherVoronoiLabels:
             traj,
             decision_region="center",
             goal_regions=["left", "right"],
+            max_gap=None,
         )
 
         assert result.boundary is not None

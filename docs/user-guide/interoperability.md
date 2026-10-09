@@ -232,6 +232,22 @@ rates = compute_spatial_rates(env, tsgroup, tsdframe.t, tsdframe.values)
 result = decode_session(env, tsgroup, tsdframe.t, tsdframe.values, dt=0.1)
 ```
 
+neurospatial reads only the spike times and labels from a `TsGroup`; it
+ignores the group's `time_support`. Without `spike_window=`, spikes are assumed
+to have been recorded wherever position was tracked. When the electrophysiology
+covers a different stretch, pass that coverage explicitly. An `IntervalSet` is
+accepted directly:
+
+```python
+rates = compute_spatial_rates(
+    env, tsgroup, tsdframe.t, tsdframe.values, spike_window=recording_intervals
+)
+```
+
+Use `tsgroup.time_support` here only if you set it to the true acquisition
+intervals: a `TsGroup` built from spike times alone gets a default support that
+runs from its first spike to its last, which is not recording coverage.
+
 ## NWB interop
 
 The NWB adapters read population spikes, position, and pose out of an NWB file,

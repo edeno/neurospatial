@@ -38,6 +38,7 @@ def test_family_kernel_shares_window_mask(
     frame_family, short_frame_recording, monkeypatch, n_units, n_jobs
 ):
     f, r = frame_family, short_frame_recording
+    from neurospatial.encoding import _binning as encoding_binning
     from neurospatial.environment import trajectory
 
     original = trajectory.interval_valid_mask
@@ -51,6 +52,7 @@ def test_family_kernel_shares_window_mask(
     monkeypatch.setattr(trajectory, "interval_valid_mask", track_mask)
     # Also support direct imports in the kernel module.
     monkeypatch.setattr(f.binning, "interval_valid_mask", track_mask, raising=False)
+    monkeypatch.setattr(encoding_binning, "interval_valid_mask", track_mask)
     window = np.array([[0.0, 0.5]])
     result = f.counts(
         *f.args(r, [r.spike_times] * n_units, kernel=True),

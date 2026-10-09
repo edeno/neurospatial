@@ -143,6 +143,19 @@ def test_unit_coverage_intersection_folds_all_selected_units(empty_nwb):
     assert read_units(empty_nwb, unit_ids=[]).spike_window.shape == (0, 2)
 
 
+def test_unit_without_observation_intervals_reads(empty_nwb):
+    """NWB allows a unit with no obs_intervals rows; it was never observed."""
+    empty_nwb.add_unit(id=7, spike_times=[1.0], obs_intervals=[[0.0, 10.0]])
+    empty_nwb.add_unit(id=11, spike_times=[], obs_intervals=np.empty((0, 2)))
+    units = read_units(empty_nwb)
+    assert units.obs_intervals[1].shape == (0, 2)
+    assert units.spike_window.shape == (0, 2)
+    np.testing.assert_array_equal(
+        read_units(empty_nwb, unit_ids=[7]).spike_window, [[0.0, 10.0]]
+    )
+    assert read_units(empty_nwb, unit_ids=[11]).spike_window.shape == (0, 2)
+
+
 def test_disjoint_unit_coverage_is_explicitly_empty(empty_nwb):
     from neurospatial import Environment, compute_spatial_rates
 
@@ -157,3 +170,17 @@ def test_disjoint_unit_coverage_is_explicitly_empty(empty_nwb):
         compute_spatial_rates(
             env, units.spike_times, times, positions, spike_window=units.spike_window
         )
+
+
+@pytest.mark.parametrize(
+    ("unit_ids", "obs_intervals"),
+    [
+        (np.array([7, 11]), None),
+        (np.array([7]), [np.empty((0, 2)), np.empty((0, 2))]),
+    ],
+)
+def test_units_holder_rejects_misaligned_fields(unit_ids, obs_intervals):
+    from neurospatial.io.nwb import NWBUnits
+
+    with pytest.raises(ValueError, match="one-to-one"):
+        NWBUnits([np.array([0.1])], unit_ids, obs_intervals, None)

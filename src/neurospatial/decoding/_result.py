@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, _coord_dim_names
 
 if TYPE_CHECKING:
@@ -28,6 +29,17 @@ def _read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     owned = np.array(array, dtype=dtype, copy=True)
     owned.flags.writeable = False
     return owned
+
+
+def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
+    """Indices ``i`` where a pause separates ``times[i]`` and ``times[i + 1]``.
+
+    A step longer than 1.5 times the shortest step marks a recording break.
+    """
+    if times is None or times.size < 2:
+        return np.empty(0, dtype=np.intp)
+    d = np.diff(times)
+    return np.flatnonzero(d > 1.5 * np.min(d))
 
 
 @dataclass(frozen=True, repr=False)
@@ -112,10 +124,44 @@ class DecodingResult(ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Take ownership of input arrays as read-only copies."""
+        """Take ownership of input arrays as read-only copies, checking shapes."""
         object.__setattr__(self, "posterior", _read_only_copy(self.posterior))
         if self.times is not None:
             object.__setattr__(self, "times", _read_only_copy(self.times, np.float64))
+        problems = []
+        if self.posterior.ndim != 2:
+            problems.append(
+                f"posterior must be 2-D (n_time_bins, n_bins), got shape "
+                f"{self.posterior.shape}"
+            )
+        elif self.posterior.shape[1] != self.env.n_bins:
+            problems.append(
+                f"posterior has {self.posterior.shape[1]} columns but env has "
+                f"n_bins={self.env.n_bins}"
+            )
+        if (
+            self.times is not None
+            and self.posterior.ndim == 2
+            and self.times.shape != (self.posterior.shape[0],)
+        ):
+            problems.append(
+                f"times has shape {self.times.shape}, expected "
+                f"({self.posterior.shape[0]},) to match the posterior's time bins"
+            )
+        if problems:
+            raise ValueError(
+                _format_error(
+                    "DecodingResult: " + "; ".join(problems) + ".",
+                    why=(
+                        "Why: posterior column j is the probability of "
+                        "env.bin_centers[j], and row i belongs to times[i]."
+                    ),
+                    fix=(
+                        "pass the env the posterior was decoded on and one "
+                        "time per posterior row"
+                    ),
+                )
+            )
         if self.spike_window is not None:
             object.__setattr__(
                 self, "spike_window", _read_only_copy(self.spike_window, np.float64)
@@ -400,10 +446,7 @@ class DecodingResult(ResultMixin):
 
         # Compute extent for proper axis labeling
         # extent = [left, right, bottom, top]
-        breaks = np.empty(0, dtype=np.intp)
-        if self.times is not None and self.times.size >= 2:
-            d = np.diff(self.times)
-            breaks = np.flatnonzero(d > 1.5 * np.min(d))
+        breaks = _recording_breaks(self.times)
         if self.times is not None and breaks.size == 0:
             # Use actual time values
             t_min = float(self.times[0])
@@ -1067,7 +1110,9 @@ class DecodingSummary(ResultMixin):
 
         Since there is no full posterior to display as a heatmap, this plots a
         per-time scalar over time: either the posterior entropy (default) or
-        the MAP position coordinate(s).
+        the MAP position coordinate(s). Lines break at recording gaps (a step
+        longer than 1.5 times the shortest time step), so no segment is drawn
+        across a pause.
 
         Parameters
         ----------
@@ -1096,13 +1141,24 @@ class DecodingSummary(ResultMixin):
             x = np.arange(self.n_time_bins, dtype=np.float64)
             x_label = "Time bin"
 
+        # A NaN after each recording break stops a line from drawing a
+        # straight segment across the pause; the axis keeps real time.
+        breaks = _recording_breaks(self.times) + 1
+
+        def broken(values: NDArray[Any]) -> NDArray[np.float64]:
+            return np.insert(np.asarray(values, dtype=np.float64), breaks, np.nan)
+
+        x = broken(x)
+
         if quantity == "entropy":
-            ax.plot(x, self.posterior_entropy, **kwargs)
+            ax.plot(x, broken(self.posterior_entropy), **kwargs)
             ax.set_ylabel("Posterior entropy (bits)")
             ax.set_title("Posterior entropy over time")
         elif quantity == "map":
             for i, name in enumerate(self._dim_names()):
-                ax.plot(x, self.map_position[:, i], label=f"map_{name}", **kwargs)
+                ax.plot(
+                    x, broken(self.map_position[:, i]), label=f"map_{name}", **kwargs
+                )
             ax.set_ylabel("MAP position")
             ax.set_title("MAP position over time")
             ax.legend()

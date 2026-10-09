@@ -24,7 +24,7 @@
 
 - Add seeded circular spike-time shifts over joined valid recording windows. Shifts preserve retained spike counts and compressed-clock circular spacings without placing spikes in gaps.
 
-- Add `is_egocentric_object_vector_cell` for heading-relative tuning. `is_object_vector_cell` now measures allocentric direction without a headings argument; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
+- Add `is_egocentric_object_vector_cell` for heading-relative tuning. **Breaking:** `is_object_vector_cell` now measures allocentric direction and no longer accepts `headings`; call `is_egocentric_object_vector_cell` for the previous heading-relative verdict; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
 
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
@@ -50,13 +50,78 @@
 
 - **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
 
-- Default `ObjectVectorCellModel` to allocentric direction tuning without headings. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
+- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
 
 - Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
 
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- **Behavior change:** spatial rates use only intervals whose two tracking
+  samples both lie inside the environment. An interval ending in a dropout
+  (NaN) or outside was previously kept in the occupancy while its spikes
+  were dropped, biasing rates low (20% isolated NaN frames read a 5 Hz unit
+  as 3.97 Hz); it is now excluded from spikes and occupancy alike, which
+  recovers 5 Hz without imputing positions.
+- The all-intervals-excluded, spikes-outside-tracking, out-of-bin and
+  `min_occupancy`-masks-all warnings point at the user's calling line instead
+  of a line inside neurospatial, for every rate family.
+- `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` build the polar grid and each
+  frame's polar bin once per call instead of once per shuffle: about 3x
+  faster (0.24 s to 0.08 s for 10 units, 20 shuffles, 60,000 samples) with
+  identical results.
+- Kinematic speeds treat a zero-length interval (duplicate timestamps) as
+  undefined (NaN) instead of infinite, so `pre_decision_speed_stats`, goal
+  approach rates and heading labels no longer absorb an `inf` or a
+  divide-by-zero warning.
+- Kinematic speeds from 1-D (linear-track) positions are the track speed.
+  `pre_decision_speed_stats` previously broadcast a 1-D difference against
+  the time steps and returned an unrelated number.
+- **Breaking:** `Environment.bin_center_of` raises `BinIndexOutOfRangeError`
+  for indices outside `[0, n_bins)`, like the graph queries. Negative indices
+  previously wrapped silently to the last bins, and indices past the end
+  raised NumPy's `IndexError`.
+- `DecodingSummary.plot` breaks its entropy and MAP lines at recording gaps
+  instead of drawing a straight segment across the pause.
+- neurospatial exceptions survive pickling, so errors raised in worker
+  processes reach the caller with their original message and attributes;
+  previously several failed to unpickle or repeated their message.
+- `SimulationSession` checks that `times` and `positions` have one row per
+  sample and that `ground_truth` is keyed by exactly the `unit_ids`, so
+  relabeling units with `dataclasses.replace` must re-key `ground_truth` too.
+  `NWBUnits` checks that `unit_ids` and `obs_intervals` align with
+  `spike_times`.
+- `ObjectVectorRateResult` and `ObjectVectorRatesResult` reject a
+  `direction_frame` other than `"allocentric"` or `"egocentric"`; plots
+  previously drew any other value as egocentric.
+- `spatial_view_cell_significance` computes the gaze geometry once per
+  call instead of once per shuffle. With `gaze_model="ray_cast"` on 3,000
+  samples, 10 shuffles drop from 6.95 s to 0.64 s with identical observed
+  scores, null scores and p-values.
+- Object-vector and egocentric `method="binned"` rates keep bins whose
+  occupancy equals `min_occupancy`, as every other rate path does, and warn
+  when `min_occupancy` masks every occupied bin.
+- `ShuffleTestResult` stores `null_scores` as a read-only copy, and its
+  p-value documentation names the finite-null denominator the significance
+  functions use.
+- `DecodingResult(...)` checks that the posterior is 2-D with one column
+  per `env` bin and that `times` has one entry per posterior row, instead of
+  silently mapping columns to the wrong bin centers. The `times` checks that
+  `to_xarray()` used to apply now fire at construction.
+- Smoothing, `gradient`, `divergence` and `heat_kernel_wavelet_basis` on a
+  non-grid environment read from NWB explain that the round trip does not
+  restore cell geometry and name the original layout, instead of advising a
+  factory method the user never skipped.
+- `BayesianDecoder.fit` (and the session decoders that build an encoding
+  model) raise `ValueError` when the speed, gap, window and `min_occupancy`
+  gates leave no occupied bin, instead of returning a model that decodes
+  every time bin as a uniform posterior.
+- `read_units` reads files in which a unit has no `obs_intervals` rows (a
+  unit that was never observed); that unit's coverage is an empty `(0, 2)`
+  array, so the shared `spike_window` is empty unless it is excluded with
+  `unit_ids=`.
 
 - Center continuous posterior image columns on decoder timestamps, preserving MAP/actual overlays, gapped index clocks and explicit extent overrides. Two-column plots use their timestamp spacing; a single column has a documented 1-second display width, with no changes to posterior arrays or clocks.
 
@@ -159,7 +224,7 @@
 - Replace `HOW:` labels with `Fix:` in diagnostic messages. Shared timestamp, spike and trajectory validators name their caller, collect all input problems, detect swapped arrays, and check coordinate dimensions before binning. A non-Environment first argument now raises `TypeError` with a corrected call.
 
 - Add `NeurospatialError` as the common base for library exceptions while retaining their standard Python bases. `RegionNotFoundError` also supports `except ValueError` and prints an unquoted `Fix:` line with a suggested region name.
-- Raise `BinIndexOutOfRangeError` for graph-query bin indices (formerly `IndexError`), `LayoutNotBuiltError` for unbuilt layouts, and `IncompatibleEnvironmentError` for mismatched environment dimensions or decoding bins.
+- **Breaking:** raise `BinIndexOutOfRangeError` for graph-query bin indices (formerly `IndexError`; it subclasses `ValueError`, not `IndexError`, so `except IndexError` no longer catches it), `LayoutNotBuiltError` for unbuilt layouts, and `IncompatibleEnvironmentError` for mismatched environment dimensions or decoding bins.
 
 ### Changed — behavior analyses respect recording gaps
 
@@ -187,7 +252,7 @@
   `compute_path_efficiency` reports NaN traveled length, efficiency and angular
   efficiency when any interval is unobserved. Shortest length and wall-clock
   time efficiency/time-to-goal retain their existing meanings.
-- `heading_from_velocity(positions, times)` replaces scalar `dt`, validates
+- **Breaking:** `heading_from_velocity(times, positions)` replaces scalar `dt`, validates
   finite, strictly increasing aligned timestamps, and computes velocity,
   smoothing and circular interpolation separately per observed run. The
   measured 1,911.44 cm/s teleport no longer produces a heading across the pause.
@@ -209,6 +274,11 @@
   `compute_vte_trial`, `compute_vte_session`, and `Environment.bin_sequence`,
   `bin_sequence_with_runs`, `transitions`. Use `max_gap=None` to disable the
   gap gate for intentionally coarse sampling; `epochs` still applies.
+- Position-only analyses warn when `max_gap` or `epochs` exclude every
+  interval, for example tracking sampled more slowly than 2 Hz under the
+  default `max_gap=0.5`. The warning names the active gate, reports the median
+  sampling interval and points at the calling line, so an empty or all-NaN
+  result is no longer indistinguishable from a measurement.
 - Pre-decision extraction, metrics, composite decision analysis and trial/session
   VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
   observed run containing the entry time; entries outside every run return an
@@ -223,9 +293,8 @@
   direction labels forward the same windows and retain one label per sample.
 - `detect_region_crossings` accepts `max_gap` and `epochs`, and detects entries
   and exits separately within observed runs. A first post-pause target sample
-  no longer invents an entry at 1100 s. Compatibility argument dispatch and
-  its deprecation warning run once per call; the contiguous detector keeps
-  its existing crossing timestamps and region-boundary handling.
+  no longer invents an entry at 1100 s. The contiguous detector keeps its
+  existing crossing timestamps and region-boundary handling.
 - `Environment.bin_sequence` and `bin_sequence_with_runs` accept `max_gap`
   and `epochs`, drop samples that touch no observed interval (including
   singleton inputs), and split same-bin runs and deduplication at recording
@@ -261,7 +330,7 @@
   dashed gap markers, preserving visible separation instead of stretching
   bins across a pause. Contiguous and single-bin results keep time axes;
   two timestamps alone cannot distinguish a gap from a larger bin width.
-- `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
+- **Breaking:** `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
   `spike_window`. Training masks the original arrays instead of concatenating
   epoch slices, preserving aligned speed samples and unit identities.
   `predict`, `predict_summary`, and `score` forward the same window keywords
@@ -303,6 +372,11 @@
   instead of charging the pause to a single bin. In an unsmoothed example,
   pooled directional/egocentric rates rise from 0.833 Hz to 5.001 Hz and view
   rates from 0.717 Hz to 4.916 Hz; no bin absorbs the 1000-second pause.
+- Directional, view and object-vector rates warn, like spatial rates, when
+  the gates exclude every interval (for example `epochs` in milliseconds) or
+  when more than half of the spikes fall outside the tracked time (for
+  example `spike_times` in milliseconds), instead of silently returning an
+  empty or truncated map.
 - Directional, view and egocentric binning helpers use one interval mask for
   both spike counts and occupancy. Their default `max_gap=0.5` excludes
   recording pauses instead of charging them to one bin, and their normalized
@@ -324,9 +398,11 @@
   store the assumption as an integer and supplied windows as a flat array,
   so both round-trip through NetCDF. Frame-family encoders now record their
   acquisition windows as well.
-- `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
+- **Breaking:** `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
   same window parser as spatial analyses. Nested sequences always describe
-  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.
+  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form,
+  and a tuple or list of two 1-D NumPy arrays raises (naming
+  `np.column_stack([starts, stops])`) instead of being read as two rows.
   Overlapping or touching rows merge, zero-width and empty window sets raise
   with a fix, and `epochs=None` leaves data unrestricted. Point membership
   still uses the requested `closed=` setting on the normalized windows.
@@ -345,7 +421,7 @@
   It excludes intervals that cross window boundaries for both start and
   linear time allocation, interval counts, and smoothed occupancy.
 
-### Fixed
+### Fixed — numerical and I/O corrections
 
 - **Behavior change:** `pre_decision_heading_stats` now excludes samples below
   `min_speed` using the same uninterpolated velocity and speed as goal

@@ -450,7 +450,9 @@ warn_on_drop
         "succeeds" but decodes poorly. For short epochs, raise ``min_occupancy``
         (ratio methods) or check the fitted model's spatial coverage before
         trusting a decode. ``method="glm"`` has no such knob -- occupancy enters
-        as a log-offset, so every bin gets a finite rate.
+        as a log-offset, so every bin gets a finite rate. A fit whose gates
+        leave no occupied bin at all raises ``ValueError`` rather than
+        returning a model that decodes every time bin as uniform.
 
         When predicting with the fitted decoder, decode time bins are formed
         separately within each run of samples whose

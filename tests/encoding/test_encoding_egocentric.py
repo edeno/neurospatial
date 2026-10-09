@@ -693,7 +693,7 @@ class TestObjectVectorRatesResultIter:
 
 
 # =============================================================================
-# ObjectVectorRateResult Convenience Methods Tests (Task 5.2)
+# ObjectVectorRateResult Convenience Methods Tests
 # =============================================================================
 
 
@@ -1058,7 +1058,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
 
 
 # =============================================================================
-# ObjectVectorRateResult Classification Tests (Task 5.3)
+# ObjectVectorRateResult Classification Tests
 # =============================================================================
 
 
@@ -1380,7 +1380,7 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
 
 
 # =============================================================================
-# ObjectVectorRatesResult Batch Methods Tests (Task 5.4)
+# ObjectVectorRatesResult Batch Methods Tests
 # =============================================================================
 
 
@@ -1958,7 +1958,7 @@ class TestObjectVectorRatesResultPeakFiringRates:
 
 
 # =============================================================================
-# ObjectVectorRatesResult.summary_table() Tests (Task 5.5)
+# ObjectVectorRatesResult.summary_table() Tests
 # =============================================================================
 
 

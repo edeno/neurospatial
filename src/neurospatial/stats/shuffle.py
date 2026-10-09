@@ -200,17 +200,39 @@ def shuffle_spike_times_circular(
     inside = (idx >= 0) & (spike_times < normalized[np.maximum(idx, 0), 1])
     idx = idx[inside]
     compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
-    generator = _ensure_rng(rng)
+    # Validation above runs at call time; only the draws are lazy.
+    return _circular_shift_draws(
+        compressed,
+        normalized,
+        offsets,
+        total,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        generator=_ensure_rng(rng),
+    )
+
+
+def _circular_shift_draws(
+    compressed: NDArray[np.float64],
+    windows: NDArray[np.float64],
+    offsets: NDArray[np.float64],
+    total: float,
+    *,
+    n_shuffles: int,
+    min_shift: float,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Yield shifted spike trains from validated, compressed-clock inputs."""
     for _ in range(n_shuffles):
         wrapped = np.mod(
             compressed + generator.uniform(min_shift, total - min_shift), total
         )
         j = np.minimum(
-            np.searchsorted(offsets, wrapped, side="right") - 1, len(normalized) - 1
+            np.searchsorted(offsets, wrapped, side="right") - 1, len(windows) - 1
         )
-        shifted = normalized[j, 0] + (wrapped - offsets[j])
+        shifted = windows[j, 0] + (wrapped - offsets[j])
         # A sum on a large absolute clock may round up to an excluded stop.
-        shifted = np.minimum(shifted, np.nextafter(normalized[j, 1], normalized[j, 0]))
+        shifted = np.minimum(shifted, np.nextafter(windows[j, 1], windows[j, 0]))
         yield np.sort(shifted)
 
 
@@ -942,11 +964,12 @@ class ShuffleTestResult:
         The score computed from the original (non-shuffled) data.
     null_scores : NDArray[np.float64]
         Array of scores computed from shuffled data, forming the null
-        distribution.
+        distribution. Stored as a read-only float64 copy.
     p_value : float
         Monte Carlo p-value with correction: (k + 1) / (n + 1) where k is
-        the count of null scores at least as extreme as observed and n is
-        the number of shuffles.
+        the count of finite null scores at least as extreme as observed and
+        n is the number of finite null scores (``n_shuffles`` unless some
+        shuffles produced NaN).
     z_score : float
         Standard score: (observed - mean(null)) / std(null). NaN if null
         has zero variance.
@@ -990,6 +1013,12 @@ class ShuffleTestResult:
     z_score: float
     shuffle_type: str
     n_shuffles: int
+
+    def __post_init__(self) -> None:
+        """Own the null distribution as a read-only copy."""
+        null = np.array(self.null_scores, dtype=np.float64, copy=True)
+        null.flags.writeable = False
+        object.__setattr__(self, "null_scores", null)
 
     @property
     def is_significant(self) -> bool:

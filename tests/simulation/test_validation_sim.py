@@ -49,7 +49,15 @@ def test_plot_session_summary_labels(simple_2d_env):
     assert [ax.get_title() for ax in axes[2:4]] == ["Cell 1", "Cell 3"]
     assert all(not ax.axison for ax in axes[4:8])
     plt.close(fig)
-    relabeled = replace(session, unit_ids=np.array([7, 11, 19, 23, 31]))
+    labels = np.array([7, 11, 19, 23, 31])
+    relabeled = replace(
+        session,
+        unit_ids=labels,
+        ground_truth={
+            int(new): session.ground_truth[int(old)]
+            for old, new in zip(session.unit_ids, labels, strict=True)
+        },
+    )
     fig, axes = plot_session_summary(relabeled, unit_ids=[31, 11])
     assert [ax.get_title() for ax in axes[2:4]] == ["Cell 31", "Cell 11"]
     assert [tick.get_text() for tick in axes[-1].get_yticklabels()] == [

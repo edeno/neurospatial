@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+import pytest
 
 from neurospatial.encoding._significance import (
     _stream_key,
@@ -54,9 +55,7 @@ def test_finite_upper_tail_ranks_and_undefined_observation():
 def test_results_preserve_labels_and_finite_null_zscore():
     observed = np.array([[3.0], [1.0]])
     null = np.array([[[1.0], [1.0]], [[2.0], [1.0]], [[np.nan], [1.0]]])
-    results = to_shuffle_results(
-        observed, null, shuffle_pvalues(observed, null), np.array([11, 37])
-    )
+    results = to_shuffle_results(observed, null, np.array([11, 37]))
     assert list(results) == [11, 37]
     assert results[11].z_score == 3
     assert np.isnan(results[37].z_score)
@@ -81,3 +80,13 @@ def test_observed_warning_once_null_warnings_suppressed():
             rng=7,
         )
     assert len(caught) == 1
+
+
+def test_shuffle_result_owns_a_read_only_null():
+    observed = np.array([[3.0]])
+    null = np.array([[[1.0]], [[2.0]]])
+    result = to_shuffle_results(observed, null, np.array([5]))[5]
+    with pytest.raises(ValueError, match="read-only"):
+        result.null_scores[0] = 99.0
+    null[0, 0, 0] = 99.0
+    assert result.null_scores[0] == 1.0

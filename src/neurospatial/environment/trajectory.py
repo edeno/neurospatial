@@ -24,9 +24,12 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
+import sys
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import networkx as nx
@@ -254,11 +257,52 @@ def observed_interval_mask(
     """
     from neurospatial._intervals import as_intervals
 
-    return interval_valid_mask(
-        np.asarray(times, dtype=np.float64),
-        max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
+    times = np.asarray(times, dtype=np.float64)
+    resolved_epochs = as_intervals(epochs, name="epochs")
+    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
+    if mask.size and not mask.any():
+        _warn_all_intervals_excluded(times, max_gap=max_gap, epochs=resolved_epochs)
+    return mask
+
+
+def _warn_all_intervals_excluded(
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+) -> None:
+    """Name the gate that left a position-only analysis with no observed data."""
+    causes = [f"max_gap={max_gap}"] if max_gap is not None else []
+    fixes = []
+    if max_gap is not None:
+        fixes.append(
+            f"max_gap is in seconds and the median sampling interval is "
+            f"{float(np.median(np.diff(times))):.4g} s; raise max_gap above it "
+            f"or pass max_gap=None to disable gap gating"
+        )
+    if epochs is not None:
+        causes.append("epochs")
+        fixes.append("check that epochs overlap `times` (same clock, seconds)")
+    warnings.warn(
+        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
+        f"{', '.join(causes)}), so the result is empty or NaN rather than a "
+        f"measurement. Fix: {'; '.join(fixes)}.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
     )
+
+
+def _external_stacklevel() -> int:
+    """Stacklevel, counted from the caller, of the first frame outside the package."""
+    package_dir = Path(__file__).resolve().parent.parent
+    frame = sys._getframe(1)
+    level = 1
+    while frame.f_back is not None and Path(frame.f_code.co_filename).is_relative_to(
+        package_dir
+    ):
+        frame = frame.f_back
+        level += 1
+    return level
 
 
 def observed_runs(

@@ -137,6 +137,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         assert len(trials) == 0, "Short trial should be excluded"
@@ -173,6 +174,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=20.0,
+            max_gap=None,
         )
 
         # Should detect the trial but mark as failed (timeout)
@@ -275,6 +277,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=20.0,
+            max_gap=None,
         )
 
         # Should detect trial start but timeout
@@ -590,6 +593,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Trial in progress at end is too short -> dropped.

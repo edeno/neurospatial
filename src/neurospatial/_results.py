@@ -117,8 +117,8 @@ def resolve_unit_ids(
     if resolved.shape[0] != n_units:
         raise ValueError(
             _format_error(
-                f"unit_ids length mismatch{where}: got {resolved.shape[0]} label(s) but there are {n_units} unit(s).\n  WHY: each unit must have exactly one identity label.\n  Fix: pass unit_ids with one entry per unit, or omit it to default to np.arange(n_units).",
-                fix=f"pass one label per unit (len(unit_ids) == {n_units})",
+                f"unit_ids length mismatch{where}: got {resolved.shape[0]} label(s) but there are {n_units} unit(s).",
+                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or omit unit_ids to default to np.arange(n_units)",
                 why="Why: unit_ids must identify every row without shifting unit labels.",
             )
         )

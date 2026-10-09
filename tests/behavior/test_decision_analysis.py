@@ -484,7 +484,10 @@ class TestDetectBoundaryCrossings:
         times = np.linspace(0, 4, 5)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            position_bins, voronoi_labels, times
+            position_bins,
+            voronoi_labels,
+            times,
+            max_gap=None,
         )
 
         assert len(crossing_times) == 0

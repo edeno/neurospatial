@@ -65,14 +65,12 @@ if TYPE_CHECKING:
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
-    _SILENCE_MIN_SECONDS,
-    _SILENCE_MIN_UNITS,
     _warn_if_population_silent,
 )
 from neurospatial.encoding._significance import (
-    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
+    resolve_shuffle_settings,
 )
 from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -2320,18 +2318,14 @@ def compute_directional_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
 
-    # Recording coverage uses tracked runs, independently of invalid frame bins.
-    if (
-        resolved_spike_window is None
-        and n_neurons >= _SILENCE_MIN_UNITS
-        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
-    ):
-        observed_mask = interval_valid_mask(
-            times, max_gap=max_gap, epochs=resolved_epochs
-        )
-        _warn_if_population_silent(
-            spike_times_list, run_time_bounds(times, observed_mask)
-        )
+    # Recording coverage uses tracked runs, independently of speed or frame bins.
+    _warn_if_population_silent(
+        spike_times_list,
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
 
     # Precompute frame bins and one shared mask for the whole population.
     spike_counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
@@ -2537,7 +2531,8 @@ def is_head_direction_cell(
     min_mvl : float or None, default=None
         Inclusive screen cutoff; None resolves to the family threshold constant.
     alpha : float or None, default=None
-        P-value level (0.05). Shuffle-only, except HD also uses it for Rayleigh.
+        P-value level for the Rayleigh test (threshold mode) and the shuffle
+        test; None resolves to 0.05.
     n_shuffles : int or None, default=None
         Number of circular shifts in shuffle mode; None resolves to 1000.
     min_shift : float or None, default=None
@@ -2617,12 +2612,7 @@ def is_head_direction_cell(
             times,
             headings,
             unit_ids=[label],
-            n_shuffles=int(_SHUFFLE_DEFAULTS["n_shuffles"])
-            if n_shuffles is None
-            else n_shuffles,
-            min_shift=_SHUFFLE_DEFAULTS["min_shift"]
-            if min_shift is None
-            else min_shift,
+            **resolve_shuffle_settings(n_shuffles, min_shift),
             rng=rng,
             bin_size=bin_size,
             bandwidth=bandwidth,
@@ -2950,15 +2940,12 @@ def head_direction_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._directional_binning import (
-        _directional_interval_mask,
-        directional_frame_bins,
-    )
+    from neurospatial.encoding._directional_binning import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
-        shuffle_pvalues,
+        snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -2989,16 +2976,11 @@ def head_direction_cell_significance(
         "n_jobs": n_jobs,
         "backend": backend,
     }
-    options = {
-        key: value.copy()
-        if isinstance(value, np.ndarray)
-        else np.array(value, copy=True)
-        if isinstance(value, (list, tuple))
-        else value
-        for key, value in options.items()
-    }
-    options.update(
-        epochs=resolved_epochs, spike_window=resolved_spike_window, unit_ids=ids
+    options = snapshot_options(
+        options,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        unit_ids=ids,
     )
     validate_trajectory(
         times, headings=headings, context="head_direction_cell_significance"
@@ -3006,7 +2988,7 @@ def head_direction_cell_significance(
     for train in trains:
         validate_spike_times(train, context="head_direction_cell_significance")
     frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
-    mask = _directional_interval_mask(
+    mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
@@ -3029,4 +3011,4 @@ def head_direction_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, shuffle_pvalues(observed, null), ids)
+    return to_shuffle_results(observed, null, ids)

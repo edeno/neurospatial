@@ -6,7 +6,9 @@ NeurospatialError base second. This module has no internal dependencies.
 
 from __future__ import annotations
 
+import functools
 from difflib import get_close_matches
+from typing import Any
 
 __all__ = [
     "BinIndexOutOfRangeError",
@@ -25,7 +27,42 @@ class NeurospatialError(Exception):
     Each concrete error also inherits a built-in type, listed first, so
     ``except ValueError`` keeps working. ``except NeurospatialError`` catches
     only problems that neurospatial itself detected.
+
+    Subclasses build their message from structured constructor arguments, so
+    the default pickling (which re-calls the class with the formatted message)
+    would fail or double-format. Each subclass ``__init__`` therefore records
+    its arguments, and ``__reduce__`` rebuilds the error from them, which lets
+    errors raised in worker processes reach the caller intact.
     """
+
+    _init_arguments: tuple[tuple[Any, ...], dict[str, Any]]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        init = cls.__dict__.get("__init__")
+        if init is None:
+            return
+
+        @functools.wraps(init)
+        def recording_init(self: NeurospatialError, *args: Any, **kw: Any) -> None:
+            init(self, *args, **kw)
+            self._init_arguments = (args, kw)
+
+        setattr(cls, "__init__", recording_init)  # noqa: B010
+
+    def __reduce__(self) -> str | tuple[Any, ...]:
+        arguments = self.__dict__.get("_init_arguments")
+        if arguments is None:
+            return super().__reduce__()
+        args, kwargs = arguments
+        return (_rebuild_error, (type(self), args, kwargs), self.__dict__)
+
+
+def _rebuild_error(
+    cls: type[NeurospatialError], args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> NeurospatialError:
+    """Unpickling hook: call the error class with its original arguments."""
+    return cls(*args, **kwargs)
 
 
 def _format_error(what: str, *, fix: str, why: str | None = None) -> str:
@@ -144,21 +181,27 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
 
     Inherits from :class:`ValueError` so existing ``except ValueError``
     blocks keep working.
+
+    Parameters
+    ----------
+    message : str
+        What differs between the environments.
+    fix : str, optional
+        The ``Fix:`` line for this mismatch. The default names no specific
+        remedy; raise sites pass the fix for their own check.
+    first, second : object, optional
+        The two mismatched objects, kept as attributes for inspection.
     """
 
     def __init__(
         self,
         message: str,
         *,
+        fix: str = "use environments that share the property named above.",
         first: object | None = None,
         second: object | None = None,
     ) -> None:
-        super().__init__(
-            _format_error(
-                message,
-                fix="use environments with matching n_dims and bins; recompute encoding_models on the decoding env.",
-            )
-        )
+        super().__init__(_format_error(message, fix=fix))
         self.first = first
         self.second = second
 

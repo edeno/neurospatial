@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2026-01-08 (Encoding API updated to use result classes)
+**Last Updated**: 2026-10-09 (time windows, recording gaps and v0.6 naming contract)
 
 ---
 
@@ -337,8 +337,8 @@ candidate = result.is_place_cell(criterion="spatial_info")  # Fast, biased scree
 # change for existing callers). Pass fill_value=0.0 when feeding
 # decode_position() so the model is explicitly zero-rate there -- the documented
 # encode->decode golden path then composes with no manual np.nan_to_num.
-# decode_position() also tolerates residual NaN bins (treats them as zero-rate,
-# warns once).
+# decode_position() also tolerates residual NaN bins: it leaves those
+# (neuron, bin) terms out of the likelihood (NOT zero-rate) and warns once.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
@@ -747,7 +747,7 @@ This documentation is organized into focused modules:
 | ValueError: no active bins | "When Things Break" above |
 | Tests fail | [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing) |
 | Pre-commit hooks fail | [TROUBLESHOOTING.md - Pre-commit](.claude/TROUBLESHOOTING.md#pre-commit-hooks-fail-on-commit) |
-| Memory warning | [TROUBLESHOOTING.md - ResourceWarning](.claude/TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) |
+| Memory warning | [TROUBLESHOOTING.md - Creating large grid](.claude/TROUBLESHOOTING.md#userwarning-creating-large-grid) |
 | Type errors | [PATTERNS.md - Mypy](.claude/PATTERNS.md#mypy-type-checking-requirements) |
 | Slow napari animations | [PROFILING.md - Common Performance Issues](.claude/PROFILING.md#common-performance-issues) |
 
@@ -862,7 +862,7 @@ Module doctests remain a separate check: `uv run pytest --doctest-modules src/ne
 - Visualization (interactive animation with napari, video export, HTML players)
 - NWB integration (read/write NeurodataWithoutBorders files - optional)
 
-**Current Version:** v0.3.x (Domain-centric package reorganization)
+**Current Version:** v0.8.0 (unreleased changes in CHANGELOG.md)
 
 ---
 

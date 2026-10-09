@@ -28,8 +28,12 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import resolve_time_windows
-from neurospatial.environment.trajectory import start_allocated_occupancy
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial.environment.trajectory import (
+    _external_stacklevel,
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -290,6 +294,80 @@ def count_spikes_by_frame(
     return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
 
 
+_WARN_ON_DROP_HINT = "Set warn_on_drop=False to suppress this warning."
+
+
+def count_frames_and_occupancy(
+    spike_times_list: Sequence[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    frame_bins: NDArray[np.intp],
+    n_bins: int,
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+    n_jobs: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Count every unit's spikes and the shared occupancy over one frame mask.
+
+    Warns, at the caller's call site, when the gates exclude every interval or
+    when most spikes fall outside the tracked time (the same checks the
+    spatial family applies under ``warn_on_drop=True``).
+
+    Returns
+    -------
+    spike_counts : ndarray, shape (n_units, n_bins)
+    occupancy : ndarray, shape (n_bins,)
+    """
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    _emit_all_excluded_intervals_warning(
+        mask,
+        max_gap=max_gap,
+        min_speed=None,
+        epochs=epochs,
+        spike_window=spike_window,
+        suppress_hint="",
+    )
+    if len(times):
+        all_spikes = (
+            np.concatenate(spike_times_list)
+            if spike_times_list
+            else np.empty(0, dtype=np.float64)
+        )
+        outside = ~((all_spikes >= times[0]) & (all_spikes < times[-1]))
+        _emit_time_window_warning(
+            int(outside.sum()),
+            all_spikes.size,
+            float(times[0]),
+            float(times[-1]),
+            all_spikes,
+            scope="across all neurons " if len(spike_times_list) > 1 else "",
+            suppress_hint="",
+        )
+    occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
+    spike_counts = np.zeros((len(spike_times_list), n_bins), dtype=np.float64)
+    if len(spike_times_list) and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(count_spikes_by_frame)(spikes, times, frame_bins, mask, n_bins)
+            for spikes in spike_times_list
+        )
+        spike_counts = np.asarray(results, dtype=np.float64)
+    else:
+        for i, spikes in enumerate(spike_times_list):
+            spike_counts[i] = count_spikes_by_frame(
+                spikes, times, frame_bins, mask, n_bins
+            )
+    return spike_counts, occupancy
+
+
 def _spatial_interval_mask(
     env: Environment,
     times: NDArray[np.float64],
@@ -310,7 +388,8 @@ def _spatial_interval_mask(
     trajectory inside each neuron's kernel call. The single-neuron path uses it
     too, keeping one code path.
 
-    The bounds gate always applies, even when gap and speed checks are off.
+    The bounds gate always applies, even when gap and speed checks are off,
+    and requires both of an interval's samples to be inside the environment.
 
     Parameters
     ----------
@@ -338,17 +417,63 @@ def _spatial_interval_mask(
     """
     from neurospatial.environment.trajectory import interval_valid_mask
 
-    return interval_valid_mask(
+    sample_bins = env.bin_at(positions)
+    mask = interval_valid_mask(
         times,
         positions,
         cast("EnvironmentProtocol", env),
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=env.bin_at(positions),
+        start_bin=sample_bins,
         epochs=epochs,
         spike_window=spike_window,
     )
+    # Complete-case rule: spikes are placed by interpolating between an
+    # interval's two samples, so an interval counts only when both samples are
+    # tracked inside the environment. One whose end sample is a dropout (NaN)
+    # or outside is left out of the spike counts and the occupancy alike,
+    # rather than imputing where the animal was.
+    return mask & (sample_bins[1:] >= 0)
+
+
+def _resolve_spatial_interval_mask(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    warn_on_drop: bool,
+) -> tuple[NDArray[np.bool_], NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """Normalize time windows, build the shared mask and warn if it is empty.
+
+    Returns ``(interval_mask, epochs, spike_window)`` with the windows
+    normalized. The all-excluded warning is attributed to the public caller.
+    """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    interval_mask = _spatial_interval_mask(
+        env,
+        times,
+        positions.reshape(-1, 1) if positions.ndim == 1 else positions,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    if warn_on_drop:
+        _emit_all_excluded_intervals_warning(
+            interval_mask,
+            max_gap=max_gap,
+            min_speed=min_speed,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+        )
+    return interval_mask, resolved_epochs, resolved_spike_window
 
 
 def _emit_all_excluded_intervals_warning(
@@ -358,7 +483,7 @@ def _emit_all_excluded_intervals_warning(
     min_speed: float | None,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-    stacklevel: int = 2,
+    suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning when the interval filter excludes ALL intervals.
 
@@ -378,8 +503,9 @@ def _emit_all_excluded_intervals_warning(
         The active speed threshold (named in the message when set).
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Active normalized time windows, named in the message when supplied.
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning; empty for callers
+        without a ``warn_on_drop`` parameter.
     """
     if interval_mask.size == 0:
         return
@@ -420,12 +546,14 @@ def _emit_all_excluded_intervals_warning(
     fix_part = ("; ".join(fixes) + ". ") if fixes else ""
 
     warnings.warn(
-        f"Interval filtering excluded ALL trajectory intervals "
-        f"({gate_part}); the rate map is empty. "
-        f"{fix_part}"
-        f"Set warn_on_drop=False to suppress this warning.",
+        (
+            f"Interval filtering excluded ALL trajectory intervals "
+            f"({gate_part}); the rate map is empty. "
+            f"{fix_part}"
+            f"{suppress_hint}"
+        ).rstrip(),
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -435,20 +563,34 @@ _SILENCE_MIN_SECONDS = 60.0
 
 def _warn_if_population_silent(
     spike_trains: Sequence[NDArray[np.float64]],
-    observed_runs: NDArray[np.float64],
+    times: NDArray[np.float64],
     *,
-    stacklevel: int = 3,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
 ) -> None:
     """Warn once if every unit is silent for >= 60 s of tracked time.
 
-    ``observed_runs`` are the maximal runs of intervals passing the max_gap and
-    epochs gates (``run_time_bounds``). A silent stretch is measured inside a
-    single run, from the run start to the first spike, between consecutive
+    Skipped when the caller passed ``spike_window`` (recording coverage is then
+    explicit), for populations below ``_SILENCE_MIN_UNITS`` and for recordings
+    shorter than ``_SILENCE_MIN_SECONDS``. Otherwise silence is measured over
+    the maximal runs of intervals passing the max_gap and epochs gates
+    (``run_time_bounds``), independently of speed or frame-bin validity: inside
+    a single run, from the run start to the first spike, between consecutive
     spikes of the merged train, and from the last spike to the run end, so a
     stretch never spans an untracked pause.
     """
     n_units = len(spike_trains)
-    if n_units < _SILENCE_MIN_UNITS or observed_runs.shape[0] == 0:
+    if (
+        spike_window is not None
+        or n_units < _SILENCE_MIN_UNITS
+        or times[-1] - times[0] < _SILENCE_MIN_SECONDS
+    ):
+        return
+    observed_runs = run_time_bounds(
+        times, interval_valid_mask(times, max_gap=max_gap, epochs=epochs)
+    )
+    if observed_runs.shape[0] == 0:
         return
     nonempty = [np.asarray(s, dtype=np.float64) for s in spike_trains if len(s)]
     spikes = np.concatenate(nonempty) if nonempty else np.empty(0, dtype=np.float64)
@@ -471,7 +613,7 @@ def _warn_if_population_silent(
         f"was not recording then, pass spike_window=(start, stop) so that time "
         f"is excluded from occupancy.",
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -483,7 +625,7 @@ def _emit_time_window_warning(
     all_spike_times: NDArray[np.float64] | None,
     *,
     scope: str = "",
-    stacklevel: int = 2,
+    suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Emit a UserWarning for time-window spike drops if the fraction exceeds threshold.
 
@@ -500,8 +642,9 @@ def _emit_time_window_warning(
         are omitted from the message.
     scope : str, optional
         Extra phrase inserted into the message (e.g. "across all neurons ").
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning; empty for callers
+        without a ``warn_on_drop`` parameter.
     """
     if n_total == 0 or n_time_dropped == 0:
         return
@@ -516,15 +659,16 @@ def _emit_time_window_warning(
     else:
         range_part = ""
     warnings.warn(
-        f"{n_time_dropped}/{n_total} spike_times "
-        f"({100 * frac:.0f}%) {scope}fell outside the position time "
-        f"window [{t_min:.6g}, {t_max:.6g}]; "
-        f"{range_part}"
-        f"Check that spike_times and times share units (both seconds). "
-        f"Dropped spikes do not contribute. "
-        f"Set warn_on_drop=False to suppress this warning.",
+        (
+            f"{n_time_dropped}/{n_total} spike_times "
+            f"({100 * frac:.0f}%) {scope}fell outside the position time "
+            f"window [{t_min:.6g}, {t_max:.6g}]; "
+            f"{range_part}"
+            f"Check that spike_times and times share units (both seconds). "
+            f"Dropped spikes do not contribute. {suppress_hint}"
+        ).rstrip(),
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -533,7 +677,6 @@ def _emit_inactive_bin_warning(
     n_after_time: int,
     *,
     scope: str = "",
-    stacklevel: int = 2,
 ) -> None:
     """Emit a UserWarning for inactive-bin spike drops if the fraction exceeds threshold.
 
@@ -545,8 +688,6 @@ def _emit_inactive_bin_warning(
         Spikes that survived the time-window filter (denominator).
     scope : str, optional
         Extra phrase inserted into the message (e.g. "across all neurons ").
-    stacklevel : int, optional
-        ``warnings.warn`` stacklevel.
     """
     if n_after_time == 0 or n_bin_dropped == 0:
         return
@@ -562,7 +703,7 @@ def _emit_inactive_bin_warning(
         f"Dropped spikes do not contribute. "
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -724,12 +865,10 @@ def bin_spike_train(
             t_min,
             t_max,
             spike_times,
-            stacklevel=2,
         )
         _emit_inactive_bin_warning(
             n_bin_dropped,
             n_after_time,
-            stacklevel=2,
         )
 
     return spike_counts
@@ -1092,7 +1231,6 @@ def bin_spike_trains(
                 t_max,
                 all_spikes_cat,
                 scope="across all neurons ",
-                stacklevel=2,
             )
 
         if total_after_time > 0 and total_bin_dropped > 0:
@@ -1100,7 +1238,6 @@ def bin_spike_trains(
                 total_bin_dropped,
                 total_after_time,
                 scope="across all neurons ",
-                stacklevel=2,
             )
 
     return spike_counts, occupancy

@@ -134,6 +134,12 @@ def in_epochs(
     closed : {"both", "left", "right", "neither"}, optional
         Which endpoints are inclusive. Default ``"both"`` (``start <= t <=
         end``), matching :mod:`neurospatial.behavior.segmentation` and pynapple.
+        Analysis ``epochs=``/``spike_window=`` arguments are half-open
+        ``[start, stop)`` because they tile time bins and sampling intervals,
+        so a point exactly at a stop is kept here but excluded there; pass
+        ``closed="left"`` to match them. Touching rows merge first, so a
+        boundary shared by two rows is inside the merged window for every
+        ``closed`` value.
 
     Returns
     -------
@@ -203,7 +209,7 @@ def restrict(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``.
+        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
 
     Returns
     -------
@@ -277,7 +283,7 @@ def restrict_spike_trains(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``.
+        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
 
     Returns
     -------

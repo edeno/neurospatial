@@ -226,3 +226,81 @@ def test_plot_allocentric_north_is_up(ou_env, ou_2min, obj):
     assert dy > 0 and abs(dx) < 0.1 * dy
     assert "allocentric" in ax.get_xlabel()
     plt.close(ax.figure)
+
+
+def test_binned_polar_rate_keeps_bins_at_min_occupancy():
+    """Object-vector binned rates use the shared inclusive occupancy rule."""
+    from neurospatial.encoding.egocentric import _raw_polar_rate
+
+    rate = _raw_polar_rate(
+        np.array([1.0, 1.0, 1.0, 1.0]), np.array([0.0, 0.5, 1.0, 2.0]), 1.0
+    )
+    np.testing.assert_array_equal(rate, [np.nan, np.nan, 1.0, 0.5])
+
+
+def test_binned_object_vector_warns_when_min_occupancy_masks_everything(
+    continuous_recording,
+):
+    from neurospatial.encoding import compute_object_vector_rates
+
+    r = continuous_recording
+    with pytest.warns(UserWarning, match="masks ALL") as record:
+        compute_object_vector_rates(
+            r.env,
+            [r.spike_times, r.spike_times],
+            r.times,
+            r.positions,
+            np.array([[50.0, 50.0]]),
+            distance_range=(0, 100),
+            method="binned",
+            min_occupancy=1e6,
+        )
+    assert sum("masks ALL" in str(w.message) for w in record) == 1
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_results_reject_unknown_direction_frame(continuous_recording, plural):
+    """Plotting would draw an unknown frame as egocentric; reject it instead."""
+    import dataclasses
+
+    from neurospatial.encoding import (
+        compute_object_vector_rate,
+        compute_object_vector_rates,
+    )
+
+    r = continuous_recording
+    compute = compute_object_vector_rates if plural else compute_object_vector_rate
+    result = compute(
+        r.env,
+        [r.spike_times] if plural else r.spike_times,
+        r.times,
+        r.positions,
+        np.array([[50.0, 50.0]]),
+        distance_range=(0, 100),
+        method="binned",
+    )
+    with pytest.raises(ValueError, match="direction_frame") as exc:
+        dataclasses.replace(result, direction_frame="ego")
+    assert "Fix:" in str(exc.value)
+
+
+@pytest.mark.parametrize("call", ["significance", "shuffle_predicate"])
+def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
+    """Missing headings must not silently switch to the allocentric analysis."""
+    from neurospatial.encoding import (
+        egocentric_object_vector_cell_significance,
+        is_egocentric_object_vector_cell,
+    )
+
+    r = continuous_recording
+    args = (r.env, r.spike_times, r.times, r.positions, None, np.array([[50.0, 50.0]]))
+    with pytest.raises(ValueError, match="headings is required") as exc:
+        if call == "significance":
+            egocentric_object_vector_cell_significance(
+                *args, distance_range=(0, 100), n_shuffles=3, rng=0
+            )
+        else:
+            is_egocentric_object_vector_cell(
+                *args, criterion="shuffle", n_shuffles=3, rng=0
+            )
+    assert "Fix:" in str(exc.value)

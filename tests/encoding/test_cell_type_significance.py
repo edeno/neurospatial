@@ -68,7 +68,7 @@ def test_significance_uses_only_observed_windows(
     significance_family, significance_recording, monkeypatch
 ):
     f, r = significance_family, significance_recording
-    compute = getattr(f.module, f.compute_name)
+    compute = getattr(f.module, f.statistic_name)
     recorded = []
 
     def capture(*args, **kwargs):
@@ -76,7 +76,7 @@ def test_significance_uses_only_observed_windows(
         recorded.append([train.copy() for train in trains])
         return compute(*args, **kwargs)
 
-    monkeypatch.setattr(f.module, f.compute_name, capture)
+    monkeypatch.setattr(f.module, f.statistic_name, capture)
     f.function(
         *f.args(r),
         epochs=[[0, 20], [30, 60]],
@@ -148,7 +148,7 @@ def test_significance_isolated_from_caller_mutation(
         kwargs["method"] = "gaussian_kde"
     clean = f.function(*f.args(r), n_shuffles=4, rng=0, **kwargs)
     target = kwargs[argument] if argument in kwargs else getattr(r, argument)
-    compute = getattr(f.module, f.compute_name)
+    compute = getattr(f.module, f.statistic_name)
     calls = 0
 
     def mutate_after_observation(*args, **parameters):
@@ -166,7 +166,7 @@ def test_significance_isolated_from_caller_mutation(
         calls += 1
         return result
 
-    monkeypatch.setattr(f.module, f.compute_name, mutate_after_observation)
+    monkeypatch.setattr(f.module, f.statistic_name, mutate_after_observation)
     protected = f.function(*f.args(r), n_shuffles=4, rng=0, **kwargs)
     for uid in clean:
         assert protected[uid].p_value == clean[uid].p_value
@@ -187,22 +187,64 @@ def test_significance_rejects_duplicate_labels_and_glm(significance_recording):
         )
 
 
+def _significance_args(name, env, trains, trajectory, obj):
+    """Positional arguments of each ``*_cell_significance`` function."""
+    times, positions, headings = trajectory
+    if name.startswith("head_direction"):
+        return (trains, times, headings)
+    args = (env, trains, times, positions)
+    if name.startswith(("spatial_view", "egocentric")):
+        args += (headings,)
+    if "object_vector" in name:
+        args += (obj,)
+    return args
+
+
+def _inhomogeneous_poisson(times, rate, seed):
+    """Spike times from a per-sample rate (Hz), uniform within each sample."""
+    rng = np.random.default_rng(seed)
+    dt = np.diff(times, append=times[-1] + (times[1] - times[0]))
+    counts = rng.poisson(rate * dt)
+    starts = np.repeat(times, counts)
+    return np.sort(starts + rng.uniform(0, np.repeat(dt, counts)))
+
+
+@pytest.mark.slow
+def test_shuffle_detects_true_head_direction_cell(ou_10min):
+    times, _, headings = ou_10min
+    rate = 0.5 + 20.0 * np.exp(4.0 * (np.cos(headings - 1.0) - 1.0))
+    spikes = _inhomogeneous_poisson(times, rate, seed=3)
+    result = encoding.head_direction_cell_significance(
+        [spikes], times, headings, n_shuffles=200, rng=0
+    )[0]
+    assert result.p_value == 1 / 201
+
+
+@pytest.mark.slow
+def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
+    times, positions, headings = ou_10min
+    viewed = positions + 10.0 * np.c_[np.cos(headings), np.sin(headings)]
+    near_target = np.linalg.norm(viewed - [70.0, 70.0], axis=1) < 12.0
+    spikes = _inhomogeneous_poisson(times, np.where(near_target, 20.0, 0.5), seed=4)
+    result = encoding.spatial_view_cell_significance(
+        ou_env, [spikes], times, positions, headings, n_shuffles=200, rng=0
+    )[0]
+    assert result.p_value == 1 / 201
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "name",
     [
         "place_cell_significance",
+        "head_direction_cell_significance",
+        "spatial_view_cell_significance",
         "object_vector_cell_significance",
         "egocentric_object_vector_cell_significance",
     ],
 )
 def test_shuffle_noise_false_positives(name, ou_env, ou_10min, noise_trains, obj):
-    times, positions, headings = ou_10min
-    args = (ou_env, noise_trains(600), times, positions)
-    if name.startswith("egocentric"):
-        args += (headings, obj)
-    elif name.startswith("object"):
-        args += (obj,)
+    args = _significance_args(name, ou_env, noise_trains(600), ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 3
@@ -213,18 +255,15 @@ def test_shuffle_noise_false_positives(name, ou_env, ou_10min, noise_trains, obj
     "name",
     [
         "place_cell_significance",
+        "head_direction_cell_significance",
+        "spatial_view_cell_significance",
         "object_vector_cell_significance",
         "egocentric_object_vector_cell_significance",
     ],
 )
 def test_shuffle_pooled_false_positive_rate(name, ou_env, ou_10min, noise_trains, obj):
-    times, positions, headings = ou_10min
     trains = [train for seed in range(1, 6) for train in noise_trains(600, seed=seed)]
-    args = (ou_env, trains, times, positions)
-    if name.startswith("egocentric"):
-        args += (headings, obj)
-    elif name.startswith("object"):
-        args += (obj,)
+    args = _significance_args(name, ou_env, trains, ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 10

@@ -743,11 +743,6 @@ def _velocity_heading_and_speed(
         Radians and position units per second. The final interval's velocity
         is repeated at each run's last sample; samples in no run are NaN.
     """
-    from neurospatial._validation import validate_times_positions
-
-    times, positions = validate_times_positions(
-        times, positions, call="_velocity_heading_and_speed"
-    )
     from neurospatial._intervals import run_sample_bounds
     from neurospatial._validation import validate_finite
 

@@ -525,7 +525,9 @@ class EnvironmentFields:
             _finite_volume_geometry,
         )
 
-        graph, volumes = _finite_volume_geometry(cast("EnvironmentProtocol", self))
+        graph, volumes = _finite_volume_geometry(
+            cast("EnvironmentProtocol", self), operation="smoothing"
+        )
         volumes = np.asarray(volumes, dtype=np.float64)
         W = _assemble_W(graph, int(volumes.shape[0]))
         n_components, labels = _components_from_W(W)

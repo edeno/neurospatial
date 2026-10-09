@@ -31,15 +31,9 @@ def _fv_edges(env: Environment) -> tuple[nx.Graph, NDArray[np.float64]]:
     """Resolve face measures, along-edge distances and cell volumes."""
     from neurospatial.ops.diffusion import _finite_volume_geometry
 
-    try:
-        return _finite_volume_geometry(cast("EnvironmentProtocol", env))
-    except NotImplementedError as err:
-        raise NotImplementedError(
-            f"gradient/divergence need finite-volume cell geometry, which layout "
-            f"{type(env.layout).__name__!r} does not provide ({err}).\n"
-            "Fix: build the environment with a factory method, e.g. "
-            "Environment.from_samples(positions, bin_size=...)."
-        ) from err
+    return _finite_volume_geometry(
+        cast("EnvironmentProtocol", env), operation="gradient/divergence"
+    )
 
 
 def compute_differential_operator(env: Environment) -> sparse.csc_matrix:

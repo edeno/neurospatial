@@ -529,15 +529,17 @@ def decode_position(
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
         ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
-        ``(neuron, bin)`` is treated as a zero-rate observation and excluded
-        from that neuron's contribution to the Poisson log-likelihood at that
-        bin, and a single :class:`UserWarning` is emitted per call. This is
-        defense-in-depth so a ``fill_value=None`` encoding model still decodes;
-        the recommended path is still to pass ``fill_value=0.0`` to the
-        encoder so no NaN reaches the decoder.
+        ``(neuron, bin)`` is excluded from that neuron's contribution to the
+        Poisson log-likelihood at that bin, so the neuron is uninformative
+        there, and a single :class:`UserWarning` is emitted per call. This is
+        not the same as a zero rate: a spike from that neuron cannot count
+        against the bin. It is defense-in-depth so a ``fill_value=None``
+        encoding model still decodes; the recommended path is still to pass
+        ``fill_value=0.0`` to the encoder, which models those bins as
+        zero-rate.
 
         Inf entries are handled the same way, but only with ``validate=False``:
-        each Inf ``(neuron, bin)`` is excluded as a zero-rate observation, so a
+        each Inf ``(neuron, bin)`` is excluded in the same way, so a
         partial-Inf model such as ``rates=[inf, inf, 5]`` concentrates posterior
         mass on the one finite bin rather than collapsing to a uniform
         posterior. Under ``validate=True`` (the default) Inf entries are instead
@@ -1069,10 +1071,10 @@ def _prepare_decode_inputs(
         warnings.warn(
             f"encoding_models contains {n_bad} non-finite bin(s) (NaN or Inf; "
             "e.g. low-occupancy bins masked by the encoder's min_occupancy "
-            "with fill_value=None). Treating each as a zero-rate observation "
-            "(excluded from that neuron's Poisson contribution at that bin). "
-            "Pass fill_value=0.0 to the encoder to silence this and make the "
-            "model explicitly zero-rate there.",
+            "with fill_value=None). Each such (neuron, bin) is left out of that "
+            "neuron's Poisson likelihood, so the neuron says nothing about that "
+            "bin. Pass fill_value=0.0 to the encoder to silence this and model "
+            "those bins as zero-rate instead; the posteriors differ.",
             UserWarning,
             stacklevel=3,
         )
@@ -1692,8 +1694,8 @@ def _validate_inputs(
     if encoding_models.ndim == 2 and encoding_models.shape[1] != env.n_bins:
         raise IncompatibleEnvironmentError(
             f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
-            f"but env has {env.n_bins} active bins. Recompute the place "
-            f"fields on this environment before decoding."
+            f"but env has {env.n_bins} active bins.",
+            fix="recompute the place fields on the decoding environment.",
         )
 
     # Check prior if provided. Convert to ndarray first because the

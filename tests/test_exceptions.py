@@ -237,3 +237,27 @@ def test_incompatible_environment_site():
         CompositeEnvironment([a, b])
     assert "[E1003]" in str(caught.value)
     assert "Fix:" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda e: e.RegionNotFoundError("goal", available=["start"]),
+        lambda e: e.BinIndexOutOfRangeError(99, n_bins=4),
+        lambda e: e.IncompatibleEnvironmentError("dims differ", fix="match them."),
+        lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
+        lambda e: e.EnvironmentNotFittedError("Environment", "bin_at"),
+        lambda e: e.GraphValidationError("bad graph"),
+    ],
+)
+def test_errors_survive_pickling(make):
+    """Errors raised in worker processes are pickled back to the caller."""
+    import pickle
+
+    import neurospatial._exceptions as exceptions
+
+    error = make(exceptions)
+    restored = pickle.loads(pickle.dumps(error))
+    assert type(restored) is type(error)
+    assert str(restored) == str(error)
+    assert restored.__dict__ == error.__dict__

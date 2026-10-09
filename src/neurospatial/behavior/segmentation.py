@@ -654,8 +654,6 @@ def detect_runs_between_regions(
     validate_finite(times, name="times")
 
     position_bins = np.asarray(position_bins, dtype=np.int64)
-
-    position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
     results: list[Run] = []
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
@@ -917,22 +915,12 @@ def segment_by_velocity(
     times, positions = validate_times_positions(
         times, positions, call="segment_by_velocity"
     )
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got {len(positions)} and {len(times)}"
-        )
-
     if min_speed <= 0:
         raise ValueError(f"min_speed must be positive. Got {min_speed}")
 
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
 
-    validate_finite(times, name="times")
-
-    positions = np.asarray(positions)
-    times = np.asarray(times, dtype=np.float64)
     results: list[Run] = []
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
         results.extend(
@@ -2582,6 +2570,23 @@ def detect_goal_directed_runs(
         )
     position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
+
+    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.distance import distance_field
+
+    goal_bin_indices = np.flatnonzero(regions_to_mask(env, [goal_region]))
+    if len(goal_bin_indices) == 0:
+        # No bins in goal region
+        return []
+    # Compute distance from each bin to nearest goal bin using graph distance,
+    # once for every run. A single multi-source Dijkstra (via distance_field)
+    # computes, for every bin, the shortest-path distance to the nearest goal
+    # bin. This is equivalent to (but far cheaper than) looping over every
+    # (bin, goal_bin) pair with nx.shortest_path_length; unreachable bins
+    # remain np.inf.
+    distances_to_goal = distance_field(
+        env.connectivity, list(goal_bin_indices), weight="distance"
+    )
     results: list[Run] = []
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
         results.extend(
@@ -2589,7 +2594,7 @@ def detect_goal_directed_runs(
                 position_bins[run],
                 times[run],
                 env,
-                goal_region=goal_region,
+                distances_to_goal=distances_to_goal,
                 directedness_threshold=directedness_threshold,
                 min_progress=min_progress,
             )
@@ -2602,32 +2607,11 @@ def _detect_goal_directed_runs_contiguous(
     times: NDArray[np.float64],
     env: Environment,
     *,
-    goal_region: str,
+    distances_to_goal: NDArray[np.float64],
     directedness_threshold: float = 0.7,
     min_progress: float = 20.0,
 ) -> list[Run]:
     """Analyze one recording after the public input validation."""
-    # Get goal region mask
-    from neurospatial.ops.binning import regions_to_mask
-
-    goal_mask = regions_to_mask(env, [goal_region])
-    goal_bin_indices = np.where(goal_mask)[0]
-
-    if len(goal_bin_indices) == 0:
-        # No bins in goal region
-        return []
-
-    # Compute distance from each bin to nearest goal bin using graph distance.
-    # A single multi-source Dijkstra (via distance_field) computes, for every
-    # bin, the shortest-path distance to the nearest goal bin. This is
-    # equivalent to (but far cheaper than) looping over every (bin, goal_bin)
-    # pair with nx.shortest_path_length; unreachable bins remain np.inf.
-    from neurospatial.ops.distance import distance_field
-
-    distances_to_goal = distance_field(
-        env.connectivity, list(goal_bin_indices), weight="distance"
-    )
-
     # Get start and end positions
     start_bin = position_bins[0]
     end_bin = position_bins[-1]
