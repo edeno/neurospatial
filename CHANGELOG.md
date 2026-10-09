@@ -209,6 +209,11 @@
   `compute_vte_trial`, `compute_vte_session`, and `Environment.bin_sequence`,
   `bin_sequence_with_runs`, `transitions`. Use `max_gap=None` to disable the
   gap gate for intentionally coarse sampling; `epochs` still applies.
+- Position-only analyses warn when `max_gap` or `epochs` exclude every
+  interval, for example tracking sampled more slowly than 2 Hz under the
+  default `max_gap=0.5`. The warning names the active gate, reports the median
+  sampling interval and points at the calling line, so an empty or all-NaN
+  result is no longer indistinguishable from a measurement.
 - Pre-decision extraction, metrics, composite decision analysis and trial/session
   VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
   observed run containing the entry time; entries outside every run return an

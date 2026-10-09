@@ -133,7 +133,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="both",
+            max_gap=None,
         )
 
         # Should have no crossings

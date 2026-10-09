@@ -84,7 +84,7 @@ trajectory = np.array([
     [30.0, 50.0],
 ])
 position_bins = env.bin_at(trajectory)
-times = np.arange(len(trajectory), dtype=float)
+times = np.arange(len(trajectory)) * 0.1  # 10 Hz tracking
 """,
     "quickstart_vte_session": """import os
 os.environ["MPLBACKEND"] = "Agg"
