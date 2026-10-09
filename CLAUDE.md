@@ -337,8 +337,8 @@ candidate = result.is_place_cell(criterion="spatial_info")  # Fast, biased scree
 # change for existing callers). Pass fill_value=0.0 when feeding
 # decode_position() so the model is explicitly zero-rate there -- the documented
 # encode->decode golden path then composes with no manual np.nan_to_num.
-# decode_position() also tolerates residual NaN bins (treats them as zero-rate,
-# warns once).
+# decode_position() also tolerates residual NaN bins: it leaves those
+# (neuron, bin) terms out of the likelihood (NOT zero-rate) and warns once.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
