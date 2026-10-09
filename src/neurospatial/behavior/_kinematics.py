@@ -19,7 +19,7 @@ def interval_velocity(
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-    positions : ndarray, shape (n_samples, n_dims)
+    positions : ndarray, shape (n_samples, n_dims) or (n_samples,)
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         ``observed_interval_mask`` output.
 
@@ -27,6 +27,10 @@ def interval_velocity(
     -------
     ndarray, shape (n_samples - 1, n_dims)
     """
+    # 1-D positions (a linear track) are one coordinate per sample.
+    positions = np.asarray(positions)
+    if positions.ndim == 1:
+        positions = positions[:, np.newaxis]
     dt = np.diff(times)
     defined = interval_mask & (dt > 0)
     velocity: NDArray[np.float64] = np.full(

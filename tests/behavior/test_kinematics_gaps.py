@@ -286,3 +286,18 @@ def test_duplicate_timestamps_give_undefined_not_infinite_speed():
     np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
     assert mean_speed == pytest.approx(10.0)
     assert max_speed == pytest.approx(10.0)
+
+
+def test_one_dimensional_positions_give_track_speed():
+    """1-D (linear-track) positions are one coordinate per sample, not a row."""
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.behavior.decisions import pre_decision_speed_stats
+
+    times = np.arange(0.0, 1.0, 0.1)
+    x = 3.0 * np.arange(times.size)  # 30 units per second
+    velocity = interval_velocity(times, x, np.ones(times.size - 1, dtype=bool))
+    assert velocity.shape == (times.size - 1, 1)
+    np.testing.assert_allclose(velocity[:, 0], 30.0)
+    mean_speed, max_speed = pre_decision_speed_stats(times, x)
+    assert mean_speed == pytest.approx(30.0)
+    assert max_speed == pytest.approx(30.0)

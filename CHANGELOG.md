@@ -67,6 +67,9 @@
   undefined (NaN) instead of infinite, so `pre_decision_speed_stats`, goal
   approach rates and heading labels no longer absorb an `inf` or a
   divide-by-zero warning.
+- Kinematic speeds from 1-D (linear-track) positions are the track speed.
+  `pre_decision_speed_stats` previously broadcast a 1-D difference against
+  the time steps and returned an unrelated number.
 - **Breaking:** `Environment.bin_center_of` raises `BinIndexOutOfRangeError`
   for indices outside `[0, n_bins)`, like the graph queries. Negative indices
   previously wrapped silently to the last bins, and indices past the end
