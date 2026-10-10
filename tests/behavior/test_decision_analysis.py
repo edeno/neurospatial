@@ -199,7 +199,7 @@ class TestExtractPreDecisionWindow:
 
         # Extract 2-second window before entry at t=5
         window_pos, window_times = extract_pre_decision_window(
-            positions, times, entry_time=5.0, window_duration=2.0
+            times, positions, entry_time=5.0, window_duration=2.0
         )
 
         # Should have samples from t=3 to t=5 (but not t=5 since it's entry)
@@ -216,7 +216,7 @@ class TestExtractPreDecisionWindow:
 
         # Request 3-second window before t=1 (extends before t=0)
         window_pos, window_times = extract_pre_decision_window(
-            positions, times, entry_time=1.0, window_duration=3.0
+            times, positions, entry_time=1.0, window_duration=3.0
         )
 
         # Should return available data from t=0 to t<1
@@ -245,7 +245,7 @@ class TestPreDecisionHeadingStats:
         times = np.linspace(0, 5, n_samples)
 
         mean_dir, circ_var, mrl = pre_decision_heading_stats(
-            positions, times, min_speed=0.0
+            times, positions, min_speed=0.0
         )
 
         # Low variance for consistent heading
@@ -267,7 +267,7 @@ class TestPreDecisionHeadingStats:
         times = np.linspace(0, 5, n_samples)
 
         _mean_dir, circ_var, _mrl = pre_decision_heading_stats(
-            positions, times, min_speed=0.0
+            times, positions, min_speed=0.0
         )
 
         # Higher variance for zigzag heading
@@ -283,7 +283,7 @@ class TestPreDecisionHeadingStats:
         times = np.linspace(0, 3, n_samples)
 
         _mean_dir, circ_var, mrl = pre_decision_heading_stats(
-            positions, times, min_speed=5.0
+            times, positions, min_speed=5.0
         )
 
         # Max variance when no valid headings
@@ -311,7 +311,7 @@ class TestPreDecisionSpeedStats:
         )
         times = np.linspace(0, 10, n_samples)
 
-        mean_speed, min_speed = pre_decision_speed_stats(positions, times)
+        mean_speed, min_speed = pre_decision_speed_stats(times, positions)
 
         assert_allclose(mean_speed, 10.0, rtol=0.1)
         assert_allclose(min_speed, 10.0, rtol=0.1)
@@ -327,7 +327,7 @@ class TestPreDecisionSpeedStats:
         positions = np.column_stack([x, np.zeros(n_samples)])
         times = t
 
-        mean_speed, min_speed = pre_decision_speed_stats(positions, times)
+        mean_speed, min_speed = pre_decision_speed_stats(times, positions)
 
         # Min should be less than mean for accelerating trajectory
         assert min_speed < mean_speed
@@ -451,7 +451,7 @@ class TestDetectBoundaryCrossings:
         times = np.linspace(0, 9, 10)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            position_bins, voronoi_labels, times
+            position_bins, voronoi_labels, times, max_gap=None
         )
 
         assert len(crossing_times) == 1
@@ -468,7 +468,7 @@ class TestDetectBoundaryCrossings:
         times = np.linspace(0, 7, 8)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            position_bins, voronoi_labels, times
+            position_bins, voronoi_labels, times, max_gap=None
         )
 
         assert len(crossing_times) == 3
@@ -484,7 +484,10 @@ class TestDetectBoundaryCrossings:
         times = np.linspace(0, 4, 5)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            position_bins, voronoi_labels, times
+            position_bins,
+            voronoi_labels,
+            times,
+            max_gap=None,
         )
 
         assert len(crossing_times) == 0
@@ -511,7 +514,7 @@ class TestComputePreDecisionMetrics:
 
         # Request 5-second window before t=1 (only 1 second available)
         result = compute_pre_decision_metrics(
-            positions, times, entry_time=1.0, window_duration=5.0, min_speed=0.0
+            times, positions, entry_time=1.0, window_duration=5.0, min_speed=0.0
         )
 
         # Should return metrics for available window
@@ -555,8 +558,8 @@ class TestComputeDecisionAnalysis:
 
         result = compute_decision_analysis(
             env,
-            positions,
             times,
+            positions,
             decision_region="center",
             goal_regions=["left", "right"],
             pre_window=1.0,
@@ -716,8 +719,8 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="not found"):
             compute_decision_analysis(
                 env,
-                positions,
                 times,
+                positions,
                 decision_region="nonexistent",
                 goal_regions=["left", "right"],
             )
@@ -733,8 +736,29 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="same length"):
             compute_decision_analysis(
                 env,
-                positions,
                 times,
+                positions,
                 decision_region="center",
                 goal_regions=["left", "right"],
             )
+
+
+def test_pre_decision_heading_stats_excludes_stationary(east_stop_north):
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    positions, times = east_stop_north
+    np.testing.assert_allclose(
+        pre_decision_heading_stats(times, positions),
+        [0.7854, 0.2929, 0.7071],
+        atol=1e-4,
+    )
+
+
+def test_pre_decision_heading_stats_all_stationary():
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    assert pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2))) == (
+        0.0,
+        1.0,
+        0.0,
+    )

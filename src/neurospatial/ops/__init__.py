@@ -47,7 +47,6 @@ from neurospatial.ops.basis import (
 # Binning operations
 from neurospatial.ops.binning import (
     TieBreakStrategy,
-    clear_kdtree_cache,
     map_points_to_bins,
     regions_to_mask,
     resample_field,
@@ -103,7 +102,6 @@ from neurospatial.ops.smoothing import (
 # Transform operations
 from neurospatial.ops.transforms import (
     Affine2D,
-    Affine3D,
     AffineND,
     SpatialTransform,
     VideoCalibration,
@@ -165,7 +163,6 @@ __all__ = [
     "map_probabilities",
     # Binning
     "TieBreakStrategy",
-    "clear_kdtree_cache",
     "map_points_to_bins",
     "regions_to_mask",
     "resample_field",
@@ -200,7 +197,6 @@ __all__ = [
     "compute_diffusion_kernels",
     # Transforms - Core classes
     "Affine2D",
-    "Affine3D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",

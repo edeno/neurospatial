@@ -42,7 +42,7 @@ Reading position data:
 >>> from neurospatial.io.nwb import read_position
 >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
-...     positions, timestamps = read_position(nwbfile)
+...     pos = read_position(nwbfile)
 
 Creating an environment from NWB position data:
 
@@ -95,6 +95,10 @@ from typing import Any
 # Mapping of public API names to their module paths
 # Format: "name": "module_path:attribute_name"
 _LAZY_IMPORTS: dict[str, str] = {
+    # Named array holders (no optional dependency imports)
+    "NWBPosition": "neurospatial.io.nwb._holders:NWBPosition",
+    "NWBHeadDirection": "neurospatial.io.nwb._holders:NWBHeadDirection",
+    "NWBUnits": "neurospatial.io.nwb._holders:NWBUnits",
     # Reading functions
     "read_position": "neurospatial.io.nwb._behavior:read_position",
     "read_head_direction": "neurospatial.io.nwb._behavior:read_head_direction",
@@ -138,6 +142,9 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "NWBHeadDirection",
+    "NWBPosition",
+    "NWBUnits",
     "bodypart_overlay_from_nwb",
     "dataframe_to_events_table",
     "environment_from_position",

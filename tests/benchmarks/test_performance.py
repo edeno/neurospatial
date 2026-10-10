@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.encoding import PlaceFieldsResult
 from neurospatial.encoding._metrics import sparsity, spatial_information
 from neurospatial.encoding.spatial import compute_spatial_rate, detect_place_fields
 from neurospatial.ops.binning import map_points_to_bins
@@ -32,6 +33,65 @@ from neurospatial.ops.smoothing import compute_diffusion_kernels
 # =============================================================================
 # Fixtures for Benchmark Data
 # =============================================================================
+
+
+@pytest.fixture(scope="module")
+def frame_population_recording():
+    """Fifty seeded 5 Hz units with 60 seconds of 50 Hz tracking."""
+    from types import SimpleNamespace
+
+    times = np.arange(3000) / 50
+    positions = np.c_[50 + 40 * np.sin(times / 3.1), 50 + 40 * np.cos(times / 4.7)]
+    rng = np.random.default_rng(0)
+    headings = rng.uniform(-np.pi, np.pi, times.size)
+    spikes = [np.sort(rng.uniform(0, 60, rng.poisson(300))) for _ in range(50)]
+    return SimpleNamespace(
+        times=times,
+        positions=positions,
+        headings=headings,
+        spikes=spikes,
+        env=Environment.from_samples(positions, bin_size=5.0),
+    )
+
+
+@pytest.mark.slow
+class TestFrameFamilyRates:
+    """Track population frame-binning runtime on a shared recording."""
+
+    @pytest.mark.parametrize("family", ["directional", "view", "egocentric"])
+    def test_population_rates(self, benchmark, frame_population_recording, family):
+        from neurospatial.encoding import (
+            compute_directional_rates,
+            compute_egocentric_rates,
+            compute_view_rates,
+        )
+
+        r = frame_population_recording
+        if family == "directional":
+            result = benchmark(compute_directional_rates, r.spikes, r.times, r.headings)
+        elif family == "view":
+            result = benchmark(
+                compute_view_rates,
+                r.env,
+                r.spikes,
+                r.times,
+                r.positions,
+                r.headings,
+                view_distance=5.0,
+            )
+        else:
+            result = benchmark(
+                compute_egocentric_rates,
+                r.env,
+                r.spikes,
+                r.times,
+                r.positions,
+                r.headings,
+                np.array([[50.0, 50.0]]),
+                distance_range=(0, 100),
+            )
+        assert result.firing_rates.shape == (50, len(result.occupancy))
+        assert 0 < result.occupancy.sum() <= 59.98 + 1e-6
 
 
 def _compute_spatial_rate_map(*args, **kwargs):
@@ -45,7 +105,7 @@ def benchmark_data_small():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 50, (1000, 2))
     times = np.linspace(0, 100, 1000)
-    spike_times = rng.uniform(0, 100, 50)
+    spike_times = np.sort(rng.uniform(0, 100, 50))
     return positions, times, spike_times
 
 
@@ -55,7 +115,7 @@ def benchmark_data_medium():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 100, (5000, 2))
     times = np.linspace(0, 500, 5000)
-    spike_times = rng.uniform(0, 500, 200)
+    spike_times = np.sort(rng.uniform(0, 500, 200))
     return positions, times, spike_times
 
 
@@ -65,7 +125,7 @@ def benchmark_data_large():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 200, (10000, 2))
     times = np.linspace(0, 1000, 10000)
-    spike_times = rng.uniform(0, 1000, 500)
+    spike_times = np.sort(rng.uniform(0, 1000, 500))
     return positions, times, spike_times
 
 
@@ -231,7 +291,7 @@ class TestSpatialQueryPerformance:
         positions, _, _ = benchmark_data_medium
 
         result = benchmark(
-            map_points_to_bins, positions, medium_env, tie_break="lowest_index"
+            map_points_to_bins, medium_env, positions, tie_break="lowest_index"
         )
 
         assert len(result) == len(positions)
@@ -337,9 +397,9 @@ class TestMetricComputationPerformance:
         """Benchmark place field detection."""
         firing_rate, _ = firing_rate_and_occupancy
 
-        result = benchmark(detect_place_fields, firing_rate, medium_env)
+        result = benchmark(detect_place_fields, medium_env, firing_rate)
 
-        assert isinstance(result, list)
+        assert isinstance(result, PlaceFieldsResult)
 
 
 # =============================================================================

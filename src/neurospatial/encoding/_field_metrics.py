@@ -307,8 +307,8 @@ def field_stability(
 
 
 def rate_map_coherence(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
     *,
     method: Literal["pearson", "spearman"] = "pearson",
 ) -> float:
@@ -324,10 +324,10 @@ def rate_map_coherence(
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
     env : EnvironmentProtocol
         Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
     method : {'pearson', 'spearman'}, optional
         Correlation method. Default is 'pearson'.
         - 'pearson': Pearson correlation (linear relationship)
@@ -384,7 +384,7 @@ def rate_map_coherence(
     ...     dist = np.linalg.norm(center - np.array([0, 0]))
     ...     firing_rate_smooth[i] = 5.0 * np.exp(-(dist**2) / (2 * 8**2))
     >>>
-    >>> coherence_smooth = rate_map_coherence(firing_rate_smooth, env)
+    >>> coherence_smooth = rate_map_coherence(env, firing_rate_smooth)
     >>> print(f"Smooth field coherence: {coherence_smooth:.3f}")  # doctest: +SKIP
     Smooth field coherence: 0.850
 
@@ -556,9 +556,9 @@ def in_out_field_ratio(
 
 
 def field_shape_metrics(
+    env: Environment,
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
-    env: Environment,
 ) -> dict[str, float]:
     """Compute geometric shape metrics for a place field.
 
@@ -568,13 +568,13 @@ def field_shape_metrics(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment for bin positions. Must be 2D (n_dims == 2).
+
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     field_bins : NDArray[np.int64], shape (n_field_bins,)
         Indices of bins belonging to the place field.
-    env : Environment
-        Spatial environment for bin positions. Must be 2D (n_dims == 2).
-
     Returns
     -------
     dict[str, float]
@@ -633,7 +633,7 @@ def field_shape_metrics(
     >>> firing_rate[field_bins] = 10.0
     >>>
     >>> # Compute shape metrics
-    >>> shape = field_shape_metrics(firing_rate, field_bins, env)
+    >>> shape = field_shape_metrics(env, firing_rate, field_bins)
     >>> print(f"Eccentricity: {shape['eccentricity']:.2f}")  # doctest: +SKIP
     Eccentricity: 0.87
 

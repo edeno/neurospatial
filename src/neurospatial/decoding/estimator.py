@@ -21,7 +21,8 @@ track or a masked open field, not just a rectangular grid.
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, replace
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -30,8 +31,9 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
-    from neurospatial._typing import PositionLike, SpikeTrainsLike
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
 
 __all__ = ["BayesianDecoder"]
@@ -108,9 +110,15 @@ class BayesianDecoder:
         :meth:`score` raise until :meth:`fit` populates it. Set only via
         :meth:`fit`.
     unit_ids : NDArray or None, default=None
-        Identity label per encoding model (introspection only; the posterior
-        carries no unit axis). Populated by :meth:`fit` from the spike input
-        (``arange(n_neurons)`` when the input carries no ids).
+        Identity label per encoding model. Populated by :meth:`fit` from a
+        labelled spike input such as a pynapple ``TsGroup`` (its index), or
+        ``arange(n_neurons)`` when the input carries no labels. Labels passed
+        here directly, or captured by :meth:`fit` from a labelled input, are
+        used to pair spike trains with encoding models: when both they and the
+        spike input given to :meth:`predict` / :meth:`predict_summary` /
+        :meth:`score` are labelled, trains are matched to models by label. In
+        every other case (including the generated ``arange`` labels) trains are
+        paired by position, one per fitted unit, in fit order.
 
     Attributes
     ----------
@@ -138,6 +146,16 @@ warn_on_drop
     RuntimeError
         From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
         decoder is unfitted.
+
+    Other Parameters
+    ----------------
+    _unit_ids_generated : bool, default=False
+        Internal identity flag carried by selection or fitting when unit labels
+        were generated. Leave it at its default when supplying real unit IDs.
+
+    spike_window : ndarray or None
+        Spike-recording windows carried from training or precomputed rates as
+        provenance. Prediction takes its own explicit observation window.
 
     Examples
     --------
@@ -173,6 +191,12 @@ warn_on_drop
     # Fitted state (private; ``None`` => unfitted). Set only via :meth:`fit`.
     encoding_models: NDArray[np.float64] | None = None
     unit_ids: NDArray[Any] | None = None
+    # True only when ``fit`` generated ``arange`` labels for an unlabelled
+    # input; such labels never drive label-based pairing.
+    _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate config domain and (if injected) fitted-state coupling.
@@ -233,12 +257,12 @@ warn_on_drop
                     f"is {self.env.n_bins}; the encoding model's bin axis must "
                     f"match the environment it decodes over."
                 )
-            if models.shape[0] != len(self.unit_ids):
-                raise ValueError(
-                    f"encoding_models has {models.shape[0]} units but unit_ids "
-                    f"has length {len(self.unit_ids)}; there must be exactly one "
-                    f"unit_id per encoding model."
-                )
+            # One distinct label per encoding model: label pairing in predict
+            # relies on it. Runs for constructor labels and, via replace, for
+            # the labels fit captures.
+            from neurospatial._results import resolve_unit_ids
+
+            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder")
 
     @property
     def is_fitted(self) -> bool:
@@ -254,6 +278,82 @@ warn_on_drop
             unfitted.
         """
         return self.encoding_models is not None
+
+    @classmethod
+    def from_rates(
+        cls, rates: SpatialRatesResult, *, dt: float = 0.025
+    ) -> BayesianDecoder:
+        """Create a fitted decoder from existing spatial population rate maps.
+
+        Parameters
+        ----------
+        rates : SpatialRatesResult
+            Result from ``compute_spatial_rates``. Carries the environment,
+            rate maps, unit labels and recorded spike-observation windows.
+        dt : float, default=0.025
+            Decode bin width in seconds.
+
+        Returns
+        -------
+        BayesianDecoder
+            Frozen fitted decoder; call ``predict`` or ``predict_summary`` with
+            spikes and timestamp arrays, without supplying tracking positions.
+
+        Raises
+        ------
+        TypeError
+            If ``rates`` is not a ``SpatialRatesResult``.
+        ValueError
+            If ``dt`` is not a valid positive finite bin width.
+
+        Notes
+        -----
+        Caller-supplied labels align labelled prediction inputs by identity.
+        Generated row numbers retain positional pairing. The spike window is
+        training provenance; pass the prediction recording's ``spike_window``
+        explicitly when decoding. Non-finite map bins follow ``decode_position``:
+        prediction warns once, excludes their Poisson contributions, and points
+        to ``fill_value=0.0`` for explicitly zero-rate maps. The maps are not
+        recomputed or silently filled by this constructor.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment, compute_spatial_rates
+        >>> times = np.arange(600) / 30.0
+        >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
+        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> spikes = [times[::10], times[::15]]
+        >>> train, test = (0.0, 10.0), (10.0, 19.9)
+        >>> rates = compute_spatial_rates(
+        ...     env, spikes, times, positions, epochs=train, fill_value=0.0
+        ... )
+        >>> result = BayesianDecoder.from_rates(rates).predict(
+        ...     spikes, times, epochs=test
+        ... )
+        >>> bool(np.all(result.times >= 10.0))
+        True
+        """
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        if not isinstance(rates, SpatialRatesResult):
+            raise TypeError(
+                f"BayesianDecoder.from_rates expects SpatialRatesResult, got {type(rates).__name__}.\n"
+                "Why: the decoder needs spatial rate maps, their environment and unit identities.\n"
+                "Fix: call rates = compute_spatial_rates(env, spike_times, times, positions), "
+                "then BayesianDecoder.from_rates(rates)."
+            )
+        models = np.asarray(rates.firing_rates)
+        dtype = np.float32 if models.dtype == np.float32 else np.float64
+        return cls(
+            rates.env,
+            dt=dt,
+            dtype=dtype,
+            encoding_models=models,
+            unit_ids=np.asarray(rates.unit_ids),
+            _unit_ids_generated=rates._unit_ids_generated,
+            spike_window=rates.spike_window,
+        )
 
     def _check_fitted(self) -> NDArray[np.float64]:
         """Return the fitted encoding models, or raise if unfitted.
@@ -278,12 +378,14 @@ warn_on_drop
     def fit(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
-        positions: NDArray[np.float64] | None = None,
+        times: ArrayLike,
+        positions: NDArray[np.float64],
         *,
+        unit_ids: NDArray[Any] | Sequence[Any] | None = None,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
-        epoch: Any = None,
+        epochs: Any = None,
+        spike_window: Any = None,
     ) -> BayesianDecoder:
         """Build encoding models from training data; return a new fitted decoder.
 
@@ -299,12 +401,21 @@ warn_on_drop
         spike_times : SpikeTrainsLike
             Spike times for one or more units. Accepts the canonical array forms,
             a :class:`~neurospatial.encoding.SpikeTrains` container, or a pynapple
-            ``TsGroup``-like group (its ``unit_ids`` are captured).
-        times : array-like, shape (n_frames,), or PositionLike
-            Training timestamps (seconds), or a ``PositionLike`` object carrying
-            both times and positions (then ``positions`` must be omitted).
-        positions : NDArray[np.float64], shape (n_frames, n_dims), optional
-            Training positions. Omit only when ``times`` is a ``PositionLike``.
+            ``TsGroup``-like group. A group's index becomes ``unit_ids`` and is
+            later used to match predict-time spike trains to these models by
+            label; an unlabelled input gets ``arange(n_units)``, and later inputs
+            are then paired by position.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+        positions : NDArray[np.float64], shape (n_frames, n_dims)
+            Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
+        unit_ids : ndarray or sequence, optional
+            One distinct label per spike train. If the spike group carries labels,
+            these must match exactly in the same order. Caller-supplied labels
+            enable label alignment for labelled prediction inputs; generated
+            ``arange`` labels pair by position.
         speed : NDArray[np.float64], shape (n_frames,), optional
             Precomputed speed, forwarded to the encoder. Only used when
             ``min_speed`` is set; auto-derived when ``None``.
@@ -312,11 +423,16 @@ warn_on_drop
             Minimum speed threshold (position units / second). When set,
             low-speed samples are excluded from both the spike numerator and the
             occupancy denominator of the encoding model.
-        epoch : IntervalSet-like, tuple, list, or ndarray, optional
-            When given, the training data is restricted to these epochs *first*
-            (via :func:`neurospatial.behavior.restrict` for the position track
-            and :func:`neurospatial.behavior.restrict_spike_trains` for spikes),
-            then encoded. Enables train/test splits.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording.
 
         Returns
         -------
@@ -328,57 +444,50 @@ warn_on_drop
         Notes
         -----
         The default ``min_occupancy=None`` (resolving to ``0.0``, paired with the
-        ratio decode golden path's ``fill_value=0.0``) means a small ``epoch`` or
+        ratio decode golden path's ``fill_value=0.0``) means a small epoch or
         sparse training data can build a **degenerate low-coverage** encoding
         model *without erroring* -- most bins fall back to ``0.0`` Hz, so the fit
         "succeeds" but decodes poorly. For short epochs, raise ``min_occupancy``
         (ratio methods) or check the fitted model's spatial coverage before
         trusting a decode. ``method="glm"`` has no such knob -- occupancy enters
-        as a log-offset, so every bin gets a finite rate.
+        as a log-offset, so every bin gets a finite rate. A fit whose gates
+        leave no occupied bin at all raises ``ValueError`` rather than
+        returning a model that decodes every time bin as uniform.
+
+        When predicting with the fitted decoder, decode time bins are formed
+        separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
 
         Examples
         --------
         >>> decoder = BayesianDecoder(env).fit(  # doctest: +SKIP
-        ...     spike_times, times, positions, epoch=(0.0, 60.0)
+        ...     spike_times, times, positions, epochs=(0.0, 60.0)
         ... )
         """
-        from neurospatial._typing import as_times_positions
+        from neurospatial._intervals import resolve_time_windows
+        from neurospatial._results import resolve_unit_ids
         from neurospatial.decoding.session import _build_encoding_model
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding._spikes import as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
-        trains, unit_ids = as_spike_trains_with_ids(spike_times)
+        trains, extracted_ids = as_spike_trains_with_ids(spike_times)
+        resolved_ids = resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=extracted_ids,
+            context="BayesianDecoder.fit",
+        )
 
-        if epoch is not None:
-            from neurospatial.behavior import restrict, restrict_spike_trains
-
-            # Restrict the training data to the epoch BEFORE encoding. Normalize
-            # the position track to arrays first (restrict needs a shared time
-            # axis); restrict the already-normalized trains (never the raw group
-            # -- iterating a TsGroup would yield ids, not trains). ``speed`` (if
-            # given) is time-aligned to ``times``, so it must be sliced by the
-            # SAME epoch mask -- otherwise the full-length speed reaches the
-            # encoder with the restricted times and raises a length mismatch.
-            times, positions = as_times_positions(times, positions)
-            if speed is not None:
-                speed_arr = np.asarray(speed, dtype=np.float64)
-                times, positions, speed = restrict(
-                    times, positions, speed_arr, epochs=epoch
-                )
-            else:
-                times, positions = restrict(times, positions, epochs=epoch)
-            spike_input: Any = restrict_spike_trains(trains, epoch)
-        else:
-            # No epoch: reuse the trains already coerced above rather than
-            # re-coercing the raw input inside the encoder. Re-coercing a
-            # list[float64 array] is a no-op, so the encode stays byte-for-byte
-            # identical to decode_session's (and to the epoch branch above).
-            spike_input = trains
+        resolved_epochs, resolved_spike_window = resolve_time_windows(
+            epochs, spike_window
+        )
 
         firing_rates = _build_encoding_model(
             self.env,
-            spike_input,
+            trains,
             times,
             positions,
             dt=self.dt,
@@ -390,35 +499,105 @@ warn_on_drop
             speed=speed,
             min_speed=min_speed,
             max_gap=self.max_gap,
-            encoding_models=None,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             context="BayesianDecoder.fit",
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )[1]
 
-        if unit_ids is None:
-            unit_ids = np.arange(firing_rates.shape[0])
+        return replace(
+            self,
+            encoding_models=firing_rates,
+            unit_ids=resolved_ids,
+            _unit_ids_generated=unit_ids is None and extracted_ids is None,
+            spike_window=resolved_spike_window,
+        )
 
-        return replace(self, encoding_models=firing_rates, unit_ids=unit_ids)
+    def _align_to_fitted_units(
+        self, spike_times: SpikeTrainsLike, caller: str
+    ) -> list[NDArray[np.float64]]:
+        """Pair each spike train with its encoding model.
+
+        By label when both ``fit`` and this input carried caller-supplied labels;
+        otherwise by position, which requires one train per fitted unit.
+        """
+        from neurospatial._results import resolve_unit_ids
+        from neurospatial.encoding._spikes import as_spike_trains_with_ids
+
+        trains, input_ids = as_spike_trains_with_ids(spike_times)
+        n_models = self._check_fitted().shape[0]
+        if input_ids is not None:
+            labels = resolve_unit_ids(
+                None,
+                len(trains),
+                input_ids=input_ids,
+                context=f"BayesianDecoder.{caller}",
+            ).tolist()
+            if self.unit_ids is not None and not self._unit_ids_generated:
+                fitted = np.asarray(self.unit_ids).tolist()
+                row = {u: i for i, u in enumerate(labels)}
+                fitted_set = set(fitted)
+                missing = [u for u in fitted if u not in row]
+                unexpected = [u for u in labels if u not in fitted_set]
+                if missing or unexpected:
+                    raise ValueError(
+                        "Spike input unit labels do not match the decoder's fitted "
+                        f"unit_ids (missing: {missing}, unexpected: {unexpected}).\n"
+                        "Decoding would pair spike trains with the wrong encoding "
+                        "models.\n"
+                        "Fix: pass spikes for exactly the fitted units (pynapple: "
+                        "group[list(decoder.unit_ids)]), or refit on this input."
+                    )
+                return [trains[row[u]] for u in fitted]
+        if len(trains) != n_models:
+            raise ValueError(
+                f"Got {len(trains)} spike trains but the decoder was fitted with "
+                f"{n_models} units. Without caller-supplied labels on both the fit "
+                "and the predict input, trains are paired with encoding models by "
+                "position.\n"
+                "Fix: pass one spike train per fitted unit in the order used for "
+                "fit, or fit and predict with the same labelled TsGroup."
+            )
+        return trains
 
     def predict(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
+        *,
+        epochs: Any = None,
+        spike_window: Any = None,
     ) -> DecodingResult:
         """Decode the full posterior for new spikes against the fitted models.
 
-        Delegates to :func:`~neurospatial.decoding.decode_session` with the
-        fitted ``encoding_models``, so the encode step is skipped and the
-        posterior is computed directly from those models.
+        Uses the fitted rate maps with the same per-run binning and posterior
+        calculation as :func:`~neurospatial.decoding.decode_session`.
 
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
-        times : array-like, shape (n_frames,), or PositionLike
-            Timestamps defining the decode window ``[min, max]``; a
-            ``PositionLike`` is accepted (its positions are ignored for decode).
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -430,44 +609,78 @@ warn_on_drop
         ------
         RuntimeError
             If the decoder is unfitted.
+        ValueError
+            If the spike input repeats a unit label; if label matching applies
+            and the input's labels differ from ``unit_ids`` (the message lists
+            the missing and unexpected labels); or if trains are paired by
+            position and their number differs from the number of fitted units.
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial.decoding.session import decode_session
+        from neurospatial.decoding.session import _decode_with_models
 
         encoding_models = self._check_fitted()
-        return decode_session(
+        return _decode_with_models(
             self.env,
-            spike_times,
+            self._align_to_fitted_units(spike_times, "predict"),
             times,
-            positions=None,
+            encoding_models,
             dt=self.dt,
-            encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
+            max_gap=self.max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
 
     def predict_summary(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
+        times: ArrayLike,
         *,
+        epochs: Any = None,
+        spike_window: Any = None,
         time_chunk: int = 1024,
     ) -> DecodingSummary:
         """Decode memory-safe per-time reductions for new spikes.
 
-        Delegates to :func:`~neurospatial.decoding.decode_session_summary` with
-        the fitted ``encoding_models``. Streams the time-binning and reduces the
+        Uses the fitted rate maps and streams time-binning, reducing the
         posterior block-by-block, so the full ``(n_time, n_bins)`` posterior is
         never materialized. The MAP estimate equals :meth:`predict`'s.
 
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
-        times : array-like, shape (n_frames,), or PositionLike
-            Timestamps defining the decode window.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         time_chunk : int, default=1024
             Streaming block size (number of time bins per block). Must be a
             positive integer.
+
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -479,28 +692,44 @@ warn_on_drop
         ------
         RuntimeError
             If the decoder is unfitted.
+        ValueError
+            If the spike input repeats a unit label; if label matching applies
+            and the input's labels differ from ``unit_ids`` (the message lists
+            the missing and unexpected labels); or if trains are paired by
+            position and their number differs from the number of fitted units.
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial.decoding.session import decode_session_summary
+        from neurospatial.decoding.session import _decode_with_models_summary
 
         encoding_models = self._check_fitted()
-        return decode_session_summary(
+        return _decode_with_models_summary(
             self.env,
-            spike_times,
+            self._align_to_fitted_units(spike_times, "predict_summary"),
             times,
-            positions=None,
+            encoding_models,
             dt=self.dt,
-            encoding_models=encoding_models,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
+            max_gap=self.max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
             time_chunk=time_chunk,
         )
 
     def score(
         self,
         spike_times: SpikeTrainsLike,
-        times: ArrayLike | PositionLike,
-        positions: NDArray[np.float64] | None = None,
+        times: ArrayLike,
+        positions: NDArray[np.float64],
         *,
+        epochs: Any = None,
+        spike_window: Any = None,
         metric: str = "median_error",
         distance: str = "euclidean",
     ) -> float:
@@ -523,13 +752,17 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
-        times : array-like, shape (n_frames,), or PositionLike
-            Ground-truth timestamps (seconds), or a ``PositionLike`` carrying
-            both times and positions (then ``positions`` must be omitted).
-        positions : NDArray[np.float64], shape (n_frames, n_dims), optional
-            Ground-truth positions to score against. Omit only when ``times`` is
-            a ``PositionLike``.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
+        times : array-like, shape (n_frames,)
+            Timestamp array in seconds. Decode bins tile each run whose gaps
+            are no longer than ``max_gap``. For spans without tracking, pass
+            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+        positions : NDArray[np.float64], shape (n_frames, n_dims)
+            Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
         metric : {"median_error", "mean_error"}, default="median_error"
             Reduction over the per-time-bin errors. ``"median_error"`` ->
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
@@ -538,6 +771,19 @@ warn_on_drop
             error. ``"geodesic"`` uses the environment's connectivity graph
             (shortest-path along the track / masked field), the differentiator
             over straight-line euclidean error; ``"euclidean"`` is the default.
+
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -556,9 +802,17 @@ warn_on_drop
             **no** decode time bin was decodable (every posterior row was
             non-finite) -- likely a degenerate/empty encoding model from too few
             training samples, or a spikes/times unit mismatch (seconds vs
-            milliseconds).
+            milliseconds). Also raised when the spike input cannot be paired
+            with the fitted units (see :meth:`predict`).
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
-        from neurospatial._typing import as_times_positions
+        from neurospatial._validation import validate_times_positions
 
         # Validate the reduction (`metric`) and error metric (`distance`) up
         # front, BEFORE any decode -- a typo should raise cheaply, not after a
@@ -576,11 +830,13 @@ warn_on_drop
 
         self._check_fitted()
 
-        # Normalize the ground-truth track to arrays so a PositionLike scores
-        # like the explicit (times, positions) pair.
-        times_arr, positions_arr = as_times_positions(times, positions)
+        times_arr, positions_arr = validate_times_positions(
+            times, positions, call="BayesianDecoder.score"
+        )
 
-        result = self.predict(spike_times, times_arr)
+        result = self.predict(
+            spike_times, times_arr, epochs=epochs, spike_window=spike_window
+        )
         # `distance` is validated above, so narrowing it to the Literal the
         # DecodingResult expects is safe.
         errors = result.error_against(

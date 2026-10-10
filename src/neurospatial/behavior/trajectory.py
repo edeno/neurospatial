@@ -25,7 +25,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
-from neurospatial._validation import validate_finite
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -357,11 +356,27 @@ def compute_step_lengths(
     return step_lengths
 
 
+def _sample_dwell_times(
+    times: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """Sample dwell from valid intervals, padding each run's final sample."""
+    from neurospatial._intervals import run_sample_bounds
+
+    dt = np.diff(times)
+    weights: NDArray[np.float64] = np.zeros(len(times), dtype=np.float64)
+    weights[:-1] = np.where(interval_mask, dt, 0.0)
+    for first, last in run_sample_bounds(interval_mask):
+        weights[last] = np.median(dt[first:last])
+    return weights
+
+
 def compute_home_range(
     position_bins: NDArray[np.int_],
     *,
     times: NDArray[np.float64] | None = None,
     percentile: float = 95.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.int_]:
     """
     Compute home range as bins containing a percentile of time spent.
@@ -377,10 +392,9 @@ def compute_home_range(
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps (seconds) for each sample. When provided, occupancy is
-        time-weighted: each sample contributes its dwell time (the gap to the
-        next sample) rather than a unit count. This is more accurate for
-        non-uniformly sampled trajectories. The final sample is assigned the
-        median inter-sample interval (it has no successor). When ``None``
+        time-weighted: each sample contributes its observed interval dwell rather than a unit count. This is more accurate for
+        non-uniformly sampled trajectories. Each run's final sample is assigned
+        that run's median interval (it has no successor within the run). When ``None``
         (default), occupancy is the visit count per bin, which is correct only
         when sampling is uniform.
     percentile : float, default=95.0
@@ -388,6 +402,14 @@ def compute_home_range(
         - 50%: core area (most frequently used)
         - 95%: standard home range
         - 100%: all visited bins
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -396,6 +418,15 @@ def compute_home_range(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    When ``times`` is given, dwell comes only from valid intervals. Each
+    run's last sample receives that run's median interval duration; samples
+    in no run receive zero dwell. Bins with zero observed dwell are omitted.
+    No observed dwell gives an empty home
+    range. With ``times=None``, counts are used and time gates are unused.
+
     The home range is computed by:
     1. Computing occupancy per bin (visit counts, or time-weighted dwell time
        when ``times`` is provided)
@@ -449,17 +480,18 @@ def compute_home_range(
                 f"times and position_bins must have same length. "
                 f"Got {len(times)} and {len(position_bins)}."
             )
+        from neurospatial.environment.trajectory import observed_interval_mask
+
+        interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
         if len(position_bins) == 0:
             return np.array([], dtype=np.intp)
-        intervals = np.diff(times)
-        # The last sample has no successor; assign it the median interval so it
-        # is not dropped. Falls back to 1.0 for a single sample.
-        last_dwell = float(np.median(intervals)) if len(intervals) > 0 else 1.0
-        sample_weights = np.append(intervals, last_dwell)
+        sample_weights = _sample_dwell_times(times, interval_mask)
         # Sum dwell time per bin.
         unique_bins, inverse = np.unique(position_bins, return_inverse=True)
         occupancy = np.zeros(len(unique_bins), dtype=np.float64)
         np.add.at(occupancy, inverse, sample_weights)
+        observed = occupancy != 0
+        unique_bins, occupancy = unique_bins[observed], occupancy[observed]
 
     # Sort bins by occupancy (descending)
     sort_idx = np.argsort(occupancy)[::-1]
@@ -468,6 +500,8 @@ def compute_home_range(
 
     # Compute cumulative percentage
     total_counts = np.sum(sorted_counts)
+    if total_counts == 0:
+        return np.array([], dtype=np.intp)
     cumulative_pct = np.cumsum(sorted_counts) / total_counts * 100.0
 
     # Find bins to include (cumulative percentage >= threshold)
@@ -483,8 +517,8 @@ def compute_home_range(
 
 
 def mean_square_displacement(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
@@ -500,10 +534,10 @@ def mean_square_displacement(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions in continuous space.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps corresponding to each sample in the trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).
@@ -591,7 +625,7 @@ def mean_square_displacement(
     >>>
     >>> # Compute MSD with Euclidean distance (default)
     >>> result = mean_square_displacement(
-    ...     positions, times, metric="euclidean", max_tau=5.0
+    ...     times, positions, metric="euclidean", max_tau=5.0
     ... )
     >>> len(result.lags) > 0
     True
@@ -617,35 +651,15 @@ def mean_square_displacement(
     .. [4] Traja documentation: https://traja.readthedocs.io/
     """
     # Coerce array-likes (e.g. Python lists) before any .ndim access.
-    try:
-        positions = np.asarray(positions, dtype=float)
-    except (TypeError, ValueError) as e:
-        actual_type = type(positions).__name__
-        raise TypeError(
-            f"positions must be a numeric array-like object (e.g., numpy array, "
-            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-        ) from e
+    from neurospatial._validation import validate_times_positions
 
-    # Coerce times array-like before any indexing or arithmetic.
-    try:
-        times = np.asarray(times, dtype=float)
-    except (TypeError, ValueError) as e:
-        actual_type = type(times).__name__
-        raise TypeError(
-            f"times must be a numeric array-like object (e.g., numpy array, "
-            f"list of floats). Got {actual_type}: {times!r}"
-        ) from e
-
+    times, positions = validate_times_positions(
+        times, positions, call="mean_square_displacement"
+    )
     # Input validation
     if positions.ndim != 2:
         raise ValueError(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length, "
-            f"got {len(positions)} and {len(times)}"
         )
 
     if metric not in ("euclidean", "geodesic"):
@@ -656,8 +670,6 @@ def mean_square_displacement(
             "metric='geodesic' requires env parameter. "
             "Use metric='euclidean' if env is not available."
         )
-
-    validate_finite(times, name="times")
 
     n_samples = len(positions)
 
@@ -756,6 +768,8 @@ def compute_trajectory_curvature(
     times: NDArray[np.float64] | None = None,
     *,
     smooth_window: float | None = 0.2,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute trajectory curvature from position data.
 
@@ -777,6 +791,14 @@ def compute_trajectory_curvature(
         to preserve rapid turns.
 
         Set to None for no smoothing.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -785,9 +807,18 @@ def compute_trajectory_curvature(
         - Positive values: counterclockwise turn (left in 2D top-down view)
         - Negative values: clockwise turn (right in 2D top-down view)
         - Zero: straight movement
+        - NaN: sample belongs to no observed run (when times is supplied)
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    When ``times`` is given, turn angles, padding and smoothing are applied
+    per run. Samples in no run have NaN curvature. With ``times=None``,
+    ``max_gap`` and ``epochs`` are unused and the original untimed behavior
+    is retained.
+
     This function wraps `compute_turn_angles()` and adds:
     - Padding to match input length (n_samples)
     - Optional temporal smoothing
@@ -825,13 +856,38 @@ def compute_trajectory_curvature(
     >>> # Smooth for noisy tracking data
     >>> times = np.linspace(0, 10, 20)
     >>> curvature_smooth = compute_trajectory_curvature(
-    ...     positions, times, smooth_window=0.5
+    ...     positions, times, smooth_window=0.5, max_gap=None
     ... )
 
     See Also
     --------
     compute_turn_angles : Raw turn angles without padding
     """
+    if times is None:
+        return _compute_trajectory_curvature_contiguous(
+            positions, None, smooth_window=smooth_window
+        )
+    from neurospatial._validation import validate_times_positions
+    from neurospatial.environment.trajectory import observed_runs
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_trajectory_curvature", order="positions, times"
+    )
+    curvature: NDArray[np.float64] = np.full(len(positions), np.nan)
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        curvature[run] = _compute_trajectory_curvature_contiguous(
+            positions[run], times[run], smooth_window=smooth_window
+        )
+    return curvature
+
+
+def _compute_trajectory_curvature_contiguous(
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64] | None,
+    *,
+    smooth_window: float | None,
+) -> NDArray[np.float64]:
+    """Apply the existing angle padding and smoothing within one recording."""
     # 1. Compute turn angles using existing function
     # Returns length (n_angles,) where n_angles <= n_samples - 2
     # Filters stationary periods automatically

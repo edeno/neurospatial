@@ -34,7 +34,8 @@ class TestEnvironmentFromPosition:
         from neurospatial.io.nwb import environment_from_position, read_position
 
         # Get position data for comparison
-        positions, _ = read_position(sample_nwb_with_position)
+        position_data = read_position(sample_nwb_with_position)
+        positions = position_data.positions
 
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
 
@@ -2069,3 +2070,211 @@ class TestCoordinateKindRoundTrip:
                 d["distance"] for _, _, d in loaded.connectivity.edges(data=True)
             )
             np.testing.assert_allclose(loaded_weights, orig_weights, rtol=1e-9)
+
+
+def test_reconstructed_layout_estimates_bin_size_from_spacing():
+    """Without stored measures, the KDTree fallback estimates each bin as
+    (median nearest-neighbour spacing) ** n_dims."""
+    import networkx as nx
+
+    from neurospatial.io.nwb._environment import _ReconstructedLayout
+
+    # Points on a line spaced 3 apart; indices grow much faster than spacing.
+    bin_centers = np.column_stack([np.arange(50) * 3.0, np.zeros(50)])
+    layout = _ReconstructedLayout(
+        bin_centers=bin_centers,
+        connectivity=nx.Graph(),
+        dimension_ranges=[(0.0, 147.0), (0.0, 0.0)],
+        layout_type="Graph",
+    )
+    np.testing.assert_allclose(layout.bin_sizes(), 9.0)
+
+
+def _y_track_env():
+    """Y-shaped linearized track (from_graph, bin 3, edge spacing 10)."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    for node, pos in enumerate(
+        [(0.0, 0.0), (0.0, 100.0), (-50.0, 150.0), (50.0, 150.0)]
+    ):
+        graph.add_node(node, pos=pos)
+    for edge_id, (u, v) in enumerate([(0, 1), (1, 2), (1, 3)]):
+        distance = float(
+            np.linalg.norm(np.subtract(graph.nodes[v]["pos"], graph.nodes[u]["pos"]))
+        )
+        graph.add_edge(u, v, distance=distance, edge_id=edge_id)
+    return Environment.from_graph(
+        graph, edge_order=[(0, 1), (1, 2), (1, 3)], edge_spacing=10.0, bin_size=3.0
+    )
+
+
+def _roundtrip_through_file(env, path):
+    from pynwb import NWBHDF5IO
+
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    with NWBHDF5IO(str(path), "w") as io:
+        nwbfile = _create_nwb_for_test()
+        write_environment(nwbfile, env)
+        io.write(nwbfile)
+    with NWBHDF5IO(str(path), "r") as io:
+        return read_environment(io.read())
+
+
+class TestGraphGeometryRoundTrip:
+    """Non-grid (graph) environments keep their geometry through NWB."""
+
+    def test_graph_env_roundtrip_preserves_geometry(self, tmp_path):
+        env = _y_track_env()
+        loaded = _roundtrip_through_file(env, tmp_path / "ytrack.nwb")
+
+        assert loaded.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded.bin_sizes, env.bin_sizes)
+        assert loaded.grid_edges is not None
+        np.testing.assert_array_equal(loaded.grid_edges[0], env.grid_edges[0])
+
+        flipped = [
+            (u, v)
+            for u, v, data in env.connectivity.edges(data=True)
+            if not np.allclose(
+                loaded.connectivity.edges[u, v]["vector"], data["vector"]
+            )
+        ]
+        assert flipped == []
+
+    def test_reads_schema_1_0_file(self, tmp_path, caplog):
+        """A 1.0 file (no bin_sizes column, no grid geometry) still reads, with
+        bin sizes estimated from bin spacing and no schema warning."""
+        import json
+        import logging
+
+        from hdmf.common import DynamicTable, VectorData
+        from pynwb import NWBHDF5IO
+        from scipy.spatial import KDTree
+
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        env = _y_track_env()
+        current = _create_nwb_for_test()
+        write_environment(current, env)
+        table = current.scratch["spatial_environment"]
+
+        metadata = json.loads(table["metadata"][0])
+        metadata["schema_version"] = "1.0"
+        metadata.pop("grid_edges", None)
+        metadata.pop("grid_shape", None)
+        columns = []
+        for column in table.columns:
+            if column.name == "bin_sizes":
+                continue
+            data = column.data
+            if column.name == "metadata":
+                data = [json.dumps(metadata)] * len(data)
+            columns.append(
+                VectorData(name=column.name, data=data, description=column.description)
+            )
+        legacy = _create_nwb_for_test()
+        legacy.add_scratch(
+            DynamicTable(
+                name="spatial_environment",
+                description=table.description,
+                columns=columns,
+            )
+        )
+        path = tmp_path / "legacy.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(legacy)
+
+        with (
+            caplog.at_level(logging.WARNING, logger="neurospatial"),
+            NWBHDF5IO(str(path), "r") as io,
+        ):
+            loaded = read_environment(io.read())
+
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+        spacing = np.median(
+            KDTree(env.bin_centers).query(env.bin_centers, k=2)[0][:, 1]
+        )
+        np.testing.assert_allclose(loaded.bin_sizes, spacing**2)
+
+
+def test_environment_from_position_uses_converted_meters(make_scaled_position_nwb):
+    """Positions are converted to meters, and NWB's "meters" becomes "m".
+
+    The converted extent is 1 m, so a cm-scale reading would give one bin.
+    """
+    import warnings
+
+    from neurospatial.io.nwb import environment_from_position
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        env = environment_from_position(make_scaled_position_nwb(), bin_size=0.05)
+
+    assert env.units == "m"
+    assert not [w for w in caught if "standard registry" in str(w.message)]
+    assert env.bin_centers.min() >= 0.1 - 0.05
+    assert env.bin_centers.max() <= 1.1 + 0.05
+
+
+def test_empty_unit_warns_and_assumes_cm(make_scaled_position_nwb):
+    """A series that declares no unit warns once, then assumes 'cm'."""
+    import warnings
+
+    from neurospatial.io.nwb import environment_from_position
+
+    nwbfile = make_scaled_position_nwb(unit="", conversion=1.0, offset=0.0)
+
+    with pytest.warns(UserWarning, match="declares no unit") as record:
+        env = environment_from_position(nwbfile, bin_size=50.0)
+    messages = [str(w.message) for w in record if "declares no unit" in str(w.message)]
+    assert len(messages) == 1
+    assert "Fix: pass units=" in messages[0]
+    assert env.units == "cm"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        env = environment_from_position(nwbfile, bin_size=50.0, units="cm")
+    assert env.units == "cm"
+
+
+@pytest.fixture
+def hexagonal_env_from_nwb(empty_nwb):
+    """A hexagonal environment after an in-memory NWB write/read round trip."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    env = Environment.from_layout(
+        kind="Hexagonal",
+        layout_params={"hexagon_width": 5.0, "dimension_ranges": [(0, 50), (0, 50)]},
+    )
+    write_environment(empty_nwb, env)
+    return read_environment(empty_nwb)
+
+
+@pytest.mark.parametrize("operation", ["gradient", "divergence", "smooth", "basis"])
+def test_finite_volume_ops_on_nwb_layout_explain_the_round_trip(
+    hexagonal_env_from_nwb, operation
+):
+    """The fix must name the NWB round trip, not a factory the user never skipped."""
+    from neurospatial.ops.basis import heat_kernel_wavelet_basis
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = hexagonal_env_from_nwb
+    calls = {
+        "gradient": lambda: gradient(env, np.ones(env.n_bins)),
+        "divergence": lambda: divergence(
+            env, np.ones(env.connectivity.number_of_edges())
+        ),
+        "smooth": lambda: env.smooth(np.ones(env.n_bins), bandwidth=5.0),
+        "basis": lambda: heat_kernel_wavelet_basis(env, centers=np.array([0])),
+    }
+    with pytest.raises(NotImplementedError) as exc:
+        calls[operation]()
+    message = str(exc.value)
+    assert "read from NWB" in message
+    assert "Hexagonal" in message
+    assert "\nFix:" in message

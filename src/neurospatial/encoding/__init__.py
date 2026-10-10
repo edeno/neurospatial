@@ -38,7 +38,6 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
-from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -50,17 +49,23 @@ from neurospatial.encoding.directional import (
     DirectionalRatesResult,
     compute_directional_rate,
     compute_directional_rates,
+    head_direction_cell_significance,
     is_head_direction_cell,
     plot_head_direction_tuning,
 )
 
 # Egocentric rate (object vector cells)
 from neurospatial.encoding.egocentric import (
-    EgocentricRateResult,
-    EgocentricRatesResult,
+    ObjectVectorRateResult,
+    ObjectVectorRatesResult,
     compute_egocentric_rate,
     compute_egocentric_rates,
+    compute_object_vector_rate,
+    compute_object_vector_rates,
+    egocentric_object_vector_cell_significance,
+    is_egocentric_object_vector_cell,
     is_object_vector_cell,
+    object_vector_cell_significance,
     object_vector_score,
     plot_object_vector_tuning,
 )
@@ -78,8 +83,8 @@ from neurospatial.encoding.grid import (
 # Phase precession analysis
 from neurospatial.encoding.phase_precession import (
     PhasePrecessionResult,
+    compute_phase_precession,
     has_phase_precession,
-    phase_precession,
     plot_phase_precession,
     theta_phase,
 )
@@ -105,7 +110,9 @@ from neurospatial.encoding.spatial import (
     compute_spatial_rate,
     compute_spatial_rates,
     detect_place_fields,
+    has_place_field,
     is_place_cell,
+    place_cell_significance,
 )
 from neurospatial.encoding.spike_trains import SpikeTrains
 
@@ -116,12 +123,16 @@ from neurospatial.encoding.view import (
     compute_view_rate,
     compute_view_rates,
     is_spatial_view_cell,
+    spatial_view_cell_significance,
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
+    "egocentric_object_vector_cell_significance",
+    "object_vector_cell_significance",
+    "spatial_view_cell_significance",
+    "head_direction_cell_significance",
+    "place_cell_significance",
     # Spike-time normalization
-    "as_spike_trains",
-    "as_spike_trains_with_ids",
     # Ragged-spike-train container
     "SpikeTrains",
     # Border/boundary cell analysis
@@ -133,10 +144,12 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_directional_rate",
     "compute_directional_rates",
     # Egocentric rate (object vector cells)
-    "EgocentricRateResult",
-    "EgocentricRatesResult",
+    "ObjectVectorRateResult",
+    "ObjectVectorRatesResult",
     "compute_egocentric_rate",
     "compute_egocentric_rates",
+    "compute_object_vector_rate",
+    "compute_object_vector_rates",
     # Spatial rate (place/grid/border cells)
     "SpatialRateResult",
     "SpatialRatesResult",
@@ -150,10 +163,11 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Phase precession analysis
     "PhasePrecessionResult",
     "has_phase_precession",
-    "phase_precession",
+    "compute_phase_precession",
     "plot_phase_precession",
     "theta_phase",
     # Object-vector cell analysis
+    "is_egocentric_object_vector_cell",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",
@@ -176,6 +190,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_field_emd",
     "detect_place_fields",
     "is_place_cell",
+    "has_place_field",
     "rate_map_centroid",
     "field_shape_metrics",
     "field_shift_distance",

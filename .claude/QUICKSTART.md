@@ -8,6 +8,7 @@ Essential patterns for daily use. Copy-paste and modify for your needs.
 
 ## Your First Environment
 
+<!-- docs-test: run -->
 ```python
 from neurospatial import Environment
 import numpy as np
@@ -83,13 +84,14 @@ env.units = "cm"
 
 **1D linearized track:**
 
+<!-- docs-test: run -->
 ```python
 import networkx as nx
 
 # Create track graph (nodes = track points, edges = connections)
 G = nx.Graph()
 G.add_nodes_from([(0, {"pos": (0, 0)}), (1, {"pos": (50, 0)}), (2, {"pos": (100, 0)})])
-G.add_edges_from([(0, 1), (1, 2)])
+G.add_edges_from([(0, 1), (1, 2)], distance=50.0)
 
 # from_graph requires edge_order (linearization order) and edge_spacing (gap between edges)
 env = Environment.from_graph(
@@ -101,6 +103,7 @@ env = Environment.from_graph(
 print(env.is_linearized_track)  # True
 
 # Linearization methods available
+nd_position = np.array([[25.0, 0.0]])  # On the first track segment
 linear_pos = env.to_linear(nd_position)
 nd_pos = env.linear_to_nd(linear_pos)
 ```
@@ -257,7 +260,7 @@ from neurospatial.behavior.navigation import compute_path_efficiency
 
 # Compute path efficiency for a trajectory
 result = compute_path_efficiency(
-    env, positions, times, goal_position,
+    env, times, positions, goal_position,
     metric="geodesic",       # Respects walls/obstacles
     reference_speed=20.0,    # Optional: for time efficiency
 )
@@ -279,7 +282,7 @@ if result.is_efficient(threshold=0.8):
 from neurospatial.behavior.navigation import compute_goal_directed_metrics, goal_bias
 
 # Compute full goal-directed analysis
-result = compute_goal_directed_metrics(env, positions, times, goal_position)
+result = compute_goal_directed_metrics(env, times, positions, goal_position)
 
 # Access results
 print(f"Goal bias: {result.goal_bias:.2f}")  # Range [-1, 1]
@@ -290,18 +293,19 @@ if result.is_goal_directed(threshold=0.3):
     print("Goal-directed navigation detected!")
 
 # Quick goal bias calculation
-bias = goal_bias(positions, times, goal_position, min_speed=5.0)
+bias = goal_bias(times, positions, goal_position, min_speed=5.0)
 # bias > 0: approaching goal; bias < 0: moving away
 ```
 
 **VTE (Vicarious Trial and Error) detection:**
 
+<!-- docs-test: run setup=quickstart_vte_session -->
 ```python
 from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 # Analyze VTE behavior at decision points across a session
 result = compute_vte_session(
-    env, positions, times,
+    env, times, positions,
     decision_region="center",  # Region name in env.regions
     trials=trials,
     window_duration=1.0,       # Pre-decision window (seconds)
@@ -320,7 +324,7 @@ for trial in result.trial_results:
 
 # Single trial analysis (no z-scoring)
 single_result = compute_vte_trial(
-    positions, times,
+    times, positions,
     entry_time=5.0,        # Time of decision region entry
     window_duration=1.0,
     min_speed=5.0,
@@ -339,7 +343,7 @@ from neurospatial.behavior.decisions import (
 
 # Full decision analysis for a trial
 result = compute_decision_analysis(
-    env, positions, times,
+    env, times, positions,
     decision_region="center",
     goal_regions=["left", "right"],
     pre_window=1.0,
@@ -379,8 +383,7 @@ import numpy as np
 
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
-dt = times[1] - times[0]
-headings = heading_from_velocity(positions, dt, min_speed=5.0, bandwidth=3.0)  # cm/s
+headings = heading_from_velocity(times, positions, min_speed=5.0, bandwidth=3.0)  # cm/s
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)
@@ -443,9 +446,37 @@ env = Environment.from_polar_egocentric(
 
 ### Object-Vector Cells
 
-Analyze cells that encode distance and direction to objects in egocentric coordinates:
+Analyze animal-to-object distance and direction in a chosen reference frame.
+Allocentric direction is world-relative (0 = East, +pi/2 = North); egocentric
+bearing is heading-relative (0 = ahead, +pi/2 = left). Results record
+`direction_frame`; the reverse object-to-animal vector adds pi and wraps.
+
+**Compute allocentric rate field (no headings):**
+
+Information thresholds screen candidates rather than establish object-vector
+identity. Use `object_vector_cell_significance(...)` for allocentric direction
+or `egocentric_object_vector_cell_significance(...)` with headings for animal-
+relative bearing. Free frame predicates also accept `criterion="shuffle"`;
+match `unit_id` and the integer `rng` with a population call for the same stream.
+A significant position association can also arise from a place-cell control.
+
+<!-- docs-test: run setup=quickstart_ovc_classify_single -->
+```python
+from neurospatial.encoding import compute_object_vector_rate, is_object_vector_cell
+
+allocentric = compute_object_vector_rate(
+    None, spike_times, times, positions, object_positions,
+)
+assert allocentric.direction_frame == "allocentric"
+print(allocentric.spatial_information())
+print(is_object_vector_cell(None, spike_times, times, positions, object_positions))
+```
 
 **Compute egocentric rate field (single neuron):**
+
+Use `is_egocentric_object_vector_cell(env, spike_times, times, positions,
+headings, object_positions)` for a free heading-relative candidate screen.
+Result methods screen tuning in the recorded frame.
 
 ```python
 from neurospatial.encoding import compute_egocentric_rate
@@ -453,7 +484,7 @@ from neurospatial.encoding import compute_egocentric_rate
 # Define object positions in allocentric (world) coordinates
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
-# Compute egocentric polar field (returns EgocentricRateResult)
+# Compute egocentric polar field (returns ObjectVectorRateResult)
 # `env` is the first positional arg; pass None for euclidean distance,
 # or pass the allocentric Environment for metric="geodesic".
 result = compute_egocentric_rate(
@@ -506,10 +537,11 @@ df = result.summary_table()
 
 **Classify object-vector cells from result metrics:**
 
+<!-- docs-test: run setup=quickstart_ovc_classify_single -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate
 
-# Singular methods live on the single-neuron EgocentricRateResult
+# Singular methods live on the single-neuron ObjectVectorRateResult
 single = compute_egocentric_rate(
     None,  # env (required only for metric="geodesic")
     spike_times, times, positions, headings, object_positions,
@@ -538,13 +570,13 @@ ovc = ObjectVectorCellModel(
     object_positions=object_positions,
     preferred_distance=20.0,        # Peak at 20 cm
     distance_width=8.0,             # Gaussian width
-    preferred_direction=np.pi/4,    # 45° left (optional)
+    preferred_direction=np.pi/4,    # Northeast (allocentric default)
     direction_kappa=4.0,            # Direction tuning sharpness
     max_rate=30.0,                  # Peak firing rate (Hz)
 )
 
 # Generate firing rates along trajectory
-rates = ovc.firing_rate(positions, headings=headings)
+rates = ovc.firing_rate(positions)  # allocentric default needs no headings
 
 # Generate spikes
 spike_times = generate_poisson_spikes(rates, times, seed=42)
@@ -628,8 +660,15 @@ view_cells = result.classify(min_info=0.5)  # (n_neurons,) bool
 df = result.summary_table()
 ```
 
-**Classify spatial view cells from result metrics:**
+**Screen spatial view candidates from result metrics:**
 
+Information screens are biased at low spike counts. For a circular-shift
+verdict, use `is_spatial_view_cell(env, spikes, times, positions, headings,
+criterion="shuffle", rng=0)` or `spatial_view_cell_significance(...)` on the raw
+arrays. They reuse the observed gaze model and valid recording windows and
+cost about `n_shuffles` map recomputes. Result methods stay threshold-only.
+
+<!-- docs-test: run setup=quickstart_view_classify -->
 ```python
 # Single-neuron result from compute_view_rate(...)
 print(single.is_spatial_view_cell(min_info=0.5))
@@ -666,6 +705,7 @@ spike_times = generate_poisson_spikes(rates, times, seed=42)
 
 **Visibility and gaze analysis:**
 
+<!-- docs-test: run -->
 ```python
 from neurospatial.ops.visibility import (
     compute_viewed_location,
@@ -696,8 +736,7 @@ print(f"Visible bins: {viewshed.n_visible_bins}")
 # Check which cues/landmarks are visible
 cue_positions = np.array([[80, 50], [20, 80]])
 visible, distances, bearings = visible_cues(
-    env, observer_position=np.array([50, 50]),
-    observer_heading=0.0, cue_positions=cue_positions
+    env, np.array([50, 50]), 0.0, cue_positions, fov=fov
 )
 ```
 
@@ -726,6 +765,7 @@ env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed
 
 **Add trajectory overlays:**
 
+<!-- docs-test: run setup=quickstart_overlay_block -->
 ```python
 from neurospatial.animation import (
     BodypartOverlay,
@@ -769,7 +809,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[animal1, animal2])
 from neurospatial.animation import calibrate_video, VideoOverlay
 
 # Calibrate video to environment coordinates
-calibration = calibrate_video("session.mp4", env, cm_per_px=0.25)
+calibration = calibrate_video(env, "session.mp4", cm_per_px=0.25)
 
 # Create video overlay
 video_overlay = VideoOverlay(
@@ -782,6 +822,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[video_overlay])
 
 ### Working with Regions
 
+<!-- docs-test: run -->
 ```python
 # Add regions
 env.regions.add("goal", point=(50.0, 50.0))
@@ -789,7 +830,9 @@ env.regions.add("start", point=(10.0, 10.0))
 
 # Query regions
 bins_in_goal = env.bins_in_region("goal")
-is_in_start = env.point_in_region((12.0, 12.0), "start")
+# Region membership uses the spatial bin containing the query point.
+query_bin = int(env.bin_at([[12.0, 12.0]])[0])
+is_in_start = query_bin in env.bins_in_region("start")
 
 # Update region (don't modify in place - regions are immutable)
 env.regions.update_region("goal", point=(55.0, 55.0))  # No warning
@@ -845,6 +888,7 @@ env.plot_field(place_field, title="Fitted Place Field")
 
 For circular predictors (head direction, theta phase, running direction):
 
+<!-- docs-test: run setup=quickstart_circular_basis_metrics -->
 ```python
 from neurospatial.stats.circular import (
     circular_basis,
@@ -876,7 +920,7 @@ plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 **Related functions:** (from `neurospatial.encoding` and `neurospatial.stats.circular`)
 
 - `compute_directional_rate()`: Complete head direction cell analysis
-- `phase_precession()`: Detect theta phase precession
+- `compute_phase_precession()`: Detect theta phase precession
 - `rayleigh_test()`: Test for circular uniformity
 
 ### Events and Peri-Event Analysis
@@ -908,9 +952,9 @@ plot_peri_event_histogram(result, show_sem=True, as_rate=True)
 from neurospatial.events import population_peri_event_histogram
 
 # Analyze multiple neurons
-spike_trains = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+spike_times = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = population_peri_event_histogram(
-    spike_trains, event_times, window=(-1.0, 2.0), bin_size=0.025
+    spike_times, event_times, window=(-1.0, 2.0), bin_size=0.025
 )
 
 print(f"Population mean shape: {result.mean_histogram.shape}")
@@ -918,6 +962,7 @@ print(f"Population mean shape: {result.mean_histogram.shape}")
 
 **GLM regressors from events:**
 
+<!-- docs-test: run setup=quickstart_events_glm_regressors -->
 ```python
 from neurospatial.events import time_to_nearest_event, event_indicator, event_count_in_window
 
@@ -1016,7 +1061,8 @@ from neurospatial.io.nwb import (
 # Read position data
 with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
-    positions, timestamps = read_position(nwbfile)
+    pos = read_position(nwbfile)
+    positions, timestamps = pos.positions, pos.times
     env = environment_from_position(nwbfile, bin_size=2.0, units="cm")
 
 # Write analysis results

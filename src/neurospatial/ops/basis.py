@@ -33,7 +33,8 @@ Scale Parameters Across Bases
 The three basis types use different scale parameters:
 
 - geodesic_rbf_basis(sigma=...): RBF bandwidth in environment units (cm)
-- heat_kernel_wavelet_basis(scales=...): Diffusion times (proportional to sigma²)
+- heat_kernel_wavelet_basis(scales=...): Diffusion time in bin-spacing² units;
+  standard deviation sqrt(2*scale) bins
 - chebyshev_filter_basis(max_degree=...): How many bins away from center the
   function extends (degree 5 = nonzero within 5 bins of center)
 
@@ -96,13 +97,16 @@ References
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from scipy import sparse
+
     from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
     "chebyshev_filter_basis",
@@ -572,6 +576,27 @@ def geodesic_rbf_basis(
     return basis
 
 
+def _diffusion_generator(env: Environment) -> sparse.csr_matrix:
+    """Finite-volume generator in bin-spacing² units, as used by env.smooth."""
+    from scipy import sparse
+    from scipy.spatial import cKDTree
+
+    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
+
+    graph, volumes = _finite_volume_geometry(
+        cast("EnvironmentProtocol", env), operation="heat_kernel_wavelet_basis"
+    )
+    weights = _assemble_W(graph, env.n_bins)
+    degree = sparse.diags(np.asarray(weights.sum(axis=1)).ravel())
+    spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
+    return (
+        spacing**2
+        * sparse.diags(1.0 / np.asarray(volumes, dtype=np.float64))
+        @ (degree - weights)
+    ).tocsr()
+
+
 def heat_kernel_wavelet_basis(
     env: Environment,
     centers: NDArray[np.int_] | None = None,
@@ -588,7 +613,8 @@ def heat_kernel_wavelet_basis(
     For each center c and diffusion time s, computes:
         B(j) = [exp(-s * L)]_{j,c}
 
-    where L is the graph Laplacian. This represents heat diffusion from
+    where L is the finite-volume diffusion generator in bin-spacing² units.
+    This represents heat diffusion from
     center c for time s, respecting the graph topology.
 
     Parameters
@@ -598,23 +624,11 @@ def heat_kernel_wavelet_basis(
     centers : NDArray[np.int_] or None
         Node indices for wavelet centers. If None, auto-select.
     scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
-        Diffusion time scales in graph-intrinsic units.
-        Larger values = wider spatial spread.
-
-        Default values (0.5, 1, 2, 4) provide octave-spaced multi-scale
-        coverage similar to wavelets. For most environments:
-
-        - scale=0.5: ~1-2 bins radius (very localized)
-        - scale=1.0: ~2-3 bins radius
-        - scale=2.0: ~3-5 bins radius
-        - scale=4.0: ~5-8 bins radius (compartment-level)
-
-        Adjust if your bin_size is unusual:
-
-        - Finer bins (bin_size < 1cm): increase scales 2-4×
-        - Coarser bins (bin_size > 5cm): decrease scales 2-4×
-
-        **Relationship to RBF sigma**: Roughly scale ≈ sigma² / (2 * bin_size²)
+        Diffusion time in units of bin spacing². The kernel's standard
+        deviation on a uniform Cartesian grid is ``sqrt(2 * scale)`` bins,
+        independent of ``bin_size``: 0.5 → 1, 1 → 1.41, 2 → 2, 4 → 2.83 bins.
+        Larger values give wider spread; walls and boundaries constrain it.
+        For physical bandwidth sigma, scale = sigma² / (2 * spacing²).
     n_centers : int or None
         Number of centers for auto-selection.
     center_method : {"kmeans", "farthest_point", "random"}
@@ -635,6 +649,8 @@ def heat_kernel_wavelet_basis(
     ValueError
         If scales contains non-positive values.
         If centers is None and n_centers is None.
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
@@ -651,10 +667,10 @@ def heat_kernel_wavelet_basis(
     scipy's expm_multiply, which avoids forming the full matrix exponential.
     About 2-3× slower than geodesic RBF for typical environments.
 
-    **Laplacian weighting**: Uses edge 'distance' weights in the Laplacian.
-    For physical diffusion interpretation, these represent edge conductance
-    (inverse resistance). If uniform diffusion is preferred, the Laplacian
-    can be computed without weights.
+    **Laplacian weighting**: Uses the finite-volume generator of
+    ``env.smooth`` (shared-face measure over center distance, divided by cell
+    volume), scaled by the squared median nearest-neighbor bin spacing.
+    Spread is isotropic on a uniform Cartesian grid and expressed in bin units.
 
     **Comparison with geodesic RBF**:
 
@@ -678,7 +694,6 @@ def heat_kernel_wavelet_basis(
     .. [2] Hammond, D.K. et al. (2011). Wavelets on graphs via spectral
            graph theory. Applied and Computational Harmonic Analysis, 30(2), 129-150.
     """
-    import networkx as nx
     from scipy.sparse.linalg import expm_multiply
 
     # Handle centers
@@ -707,21 +722,18 @@ def heat_kernel_wavelet_basis(
             f"scales values must be positive, got: {invalid}.\n"
             "\n"
             "scales controls diffusion time (spatial spread):\n"
-            "  - scale=0.5: ~1-2 bins radius\n"
-            "  - scale=2.0: ~3-5 bins radius\n"
-            "  - scale=4.0: ~5-8 bins radius\n"
+            "  - scale=0.5: standard deviation 1 bin\n"
+            "  - scale=2.0: standard deviation 2 bins\n"
+            "  - scale=4.0: standard deviation 2.83 bins\n"
             "\n"
-            "Default (0.5, 1.0, 2.0, 4.0) works well for most environments."
+            "Fix: pass positive scales, e.g. scales=[0.5, 1.0, 2.0, 4.0]."
         )
 
     n_centers_actual = len(centers)
     n_scales = len(scales_arr)
     n_bins = env.n_bins
 
-    # Get graph Laplacian (sparse)
-    laplacian = nx.laplacian_matrix(
-        env.connectivity, nodelist=range(n_bins), weight="distance"
-    )
+    laplacian = _diffusion_generator(env)
 
     # Create delta vectors at centers
     # Shape: (n_bins, n_centers)
@@ -820,6 +832,11 @@ def chebyshev_filter_basis(
 
     Notes
     -----
+    The operator is the connectivity graph's Laplacian with ``distance``
+    edge weights, rescaled by its spectral radius. It defines hop locality
+    only and is not a physical diffusion; use ``heat_kernel_wavelet_basis``
+    for bin-size-independent spread.
+
     **Strict locality guarantee**: A degree-k polynomial of L depends only
     on nodes within k hops. This is stronger than heat kernel or RBF bases,
     which have infinite (though decaying) support.

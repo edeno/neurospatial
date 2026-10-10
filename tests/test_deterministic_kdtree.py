@@ -39,7 +39,7 @@ class TestDeterministicBehavior:
         )
 
         # Call multiple times
-        results = [map_points_to_bins(points, env) for _ in range(10)]
+        results = [map_points_to_bins(env, points) for _ in range(10)]
 
         # All results should be identical
         for result in results[1:]:
@@ -61,7 +61,7 @@ class TestDeterministicBehavior:
 
         # Run 100 times to ensure consistency
         results = [
-            map_points_to_bins(points, env, tie_break="lowest_index")
+            map_points_to_bins(env, points, tie_break="lowest_index")
             for _ in range(100)
         ]
 
@@ -80,8 +80,8 @@ class TestDeterministicBehavior:
         points = rng.uniform(0, 20, size=(1000, 2))
 
         # Call twice
-        result1 = map_points_to_bins(points, env)
-        result2 = map_points_to_bins(points, env)
+        result1 = map_points_to_bins(env, points)
+        result2 = map_points_to_bins(env, points)
 
         np.testing.assert_array_equal(result1, result2)
 
@@ -111,7 +111,7 @@ class TestMaxDistanceParameter:
         )
 
         # Set max_distance = 1.0 (one bin width)
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         # First and third should be assigned to bins
         assert bin_indices[0] >= 0
@@ -136,7 +136,7 @@ class TestMaxDistanceParameter:
         )
 
         # Large max_distance (covers entire environment)
-        bin_indices = map_points_to_bins(points, env, max_distance=10.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=10.0)
 
         # All should be assigned
         assert np.all(bin_indices >= 0)
@@ -156,7 +156,7 @@ class TestMaxDistanceParameter:
         )
 
         # Small max_distance
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         # All should be marked outside
         np.testing.assert_array_equal(bin_indices, [-1, -1, -1])
@@ -180,7 +180,7 @@ class TestMaxDistanceParameter:
             ]
         )
 
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         # Point exactly at threshold or inside should be assigned
         assert bin_indices[1] >= 0  # Just inside
@@ -215,7 +215,7 @@ class TestMaxDistanceFactor:
 
         # max_distance_factor = 1.0 means points > 1.0 * bin_size away are outside
         # bin_size = 2.0, so threshold ≈ 2.0
-        bin_indices = map_points_to_bins(points, env, max_distance_factor=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance_factor=1.0)
 
         # First two should be inside (distance < 2.0)
         assert bin_indices[0] >= 0
@@ -247,10 +247,10 @@ class TestMaxDistanceFactor:
         # Apply same max_distance_factor
         factor = 1.0
         result_small = map_points_to_bins(
-            points_small, env_small, max_distance_factor=factor
+            env_small, points_small, max_distance_factor=factor
         )
         result_large = map_points_to_bins(
-            points_large, env_large, max_distance_factor=factor
+            env_large, points_large, max_distance_factor=factor
         )
 
         # Both should have similar behavior (either both inside or both outside)
@@ -280,11 +280,11 @@ class TestMaxDistanceFactor:
         points = np.array([[8.0, 8.0]])
 
         # With large factor, should be included
-        bin_indices_large = map_points_to_bins(points, env, max_distance_factor=10.0)
+        bin_indices_large = map_points_to_bins(env, points, max_distance_factor=10.0)
         assert bin_indices_large[0] >= 0
 
         # With small factor, should be excluded
-        bin_indices_small = map_points_to_bins(points, env, max_distance_factor=0.5)
+        bin_indices_small = map_points_to_bins(env, points, max_distance_factor=0.5)
         assert bin_indices_small[0] == -1
 
 
@@ -303,7 +303,7 @@ class TestParameterInteraction:
         points = np.array([[2.0, 2.0]])
 
         with pytest.raises(ValueError, match="Cannot specify both"):
-            map_points_to_bins(points, env, max_distance=1.0, max_distance_factor=1.5)
+            map_points_to_bins(env, points, max_distance=1.0, max_distance_factor=1.5)
 
     def test_negative_max_distance_error(self):
         """Negative max_distance raises error."""
@@ -312,7 +312,7 @@ class TestParameterInteraction:
         points = np.array([[2.0, 2.0]])
 
         with pytest.raises(ValueError, match="max_distance must be non-negative"):
-            map_points_to_bins(points, env, max_distance=-1.0)
+            map_points_to_bins(env, points, max_distance=-1.0)
 
     def test_negative_max_distance_factor_error(self):
         """Negative max_distance_factor raises error."""
@@ -321,7 +321,7 @@ class TestParameterInteraction:
         points = np.array([[2.0, 2.0]])
 
         with pytest.raises(ValueError, match="max_distance_factor must be positive"):
-            map_points_to_bins(points, env, max_distance_factor=-0.5)
+            map_points_to_bins(env, points, max_distance_factor=-0.5)
 
     def test_zero_max_distance_factor_error(self):
         """Zero max_distance_factor raises error."""
@@ -330,7 +330,7 @@ class TestParameterInteraction:
         points = np.array([[2.0, 2.0]])
 
         with pytest.raises(ValueError, match="max_distance_factor must be positive"):
-            map_points_to_bins(points, env, max_distance_factor=0.0)
+            map_points_to_bins(env, points, max_distance_factor=0.0)
 
     def test_zero_max_distance(self):
         """max_distance=0.0 only accepts points exactly on bin centers."""
@@ -349,7 +349,7 @@ class TestParameterInteraction:
             ]
         )
 
-        bin_indices = map_points_to_bins(points, env, max_distance=0.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=0.0)
 
         # Point on center (distance=0) should be assigned (0 is not > 0)
         assert bin_indices[0] >= 0
@@ -379,7 +379,7 @@ class TestBackwardCompatibility:
             ]
         )
 
-        bin_indices = map_points_to_bins(points, env)
+        bin_indices = map_points_to_bins(env, points)
 
         # First two points should be assigned (inside environment)
         assert bin_indices[0] >= 0
@@ -396,7 +396,7 @@ class TestBackwardCompatibility:
         points = np.array([[0.5, 0.5]])  # Equidistant from multiple bins
 
         # With lowest_index tie break
-        result = map_points_to_bins(points, env, tie_break="lowest_index")
+        result = map_points_to_bins(env, points, tie_break="lowest_index")
         assert result[0] >= 0  # Should be assigned consistently
 
 
@@ -414,7 +414,7 @@ class TestEdgeCases:
         env = Environment.from_samples(data, bin_size=1.0)
 
         points = np.array([]).reshape(0, 2)
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         assert bin_indices.shape == (0,)
 
@@ -424,7 +424,7 @@ class TestEdgeCases:
         env = Environment.from_samples(data, bin_size=1.0)
 
         points = np.array([[2.0, 2.0]])
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         assert bin_indices.shape == (1,)
         assert bin_indices[0] >= 0
@@ -435,7 +435,7 @@ class TestEdgeCases:
         env = Environment.from_samples(data, bin_size=1.0)
 
         points = np.array([[2.0, 2.0]] * 10)
-        bin_indices = map_points_to_bins(points, env, max_distance=1.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=1.0)
 
         # All should map to same bin
         assert len(np.unique(bin_indices)) == 1
@@ -465,7 +465,7 @@ class TestDifferentLayouts:
             ]
         )
 
-        bin_indices = map_points_to_bins(points, env, max_distance=2.0)
+        bin_indices = map_points_to_bins(env, points, max_distance=2.0)
 
         assert bin_indices[0] >= 0
         assert bin_indices[1] == -1

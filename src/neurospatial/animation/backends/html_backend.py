@@ -448,6 +448,7 @@ def render_html(
     fields: list[NDArray[np.float64]],
     save_path: str | None,
     *,
+    overwrite: bool = False,
     fps: int = 30,
     cmap: str = "viridis",
     vmin: float | None = None,
@@ -479,6 +480,9 @@ def render_html(
         Fields to animate. Each array contains field values for one frame.
     save_path : str or None
         Output path. If None, defaults to 'animation.html'.
+    overwrite : bool, default=False
+        Allow replacing existing video/HTML files and nonempty HTML frames
+        directories. By default, an existing target raises before rendering.
     fps : int, default=30
         Frames per second for playback.
     cmap : str, default="viridis"
@@ -512,7 +516,7 @@ def render_html(
         (smaller HTML, suitable for 500+ frames).
     frames_dir : str or Path or None, optional
         Directory to write frames when embed=False. Defaults to a sibling
-        directory based on save_path name (e.g., "animation_frames/").
+        directory based on save_path name (e.g., "animation/").
     n_workers : int or None, optional
         Number of parallel workers for frame rendering (embed=False only).
         Defaults to CPU count / 2.
@@ -538,6 +542,8 @@ def render_html(
 
     Raises
     ------
+    FileExistsError
+        If an output already exists and overwrite is False.
     ValueError
         If number of frames exceeds max_html_frames
 
@@ -577,10 +583,25 @@ def render_html(
     render_video : Export as video file
     render_napari : Interactive GPU viewer
     """
+    from neurospatial._validation import check_writable
     from neurospatial.animation.rendering import (
         _validate_frame_labels,
         compute_global_colormap_range,
         render_field_to_image_bytes,
+    )
+
+    output_path = Path("animation.html" if save_path is None else save_path)
+    targets = [output_path]
+    if not embed:
+        frames_dir = (
+            Path(frames_dir) if frames_dir is not None else output_path.with_suffix("")
+        )
+        targets.append(frames_dir)
+    check_writable(
+        targets,
+        overwrite=overwrite,
+        what="HTML file or frames directory",
+        argument="save_path or frames_dir",
     )
 
     n_frames = len(fields)
@@ -607,7 +628,7 @@ def render_html(
                 "WHY: HTML embeds frames as base64 images; video compositing requires\n"
                 "     frame-by-frame rendering which is only supported in video/napari.\n"
                 "\n"
-                "HOW to fix:\n"
+                "Fix:\n"
                 "  1. Use video backend for full video overlay support:\n"
                 "     env.animate_fields(fields, frame_times=frame_times,\n"
                 "                        backend='video', save_path='output.mp4',\n"
@@ -633,7 +654,7 @@ def render_html(
                 "WHY: HTML embeds frames as static base64 images. Time series display\n"
                 "     requires dynamic chart updates and multi-panel layout.\n"
                 "\n"
-                "HOW to fix:\n"
+                "Fix:\n"
                 "  1. Use video backend for time series support:\n"
                 "     env.animate_fields(fields, frame_times=frame_times,\n"
                 "                        backend='video', save_path='output.mp4',\n"
@@ -733,21 +754,11 @@ def render_html(
     vmin = vmin if vmin is not None else vmin_computed
     vmax = vmax if vmax is not None else vmax_computed
 
-    # Set default save path if None
-    if save_path is None:
-        save_path = "animation.html"
-    output_path = Path(save_path)
-
     # ---- Non-embedded mode: write frames to disk, lightweight HTML ----
     if not embed:
         from neurospatial.animation._parallel import parallel_render_frames
 
-        # Default frames directory: sibling folder based on HTML name
-        if frames_dir is None:
-            frames_dir = output_path.with_suffix(
-                ""
-            )  # e.g., "animation.html" -> "animation/"
-        frames_dir = Path(frames_dir)
+        assert isinstance(frames_dir, Path)
         frames_dir.mkdir(parents=True, exist_ok=True)
 
         # Determine number of workers

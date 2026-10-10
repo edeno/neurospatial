@@ -104,7 +104,7 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
         # Should be ~1.0 everywhere (ignoring edge effects)
         valid_alignment = result[~np.isnan(result)]
@@ -126,7 +126,7 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
         # Should be ~-1.0 (moving away)
         valid_alignment = result[~np.isnan(result)]
@@ -154,7 +154,7 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = center  # Goal at center of circle
 
-        result = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
         # Should be ~0 (always orthogonal to radial direction)
         valid_alignment = result[~np.isnan(result)]
@@ -172,7 +172,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(positions, times, goal, min_speed=5.0)
+        result = instantaneous_goal_alignment(
+            times, positions, goal, min_speed=5.0, max_gap=None
+        )
 
         # All should be NaN due to zero speed
         assert np.all(np.isnan(result))
@@ -193,7 +195,7 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(positions, times, goal, min_speed=0.0)
+        result = goal_bias(times, positions, goal, min_speed=0.0)
 
         assert result > 0.8
 
@@ -212,7 +214,7 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(positions, times, goal, min_speed=0.0)
+        result = goal_bias(times, positions, goal, min_speed=0.0)
 
         assert result < -0.5
 
@@ -231,7 +233,7 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = center  # Goal at center of circle
 
-        result = goal_bias(positions, times, goal, min_speed=0.0)
+        result = goal_bias(times, positions, goal, min_speed=0.0)
 
         # Should be close to 0 (equal time moving toward and away)
         assert abs(result) < 0.3
@@ -245,7 +247,7 @@ class TestGoalBias:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(positions, times, goal, min_speed=5.0)
+        result = goal_bias(times, positions, goal, min_speed=5.0, max_gap=None)
 
         assert np.isnan(result)
 
@@ -265,7 +267,7 @@ class TestApproachRate:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = approach_rate(positions, times, goal, metric="euclidean")
+        result = approach_rate(times, positions, goal, metric="euclidean")
 
         # Should be negative (distance decreasing)
         assert np.nanmean(result) < 0
@@ -285,7 +287,7 @@ class TestApproachRate:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])  # Goal in East
 
-        result = approach_rate(positions, times, goal, metric="euclidean")
+        result = approach_rate(times, positions, goal, metric="euclidean")
 
         # Should be positive (distance increasing)
         assert np.nanmean(result) > 0
@@ -302,7 +304,7 @@ class TestApproachRate:
         times = np.linspace(0, 10, n_samples)  # 100 units in 10 seconds = 10 units/s
         goal = np.array([100.0, 0.0])
 
-        result = approach_rate(positions, times, goal, metric="euclidean")
+        result = approach_rate(times, positions, goal, metric="euclidean", max_gap=None)
 
         # Approach rate magnitude should be ~10 units/s
         valid_rates = result[~np.isnan(result)]
@@ -321,7 +323,7 @@ class TestApproachRate:
         times = np.linspace(0.0, 4.0, 20)
         goal = np.array([90.0, 50.0])
 
-        rates = approach_rate(positions, times, goal, metric="geodesic", env=env)
+        rates = approach_rate(times, positions, goal, metric="geodesic", env=env)
 
         assert np.isnan(rates[0])  # first value is NaN by contract
         assert np.nanmean(rates) < 0  # approaching => distance decreasing
@@ -333,7 +335,7 @@ class TestApproachRate:
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = np.linspace(0, 5, 11)
         with pytest.raises(ValueError, match="env parameter is required"):
-            approach_rate(positions, times, np.array([100.0, 0.0]), metric="geodesic")
+            approach_rate(times, positions, np.array([100.0, 0.0]), metric="geodesic")
 
 
 class TestGoalDirectedMetrics:
@@ -381,7 +383,7 @@ class TestComputeGoalDirectedMetrics:
         goal = np.array([90.0, 50.0])
 
         result = compute_goal_directed_metrics(
-            env, positions, times, goal, metric="euclidean", min_speed=0.0
+            env, times, positions, goal, metric="euclidean", min_speed=0.0
         )
 
         # Should show strong goal-directed behavior
@@ -404,10 +406,8 @@ class TestErrorHandling:
         times = np.linspace(0, 5, 10)  # Wrong length!
         goal = np.array([50.0, 0.0])
 
-        with pytest.raises(
-            ValueError, match="positions and times must have same length"
-        ):
-            compute_goal_directed_metrics(env, positions, times, goal)
+        with pytest.raises(ValueError, match="same length"):
+            compute_goal_directed_metrics(env, times, positions, goal)
 
     def test_single_position(self):
         """Test edge case with single position."""
@@ -418,6 +418,6 @@ class TestErrorHandling:
         goal = np.array([100.0, 0.0])
 
         # Should return NaN since can't compute velocity
-        result = goal_bias(positions, times, goal, min_speed=0.0)
+        result = goal_bias(times, positions, goal, min_speed=0.0)
 
         assert np.isnan(result)

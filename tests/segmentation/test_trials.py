@@ -85,6 +85,7 @@ class TestSegmentTrials:
             end_regions=["left", "right"],
             min_duration=5.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should detect 3 trials
@@ -136,6 +137,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         assert len(trials) == 0, "Short trial should be excluded"
@@ -172,6 +174,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=20.0,
+            max_gap=None,
         )
 
         # Should detect the trial but mark as failed (timeout)
@@ -210,6 +213,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=5.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should detect successful trial
@@ -273,6 +277,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=20.0,
+            max_gap=None,
         )
 
         # Should detect trial start but timeout
@@ -296,7 +301,7 @@ class TestSegmentTrials:
         from neurospatial.behavior.segmentation import segment_trials
 
         # Missing start_region - passes None which won't be found in regions
-        with pytest.raises(ValueError, match=r"start_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*start_region="):
             segment_trials(
                 position_bins,
                 times,
@@ -306,7 +311,7 @@ class TestSegmentTrials:
             )
 
         # Missing end_regions - need to pass a string in list form that doesn't exist
-        with pytest.raises(ValueError, match=r"end_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*end_regions="):
             segment_trials(
                 position_bins,
                 times,
@@ -326,7 +331,7 @@ class TestSegmentTrials:
             )
 
         # Nonexistent start_region
-        with pytest.raises(ValueError, match=r"start_region.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*start_region="):
             segment_trials(
                 position_bins,
                 times,
@@ -336,7 +341,7 @@ class TestSegmentTrials:
             )
 
         # Nonexistent end_region
-        with pytest.raises(ValueError, match=r"end_regions.*not found"):
+        with pytest.raises(ValueError, match=r"(?s)not found.*end_regions="):
             segment_trials(
                 position_bins,
                 times,
@@ -431,6 +436,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=2.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Aborted trial 1 must be present as a failed trial, plus successful trial 2.
@@ -487,6 +493,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Aborted trial too short to pass min_duration -> dropped.
@@ -539,6 +546,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=2.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         assert len(trials) == 1
@@ -585,6 +593,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Trial in progress at end is too short -> dropped.
@@ -633,6 +642,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should handle multiple start entries gracefully

@@ -521,6 +521,7 @@ class TestScriptIntegration:
     """Integration tests for full script execution."""
 
     @pytest.mark.slow
+    @pytest.mark.napari
     def test_script_runs_in_headless_mode(self):
         """Script should complete successfully in headless mode."""
         result = subprocess.run(
@@ -546,6 +547,7 @@ class TestScriptIntegration:
         assert "Setup" in result.stdout or "setup" in result.stdout.lower()
 
     @pytest.mark.slow
+    @pytest.mark.napari
     def test_script_with_all_overlays(self):
         """Script should handle --all-overlays flag."""
         result = subprocess.run(

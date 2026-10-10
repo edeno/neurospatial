@@ -14,6 +14,7 @@ A complete workflow for analyzing spatial firing patterns of neurons during navi
 
 ### Complete Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -150,6 +151,7 @@ decoder for you. The whole encode → bin → decode pipeline fits in one line.
 
 ### Complete Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -176,7 +178,7 @@ cells = [
     for i, c in enumerate(np.linspace(5.0, 95.0, 25))
 ]
 spike_times = generate_population_spikes(
-    cells, positions, times, seed=0, show_progress=False
+    cells, times, positions, seed=0, show_progress=False
 )
 
 # Step 2: Decode position in a single call (encode -> bin -> decode).
@@ -206,12 +208,72 @@ plt.show()
 `.times`. See [`decoding_error`](../api/neurospatial/decoding/index.md) and
 related helpers for accuracy metrics.
 
+### Overlaying actual position on a posterior
+
+`DecodingResult.plot(show_map=True)` uses **spatial-bin indices** on its y-axis.
+Actual positions and `result.map_position` carry physical coordinates, such as
+centimeters. Convert actual positions with `env.bin_at` for a posterior overlay;
+keep their physical coordinates for error metrics and position-versus-time plots.
+
+On a uniform continuous decoder clock, image columns center on the returned
+timestamps: image edges extend half a bin past the first and last center.
+Two timestamps use their actual spacing; one timestamp uses a 1-second
+display width centered on that timestamp. Explicit `extent=` overrides these
+edges. Posterior values, MAP positions and timestamps are unchanged.
+
+On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
+gaps it uses time-bin indices and marks the breaks with dashed lines. Reusing
+the MAP line's x coordinates keeps the actual overlay on the same axis in both
+cases. Supply actual positions aligned to the returned decoder rows; do not
+create or interpolate observations inside a tracking pause.
+
+This exact four-row posterior uses 5 cm bins. It represents perfect decoding
+for both clocks below, so the actual and MAP overlays must coincide. The
+gapped example contains no decoder rows between 10.15 and 20.05 seconds.
+
+<!-- docs-test: run -->
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+from neurospatial import Environment
+from neurospatial.decoding import DecodingResult, median_decoding_error
+
+env = Environment.from_samples(
+    np.linspace(0.0, 100.0, 21)[:, None], bin_size=5.0, units="cm"
+)
+actual = np.array([[20.0], [80.0], [40.0], [60.0]])
+actual_bins = env.bin_at(actual)
+posterior = np.zeros((len(actual), env.n_bins))
+posterior[np.arange(len(actual)), actual_bins] = 1.0
+clocks = {
+    "Continuous": 10.05 + np.arange(4) * 0.1,
+    "Gapped": np.array([10.05, 10.15, 20.05, 20.15]),
+}
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
+for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
+    result = DecodingResult(posterior, env, decoder_times)
+    result.plot(ax=ax, show_map=True, colorbar=True)
+    map_line = ax.lines[0]  # The MAP line precedes recording-gap markers.
+    plot_times = map_line.get_xdata()
+    actual_line = ax.plot(plot_times, actual_bins, "c--", label="Actual spatial bin")[0]
+    expected_x = decoder_times if name == "Continuous" else np.arange(len(actual))
+    np.testing.assert_array_equal(actual_line.get_xdata(), expected_x)
+    np.testing.assert_array_equal(actual_line.get_ydata(), map_line.get_ydata())
+    np.testing.assert_array_equal(actual_line.get_ydata(), [4, 16, 8, 12])
+    assert median_decoding_error(result.map_position, actual) == 0.0
+    ax.set_title(name)
+    ax.legend()
+plt.show()
+```
+
 ### Long sessions / thousands of units: stream the decode
 
 `decode_session` materializes the full `(n_time, n_bins)` posterior. For long
 recordings or large populations that array can be too big to hold in memory.
 Use the memory-safe summary decoder instead:
 
+<!-- docs-test: run setup=workflows_decode_session_summary_streaming -->
 ```python
 from neurospatial.decoding import decode_session_summary
 
@@ -237,6 +299,61 @@ inspecting the binned spike counts — use the manual three-call path
 walk-through, plus trajectory analysis and shuffle-based significance testing
 for replay detection, is covered in
 [example 20](../examples/20_bayesian_decoding.ipynb).
+
+### Reusing rate maps on a recording with gaps
+
+`decode_session` requires tracking and computes its own maps. For maps already
+computed on a training epoch, use `BayesianDecoder.from_rates(rates)`; prediction
+takes spike times and a plain timestamp array. An explicit array handoff uses
+`rates.firing_rates` with binned counts. This example decodes the second recording
+run through both routes. It bins only that run and uses each decoder's returned
+timestamps, so the 10–20 s pause is never represented by a decode bin.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment, compute_spatial_rates, decode_position
+from neurospatial.decoding import BayesianDecoder, bin_spikes_in_time
+
+times = np.r_[np.arange(300) / 30, 20 + np.arange(300) / 30]
+phase = np.arange(600) / 30
+positions = 10 + 5 * np.c_[np.sin(phase), np.cos(phase)]
+env = Environment.from_samples(positions, bin_size=2.0)
+spike_times = [times[::10], times[::15]]
+recording_windows = np.array([[0.0, 10.0], [20.0, 30.0]])
+train, test = (0.0, 10.0), (20.0, 30.0)
+dt = 0.1
+
+rates = compute_spatial_rates(
+    env, spike_times, times, positions, epochs=train,
+    spike_window=recording_windows, fill_value=0.0, unit_ids=[101, 202],
+)
+decoder = BayesianDecoder.from_rates(rates, dt=dt)
+result = decoder.predict(
+    spike_times, times, epochs=test, spike_window=recording_windows,
+)
+
+# Clip the analysis epoch to the observed run, then bin that epoch alone.
+counts, centers = bin_spikes_in_time(
+    spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
+)
+array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers)
+np.testing.assert_array_equal(result.times, array_result.times)
+np.testing.assert_array_equal(result.posterior, array_result.posterior)
+assert np.all((result.times >= 20.0) & (result.times < 30.0))
+print("Decode bins:", len(result.times), "unit order:", rates.unit_ids.tolist())
+```
+
+Use `BayesianDecoder(env).fit(spike_times, times, positions, unit_ids=...)` when
+the decoder should build the maps. A labelled spike group and explicit `unit_ids`
+must agree in order and value. Prediction matches labels only when both inputs
+carry caller-supplied identity; generated row numbers retain positional pairing.
+The training spike window carried on the decoder is provenance. Supply the
+prediction recording's observation windows explicitly to `predict`.
+
+The count-array route has already applied its time selection upstream. For
+multiple recording runs, bin each run independently and retain the corresponding
+centers; a single start/stop grid would span the pauses.
 
 ## Workflow 3: Region-Based Analysis
 
@@ -437,6 +554,307 @@ Analyzing maze experiments with branching structures.
 
 See the complete example in [examples/05_track_linearization.ipynb](../examples/05_track_linearization.ipynb).
 
+### Direction-specific fields on a graph track
+
+Linearization supplies coordinates along track geometry. On a single-edge
+track, a return traversal reuses the same coordinates and bins; it does not
+automatically become a separate directional map. For a branched graph,
+assignment also depends on the graph and projection settings.
+
+Use explicit trial labels to condition firing on direction. This complete
+60-second example plants a field at 60 cm outbound and 40 cm inbound, then
+checks each recovered peak against its own ground truth within one 5 cm bin.
+Replace the synthetic positions and spikes with your recorded arrays for an
+experiment. The two panels share the same environment.
+
+<!-- docs-test: run -->
+```python
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+from shapely.geometry import Polygon
+
+from neurospatial import Environment
+from neurospatial.behavior import goal_pair_direction_labels, segment_trials
+from neurospatial.encoding import compute_directional_place_fields
+from neurospatial.simulation import generate_poisson_spikes
+
+# A 100 cm track: graph coordinates describe geometry, not running direction.
+graph = nx.Graph()
+graph.add_node(0, pos=(0.0, 0.0))
+graph.add_node(1, pos=(100.0, 0.0))
+graph.add_edge(0, 1, distance=100.0)
+env = Environment.from_graph(graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0)
+env.units = "cm"
+repeated = np.array([[25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [50.0, 0.0], [25.0, 0.0]])
+np.testing.assert_allclose(env.to_linear(repeated), repeated[:, 0])
+repeated_bins = env.bin_at(repeated)
+assert repeated_bins[0] == repeated_bins[-1] and repeated_bins[1] == repeated_bins[-2]
+
+# Six out-and-back cycles in 60 seconds, with different planted field centers.
+times = np.arange(0.0, 60.0, 0.05)
+phase = (times % 10.0) / 10.0
+x = 10.0 + 80.0 * (1.0 - np.abs(2.0 * phase - 1.0))
+positions = np.column_stack([x, np.zeros_like(x)])
+planted_center = np.where(phase < 0.5, 60.0, 40.0)
+intensity = 0.5 + 25.0 * np.exp(-0.5 * ((x - planted_center) / 10.0) ** 2)
+spikes = generate_poisson_spikes(intensity, times, seed=7)
+
+# Explicit trials supply the direction labels; both maps use the same graph.
+env.regions.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
+env.regions.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
+position_bins = env.bin_sequence(times, positions, dedup=False)
+outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
+inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
+labels = goal_pair_direction_labels(times, outbound + inbound)
+fields = compute_directional_place_fields(env, spikes, times, positions, labels)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
+for ax, label, truth in zip(axes, ["home→goal", "goal→home"], [60.0, 40.0], strict=True):
+    field = fields.firing_rates[label]
+    recovered = env.bin_centers[np.nanargmax(field), 0]
+    assert abs(recovered - truth) <= 5.0  # Recover each planted center within one bin.
+    env.plot_field(field, ax=ax, colorbar_label="Firing rate (Hz)")
+    ax.set_title(f"{label}: peak {recovered:.1f} cm")
+    print(f"{label}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
+plt.show()
+```
+
+## Workflow 6: Shared Units for Decoding and Population Statistics
+
+Simulate a labeled population, estimate spatial maps from four raw arrays,
+and use one unit selection for both downstream branches. The earlier period
+is the baseline control, the middle period is the encoding/statistical
+reference (template), and the last period is the match. These are synthetic
+navigation periods, not a claim of sleep replay. All models here are place
+cells; covariance patterns can reflect their shared spatial drive.
+
+| Branch | Inputs | Output |
+| --- | --- | --- |
+| Position decoding | Template rate maps and match spike counts, in the same unit order | Posterior over spatial bins |
+| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, standardized activations and EV/controlled REV effect sizes |
+
+A posterior is not an input to assembly or EV analysis. Remove constant units
+once across all periods, then apply the same mask to spike trains, map rows,
+count columns and unit IDs. The silent unit below demonstrates the common
+nonzero-variance selection. Do not independently filter each period: equal
+column counts alone would not ensure that they represent the same neurons.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment, compute_spatial_rates, decode_position
+from neurospatial.decoding import (
+    assembly_activation,
+    bin_spikes_in_time,
+    detect_assemblies,
+    explained_variance_reactivation,
+    pairwise_correlations,
+    reactivation_strength,
+)
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
+
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+env.units = "cm"
+positions, times = simulate_trajectory_ou(
+    env, duration=180.0, dt=1 / 30, speed_units="cm", seed=7
+)
+centers = np.array(
+    [
+        [30, 35],
+        [32, 37],
+        [34, 33],
+        [70, 70],
+        [72, 68],
+        [68, 72],
+        [50, 50],
+        [53, 50],
+        [50, 53],
+    ]
+)
+trains = [
+    generate_poisson_spikes(
+        PlaceCellModel(
+            env, center=center, width=12, max_rate=15, baseline_rate=0.5
+        ).firing_rate(positions, times),
+        times,
+        seed=10 + i,
+    )
+    for i, center in enumerate(centers)
+]
+trains.append(np.empty(0, dtype=np.float64))
+unit_ids = np.r_[np.arange(101, 110), 999]
+dt = 0.1
+windows = {"control": (0.0, 60.0), "template": (60.0, 120.0), "match": (120.0, 180.0)}
+counts, centers_by_period = {}, {}
+for period, (start, stop) in windows.items():
+    counts[period], centers_by_period[period] = bin_spikes_in_time(
+        trains, dt, t_start=start, t_stop=stop
+    )
+# Select once across every period, preserving original unit order.
+keep = np.logical_and.reduce([np.var(matrix, axis=0) > 0 for matrix in counts.values()])
+selected_ids = unit_ids[keep]
+selected_trains = [
+    train for train, retained in zip(trains, keep, strict=True) if retained
+]
+counts = {period: matrix[:, keep] for period, matrix in counts.items()}
+assert len(selected_ids) >= 3 and 999 not in selected_ids
+# Four-array encoding on the template; metadata carries the selected IDs.
+rates = compute_spatial_rates(
+    env,
+    selected_trains,
+    times,
+    positions,
+    unit_ids=selected_ids,
+    epochs=[windows["template"]],
+    spike_window=[(0.0, 180.0)],
+    bandwidth=5.0,
+    fill_value=0.0,
+)
+np.testing.assert_array_equal(rates.unit_ids, selected_ids)
+# Branch 1: maps + count columns in the same selected order.
+decoded = decode_position(
+    env, counts["match"], rates, dt, times=centers_by_period["match"]
+)
+assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
+np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
+# Branch 2: counts, not the decoded posterior.
+assemblies = detect_assemblies(counts["template"], algorithm="pca", rng=0)
+print("Retained unit IDs:", selected_ids.tolist())
+print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
+for pattern in assemblies.patterns:
+    print("Thresholded core member IDs:", selected_ids[pattern.member_indices].tolist())
+    activation = assembly_activation(counts["match"], pattern)
+    assert len(activation) == len(centers_by_period["match"])
+    strength = reactivation_strength(counts["template"], counts["match"], pattern)
+    print("Standardized activation mean/SD:", activation.mean(), activation.std())
+    print("Activation magnitude ratio (effect size):", strength)
+correlations = {
+    period: pairwise_correlations(matrix) for period, matrix in counts.items()
+}
+reactivation = explained_variance_reactivation(
+    correlations["template"],
+    correlations["match"],
+    control_correlations=correlations["control"],
+)
+print(
+    "EV, controlled REV (effect sizes):",
+    reactivation.explained_variance,
+    reactivation.reversed_ev,
+)
+assert np.isfinite(reactivation.explained_variance) and np.isfinite(
+    reactivation.reversed_ev
+)
+```
+
+`n_significant` counts dimensions above a random-matrix reference, not neurons
+with calibrated p-values. If no dimension passes, the algorithm may still
+return an exploratory pattern. Pattern `member_indices` are positions in the
+selected unit order; mapping them through `selected_ids` recovers the original
+labels. A pattern can have no core members at the default absolute-weight
+z-score cutoff, even when its dimension passes the reference.
+
+`assembly_activation` standardizes the projection within each period,
+removing absolute projection scale; its output does not give a tail
+probability. In contrast, `reactivation_strength` normalizes both count
+matrices with the template's neuron means/standard deviations and projects
+onto the same pattern without separate projection standardization. Its ratio
+preserves relative magnitude on that shared template scale, but remains an
+effect size rather than a calibrated tail probability.
+
+Controlled EV is `r(template, match | control)^2`, while controlled REV
+is `r(control, match | template)^2`. EV > REV is an effect-size comparison,
+not calibrated reactivation significance. Report control choice, preprocessing,
+unit selection and a separately justified null when a significance claim is
+needed.
+
+## Workflow 7: One Event Cohort Across a Gapped Recording
+
+Choose events whose entire peri-event window fits both the spike recording and
+the analysis epochs. Keep the original identifiers and selection mask in a
+table, then reuse the selected timestamps for every view of those events. A
+PSTH can otherwise retain fewer events than a raster or positioned-event table.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from neurospatial.events import (
+    add_positions, align_spikes_to_events, peri_event_histogram,
+    event_count_in_window, event_indicator,
+)
+
+times = np.r_[np.arange(100) / 10, 20 + np.arange(100) / 10]
+positions = np.c_[times, np.zeros(len(times))]
+spike_times = np.array([4.0, 5.0, 6.0, 24.0, 25.0, 26.0])
+events = pd.DataFrame({
+    "event_id": ["reward-a", "reward-b", "reward-c", "reward-d"],
+    "timestamp": [5.0, 9.5, 25.0, 29.5],
+})
+spike_window = np.array([[0.0, 10.0], [20.0, 30.0]])
+epochs = np.array([[1.0, 9.0], [21.0, 29.0]])
+window = (-1.0, 1.0)
+starts = events["timestamp"].to_numpy() + window[0]
+stops = events["timestamp"].to_numpy() + window[1]
+
+fits_recording = (
+    (starts[:, None] >= spike_window[:, 0])
+    & (stops[:, None] <= spike_window[:, 1])
+).any(axis=1)
+fits_analysis = (
+    (starts[:, None] >= epochs[:, 0]) & (stops[:, None] <= epochs[:, 1])
+).any(axis=1)
+events["retained"] = fits_recording & fits_analysis
+selected = events.loc[events["retained"]].copy()
+event_times = selected["timestamp"].to_numpy()
+
+psth = peri_event_histogram(
+    spike_times, event_times, window=window, bin_size=0.2,
+    epochs=epochs, spike_window=spike_window,
+)
+aligned = align_spikes_to_events(spike_times, event_times, window=window)
+fig, ax = plt.subplots()
+ax.eventplot(aligned, lineoffsets=np.arange(len(event_times)))
+ax.set_yticks(np.arange(len(event_times)), selected["event_id"])
+ax.set_xlabel("Time from event (s)")
+
+regressors = pd.DataFrame({
+    "timestamp": times,
+    "event_count": event_count_in_window(times, event_times, window=window),
+    "event_present": event_indicator(times, event_times, window=window),
+})
+positioned = add_positions(selected, times=times, positions=positions, epochs=epochs)
+table = events.join(positioned[["x", "y"]])
+assert psth.n_events == len(aligned) == len(positioned) == 2
+assert selected["event_id"].tolist() == ["reward-a", "reward-c"]
+assert regressors["event_count"].dtype == np.int64
+assert regressors["event_present"].dtype == np.bool_
+print(table.to_string(index=False))
+
+# The cohort is shared; the helpers keep their documented edge rules.
+assert psth.histogram.sum() == 2.0  # Average of two spikes per event.
+assert [len(row) for row in aligned] == [3, 3]  # Includes the +1 s spike.
+assert event_count_in_window(
+    np.array([4.0, 6.0]), np.array([5.0]), window=window,
+).tolist() == [1, 1]  # Both adjacent windows include the boundary event.
+plt.close(fig)
+```
+
+PSTHs count spikes on `[event + start, event + stop)` and exclude the stop edge.
+Raster alignment includes that stop edge. Event-count and indicator windows
+include both edges, so neighboring sample windows can count the same boundary
+event twice. Sharing the event cohort preserves event identity and inclusion;
+it does not make these spike-edge rules identical. Regressors describe the
+selected events at each sample; restrict their sample rows to your modeling
+epochs when fitting a model.
+
 ## Common Patterns
 
 ### Pattern: Handling Edge Cases
@@ -458,6 +876,7 @@ firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[va
 
 ### Pattern: Batch Processing
 
+<!-- docs-test: run setup=workflows_batch_processing_compute_spatial_rates -->
 ```python
 from neurospatial.encoding import compute_spatial_rates
 

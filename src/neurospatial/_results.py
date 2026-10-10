@@ -35,15 +35,43 @@ without forcing a single tabular shape onto every result.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+
+
+def as_label_array(labels: Any) -> NDArray[Any]:
+    """Convert unit labels to an array without changing any label's type.
+
+    ``np.asarray([1, "u"])`` would turn the integer ``1`` into the string
+    ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
+    label a unit is reported, looked up and seeded under. Labels of more than
+    one kind are kept in an object array; homogeneous labels keep their
+    natural dtype.
+    """
+    if isinstance(labels, np.ndarray):
+        return labels
+    values = list(labels)
+    array = np.asarray(values)
+    if array.ndim == 1 and len({np.asarray(v).dtype.kind for v in values}) > 1:
+        array = np.empty(len(values), dtype=object)
+        array[:] = values
+    return array
+
+
+def label_at(unit_ids: Any, index: int) -> Any:
+    """Return one label as a plain Python value, whatever the array's dtype."""
+    value = np.asarray(unit_ids)[index]
+    return value.item() if isinstance(value, np.generic) else value
 
 
 def resolve_unit_ids(
@@ -51,22 +79,27 @@ def resolve_unit_ids(
     n_units: int,
     *,
     context: str = "",
+    input_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> NDArray[Any]:
     """Resolve and validate per-unit identity labels.
 
-    Returns an ``ndarray`` of unit identity labels, defaulting to
-    ``np.arange(n_units)`` when ``unit_ids`` is ``None``. When labels are
-    provided, validates that exactly one label is supplied per unit.
+    Returns an ``ndarray`` of unit identity labels: ``unit_ids`` when given,
+    else the labels the spike input carries (``input_ids``), else
+    ``np.arange(n_units)``. Validates that there is exactly one label per unit
+    and that no label repeats.
 
     Parameters
     ----------
     unit_ids : ndarray or sequence or None
-        Per-unit identity labels. May be integers or strings. When ``None``,
-        defaults to ``np.arange(n_units)``.
+        Caller-supplied per-unit identity labels. May be integers or strings.
     n_units : int
         Number of units the labels must describe.
     context : str, optional
-        Caller name included in the error message on a length mismatch.
+        Caller name included in error messages.
+    input_ids : ndarray or sequence or None, optional
+        Labels carried by the spike input itself (for example a pynapple
+        ``TsGroup`` index). A labelled input names its own units, so when both
+        ``unit_ids`` and ``input_ids`` are given they must be identical.
 
     Returns
     -------
@@ -76,29 +109,60 @@ def resolve_unit_ids(
     Raises
     ------
     ValueError
-        If ``unit_ids`` is provided and is not 1-D, or if its length does not
-        equal ``n_units``.
+        If ``unit_ids`` and ``input_ids`` are both given and differ (in length,
+        order or type), if the resolved labels are not 1-D, if their length
+        does not equal ``n_units``, or if any label repeats.
     """
+    if unit_ids is not None and input_ids is not None:
+        given, carried = as_label_array(unit_ids), as_label_array(input_ids)
+        if given.shape != carried.shape or not np.array_equal(given, carried):
+            raise ValueError(
+                f"{context or 'This call'} got unit_ids={given.tolist()}, but the "
+                f"spike input is already labelled {carried.tolist()}.\n"
+                "Why: a labelled input names its own units; a different unit_ids "
+                "would attach another unit's label to each spike train.\n"
+                "Fix: drop unit_ids= to keep the input's labels, or relabel the "
+                "input itself before the call (pynapple: build the TsGroup with "
+                "the labels you want)."
+            )
+    from_input = unit_ids is None and input_ids is not None
+    unit_ids = unit_ids if unit_ids is not None else input_ids
     if unit_ids is None:
         return np.arange(n_units)
 
-    resolved = np.asarray(unit_ids)
+    resolved = as_label_array(unit_ids)
+    where = f" in {context}" if context else ""
     if resolved.ndim != 1:
-        where = f" in {context}" if context else ""
         raise ValueError(
             f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
             "  WHY: unit_ids labels one identity per unit (row).\n"
-            "  HOW: pass a 1-D sequence with one entry per unit, or omit it "
+            "  Fix: pass a 1-D sequence with one entry per unit, or omit it "
             "to default to np.arange(n_units)."
         )
     if resolved.shape[0] != n_units:
-        where = f" in {context}" if context else ""
         raise ValueError(
-            f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
-            f"label(s) but there are {n_units} unit(s).\n"
-            "  WHY: each unit must have exactly one identity label.\n"
-            "  HOW: pass unit_ids with one entry per unit, or omit it to "
-            "default to np.arange(n_units)."
+            _format_error(
+                f"unit_ids length mismatch{where}: got {resolved.shape[0]} label(s) but there are {n_units} unit(s).",
+                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or omit unit_ids to default to np.arange(n_units)",
+                why="Why: unit_ids must identify every row without shifting unit labels.",
+            )
+        )
+    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
+    # object array.
+    duplicated = [
+        label for label, count in Counter(resolved.tolist()).items() if count > 1
+    ]
+    if duplicated:
+        fix = (
+            "Fix: pass each unit once in the spike input (pynapple: check group.index)."
+            if from_input
+            else "Fix: pass one distinct label per unit, or omit unit_ids= to "
+            "number the units 0..n-1."
+        )
+        raise ValueError(
+            f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.\n"
+            "Why: results index units by label, so a repeated label would name two "
+            f"spike trains.\n{fix}"
         )
     return resolved
 
@@ -140,7 +204,7 @@ def validate_unit_table(
             f"there are {n_units} unit(s).\n"
             "  WHY: unit_table must carry exactly one row per unit, aligned "
             "to unit_ids.\n"
-            "  HOW: pass a unit_table with one row per unit, or omit it."
+            "  Fix: pass a unit_table with one row per unit, or omit it."
         )
 
 
@@ -288,7 +352,7 @@ def _bin_center_coords(
             f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
             "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
             "coordinate.\n"
-            "  HOW: ensure the environment is fitted and exposes 2-D "
+            "  Fix: ensure the environment is fitted and exposes 2-D "
             "bin_centers."
         )
     if bin_centers.shape[0] != n_bins:
@@ -299,7 +363,7 @@ def _bin_center_coords(
             "  WHY: the 'bin' coordinate must have one center per bin; a "
             "mismatch would silently produce a structurally-incomplete or "
             "misaligned Dataset.\n"
-            "  HOW: pass the same environment used to compute the result, or "
+            "  Fix: pass the same environment used to compute the result, or "
             "recompute the result against this environment."
         )
 
@@ -401,7 +465,7 @@ def build_population_dataset(
             f"label(s) are duplicated: {dups}.\n"
             "  WHY: label-based selection .sel(unit_id=...) requires a unique "
             "index coordinate.\n"
-            "  HOW: deduplicate unit_ids (e.g. when concatenating populations) "
+            "  Fix: deduplicate unit_ids (e.g. when concatenating populations) "
             "before calling to_xarray()."
         )
 
@@ -420,7 +484,7 @@ def build_population_dataset(
                 f"{n_bins} bin(s) (firing_rates.shape[1]).\n"
                 "  WHY: the 'bin' coordinate must have one center per bin; a "
                 "mismatch would silently produce a misaligned Dataset.\n"
-                "  HOW: pass a 1-D bin_centers array of length n_bins."
+                "  Fix: pass a 1-D bin_centers array of length n_bins."
             )
         coords["bin_center_angle"] = ("bin", bc)
 
@@ -439,7 +503,7 @@ def build_population_dataset(
                 "  WHY: the 'occupancy' data var is indexed by bin; a length "
                 "mismatch would silently produce a structurally-incomplete "
                 "Dataset.\n"
-                "  HOW: pass a 1-D occupancy array of length n_bins, or omit "
+                "  Fix: pass a 1-D occupancy array of length n_bins, or omit "
                 "it entirely if unavailable."
             )
         data_vars["occupancy"] = (("bin",), occ)

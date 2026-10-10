@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.helpers.regular_grid import (
     _points_to_regular_grid_bin_ind,
 )
@@ -290,7 +291,14 @@ class _GridMixin:
 
         """
         if self.grid_edges is None or self.grid_shape is None:
-            raise RuntimeError("Grid layout not built; edges or shape missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "grid_shape")
+                    if getattr(self, name) is None
+                ),
+            )
 
         return _points_to_regular_grid_bin_ind(
             points=points,
@@ -355,7 +363,20 @@ class _GridMixin:
             or self.grid_shape is None
             or self.connectivity is None
         ):
-            raise RuntimeError("Layout not built. Call `build` first.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "bin_centers",
+                        "grid_edges",
+                        "active_mask",
+                        "grid_shape",
+                        "connectivity",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
 
         is_2d_grid = len(self.grid_shape) == 2 and len(self.grid_edges) == 2
 
@@ -433,7 +454,14 @@ class _GridMixin:
 
         """
         if self.grid_edges is None or self.bin_centers is None:  # pragma: no cover
-            raise RuntimeError("Layout not built; grid_edges or bin_centers missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "bin_centers")
+                    if getattr(self, name) is None
+                ),
+            )
         if not self.grid_edges or not all(
             len(e) > 1 for e in self.grid_edges
         ):  # pragma: no cover

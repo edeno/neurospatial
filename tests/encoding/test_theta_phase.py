@@ -40,6 +40,30 @@ class TestThetaPhase:
         assert hasattr(enc, "theta_phase")
         assert "theta_phase" in enc.__all__
 
+    @pytest.mark.parametrize("sampling_rate", [2000.0, 5000.0, 10000.0, 30000.0])
+    def test_theta_phase_accurate_at_high_sampling_rates(
+        self, sampling_rate: float
+    ) -> None:
+        """The theta band-pass stays stable at typical LFP sampling rates.
+
+        A narrow 6-10 Hz band at kHz sampling rates puts the filter poles very
+        close to the unit circle; the phase must still match the analytic
+        phase of the input sinusoid.
+        """
+        from neurospatial.encoding import theta_phase
+
+        frequency = 8.0
+        lfp, _ = _theta_sinusoid(frequency, sampling_rate, duration=5.0)
+        phase = theta_phase(lfp, sampling_rate, band=(6, 10))
+
+        assert np.all(np.isfinite(phase))
+        t = np.arange(lfp.size) / sampling_rate
+        # The analytic signal of sin(w t) is -i exp(i w t), phase w t - pi/2.
+        expected = 2 * np.pi * frequency * t - np.pi / 2
+        error = np.abs(np.angle(np.exp(1j * (phase - expected))))
+        interior = (t > 1.0) & (t < 4.0)
+        assert np.median(error[interior]) < 0.01
+
     def test_theta_phase_monotonic(self) -> None:
         """Phase advances ~linearly mod 2*pi on a pure sinusoid.
 
@@ -75,14 +99,14 @@ class TestThetaPhase:
 
     def test_feeds_phase_precession_without_reshaping(self) -> None:
         """theta_phase output is drop-in for phase_precession (no reshaping)."""
-        from neurospatial.encoding import phase_precession, theta_phase
+        from neurospatial.encoding import compute_phase_precession, theta_phase
 
         sampling_rate = 1000.0
         lfp, _ = _theta_sinusoid(8.0, sampling_rate, duration=2.0)
         phase = theta_phase(lfp, sampling_rate)
 
         positions = np.linspace(0.0, 50.0, phase.size)
-        result = phase_precession(positions, phase, rng=0)
+        result = compute_phase_precession(positions, phase, rng=0)
 
         # Consumed without error and returns the standard result type.
         assert isinstance(result.slope, float)

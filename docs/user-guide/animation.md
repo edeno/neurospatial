@@ -4,6 +4,7 @@ Animate spatial fields over time using four different backends optimized for dif
 
 ## Quick Start
 
+<!-- docs-test: run setup=docs_animation_quick_start -->
 ```python
 import numpy as np
 
@@ -28,6 +29,25 @@ env.animate_fields(fields, frame_times=frame_times, save_path="animation.html")
 # Jupyter widget (best for notebooks)
 env.animate_fields(fields, frame_times=frame_times, backend="widget")
 ```
+
+## Overwriting existing files
+
+Video and HTML exports default to `overwrite=False`. Reusing an existing
+`save_path` raises `FileExistsError` before rendering, including a video dry
+run. Pass `overwrite=True` to replace an output deliberately:
+
+```python
+env.animate_fields(
+    fields, frame_times=frame_times, backend="html",
+    save_path="animation.html", overwrite=True,
+)
+```
+
+HTML's default `animation.html` is protected too. With `embed=False`, a
+nonempty `frames_dir` is also protected; an empty frames directory is usable.
+A refused call creates no new frames directory. The option applies to video
+and HTML exports; interactive napari/widget viewing does not write these files.
+Environment saves use the same rule for their paired `.json` and `.npz` files.
 
 ## Overview
 
@@ -282,6 +302,35 @@ The HTML player includes:
 
 Works in all modern browsers (Chrome, Firefox, Safari, Edge). No server required—just open the HTML file.
 
+### Numeric scales and timestamp labels
+
+HTML currently does not display a numeric colorbar through `show_colorbar` or
+`colorbar_label`. Share a labeled static plot with the same colormap and fixed
+limits to communicate the values, and supply real timestamp frame labels.
+This complete example uses synthetic rate values in Hz:
+
+<!-- docs-test: run -->
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+from neurospatial import Environment
+
+x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0, units="cm")
+fields = np.random.default_rng(0).uniform(0.0, 10.0, (5, env.n_bins))
+frame_times = 10.05 + np.arange(5) * 0.1
+
+ax = env.plot_field(fields[0], cmap="viridis", vmin=0.0, vmax=10.0,
+                    colorbar_label="Firing rate (Hz)")
+ax.set_title(f"Rate map at {frame_times[0]:.2f} s")
+plt.show()
+env.animate_fields(
+    fields, frame_times=frame_times, backend="html", save_path="scaled_rates.html",
+    frame_labels=[f"{time:.2f} s" for time in frame_times],
+    cmap="viridis", vmin=0.0, vmax=10.0, dpi=50, n_workers=1,
+)
+```
+
 ## Widget Backend (Jupyter Notebooks)
 
 Interactive widget with play/pause controls for Jupyter environments.
@@ -328,6 +377,7 @@ All backends accept these common parameters:
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
 | `vmin` | float | None | Minimum value for colormap (auto if None) |
 | `vmax` | float | None | Maximum value for colormap (auto if None) |
+| `overwrite` | bool | False | Explicitly allow replacing video/HTML targets |
 | `frame_labels` | list[str] | None | Custom labels for each frame |
 | `dpi` | int | 100 | Resolution (dots per inch) |
 

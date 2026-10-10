@@ -8,9 +8,9 @@ from numpy.testing import assert_allclose
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
+    _validate_events_dataframe,
+    _validate_spatial_columns,
     plot_peri_event_histogram,
-    validate_events_dataframe,
-    validate_spatial_columns,
 )
 
 # =============================================================================
@@ -127,94 +127,94 @@ class TestPopulationPeriEventResult:
 
 
 # =============================================================================
-# Test validate_events_dataframe
+# Test _validate_events_dataframe
 # =============================================================================
 
 
 class TestValidateEventsDataframe:
-    """Tests for validate_events_dataframe function."""
+    """Tests for _validate_events_dataframe function."""
 
     def test_non_dataframe_raises_typeerror(self):
         """Non-DataFrame input should raise TypeError."""
         with pytest.raises(TypeError, match=r"Expected pd\.DataFrame"):
-            validate_events_dataframe([1, 2, 3])  # type: ignore[arg-type]
+            _validate_events_dataframe([1, 2, 3])  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match=r"Expected pd\.DataFrame"):
-            validate_events_dataframe(np.array([1, 2, 3]))  # type: ignore[arg-type]
+            _validate_events_dataframe(np.array([1, 2, 3]))  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match=r"Expected pd\.DataFrame"):
-            validate_events_dataframe({"timestamp": [1, 2]})  # type: ignore[arg-type]
+            _validate_events_dataframe({"timestamp": [1, 2]})  # type: ignore[arg-type]
 
     def test_missing_timestamp_raises_valueerror(self):
         """Missing timestamp column should raise ValueError."""
         df = pd.DataFrame({"time": [1.0, 2.0]})  # Wrong column name
         with pytest.raises(ValueError, match=r"Missing required columns.*timestamp"):
-            validate_events_dataframe(df)
+            _validate_events_dataframe(df)
 
     def test_missing_custom_timestamp_raises(self):
         """Missing custom timestamp column should raise."""
         df = pd.DataFrame({"timestamp": [1.0, 2.0]})
         with pytest.raises(ValueError, match=r"Missing required columns.*event_time"):
-            validate_events_dataframe(df, timestamp_column="event_time")
+            _validate_events_dataframe(df, timestamp_column="event_time")
 
     def test_required_columns_check(self, valid_events_df):
         """Should check for additional required columns."""
         # This should pass - has timestamp and label
-        validate_events_dataframe(valid_events_df, required_columns=["label"])
+        _validate_events_dataframe(valid_events_df, required_columns=["label"])
 
         # This should fail - missing 'x' column
         with pytest.raises(ValueError, match=r"Missing required columns.*'x'"):
-            validate_events_dataframe(valid_events_df, required_columns=["x"])
+            _validate_events_dataframe(valid_events_df, required_columns=["x"])
 
     def test_non_numeric_timestamp_raises(self):
         """Non-numeric timestamp column should raise ValueError."""
         df = pd.DataFrame({"timestamp": ["a", "b", "c"]})
         with pytest.raises(ValueError, match="non-numeric values"):
-            validate_events_dataframe(df)
+            _validate_events_dataframe(df)
 
     def test_context_in_error_message(self):
         """Context should appear in error message."""
         df = pd.DataFrame({"time": [1.0, 2.0]})
         with pytest.raises(ValueError, match="for peri_event_histogram"):
-            validate_events_dataframe(df, context="peri_event_histogram")
+            _validate_events_dataframe(df, context="peri_event_histogram")
 
     def test_error_message_shows_available_columns(self):
         """Error message should list available columns."""
         df = pd.DataFrame({"time": [1.0], "value": [10]})
         with pytest.raises(ValueError, match=r"Available columns:.*time.*value"):
-            validate_events_dataframe(df)
+            _validate_events_dataframe(df)
 
 
 class TestValidateSpatialColumns:
-    """Tests for validate_spatial_columns function."""
+    """Tests for _validate_spatial_columns function."""
 
     def test_returns_true_when_present(self, valid_spatial_events_df):
         """Should return True when x, y columns present."""
-        assert validate_spatial_columns(valid_spatial_events_df) is True
+        assert _validate_spatial_columns(valid_spatial_events_df) is True
 
     def test_returns_false_when_missing(self, valid_events_df):
         """Should return False when x, y columns missing."""
-        assert validate_spatial_columns(valid_events_df) is False
+        assert _validate_spatial_columns(valid_events_df) is False
 
     def test_returns_false_with_only_x(self):
         """Should return False when only x column present."""
         df = pd.DataFrame({"timestamp": [1.0], "x": [10.0]})
-        assert validate_spatial_columns(df) is False
+        assert _validate_spatial_columns(df) is False
 
     def test_returns_false_with_only_y(self):
         """Should return False when only y column present."""
         df = pd.DataFrame({"timestamp": [1.0], "y": [10.0]})
-        assert validate_spatial_columns(df) is False
+        assert _validate_spatial_columns(df) is False
 
     def test_require_positions_raises_when_missing(self, valid_events_df):
         """Should raise ValueError when require_positions=True and missing."""
         with pytest.raises(ValueError, match="missing spatial columns"):
-            validate_spatial_columns(valid_events_df, require_positions=True)
+            _validate_spatial_columns(valid_events_df, require_positions=True)
 
     def test_context_in_error_message(self, valid_events_df):
         """Context should appear in error message."""
         with pytest.raises(ValueError, match="spatial_event_rate"):
-            validate_spatial_columns(
+            _validate_spatial_columns(
                 valid_events_df,
                 require_positions=True,
                 context="spatial_event_rate",
@@ -223,7 +223,7 @@ class TestValidateSpatialColumns:
     def test_error_message_suggests_add_positions(self, valid_events_df):
         """Error message should suggest using add_positions."""
         with pytest.raises(ValueError, match="add_positions"):
-            validate_spatial_columns(valid_events_df, require_positions=True)
+            _validate_spatial_columns(valid_events_df, require_positions=True)
 
 
 # =============================================================================
@@ -280,8 +280,8 @@ class TestEdgeCases:
                 "y": pd.Series([], dtype=float),
             }
         )
-        validate_events_dataframe(df)
-        assert validate_spatial_columns(df) is True
+        _validate_events_dataframe(df)
+        assert _validate_spatial_columns(df) is True
 
     def test_peri_event_result_with_single_bin(self):
         """PeriEventResult with single bin should work."""
@@ -301,4 +301,4 @@ class TestEdgeCases:
         df = pd.DataFrame({"timestamp": [1.0, np.nan, 3.0]})
         # NaN is still numeric type, so validation passes
         # (specific functions may handle NaN differently)
-        validate_events_dataframe(df)
+        _validate_events_dataframe(df)

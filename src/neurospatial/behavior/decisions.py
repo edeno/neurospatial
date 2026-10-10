@@ -49,8 +49,8 @@ Decision analysis:
 >>> from neurospatial.behavior import compute_decision_analysis
 >>> result = compute_decision_analysis(
 ...     env,
-...     positions,
 ...     times,
+...     positions,
 ...     decision_region="center",
 ...     goal_regions=["left", "right"],
 ...     pre_window=1.0,
@@ -74,6 +74,7 @@ from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
 from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.environment.trajectory import observed_runs
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -350,23 +351,34 @@ def decision_region_entry_time(
 
 
 def extract_pre_decision_window(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Extract trajectory segment before decision region entry.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Full trajectory timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Full trajectory positions.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window to extract (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -377,45 +389,64 @@ def extract_pre_decision_window(
 
     Notes
     -----
-    If the requested window extends before the trajectory start,
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    The window never extends before the start of the observed run
+    containing entry_time. If entry_time lies in no run, empty arrays
+    are returned.
+
+    If the requested window extends before the observed run start,
     the returned window will be shorter than requested.
 
     Examples
     --------
     >>> window_pos, window_times = extract_pre_decision_window(
-    ...     positions, times, entry_time=5.0, window_duration=2.0
+    ...     times, positions, entry_time=5.0, window_duration=2.0
     ... )  # doctest: +SKIP
     >>> # Returns data from t=3.0 to t<5.0
     """
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    from neurospatial._validation import validate_times_positions
 
-    window_start = entry_time - window_duration
-    window_start = max(window_start, times[0])  # Clamp to trajectory start
-
-    # Select samples in window (before entry)
-    mask = (times >= window_start) & (times < entry_time)
-
-    return positions[mask], times[mask]
+    times, positions = validate_times_positions(
+        times, positions, call="extract_pre_decision_window"
+    )
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        if times[run.start] <= entry_time <= times[run.stop - 1]:
+            run_times = times[run]
+            window_start = max(entry_time - window_duration, times[run.start])
+            keep = (run_times >= window_start) & (run_times < entry_time)
+            return positions[run][keep], run_times[keep]
+    return positions[:0], times[:0]
 
 
 def pre_decision_heading_stats(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float, float]:
     """Compute circular statistics on heading in a trajectory window.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -430,6 +461,9 @@ def pre_decision_heading_stats(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
     Circular statistics are computed directly:
 
     - mean_resultant_length = sqrt(mean(cos(theta))^2 + mean(sin(theta))^2)
@@ -442,31 +476,29 @@ def pre_decision_heading_stats(
     Examples
     --------
     >>> mean_dir, circ_var, mrl = pre_decision_heading_stats(
-    ...     positions, times, min_speed=5.0
+    ...     times, positions, min_speed=5.0
     ... )  # doctest: +SKIP
     >>> if circ_var > 0.5:
     ...     print("High heading variability")  # doctest: +SKIP
     """
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial._validation import validate_times_positions
 
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    times, positions = validate_times_positions(
+        times, positions, call="pre_decision_heading_stats"
+    )
+    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return 0.0, 1.0, 0.0
 
-    # Compute dt from times (heading_from_velocity expects scalar dt)
-    # Use median dt to handle irregular sampling
-    dt = float(np.median(np.diff(times)))
-
-    # Get headings. allow_all_nan: a fully-stationary window is handled below as
-    # "undefined direction, max variance", so an all-NaN heading is expected here.
-    headings = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
+    headings, speed = _velocity_heading_and_speed(
+        times,
+        positions,
+        interval_mask=interval_mask,
     )
-
-    # Filter out NaN (stationary periods)
-    valid_headings = headings[~np.isnan(headings)]
+    valid_headings = headings[speed >= min_speed]
 
     if len(valid_headings) == 0:
         # No valid headings: undefined direction, max variance
@@ -486,17 +518,28 @@ def pre_decision_heading_stats(
 
 
 def pre_decision_speed_stats(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[float, float]:
     """Compute speed statistics for a trajectory window.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -505,68 +548,106 @@ def pre_decision_speed_stats(
     min_speed : float
         Minimum instantaneous speed (units/s).
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Only observed interval speeds enter the reductions. Both results are
+    NaN when no interval is valid, including empty or singleton inputs.
+
     Examples
     --------
     >>> mean_speed, min_speed = pre_decision_speed_stats(
-    ...     positions, times
+    ...     times, positions
     ... )  # doctest: +SKIP
     >>> if min_speed < 1.0:
     ...     print("Animal paused during pre-decision window")  # doctest: +SKIP
     """
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    from neurospatial._validation import validate_times_positions
 
-    if len(positions) < 2:
-        return 0.0, 0.0
+    times, positions = validate_times_positions(
+        times, positions, call="pre_decision_speed_stats"
+    )
 
-    # Compute velocities
-    dt = np.diff(times)
-    displacement = np.diff(positions, axis=0)
-    velocity = displacement / dt[:, np.newaxis]
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    if not mask.any():
+        return np.nan, np.nan
+    velocity = interval_velocity(times, positions, mask)
     speeds = np.linalg.norm(velocity, axis=1)
-
-    return float(np.mean(speeds)), float(np.min(speeds))
+    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
 
 
 def compute_pre_decision_metrics(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> PreDecisionMetrics:
     """Compute all pre-decision window metrics.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Full trajectory timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Full trajectory positions.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window to analyze (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     PreDecisionMetrics
         Dataclass containing all pre-decision metrics.
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Only the pre-decision window in the run containing entry_time is
+    analyzed; its duration excludes any preceding pause.
+
     Examples
     --------
     >>> metrics = compute_pre_decision_metrics(
-    ...     positions, times, entry_time=5.0, window_duration=2.0
+    ...     times, positions, entry_time=5.0, window_duration=2.0
     ... )  # doctest: +SKIP
     >>> if metrics.suggests_deliberation():
     ...     print("Possible VTE behavior")  # doctest: +SKIP
     """
     # Extract window
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_pre_decision_metrics"
+    )
     window_pos, window_times = extract_pre_decision_window(
-        positions, times, entry_time, window_duration
+        times,
+        positions,
+        entry_time,
+        window_duration,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Handle edge case of empty or too-short window
@@ -583,11 +664,13 @@ def compute_pre_decision_metrics(
 
     # Compute heading stats
     mean_dir, circ_var, mrl = pre_decision_heading_stats(
-        window_pos, window_times, min_speed=min_speed
+        window_times, window_pos, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     # Compute speed stats
-    mean_speed, min_speed_val = pre_decision_speed_stats(window_pos, window_times)
+    mean_speed, min_speed_val = pre_decision_speed_stats(
+        window_times, window_pos, max_gap=max_gap, epochs=epochs
+    )
 
     # Actual window duration
     actual_duration = (
@@ -765,6 +848,9 @@ def detect_boundary_crossings(
     position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[list[float], list[tuple[int, int]]]:
     """Detect when trajectory crosses decision boundaries.
 
@@ -776,6 +862,14 @@ def detect_boundary_crossings(
         Voronoi label for each bin (from geodesic_voronoi_labels).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -783,6 +877,11 @@ def detect_boundary_crossings(
         Times when trajectory crossed a decision boundary.
     crossing_directions : list[tuple[int, int]]
         (from_goal_idx, to_goal_idx) for each crossing.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
 
     Examples
     --------
@@ -794,6 +893,30 @@ def detect_boundary_crossings(
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times)
 
+    if len(position_bins) != len(times):
+        raise ValueError(
+            f"position_bins and times must have same length; got "
+            f"{len(position_bins)} and {len(times)}.\n"
+            "Why: each trajectory sample needs its corresponding timestamp.\n"
+            "Fix: pass one timestamp per position bin on the same clock."
+        )
+    crossing_times: list[float] = []
+    crossing_directions: list[tuple[int, int]] = []
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        run_times, run_directions = _detect_boundary_crossings_contiguous(
+            position_bins[run], voronoi_labels, times[run]
+        )
+        crossing_times.extend(run_times)
+        crossing_directions.extend(run_directions)
+    return crossing_times, crossing_directions
+
+
+def _detect_boundary_crossings_contiguous(
+    position_bins: NDArray[np.int_],
+    voronoi_labels: NDArray[np.int_],
+    times: NDArray[np.float64],
+) -> tuple[list[float], list[tuple[int, int]]]:
+    """Detect label changes within one recording with labels indexed by bin."""
     # Get label for each trajectory point
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
 
@@ -827,13 +950,15 @@ def detect_boundary_crossings(
 
 def compute_decision_analysis(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     decision_region: str,
     goal_regions: list[str],
     pre_window: float = 1.0,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> DecisionAnalysisResult:
     """Compute complete decision analysis for a trajectory.
 
@@ -841,10 +966,10 @@ def compute_decision_analysis(
     ----------
     env : Environment
         Spatial environment with region definitions.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     decision_region : str
         Name of decision region in env.regions (e.g., "center" for T-maze).
     goal_regions : list[str]
@@ -853,6 +978,14 @@ def compute_decision_analysis(
         Duration of pre-decision window to analyze (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -867,27 +1000,30 @@ def compute_decision_analysis(
     ValueError
         If positions and times have different lengths.
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no segment spans a pause.
+
+    Pre-decision windows and boundary crossings respect these recordings.
+    Per-sample goal labels and boundary distances keep the input shape.
+
     Examples
     --------
     >>> result = compute_decision_analysis(
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     decision_region="center",
     ...     goal_regions=["left", "right"],
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    from neurospatial._validation import validate_times_positions
 
-    # Validate inputs
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
+    times, positions = validate_times_positions(
+        times, positions, call="compute_decision_analysis"
+    )
 
     # Validate regions exist
     if decision_region not in env.regions:
@@ -915,7 +1051,13 @@ def compute_decision_analysis(
 
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(
-        positions, times, entry_time, pre_window, min_speed=min_speed
+        times,
+        positions,
+        entry_time,
+        pre_window,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Compute boundary metrics
@@ -936,7 +1078,7 @@ def compute_decision_analysis(
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
     crossing_times, crossing_directions = detect_boundary_crossings(
-        position_bins, voronoi_labels, times
+        position_bins, voronoi_labels, times, max_gap=max_gap, epochs=epochs
     )
 
     boundary = DecisionBoundaryMetrics(

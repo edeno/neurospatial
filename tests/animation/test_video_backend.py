@@ -10,6 +10,7 @@ This module tests the video backend implementation, including:
 
 import os
 import subprocess
+from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -502,11 +503,19 @@ class TestParallelRendering:
         # 10 frames, 3 workers
         fields = [rng.random(env.n_bins) for _ in range(10)]
 
-        # Mock ProcessPoolExecutor
+        # parallel_render_frames submits one task per worker and drains them
+        # with concurrent.futures.as_completed, so the mocked submit must
+        # return already-completed futures; a MagicMock "future" never
+        # completes and as_completed would block forever.
+        def _completed_future(_fn, _task):
+            future: Future = Future()
+            future.set_result(None)
+            return future
+
         with patch("neurospatial.animation._parallel.ProcessPoolExecutor") as mock_pool:
             mock_executor = MagicMock()
             mock_pool.return_value.__enter__.return_value = mock_executor
-            mock_executor.map.return_value = [None, None, None]  # 3 workers
+            mock_executor.submit.side_effect = _completed_future
 
             pattern = parallel_render_frames(
                 env=env,
@@ -524,10 +533,9 @@ class TestParallelRendering:
             assert "frame_" in pattern
             assert ".png" in pattern
 
-            # Check executor.map was called with tasks
-            mock_executor.map.assert_called_once()
-            args = mock_executor.map.call_args[0]
-            tasks = list(args[1])  # Get task list
+            # One submit per worker task (10 frames across 3 workers)
+            assert mock_executor.submit.call_count == 3
+            tasks = [call.args[1] for call in mock_executor.submit.call_args_list]
 
             # Should have 3 tasks (one per worker)
             assert len(tasks) == 3

@@ -9,8 +9,14 @@ into downstream computations.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Literal
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._exceptions import _format_error
 
 
 def validate_finite(
@@ -98,3 +104,155 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
     if len(set(lengths.values())) > 1:
         pairs = ", ".join(f"{k}={n}" for k, n in lengths.items())
         raise ValueError(f"Length mismatch: {pairs}. These must agree.")
+
+
+def times_positions_problems(
+    t: NDArray[np.float64] | None, p: NDArray[np.float64] | None
+) -> tuple[list[str], bool]:
+    """Collect pair problems, skipping an array that failed numeric conversion."""
+    problems: list[str] = []
+    if t is not None:
+        if t.ndim != 1:
+            problems.append(f"times must be 1-D (n_samples,), got shape {t.shape}.")
+        else:
+            # Finiteness applies to every 1-D timestamp array, including a single
+            # sample; only monotonicity needs two or more samples.
+            finite = np.isfinite(t)
+            if not finite.all():
+                problems.append(
+                    f"times has {int((~finite).sum())} non-finite value(s), "
+                    f"first at index {int(np.argmin(finite))}."
+                )
+            elif t.size > 1:
+                down = np.flatnonzero(np.diff(t) < 0)
+                if down.size:
+                    k = int(down[0])
+                    problems.append(
+                        f"times must be monotonically non-decreasing; it decreases at "
+                        f"{down.size} place(s), first {float(t[k])!r} -> {float(t[k + 1])!r} "
+                        f"at index {k}."
+                    )
+    if p is not None and p.ndim not in (1, 2):
+        problems.append(f"positions must be (n_samples, n_dims), got shape {p.shape}.")
+    if (
+        t is not None
+        and p is not None
+        and t.ndim >= 1
+        and p.ndim >= 1
+        and len(t) != len(p)
+    ):
+        problems.append(
+            f"times and positions must have the same length; times has "
+            f"{len(t)} samples, positions has {len(p)}."
+        )
+    looks_swapped = (t is not None and t.ndim == 2) or (
+        p is not None and p.ndim == 1 and p.size > 1 and bool(np.all(np.diff(p) >= 0))
+    )
+    return problems, looks_swapped
+
+
+def validate_times_positions(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    call: str,
+    order: Literal["times, positions", "positions, times"] = "times, positions",
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Validate a ``(times, positions)`` pair and name an argument swap.
+
+    Parameters
+    ----------
+    times : array-like, shape (n_samples,)
+        Sample timestamps in seconds; must be 1-D, finite and non-decreasing.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        One position row per timestamp.
+    call : str
+        Public function name, used in the message.
+    order : {"times, positions", "positions, times"}, default="times, positions"
+        The order in which ``call`` takes the two arguments, so the message
+        names the swap the caller actually made.
+
+    Returns
+    -------
+    times, positions : ndarray
+        float64 arrays; shapes are not changed.
+
+    Raises
+    ------
+    ValueError
+        Listing every problem, with a ``Fix:`` line that names the swap when the
+        arguments look swapped.
+    """
+    conversion_problems = []
+    arrays: list[NDArray[np.float64] | None] = []
+    for name, value in (("times", times), ("positions", positions)):
+        try:
+            arrays.append(np.asarray(value, dtype=np.float64))
+        except (TypeError, ValueError):
+            arrays.append(None)
+            conversion_problems.append(
+                f"{name} must contain numeric values convertible to float64, got {value!r}."
+            )
+    t, p = arrays
+    problems, looks_swapped = times_positions_problems(t, p)
+    problems = conversion_problems + problems
+    if problems:
+        raise ValueError(
+            format_times_positions_error(
+                problems, looks_swapped, call=call, order=order
+            )
+        )
+    assert t is not None and p is not None
+    return t, p
+
+
+def format_times_positions_error(
+    problems: list[str], looks_swapped: bool, *, call: str, order: str
+) -> str:
+    first, second = order.split(", ")
+    fix = (
+        f"Fix: did you pass {second} before {first}? Call {call}(..., {order}, ...)."
+        if looks_swapped
+        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds with one "
+        "numeric positions row per timestamp."
+    )
+    return (
+        f"Invalid times/positions passed to {call}():\n- "
+        + "\n- ".join(problems)
+        + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
+        "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
+    )
+
+
+def check_writable(
+    paths: Sequence[Path], *, overwrite: bool, what: str, argument: str
+) -> None:
+    """Refuse existing files/nonempty directories unless overwrite is explicit.
+
+    Parameters
+    ----------
+    paths : sequence of pathlib.Path
+        All targets an export will write.
+    overwrite : bool
+        Whether existing outputs may be replaced.
+    what : str
+        Description of the outputs for the diagnostic.
+    argument : str
+        Path argument name used in corrected-call guidance.
+
+    Raises
+    ------
+    FileExistsError
+        If a file or nonempty directory exists and overwrite is False.
+    """
+    if overwrite:
+        return
+    existing = [p for p in paths if (p.is_dir() and any(p.iterdir())) or p.is_file()]
+    if existing:
+        raise FileExistsError(
+            _format_error(
+                f"Refusing to overwrite existing {what}: {', '.join(map(str, existing))}.",
+                fix=f"pass overwrite=True to replace {'it' if len(existing) == 1 else 'them'}, "
+                f"or choose a different {argument}.",
+            )
+        )

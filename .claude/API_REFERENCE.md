@@ -53,6 +53,12 @@ func(
 
 #### Egocentric Operations (bearing, distance to targets)
 
+Required behavior trajectories use `(times, positions)` or
+`(env, times, positions)` when an environment is needed. `heading_from_velocity`
+uses `(times, positions)` too. Optional-timestamp functions keep their documented
+positions-first slot. Analyses accept explicit tracking arrays; pynapple users
+pass `tsd.t, tsd.values`.
+
 ```python
 func(
     positions,              # 1. Animal positions (where animal is)
@@ -168,6 +174,34 @@ def compute_spatial_rate(
 
 ---
 
+## Root workflows
+
+```python
+from neurospatial import (
+    Environment,
+    compute_spatial_rate,
+    compute_spatial_rates,
+    SpatialRateResult,
+    SpatialRatesResult,
+    decode_position,
+    DecodingResult,
+    peri_event_histogram,
+    PeriEventResult,
+    NeurospatialError,
+)
+```
+
+Root workflows load lazily and expose concrete types to IDEs and mypy.
+`SpikeTrains` comes from `encoding`, `restrict` from `behavior`, and
+`BayesianDecoder` / `bin_spikes_in_time` from `decoding`.
+
+`BayesianDecoder.from_rates(rates)` accepts an existing `SpatialRatesResult`.
+Use `fit(spike_times, times, positions, unit_ids=...)` to build maps, then
+`predict(spike_times, times)` without tracking positions. Explicit unit labels
+must agree with any labels carried by the spike group. `decode_session` always
+requires positions and builds its own maps; explicit count arrays and rate
+arrays go to `decode_position`.
+
 ## Core Classes
 
 ```python
@@ -187,7 +221,6 @@ from neurospatial.ops import (
     regions_to_mask,                # Convert regions to binary mask
     resample_field,                 # Resample field to different grid
     TieBreakStrategy,               # Enum for tie-breaking
-    clear_kdtree_cache,             # Clear KDTree cache
 
     # Distance
     distance_field,                 # Multi-source geodesic distances
@@ -199,7 +232,6 @@ from neurospatial.ops import (
 
     # Transforms - Core classes
     Affine2D,                       # 2D affine transform
-    Affine3D,                       # 3D affine transform
     AffineND,                       # ND affine transform
     SpatialTransform,               # Protocol for composable transforms
     VideoCalibration,               # Video calibration transform
@@ -282,11 +314,26 @@ from neurospatial.encoding import (
     ViewRateResult,                         # Result with occupancy, is_spatial_view_cell()
     ViewRatesResult,                        # Population result
 
-    # Egocentric Rate (Object-Vector Cells)
+    # Object-vector rate (allocentric and egocentric)
+    compute_object_vector_rate,             # Allocentric field, no headings
+    compute_object_vector_rates,            # Allocentric population fields
+    is_object_vector_cell,                  # Allocentric candidate screen
+    is_egocentric_object_vector_cell,       # Heading-relative candidate screen
     compute_egocentric_rate,                # Single-neuron egocentric polar field
     compute_egocentric_rates,               # Population egocentric fields
-    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction()
-    EgocentricRatesResult,                  # Population result
+    ObjectVectorRateResult,                   # Result with preferred_distance(), preferred_direction()
+    ObjectVectorRatesResult,                  # Population result
+
+    # Field detection and explicit cell criteria
+    has_place_field,                        # A detected field, not cell identity
+    is_place_cell,                          # Required criterion="spatial_info" | "shuffle"
+    is_head_direction_cell,                 # Default threshold screen or opt-in shuffle
+    is_spatial_view_cell,                   # Default threshold screen or opt-in shuffle
+    place_cell_significance,                # Population circular shifts, spatial info
+    head_direction_cell_significance,       # Population circular shifts, MVL
+    spatial_view_cell_significance,         # Population circular shifts, view info
+    object_vector_cell_significance,        # Allocentric polar information
+    egocentric_object_vector_cell_significance, # Heading-relative polar information
 
     # Metrics (available on result objects or standalone)
     spatial_information,                    # Spatial info (bits/spike)
@@ -302,6 +349,21 @@ from neurospatial.encoding import (
     compute_viewshed,                       # Compute visible bins
 )
 ```
+
+The five significance functions take their family's raw positional arrays and
+explicit encoder keywords plus `unit_ids`, `n_shuffles=1000`, `min_shift=20.0`
+and `rng`. They return `{unit_label: ShuffleTestResult}` in input order; compare
+`p_value < alpha` (default level 0.05). Matching integer seeds and labels preserve
+single/population/reordered streams. They copy array inputs before recomputing
+and shift only inside the observed encoder's valid recording runs. Place GLM
+significance raises because pooled REML couples the units.
+
+Free predicates accept `criterion="shuffle"`, `alpha`, `n_shuffles`, `min_shift`,
+`rng` and `unit_id`. Other-mode keywords raise rather than being ignored.
+Thresholds are `min_info` (place 0.5, view 0.5, both object frames 0.3) or
+`min_mvl` (HD 0.4); HD's `alpha` applies in both modes. Method thresholds are
+keyword-only and resolve `None` through named read-only constants. Methods and
+`classify` have threshold criteria only and do not store input arrays.
 
 ### Backend Parameter
 
@@ -354,7 +416,7 @@ Result objects from the new API provide convenient methods:
 - `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
 - `.view_distance` - Distance parameter for gaze model
 
-**EgocentricRateResult** (from `compute_egocentric_rate`):
+**ObjectVectorRateResult** (from `compute_egocentric_rate`):
 - `.firing_rate` - Egocentric polar field (n_bins,) in Hz
 - `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
 - `.env` - Egocentric polar environment
@@ -418,15 +480,22 @@ from neurospatial.encoding.border import (
 
 ```python
 from neurospatial.encoding import (
-    compute_egocentric_rate,                # Egocentric polar field (returns EgocentricRateResult)
+    compute_object_vector_rate,             # Allocentric field, no headings
+    compute_object_vector_rates,            # Allocentric population fields
+    is_object_vector_cell,                  # Allocentric candidate screen
+    is_egocentric_object_vector_cell,       # Heading-relative candidate screen
+    compute_egocentric_rate,                # Egocentric polar field (returns ObjectVectorRateResult)
     compute_egocentric_rates,               # Population egocentric fields
-    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction(), etc.
-    EgocentricRatesResult,                  # Population result
+    ObjectVectorRateResult,                   # Result with preferred_distance(), preferred_direction(), etc.
+    ObjectVectorRatesResult,                  # Population result
 )
 ```
 
 Use result methods such as `preferred_distance()`, `preferred_direction()`, and
-`is_object_vector_cell()` for classification workflows.
+`spatial_information()` and `is_object_vector_cell()` for candidate screening
+in `result.direction_frame`. Free allocentric functions omit headings; free
+egocentric functions require headings. Direction is animal-to-object: add pi
+and wrap for the reverse object-centred vector.
 
 ### Spatial View Cells
 
@@ -448,7 +517,7 @@ the returned result methods for classification and summaries.
 
 ```python
 from neurospatial.encoding.phase_precession import (
-    phase_precession,                       # Phase precession analysis
+    compute_phase_precession,               # Phase precession analysis
     has_phase_precession,                   # Significance test
     plot_phase_precession,                  # Phase-position plot
     PhasePrecessionResult,                  # Result dataclass
@@ -483,7 +552,6 @@ from neurospatial.decoding import (
 
     # Likelihood
     log_poisson_likelihood,
-    poisson_likelihood,
 
     # Posterior
     normalize_to_posterior,
@@ -589,6 +657,7 @@ from neurospatial.stats.shuffle import (
     shuffle_posterior_weighted_circular,  # Weighted circular posterior
     shuffle_trials,                 # Shuffle trial labels
     shuffle_spikes_isi,             # Shuffle inter-spike intervals
+    shuffle_spike_times_circular,   # Shift a train on joined valid windows
 
     # P-value computation
     compute_shuffle_pvalue,         # P-value from null distribution
@@ -597,6 +666,9 @@ from neurospatial.stats.shuffle import (
 ```
 
 ### Surrogate Data Generation
+
+Surrogate generators come from `neurospatial.stats.surrogates` (or `stats`),
+not the shuffle module.
 
 ```python
 from neurospatial.stats.surrogates import (
@@ -700,7 +772,7 @@ from neurospatial.simulation import (
     simulate_trajectory_sinusoidal, # Sinusoidal motion
 
     # Session API
-    SimulationSession,              # Session container class
+    SimulationSession,              # Frozen spike_times/unit_ids/times/positions holder
     simulate_session,               # High-level session generation
 
     # Pre-configured example sessions
@@ -711,18 +783,37 @@ from neurospatial.simulation import (
     grid_cell_session,              # Grid cell session
 
     # Validation and visualization
-    validate_simulation,            # Validate simulation output
-    plot_session_summary,           # Plot session summary
+    validate_simulation,            # Holder-only; unit_ids= selects labels
+    plot_session_summary,           # Holder-only; unit_ids= selects labels
 )
 
 # Animation overlays for simulation
 from neurospatial.animation import (
     ObjectVectorOverlay,           # Vectors from animal to objects
-    ObjectVectorData,              # Internal data container
 )
 ```
 
 ---
+
+## Population covariance and reactivation
+
+```python
+from neurospatial.decoding import (
+    detect_assemblies,
+    assembly_activation,
+    pairwise_correlations,
+    explained_variance_reactivation,
+    reactivation_strength,
+)
+```
+
+These consume spike-count matrices with a common unit selection and column
+order. `detect_assemblies` selects dimensions against a Marchenko-Pastur
+reference; thresholded core members and standardized activations have no
+calibrated neuron/bin p-values. EV, controlled REV and activation-magnitude
+ratios are effect sizes. Use an explicit pre-template control for controlled
+EV/REV. The complete recipe is in
+[workflows](../docs/user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ## Behavioral Analysis (behavior/)
 
@@ -828,7 +919,6 @@ from neurospatial.behavior.vte import (
 
     # VTE functions
     head_sweep_magnitude,           # Sum of |delta_theta| (IdPhi)
-    integrated_absolute_rotation,   # Alias for head_sweep_magnitude
     head_sweep_from_positions,      # IdPhi from trajectory
     normalize_vte_scores,           # Z-score across trials
     compute_vte_index,              # Combined VTE index
@@ -881,9 +971,6 @@ from neurospatial.events import (
     events_to_intervals,              # Pair start/stop events
     filter_by_intervals,              # Filter events by intervals
 
-    # Validation
-    validate_events_dataframe,        # Validate events DataFrame
-    validate_spatial_columns,         # Check for spatial columns
 )
 ```
 
@@ -898,7 +985,6 @@ from neurospatial.animation import (
     BodypartOverlay,                        # Pose tracking with skeleton
     HeadDirectionOverlay,                   # Orientation arrows
     EventOverlay,                           # Spikes, licks, rewards
-    SpikeOverlay,                           # Alias for EventOverlay
     TimeSeriesOverlay,                      # Continuous variables
     ObjectVectorOverlay,                    # Vectors from animal to objects
 
@@ -915,7 +1001,7 @@ from neurospatial.animation import (
     subsample_frames,                       # Subsample frame arrays
 )
 
-# VideoCalibration and calibrate_from_landmarks also available from neurospatial.ops
+# Import VideoCalibration and calibrate_from_landmarks from neurospatial.ops.
 ```
 
 ---
@@ -949,13 +1035,17 @@ from neurospatial.io import (
 
 ### NWB Integration
 
-**Requires:** `uv add neurospatial[nwb-full]`
+**Requires:** `uv add neurospatial[nwb]`
 
 ```python
 from neurospatial.io.nwb import (
+    # Frozen, non-iterable holders
+    NWBPosition, NWBHeadDirection, NWBUnits,
+
     # Reading
-    read_position,           # Position → (positions, timestamps)
-    read_head_direction,     # CompassDirection → (angles, timestamps)
+    read_units,              # Units → spikes/IDs/obs_intervals/shared spike_window
+    read_position,           # Position → NWBPosition(times, positions, units)
+    read_head_direction,     # CompassDirection → NWBHeadDirection(times, headings)
     read_pose,               # PoseEstimation → (bodyparts, timestamps, skeleton)
     read_events,             # EventsTable → DataFrame
     read_intervals,          # TimeIntervals → DataFrame

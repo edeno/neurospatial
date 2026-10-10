@@ -23,6 +23,11 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import (
+    BinIndexOutOfRangeError,
+    RegionNotFoundError,
+    _format_error,
+)
 from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -40,7 +45,7 @@ def _resolve_point_or_index(
 
     Raises
     ------
-    IndexError
+    BinIndexOutOfRangeError
         If an integer index is outside ``[0, n_bins)``.
     ValueError
         If a coordinate point falls outside every active bin.
@@ -48,21 +53,34 @@ def _resolve_point_or_index(
     if isinstance(point_or_index, (int, np.integer)):
         idx = int(point_or_index)
         if not 0 <= idx < env.n_bins:
-            raise IndexError(f"bin index {idx} is out of range [0, {env.n_bins}).")
+            raise BinIndexOutOfRangeError(idx, n_bins=env.n_bins)
         return idx
     point = np.asarray(point_or_index, dtype=float)
+    if point.shape == (1,) and env.n_dims > 1:
+        raise ValueError(
+            _format_error(
+                f"Got a length-1 array with shape {point.shape} in a {env.n_dims}-D environment. bin_at returns an array, even for one point.",
+                why="Why: this array is neither a scalar bin index nor a complete coordinate point.",
+                fix=f"unwrap the bin_at result with env.neighbors(int(bin_idx[0])), or pass a complete coordinate point of shape ({env.n_dims},)",
+            )
+        )
     resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
     if resolved.size != 1:
         raise ValueError(
-            f"expected a single coordinate point of shape (n_dims,), but got "
-            f"{resolved.size} points (input shape {point.shape}); pass one "
-            "point or a single bin index (int)."
+            _format_error(
+                f"expected a single coordinate point of shape (n_dims,), but got {resolved.size} points (input shape {point.shape}); pass one point or a single bin index (int).",
+                fix="pass one point, e.g. env.neighbors([x, y]), or a single bin index: env.neighbors(int(bin_idx[0]))",
+                why="Why: a graph query starts from one active bin.",
+            )
         )
     idx = int(resolved[0])
     if idx < 0:
         raise ValueError(
-            f"Point {point.tolist()} is not inside any active bin; pass a point "
-            "within the environment, or a bin index (int)."
+            _format_error(
+                f"Point {point.tolist()} is not inside any active bin; pass a point within the environment, or a bin index (int).",
+                fix="pass a point inside the environment, or an integer bin index from env.bin_at([point])[0]",
+                why="Why: graph queries need a point mapped to an active bin.",
+            )
         )
     return idx
 
@@ -132,12 +150,12 @@ class EnvironmentQueries:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> points = np.array([[2.0, 2.0], [15.0, 15.0]])
         >>> indices = env.bin_at(points)
-        >>> print(indices)  # doctest: +SKIP
-        [12 -1]  # Second point outside environment
+        >>> indices.tolist()  # -1 denotes the point outside the environment
+        [4, -1]
 
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
@@ -212,8 +230,9 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If the environment is not fitted.
-        IndexError
-            If any bin index is out of range.
+        BinIndexOutOfRangeError
+            If any bin index is outside ``[0, n_bins)``, including negative
+            indices (a ``ValueError`` subclass).
 
         Examples
         --------
@@ -229,9 +248,13 @@ class EnvironmentQueries:
         (3, 2)
 
         """
-        return np.asarray(
-            self.bin_centers[np.asarray(bin_indices, dtype=int)], dtype=np.float64
-        )
+        indices = np.asarray(bin_indices, dtype=int)
+        out_of_range = (indices < 0) | (indices >= self.n_bins)
+        if np.any(out_of_range):
+            raise BinIndexOutOfRangeError(
+                int(indices[out_of_range].flat[0]), n_bins=self.n_bins
+            )
+        return np.asarray(self.bin_centers[indices], dtype=np.float64)
 
     @check_fitted
     def neighbors(self: SelfEnv, bin_index: int | ArrayLike) -> list[int]:
@@ -258,7 +281,7 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
-        IndexError
+        BinIndexOutOfRangeError
             If bin_index is an integer index outside [0, n_bins).
         ValueError
             If bin_index is a coordinate point outside every active bin.
@@ -267,11 +290,11 @@ class EnvironmentQueries:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> neighbors = env.neighbors(0)
-        >>> print(len(neighbors))  # doctest: +SKIP
-        4  # Number of neighbors varies by layout
+        >>> len(neighbors)  # Corner bin, including diagonal connectivity
+        3
 
         """
         bin_index = _resolve_point_or_index(self, bin_index)
@@ -433,7 +456,7 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
-        IndexError
+        BinIndexOutOfRangeError
             If source/target is an integer index outside [0, n_bins).
         ValueError
             If source/target is a coordinate point outside every active bin.
@@ -580,17 +603,8 @@ class EnvironmentQueries:
         if isinstance(targets, str):
             region_name = targets
             if region_name not in self.regions:
-                # Local import: neurospatial.__init__ imports _exceptions before
-                # environment. _exceptions imports environment.decorators, which
-                # pulls in environment.core, which imports this module — re-
-                # entering while _exceptions is still initializing. A top-level
-                # `from neurospatial._exceptions import RegionNotFoundError` here
-                # would therefore be a partially-initialized-module circular
-                # import.
-                from neurospatial._exceptions import RegionNotFoundError
-
                 raise RegionNotFoundError(
-                    region_name, available=list(self.regions.keys())
+                    region_name, available=list(self.regions.keys()), argument="targets"
                 )
 
             # Get bins in region via membership
@@ -698,7 +712,7 @@ class EnvironmentQueries:
 
         Raises
         ------
-        IndexError
+        BinIndexOutOfRangeError
             If source_bin is an integer index outside [0, n_bins).
         ValueError
             If source_bin is a coordinate point outside every active bin.

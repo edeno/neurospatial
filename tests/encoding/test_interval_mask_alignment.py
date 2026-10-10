@@ -1,25 +1,12 @@
-"""Tests for FULL interval-mask alignment between spikes and occupancy (R1).
+"""Spike counts and occupancy share interval gates and half-open boundaries.
 
-A firing rate map is ``spike_counts (numerator) / occupancy (denominator)``
-per bin. ``env.occupancy`` drops an interval ``k`` (spanning ``[t_k, t_{k+1})``,
-``time_allocation="start"``) for THREE reasons:
-
-  * ``dt[k] > max_gap``           (large tracking gap; default max_gap=0.5 s)
-  * ``speed[k] < min_speed``      (low-speed filtering)
-  * ``start_bin[k] < 0``          (interval's start sample out of bounds)
-
-Before this fix the spike binner only filtered by the time window and (since
-task 2.6) by speed — NOT by ``max_gap`` and NOT by the out-of-bounds-start
-rule. A spike inside a dropped interval (a tracking gap, or an out-of-bounds
-excursion) was therefore COUNTED in the numerator while occupancy EXCLUDED its
-time from the denominator, inflating the rate.
-
-These tests pin that the spike numerator and the occupancy denominator now drop
-the IDENTICAL set of intervals via the single shared ``interval_valid_mask``
-helper.
+Gap, speed, bounds and window exclusions apply to the same sampling intervals
+in both sides of the firing-rate ratio. A final sample starts no interval.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -33,7 +20,58 @@ from neurospatial.encoding._binning import (
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
 from neurospatial.environment.trajectory import interval_valid_mask
 
+
+@pytest.mark.parametrize("offset", [0.0, 1e9])
+def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, offset):
+    f = frame_family
+    r = replace(
+        continuous_recording,
+        times=offset + np.array([0.0, 0.5, 1.0]),
+        positions=np.tile([40.0, 40.0], (3, 1)),
+        headings=np.zeros(3),
+        spike_times=offset + np.array([0.5, 1.0]),
+    )
+    counts = f.count(*f.args(r, r.spike_times, kernel=True), **f.kernel_defaults)
+    if f.name == "egocentric":
+        counts = counts[0]
+    assert counts.sum() == 1
+    result = f.single(*f.args(r, r.spike_times), **f.defaults)
+    assert np.nansum(result.firing_rate * result.occupancy) == pytest.approx(1.0)
+
+
 SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
+
+
+@pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
+def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
+    from neurospatial.encoding._binning import _bin_spike_train_with_stats
+
+    times = offset + np.arange(3) * step
+    positions = np.full((3, 1), 20.0)
+    spikes = times[1:]
+    mask = interval_valid_mask(times, positions, env_1d)
+    counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
+        _bin_spike_train_with_stats(
+            env_1d, spikes, times, positions, interval_mask=mask
+        )
+    )
+    assert counts.sum() == 1
+    assert (n_time_dropped, n_bin_dropped, n_total, n_after_time) == (1, 0, 2, 1)
+    public_counts = bin_spike_train(
+        env_1d, spikes, times, positions, warn_on_drop=False
+    )
+    np.testing.assert_array_equal(public_counts, counts)
+
+
+def test_max_gap_none_drops_out_of_bounds_spikes(env_1d):
+    times = np.array([0.0, 0.5, 1.0])
+    positions = np.array([[-20.0], [20.0], [30.0]])
+    counts = bin_spike_train(
+        env_1d, np.array([0.45, 0.75]), times, positions, max_gap=None
+    )
+    assert counts.sum() == 1
+    occupancy = compute_occupancy(env_1d, times, positions, max_gap=None)
+    assert occupancy.sum() == 0.5
 
 
 # ==============================================================================
@@ -280,6 +318,8 @@ def test_oob_alignment_against_reference(env_1d, oob_trajectory) -> None:
 
     mask = interval_valid_mask(times, positions, env_1d)
     assert not mask[oob_interval]
+    # Complete-case rule: the interval's end sample must also be tracked.
+    mask &= env_1d.bin_at(positions)[1:] >= 0
 
     interval = np.clip(
         np.searchsorted(times, spike_times, side="right") - 1, 0, len(times) - 2
@@ -369,6 +409,8 @@ def test_combined_mask_alignment(env_1d) -> None:
     mask = interval_valid_mask(
         times, positions, env_1d, speed=resolved, min_speed=min_speed
     )
+    # Complete-case rule: the interval's end sample must also be tracked.
+    mask &= env_1d.bin_at(positions)[1:] >= 0
 
     # Reference numerator and denominator from the SAME mask.
     interval = np.clip(
@@ -611,9 +653,8 @@ def test_interval_mask_not_recomputed_per_neuron_batch(
 
     # Constant regardless of neuron count (the recompute-per-neuron is gone).
     assert calls_5 == calls_50
-    # Concretely: once for env.occupancy's denominator mask + once for the
-    # shared spike-side mask = 2 per batch call (NOT n_neurons + 1).
-    assert calls_5 == 2
+    # The identical mask is shared by occupancy and every spike train.
+    assert calls_5 == 1
 
 
 def test_compute_spatial_rates_mask_computed_once(
@@ -639,8 +680,8 @@ def test_compute_spatial_rates_mask_computed_once(
 
     calls["n"] = 0
     compute_spatial_rates(env_1d, spike_trains, times, positions, warn_on_drop=False)
-    # Independent of n_neurons: NOT n_neurons-scaled. (2 = occupancy + spikes.)
-    assert calls["n"] == 2
+    # One analysis mask supplies both occupancy and all per-unit counts.
+    assert calls["n"] == 1
 
 
 def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> None:
@@ -660,3 +701,40 @@ def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> N
     for i, spikes in enumerate(spike_trains):
         single = bin_spike_train(env_1d, spikes, times, positions, warn_on_drop=False)
         np.testing.assert_array_equal(batch_counts[i], single)
+
+
+def test_interval_ending_in_dropout_is_excluded_from_both_sides():
+    """Complete-case rule: an interval counts only if both samples are tracked.
+
+    Interval [t_k, t_k+1) whose end sample is a NaN dropout has no observed
+    position for its spikes, so its spikes and its time are both left out
+    rather than imputing where the animal was.
+    """
+    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    times = np.array([0.0, 0.1, 0.2, 0.3])
+    positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
+    spikes = np.array([0.05, 0.25])
+    counts = bin_spike_train(env, spikes, times, positions, warn_on_drop=False)
+    occupancy = compute_occupancy(env, times, positions)
+    in_last = int(env.bin_at(np.array([[45.0]]))[0])
+    expected_counts = np.zeros(env.n_bins)
+    expected_counts[in_last] = 1.0
+    np.testing.assert_array_equal(counts, expected_counts)
+    assert occupancy.sum() == pytest.approx(0.1)
+    assert occupancy[in_last] == pytest.approx(0.1)
+
+
+def test_isolated_tracking_dropouts_do_not_bias_rate():
+    """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 600, 0.02)
+    positions = np.c_[50 + 40 * np.sin(times / 7), 50 + 40 * np.cos(times / 11)]
+    env = Environment.from_samples(positions, bin_size=5.0)
+    spikes = np.sort(rng.uniform(0, 599, 3000))
+    positions[rng.random(len(times)) < 0.2] = np.nan
+    result = compute_spatial_rate(
+        env, spikes, times, positions, method="binned", bandwidth=1e-6
+    )
+    occupied = result.occupancy > 1
+    pooled = np.nansum(result.firing_rate[occupied] * result.occupancy[occupied])
+    assert pooled / result.occupancy[occupied].sum() == pytest.approx(5.0, rel=0.05)

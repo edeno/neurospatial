@@ -9,6 +9,9 @@ Commands and workflows for developing neurospatial.
 ## Testing
 
 ```bash
+# Execute public Markdown and flagship docstring examples
+uv run pytest tests/docs -n 4
+
 # Run all tests
 uv run pytest
 
@@ -36,6 +39,22 @@ uv run pytest -m "not slow"
 # Run NWB tests (requires nwb-full extra)
 uv run pytest tests/nwb/ -v
 ```
+
+Documentation tests execute README and the getting-started quickstart cumulatively
+without injected names. CLAUDE patterns and opted-in reference fragments each get
+a fresh NumPy recording fixture, so variables do not carry between blocks.
+Place a marker directly above a Python fence:
+
+- `<!-- docs-test: run -->` opts a reference fragment into execution.
+- `<!-- docs-test: run setup=quickstart_vte_session -->` selects a named setup
+  migrated from the former snippet manifest. Every setup name must exist in
+  `SETUPS` in `tests/docs/test_executable_docs.py` and be used by a marker.
+- `<!-- docs-test: skip requires a display -->` skips execution with a required reason.
+- `<!-- docs-test: raises ValueError -->` checks an intentionally wrong call.
+
+Figures use the Agg backend and outputs go into temporary directories. Animation
+setup patches are restored after each test. Module doctests remain a separate
+check: `uv run pytest --doctest-modules src/neurospatial/ -n 0`.
 
 ---
 
@@ -337,4 +356,4 @@ estimated_mb = _estimate_grid_memory_mb(grid_shape, dtype=np.float64)
 print(f"Estimated memory: {estimated_mb:.1f} MB")
 ```
 
-**Memory warnings trigger at 100MB.** See [TROUBLESHOOTING.md - ResourceWarning](TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) for fixes.
+**Memory warnings trigger at 100MB.** See [TROUBLESHOOTING.md - Creating large grid](TROUBLESHOOTING.md#userwarning-creating-large-grid) for fixes.

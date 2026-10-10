@@ -12,9 +12,14 @@ Spatial utilities:
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+from neurospatial._intervals import as_intervals, run_time_bounds
+from neurospatial.environment.trajectory import observed_interval_mask
 
 
 def add_positions(
@@ -23,6 +28,8 @@ def add_positions(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     timestamp_column: str = "timestamp",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> pd.DataFrame:
     """
     Add spatial coordinates to events by interpolating from trajectory.
@@ -45,6 +52,14 @@ def add_positions(
         mis-interpolate.
     timestamp_column : str, default="timestamp"
         Name of the column in events containing timestamps.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -67,13 +82,22 @@ def add_positions(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Positions are available only within each run's closed sample span
+    ``[times[first], times[last]]``. Events exactly at either endpoint get
+    that observed sample's position. Events strictly inside a pause, at
+    isolated samples or outside all observed spans have NaN coordinates.
+    Positions are never extrapolated outside the tracked span.
+
     This function only adds coordinate columns (x, y, z). It does not add
     derived columns like ``bin_index`` or ``region``; map the added coordinates
     to bins yourself with ``env.bin_at(events[["x", "y"]].to_numpy())`` for
     spatial analysis.
 
     Interpolation uses linear interpolation between trajectory samples.
-    Events before or after the trajectory will be extrapolated.
+    Events before or after the trajectory have NaN coordinates.
 
     Events with NaN timestamps will have NaN positions.
 
@@ -90,7 +114,7 @@ def add_positions(
     >>> rewards = pd.DataFrame({"timestamp": [1.5, 3.5], "size": [1, 2]})
     >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]])
-    >>> result = add_positions(rewards, times=times, positions=positions)
+    >>> result = add_positions(rewards, times=times, positions=positions, max_gap=None)
     >>> result[["x", "y"]].values
     array([[3., 3.],
            [7., 7.]])
@@ -100,7 +124,7 @@ def add_positions(
         raise TypeError(
             f"events must be a pandas DataFrame, got {type(events).__name__}.\n"
             "  WHY: This function operates on DataFrames to preserve metadata.\n"
-            "  HOW: Convert your data to a DataFrame before calling."
+            "  Fix: Convert your data to a DataFrame before calling."
         )
 
     # Validate timestamp column exists
@@ -108,7 +132,7 @@ def add_positions(
         raise ValueError(
             f"timestamp column '{timestamp_column}' not found in events.\n"
             f"  WHY: Events must have a timestamp column for interpolation.\n"
-            f"  HOW: Use timestamp_column parameter to specify the correct name.\n"
+            f"  Fix: Use timestamp_column parameter to specify the correct name.\n"
             f"  Available columns: {list(events.columns)}"
         )
 
@@ -138,7 +162,7 @@ def add_positions(
         raise ValueError(
             f"times and positions must have same length, got {len(times)} and {len(positions)}.\n"
             "  WHY: Each position sample must have a corresponding timestamp.\n"
-            "  HOW: Ensure positions.shape[0] == times.shape[0]."
+            "  Fix: Ensure positions.shape[0] == times.shape[0]."
         )
 
     # Ensure positions is 2D
@@ -153,6 +177,7 @@ def add_positions(
     # event table without tripping the >= 2 sample / finite / non-zero-span
     # guards below, which only matter when interpolation actually happens.
     if len(events) == 0:
+        as_intervals(epochs, name="epochs")
         result = events.copy()
         result["x"] = np.array([], dtype=np.float64)
         if n_dims >= 2:
@@ -177,7 +202,7 @@ def add_positions(
             f"interpolate, got {len(times)}.\n"
             "  WHY: linear interpolation is undefined for a single sample and "
             "would return NaN for every event position.\n"
-            "  HOW: pass a trajectory with >= 2 samples spanning the event times."
+            "  Fix: pass a trajectory with >= 2 samples spanning the event times."
         )
     if np.ptp(times) == 0:
         raise ValueError(
@@ -185,7 +210,7 @@ def add_positions(
             f"(every sample at t={times[0]:g}).\n"
             "  WHY: interpolation needs a non-zero time span; duplicate sample "
             "times leave the interpolant undefined (NaN/Inf positions).\n"
-            "  HOW: pass a trajectory whose timestamps vary."
+            "  Fix: pass a trajectory whose timestamps vary."
         )
 
     # Get event timestamps
@@ -197,7 +222,7 @@ def add_positions(
     sorted_positions = positions[sort_idx]
 
     # Interpolate positions at event times
-    # Use scipy.interpolate for extrapolation support
+    # Preserve linear interpolation only inside the tracked span.
     from scipy.interpolate import interp1d
 
     interpolated = np.empty((len(event_times), n_dims), dtype=np.float64)
@@ -206,9 +231,20 @@ def add_positions(
             sorted_times,
             sorted_positions[:, dim],
             kind="linear",
-            fill_value="extrapolate",
+            bounds_error=False,
+            fill_value=np.nan,
         )
         interpolated[:, dim] = interp_func(event_times)
+
+    runs = run_time_bounds(
+        sorted_times,
+        observed_interval_mask(sorted_times, max_gap=max_gap, epochs=epochs),
+    )
+    observed = np.zeros(len(event_times), dtype=bool)
+    if len(runs):
+        run_index = np.searchsorted(runs[:, 0], event_times, side="right") - 1
+        observed = (run_index >= 0) & (event_times <= runs[np.maximum(run_index, 0), 1])
+    interpolated[~observed, :] = np.nan
 
     # Handle NaN timestamps - propagate to positions
     nan_mask = np.isnan(event_times)

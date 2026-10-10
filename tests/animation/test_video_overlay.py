@@ -104,6 +104,7 @@ def video_overlay_array(
 @pytest.mark.skipif(not HAS_CV2, reason="opencv-python not installed")
 @pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 @pytest.mark.slow
+@pytest.mark.napari
 @pytest.mark.xdist_group(name="napari_gui")
 class TestNapariVideoOverlay:
     """Test video overlay functionality in napari backend."""

@@ -115,17 +115,18 @@ session = open_field_session(
     seed=42,  # Reproducible
 )
 
-# Session is a dataclass with typed attributes
+# SimulationSession is a frozen holder with typed array attributes
 print(f"Environment: {session.env.n_bins} bins, {session.env.n_dims}D")
 print(f"Trajectory: {len(session.times)} time points over {session.times[-1]:.1f}s")
-print(f"Neural activity: {len(session.spike_trains)} cells")
-print(f"Total spikes: {sum(len(spikes) for spikes in session.spike_trains)}")
+print(f"Neural activity: {len(session.spike_times)} cells")
+print(f"Unit labels: {session.unit_ids.tolist()}")
+print(f"Total spikes: {sum(len(spikes) for spikes in session.spike_times)}")
 
 # Access ground truth parameters
 print("\nGround truth for first cell:")
-print(f"  Center: {session.ground_truth['cell_0']['center']}")
-print(f"  Width: {session.ground_truth['cell_0']['width']:.2f} cm")
-print(f"  Max rate: {session.ground_truth['cell_0']['max_rate']:.1f} Hz")
+print(f"  Center: {session.ground_truth[0]['center']}")
+print(f"  Width: {session.ground_truth[0]['width']:.2f} cm")
+print(f"  Max rate: {session.ground_truth[0]['max_rate']:.1f} Hz")
 
 # %% [markdown]
 # ### Visualize the Session
@@ -133,7 +134,7 @@ print(f"  Max rate: {session.ground_truth['cell_0']['max_rate']:.1f} Hz")
 # Use `plot_session_summary()` to get a comprehensive overview:
 
 # %%
-fig, axes = plot_session_summary(session, cell_ids=[0, 1, 2, 5, 10, 15])
+fig, axes = plot_session_summary(session, unit_ids=[0, 1, 2, 5, 10, 15])
 plt.tight_layout()
 plt.show()
 
@@ -328,7 +329,7 @@ open_field = open_field_session(
     seed=100,
 )
 
-print(f"Open field: {len(open_field.spike_trains)} cells, {open_field.env.n_bins} bins")
+print(f"Open field: {len(open_field.spike_times)} cells, {open_field.env.n_bins} bins")
 
 # %% [markdown]
 # ### 4.2 Linear Track Session
@@ -346,7 +347,7 @@ linear_track = linear_track_session(
 )
 
 print(
-    f"Linear track: {len(linear_track.spike_trains)} cells, {linear_track.env.n_bins} bins"
+    f"Linear track: {len(linear_track.spike_times)} cells, {linear_track.env.n_bins} bins"
 )
 print(f"  Track is 1D: {linear_track.env.is_linearized_track}")
 
@@ -363,7 +364,7 @@ tmaze = tmaze_alternation_session(
     seed=102,
 )
 
-print(f"T-maze: {len(tmaze.spike_trains)} cells, {tmaze.env.n_bins} bins")
+print(f"T-maze: {len(tmaze.spike_times)} cells, {tmaze.env.n_bins} bins")
 print(f"  Trial choices: {tmaze.metadata['trial_choices']}")
 
 # %% [markdown]
@@ -381,10 +382,12 @@ boundary_session = boundary_cell_session(
     seed=103,
 )
 
-print(f"Boundary session: {len(boundary_session.spike_trains)} cells")
+print(f"Boundary session: {len(boundary_session.spike_times)} cells")
 print("  Cell types in ground truth:")
-for i in range(min(3, len(boundary_session.spike_trains))):
-    cell_type = boundary_session.ground_truth[f"cell_{i}"]["cell_type"]
+for i in range(min(3, len(boundary_session.spike_times))):
+    cell_type = boundary_session.ground_truth[int(boundary_session.unit_ids[i])][
+        "cell_type"
+    ]
     print(f"    Cell {i}: {cell_type}")
 
 # %% [markdown]
@@ -401,7 +404,7 @@ grid_session = grid_cell_session(
     seed=104,
 )
 
-print(f"Grid session: {len(grid_session.spike_trains)} cells")
+print(f"Grid session: {len(grid_session.spike_times)} cells")
 print(f"  Grid spacing: {grid_session.metadata['grid_spacing']} cm")
 
 # %% [markdown]
@@ -730,7 +733,7 @@ session2 = open_field_session(duration=5.0, n_place_cells=10, seed=999)
 # Check reproducibility
 spikes_match = all(
     np.allclose(s1, s2)
-    for s1, s2 in zip(session1.spike_trains, session2.spike_trains, strict=True)
+    for s1, s2 in zip(session1.spike_times, session2.spike_times, strict=True)
 )
 print(f"Identical sessions with same seed: {spikes_match}")
 
@@ -750,7 +753,7 @@ durations = [5.0, 10.0, 30.0]
 
 for dur in durations:
     sess = open_field_session(duration=dur, n_place_cells=10, seed=300)
-    n_spikes = sum(len(st) for st in sess.spike_trains)
+    n_spikes = sum(len(st) for st in sess.spike_times)
     print(
         f"Duration {dur:5.1f}s: {n_spikes:5d} total spikes, {len(sess.times):6d} time points"
     )

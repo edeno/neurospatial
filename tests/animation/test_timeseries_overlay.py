@@ -2306,6 +2306,7 @@ class TestTimeSeriesPerformance:
             assert len(window_times) == 100
 
     @pytest.mark.slow
+    @pytest.mark.wallclock
     def test_timeseries_artist_manager_update_performance(self):
         """Test that TimeSeriesArtistManager.update() is efficient per frame."""
         import time
@@ -2375,6 +2376,7 @@ class TestTimeSeriesPerformance:
         )
 
     @pytest.mark.slow
+    @pytest.mark.wallclock
     def test_timeseries_window_extraction_is_o1(self):
         """Verify window extraction scales O(1) with data size.
 

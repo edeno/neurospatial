@@ -84,11 +84,11 @@ class TestPhasePrecessionResult:
 
 
 class TestPhasePrecession:
-    """Tests for phase_precession() function."""
+    """Tests for compute_phase_precession() function."""
 
     def test_negative_slope_for_precession(self) -> None:
         """Should return negative slope for phase precession data."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -98,7 +98,7 @@ class TestPhasePrecession:
             2 * np.pi
         )
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         # Should detect negative slope
         assert result.slope < 0
@@ -112,7 +112,7 @@ class TestPhasePrecession:
         at the true slope (MRL == 1). The optimizer must locate that lobe
         rather than settling into a neighboring side-lobe minimum.
         """
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         n = 400
         positions = np.linspace(0, 200, n)  # wide span -> narrow MRL lobe
@@ -120,7 +120,7 @@ class TestPhasePrecession:
         offset = 1.0
         phases = (offset + true_slope * positions) % (2 * np.pi)
 
-        result = phase_precession(
+        result = compute_phase_precession(
             positions, phases, slope_bounds=(-2 * np.pi, 2 * np.pi)
         )
 
@@ -137,108 +137,110 @@ class TestPhasePrecession:
 
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         assert 0 <= result.correlation <= 1
 
     def test_pvalue_in_valid_range(self) -> None:
         """P-value should be in [0, 1]."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         assert 0 <= result.pval <= 1
 
     def test_offset_in_valid_range(self) -> None:
         """Offset should be in [0, 2pi]."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         # Offset should be in [0, 2pi] (circular mean of residuals)
         assert 0 <= result.offset <= 2 * np.pi
 
     def test_mean_resultant_length_in_valid_range(self) -> None:
         """Mean resultant length should be in [0, 1]."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
 
         assert 0 <= result.mean_resultant_length <= 1
 
     def test_insufficient_spikes_raises(self) -> None:
         """Should raise ValueError for insufficient spikes."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.array([1.0, 2.0])  # Only 2 spikes
         phases = np.array([0.5, 1.5])
 
         with pytest.raises(ValueError, match="at least"):
-            phase_precession(positions, phases, min_spikes=10)
+            compute_phase_precession(positions, phases, min_spikes=10)
 
     def test_mismatched_lengths_raises(self) -> None:
         """Should raise ValueError for mismatched array lengths."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.array([1.0, 2.0, 3.0])
         phases = np.array([0.5, 1.5])
 
         with pytest.raises(ValueError, match="same length"):
-            phase_precession(positions, phases)
+            compute_phase_precession(positions, phases)
 
     def test_degree_input(self) -> None:
         """Should handle phases in degrees."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
         phases_deg = rng.uniform(0, 360, 50)
 
-        result = phase_precession(positions, phases_deg, angle_unit="deg")
+        result = compute_phase_precession(positions, phases_deg, angle_unit="deg")
 
         assert 0 <= result.correlation <= 1
 
     def test_position_range_normalization(self) -> None:
         """position_range should normalize positions and change slope units."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
         # position_range normalizes to [0, 1] - documented behavior, not a warning
-        result = phase_precession(positions, phases, position_range=(0.0, 100.0))
+        result = compute_phase_precession(
+            positions, phases, position_range=(0.0, 100.0)
+        )
 
         assert "normalized" in result.slope_units.lower()
 
     def test_invalid_position_range_raises(self) -> None:
         """Invalid position_range should raise ValueError."""
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
         with pytest.raises(ValueError, match="pos_max > pos_min"):
-            phase_precession(positions, phases, position_range=(100.0, 0.0))
+            compute_phase_precession(positions, phases, position_range=(100.0, 0.0))
 
 
 class TestHasPhasePrecession:
@@ -442,7 +444,7 @@ class TestPlotPhasePrecession:
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.phase_precession import (
-            phase_precession,
+            compute_phase_precession,
             plot_phase_precession,
         )
 
@@ -453,7 +455,7 @@ class TestPlotPhasePrecession:
             2 * np.pi
         )
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         ax = plot_phase_precession(positions, phases, result=result, show_fit=True)
 
         try:
@@ -470,7 +472,7 @@ class TestPlotPhasePrecession:
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.phase_precession import (
-            phase_precession,
+            compute_phase_precession,
             plot_phase_precession,
         )
 
@@ -478,7 +480,7 @@ class TestPlotPhasePrecession:
         positions = np.linspace(0, 50, 100)
         phases = rng.uniform(0, 2 * np.pi, 100)
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         ax = plot_phase_precession(positions, phases, result=result, show_fit=False)
 
         try:
@@ -605,7 +607,7 @@ class TestPlotPhasePrecession:
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.phase_precession import (
-            phase_precession,
+            compute_phase_precession,
             plot_phase_precession,
         )
 
@@ -616,7 +618,7 @@ class TestPlotPhasePrecession:
             2 * np.pi
         )
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         ax = plot_phase_precession(
             positions,
             phases,
@@ -688,7 +690,7 @@ class TestPlotPhasePrecession:
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.phase_precession import (
-            phase_precession,
+            compute_phase_precession,
             plot_phase_precession,
         )
 
@@ -699,7 +701,7 @@ class TestPlotPhasePrecession:
             2 * np.pi
         )
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         ax = plot_phase_precession(positions, phases, result=result, show_fit=True)
 
         try:
@@ -771,29 +773,29 @@ class TestPhasePrecessionSlopeMagnitude:
         return (angle + np.pi) % (2 * np.pi) - np.pi
 
     def test_slope_magnitude_recovered(self):
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(3)
         positions = np.linspace(0, 100, 200)
         true_slope = -0.1  # rad per position unit
         phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         assert np.isclose(result.slope, true_slope, atol=0.02)
 
     def test_slope_sign_and_magnitude_for_positive_slope(self):
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(3)
         positions = np.linspace(0, 100, 200)
         true_slope = 0.05
         phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
 
-        result = phase_precession(positions, phases)
+        result = compute_phase_precession(positions, phases)
         assert np.isclose(result.slope, true_slope, atol=0.02)
 
     def test_position_range_normalization(self):
-        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         # Contract (phase_precession docstring): with position_range=None the
         # slope is rad/position_unit; with position_range=(min, max) positions
@@ -810,8 +812,10 @@ class TestPhasePrecessionSlopeMagnitude:
         true_slope = -0.05
         phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
 
-        raw = phase_precession(positions, phases)
-        normalized = phase_precession(positions, phases, position_range=(0.0, 100.0))
+        raw = compute_phase_precession(positions, phases)
+        normalized = compute_phase_precession(
+            positions, phases, position_range=(0.0, 100.0)
+        )
 
         assert np.isclose(raw.slope, true_slope, atol=0.02)
         # Normalized slope = raw slope * span (100), within bounds.

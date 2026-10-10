@@ -55,12 +55,12 @@ Typical Workflows
     3. Compute metrics: ``path_progress()``, ``distance_to_region()``, etc.
 
 **Path efficiency analysis**:
-    1. Compute efficiency: ``result = compute_path_efficiency(env, positions, times, goal)``
+    1. Compute efficiency: ``result = compute_path_efficiency(env, times, positions, goal)``
     2. Check efficiency: ``if result.is_efficient(threshold=0.8): ...``
     3. Print summary: ``print(result)``
 
 **Goal-directed analysis**:
-    1. Compute metrics: ``result = compute_goal_directed_metrics(env, positions, times, goal)``
+    1. Compute metrics: ``result = compute_goal_directed_metrics(env, times, positions, goal)``
     2. Check goal-directed: ``if result.is_goal_directed(): ...``
 
 Example
@@ -91,11 +91,11 @@ Complete analysis pipeline for a spatial navigation task::
     )
 
     # 3. Compute efficiency
-    result = compute_path_efficiency(env, positions, times, goal)
+    result = compute_path_efficiency(env, times, positions, goal)
     print(result)
 
     # 4. Compute goal-directed metrics
-    gd_result = compute_goal_directed_metrics(env, positions, times, goal)
+    gd_result = compute_goal_directed_metrics(env, times, positions, goal)
     print(f"Goal bias: {gd_result.goal_bias:.2f}")
 
 References
@@ -116,7 +116,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
-from neurospatial._validation import validate_finite
 from neurospatial.behavior.segmentation import _positive_dt
 
 if TYPE_CHECKING:
@@ -167,6 +166,7 @@ class PathEfficiencyResult(ResultMixin):
     ----------
     traveled_length : float
         Total path length traveled (sum of step lengths), in environment units.
+        NaN when an interval is unobserved in compute_path_efficiency().
     shortest_length : float
         Geodesic or Euclidean distance from start to goal, in environment units.
         Is ``inf`` when the goal is unreachable under the geodesic metric (the
@@ -175,13 +175,14 @@ class PathEfficiencyResult(ResultMixin):
         Ratio shortest_length / traveled_length. Range (0, 1].
         Value of 1.0 indicates optimal path taken.
         Returns NaN if traveled_length is 0, path has < 2 points, or
-        shortest_length is ``inf`` (unreachable goal).
+        shortest_length is ``inf`` (unreachable goal), or an interval is unobserved.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
         1 - mean(|delta_theta|) / pi. Range [0, 1].
         Value of 1.0 indicates heading directly toward goal at all times.
         Returns 1.0 for paths with < 3 positions (no turns possible).
+        NaN when an interval is unobserved in compute_path_efficiency().
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
@@ -1112,6 +1113,8 @@ def heading_direction_labels(
     heading: NDArray[np.float64] | None = None,
     n_directions: int = 8,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
@@ -1134,11 +1137,28 @@ def heading_direction_labels(
         Minimum speed threshold below which a sample is labeled "stationary".
         In the same spatial-units-per-second as ``positions``/``times`` (e.g.
         cm/s if positions are in cm). The 5.0 default assumes cm/s.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
         Direction label for each timepoint.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    In trajectory mode, a sample with an invalid backward interval is
+    labeled "stationary", like the first sample. Precomputed speed/heading
+    inputs retain their existing behavior without a time gate.
 
     Examples
     --------
@@ -1180,17 +1200,25 @@ def heading_direction_labels(
                 "must be provided."
             )
 
-        positions_arr = np.asarray(positions, dtype=np.float64)
-        times_arr = np.asarray(times, dtype=np.float64)
+        from neurospatial._validation import validate_times_positions
+
+        times_arr, positions_arr = validate_times_positions(
+            times, positions, call="heading_direction_labels", order="positions, times"
+        )
         n_samples = len(times_arr)
 
+        from neurospatial.behavior._kinematics import interval_velocity
+        from neurospatial.environment.trajectory import observed_interval_mask
+
+        interval_mask = observed_interval_mask(
+            times_arr, max_gap=max_gap, epochs=epochs
+        )
         if n_samples == 0:
             return np.array([], dtype=object)
         if n_samples == 1:
             return np.array(["stationary"], dtype=object)
 
-        dt = np.diff(times_arr)
-        velocity = np.diff(positions_arr, axis=0) / dt[:, np.newaxis]
+        velocity = interval_velocity(times_arr, positions_arr, interval_mask)
 
         speed_computed = np.linalg.norm(velocity, axis=1)
         heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
@@ -1356,8 +1384,8 @@ def shortest_path_length(
 
 
 def time_efficiency(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     reference_speed: float,
     optimal_distance: float,
@@ -1366,10 +1394,10 @@ def time_efficiency(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions.
     reference_speed : float
         Reference speed in environment units per second.
     optimal_distance : float
@@ -1388,19 +1416,17 @@ def time_efficiency(
     Examples
     --------
     >>> eff = time_efficiency(
-    ...     positions, times, reference_speed=20.0, optimal_distance=50.0
+    ...     times, positions, reference_speed=20.0, optimal_distance=50.0
     ... )  # doctest: +SKIP
     >>> print(f"Time efficiency: {eff:.1%}")  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="time_efficiency"
+    )
     if len(positions) < 2:
         return np.nan
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
 
     if not np.isfinite(optimal_distance):
         return np.nan
@@ -1440,6 +1466,14 @@ def angular_efficiency(
     Notes
     -----
     Computed as: 1 - mean(|delta_theta|) / pi
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import angular_efficiency
+    >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    >>> angular_efficiency(positions, goal=np.array([2.0, 0.0]))
+    1.0
     """
     from neurospatial.behavior.trajectory import compute_turn_angles
 
@@ -1482,6 +1516,16 @@ def subgoal_efficiency(
     -------
     SubgoalEfficiencyResult
         Per-segment efficiency and aggregated metrics.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import subgoal_efficiency
+    >>> positions = np.c_[np.arange(11.0), np.zeros(11)]
+    >>> env = Environment.from_samples(positions, bin_size=1.0)
+    >>> subgoals = np.array([[5.0, 0.0], [10.0, 0.0]])
+    >>> result = subgoal_efficiency(env, positions, subgoals, metric="euclidean")
     """
     subgoals = np.asarray(subgoals)
     if subgoals.ndim == 1:
@@ -1569,12 +1613,14 @@ def subgoal_efficiency(
 
 def compute_path_efficiency(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
     reference_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> PathEfficiencyResult:
     """Compute comprehensive path efficiency metrics.
 
@@ -1582,40 +1628,62 @@ def compute_path_efficiency(
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance metric.
     reference_speed : float, optional
         Reference speed for time efficiency.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     PathEfficiencyResult
-        All path efficiency metrics combined. When the goal is unreachable
+        All path efficiency metrics combined. An unobserved interval makes
+        traveled_length, efficiency and angular_efficiency NaN. When the goal is unreachable
         under ``metric="geodesic"`` (it lies on a disconnected component),
         ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
         ``time_efficiency`` fields are ``nan`` (not ``0.0``).
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    A path containing any unobserved interval is unknowable: traveled
+    length, path efficiency and angular efficiency are NaN. Shortest
+    length and wall-clock time efficiency retain their existing meanings.
+
     Examples
     --------
-    >>> result = compute_path_efficiency(env, positions, times, goal)  # doctest: +SKIP
+    >>> result = compute_path_efficiency(env, times, positions, goal)  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
+    from neurospatial._validation import validate_times_positions
 
+    times, positions = validate_times_positions(
+        times, positions, call="compute_path_efficiency"
+    )
+
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    complete_path = observed_interval_mask(times, max_gap=max_gap, epochs=epochs).all()
     goal = np.asarray(goal)
 
-    if len(positions) >= 2:
+    if not complete_path:
+        traveled = np.nan
+    elif len(positions) >= 2:
         traveled = traveled_path_length(positions, metric=metric, env=env)
     else:
         traveled = 0.0
@@ -1631,13 +1699,13 @@ def compute_path_efficiency(
     time_eff = None
     if reference_speed is not None and len(positions) >= 2:
         time_eff = time_efficiency(
-            positions,
             times,
+            positions,
             reference_speed=reference_speed,
             optimal_distance=shortest,
         )
 
-    ang_eff = angular_efficiency(positions, goal)
+    ang_eff = angular_efficiency(positions, goal) if complete_path else np.nan
 
     return PathEfficiencyResult(
         traveled_length=traveled,
@@ -1730,56 +1798,80 @@ def goal_direction(
 
 
 def instantaneous_goal_alignment(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute instantaneous alignment between movement and goal direction.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     min_speed : float, default=5.0
         Minimum speed threshold in environment units per second.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Cosine of angle between velocity and goal direction.
-        Range [-1, 1]. NaN for stationary periods.
+        Range [-1, 1]. NaN where speed < ``min_speed`` or no run is observed.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Samples in no observed run and samples below ``min_speed`` have NaN
+    alignment. Each run's last sample repeats its previous interval's
+    heading, as at the end of a complete recording.
 
     Examples
     --------
     >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
     >>> times = np.linspace(0, 10, 21)
     >>> goal = np.array([100.0, 0.0])
-    >>> alignment = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
+    >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
     >>> bool(np.nanmean(alignment) > 0.9)
     True
     """
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial._validation import validate_times_positions
 
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    times, positions = validate_times_positions(
+        times, positions, call="instantaneous_goal_alignment"
+    )
+    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+
     goal = np.asarray(goal)
 
+    from neurospatial.environment.trajectory import observed_interval_mask
+
+    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
 
-    dt = float(np.median(np.diff(times)))
-
-    # allow_all_nan: a fully-stationary window has undefined goal alignment; the
-    # NaN propagates to `alignment` rather than raising (goal_bias handles it).
-    velocity_heading = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
+    velocity_heading, speed = _velocity_heading_and_speed(
+        times,
+        positions,
+        interval_mask=interval_mask,
     )
+    velocity_heading[speed < min_speed] = np.nan
     goal_heading = goal_direction(positions, goal)
 
     angle_diff = velocity_heading - goal_heading
@@ -1789,24 +1881,35 @@ def instantaneous_goal_alignment(
 
 
 def goal_bias(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> float:
     """Compute mean alignment toward goal over trajectory.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     min_speed : float, default=5.0
-        Minimum speed threshold. Stationary periods excluded.
+        Speed threshold in position units per second. Samples slower than this
+        are excluded from the mean.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1816,6 +1919,9 @@ def goal_bias(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
     Interpretation:
     - > 0.5: Strong goal-directed navigation
     - 0 to 0.5: Weak goal-directed with some wandering
@@ -1826,11 +1932,14 @@ def goal_bias(
     >>> positions = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
     >>> times = np.linspace(0, 10, 101)
     >>> goal = np.array([100.0, 0.0])
-    >>> goal_bias(positions, times, goal, min_speed=0.0) > 0.8
+    >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
     True
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(times, positions, call="goal_bias")
     alignment = instantaneous_goal_alignment(
-        positions, times, goal, min_speed=min_speed
+        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )
 
     valid_alignment = alignment[~np.isnan(alignment)]
@@ -1842,34 +1951,44 @@ def goal_bias(
 
 
 def approach_rate(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
     env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """Compute rate of distance change toward goal.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric. Geodesic requires env parameter.
     env : Environment, optional
         Required when metric="geodesic".
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Rate of distance change (d(distance)/dt) in units per second.
         Negative values indicate approaching the goal.
-        First value is NaN.
+        First value and samples with invalid backward intervals are NaN.
 
     Raises
     ------
@@ -1882,17 +2001,26 @@ def approach_rate(
         (duplicate or out-of-order timestamps would yield ``inf``/``nan``
         rates).
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    The first sample and samples with an invalid backward interval have
+    NaN rates; no distance change is estimated across a pause.
+
     Examples
     --------
     >>> positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
     >>> times = np.linspace(0, 5, 11)
     >>> goal = np.array([100.0, 0.0])
-    >>> rates = approach_rate(positions, times, goal)
+    >>> rates = approach_rate(times, positions, goal)
     >>> bool(np.nanmean(rates) < 0)  # Negative = approaching
     True
     """
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(times, positions, call="approach_rate")
     goal = np.asarray(goal)
 
     if metric == "geodesic" and env is None:
@@ -1901,14 +2029,6 @@ def approach_rate(
             "Provide the Environment instance, or use metric='euclidean' "
             "for straight-line distances."
         )
-
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}."
-        )
-
-    validate_finite(times, name="times")
 
     if metric == "euclidean":
         goal_vec = goal_vector(positions, goal)
@@ -1921,24 +2041,28 @@ def approach_rate(
             position_bins, env, target_bins=goal_bin, metric="geodesic"
         )
 
-    dt = _positive_dt(times, name="times")
-    d_distance = np.diff(distances)
+    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial.environment.trajectory import observed_interval_mask
 
+    _positive_dt(times, name="times")
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     rates = np.full(len(positions), np.nan)
-    rates[1:] = d_distance / dt
+    rates[1:] = interval_velocity(times, distances[:, None], mask)[:, 0]
 
     return rates
 
 
 def compute_goal_directed_metrics(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
     min_speed: float = 5.0,
     goal_radius: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> GoalDirectedMetrics:
     """Compute comprehensive goal-directed navigation metrics.
 
@@ -1946,10 +2070,10 @@ def compute_goal_directed_metrics(
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"
@@ -1958,6 +2082,14 @@ def compute_goal_directed_metrics(
         Minimum speed for valid heading (units/s).
     goal_radius : float, optional
         Radius for goal arrival detection.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1969,28 +2101,36 @@ def compute_goal_directed_metrics(
     ValueError
         If positions and times have different lengths.
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Heading alignment and approach-rate averages use observed intervals.
+    Time-to-goal remains wall-clock time, which is known across a pause.
+
     Examples
     --------
     >>> result = compute_goal_directed_metrics(
-    ...     env, positions, times, goal
+    ...     env, times, positions, goal
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
-    positions = np.asarray(positions)
-    times = np.asarray(times)
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_goal_directed_metrics"
+    )
     goal = np.asarray(goal)
 
-    if len(positions) != len(times):
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {len(times)}. "
-            f"Check that both arrays cover the same time period."
-        )
+    bias = goal_bias(
+        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+    )
 
-    bias = goal_bias(positions, times, goal, min_speed=min_speed)
-
-    rates = approach_rate(positions, times, goal, metric=metric, env=env)
-    mean_rate = float(np.nanmean(rates))
+    rates = approach_rate(
+        times, positions, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
+    )
+    mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
     goal_vec = goal_vector(positions, goal)
     distances = np.linalg.norm(goal_vec, axis=1)

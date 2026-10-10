@@ -31,6 +31,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import ndimage
 
+from neurospatial._exceptions import _format_error
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
@@ -375,18 +376,28 @@ def _validate_and_prepare_inputs(
     # Check for NaN or Inf values
     if np.any(np.isnan(bin_sizes)):
         raise ValueError(
-            f"[E1002] bin_size contains NaN (Not a Number) values (got {bin_size}). "
-            "bin_size must be finite numeric values."
+            _format_error(
+                f"[E1002] bin_size contains NaN (Not a Number) values (got {bin_size}). bin_size must be finite numeric values.",
+                fix="pass bin_size=2.0 (in the same units as positions)",
+                why="Why: grid widths must be finite and positive in every spatial dimension.",
+            )
         )
     if np.any(np.isinf(bin_sizes)):
         raise ValueError(
-            f"[E1002] bin_size contains infinite values (got {bin_size}). "
-            "bin_size must be finite numeric values."
+            _format_error(
+                f"[E1002] bin_size contains infinite values (got {bin_size}). bin_size must be finite numeric values.",
+                fix="pass bin_size=2.0 (in the same units as positions)",
+                why="Why: grid widths must be finite and positive in every spatial dimension.",
+            )
         )
 
     if np.any(bin_sizes <= 0.0):
         raise ValueError(
-            f"[E1002] All elements of `bin_size` must be positive (got {bin_size})."
+            _format_error(
+                f"[E1002] All elements of `bin_size` must be positive (got {bin_size}).",
+                fix="pass bin_size=2.0 (in the same units as positions)",
+                why="Why: grid widths must be finite and positive in every spatial dimension.",
+            )
         )
 
     return samples, n_dims, bin_sizes

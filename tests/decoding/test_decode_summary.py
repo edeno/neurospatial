@@ -493,8 +493,26 @@ class TestDecodingSummaryTerminalVerbs:
         assert s["n_bins"] == small_2d_env.n_bins
         assert "mean_entropy" in s
         assert "max_entropy" in s
-        # all scalar
-        for v in s.values():
+        assert set(s) == {
+            "n_time_bins",
+            "n_bins",
+            "mean_entropy",
+            "max_entropy",
+            "mean_peak_prob",
+            "spike_window",
+            "spike_window_assumed",
+        }
+        assert s["spike_window"] is None
+        assert s["spike_window_assumed"] is True
+        # Headline metrics remain scalar; coverage metadata may hold intervals.
+        for key in (
+            "n_time_bins",
+            "n_bins",
+            "mean_entropy",
+            "max_entropy",
+            "mean_peak_prob",
+        ):
+            v = s[key]
             assert np.isscalar(v) or isinstance(v, (int, float))
 
     def test_plot_returns_axes(self, small_2d_env):
@@ -506,6 +524,14 @@ class TestDecodingSummaryTerminalVerbs:
         from matplotlib.axes import Axes
 
         assert isinstance(ax, Axes)
+        (line,) = ax.get_lines()
+        np.testing.assert_array_equal(line.get_xdata(), summ.times)
+        np.testing.assert_array_equal(line.get_ydata(), summ.posterior_entropy)
+
+        map_lines = summ.plot(quantity="map").get_lines()
+        assert len(map_lines) == summ.map_position.shape[1]
+        for i, map_line in enumerate(map_lines):
+            np.testing.assert_array_equal(map_line.get_ydata(), summ.map_position[:, i])
 
     def test_to_xarray_dims(self, small_2d_env):
         pytest.importorskip("xarray")

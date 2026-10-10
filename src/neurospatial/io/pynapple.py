@@ -93,14 +93,12 @@ def from_pynapple(
     # actionable and consistent with ``to_pynapple``.
     _require_pynapple()
 
-    # Tsd / TsdFrame: a value time series -> (times, positions). Delegate to the
-    # shared position boundary adapter -- identical duck-type guard and float64
-    # coercion (including the ``.d`` alias fallback), so this stays a single
-    # implementation of that coercion.
+    # Tsd / TsdFrame: prefer .values, with the pynapple .d alias fallback.
     if hasattr(obj, "t") and (hasattr(obj, "values") or hasattr(obj, "d")):
-        from neurospatial._typing import as_times_positions
-
-        return as_times_positions(obj)
+        values = getattr(obj, "values", None)
+        if values is None:
+            values = obj.d
+        return np.asarray(obj.t, dtype=np.float64), np.asarray(values, dtype=np.float64)
 
     # IntervalSet: epochs -> (start, end). No public adapter equivalent, so this
     # branch keeps its own coercion.
@@ -115,7 +113,7 @@ def from_pynapple(
     # surfaces the group's ids. For a genuine group the ids are never ``None``,
     # so the cast to the non-optional group return arm is safe.
     if hasattr(obj, "index"):
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding._spikes import as_spike_trains_with_ids
 
         return cast(
             "tuple[list[NDArray[np.float64]], NDArray[Any]]",
@@ -144,14 +142,17 @@ def to_pynapple(
     Parameters
     ----------
     times : array-like or decode result
-        Timestamps (seconds), or a decode result exposing ``.times`` and
-        ``.map_position`` (in which case ``values`` must be ``None``).
+        Finite, strictly increasing timestamps (seconds), or a decode result
+        exposing ``.times`` and ``.map_position`` (in which case ``values``
+        must be ``None``). Times are never sorted here: pynapple would sort
+        them without reordering ``values``.
     values : NDArray[np.float64] or None, default=None
         Values sampled at ``times``, shape ``(n,)`` or ``(n, n_dims)``. Required
         when ``times`` is a timestamp array; must be ``None`` when ``times`` is a
         decode result.
     columns : sequence, optional
-        Column labels for the resulting ``TsdFrame`` (2-D values only).
+        Column labels for the resulting ``TsdFrame`` (2-D values only), one per
+        value column.
 
     Returns
     -------
@@ -166,8 +167,10 @@ def to_pynapple(
         If ``values`` is ``None`` and ``times`` is not a decode result exposing
         ``.times`` and ``.map_position``.
     ValueError
-        If ``times`` is not 1-D, ``values`` is not 1-D or 2-D, or ``times`` and
-        ``values`` differ in length.
+        If ``times`` is not 1-D, finite and strictly increasing, ``values`` is
+        not 1-D or 2-D, ``times`` and ``values`` differ in length, or
+        ``columns`` does not have one label per value column. These checks run
+        before pynapple is imported.
 
     Examples
     --------
@@ -175,8 +178,6 @@ def to_pynapple(
     >>> tsdframe = to_pynapple(result)  # a DecodingResult MAP track  # doctest: +SKIP
     >>> tsd = to_pynapple(times, linear_positions)  # doctest: +SKIP
     """
-    nap = _require_pynapple()
-
     if values is None:
         # Duck-typed decode result: pull the MAP track off it. Guard the
         # duck-type up front so a non-result `times` yields an actionable error
@@ -202,7 +203,7 @@ def to_pynapple(
         raise ValueError(
             f"`times` must be 1-D, got shape {times.shape}.\n"
             "  WHY: pynapple indexes a Tsd/TsdFrame by a 1-D time axis.\n"
-            "  HOW: pass a 1-D array of timestamps."
+            "  Fix: pass a 1-D array of timestamps."
         )
     if values.ndim not in (1, 2):
         raise ValueError(
@@ -210,15 +211,48 @@ def to_pynapple(
             f"{values.shape}).\n"
             "  WHY: a Tsd holds 1-D values, a TsdFrame holds 2-D "
             "(n_samples, n_columns) values.\n"
-            "  HOW: pass values shaped (n,) or (n, n_columns)."
+            "  Fix: pass values shaped (n,) or (n, n_columns)."
         )
     if len(times) != len(values):
         raise ValueError(
             f"`times` and `values` must have the same length, got "
             f"{len(times)} timestamps and {len(values)} value rows.\n"
             "  WHY: each value (row) is sampled at one timestamp.\n"
-            "  HOW: pass times and values with matching first-axis length."
+            "  Fix: pass times and values with matching first-axis length."
         )
+    non_finite = np.flatnonzero(~np.isfinite(times))
+    if non_finite.size:
+        raise ValueError(
+            f"`times` must be finite, but {non_finite.size} timestamp(s) are NaN "
+            f"or infinite (first at index {int(non_finite[0])}).\n"
+            "Why: a non-finite timestamp has no place on a pynapple time axis.\n"
+            "Fix: keep = np.isfinite(times); to_pynapple(times[keep], "
+            "values[keep])"
+        )
+    non_increasing = np.flatnonzero(times[1:] <= times[:-1])
+    if non_increasing.size:
+        i = int(non_increasing[0])
+        raise ValueError(
+            f"`times` must be strictly increasing, but timestamps at indices {i} "
+            f"and {i + 1} are {times[i]!r} and {times[i + 1]!r}.\n"
+            "Why: pynapple sorts timestamps without reordering the values, "
+            "which would pair each value with another sample's time; repeated "
+            "timestamps have no defined order.\n"
+            'Fix: order = np.argsort(times, kind="stable"); '
+            "to_pynapple(times[order], values[order]), after resolving any "
+            "repeated timestamps."
+        )
+    if values.ndim == 2 and columns is not None and len(columns) != values.shape[1]:
+        raise ValueError(
+            f"`columns` has {len(columns)} labels but values has "
+            f"{values.shape[1]} value columns.\n"
+            "Why: pynapple replaces a mismatched label list with integer "
+            "column names.\n"
+            f"Fix: pass exactly {values.shape[1]} labels, or omit columns=."
+        )
+
+    # Import only after validation, so invalid input never reaches pynapple.
+    nap = _require_pynapple()
 
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values)

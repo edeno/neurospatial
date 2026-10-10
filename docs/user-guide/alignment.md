@@ -6,6 +6,7 @@ neurospatial provides tools for transforming and aligning spatial representation
 
 For 2D environments, use the `Affine2D` class:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 
@@ -25,8 +26,9 @@ transformed_points = transform(points_2d)
 
 ## 3D Affine Transformations
 
-For 3D environments, use `AffineND` or the convenience alias `Affine3D`:
+For 3D environments, use `AffineND`:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 
@@ -59,6 +61,7 @@ transformed_points = combined(points_3d)
 
 Estimate transformations from matching point pairs (works for 2D or 3D):
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 

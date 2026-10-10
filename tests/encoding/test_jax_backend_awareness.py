@@ -530,20 +530,20 @@ class TestViewRateResultWithJax:
 
 
 # ==============================================================================
-# Test EgocentricRateResult with JAX arrays
+# Test ObjectVectorRateResult with JAX arrays
 # ==============================================================================
 
 
 @skip_without_jax
-class TestEgocentricRateResultWithJax:
-    """Tests for EgocentricRateResult methods with JAX arrays."""
+class TestObjectVectorRateResultWithJax:
+    """Tests for ObjectVectorRateResult methods with JAX arrays."""
 
     def test_plot_with_jax_array(self) -> None:
         """plot() should work with JAX array data."""
         import jax.numpy as jnp
         import matplotlib.pyplot as plt
 
-        from neurospatial.encoding.egocentric import EgocentricRateResult
+        from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         # Create egocentric polar environment
         n_distance_bins = 5
@@ -561,7 +561,8 @@ class TestEgocentricRateResultWithJax:
         firing_rate_jax = jnp.ones(n_bins) * 5.0
         occupancy_jax = jnp.ones(n_bins)
 
-        result = EgocentricRateResult(
+        result = ObjectVectorRateResult(
+            direction_frame="egocentric",
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=env,
@@ -579,7 +580,7 @@ class TestEgocentricRateResultWithJax:
         """preferred_distance() should work with JAX arrays."""
         import jax.numpy as jnp
 
-        from neurospatial.encoding.egocentric import EgocentricRateResult
+        from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         n_distance_bins = 5
         n_direction_bins = 12
@@ -600,7 +601,8 @@ class TestEgocentricRateResultWithJax:
         firing_rate_jax = jnp.array(firing_rate_np)
         occupancy_jax = jnp.ones(n_bins)
 
-        result = EgocentricRateResult(
+        result = ObjectVectorRateResult(
+            direction_frame="egocentric",
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=env,

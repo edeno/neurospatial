@@ -175,7 +175,9 @@ print(f"Processing modules: {list(nwbfile.processing.keys())}")
 # multiple series exist.
 
 # %%
-positions_nwb, times_nwb = read_position(nwbfile)
+pos = read_position(nwbfile)
+positions_nwb, times_nwb = pos.positions, pos.times
+print(f"Declared physical units: {pos.units}")
 print(f"Read positions: shape={positions_nwb.shape}, dtype={positions_nwb.dtype}")
 print(
     f"Read times:     shape={times_nwb.shape}, range=[{times_nwb[0]:.1f}, "

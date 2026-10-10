@@ -491,7 +491,10 @@ def create_selected_overlays(
         ts_data = rng.standard_normal(n_frames)
         # Low-pass filter to create smooth signal
         b, a = butter(3, 0.1)
-        ts_data = filtfilt(b, a, ts_data)
+        # filtfilt's default padlen (3 * max(len(a), len(b)) = 12) exceeds a
+        # short --frames run; cap it so any n_frames >= 2 works.
+        padlen = min(3 * max(len(a), len(b)), n_frames - 1)
+        ts_data = filtfilt(b, a, ts_data, padlen=padlen)
 
         # Generate timestamps
         ts_times = np.arange(n_frames) / DEFAULT_FPS

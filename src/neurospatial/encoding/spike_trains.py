@@ -1,6 +1,6 @@
 """The :class:`SpikeTrains` ragged-spike-train container.
 
-``SpikeTrains`` is the single new container Phase 3 adds. It is justified
+``SpikeTrains`` is the library's one spike container. It is justified
 because ragged per-unit spike times genuinely do not fit a rectangular array;
 every other neurospatial surface stays array-first (or ``xarray`` for labeled
 grids). The container bundles the per-unit trains with their identity labels
@@ -11,8 +11,8 @@ metadata-driven :meth:`SpikeTrains.filter`.
 Interop role
 ------------
 ``SpikeTrains`` **duck-types as a** ``SpikeTrainsLike`` **group** so it flows
-straight into the batch encoding/decoding functions through the Phase 3.1
-spike-input adapter (:func:`neurospatial.encoding.as_spike_trains_with_ids`).
+straight into the batch encoding/decoding functions through the shared
+spike-input adapter (``neurospatial.encoding._spikes.as_spike_trains_with_ids``).
 That adapter detects a group via a non-callable ``.index`` and then extracts
 trains in one of two ways:
 
@@ -35,9 +35,8 @@ access keyed by unit id.
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -73,7 +72,10 @@ class SpikeTrains:
         non-1-D element raises :class:`ValueError`.
     unit_ids : ndarray or sequence, optional
         Identity label for each unit, one per train. Defaults to
-        ``np.arange(len(trains))``. Must be 1-D, length ``len(trains)``, and
+        ``np.arange(len(trains))``; such generated labels do not count as
+        labels when the container is passed to an encoder or decoder (an
+        explicit ``unit_ids=`` there may name the units, and decoding pairs
+        trains by position). Must be 1-D, length ``len(trains)``, and
         **unique** (label access and downstream selection require uniqueness);
         a length mismatch or duplicate labels raise :class:`ValueError`.
     unit_table : pandas.DataFrame or None, optional
@@ -93,10 +95,16 @@ class SpikeTrains:
     unit_table : pandas.DataFrame or None
         The per-unit metadata table, or ``None``.
 
+    Other Parameters
+    ----------------
+    _unit_ids_generated : bool, default=False
+        Internal identity flag carried by selection or fitting when unit labels
+        were generated. Leave it at its default when supplying real unit IDs.
+
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import SpikeTrains
+    >>> from neurospatial.encoding import SpikeTrains
     >>> st = SpikeTrains(
     ...     [np.array([0.1, 0.5]), np.array([0.2, 0.3, 0.8])],
     ...     unit_ids=np.array([7, 9]),
@@ -110,6 +118,9 @@ class SpikeTrains:
     trains: Sequence[NDArray[np.float64]]
     unit_ids: NDArray[Any] | None = None
     unit_table: pd.DataFrame | None = None
+    # True only when ``unit_ids`` was omitted and ``arange`` labels were
+    # generated; such labels are not caller-supplied (see ``.index``).
+    _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Coerce trains, resolve/validate unit ids, and validate the table."""
@@ -121,7 +132,7 @@ class SpikeTrains:
                     f"Each spike train must be 1-D, but train {i} has shape "
                     f"{arr.shape}.\n"
                     "  WHY: SpikeTrains holds one 1-D spike-time array per unit.\n"
-                    "  HOW: pass a 1-D array of spike times for each unit."
+                    "  Fix: pass a 1-D array of spike times for each unit."
                 )
             coerced.append(arr)
         # Store as a tuple so in-place mutation (e.g. ``st.trains.append(...)``)
@@ -129,24 +140,9 @@ class SpikeTrains:
         object.__setattr__(self, "trains", tuple(coerced))
 
         n_units = len(coerced)
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
-
-        # Uniqueness is required: label access (st[unit_id]) and downstream
-        # label-based selection are ambiguous with duplicate ids. Count with a
-        # hash-based Counter rather than np.unique: unit_ids may be a mixed
-        # int/str object array (e.g. [1, "a", 2]), which np.unique cannot sort
-        # (TypeError). Counter needs only hashability, not ordering.
-        counts = Counter(resolved.tolist())
-        duplicated = [label for label, count in counts.items() if count > 1]
-        if duplicated:
-            raise ValueError(
-                f"unit_ids must be unique in SpikeTrains: duplicated label(s) "
-                f"{duplicated}.\n"
-                "  WHY: label access st[unit_id] and downstream selection "
-                "require one row per label.\n"
-                "  HOW: pass distinct unit_ids, or omit them to default to "
-                "np.arange(n_units)."
-            )
         object.__setattr__(self, "unit_ids", resolved)
 
         validate_unit_table(self.unit_table, n_units, context="SpikeTrains")
@@ -254,7 +250,7 @@ class SpikeTrains:
         --------
         >>> import numpy as np
         >>> import pandas as pd
-        >>> from neurospatial import SpikeTrains
+        >>> from neurospatial.encoding import SpikeTrains
         >>> st = SpikeTrains(
         ...     [np.array([0.1]), np.array([0.2]), np.array([0.3])],
         ...     unit_ids=np.array([10, 20, 30]),
@@ -269,7 +265,7 @@ class SpikeTrains:
                 "Cannot filter a SpikeTrains with unit_table=None: there is no "
                 "per-unit metadata to query.\n"
                 "  WHY: filter() selects units by matching unit_table rows.\n"
-                "  HOW: construct SpikeTrains with a unit_table (one row per "
+                "  Fix: construct SpikeTrains with a unit_table (one row per "
                 "unit) before calling filter()."
             )
 
@@ -282,5 +278,8 @@ class SpikeTrains:
         new_unit_ids = np.asarray(self.unit_ids)[positions]
         new_table = self.unit_table.iloc[positions].reset_index(drop=True)
         return SpikeTrains(
-            trains=new_trains, unit_ids=new_unit_ids, unit_table=new_table
+            trains=new_trains,
+            unit_ids=new_unit_ids,
+            unit_table=new_table,
+            _unit_ids_generated=self._unit_ids_generated,
         )

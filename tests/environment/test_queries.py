@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+from neurospatial import BinIndexOutOfRangeError
+
 
 class TestBinAt:
     """Tests for Environment.bin_at() method."""
@@ -205,6 +207,15 @@ class TestBinCenterOf:
         centers = small_2d_env.bin_center_of(indices)
 
         assert centers.shape == (3, small_2d_env.n_dims)
+
+    @pytest.mark.parametrize("bad", [-1, "n_bins", [0, -2]])
+    def test_bin_center_of_rejects_out_of_range(self, small_2d_env, bad):
+        """A negative index must not silently wrap to the last bins."""
+        from neurospatial import BinIndexOutOfRangeError
+
+        index = small_2d_env.n_bins if bad == "n_bins" else bad
+        with pytest.raises(BinIndexOutOfRangeError):
+            small_2d_env.bin_center_of(index)
 
     def test_bin_center_of_all_bins(self, small_2d_env):
         """Test bin_center_of for all bins."""
@@ -620,7 +631,7 @@ class TestReachableFrom:
 
     def test_reachable_from_invalid_source_raises(self, small_2d_env):
         """Test that invalid source bin raises ValueError."""
-        with pytest.raises(IndexError, match="out of range"):
+        with pytest.raises(BinIndexOutOfRangeError, match="out of range"):
             small_2d_env.reachable_from(small_2d_env.n_bins + 10, radius=None)
 
     def test_reachable_from_negative_radius_raises(self, small_2d_env):

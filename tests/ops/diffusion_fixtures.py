@@ -21,6 +21,7 @@ and therefore the dense operator -- is reproducible run to run.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -159,6 +160,20 @@ def build_mesh(point_spacing: float = 5.0) -> tuple[Environment, list[float]]:
         layout_params={"boundary_polygon": boundary, "point_spacing": point_spacing},
     )
     return env, [0.0, 0.0]
+
+
+# The mesh fixture triangulates a square lattice. Every lattice cell is
+# cocircular, so scipy's Delaunay picks each cell's diagonal by a tie-break that
+# differs across platforms (macOS vs Linux/Windows): an equally valid mesh with
+# different triangles. The frozen baseline describes the mesh it was captured
+# on, identified by this fingerprint of its bin centers.
+MESH_BASELINE_FINGERPRINT = "4c270b13ea446f72"
+
+
+def bin_center_fingerprint(env: Environment) -> str:
+    """Short hash of the bin centers, rounded to absorb float round-off."""
+    rounded = np.round(np.asarray(env.bin_centers, dtype=np.float64), 6)
+    return hashlib.sha256(rounded.tobytes()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------

@@ -39,7 +39,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="both",
+            max_gap=None,
         )
 
         # Should detect entries and exits
@@ -68,7 +73,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="entry"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="entry",
+            max_gap=None,
         )
 
         # All crossings should be entries
@@ -93,7 +103,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="exit"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="exit",
+            max_gap=None,
         )
 
         # All crossings should be exits
@@ -118,7 +133,12 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="target",
+            direction="both",
+            max_gap=None,
         )
 
         # Should have no crossings
@@ -326,7 +346,7 @@ class TestSegmentByVelocity:
 
         # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
-            trajectory, times, min_speed=2.0, min_duration=0.5, hysteresis=2.0
+            times, trajectory, min_speed=2.0, min_duration=0.5, hysteresis=2.0
         )
 
         # Should detect at least one movement period
@@ -353,10 +373,10 @@ class TestSegmentByVelocity:
         from neurospatial.behavior.segmentation import segment_by_velocity
 
         wide = segment_by_velocity(
-            trajectory, times, min_speed=1.0, min_duration=0.0, hysteresis=2.0
+            times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=2.0
         )
         narrow = segment_by_velocity(
-            trajectory, times, min_speed=1.0, min_duration=0.0, hysteresis=1.01
+            times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=1.01
         )
 
         # Wide hysteresis band ⇒ fewer (or equal) transitions, hence
@@ -378,8 +398,8 @@ class TestSegmentByVelocity:
         from neurospatial.behavior.segmentation import segment_by_velocity
 
         segments = segment_by_velocity(
-            trajectory,
             times,
+            trajectory,
             min_speed=5.0,
             min_duration=1.0,  # Require 1 second
         )
@@ -411,8 +431,8 @@ class TestSegmentByVelocity:
         # min_speed just below the true speed; with zero-padding the suppressed
         # edges would dip under this threshold and break the epoch.
         segments = segment_by_velocity(
-            trajectory,
             times,
+            trajectory,
             min_speed=8.0,
             min_duration=0.5,
             hysteresis=2.0,
@@ -445,7 +465,7 @@ class TestSegmentByVelocity:
 
         from neurospatial.behavior.segmentation import Run, segment_by_velocity
 
-        segments = segment_by_velocity(trajectory, times, min_speed=2.0)
+        segments = segment_by_velocity(times, trajectory, min_speed=2.0)
 
         assert isinstance(segments, list)
         for run in segments:
@@ -519,7 +539,7 @@ class TestRegionSegmentationIntegration:
 
         # 3. Segment by velocity
         movement_segments = segment_by_velocity(
-            trajectory, times, min_speed=2.0, min_duration=0.5
+            times, trajectory, min_speed=2.0, min_duration=0.5
         )
 
         # All functions should execute successfully

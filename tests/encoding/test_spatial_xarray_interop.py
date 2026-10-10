@@ -11,15 +11,63 @@ xarray is unavailable.
 from __future__ import annotations
 
 import builtins
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
-from neurospatial.encoding.egocentric import EgocentricRatesResult
+from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.encoding.view import ViewRatesResult
+
+
+@pytest.mark.parametrize("window", [None, [(0.0, 10.0), (20.0, 30.0)]])
+def test_frame_family_spike_window_attrs_roundtrip(
+    frame_family, continuous_recording, tmp_path, window
+):
+    xr = pytest.importorskip("xarray")
+    f, r = frame_family, continuous_recording
+    result = f.plural(*f.args(r, [r.spike_times]), **f.defaults, spike_window=window)
+    ds = result.to_xarray()
+    assert ds.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in ds.attrs
+    else:
+        np.testing.assert_array_equal(
+            ds.attrs["spike_window"], np.asarray(window).ravel()
+        )
+    path = tmp_path / "frame_rates.nc"
+    ds.to_netcdf(path, engine="scipy")
+    loaded = xr.load_dataset(path, engine="scipy")
+    assert loaded.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in loaded.attrs
+    else:
+        np.testing.assert_array_equal(
+            loaded.attrs["spike_window"], np.asarray(window).ravel()
+        )
+
+
+@pytest.mark.parametrize("window", [None, np.array([[0.0, 10.0], [20.0, 30.0]])])
+def test_spike_window_attrs_roundtrip(rates_result, tmp_path, window):
+    xr = pytest.importorskip("xarray")
+    result = replace(rates_result, spike_window=window)
+    ds = result.to_xarray()
+    assert ds.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in ds.attrs
+    else:
+        np.testing.assert_array_equal(ds.attrs["spike_window"], window.ravel())
+    path = tmp_path / "rates.nc"
+    ds.to_netcdf(path, engine="scipy")
+    loaded = xr.load_dataset(path, engine="scipy")
+    assert loaded.attrs["spike_window_assumed"] == ds.attrs["spike_window_assumed"]
+    if window is None:
+        assert "spike_window" not in loaded.attrs
+    else:
+        np.testing.assert_array_equal(loaded.attrs["spike_window"], window.ravel())
 
 
 @pytest.fixture(scope="module")
@@ -114,37 +162,33 @@ def test_spatial_rates_attrs(rates_result):
 
 
 def test_spatial_rates_duplicate_unit_ids_raise(rates_result):
-    """Duplicate unit_ids -> ValueError naming the offending labels."""
-    pytest.importorskip("xarray")
-
+    """Duplicate unit_ids are rejected when the result is built, so no result
+    can reach to_xarray with an ambiguous label."""
     rates = np.asarray(rates_result.firing_rates)
-    dup = SpatialRatesResult(
-        firing_rates=rates,
-        occupancy=rates_result.occupancy,
-        env=rates_result.env,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=np.array([7, 7, 9]),
-    )
-    with pytest.raises(ValueError, match="duplicated"):
-        dup.to_xarray()
+    with pytest.raises(ValueError, match=r"unique.*\[7\]"):
+        SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=rates_result.occupancy,
+            env=rates_result.env,
+            method="binned",
+            bandwidth=5.0,
+            unit_ids=np.array([7, 7, 9]),
+        )
 
 
 def test_spatial_rates_mixed_type_duplicate_unit_ids_raise_value_error(rates_result):
-    """Mixed string/int unit_ids get the friendly duplicate-label error."""
-    pytest.importorskip("xarray")
-
+    """Mixed string/int unit_ids get the duplicate-label ValueError, not a
+    TypeError from sorting."""
     rates = np.asarray(rates_result.firing_rates)
-    dup = SpatialRatesResult(
-        firing_rates=rates,
-        occupancy=rates_result.occupancy,
-        env=rates_result.env,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=np.asarray([1, "a", 1], dtype=object),
-    )
-    with pytest.raises(ValueError, match=r"duplicated.*1"):
-        dup.to_xarray()
+    with pytest.raises(ValueError, match=r"unique.*\[1\]"):
+        SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=rates_result.occupancy,
+            env=rates_result.env,
+            method="binned",
+            bandwidth=5.0,
+            unit_ids=np.asarray([1, "a", 1], dtype=object),
+        )
 
 
 def test_spatial_rates_string_unit_ids_select_by_label(rates_result):
@@ -223,7 +267,8 @@ def test_egocentric_rates_to_xarray_polar_coords():
         angle_bin_size=np.pi / 6,
     )
     n_neurons = 3
-    result = EgocentricRatesResult(
+    result = ObjectVectorRatesResult(
+        direction_frame="egocentric",
         firing_rates=rng.uniform(0, 10, (n_neurons, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),
         env=env,
@@ -334,3 +379,27 @@ def test_spatial_rates_to_xarray_without_xarray_raises(rates_result, monkeypatch
 
     with pytest.raises(ImportError, match="neurospatial\\[xarray\\]"):
         rates_result.to_xarray()
+
+
+def test_build_population_dataset_rejects_duplicate_unit_ids():
+    """The shared Dataset builder keeps its own guard for callers that bypass
+    the result constructors."""
+    pytest.importorskip("xarray")
+    from neurospatial._results import build_population_dataset
+
+    with pytest.raises(ValueError, match=r"duplicated.*1"):
+        build_population_dataset(
+            np.zeros((3, 4)), np.asarray([1, "a", 1], dtype=object)
+        )
+
+
+@pytest.mark.parametrize(
+    "family", ("spatial", "view", "allocentric", "egocentric", "directional")
+)
+def test_singular_to_xarray_matches_batch_row(rate_family_results, family):
+    xr = pytest.importorskip("xarray")
+    result = rate_family_results[family]
+    for i in range(3):
+        xr.testing.assert_identical(
+            result[i].to_xarray(), result.to_xarray().isel(unit_id=[i])
+        )

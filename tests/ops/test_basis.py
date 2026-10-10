@@ -19,6 +19,55 @@ from neurospatial.ops.basis import (
 # =============================================================================
 
 
+@pytest.mark.parametrize("spacing", [1.0, 2.0, 5.0])
+def test_heat_kernel_spread_is_bin_size_independent(uniform_grid, spacing):
+    env = uniform_grid(spacing, n=40)
+    center = int(np.argmin(np.linalg.norm(env.bin_centers - 20 * spacing, axis=1)))
+    basis = heat_kernel_wavelet_basis(
+        env, centers=np.array([center]), scales=[1.0, 4.0], normalize="none"
+    )
+    relative = (env.bin_centers - env.bin_centers[center]) / spacing
+    for kernel, scale in zip(basis, [1.0, 4.0], strict=True):
+        for direction in [np.array([1.0, 0.0]), np.array([1.0, 1.0]) / np.sqrt(2)]:
+            projected = relative @ direction
+            mean = np.sum(kernel * projected) / kernel.sum()
+            sigma = np.sqrt(np.sum(kernel * (projected - mean) ** 2) / kernel.sum())
+            assert sigma == pytest.approx(np.sqrt(2 * scale), rel=1e-3)
+
+
+def test_heat_kernel_uses_smooth_generator(fv_env):
+    from scipy import sparse
+    from scipy.sparse.linalg import expm_multiply
+    from scipy.spatial import cKDTree
+
+    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
+
+    graph, volumes = _finite_volume_geometry(fv_env)
+    weights = _assemble_W(graph, fv_env.n_bins)
+    spacing = _estimate_typical_bin_spacing(
+        cKDTree(fv_env.bin_centers), fv_env.bin_centers
+    )
+    generator = (
+        spacing**2
+        * sparse.diags(1 / volumes)
+        @ (sparse.diags(np.asarray(weights.sum(axis=1)).ravel()) - weights)
+    )
+    center = fv_env.n_bins // 2
+    delta = np.zeros(fv_env.n_bins)
+    delta[center] = 1
+    basis = heat_kernel_wavelet_basis(
+        fv_env, centers=np.array([center]), scales=[1.0], normalize="none"
+    )
+    assert_allclose(basis[0], expm_multiply(-generator, delta), rtol=1e-10, atol=1e-12)
+
+
+def test_heat_kernel_raises_without_finite_volume_geometry(reloaded_graph_env):
+    with pytest.raises(NotImplementedError, match="heat_kernel_wavelet_basis") as exc:
+        heat_kernel_wavelet_basis(reloaded_graph_env, centers=np.array([0]))
+    assert "\nFix:" in str(exc.value)
+
+
 @pytest.fixture
 def simple_2d_env():
     """Simple 10x10 grid environment."""
@@ -499,3 +548,26 @@ class TestEstimateSpectralRadius:
 
         expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
         assert radius == pytest.approx(expected_bound)
+
+
+def test_chebyshev_hop_locality_unchanged(uniform_grid):
+    """Pin the pre-change filter and verify support stays within k graph hops."""
+    from pathlib import Path
+
+    import networkx as nx
+
+    env = uniform_grid(1.0, n=4)
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([5]), max_degree=3, normalize="none"
+    )
+    expected = np.load(Path(__file__).parent / "data" / "chebyshev_uniform_grid.npy")
+    assert_allclose(basis, expected, rtol=1e-12, atol=1e-12)
+    env = uniform_grid(1.0, n=10)
+    center = 55
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([center]), max_degree=3, normalize="none"
+    )
+    hops = nx.single_source_shortest_path_length(env.connectivity, center)
+    for degree, row in enumerate(basis):
+        outside = [node for node, distance in hops.items() if distance > degree]
+        assert_allclose(row[outside], 0, atol=1e-12)

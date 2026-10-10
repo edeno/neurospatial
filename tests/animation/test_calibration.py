@@ -91,8 +91,8 @@ class TestCalibrateVideoScaleBar:
         # Scale bar: 8 pixels (from x=0 to x=8) = 8 cm
         # So cm_per_px = 1.0
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             scale_bar=((0.0, 8.0), (8.0, 8.0), 8.0),  # ((x1, y1), (x2, y2), length_cm)
         )
 
@@ -108,8 +108,8 @@ class TestCalibrateVideoScaleBar:
 
         # 8 pixels = 4 cm -> cm_per_px = 0.5
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             scale_bar=((0.0, 8.0), (8.0, 8.0), 4.0),
         )
 
@@ -146,8 +146,8 @@ class TestCalibrateVideoLandmarks:
         )
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             landmarks_px=landmarks_px,
             landmarks_env=landmarks_env,
         )
@@ -180,8 +180,8 @@ class TestCalibrateVideoLandmarks:
         )
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             landmarks_px=landmarks_px,
             landmarks_env=landmarks_env,
         )
@@ -199,8 +199,8 @@ class TestCalibrateVideoCmPerPx:
         from neurospatial.animation import calibrate_video
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             cm_per_px=1.0,
         )
 
@@ -215,8 +215,8 @@ class TestCalibrateVideoCmPerPx:
         from neurospatial.animation import calibrate_video
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             cm_per_px=0.5,
         )
 
@@ -236,8 +236,8 @@ class TestCalibrateVideoBoundsValidation:
         # Env is 100x80 cm - much larger
         with pytest.warns(UserWarning, match="extend beyond"):
             calibrate_video(
-                tiny_video_path,
                 large_env_100cm,
+                tiny_video_path,
                 cm_per_px=1.0,
             )
 
@@ -253,8 +253,8 @@ class TestCalibrateVideoBoundsValidation:
             warnings.simplefilter("error")
             # Should not raise any warnings
             calibration = calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 cm_per_px=1.0,
             )
             assert calibration is not None
@@ -271,8 +271,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises(ValueError, match="calibration method"):
             calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 # No calibration parameters provided
             )
 
@@ -284,8 +284,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises(ValueError, match="mutually exclusive"):
             calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 scale_bar=((0.0, 0.0), (10.0, 0.0), 10.0),
                 cm_per_px=1.0,  # Conflicting!
             )
@@ -296,8 +296,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises((FileNotFoundError, ValueError)):
             calibrate_video(
-                "/nonexistent/video.mp4",
                 simple_env_16cm,
+                "/nonexistent/video.mp4",
                 cm_per_px=1.0,
             )
 
@@ -308,10 +308,10 @@ class TestCalibrateVideoErrors:
         from neurospatial.animation import calibrate_video
 
         with pytest.raises(ValueError, match="positive"):
-            calibrate_video(tiny_video_path, simple_env_16cm, cm_per_px=-1.0)
+            calibrate_video(simple_env_16cm, tiny_video_path, cm_per_px=-1.0)
 
         with pytest.raises(ValueError, match="positive"):
-            calibrate_video(tiny_video_path, simple_env_16cm, cm_per_px=0.0)
+            calibrate_video(simple_env_16cm, tiny_video_path, cm_per_px=0.0)
 
     def test_landmarks_mismatched_length_raises(
         self, tiny_video_path: Path, simple_env_16cm: Environment
@@ -324,8 +324,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises(ValueError, match="same number"):
             calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 landmarks_px=landmarks_px,
                 landmarks_env=landmarks_env,
             )
@@ -340,8 +340,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises(ValueError, match="landmarks_env"):
             calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 landmarks_px=landmarks_px,
                 # No landmarks_env!
             )
@@ -356,8 +356,8 @@ class TestCalibrateVideoErrors:
 
         with pytest.raises(ValueError, match="landmarks_px"):
             calibrate_video(
-                tiny_video_path,
                 simple_env_16cm,
+                tiny_video_path,
                 landmarks_env=landmarks_env,
                 # No landmarks_px!
             )
@@ -373,8 +373,8 @@ class TestCalibrateVideoTransformAccuracy:
         from neurospatial.animation import calibrate_video
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             cm_per_px=1.0,
         )
 
@@ -395,8 +395,8 @@ class TestCalibrateVideoTransformAccuracy:
         from neurospatial.animation import calibrate_video
 
         calibration = calibrate_video(
-            tiny_video_path,
             simple_env_16cm,
+            tiny_video_path,
             cm_per_px=1.0,
         )
 

@@ -24,16 +24,20 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
+import sys
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
-from typing import TYPE_CHECKING, Literal, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._validation import validate_finite
+from neurospatial._intervals import as_intervals
+from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -89,13 +93,15 @@ class BinSequenceWithRuns:
 
 def interval_valid_mask(
     times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    positions: NDArray[np.float64] | None = None,
+    env: EnvironmentProtocol | None = None,
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     start_bin: NDArray[np.intp] | None = None,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask shared by spikes and occupancy.
 
@@ -117,17 +123,24 @@ def interval_valid_mask(
         (\\text{min\\_speed is None or } \\text{speed}_k \\ge \\text{min\\_speed})
         \\;\\wedge\\;
         (\\text{start\\_bin}_k \\ge 0)
+        \\;\\wedge\\;
+        ([t_k, t_{k+1}) \\subseteq \\text{epochs})
+        \\;\\wedge\\;
+        ([t_k, t_{k+1}) \\subseteq \\text{spike\\_window})
 
     where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
+    Bounds are checked only when ``start_bin`` or ``env`` is supplied; speed
+    is checked only when ``speed`` is supplied. Window gates apply when given.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
         Trajectory timestamps in seconds (assumed sorted/finite; validated
         upstream).
-    positions : ndarray, shape (n_samples, n_dims)
-        Trajectory position coordinates.
-    env : Environment
+    positions : ndarray, shape (n_samples, n_dims), or None
+        Trajectory coordinates. Required with ``env`` unless ``start_bin``
+        has already been computed.
+    env : Environment or None
         The spatial environment; ``env.bin_at`` maps each start sample to its
         bin (``-1`` outside the active mask).
     speed : ndarray, shape (n_samples,), or None
@@ -148,6 +161,10 @@ def interval_valid_mask(
         redundant second ``bin_at`` pass. When ``None`` (default), ``bin_at``
         is computed here as before. Behaviour is identical either way; the
         passed array must be the ``bin_at`` of the SAME ``positions``.
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Already normalized, sorted and merged half-open windows in seconds.
+        Each kept interval must lie wholly inside one row of each supplied
+        window set.
 
     Returns
     -------
@@ -155,10 +172,9 @@ def interval_valid_mask(
         ``True`` for each valid interval. Empty (length 0) when fewer than
         two samples are provided.
     """
+    from neurospatial._intervals import intervals_contain
+
     times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
 
     n_samples = len(times)
     if n_samples < 2:
@@ -180,11 +196,123 @@ def interval_valid_mask(
     # environment (bin_at returns -1 for points outside any active bin).
     # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
     # already computes bin_at(positions)); otherwise compute it here.
-    if start_bin is None:
-        start_bin = env.bin_at(positions)
-    valid_mask &= start_bin[:-1] >= 0
+    if start_bin is None and env is not None:
+        pos = np.asarray(positions, dtype=np.float64)
+        start_bin = env.bin_at(pos.reshape(-1, 1) if pos.ndim == 1 else pos)
+    if start_bin is not None:
+        valid_mask &= np.asarray(start_bin)[:-1] >= 0
+    for windows in (epochs, spike_window):
+        if windows is not None:
+            valid_mask &= intervals_contain(windows, times[:-1], times[1:])
 
     return valid_mask
+
+
+def start_allocated_occupancy(
+    start_bin: NDArray[np.intp],
+    dt: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    n_bins: int,
+    *,
+    return_seconds: bool = True,
+) -> NDArray[np.float64]:
+    """Sum each valid interval's duration into the bin of its start sample.
+
+    Parameters
+    ----------
+    start_bin : ndarray of intp, shape (n_samples,)
+        Bin of every sample (``-1`` = invalid; such intervals must already be
+        excluded by ``interval_mask``).
+    dt : ndarray, shape (n_samples - 1,)
+        ``np.diff(times)``.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        The shared validity mask.
+    n_bins : int
+        Number of bins.
+    return_seconds : bool, default=True
+        Weight by ``dt`` (seconds) or count intervals.
+
+    Returns
+    -------
+    ndarray, shape (n_bins,)
+    """
+    bins = start_bin[:-1][interval_mask]
+    weights = dt[interval_mask] if return_seconds else None
+    return np.bincount(bins, weights=weights, minlength=n_bins)[:n_bins].astype(
+        np.float64
+    )
+
+
+def observed_interval_mask(
+    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+) -> NDArray[np.bool_]:
+    """Per-interval validity for position-only analyses (gap and epochs gates).
+
+    ``epochs`` is the raw user argument; it is normalized here with
+    ``as_intervals(epochs, name="epochs")``.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_samples - 1,)
+    """
+    from neurospatial._intervals import as_intervals
+
+    times = np.asarray(times, dtype=np.float64)
+    resolved_epochs = as_intervals(epochs, name="epochs")
+    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
+    if mask.size and not mask.any():
+        _warn_all_intervals_excluded(times, max_gap=max_gap, epochs=resolved_epochs)
+    return mask
+
+
+def _warn_all_intervals_excluded(
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+) -> None:
+    """Name the gate that left a position-only analysis with no observed data."""
+    causes = [f"max_gap={max_gap}"] if max_gap is not None else []
+    fixes = []
+    if max_gap is not None:
+        fixes.append(
+            f"max_gap is in seconds and the median sampling interval is "
+            f"{float(np.median(np.diff(times))):.4g} s; raise max_gap above it "
+            f"or pass max_gap=None to disable gap gating"
+        )
+    if epochs is not None:
+        causes.append("epochs")
+        fixes.append("check that epochs overlap `times` (same clock, seconds)")
+    warnings.warn(
+        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
+        f"{', '.join(causes)}), so the result is empty or NaN rather than a "
+        f"measurement. Fix: {'; '.join(fixes)}.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _external_stacklevel() -> int:
+    """Stacklevel, counted from the caller, of the first frame outside the package."""
+    package_dir = Path(__file__).resolve().parent.parent
+    frame = sys._getframe(1)
+    level = 1
+    while frame.f_back is not None and Path(frame.f_code.co_filename).is_relative_to(
+        package_dir
+    ):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
+def observed_runs(
+    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+) -> list[slice]:
+    """One sample slice per maximal run of valid intervals, in time order."""
+    from neurospatial._intervals import run_sample_bounds
+
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
 
 
 class EnvironmentTrajectory:
@@ -202,6 +330,7 @@ class EnvironmentTrajectory:
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
+        epochs: Any = None,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
@@ -223,10 +352,15 @@ class EnvironmentTrajectory:
         min_speed : float, optional
             Minimum speed threshold in physical units per second. Requires
             speed parameter. Samples with speed < min_speed are excluded.
-        max_gap : float, optional
-            Maximum time gap in seconds. Intervals with Δt > max_gap are
-            not counted toward occupancy. Default: 0.5 seconds. Set to None
-            to count all intervals regardless of gap size.
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from occupancy and their spikes are not counted. ``None`` disables the
+            gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
         bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
@@ -315,66 +449,32 @@ class EnvironmentTrajectory:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create environment
-        >>> data = np.array([[0, 0], [20, 20]])
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
-        >>> times = np.array([0.0, 1.0, 2.0, 3.0])  # doctest: +SKIP
-        >>> positions = np.array([[5, 5], [5, 5], [10, 10], [10, 10]])  # doctest: +SKIP
-        >>> occ = env.occupancy(times, positions)  # doctest: +SKIP
-        >>> occ.sum()  # doctest: +SKIP
-        3.0  # doctest: +SKIP
-        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])  # doctest: +SKIP
-        >>> occ_filtered = env.occupancy(  # doctest: +SKIP
+        >>> x, y = np.meshgrid(np.arange(0.0, 22.0, 2.0), np.arange(0.0, 22.0, 2.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.array([0.0, 1.0, 2.0, 3.0])
+        >>> positions = np.array([[5.0, 5.0], [5.0, 5.0], [10.0, 10.0], [10.0, 10.0]])
+        >>> # These 1 Hz demonstration samples are intentionally continuous.
+        >>> occ = env.occupancy(times, positions, max_gap=None)
+        >>> float(occ.sum())
+        3.0
+        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])
+        >>> occ_filtered = env.occupancy(
         ...     times,
         ...     positions,
         ...     speed=speeds,
         ...     min_speed=2.0,
-        ...     bandwidth=3.0,  # doctest: +SKIP
-        ... )  # doctest: +SKIP
+        ...     bandwidth=3.0,
+        ...     max_gap=None,
+        ... )
 
         """
-        # Input validation
-        times = np.asarray(times, dtype=np.float64)
-        positions = np.asarray(positions, dtype=np.float64)
-
-        # Check array shapes FIRST. A swapped occupancy(positions, times) call
-        # would otherwise run np.diff on the 2-D positions array and raise the
-        # misleading "times must be monotonically increasing", pointing the user
-        # at their (fine) timestamps instead of the real argument-order mistake.
-        if times.ndim != 1:
-            raise ValueError(
-                f"times must be a 1-dimensional array, got shape {times.shape}. "
-                "The argument order is occupancy(times, positions) -- did you "
-                "pass positions first?"
-            )
-
+        times, positions = validate_times_positions(
+            times, positions, call="Environment.occupancy"
+        )
         if positions.ndim != 2:
             raise ValueError(
                 f"positions must be 2-dimensional array (n_samples, n_dims), "
                 f"got shape {positions.shape}"
-            )
-
-        if len(times) != len(positions):
-            raise ValueError(
-                f"times and positions must have same length. "
-                f"Got times: {len(times)}, positions: {len(positions)}"
-            )
-
-        # Reject non-finite timestamps before the monotonicity check. Without
-        # this, a NaN makes every np.diff comparison False, so the monotonicity
-        # check below would raise the self-contradictory "0 decreasing
-        # interval(s)".
-        times = validate_finite(times, name="times")
-
-        # Validate monotonicity of timestamps
-        if len(times) > 1 and not np.all(np.diff(times) >= 0):
-            decreasing_indices = np.where(np.diff(times) < 0)[0]
-            raise ValueError(
-                "times must be monotonically increasing (non-decreasing). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"  # Show first 5
-                + (" ..." if len(decreasing_indices) > 5 else "")
             )
 
         # Validate positions dimensionality
@@ -455,6 +555,7 @@ class EnvironmentTrajectory:
             min_speed=min_speed,
             max_gap=max_gap,
             start_bin=bin_indices,
+            epochs=as_intervals(epochs, name="epochs"),
         )
 
         # Initialize occupancy array
@@ -462,17 +563,13 @@ class EnvironmentTrajectory:
 
         # Dispatch to appropriate time allocation method
         if time_allocation == "start":
-            # Simple allocation: entire interval goes to starting bin
-            valid_bins = bin_indices[:-1][valid_mask]
-            valid_dt = dt[valid_mask]
-
-            # Use np.bincount for efficient accumulation
-            if len(valid_bins) > 0:
-                # Choose weights based on return_seconds parameter
-                weights = valid_dt if return_seconds else np.ones_like(valid_dt)
-
-                counts = np.bincount(valid_bins, weights=weights, minlength=self.n_bins)
-                occupancy[:] = counts[: self.n_bins]
+            occupancy = start_allocated_occupancy(
+                bin_indices,
+                dt,
+                valid_mask,
+                self.n_bins,
+                return_seconds=return_seconds,
+            )
 
         elif time_allocation == "linear":
             # Linear allocation: split time across bins traversed by ray
@@ -498,6 +595,8 @@ class EnvironmentTrajectory:
         *,
         dedup: bool = True,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> NDArray[np.int32]:
         """Map trajectory to sequence of bin indices.
 
@@ -514,16 +613,24 @@ class EnvironmentTrajectory:
             Position coordinates matching environment dimensions.
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
-            If False, return bin index for every sample.
+            If False, return a bin index for every retained sample.
         outside_value : int or None, default=-1
             Bin index for samples outside environment bounds.
             - If -1 (default), outside samples are marked with -1.
             - If None, outside samples are dropped from the sequence entirely.
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
         bins : NDArray[np.int32], shape (n_sequences,)
-            Bin index at each time point (or deduplicated sequence).
+            Bin index at each retained time point (or deduplicated sequence).
             Values are in range [0, n_bins-1] for valid bins, or -1 for
             outside samples (when outside_value=-1).
 
@@ -542,6 +649,13 @@ class EnvironmentTrajectory:
 
         Notes
         -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        Samples that touch no valid interval are dropped, including singleton
+        inputs. Deduplication never merges samples across an invalid interval.
+        With dedup=False, one bin is returned per retained sample.
+
         Timestamps must be monotonically increasing (non-decreasing).
         Sort your data by time before calling this method if needed.
 
@@ -561,6 +675,8 @@ class EnvironmentTrajectory:
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
+            max_gap=max_gap,
+            epochs=epochs,
         )
         return result.bins
 
@@ -570,6 +686,8 @@ class EnvironmentTrajectory:
         positions: NDArray[np.float64],
         *,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> BinSequenceWithRuns:
         """Map trajectory to bin sequence plus per-run boundaries.
 
@@ -591,6 +709,14 @@ class EnvironmentTrajectory:
             gaps split runs even when consecutive in-env samples land
             in the same bin (so ``run_lengths.sum()`` equals the
             post-filter count of in-env samples).
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
@@ -602,6 +728,16 @@ class EnvironmentTrajectory:
         See Also
         --------
         bin_sequence : Returns just the bin sequence (supports ``dedup``).
+
+        Notes
+        -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        Samples that touch no valid interval are dropped, including singleton
+        inputs. Invalid intervals split runs even if the bins match. Run
+        starts and lengths refer to the original input indices, so durations
+        computed from them exclude pauses.
 
         Examples
         --------
@@ -617,6 +753,8 @@ class EnvironmentTrajectory:
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
+            max_gap=max_gap,
+            epochs=epochs,
         )
 
     def _bin_sequence(
@@ -627,30 +765,20 @@ class EnvironmentTrajectory:
         dedup: bool,
         outside_value: int | None,
         gap_splits_runs: bool,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> BinSequenceWithRuns:
         """Shared implementation for ``bin_sequence`` and
         ``bin_sequence_with_runs``: always computes both bins and runs;
         the public methods choose which fields of the result to expose.
         """
-        # Input validation
-        times = np.asarray(times, dtype=np.float64)
-        positions = np.asarray(positions, dtype=np.float64)
-
-        # Reject non-finite timestamps up front (see occupancy() for rationale).
-        times = validate_finite(times, name="times")
-
-        # Validate positions is 2D (consistent with occupancy())
+        times, positions = validate_times_positions(
+            times, positions, call="Environment.bin_sequence"
+        )
         if positions.ndim != 2:
             raise ValueError(
                 f"positions must be a 2-dimensional array (n_samples, n_dims), "
                 f"got shape {positions.shape}"
-            )
-
-        # Validate lengths match
-        if len(times) != len(positions):
-            raise ValueError(
-                f"times and positions must have the same length. "
-                f"Got times: {len(times)}, positions: {len(positions)}"
             )
 
         # Validate dimensions match environment
@@ -661,15 +789,13 @@ class EnvironmentTrajectory:
                 f"Got positions.shape[1] = {positions.shape[1]}"
             )
 
-        # Check for monotonic timestamps (raise error for consistency with occupancy())
-        if len(times) > 1 and not np.all(np.diff(times) >= 0):
-            decreasing_indices = np.where(np.diff(times) < 0)[0]
-            raise ValueError(
-                "times must be monotonically increasing (non-decreasing). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"
-                + (" ..." if len(decreasing_indices) > 5 else "")
-            )
+        mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
+        )
+        sample_valid = np.zeros(times.size, dtype=bool)
+        sample_valid[:-1] |= mask
+        sample_valid[1:] |= mask
+        invalid_before = np.r_[0, np.cumsum(~mask)]
 
         empty_int64 = np.array([], dtype=np.int64)
 
@@ -685,47 +811,18 @@ class EnvironmentTrajectory:
         # Use bin_at which returns -1 for points outside environment
         bin_indices = self.bin_at(positions).astype(np.int32)  # Ensure int32 dtype
 
-        # Handle outside_value=None (drop outside samples)
+        # Samples belong to a recording only if they touch a valid interval.
         if outside_value is None:
-            # Filter out samples that are outside (bin_indices == -1)
-            valid_mask = bin_indices != -1
-            bin_indices = bin_indices[valid_mask]
-
-            # Track original indices for run boundaries
-            original_indices = np.arange(len(times))[valid_mask]
-
-            if len(bin_indices) == 0:
-                # All samples were outside
-                return BinSequenceWithRuns(
-                    bins=np.array([], dtype=np.int32),
-                    run_starts=empty_int64,
-                    run_lengths=empty_int64,
-                )
-        else:
-            # Keep original indices (no filtering)
-            original_indices = np.arange(len(times))
+            sample_valid &= bin_indices != -1
+        original_indices = np.flatnonzero(sample_valid)
+        bin_indices = bin_indices[sample_valid]
 
         # Apply deduplication if requested
         deduplicated_bins: NDArray[np.int32]
         deduplicated_indices: NDArray[np.int_]
 
-        # ``bin_change`` marks the start of every new same-bin block in
-        # the post-filter sequence. ``gap_change`` additionally marks
-        # boundaries where outside samples were dropped between two
-        # in-env neighbors (only meaningful with ``outside_value=None``).
-        #
-        # The two callers want different semantics:
-        #
-        # - plain ``bin_sequence`` (gap_splits_runs=False): dedup
-        #   collapses consecutive repeats in the post-filter sequence
-        #   per its documented contract — gaps don't split duplicates,
-        #   so ``[bin0, outside, bin0]`` with outside_value=None and
-        #   dedup=True dedups to ``[bin0]``.
-        #
-        # - ``bin_sequence_with_runs`` (gap_splits_runs=True): outside
-        #   gaps DO split runs so ``run_lengths`` only counts the
-        #   in-env samples that were actually contiguous in the
-        #   original array — same input emits two length-1 runs.
+        # Recording breaks always split repeats. Outside-sample gaps retain
+        # the plain sequence's legacy dedup behavior, and split the run view.
         if len(bin_indices) == 0:
             change_points = np.zeros(0, dtype=bool)
         else:
@@ -736,7 +833,12 @@ class EnvironmentTrajectory:
                 )
             else:
                 gap_change = np.zeros(len(bin_indices), dtype=bool)
-            change_points = bin_change | gap_change
+            recording_change = np.r_[
+                False,
+                invalid_before[original_indices[1:]]
+                != invalid_before[original_indices[:-1]],
+            ]
+            change_points = bin_change | gap_change | recording_change
 
         if dedup:
             deduplicated_bins = bin_indices[change_points]
@@ -798,6 +900,8 @@ class EnvironmentTrajectory:
         bandwidth: float | None = None,
         # Common parameters
         normalize: bool = True,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> scipy.sparse.csr_matrix:
         """Compute transition matrix (empirical or model-based).
 
@@ -843,6 +947,14 @@ class EnvironmentTrajectory:
             If True, return row-stochastic matrix where each row sums to 1
             (representing transition probabilities).
             If False, return raw counts (empirical) or unnormalized weights (model).
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from the analysis. ``None`` disables the gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
 
         Returns
         -------
@@ -874,6 +986,13 @@ class EnvironmentTrajectory:
 
         Notes
         -----
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+        is analyzed as a separate recording; no segment spans a pause.
+
+        When times are supplied, a pair (k, k + lag) counts only if every
+        interval from k through k + lag - 1 is valid. Raw bin-only inputs
+        and model-based transitions have no time gate.
+
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using
         the connectivity graph. Useful for removing tracking errors.
@@ -960,6 +1079,8 @@ class EnvironmentTrajectory:
                 lag=lag,
                 normalize=normalize,
                 allow_teleports=allow_teleports,
+                max_gap=max_gap,
+                epochs=epochs,
             )
 
     def _empirical_transitions(
@@ -971,6 +1092,8 @@ class EnvironmentTrajectory:
         lag: int = 1,
         normalize: bool = True,
         allow_teleports: bool = False,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> scipy.sparse.csr_matrix:
         """Compute empirical transition matrix from observed trajectory data.
 
@@ -1077,7 +1200,17 @@ class EnvironmentTrajectory:
                 )
 
             # Compute bin sequence from trajectory
-            bins = self.bin_sequence(times, positions, dedup=False, outside_value=-1)
+            bins = self.bin_sequence(
+                times,
+                positions,
+                dedup=False,
+                outside_value=-1,
+                max_gap=None,
+                epochs=None,
+            )
+            mask = interval_valid_mask(
+                times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
+            )
 
         # Convert to numpy array and validate dtype
         bins = np.asarray(bins)
@@ -1114,6 +1247,10 @@ class EnvironmentTrajectory:
         # Extract transition pairs with lag
         source_bins = bins[:-lag]
         target_bins = bins[lag:]
+        if trajectory_provided:
+            invalid_before = np.r_[0, np.cumsum(~mask)]
+            pair_ok = invalid_before[lag:] == invalid_before[:-lag]
+            source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
 
         # Filter non-adjacent transitions if requested
         if not allow_teleports:
@@ -1132,7 +1269,8 @@ class EnvironmentTrajectory:
                 [
                     (src, tgt) in adjacency_set
                     for src, tgt in zip(source_bins, target_bins, strict=True)
-                ]
+                ],
+                dtype=bool,
             )
 
             source_bins = source_bins[is_adjacent]

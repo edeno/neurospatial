@@ -45,28 +45,38 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._exceptions import _format_error
+from neurospatial._results import ResultMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
+from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
+    check_criterion,
+    check_mode_keywords,
+    resolve_shuffle_settings,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
-    from neurospatial._typing import PositionLike, SpikeTrainsLike
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    "place_cell_significance",
     # Result classes
     "SpatialRateResult",
     "SpatialRatesResult",
@@ -81,7 +91,22 @@ __all__ = [
     "detect_place_fields",
     # Classification predicates
     "is_place_cell",
+    "has_place_field",
 ]
+
+
+PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
+    {
+        "threshold": 0.2,
+        "min_size": None,
+        "max_mean_rate": 10.0,
+        "detect_subfields": True,
+    }
+)
+PLACE_SPATIAL_INFO_THRESHOLDS = MappingProxyType({"min_info": 0.5})
+PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
+    {"min_spatial_info": 0.5, "min_grid_score": 0.4, "min_border_score": 0.5}
+)
 
 
 @dataclass(frozen=True, repr=False)
@@ -496,6 +521,126 @@ def _index_per_unit(value: Any, idx: int) -> Any:
     return arr[idx].item()
 
 
+def _spatial_xarray_attrs(
+    result: SpatialRateResult | SpatialRatesResult,
+) -> dict[str, Any]:
+    """Shared serialization metadata for this rate family."""
+    from neurospatial._results import (
+        env_fingerprint,
+        software_version,
+        units_attr,
+    )
+
+    attrs: dict[str, Any] = {
+        **units_attr(result.env),
+        "method": result.method,
+        "env": env_fingerprint(result.env),
+        "software_version": software_version(),
+        "spike_window_assumed": int(result.spike_window_assumed),
+    }
+    # Guard on the value, not on ``method``: NetCDF attributes cannot hold
+    # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
+    # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
+    # ``bandwidth is not None`` guards exactly that serialization precondition
+    # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
+    # correct even if a ratio result ever carried a ``None`` bandwidth.
+    if result.spike_window is not None:
+        attrs["spike_window"] = result.spike_window.ravel()
+    if result.bandwidth is not None:
+        attrs["bandwidth"] = result.bandwidth
+    return attrs
+
+
+def _label_from_scores(
+    spatial_info: NDArray,
+    grid: NDArray,
+    border: NDArray,
+    *,
+    min_spatial_info: float,
+    min_grid_score: float,
+    min_border_score: float,
+) -> NDArray[np.str_]:
+    """Apply the established information gate and grid/border/place precedence."""
+    tuned = spatial_info >= min_spatial_info
+    labels = np.full(len(spatial_info), "unclassified", dtype="<U14")
+    labels[tuned] = "place"
+    labels[tuned & (border >= min_border_score)] = "border"
+    labels[tuned & (grid >= min_grid_score)] = "grid"
+    return labels
+
+
+def _glm_summary_columns(
+    result: SpatialRateResult | SpatialRatesResult,
+) -> dict[str, Any]:
+    """Existing GAM diagnostics, broadcasting scalar slices to a table row."""
+    data: dict[str, Any] = {}
+    if result.method == "glm":
+        data["penalty"] = result.penalty
+        data["rank"] = result.rank
+        data["deviance"] = np.asarray(result.deviance)
+        data["converged"] = result.converged
+        data["n_iter"] = result.n_iter
+        data["reml_objective"] = result.reml_objective
+        data["reml_at_boundary"] = result.reml_at_boundary
+        data["pooled"] = result.pooled
+        # Per-unit provenance mask only exists for the per-unit (pooled=False)
+        # path; skip it (rather than write an all-None column) otherwise.
+        if result.penalty_selected_by_reml is not None:
+            data["penalty_selected_by_reml"] = np.asarray(
+                result.penalty_selected_by_reml
+            )
+
+    return data
+
+
+def _spatial_summary_frame(
+    result: SpatialRateResult | SpatialRatesResult,
+    *,
+    index: Sequence[Hashable],
+    include_classification: bool,
+) -> pd.DataFrame:
+    """Build spatial metric columns for single and population results."""
+    import pandas as pd
+
+    from neurospatial.encoding._metrics import (
+        batch_border_scores,
+        batch_grid_scores,
+        batch_sparsity,
+        batch_spatial_information,
+    )
+
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = _to_numpy(result.occupancy)
+    peaks = np.atleast_2d(result.peak_location())
+    info = np.asarray(batch_spatial_information(rates, occupancy))
+    grid = batch_grid_scores(result.env, rates).scores
+    border = batch_border_scores(result.env, rates).scores
+    columns: dict[str, Any] = {
+        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "spatial_info": info,
+        "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
+        "grid_score": grid,
+        "border_score": border,
+        "peak_x": peaks[:, 0],
+        "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
+        **_glm_summary_columns(result),
+    }
+    if include_classification:
+        columns["cell_type"] = _label_from_scores(
+            info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS
+        )
+    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["method"] = result.method
+    df.attrs["units"] = {
+        "peak_rate": "Hz",
+        "spatial_info": "bits/spike",
+        "peak_x": result.env.units or "",
+        "peak_y": result.env.units or "",
+    }
+    df.attrs["classification_thresholds"] = dict(PLACE_GRID_BORDER_THRESHOLDS)
+    return df
+
+
 @dataclass(frozen=True, repr=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
@@ -549,6 +694,16 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    spike_window : NDArray[np.float64] or None
+        Normalized spike-recording windows in seconds, copied read-only.
+        ``None`` records the assumption that spikes were observed whenever
+        position was recorded.
+    spike_window_assumed : bool
+        Whether spike-recording coverage was assumed rather than supplied.
+
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -622,7 +777,74 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _spatial_xarray_attrs(self)
+
+    def summary_table(self, include_classification: bool = True) -> pd.DataFrame:
+        """Per-unit metrics with the same columns as the population table.
+
+        Parameters
+        ----------
+        include_classification : bool, default=True
+            Include the fixed-threshold cell-type label.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row indexed by this unit label, or <NA> when no label was supplied.
+
+        Notes
+        -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call place_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> table = result[0].summary_table()
+        >>> len(table)
+        1
+        """
+        return _spatial_summary_frame(
+            self,
+            index=self._row_unit_ids().tolist(),
+            include_classification=include_classification,
+        )
+
+    def _headline_metrics(self) -> dict[str, float]:
+        """Cheap, NaN-safe metrics for the singular summary."""
+        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
+            return {"spatial_info": float("nan"), "sparsity": float("nan")}
+        return {
+            "spatial_info": float(self.spatial_information()),
+            "sparsity": float(self.sparsity()),
+        }
+
     def __post_init__(self) -> None:
+        if self.unit_id is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
         # all absent for a ratio method. n_units=None -> the singular per-unit slice.
@@ -1109,9 +1331,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         # Cast to EnvironmentProtocol for type checker (Environment implements it)
         env = cast("EnvironmentProtocol", self.env)
-        return compute_region_coverage(field_bins, env, regions=regions)
+        return compute_region_coverage(env, field_bins, regions=regions)
 
-    def is_place_cell(
+    def has_place_field(
         self,
         *,
         threshold: float = 0.2,
@@ -1119,20 +1341,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         max_mean_rate: float = 10.0,
         detect_subfields: bool = True,
     ) -> bool:
-        """Classify as a place cell based on detected place fields.
+        """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
-        A neuron is classified as a place cell if :func:`detect_place_fields`
-        finds at least one place field in its firing rate map. This is the
-        single-neuron place predicate, the place-cell sibling of
-        :meth:`is_object_vector_cell` and :meth:`is_spatial_view_cell`.
-
-        .. note::
-           This single-neuron predicate uses **place-field detection**,
-           whereas the batch :meth:`SpatialRatesResult.classify` uses a
-           **spatial-information threshold**. The two criteria can disagree
-           for the same neuron, so this is not guaranteed to equal
-           ``rates.classify()[i]``. Pick the criterion that suits your
-           analysis and apply it consistently.
+        Independent 0.5 Hz Poisson units with no spatial tuning had a detected
+        field 20/20 at every recording length from 1 to 20 minutes (100 x 100 cm
+        arena, 5 cm bins). Use ``is_place_cell(..., criterion="shuffle")`` for
+        a verdict that controls false positives under the circular-shift null.
 
         Parameters
         ----------
@@ -1149,12 +1363,18 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         bool
-            True if the neuron has at least one detected place field.
+            True when the detector finds at least one field.
 
-        See Also
-        --------
-        detect_place_fields : Place field detection algorithm this agrees with
-        is_place_cell : Free-function convenience wrapper
+        Notes
+        -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 20/20 at all five durations. For publication,
+        report a circular-shift test and its assumptions instead of a cutoff verdict.
 
         Examples
         --------
@@ -1169,7 +1389,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> isinstance(result.is_place_cell(), bool)
+        >>> isinstance(result.has_place_field(), bool)
         True
         """
         firing_rate = _to_numpy(self.firing_rate)
@@ -1182,6 +1402,61 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             detect_subfields=detect_subfields,
         )
         return len(fields) > 0
+
+    def is_place_cell(
+        self, *, criterion: Literal["spatial_info"], min_info: float | None = None
+    ) -> bool:
+        """Classify one neuron using an explicitly chosen criterion.
+
+        There is no default criterion. ``criterion="spatial_info"`` thresholds
+        plug-in spatial information, which flagged 19/20 and 15/20 untuned
+        0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
+        it against circularly shifted spike trains. Use the shuffle when the
+        verdict must control false positives under that null (slow), or spatial
+        information for a fast screen biased upward at low counts. To detect a
+        field, use ``has_place_field()``; field detection flagged 20/20 noise units.
+
+        Parameters
+        ----------
+        criterion : {"spatial_info"}
+            Required screen. Shuffle verdicts require the raw-array free function.
+        min_info : float or None, default=None
+            Inclusive information cutoff; None resolves to 0.5 bits/spike.
+
+        Returns
+        -------
+        bool
+            Whether spatial information meets the cutoff.
+
+        Notes
+        -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 20/20 at all five durations. For publication,
+        report a circular-shift test and its assumptions instead of a cutoff verdict.
+        For a shuffle test, call place_cell_significance(...) or
+        is_place_cell(..., criterion='shuffle') with the raw arrays; a result
+        does not keep the arrays it was computed from.
+        """
+        if str(criterion) == "shuffle":
+            raise ValueError(
+                _format_error(
+                    "SpatialRateResult.is_place_cell cannot run criterion='shuffle'.",
+                    why="Why: a result does not keep the spike times it was computed from",
+                    fix="is_place_cell(env, spike_times, times, positions, criterion='shuffle') or place_cell_significance(...)",
+                )
+            )
+        check_criterion(
+            criterion, ("spatial_info",), call="SpatialRateResult.is_place_cell"
+        )
+        min_info = (
+            PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
+        )
+        return self.spatial_information() >= min_info
 
 
 @dataclass(frozen=True, repr=False)
@@ -1277,6 +1552,16 @@ class SpatialRatesResult(SpatialResultMixin):
         Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
         quality, depth, inclusion flags), one row per unit; ``None`` when not
         provided. Rides alongside the rates for downstream filtering/grouping.
+    spike_window : NDArray[np.float64] or None
+        Normalized spike-recording windows in seconds, copied read-only.
+        Shared by the population and preserved on indexed single-unit results.
+        ``None`` records assumed recording coverage.
+    spike_window_assumed : bool
+        Whether spike-recording coverage was assumed rather than supplied.
+
+    _unit_ids_generated : bool, default=False
+        Internal identity provenance. True only for generated unit labels;
+        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -1382,7 +1667,20 @@ class SpatialRatesResult(SpatialResultMixin):
     penalty_selected_by_reml: NDArray[np.bool_] | None = None
     pooled: bool | None = None
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return _spatial_xarray_attrs(self)
+
     def __post_init__(self) -> None:
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
@@ -1475,7 +1773,9 @@ class SpatialRatesResult(SpatialResultMixin):
             env=self.env,
             method=self.method,
             bandwidth=self.bandwidth,
-            unit_id=np.asarray(self.unit_ids)[idx].item(),
+            unit_id=label_at(self.unit_ids, idx),
+            _unit_ids_generated=self._unit_ids_generated,
+            spike_window=self.spike_window,
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -1623,98 +1923,6 @@ class SpatialRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
-
-    def to_xarray(self) -> Any:
-        """Convert the firing-rate maps to a labeled :class:`xarray.Dataset`.
-
-        Wraps the ``(n_units, n_bins)`` firing-rate matrix in a labeled
-        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
-        ``unit_id`` index coordinate holds the real per-unit identity labels
-        (:attr:`unit_ids`), enabling label-based selection. The ``bin``
-        dimension carries non-index ``bin_center_x`` / ``bin_center_y``
-        (and ``bin_center_z`` for 3-D envs) coordinates.
-
-        Returns
-        -------
-        xarray.Dataset
-            Dataset with:
-
-            - data var ``firing_rate`` (Hz), dims ``("unit_id", "bin")``.
-            - data var ``occupancy`` (seconds), dims ``("bin",)``.
-            - index coord ``unit_id`` = :attr:`unit_ids`.
-            - non-index coords ``bin_center_x`` / ``bin_center_y`` /
-              ``bin_center_z`` on ``bin`` (per env dimensionality).
-            - ``attrs``: ``method``, ``env`` fingerprint, ``software_version``,
-              ``units`` (when set), and ``bandwidth`` (only for the ratio methods;
-              omitted for ``method="glm"``, whose ``bandwidth`` is ``None`` and is
-              not NetCDF-serializable).
-
-        Raises
-        ------
-        ValueError
-            If :attr:`unit_ids` contains duplicate labels (label-based
-            ``.sel(unit_id=...)`` requires uniqueness).
-        ImportError
-            If ``xarray`` is not installed. xarray is an optional dependency;
-            install it with ``pip install neurospatial[xarray]`` or
-            ``pip install xarray``.
-
-        Notes
-        -----
-        ``xarray`` is imported lazily inside this method, so it never becomes
-        an import-time dependency of ``neurospatial``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.spatial import compute_spatial_rates
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
-        >>> result = compute_spatial_rates(
-        ...     env, spike_times, times, positions, bandwidth=10.0
-        ... )
-        >>> ds = result.to_xarray()  # doctest: +SKIP
-        >>> ds["firing_rate"].dims  # doctest: +SKIP
-        ('unit_id', 'bin')
-        >>> ds.sel(unit_id=result.unit_ids[0])  # doctest: +SKIP
-
-        See Also
-        --------
-        spatial_information : Per-neuron Skaggs spatial information.
-        """
-        from neurospatial._results import (
-            build_population_dataset,
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
-
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "method": self.method,
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-        }
-        # Guard on the value, not on ``method``: NetCDF attributes cannot hold
-        # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
-        # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
-        # ``bandwidth is not None`` guards exactly that serialization precondition
-        # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
-        # correct even if a ratio result ever carried a ``None`` bandwidth.
-        if self.bandwidth is not None:
-            attrs["bandwidth"] = self.bandwidth
-        return build_population_dataset(
-            rates,
-            np.asarray(self.unit_ids),
-            env=self.env,
-            occupancy=np.asarray(self.occupancy, dtype=np.float64),
-            attrs=attrs,
-        )
 
     def spatial_information(self) -> NDArray[np.float64] | Any:
         """Skaggs spatial information (bits per spike) for all neurons.
@@ -1958,10 +2166,10 @@ class SpatialRatesResult(SpatialResultMixin):
 
     def label_cell_types(
         self,
-        min_spatial_info: float = 0.5,
-        min_grid_score: float = 0.4,
-        min_border_score: float = 0.5,
         *,
+        min_spatial_info: float | None = None,
+        min_grid_score: float | None = None,
+        min_border_score: float | None = None,
         grid_scores: NDArray[np.float64] | None = None,
         border_scores: NDArray[np.float64] | None = None,
     ) -> NDArray[np.str_]:
@@ -1978,13 +2186,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Parameters
         ----------
-        min_spatial_info : float, default 0.5
+        min_spatial_info : float or None, default=None
             Minimum spatial information (bits/spike) to be classified as a
             spatially tuned cell. Neurons below this are labeled "unclassified".
-        min_grid_score : float, default 0.4
+        min_grid_score : float or None, default=None
             Minimum grid score to be classified as a grid cell. Standard
             threshold from Sargolini et al. (2006).
-        min_border_score : float, default 0.5
+        min_border_score : float or None, default=None
             Minimum border score to be classified as a border cell. Standard
             threshold from Solstad et al. (2008).
         grid_scores : ndarray of shape (n_neurons,), optional
@@ -2009,14 +2217,26 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 20/20 at all five durations. For publication,
+        report a circular-shift test and its assumptions instead of a cutoff verdict.
+        None thresholds resolve through PLACE_GRID_BORDER_THRESHOLDS.
+        For a shuffle test, call place_cell_significance(...)
+        with the raw arrays; a result does not keep the arrays it was computed from.
+
         Pass precomputed scores via ``grid_scores=``/``border_scores=`` to avoid
         recomputation when you've already computed them, e.g. from
         :meth:`summary_table` (which computes them once and forwards them here).
 
         **Classification priority** (higher takes precedence):
 
-        1. **Grid cell**: grid_score >= min_grid_score
-        2. **Border cell**: border_score >= min_border_score
+        1. **Grid cell**: grid_score >= min_grid_score and spatial_info >= min_spatial_info
+        2. **Border cell**: border_score >= min_border_score and spatial_info >= min_spatial_info
         3. **Place cell**: spatial_info >= min_spatial_info (and not grid/border)
         4. **Unclassified**: Does not meet any criteria
 
@@ -2038,7 +2258,7 @@ class SpatialRatesResult(SpatialResultMixin):
         grid_scores : Compute grid scores
         border_scores : Compute border scores
         classify : Single-type place-cell boolean predicate
-        EgocentricRatesResult.classify : Sibling batch classifier
+        ObjectVectorRatesResult.classify : Sibling batch classifier
         ViewRatesResult.classify : Sibling batch classifier
 
         Examples
@@ -2061,21 +2281,30 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> set(labels.tolist()).issubset(valid)
         True
         """
+        min_spatial_info = (
+            PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
+            if min_spatial_info is None
+            else min_spatial_info
+        )
+        min_grid_score = (
+            PLACE_GRID_BORDER_THRESHOLDS["min_grid_score"]
+            if min_grid_score is None
+            else min_grid_score
+        )
+        min_border_score = (
+            PLACE_GRID_BORDER_THRESHOLDS["min_border_score"]
+            if min_border_score is None
+            else min_border_score
+        )
         n_neurons = len(self)
-
         spatial_info = self.spatial_information()
-        # grid_scores() / border_scores() return BatchScoresResult; pull
-        # the float array out via .scores for the boolean masks below.
-        # Callers (e.g. summary_table) may pass precomputed score arrays to
-        # avoid the expensive double recompute.
         if grid_scores is None:
             grid_scores_arr = self.grid_scores().scores
         else:
             grid_scores_arr = np.asarray(grid_scores, dtype=np.float64)
             if grid_scores_arr.ndim != 1 or grid_scores_arr.shape[0] != n_neurons:
                 raise ValueError(
-                    f"grid_scores must be a 1-D array of length {n_neurons} "
-                    f"(one per neuron), got shape {grid_scores_arr.shape}"
+                    f"grid_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {grid_scores_arr.shape}"
                 )
         if border_scores is None:
             border_scores_arr = self.border_scores().scores
@@ -2083,89 +2312,35 @@ class SpatialRatesResult(SpatialResultMixin):
             border_scores_arr = np.asarray(border_scores, dtype=np.float64)
             if border_scores_arr.ndim != 1 or border_scores_arr.shape[0] != n_neurons:
                 raise ValueError(
-                    f"border_scores must be a 1-D array of length {n_neurons} "
-                    f"(one per neuron), got shape {border_scores_arr.shape}"
+                    f"border_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {border_scores_arr.shape}"
                 )
-
-        labels = np.full(n_neurons, "unclassified", dtype="<U14")
-        is_place = spatial_info >= min_spatial_info
-        is_border = (~np.isnan(border_scores_arr)) & (
-            border_scores_arr >= min_border_score
-        )
-        is_grid = (~np.isnan(grid_scores_arr)) & (grid_scores_arr >= min_grid_score)
-
-        # Priority: grid > border > place > unclassified (assign in reverse so
-        # higher-priority labels overwrite lower ones).
-        labels[is_place] = "place"
-        labels[is_border] = "border"
-        labels[is_grid] = "grid"
-
-        return labels
-
-    def detect_cell_types(
-        self,
-        min_spatial_info: float = 0.5,
-        min_grid_score: float = 0.4,
-        min_border_score: float = 0.5,
-    ) -> NDArray[np.str_]:
-        """Deprecated alias for :meth:`label_cell_types`.
-
-        .. deprecated:: 0.6
-            ``detect_cell_types`` is deprecated since 0.6; use
-            :meth:`label_cell_types` instead. Removed in 0.7.
-
-        Parameters
-        ----------
-        min_spatial_info : float, default 0.5
-            Minimum spatial information (bits/spike).
-        min_grid_score : float, default 0.4
-            Minimum grid score for a grid cell.
-        min_border_score : float, default 0.5
-            Minimum border score for a border cell.
-
-        Returns
-        -------
-        ndarray, shape (n_neurons,)
-            String labels: ``"grid"``/``"border"``/``"place"``/
-            ``"unclassified"``.
-        """
-        warnings.warn(
-            "detect_cell_types is deprecated since 0.6, use label_cell_types; "
-            "removed in 0.7",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.label_cell_types(
+        return _label_from_scores(
+            spatial_info,
+            grid_scores_arr,
+            border_scores_arr,
             min_spatial_info=min_spatial_info,
             min_grid_score=min_grid_score,
             min_border_score=min_border_score,
         )
 
-    def classify(self, *, min_spatial_info: float = 0.5) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as place cells (single-type boolean predicate).
 
         A neuron is classified as a place cell if its spatial information
         meets the minimum threshold. This is the single-type boolean
         predicate ("is this a place cell") sibling of
-        :meth:`EgocentricRatesResult.classify` and
+        :meth:`ObjectVectorRatesResult.classify` and
         :meth:`ViewRatesResult.classify`.
+
+        For place-field detection use has_place_field().
 
         For multi-class labels (``"place"``/``"grid"``/``"border"``/
         ``"unclassified"``) use :meth:`label_cell_types` instead.
 
-        .. note::
-           This batch predicate uses a **spatial-information threshold**,
-           whereas the single-neuron
-           :meth:`SpatialRateResult.is_place_cell` uses **place-field
-           detection** (``detect_place_fields``). The two criteria can
-           disagree for the same neuron (high information but no contiguous
-           field, or vice versa), so ``classify()[i]`` is not guaranteed to
-           equal ``result[i].is_place_cell()``. Pick the criterion that suits
-           your analysis and apply it consistently.
 
         Parameters
         ----------
-        min_spatial_info : float, default 0.5
+        min_info : float or None, default=None
             Minimum spatial information (bits/spike) to be classified as a
             place cell.
 
@@ -2198,9 +2373,26 @@ class SpatialRatesResult(SpatialResultMixin):
         (3,)
         >>> is_place.dtype == bool
         True
+
+        Notes
+        -----
+        Plug-in information is biased upward by approximately
+        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 20/20 at all five durations. For publication,
+        report a circular-shift test and its assumptions instead of a cutoff verdict.
+        None thresholds resolve through PLACE_SPATIAL_INFO_THRESHOLDS.
+        For a shuffle test, call place_cell_significance(...)
+        with the raw arrays; a result does not keep the arrays it was computed from.
         """
+        min_info = (
+            PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
+        )
         spatial_info = np.asarray(self.spatial_information())
-        return spatial_info >= min_spatial_info
+        return spatial_info >= min_info
 
     def summary_table(
         self,
@@ -2222,7 +2414,8 @@ class SpatialRatesResult(SpatialResultMixin):
         ----------
         unit_ids : sequence of str or int, optional
             Identity labels for the index, one per unit. If ``None``, the
-            result's own :attr:`unit_ids` are used.
+            result's own :attr:`unit_ids` are used. A wrong length or a
+            repeated label raises ``ValueError``.
         include_classification : bool, default True
             Whether to include the ``cell_type`` column with classification
             labels from ``label_cell_types()``.
@@ -2244,6 +2437,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Labels are fixed-threshold heuristics; the family defaults are in
+        ``df.attrs["classification_thresholds"]``. For shuffle significance,
+        call place_cell_significance with the raw arrays.
+        See the family predicate's Notes for information/statistic bias.
+        Physical units are in ``df.attrs["units"]``; a constant estimator
+        is in ``df.attrs["method"]`` when recorded.
+
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
         individual methods (``spatial_information()``, ``grid_scores()``, etc.).
@@ -2294,72 +2494,25 @@ class SpatialRatesResult(SpatialResultMixin):
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
         """
-        import pandas as pd
-
         n_neurons = len(self)
 
         if unit_ids is None:
             index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
+            from neurospatial._results import resolve_unit_ids
+
+            # Validate as an object array so mixed int/str labels are
+            # neither coerced to strings nor merged; keep them as given.
             index_ids = list(unit_ids)
-            if len(index_ids) != n_neurons:
-                raise ValueError(
-                    f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} units"
-                )
-
-        # Compute peak locations
-        peaks = self.peak_location()
-        n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
-
-        # Compute grid/border scores ONCE and reuse them for both the score
-        # columns and label_cell_types(), avoiding a double recompute (the
-        # expensive batch_grid_scores/batch_border_scores each run once).
-        grid_scores_arr = self.grid_scores().scores
-        border_scores_arr = self.border_scores().scores
-
-        # Build data dictionary
-        data: dict[str, Any] = {
-            "peak_x": peaks[:, 0],
-            "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
-            "peak_rate": self.peak_firing_rate(),
-            "spatial_info": self.spatial_information(),
-            "sparsity": self.sparsity(),
-            "grid_score": grid_scores_arr,
-            "border_score": border_scores_arr,
-        }
-
-        if include_classification:
-            data["cell_type"] = self.label_cell_types(
-                grid_scores=grid_scores_arr,
-                border_scores=border_scores_arr,
+            resolve_unit_ids(
+                np.asarray(index_ids, dtype=object),
+                n_neurons,
+                context="SpatialRatesResult.summary_table",
             )
 
-        data["method"] = self.method
-
-        # GAM columns, only for ``method="glm"``. ``deviance`` is per-unit; the
-        # batch-scalar diagnostics broadcast to every row. ``penalty`` /
-        # ``reml_objective`` / ``reml_at_boundary`` broadcast when scalar and
-        # become per-unit columns when they are ``(n_units,)`` vectors
-        # (``pooled=False``). Keyed on ``method`` (the single "is this glm?"
-        # discriminant, matching the NWB writer), not on a GAM field's None-ness.
-        if self.method == "glm":
-            data["penalty"] = self.penalty
-            data["rank"] = self.rank
-            data["deviance"] = np.asarray(self.deviance)
-            data["converged"] = self.converged
-            data["n_iter"] = self.n_iter
-            data["reml_objective"] = self.reml_objective
-            data["reml_at_boundary"] = self.reml_at_boundary
-            data["pooled"] = self.pooled
-            # Per-unit provenance mask only exists for the per-unit (pooled=False)
-            # path; skip it (rather than write an all-None column) otherwise.
-            if self.penalty_selected_by_reml is not None:
-                data["penalty_selected_by_reml"] = np.asarray(
-                    self.penalty_selected_by_reml
-                )
-
-        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
+        return _spatial_summary_frame(
+            self, index=index_ids, include_classification=include_classification
+        )
 
 
 # ==============================================================================
@@ -2542,8 +2695,8 @@ def _compute_glm_spatial_rates(
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
-    times: NDArray[np.float64] | PositionLike,
-    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -2555,6 +2708,8 @@ def compute_spatial_rate(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
@@ -2576,23 +2731,21 @@ def compute_spatial_rate(
         (e.g., created via ``Environment.from_samples()``).
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use:
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
-          kernel computed from environment graph.
+          kernel computed from environment graph. Bins too far from all
+          occupancy for the smoothing to resolve (typically 4-7 bandwidths
+          away) are NaN; so are such bins for ``binned``.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls).
@@ -2627,10 +2780,11 @@ default="diffusion_kde"
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
         (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``). When ``None`` (the default), NaN is
-        preserved so existing callers see no behavior change. Pass
-        ``fill_value=0.0`` for the recommended decoding golden path: a zero-rate
-        map composes directly with
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN is preserved so existing callers see no behavior change.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
+        zero-rate map composes directly with
         :func:`~neurospatial.decoding.posterior.decode_position` without manual
         NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
         which bins were masked via ``result.occupancy < min_occupancy``.
@@ -2688,25 +2842,23 @@ default="diffusion_kde"
         times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
         last sample starts no occupancy interval). This Euclidean default is
         simple; for geodesic / track environments pass an explicit ``speed``.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        spike numerator AND the occupancy denominator using ONE shared
-        per-interval mask, so the firing rate stays correct. This default
-        matches ``env.occupancy``'s own default, so occupancy behavior is
-        unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes occurring inside
-           intervals longer than ``max_gap`` (large tracking gaps) or inside
-           intervals whose start sample is out of bounds are now excluded from
-           spike counts, matching occupancy. Previously such spikes were
-           counted while their time was excluded from the denominator,
-           inflating the rate. This changes firing-rate maps for sessions
-           with large tracking gaps or out-of-bounds excursions. Pass
-           ``max_gap=None`` to disable gap gating on BOTH sides (restoring the
-           pre-fix, no-gap-gating behavior while keeping the two sides
-           aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -2755,6 +2907,12 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
+
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
     compute the smoothed firing rate.
@@ -2814,8 +2972,7 @@ default="diffusion_kde"
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_intervals_warning,
-        _resolve_interval_mask,
+        _resolve_spatial_interval_mask,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -2830,7 +2987,9 @@ default="diffusion_kde"
         validate_trajectory,
     )
 
-    validate_env_fitted(env, context="compute_spatial_rate")
+    validate_env_fitted(
+        env, context="compute_spatial_rate", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -2871,20 +3030,14 @@ default="diffusion_kde"
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
 
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
-    # normalizing to plain float64 arrays here at the public entry. The array
-    # path is unchanged byte-for-byte (plain arrays pass straight through).
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
-
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rate")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rate", n_dims=env.n_dims
+    )
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Resolve the speed gate ONCE so the SAME concrete array feeds both the
@@ -2893,23 +3046,17 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE if EVERY interval is excluded (empty rate
-    # map), regardless of WHICH gate caused it. Gated by warn_on_drop. Reshape
-    # 1-D positions so _resolve_interval_mask sees the canonical 2-D shape.
-    if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
-            env,
-            times,
-            _positions_2d,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
-        _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
-        )
+    interval_mask, _, resolved_spike_window = _resolve_spatial_interval_mask(
+        env,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+    )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -2920,6 +3067,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
     )
@@ -2934,6 +3082,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         context="compute_spatial_rate",
     )
 
@@ -2970,6 +3119,7 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
             occupancy=single_occupancy,
             env=env,
@@ -3007,15 +3157,17 @@ default="diffusion_kde"
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return SpatialRateResult(
+        spike_window=resolved_spike_window,
         firing_rate=firing_rate,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=env,
         method=method,
         bandwidth=bandwidth,
@@ -3025,8 +3177,8 @@ default="diffusion_kde"
 def compute_spatial_rates(
     env: Environment,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
-    times: NDArray[np.float64] | PositionLike,
-    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -3038,6 +3190,8 @@ def compute_spatial_rates(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -3062,22 +3216,18 @@ def compute_spatial_rates(
         - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
-        - A ``SpikeTrainsLike`` group (e.g. a pynapple-``TsGroup``-like object
-          iterating per-unit trains and carrying an ``.index`` of unit ids)
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
-        When a group carries unit ids and ``unit_ids`` is not passed, those ids
-        are threaded into the result's ``unit_ids``.
-    times : ndarray, shape (n_samples,), or PositionLike
-        Timestamps of trajectory samples in seconds. May instead be a single
-        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
-        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
-        which case ``positions`` must be omitted.
-    positions : ndarray, shape (n_samples, n_dims), optional
-        Position coordinates at each time sample. NaN values are treated as
-        missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts. Omit only when
-        ``times`` is a ``PositionLike`` object carrying the positions.
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        group must equal the group's index.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds. For pynapple tracking,
+        pass ``tsd.t`` and ``tsd.values`` as separate arrays.
+    positions : ndarray, shape (n_samples, n_dims)
+        Required position coordinates at each time sample. NaN values are
+        missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
         Estimator to use. See ``compute_spatial_rate()`` for details. In addition
@@ -3105,10 +3255,11 @@ default="diffusion_kde"
         with ``method="glm"``.
     fill_value : float | None, default=None
         (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``). When ``None`` (the default), NaN is
-        preserved so existing callers see no behavior change. Pass
-        ``fill_value=0.0`` for the recommended decoding golden path: zero-rate maps
-        compose directly with
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN is preserved so existing callers see no behavior change.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path:
+        zero-rate maps compose directly with
         :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
         scrubbing. ``occupancy`` is unaffected, so callers can still recover which
         bins were masked via ``result.occupancy < min_occupancy``. Mutually
@@ -3151,22 +3302,23 @@ default="diffusion_kde"
         ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
         times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
         for geodesic / linearized-track environments.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        shared occupancy denominator AND every per-neuron spike numerator
-        using ONE shared per-interval mask. This default matches
-        ``env.occupancy``'s own default, so occupancy is unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes inside intervals
-           longer than ``max_gap`` or inside intervals whose start sample is
-           out of bounds are now excluded from spike counts, matching
-           occupancy. Previously such spikes were counted while their time was
-           excluded from the denominator, inflating the rate. This changes
-           rate maps for sessions with large tracking gaps / out-of-bounds
-           excursions. Pass ``max_gap=None`` to disable gap gating on BOTH
-           sides (pre-fix behavior, still aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -3210,8 +3362,11 @@ default="diffusion_kde"
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
         ``unit_ids`` field and stamped onto each child's ``unit_id`` when
-        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
-        wrong-length value raises ``ValueError``.
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
 
     Returns
     -------
@@ -3227,6 +3382,15 @@ default="diffusion_kde"
         The result supports iteration: ``for single in result: ...``
         and indexing: ``single = result[0]``.
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     See Also
     --------
     compute_spatial_rate : Single-neuron version
@@ -3234,6 +3398,12 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
     1. Occupancy is computed once and shared across all neurons
@@ -3327,8 +3497,8 @@ default="diffusion_kde"
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_intervals_warning,
-        _resolve_interval_mask,
+        _resolve_spatial_interval_mask,
+        _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
     )
@@ -3343,7 +3513,9 @@ default="diffusion_kde"
         validate_trajectory,
     )
 
-    validate_env_fitted(env, context="compute_spatial_rates")
+    validate_env_fitted(
+        env, context="compute_spatial_rates", arguments="spike_times, times, positions"
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3407,27 +3579,27 @@ default="diffusion_kde"
     spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Resolve and validate per-unit identity labels (defaults to arange). An
-    # explicit `unit_ids=` always wins; otherwise the ids extracted from the
-    # spikes object are threaded through so identity is not silently dropped.
+    # Resolve and validate per-unit identity labels (defaults to arange). A
+    # labelled input keeps its own labels; a differing unit_ids= raises.
     from neurospatial._results import resolve_unit_ids
 
-    effective_unit_ids = unit_ids if unit_ids is not None else extracted_unit_ids
     resolved_unit_ids = resolve_unit_ids(
-        effective_unit_ids, n_neurons, context="compute_spatial_rates"
+        unit_ids,
+        n_neurons,
+        context="compute_spatial_rates",
+        input_ids=extracted_unit_ids,
     )
-
-    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
-    # Tsd/TsdFrame) OR explicit (times, positions) arrays. Array path unchanged.
-    from neurospatial._typing import as_times_positions
-
-    times, positions = as_times_positions(times, positions)
+    result_unit_ids = (
+        None if unit_ids is None and extracted_unit_ids is None else resolved_unit_ids
+    )
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, context="compute_spatial_rates")
+    validate_trajectory(
+        times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
+    )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 
@@ -3438,23 +3610,28 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
-    # min_speed) so we can warn ONCE for the whole batch if EVERY interval is
-    # excluded (empty rate maps), regardless of WHICH gate caused it — not once
-    # per neuron. Gated by warn_on_drop. Reshape 1-D positions to canonical 2-D.
-    if warn_on_drop:
-        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-        _interval_mask = _resolve_interval_mask(
+    interval_mask, resolved_epochs, resolved_spike_window = (
+        _resolve_spatial_interval_mask(
             env,
             times,
-            _positions_2d,
+            positions,
             speed=resolved_speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            warn_on_drop=warn_on_drop,
         )
-        _emit_all_excluded_intervals_warning(
-            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
-        )
+    )
+
+    # Recording coverage uses tracked runs, independently of speed or frame bins.
+    _warn_if_population_silent(
+        spike_times_list,
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
     # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
@@ -3477,6 +3654,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 context="compute_spatial_rates",
             )
         else:
@@ -3488,6 +3666,7 @@ default="diffusion_kde"
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
                 n_jobs=n_jobs,
                 warn_on_drop=warn_on_drop,
             )
@@ -3516,12 +3695,13 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=glm_firing_rates,
             occupancy=batch_occupancy,
             env=env,
             method=method,
             bandwidth=None,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
             # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
             # diagnostics are the float64 fit result and are kept float64 -- so
             # they do not lose precision (deviance/coefficients) and rates[i]
@@ -3552,25 +3732,28 @@ default="diffusion_kde"
             speed=resolved_speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            interval_mask=interval_mask,
             context="compute_spatial_rates",
         )
 
         # Convert to JAX if needed
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=dtype)
+        occupancy_result: ArrayLike = occupancy
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
             jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
             firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp_dtype)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            spike_window=resolved_spike_window,
             firing_rates=firing_rates_result,
-            occupancy=occupancy,
+            occupancy=occupancy_result,
             env=env,
             method=method,
             bandwidth=bandwidth,
-            unit_ids=resolved_unit_ids,
+            unit_ids=result_unit_ids,
         )
 
     # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
@@ -3583,6 +3766,7 @@ default="diffusion_kde"
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        interval_mask=interval_mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
     )
@@ -3618,19 +3802,21 @@ default="diffusion_kde"
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return SpatialRatesResult(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=env,
         method=method,
         bandwidth=bandwidth,
-        unit_ids=resolved_unit_ids,
+        unit_ids=result_unit_ids,
     )
 
 
@@ -3696,6 +3882,20 @@ class DirectionalPlaceFields(ResultMixin):
     env: Environment
     labels: tuple[str, ...]
 
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
+
     def correlation(self, label_a: str, label_b: str) -> float:
         """Pearson correlation between two directions' rate maps.
 
@@ -3746,8 +3946,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
@@ -3812,8 +4012,8 @@ class DirectionalPlaceFields(ResultMixin):
         for label in (label_a, label_b):
             if label not in self.firing_rates:
                 raise KeyError(
-                    f"Unknown direction label {label!r}. "
-                    f"Known labels: {tuple(self.firing_rates)}."
+                    f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
+                    + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
@@ -3859,6 +4059,10 @@ class DirectionalPlaceFields(ResultMixin):
         """
         out: dict[str, Any] = {
             "n_directions": len(self.labels),
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": None
+            if self.spike_window is None
+            else self.spike_window.tolist(),
             "n_bins": int(self.env.n_bins),
         }
         for label in self.labels:
@@ -4003,108 +4207,6 @@ class DirectionalPlaceFields(ResultMixin):
         return ax
 
 
-def _subset_spikes_by_time_mask(
-    times: NDArray[np.float64],
-    spike_times: NDArray[np.float64],
-    mask: NDArray[np.bool_],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Subset spike times by a boolean mask over trajectory times.
-
-    Extracts spikes that fall within the time ranges defined by contiguous
-    True segments in the mask. Uses binary search (searchsorted) for
-    efficient O(log n) spike slicing per segment.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_timepoints,)
-        Timestamps of trajectory samples (seconds). Must be sorted.
-    spike_times : NDArray[np.float64], shape (n_spikes,)
-        Timestamps of spike occurrences (seconds). Must be sorted.
-    mask : NDArray[np.bool_], shape (n_timepoints,)
-        Boolean mask indicating which timepoints to include.
-        Contiguous True segments define time ranges for spike inclusion.
-
-    Returns
-    -------
-    times_sub : NDArray[np.float64]
-        Subset of times where mask is True. Same as ``times[mask]``.
-    spike_times_sub : NDArray[np.float64]
-        Spikes that fall within the time ranges of contiguous True segments.
-        Boundaries are inclusive: spikes at segment start/end are included.
-
-    Notes
-    -----
-    For each contiguous segment of True values in mask:
-    - ``t_start = times[segment_first_index]``
-    - ``t_end = times[segment_last_index]``
-    - Spikes in ``[t_start, t_end]`` (inclusive) are selected
-
-    This function is designed for conditioning place field analysis on
-    subsets of the trajectory (e.g., by movement direction, trial type).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    >>> spike_times = np.array([0.5, 1.5, 2.5, 3.5])
-    >>> mask = np.array([False, True, True, False, False])
-    >>> times_sub, spikes_sub = _subset_spikes_by_time_mask(times, spike_times, mask)
-    >>> times_sub
-    array([1., 2.])
-    >>> spikes_sub
-    array([1.5])
-    """
-    # Fast path: empty mask
-    if not np.any(mask):
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Get indices where mask is True
-    true_indices = np.where(mask)[0]
-
-    # Find contiguous segments by looking for gaps > 1
-    # diff > 1 indicates a break in contiguity
-    if len(true_indices) == 0:
-        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
-
-    # Find segment boundaries: where consecutive indices are not adjacent
-    breaks = np.where(np.diff(true_indices) > 1)[0] + 1
-    segment_starts = np.concatenate([[0], breaks])
-    segment_ends = np.concatenate([breaks, [len(true_indices)]])
-
-    # Fast path: empty spike train
-    if len(spike_times) == 0:
-        return times[mask], np.array([], dtype=np.float64)
-
-    # Collect spikes from each segment
-    spike_slices = []
-
-    for seg_start_idx, seg_end_idx in zip(segment_starts, segment_ends, strict=True):
-        # Get the actual time indices for this segment
-        first_time_idx = true_indices[seg_start_idx]
-        last_time_idx = true_indices[seg_end_idx - 1]
-
-        # Get time boundaries
-        t_start = times[first_time_idx]
-        t_end = times[last_time_idx]
-
-        # Use searchsorted for O(log n) spike slicing
-        # side="left" for t_start: include spikes at exactly t_start
-        # side="right" for t_end: include spikes at exactly t_end
-        spike_start = np.searchsorted(spike_times, t_start, side="left")
-        spike_end = np.searchsorted(spike_times, t_end, side="right")
-
-        if spike_start < spike_end:
-            spike_slices.append(spike_times[spike_start:spike_end])
-
-    # Concatenate all spike slices
-    if spike_slices:
-        spike_times_sub = np.concatenate(spike_slices)
-    else:
-        spike_times_sub = np.array([], dtype=np.float64)
-
-    return times[mask], spike_times_sub
-
-
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -4115,6 +4217,9 @@ def compute_directional_place_fields(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -4145,6 +4250,24 @@ def compute_directional_place_fields(
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+
     Returns
     -------
     DirectionalPlaceFields
@@ -4167,15 +4290,17 @@ def compute_directional_place_fields(
 
     Notes
     -----
-    The "other" label is reserved for timepoints that should be excluded from
-    analysis (e.g., inter-trial intervals, stationary periods). Any timepoints
-    with label "other" are ignored when computing fields.
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    requires both of the interval's samples to be tracked inside the
+    environment, so an interval ending in a tracking dropout is left out.
+    The same intervals are removed from the spike counts and the occupancy.
 
-    For each unique non-"other" label, this function:
-    1. Creates a boolean mask for timepoints with that label
-    2. Extracts the trajectory and spikes within those masked periods
-    3. Calls ``compute_spatial_rate`` on the subset
-    4. Stores the resulting field in the output mapping
+    Each interval carries the direction label of its start sample. Separate
+    runs of the same label become analysis epochs on the original trajectory,
+    so filtering never joins nonadjacent samples into artificial intervals.
+    The caller's epochs intersect the label windows; ``spike_window`` remains
+    the caller's acquisition coverage.
 
     Examples
     --------
@@ -4203,6 +4328,12 @@ def compute_directional_place_fields(
     True
     """
     # Validate direction_labels length matches times
+    from neurospatial._intervals import (
+        intersect_intervals,
+        resolve_time_windows,
+        run_time_bounds,
+    )
+
     if len(direction_labels) != len(times):
         raise ValueError(
             f"direction_labels must have same length as times, "
@@ -4222,33 +4353,40 @@ def compute_directional_place_fields(
     firing_rates_dict: dict[str, NDArray[np.float64]] = {}
     occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     for label in unique_labels:
-        # Build mask for this direction
-        mask = labels_arr == label
-
-        # Get subsets using our helper
-        times_sub, spike_times_sub = _subset_spikes_by_time_mask(
-            times, spike_times, mask
+        label_windows = run_time_bounds(times, labels_arr[:-1] == label)
+        if label_windows.shape[0] == 0:
+            continue
+        windows = (
+            label_windows
+            if resolved_epochs is None
+            else intersect_intervals(label_windows, resolved_epochs)
         )
-        positions_sub = positions[mask]
+        if windows.shape[0] == 0:
+            continue
 
         single = compute_spatial_rate(
             env,
-            spike_times_sub,
-            times_sub,
-            positions_sub,
+            spike_times,
+            times,
+            positions,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
+            max_gap=max_gap,
+            epochs=windows,
+            spike_window=resolved_spike_window,
         )
         firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
         occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
 
     return DirectionalPlaceFields(
+        spike_window=resolved_spike_window,
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,
-        labels=tuple(str(label) for label in unique_labels),
+        labels=tuple(firing_rates_dict),
     )
 
 
@@ -4335,7 +4473,7 @@ def detect_place_fields(
     ...     dist = np.linalg.norm(env.bin_centers[i])
     ...     firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
     >>> fields = detect_place_fields(env, firing_rate)
-    >>> len(fields)  # doctest: +SKIP
+    >>> len(fields)
     1
 
     See Also
@@ -4444,28 +4582,37 @@ def detect_place_fields(
     return PlaceFieldsResult(fields=fields, excluded_reason=None, n_excluded=0)
 
 
-def is_place_cell(
+def has_place_field(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     threshold: float = 0.2,
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
     detect_subfields: bool = True,
+    min_occupancy: float | None = None,
+    fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
+    pooled: bool = True,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = True,
 ) -> bool:
-    """Quick check: Is this a place cell?
+    """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
-    Convenience function for fast screening of neurons. Computes the spatial
-    rate map and checks whether :func:`detect_place_fields` finds at least one
-    place field. Agrees with :func:`detect_place_fields`: returns ``True`` iff
-    that detector finds a field on the same rate map.
-
-    For detailed metrics, use :func:`compute_spatial_rate` and inspect the
-    result's methods (``is_place_cell()``, ``spatial_information()``, etc.).
+    Independent 0.5 Hz Poisson units with no spatial tuning had a detected
+    field 20/20 at every recording length from 1 to 20 minutes (100 x 100 cm
+    arena, 5 cm bins). Use ``is_place_cell(..., criterion="shuffle")`` for
+    a verdict that controls false positives under the circular-shift null.
 
     Parameters
     ----------
@@ -4473,14 +4620,33 @@ def is_place_cell(
         Spatial environment defining the discretization.
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Times of spikes.
-    times : NDArray[np.float64], shape (n_time,)
-        Timestamps for each behavioral sample.
-    positions : NDArray[np.float64], shape (n_time, n_dims)
-        Animal positions.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     threshold : float, default=0.2
         Fraction of peak rate for field boundary detection (0-1).
     min_size : int, optional
@@ -4491,11 +4657,419 @@ def is_place_cell(
     detect_subfields : bool, default=True
         If True, recursively detect subfields within large fields.
 
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; bins below the threshold are set to NaN. ``None`` resolves to
+        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
+    fill_value : float | None, default=None
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN is preserved so existing callers see no behavior change.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
+        zero-rate map composes directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual
+        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
+        which bins were masked via ``result.occupancy < min_occupancy``.
+        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
+        penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
+        under-sampled data where no ``λ`` yields a converged, positive-definite
+        fit, REML raises ``ValueError`` (supply a fixed ``penalty``, coarsen the
+        grid, or reduce ``rank``). Mutually exclusive with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap. An out-of-range value is
+        **clamped** (never rejected) to the effective rank
+        ``max(n_live_components, min(n_live_bins, rank))``, reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) Whether REML selects **one
+        shared** smoothing penalty ``λ`` for the population (``True``, the
+        default) or an **independent per-unit** ``λ`` (``False``). ``pooled=False``
+        runs the REML search once per unit, so the fit costs roughly one REML per
+        neuron; ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary``
+        then hold that unit's own value (a single-unit call unwraps them to
+        scalars). Zero-spike units (whose ``λ`` is unidentified) fall back to the
+        pooled ``λ`` over the informative units, flagged
+        ``penalty_selected_by_reml=False`` with ``reml_objective=nan``. A supplied
+        fixed ``penalty`` beats ``pooled`` (REML is skipped and one scalar ``λ``
+        is recorded); ``pooled`` is likewise a no-op at ``penalty_rank == 0`` (a
+        shared-basis property) or when no unit spikes. A boundary warning means
+        the selected ``λ`` is near a search bound -- ``λ`` itself is weakly
+        identified; the fitted field is finite but its sensitivity to ``λ`` should
+        be checked. Under ``pooled=False`` that warning names the affected
+        ``unit_ids``; the shared ``pooled=True`` warning refers to "the pooled
+        fit". Passing ``pooled=False`` with a ratio method raises ``ValueError``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set. When
+        ``min_speed`` is set and ``speed`` is ``None``, speed is auto-derived
+        from the trajectory (see ``min_speed``). Pass your own ``speed`` for
+        geodesic / linearized-track environments where the Euclidean
+        auto-default is not appropriate. A wrong-length array raises
+        ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the spike numerator AND the occupancy
+        denominator using ONE shared per-interval speed gate, so the firing
+        rate stays correct (gating only one side would bias the rate). When
+        ``None`` (the default) NO speed filtering is applied and the output is
+        byte-for-byte identical to before.
+
+        **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
+        ``None``, speed is derived with a FORWARD difference to match the
+        occupancy interval semantics (``time_allocation="start"``):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
+        last sample starts no occupancy interval). This Euclidean default is
+        simple; for geodesic / track environments pass an explicit ``speed``.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a ``UserWarning`` when a large
+        fraction of spikes are silently dropped — either because they
+        fall outside the position time window or because they map to
+        inactive/out-of-environment bins.  A warning is always emitted
+        when **all** spikes are dropped (regardless of threshold).  This
+        guards against common unit mismatches (e.g. spike_times in
+        milliseconds while times is in seconds).  Set to ``False`` to
+        suppress all drop-related warnings. Speed-excluded spikes (via
+        ``min_speed``) are intentional exclusions and do NOT trigger this
+        warning.
+
+
     Returns
     -------
     bool
-        True if the neuron passes place-cell criteria (has >= 1 detected
-        place field).
+        True when a place field is detected.
+
+    Notes
+    -----
+    Plug-in information is biased upward by approximately
+    (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+    For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+    bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+    10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+    The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+    Field detection flagged 20/20 at all five durations. For publication,
+    report a circular-shift test and its assumptions instead of a cutoff verdict.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import has_place_field
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> times = np.linspace(0, 40, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 40, 50))
+    >>> result = has_place_field(env, spike_times, times, positions)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_spatial_rate : Full spatial rate computation
+    detect_place_fields : Place field detection algorithm this agrees with
+    SpatialRateResult.has_place_field : Place-cell classification on a result
+    """
+    result = compute_spatial_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        method=method,
+        bandwidth=bandwidth,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        speed=speed,
+        min_speed=min_speed,
+        backend=backend,
+        warn_on_drop=warn_on_drop,
+    )
+    return result.has_place_field(
+        threshold=threshold,
+        min_size=min_size,
+        max_mean_rate=max_mean_rate,
+        detect_subfields=detect_subfields,
+    )
+
+
+def is_place_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    criterion: Literal["spatial_info", "shuffle"],
+    min_info: float | None = None,
+    alpha: float | None = None,
+    n_shuffles: int | None = None,
+    min_shift: float | None = None,
+    rng: np.random.Generator | int | None = None,
+    unit_id: Hashable | None = None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
+    bandwidth: float | None = None,
+    min_occupancy: float | None = None,
+    fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
+    pooled: bool = True,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = True,
+) -> bool:
+    """Classify one neuron using an explicitly chosen criterion.
+
+    There is no default criterion. ``criterion="spatial_info"`` thresholds
+    plug-in spatial information, which flagged 19/20 and 15/20 untuned
+    0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
+    it against circularly shifted spike trains. Use the shuffle when the
+    verdict must control false positives under that null (slow), or spatial
+    information for a fast screen biased upward at low counts. To detect a
+    field, use ``has_place_field()``; field detection flagged 20/20 noise units.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    criterion : {"spatial_info", "shuffle"}
+        Screen the observed statistic or test circular-shift significance.
+    min_info : float or None, default=None
+        Inclusive screen cutoff; None resolves to the family threshold constant.
+    alpha : float or None, default=None
+        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
+    n_shuffles : int or None, default=None
+        Number of circular shifts in shuffle mode; None resolves to 1000.
+    min_shift : float or None, default=None
+        Minimum shift in analyzed seconds; None resolves to 20.0.
+    rng : numpy.random.Generator, int or None, default=None
+        Shuffle random source; an integer seed with the same unit label is stable
+        across single and population calls.
+    unit_id : hashable or None, default=None
+        Shuffle stream label; None uses label 0. Match the population's label.
+    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
+        Estimator to use:
+
+        - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
+          Respects environment boundaries (walls, obstacles). Uses diffusion
+          kernel computed from environment graph. Bins too far from all
+          occupancy for the smoothing to resolve (typically 4-7 bandwidths
+          away) are NaN; so are such bins for ``binned``.
+        - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
+          on Euclidean distance between bin centers. Ignores boundaries (mass
+          can "bleed through" walls).
+        - **binned**: Bin-then-smooth method. Computes raw rate first, then
+          smooths. Can introduce discretization artifacts.
+        - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
+          (never a denominator) and the smoothness penalty λ is chosen by REML,
+          so the fit returns **finite rates everywhere** -- including
+          low-occupancy and unvisited bins where the ratio estimators NaN. Tuned
+          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy`` /
+          ``fill_value``, which are mutually exclusive with ``method="glm"``).
+
+        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
+        finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
+        dense kernel and scale to large/fine grids. ``glm`` also avoids a dense
+        O(n_bins²) kernel (it fits on the rank-``r`` basis), but its
+        penalized-Poisson fit is heavier and **not** linear in ``rank``: each
+        Newton step builds a per-unit (r, r) Hessian ``Bᵀ diag(μ) B`` (≈
+        O(n_units·n_bins·rank²)) and solves it (≈ O(n_units·rank³)), and this is
+        repeated across Newton iterations and REML λ candidates. Keep ``rank``
+        modest for large populations. Only ``gaussian_kde`` builds a dense
+        O(n_bins²) matrix; for very large grids prefer ``diffusion_kde``, or
+        increase ``bin_size``.
+
+    bandwidth : float | None, default=None
+        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
+        larger values produce more smoothing. ``None`` resolves to ``5.0``.
+        Mutually exclusive with ``method="glm"``.
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; bins below the threshold are set to NaN. ``None`` resolves to
+        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
+    fill_value : float | None, default=None
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN bins stay NaN.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
+        zero-rate map composes directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual
+        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
+        which bins were masked via ``result.occupancy < min_occupancy``.
+        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
+        penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
+        under-sampled data where no ``λ`` yields a converged, positive-definite
+        fit, REML raises ``ValueError`` (supply a fixed ``penalty``, coarsen the
+        grid, or reduce ``rank``). Mutually exclusive with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap. An out-of-range value is
+        **clamped** (never rejected) to the effective rank
+        ``max(n_live_components, min(n_live_bins, rank))``, reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) Whether REML selects **one
+        shared** smoothing penalty ``λ`` for the population (``True``, the
+        default) or an **independent per-unit** ``λ`` (``False``). ``pooled=False``
+        runs the REML search once per unit, so the fit costs roughly one REML per
+        neuron; ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary``
+        then hold that unit's own value (a single-unit call unwraps them to
+        scalars). Zero-spike units (whose ``λ`` is unidentified) fall back to the
+        pooled ``λ`` over the informative units, flagged
+        ``penalty_selected_by_reml=False`` with ``reml_objective=nan``. A supplied
+        fixed ``penalty`` beats ``pooled`` (REML is skipped and one scalar ``λ``
+        is recorded); ``pooled`` is likewise a no-op at ``penalty_rank == 0`` (a
+        shared-basis property) or when no unit spikes. A boundary warning means
+        the selected ``λ`` is near a search bound -- ``λ`` itself is weakly
+        identified; the fitted field is finite but its sensitivity to ``λ`` should
+        be checked. Under ``pooled=False`` that warning names the affected
+        ``unit_ids``; the shared ``pooled=True`` warning refers to "the pooled
+        fit". Passing ``pooled=False`` with a ratio method raises ``ValueError``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set. When
+        ``min_speed`` is set and ``speed`` is ``None``, speed is auto-derived
+        from the trajectory (see ``min_speed``). Pass your own ``speed`` for
+        geodesic / linearized-track environments where the Euclidean
+        auto-default is not appropriate. A wrong-length array raises
+        ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the spike numerator AND the occupancy
+        denominator using ONE shared per-interval speed gate, so the firing
+        rate stays correct (gating only one side would bias the rate). When
+        ``None`` (the default) no speed filtering is applied.
+
+        **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
+        ``None``, speed is derived with a FORWARD difference to match the
+        occupancy interval semantics (``time_allocation="start"``):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
+        last sample starts no occupancy interval). This Euclidean default is
+        simple; for geodesic / track environments pass an explicit ``speed``.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a ``UserWarning`` when a large
+        fraction of spikes are silently dropped — either because they
+        fall outside the position time window or because they map to
+        inactive/out-of-environment bins.  A warning is always emitted
+        when **all** spikes are dropped (regardless of threshold).  This
+        guards against common unit mismatches (e.g. spike_times in
+        milliseconds while times is in seconds).  Set to ``False`` to
+        suppress all drop-related warnings. Speed-excluded spikes (via
+        ``min_speed``) are intentional exclusions and do NOT trigger this
+        warning.
+
+
+    Returns
+    -------
+    bool
+        Whether the chosen criterion is met.
+
+    Raises
+    ------
+    ValueError
+        If the criterion, inputs, or mode-specific keywords are invalid.
+
+    Notes
+    -----
+    Plug-in information is biased upward by approximately
+    (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
+    For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
+    bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
+    10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
+    The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
+    Field detection flagged 20/20 at all five durations. For publication,
+    report a circular-shift test and its assumptions instead of a cutoff verdict.
+
+    Circular shifting costs about n_shuffles recomputes of the plural map.
+    Its null assumes stable firing statistics on the joined analyzed clock;
+    recording gaps and excluded epochs are never shift destinations.
+    Compare p_value < alpha; a significant association alone does not establish
+    cell identity. Results keep no raw arrays or recompute closures.
+    Threshold keywords belong only to the screen; shuffle keywords belong
+    only to the shuffle. Passing a keyword for the other mode raises.
+
+    See Also
+    --------
+    place_cell_significance : Population significance on raw arrays.
+    compute_spatial_rate : Compute the map without classification.
 
     Examples
     --------
@@ -4505,35 +5079,78 @@ def is_place_cell(
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> times = np.linspace(0, 100, 1000)
-    >>> spike_times = np.sort(rng.uniform(0, 100, 50))
-    >>> result = is_place_cell(env, spike_times, times, positions)
+    >>> times = np.linspace(0, 40, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 40, 50))
+    >>> result = is_place_cell(
+    ...     env, spike_times, times, positions, criterion="spatial_info"
+    ... )
     >>> type(result)
     <class 'bool'>
-
-    See Also
-    --------
-    compute_spatial_rate : Full spatial rate computation
-    detect_place_fields : Place field detection algorithm this agrees with
-    SpatialRateResult.is_place_cell : Place-cell classification on a result
     """
-    try:
-        result = compute_spatial_rate(
+    check_criterion(criterion, ("spatial_info", "shuffle"), call="is_place_cell")
+    check_mode_keywords(
+        criterion,
+        threshold={"min_info": min_info},
+        shuffle={
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
+            "rng": rng,
+            "unit_id": unit_id,
+            "alpha": alpha,
+        },
+        call="is_place_cell",
+    )
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        shuffle_result = place_cell_significance(
             env,
-            spike_times,
+            [spike_times],
             times,
             positions,
+            unit_ids=[label],
+            **resolve_shuffle_settings(n_shuffles, min_shift),
+            rng=rng,
             method=method,
             bandwidth=bandwidth,
-        )
-    except (ValueError, RuntimeError):
-        return False
-    return result.is_place_cell(
-        threshold=threshold,
-        min_size=min_size,
-        max_mean_rate=max_mean_rate,
-        detect_subfields=detect_subfields,
+            min_occupancy=min_occupancy,
+            fill_value=fill_value,
+            penalty=penalty,
+            rank=rank,
+            pooled=pooled,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            backend=backend,
+            warn_on_drop=warn_on_drop,
+        )[label]
+        return shuffle_result.p_value < level
+    min_info = (
+        PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
     )
+    result = compute_spatial_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        backend=backend,
+        warn_on_drop=warn_on_drop,
+    )
+    return result.is_place_cell(criterion="spatial_info", min_info=min_info)
 
 
 def _extract_connected_component_scipy(
@@ -4800,3 +5417,336 @@ def _detect_subfields(
 
     # No subfields found
     return [field_bins]
+
+
+def place_cell_significance(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
+    bandwidth: float | None = None,
+    min_occupancy: float | None = None,
+    fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
+    pooled: bool = True,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = False,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> dict[Hashable, ShuffleTestResult]:
+    """Test place tuning against circular spike-time shifts.
+
+    Recompute the population map for the supplied arrays and for each shifted
+    train, using exactly the observed map's valid intervals. Shuffles preserve
+    counts on the compressed analyzed clock and never enter recording gaps.
+    This costs about n_shuffles population-map recomputes. The result's
+    is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : sequence of arrays or 2D array
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
+
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        group must equal the group's index.
+    times : ndarray, shape (n_samples,)
+        Sample timestamps in seconds, sorted and aligned with the raw coordinates.
+
+    positions : ndarray, shape (n_samples, n_dims)
+        Raw animal coordinates aligned with times, in environment units.
+
+    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
+        Estimator to use. See ``compute_spatial_rate()`` for details. In addition
+        to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
+        (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
+        everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
+        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
+        the batched entry point the decoder consumes; ``method="glm"`` flows
+        through both the decoder (``decode_session`` / ``BayesianDecoder``) and
+        NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
+        ``diffusion_kde`` and ``binned`` are
+        matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
+        O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
+        ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
+        (≈ O(n_units·n_bins·rank²) + O(n_units·rank³)), repeated across Newton
+        iterations and REML λ candidates, so keep ``rank`` modest for large
+        populations (see ``compute_spatial_rate`` for details). Only
+        ``gaussian_kde`` builds a dense O(n_bins²) kernel.
+    bandwidth : float | None, default=None
+        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
+        ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
+        with ``method="glm"``.
+    fill_value : float | None, default=None
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
+        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
+        default), NaN is preserved so existing callers see no behavior change.
+        Pass ``fill_value=0.0`` for the recommended decoding golden path:
+        zero-rate maps compose directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
+        scrubbing. ``occupancy`` is unaffected, so callers can still recover which
+        bins were masked via ``result.occupancy < min_occupancy``. Mutually
+        exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
+        selects ``λ`` by REML, which raises ``ValueError`` on pathologically
+        under-sampled data where no ``λ`` yields a converged fit (see
+        ``compute_spatial_rate``). Mutually exclusive with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap; an out-of-range value is
+        clamped (never rejected) to the effective rank reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) One **shared** smoothing penalty
+        ``λ`` for the whole population (``True``, the default) or an **independent
+        per-unit** ``λ`` (``False``). Under ``pooled=False`` the REML search runs
+        once per informative unit (cost ~ one REML per neuron), so
+        ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary`` become
+        ``(n_units,)`` vectors and ``penalty_selected_by_reml`` a per-unit mask;
+        zero-spike units fall back to the pooled ``λ`` over the informative units
+        (``penalty_selected_by_reml=False``, ``reml_objective=nan``). A fixed
+        ``penalty`` beats ``pooled`` (scalar ``λ``); ``pooled`` is a no-op at
+        ``penalty_rank == 0`` or when no unit spikes. ``pooled=False`` with a ratio
+        method raises ``ValueError``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set; auto-derived from
+        the trajectory when ``None``. See ``min_speed``. A wrong-length array
+        raises ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the (shared) occupancy denominator AND
+        every per-neuron spike numerator using ONE shared per-interval speed
+        gate, so firing rates stay correct. When ``None`` (default) NO speed
+        filtering is applied and the output is byte-for-byte identical to
+        before. Auto-speed uses a FORWARD difference (matching the
+        ``time_allocation="start"`` occupancy semantics):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
+        for geodesic / linearized-track environments.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
+    warn_on_drop : bool, default=False
+        Report dropped spikes in the observed fit when True. Null-fit warnings are suppressed.
+    dtype : {np.float32, np.float64}, default=np.float64
+        Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
+        ``np.float32`` halves the stored rate-map array. The rate computation
+        is still performed in float64 and only the final result is cast, so
+        float32 values match float64 within float32 tolerance.
+        ``decode_session`` / ``decode_session_summary`` now accept their own
+        ``dtype`` parameter (default float64) that honors float32 end-to-end --
+        the encoding-model working set AND the posterior -- so
+        ``decode_session(dtype=np.float32)`` halves the decode working set on
+        the golden path. Default ``np.float64`` leaves every existing caller
+        byte-for-byte unchanged. Any other dtype raises ``ValueError``.
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
+    n_shuffles : int, default=1000
+        Positive number of null map recomputes.
+    min_shift : float, default=20.0
+        Minimum shift in either direction, seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Integer seeds give stable per-unit shifts regardless of population order.
+
+    Returns
+    -------
+    dict[Hashable, ShuffleTestResult]
+        Per-unit observed score, null scores, corrected p-value and z-score,
+        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+
+    Raises
+    ------
+    ValueError
+        For invalid inputs/settings, duplicate/conflicting unit labels,
+        insufficient analyzed time, or unsupported method="glm".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import place_cell_significance
+    >>> rng = np.random.default_rng(7)
+    >>> times = np.arange(0.0, 60.0, 0.1)
+    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
+    >>> headings = np.sin(times / 5)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
+    >>> results = place_cell_significance(
+    ...     env, trains, times, positions, n_shuffles=20, rng=0
+    ... )
+    >>> list(results)
+    [0]
+    >>> results[0].n_shuffles
+    20
+    """
+
+    from neurospatial._exceptions import _format_error
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding._binning import _spatial_interval_mask, resolve_speed
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        snapshot_options,
+        to_shuffle_results,
+    )
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    if method == "glm":
+        raise ValueError(
+            _format_error(
+                "place_cell_significance does not support method='glm'.",
+                why="Why: pooled REML couples units, so shifted single-unit fits would not be the observed model",
+                fix="pass method='diffusion_kde', 'gaussian_kde' or 'binned'",
+            )
+        )
+    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    ids = np.array(
+        resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            input_ids=input_ids,
+            context="place_cell_significance",
+        ),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    options: dict[str, Any] = {
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "fill_value": fill_value,
+        "penalty": penalty,
+        "rank": rank,
+        "pooled": pooled,
+        "speed": speed,
+        "min_speed": min_speed,
+        "max_gap": max_gap,
+        "n_jobs": n_jobs,
+        "backend": backend,
+        "warn_on_drop": warn_on_drop,
+        "dtype": dtype,
+    }
+    options = snapshot_options(
+        options,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        unit_ids=ids,
+    )
+    validate_env_fitted(
+        env,
+        context="place_cell_significance",
+        arguments="spike_times, times, positions",
+    )
+    validate_trajectory(
+        times, positions=positions, context="place_cell_significance", n_dims=env.n_dims
+    )
+    for train in trains:
+        validate_spike_times(train, context="place_cell_significance")
+    resolved_speed = resolve_speed(times, positions, options["speed"], min_speed)
+    positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+    mask = _spatial_interval_mask(
+        env,
+        times,
+        positions_2d,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
+    windows = run_time_bounds(times, mask)
+
+    def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
+        return compute_spatial_rates(
+            env, shifted, times, positions, **options
+        ).spatial_information()
+
+    observed, null = run_shuffle_test(
+        statistic,
+        trains,
+        windows,
+        ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    return to_shuffle_results(observed, null, ids)

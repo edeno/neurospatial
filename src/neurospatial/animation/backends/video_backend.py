@@ -80,6 +80,7 @@ def render_video(
     fields: list[NDArray[np.float64]],
     save_path: str,
     *,
+    overwrite: bool = False,
     fps: int = 30,
     cmap: str = "viridis",
     vmin: float | None = None,
@@ -110,6 +111,9 @@ def render_video(
         Fields to animate. Each array contains field values for one frame.
     save_path : str
         Output path for video file (e.g., "output.mp4").
+    overwrite : bool, default=False
+        Allow replacing existing video/HTML files and nonempty HTML frames
+        directories. By default, an existing target raises before rendering.
     fps : int, default=30
         Frames per second for playback.
     cmap : str, default="viridis"
@@ -174,6 +178,8 @@ def render_video(
 
     Raises
     ------
+    FileExistsError
+        If an output already exists and overwrite is False.
     RuntimeError
         If ffmpeg is not installed or encoding fails
 
@@ -238,11 +244,16 @@ def render_video(
 
     Serial rendering (``n_workers=1``) does not require pickle-ability.
     """
+    from neurospatial._validation import check_writable
     from neurospatial.animation._parallel import parallel_render_frames
     from neurospatial.animation.rendering import (
         _validate_frame_labels,
         compute_global_colormap_range,
         render_field_to_rgb,
+    )
+
+    check_writable(
+        [Path(save_path)], overwrite=overwrite, what="video file", argument="save_path"
     )
 
     # Validate ffmpeg available
@@ -285,7 +296,7 @@ def render_video(
             f"  - Large video file sizes\n"
             f"  - Slow rendering (4x pixels at dpi=200 vs dpi=100)\n"
             f"  - High memory usage during rendering\n\n"
-            f"HOW: Reduce DPI to speed up export:\n"
+            f"Fix: Reduce DPI to speed up export:\n"
             f"  env.animate_fields(fields, frame_times=frame_times, backend='video', dpi=100)  # 800x600\n"
             f"  env.animate_fields(fields, frame_times=frame_times, backend='video', dpi=150)  # 1200x900",
             UserWarning,
@@ -384,7 +395,7 @@ def render_video(
         # Build ffmpeg command
         cmd = [
             "ffmpeg",
-            "-y",  # Overwrite output
+            "-y" if overwrite else "-n",  # Guard the race before encoding too
             "-framerate",
             str(fps),
             "-i",

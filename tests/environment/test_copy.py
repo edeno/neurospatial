@@ -173,7 +173,7 @@ class TestCopyCacheInvalidation:
         from neurospatial.ops.binning import map_points_to_bins
 
         points = np.array([[5.0, 5.0]])
-        _ = map_points_to_bins(points, env)
+        _ = map_points_to_bins(env, points)
 
         # Check cache exists on the environment object
         assert hasattr(env, "_kdtree_cache")
@@ -211,7 +211,7 @@ class TestCopyCacheInvalidation:
 
         # Populate both caches
         points = np.array([[5.0, 5.0]])
-        _ = map_points_to_bins(points, env)
+        _ = map_points_to_bins(env, points)
         _ = env.compute_kernel(bandwidth=2.0, mode="transition")
 
         # Both caches should exist

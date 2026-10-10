@@ -64,7 +64,7 @@ def as_spike_trains(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding import as_spike_trains
+    >>> from neurospatial.encoding._spikes import as_spike_trains
     >>> spikes = np.array([0.1, 0.5, 1.2])
     >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
@@ -214,14 +214,16 @@ def as_spike_trains_with_ids(
         Per-unit spike-time arrays, exactly as :func:`as_spike_trains` produces.
     unit_ids : NDArray or None
         Unit ids extracted from the group's ``.index`` (one per train), or
-        ``None`` for a plain array / sequence input (which carries no ids).
+        ``None`` for a plain array / sequence input (which carries no ids) and
+        for a group whose labels were generated rather than supplied (an object
+        with ``_unit_ids_generated`` set, such as ``SpikeTrains(trains)``).
 
     Examples
     --------
     Plain sequence input carries no ids:
 
     >>> import numpy as np
-    >>> from neurospatial.encoding import as_spike_trains_with_ids
+    >>> from neurospatial.encoding._spikes import as_spike_trains_with_ids
     >>> trains, ids = as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)
@@ -232,7 +234,9 @@ def as_spike_trains_with_ids(
         # ``UserDict`` (a ``Mapping``), so iterating it yields the unit-id KEYS,
         # not the per-unit trains (iterating would silently produce 0-d id
         # arrays and wrong rates/posterior).
-        unit_ids = np.asarray(list(spike_times.index))
+        from neurospatial._results import as_label_array
+
+        unit_ids = as_label_array(list(spike_times.index))
         if isinstance(spike_times, Mapping):
             # TsGroup (UserDict) & dict-like: index -> per-unit ``Ts`` with ``.t``
             # (fall back to the value itself if it is already a plain array).
@@ -247,5 +251,8 @@ def as_spike_trains_with_ids(
             # Iterate-yields-trains container (future ``SpikeTrains``, test
             # doubles): iteration yields the per-unit 1-D timestamp arrays.
             trains = [np.asarray(t, dtype=np.float64) for t in spike_times]
+        if getattr(spike_times, "_unit_ids_generated", False):
+            # Generated ``arange`` labels are not caller-supplied identity.
+            return trains, None
         return trains, unit_ids
     return as_spike_trains(spike_times), None

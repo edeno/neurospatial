@@ -202,7 +202,7 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, max_gap=None)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated: [0, 1]
@@ -232,7 +232,9 @@ class TestBinSequenceAdvanced:
         )
 
         # With outside_value=-1 (default)
-        bins_default = small_2d_env.bin_sequence(times, positions, dedup=False)
+        bins_default = small_2d_env.bin_sequence(
+            times, positions, dedup=False, max_gap=None
+        )
         assert bins_default[0] == 0
         assert bins_default[1] == -1
         assert bins_default[2] == -1
@@ -241,7 +243,7 @@ class TestBinSequenceAdvanced:
 
         # With outside_value=None (drop outside)
         bins_dropped = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=False
+            times, positions, outside_value=None, dedup=False, max_gap=None
         )
         # Should only have bins 0 and 1
         assert_array_equal(bins_dropped, [0, 1])
@@ -259,17 +261,13 @@ class TestBinSequenceAdvanced:
         _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
-        assert_array_equal(bins, [0])
-        assert_array_equal(starts, [0])
-        assert_array_equal(lengths, [1])
+        assert bins.size == 0
+        assert starts.size == 0
+        assert lengths.size == 0
 
         # With dedup=False, single sample
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
-        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
-
-        assert_array_equal(bins, [0])
-        assert_array_equal(starts, [0])
-        assert_array_equal(lengths, [1])
+        bins = small_2d_env.bin_sequence(times, positions, dedup=False)
+        assert bins.size == 0
 
     def test_bin_sequence_runs_with_outside_dropped(self, small_2d_env):
         """Test run boundaries when outside values are dropped.
@@ -289,7 +287,9 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, outside_value=None)
+        _bsr = small_2d_env.bin_sequence_with_runs(
+            times, positions, outside_value=None, max_gap=None
+        )
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # After dropping outside: [0, 0, 1, 1] with original indices [0, 1, 4, 5]
@@ -316,7 +316,7 @@ class TestBinSequenceAdvanced:
         positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
 
         result = small_2d_env.bin_sequence_with_runs(
-            times, positions, outside_value=None
+            times, positions, outside_value=None, max_gap=None
         )
         assert_array_equal(result.bins, [0, 0])
         assert_array_equal(result.run_starts, [0, 2])
@@ -342,12 +342,12 @@ class TestBinSequenceAdvanced:
         positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
 
         bins_dedup = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=True
+            times, positions, outside_value=None, dedup=True, max_gap=None
         )
         assert_array_equal(bins_dedup, [0])
 
         bins_no_dedup = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=False
+            times, positions, outside_value=None, dedup=False, max_gap=None
         )
         assert_array_equal(bins_no_dedup, [0, 0])
 
@@ -541,11 +541,13 @@ class TestTemporalBinningEdgeCases:
         times = np.array([0.0, 2.0, 1.5, 3.0])  # Decreases at index 2
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
-        with pytest.raises(ValueError, match="monotonically increasing") as exc_info:
+        with pytest.raises(
+            ValueError, match="monotonically non-decreasing"
+        ) as exc_info:
             small_2d_env.occupancy(times, positions)
 
         # Should mention index where decrease occurs
-        assert "indices" in str(exc_info.value).lower()
+        assert "index 1" in str(exc_info.value).lower()
 
     def test_temporal_binning_very_small_time_steps(self, small_2d_env):
         """Test occupancy with very small time steps.

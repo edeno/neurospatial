@@ -13,6 +13,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.io.nwb._adapters import (
+    data_from_series,
+    require_unscaled_for_lazy,
     timestamps_from_series,
     timestamps_handle_from_series,
     validate_handle_lengths,
@@ -48,18 +50,20 @@ def read_pose(
         processing/behavior > processing/*.
     lazy : bool, default False
         If ``False`` (default), each bodypart trajectory and the timestamps are
-        fully materialized into ``NDArray[np.float64]`` -- the historical,
-        byte-for-byte-unchanged behavior. If ``True``, the h5py-backed
-        ``PoseEstimationSeries.data`` handles (and the timestamps handle) are
-        returned **without** copying, so they materialize only when sliced or
-        ``np.asarray``-ed.
+        fully materialized into ``NDArray[np.float64]``. If ``True``, the
+        h5py-backed ``PoseEstimationSeries.data`` handles (and the timestamps
+        handle) are returned **without** copying, so they materialize only when
+        sliced or ``np.asarray``-ed. Values are in each series' ``unit``:
+        stored × ``conversion`` + ``offset``; ``lazy=True`` raises when that map
+        is not the identity.
 
     Returns
     -------
     bodyparts : dict[str, NDArray[np.float64] or h5py.Dataset]
         Mapping from bodypart name to coordinates, each shape
-        (n_samples, n_dims). Values are materialized arrays when ``lazy=False``
-        and lazy handles when ``lazy=True``.
+        (n_samples, n_dims), in the series' ``unit``: stored × ``conversion``
+        + ``offset``. Values are materialized arrays when ``lazy=False`` and
+        lazy handles when ``lazy=True``.
     timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
         Timestamps in seconds (shared across all bodyparts). A lazy handle when
         ``lazy=True`` and the series carries explicit timestamps.
@@ -70,6 +74,9 @@ def read_pose(
     ------
     KeyError
         If no PoseEstimation container found, or if specified name not found.
+    ValueError
+        If ``lazy=True`` and a series declares a non-identity ``conversion``
+        or ``offset``.
     ImportError
         If ndx-pose is not installed.
 
@@ -115,12 +122,13 @@ def read_pose(
     for series_name in sorted(pose_estimation.pose_estimation_series.keys()):
         series = pose_estimation.pose_estimation_series[series_name]
         if lazy:
+            require_unscaled_for_lazy(series, context="read_pose")
             # h5py-backed handle without copy; materializes on slice.
             bodyparts[series_name] = series.data
             if timestamps is None:
                 timestamps = timestamps_handle_from_series(series)
         else:
-            bodyparts[series_name] = np.asarray(series.data[:], dtype=np.float64)
+            bodyparts[series_name] = data_from_series(series)
             # Get timestamps from the first series (they should all be the same)
             if timestamps is None:
                 timestamps = _get_timestamps(series)

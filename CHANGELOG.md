@@ -2,6 +2,638 @@
 
 ## [Unreleased]
 
+### Added
+
+- Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
+
+- Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
+
+- Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity and training spike-window metadata. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction preserves the existing warning and likelihood behavior for non-finite maps.
+
+- Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
+
+- Snapshot all public namespace names and function signatures in one sorted, reviewable file, with a unified diff and explicit regeneration command for intentional API changes.
+
+- Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.
+
+- Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
+
+- Add opt-in `criterion="shuffle"` to all five raw-array cell predicates, with explicit stream labels and p-value levels. Mode-specific keywords raise together when they would be ignored; result methods and batch classifiers remain threshold screens without retained inputs.
+
+- Add five raw-array circular-shift significance functions for place, head-direction, spatial-view and both object-vector frames. Shared valid-window masks, copied inputs and label-keyed random streams preserve recording coverage and seeded single/population agreement.
+
+- Add seeded circular spike-time shifts over joined valid recording windows. Shifts preserve retained spike counts and compressed-clock circular spacings without placing spikes in gaps.
+
+- Add `is_egocentric_object_vector_cell` for heading-relative tuning. **Breaking:** `is_object_vector_cell` now measures allocentric direction and no longer accepts `headings`; call `is_egocentric_object_vector_cell` for the previous heading-relative verdict; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
+
+- Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
+
+### Changed
+
+- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
+
+- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
+
+- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
+
+- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
+
+- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
+
+- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
+
+- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
+
+- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
+
+- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
+
+- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
+
+- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
+
+- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
+
+- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
+### Fixed
+
+- Unit labels of mixed types keep their types: `unit_ids=[1, "u"]` no
+  longer turns `1` into the string `"1"`. Result keys, indexed results,
+  labelled spike groups and shuffle random streams all use the label as
+  given, so a unit's seeded null is the same in single and population calls.
+- **Behavior change:** spatial rates use only intervals whose two tracking
+  samples both lie inside the environment. An interval ending in a dropout
+  (NaN) or outside was previously kept in the occupancy while its spikes
+  were dropped, biasing rates low (20% isolated NaN frames read a 5 Hz unit
+  as 3.97 Hz); it is now excluded from spikes and occupancy alike, which
+  recovers 5 Hz without imputing positions.
+- The all-intervals-excluded, spikes-outside-tracking, out-of-bin and
+  `min_occupancy`-masks-all warnings point at the user's calling line instead
+  of a line inside neurospatial, for every rate family.
+- `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` build the polar grid and each
+  frame's polar bin once per call instead of once per shuffle: about 3x
+  faster (0.24 s to 0.08 s for 10 units, 20 shuffles, 60,000 samples) with
+  identical results.
+- Kinematic speeds treat a zero-length interval (duplicate timestamps) as
+  undefined (NaN) instead of infinite, so `pre_decision_speed_stats`, goal
+  approach rates and heading labels no longer absorb an `inf` or a
+  divide-by-zero warning.
+- Kinematic speeds from 1-D (linear-track) positions are the track speed.
+  `pre_decision_speed_stats` previously broadcast a 1-D difference against
+  the time steps and returned an unrelated number.
+- **Breaking:** `Environment.bin_center_of` raises `BinIndexOutOfRangeError`
+  for indices outside `[0, n_bins)`, like the graph queries. Negative indices
+  previously wrapped silently to the last bins, and indices past the end
+  raised NumPy's `IndexError`.
+- `DecodingSummary.plot` breaks its entropy and MAP lines at recording gaps
+  instead of drawing a straight segment across the pause.
+- neurospatial exceptions survive pickling, so errors raised in worker
+  processes reach the caller with their original message and attributes;
+  previously several failed to unpickle or repeated their message.
+- `SimulationSession` checks that `times` and `positions` have one row per
+  sample and that `ground_truth` is keyed by exactly the `unit_ids`, so
+  relabeling units with `dataclasses.replace` must re-key `ground_truth` too.
+  Duplicate `unit_ids` are rejected, since two cells sharing a label would
+  both be validated against one ground truth.
+  `NWBUnits` checks that `unit_ids` and `obs_intervals` align with
+  `spike_times`.
+- `ObjectVectorRateResult` and `ObjectVectorRatesResult` reject a
+  `direction_frame` other than `"allocentric"` or `"egocentric"`; plots
+  previously drew any other value as egocentric.
+- `spatial_view_cell_significance` computes the gaze geometry once per
+  call instead of once per shuffle. With `gaze_model="ray_cast"` on 3,000
+  samples, 10 shuffles drop from 6.95 s to 0.64 s with identical observed
+  scores, null scores and p-values.
+- Object-vector and egocentric `method="binned"` rates keep bins whose
+  occupancy equals `min_occupancy`, as every other rate path does, and warn
+  when `min_occupancy` masks every occupied bin.
+- `ShuffleTestResult` stores `null_scores` as a read-only copy, and its
+  p-value documentation names the finite-null denominator the significance
+  functions use.
+- `DecodingResult(...)` checks that the posterior is 2-D with one column
+  per `env` bin and that `times` has one entry per posterior row, instead of
+  silently mapping columns to the wrong bin centers. The `times` checks that
+  `to_xarray()` used to apply now fire at construction.
+- Smoothing, `gradient`, `divergence` and `heat_kernel_wavelet_basis` on a
+  non-grid environment read from NWB explain that the round trip does not
+  restore cell geometry and name the original layout, instead of advising a
+  factory method the user never skipped.
+- `BayesianDecoder.fit` (and the session decoders that build an encoding
+  model) raise `ValueError` when the speed, gap, window and `min_occupancy`
+  gates leave no occupied bin, instead of returning a model that decodes
+  every time bin as a uniform posterior.
+- `read_units` reads files in which a unit has no `obs_intervals` rows (a
+  unit that was never observed); that unit's coverage is an empty `(0, 2)`
+  array, so the shared `spike_window` is empty unless it is excluded with
+  `unit_ids=`.
+
+- Center continuous posterior image columns on decoder timestamps, preserving MAP/actual overlays, gapped index clocks and explicit extent overrides. Two-column plots use their timestamp spacing; a single column has a documented 1-second display width, with no changes to posterior arrays or clocks.
+
+- Plot native 1D rate maps as labeled lines over physical bin coordinates, including singular/population results and NaN breaks. Existing graph-track and 2D plotting paths are retained; rate arrays are unchanged.
+
+- Name the current `spike_times` keyword in simulation validation's missing-input diagnostic.
+
+- Name nonnumeric times/positions together in shared conversion errors, retaining shape/order problems from the convertible argument and providing Why/Fix guidance without changing valid arrays.
+
+- Share one swap-aware times/positions validator across encoding and environment trajectory APIs. Timestamp shape, finiteness, ordering and sample-count problems are reported together with a corrected call; missing position samples remain supported.
+
+- Explain invalid circular-shift windows with a valid `windows=` call, preserving all row/shape problems from shared interval normalization.
+
+- Resolve heading interpretation thresholds through `HEAD_DIRECTION_THRESHOLDS`, matching the predicate and batch screen while preserving the default text and positional option.
+
+- Align place shuffle windows with inferred speed gates and 1-D trajectory normalization, preserving retained null spike counts. Validate object-vector metric choices before coordinate construction in both frames, with shared public diagnostics.
+
+- Validate required environments before constructing place/view shuffle windows, so missing environments receive the encoder diagnostic and a corrected call. Object-vector Euclidean significance continues to accept `env=None`.
+
+- Normalize allocentric object bearings exactly like zero-heading egocentric bearings at direction-bin boundaries, and make invalid-environment guidance omit headings for allocentric calls. Result help consistently describes the recorded frame.
+
+- Require the documented spatial-information threshold for every place, grid and border label. In the seeded 10-minute noise example, erroneous border labels fall from 19/20 to 0/20; label precedence and threshold values are unchanged.
+
+- Honor requested duration in lap-based sessions, including linear-track and T-maze conveniences. Keep every one-way traversal and fixed pause on a shared half-open recording clock, derive traversal speeds from available time, and reject infeasible durations with guidance. Direct speed-driven lap trajectories and other simulation methods are unchanged.
+
+### Fixed — documentation
+
+- Document singular/population table parity, readable column order, units/threshold metadata and singular xarray identity. The quickstart covers native 1D rate plots; animation guidance explains explicit overwrite opt-in and the current HTML numeric-colorbar limitation with an executable static-scale/timestamp-label recovery. Posterior plotting help records the centered continuous and short-clock edge conventions.
+
+- Include required unit labels in the manual `SimulationSession` constructor example.
+
+- Teach explicit simulator/NWB holder attributes and a complete file → selected epochs → population fields → decoder → summary/overlay workflow. A synthetic HDF5 example executes the published NWB recipe after file close with physical units, nondefault unit IDs and two analysis epochs; synchronized tutorials preserve the simulation-duration contract.
+
+- Preserve the existing shared-validator NumPy examples and parameter sections while adding timestamp/position diagnostics.
+
+- Teach explicit tracking arrays, typed precomputed-rate and count-array decoding handoffs, and one retained event cohort across gap-aware PSTHs, rasters, regressors and positioned tables. Keep event identifiers and selection masks visible, explain each helper's existing edge closure, and synchronize the updated tutorials.
+
+- Correct both decoder tutorial posterior overlays to use spatial bins and the MAP line's plotted time coordinates. Synchronized examples and an executable continuous/gapped-clock recipe preserve physical coordinates for accuracy metrics and separate position plots.
+
+- Explain graph linearization as geometric coordinates rather than direction separation. The synchronized track tutorial and an executable graph/trial recipe use explicit direction labels and recover separate planted field centers within one bin.
+
+- Distinguish standardized assembly activity and EV/REV effect sizes from calibrated significance, document controlled REV correctly, and explain that selected dimensions can have no thresholded core members. Statistical calculations are unchanged.
+
+- Fix the README's simulated-field peak using a complete 5 cm sampling grid and the result's NaN-aware peak lookup. Reference examples use canonical graph, visibility, region, and immutable-data APIs; expected gotcha errors are checked with markers.
+
+### Documentation
+
+- Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
+
+- Update root/domain imports and hard-break migration guidance, and make population covariance APIs discoverable from the API index. Add an executable simulation → encoding recipe with separate decoding and population-statistics branches, one shared unit selection and explicit baseline-controlled EV/REV interpretation.
+
+- Document recording-window metadata on the spatial result classes now exposed at the root; their existing GLM diagnostics and constructor fields are covered by the public docstring checks.
+
+- Clarify that the head-direction MVL screen weights firing rates and its Rayleigh test weights spike counts, with a rate-times-occupancy fallback. The numerical Rayleigh calculation is unchanged.
+
+- Update cell-criterion migration, README/quickstart, API references, glossary and neuroscience guidance. Execute six new flagship docstrings and synchronize the view, heading and object-vector tutorials; the object-vector tutorial reports its estimator/criterion and adds seeded shuffle results alongside an explicit place-cell control.
+
+- Document finite-count information bias and the measured noise-screen results in every cell predicate, field detector and batch classifier. Explain occupancy bias in Rayleigh tests weighted by spike counts, circular-shift assumptions and the need for calibrated publication verdicts; retain the uniform-spike example and show its shuffle rejection.
+
+- Teach allocentric and egocentric object-vector analysis separately in the guides, migration notes, glossary and synchronized tutorial. Public examples record the frame and use the appropriate heading-free or heading-required call; executable docstrings cover the new APIs.
+
+- Document marker-based pytest checks and current first-run calls. Publish the changelog from one canonical source, preserving copy-only notes and consolidating duplicate release headings.
+
+### Removed
+
+- **Breaking:** remove `Session`, `load_session` and `neurospatial.recording`, plus the unused `PositionLike` trajectory adapter and `validate_simulation`'s raw keyword form. NWB component readers and simulator holders expose arrays for explicit analysis calls; pynapple conversion still returns `(times, positions)`.
+
+- **Breaking:** remove the image-mask `bin_size` keyword shim and both view-result `peak_view_location` methods. Use `pixel_size` and the shared `peak_location()`/`peak_locations()` accessors.
+
+- **Breaking:** remove root decoder/binner, spike-container and epoch-selection re-exports; import them from their domains. Drop public normalizers, event validators, animation internals/protocols, duplicate calibration and renderer helpers, and cache plumbing. Delete the probability-space Poisson wrapper, `integrated_absolute_rotation`, `Affine3D`, `SpikeOverlay` and surrogate compatibility imports.
+
+- Remove the superseded public API curation plans and the test pinning the old root export list; the public API snapshot replaces that export contract.
+
+- Remove the deprecated `detect_cell_types`, `detect_hd_cells`, `detect_view_cells` and `detect_ovcs` methods; use `label_cell_types` or `classify`.
+
+- Remove the deprecated region-crossing positional order. Use `detect_region_crossings(position_bins, times, env, region_name="home")`; `region_name` is required and keyword-only.
+
+### Added — executable documentation
+
+- Require function inputs to be documented under Parameters or Other Parameters; only class constructors may also use Attributes.
+
+- Install widget support in the headless module-doctest CI job so the newly executable widget example runs there too.
+
+- Execute Markdown examples using adjacent `docs-test` markers, cumulative reader state for README/quickstart, fresh seeded blocks for reference fragments, and restored animation setup patches. Replace the indexed snippet manifest and subprocess helper with default pytest coverage.
+
+- Execute flagship docstrings, including NWB geometry and position examples, with only display/video calls skipped. Module doctests write outputs in temporary directories; the NWB workflow enforces its examples separately.
+
+- Check public docstring sections and constructor inputs, and complete the missing examples and parameter documentation.
+
+### Changed — errors that teach
+
+- Corrected-call guidance includes each encoder's and decoder's required arguments and all animation backends. Population egocentric validation reports coordinate and length problems together, and malformed peri-event window bounds fail with guidance before alignment.
+
+- Region fixes show list-valued `end_regions` and handle missing names without a conversion error. Zero-rate posterior errors distinguish all-negative-infinity likelihoods from corrupt NaN inputs.
+
+- Warn visibly when `bin_size` covers every data axis or a peri-event window exceeds 60 seconds, with units and corrected values. Large-grid warnings are now `UserWarning` instead of hidden `ResourceWarning`; the existing hard memory ceiling is unchanged. Length-1 bin-index arrays explain how to unwrap `bin_at` output before a graph query.
+
+- First-run factory, graph-query, encoding, decoding, peri-event, animation and file errors give concrete corrected calls. Segmentation and boundary regressors raise `RegionNotFoundError` with the caller's region argument and available names; NWB readers and direction-label lookups name their corrected arguments.
+
+- Replace `HOW:` labels with `Fix:` in diagnostic messages. Shared timestamp, spike and trajectory validators name their caller, collect all input problems, detect swapped arrays, and check coordinate dimensions before binning. A non-Environment first argument now raises `TypeError` with a corrected call.
+
+- Add `NeurospatialError` as the common base for library exceptions while retaining their standard Python bases. `RegionNotFoundError` also supports `except ValueError` and prints an unquoted `Fix:` line with a suggested region name.
+- **Breaking:** raise `BinIndexOutOfRangeError` for graph-query bin indices (formerly `IndexError`; it subclasses `ValueError`, not `IndexError`, so `except IndexError` no longer catches it), `LayoutNotBuiltError` for unbuilt layouts, and `IncompatibleEnvironmentError` for mismatched environment dimensions or decoding bins.
+
+### Changed — behavior analyses respect recording gaps
+
+- Timestamp-based heading rejects malformed position shapes before velocity
+  division, preventing a 1-D trajectory from broadcasting into a square matrix.
+  The error names the shape and supplies an aligned x/y-coordinate fix.
+- Timed home ranges omit bins with zero observed dwell, including at
+  `percentile=100`, so rounding in cumulative percentages cannot include an
+  isolated sample's bin. Untimed visit counts retain their previous meaning.
+- The 13 kinematic/event entry points expose `max_gap=0.5` and `epochs=None`:
+  `heading_from_velocity`, `pre_decision_heading_stats`,
+  `pre_decision_speed_stats`, `head_sweep_from_positions`,
+  `heading_direction_labels`, `compute_path_efficiency`,
+  `instantaneous_goal_alignment`, `goal_bias`, `approach_rate`,
+  `compute_goal_directed_metrics`, `compute_trajectory_curvature`,
+  `compute_home_range`, and `events.add_positions`. Pre-decision and VTE
+  composites use their existing window keywords for kinematics too. Examples
+  and notebook pairs now pass timestamps to `heading_from_velocity`.
+- Speed statistics, approach rates, direction labels, head sweeps, trajectory
+  curvature and home-range dwell respect `max_gap` and `epochs`; goal and VTE
+  composites forward the same windows. IdPhi sums runs without joining their
+  headings, and the two-epoch dwell totals 200 seconds instead of charging the
+  pause to a bin. Entirely excluded speed windows return NaN without reduction
+  warnings. Samples outside runs have NaN curvature and stationary labels.
+  `compute_path_efficiency` reports NaN traveled length, efficiency and angular
+  efficiency when any interval is unobserved. Shortest length and wall-clock
+  time efficiency/time-to-goal retain their existing meanings.
+- **Breaking:** `heading_from_velocity(times, positions)` replaces scalar `dt`, validates
+  finite, strictly increasing aligned timestamps, and computes velocity,
+  smoothing and circular interpolation separately per observed run. The
+  measured 1,911.44 cm/s teleport no longer produces a heading across the pause.
+  Isolated samples and runs without moving anchors have NaN headings.
+  Shared heading statistics, goal alignment and simulation callers use actual
+  timestamps. Smoothing bandwidth retains its existing units of samples.
+- `events.add_positions` accepts `max_gap` and `epochs`, interpolating only
+  inside closed observed-run spans. Events in pauses, on isolated samples or
+  outside the tracked span now receive NaN coordinates; extrapolation ends.
+  Events exactly at either observed run endpoint retain that sample's position.
+- Kinematic interval velocity masks unobserved intervals with NaN, preserving
+  interval alignment and position-units-per-second measurements.
+- All 16 segmentation and sequence entry points now expose keyword-only
+  `max_gap=0.5` and `epochs=None`: `detect_region_crossings`,
+  `detect_runs_between_regions`, `segment_by_velocity`, `detect_laps`,
+  `segment_trials`, `detect_goal_directed_runs`, `running_direction_labels`,
+  `detect_boundary_crossings`, `extract_pre_decision_window`,
+  `compute_pre_decision_metrics`, `compute_decision_analysis`,
+  `compute_vte_trial`, `compute_vte_session`, and `Environment.bin_sequence`,
+  `bin_sequence_with_runs`, `transitions`. Use `max_gap=None` to disable the
+  gap gate for intentionally coarse sampling; `epochs` still applies.
+- Position-only analyses warn when `max_gap` or `epochs` exclude every
+  interval, for example tracking sampled more slowly than 2 Hz under the
+  default `max_gap=0.5`. The warning names the active gate, reports the median
+  sampling interval and points at the calling line, so an empty or all-NaN
+  result is no longer indistinguishable from a measurement.
+- Pre-decision extraction, metrics, composite decision analysis and trial/session
+  VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
+  observed run containing the entry time; entries outside every run return an
+  empty window. The pause example retains five post-resumption samples instead
+  of ten spanning 1000.9 seconds. Session VTE still respects the trial start.
+- Runs, trials, velocity epochs, laps, goal-directed candidates and decision
+  boundary crossings accept `max_gap` and `epochs` and analyze each observed
+  run separately. The measured 98.5→1100 s run and 0→1100 s trial are no longer
+  marked successful across a pause, the 98.1→1100 s movement epoch is clipped,
+  and the 88.6→1108.6 s region lap and 599.95 s boundary crossing disappear.
+  Auto laps keep the first 10% of the whole input as their template. Running
+  direction labels forward the same windows and retain one label per sample.
+- `detect_region_crossings` accepts `max_gap` and `epochs`, and detects entries
+  and exits separately within observed runs. A first post-pause target sample
+  no longer invents an entry at 1100 s. The contiguous detector keeps its
+  existing crossing timestamps and region-boundary handling.
+- `Environment.bin_sequence` and `bin_sequence_with_runs` accept `max_gap`
+  and `epochs`, drop samples that touch no observed interval (including
+  singleton inputs), and split same-bin runs and deduplication at recording
+  breaks. Original run indices and lengths stay aligned with the input.
+  Empirical `transitions` gates every intervening interval in a lagged pair;
+  the two-epoch fixture gives 9,998 one-step and 9,994 lag-three pairs. Raw
+  bin-only transitions retain their previous behavior without a time gate.
+- Empirical transitions return a zero CSR matrix when every pair is excluded
+  by gaps or epochs, including lagged pairs under the default adjacency filter.
+
+### Changed — decoding and peri-event histograms respect recording gaps
+
+- Peri-event counts use original spike times against absolute event-shifted
+  edges, preserving inclusive starts and exclusive stops at nonzero and Unix
+  timestamps. The shared precision guard rejects widths that the absolute
+  clock cannot represent, with an origin-shift fix for spike/event times.
+- Peri-event histograms share the decoding edge and count helpers: every bin
+  is half-open and stays inside its requested window. Spikes at the last
+  whole-bin edge are excluded, and large timestamp offsets use relative
+  rounding instead of an absolute `1e-9` epsilon.
+- Conflicting `epochs` and explicit bounds in `bin_spikes_in_time` report
+  the argument conflict with separate `Why:` and `Fix:` lines.
+- Single-unit and population peri-event histograms accept `epochs` and
+  `spike_window`, keeping only events whose entire analysis window is observed.
+  Means and SEM use retained events, and results, child results, plots and
+  summaries carry `n_events_dropped`. With neither window supplied, all events
+  remain eligible; partial drops add no warning.
+- Full and streamed decoding results record `spike_window` and
+  `spike_window_assumed`, including summaries and NetCDF-compatible xarray
+  attributes. Attaching session metadata preserves the single posterior
+  allocation; public construction and replacement still copy input arrays.
+- Posterior heatmaps with detected recording breaks use time-bin indices and
+  dashed gap markers, preserving visible separation instead of stretching
+  bins across a pause. Contiguous and single-bin results keep time axes;
+  two timestamps alone cannot distinguish a gap from a larger bin width.
+- **Breaking:** `BayesianDecoder.fit(epoch=...)` is replaced by keyword-only `epochs` and
+  `spike_window`. Training masks the original arrays instead of concatenating
+  epoch slices, preserving aligned speed samples and unit identities.
+  `predict`, `predict_summary`, and `score` forward the same window keywords
+  and the decoder's configured `max_gap` to observed-run decoding.
+- `decode_session` and its streamed summary accept `epochs` and
+  `spike_window`, and form bins only within observed sample runs. No posterior
+  is invented inside a tracking pause. Decode bins retain immobility and
+  out-of-bounds periods; speed/bounds restrict encoding only. Full and streamed
+  paths use the same half-open edges and counters, including run breaks.
+- `bin_spikes_in_time` accepts `epochs=` and tiles each normalized window
+  independently. Shared decoding helpers count only half-open bins and clamp
+  their edges to window stops. Final-edge spikes are no longer counted, and
+  floating-point rounding uses timestamp-relative slack instead of an absolute
+  `1e-9` epsilon (which lost a bin near `1e9` seconds). Partial trailing bins
+  are dropped, and unrepresentable bin widths raise with an origin-shift fix.
+
+### Changed — recording gaps and time windows in rate maps
+
+- The three frame-family cell predicates propagate invalid `epochs` and
+  `spike_window` diagnostics, including combined argument problems and
+  `Why:`/`Fix:` guidance, instead of silently classifying malformed inputs
+  as `False`. Each analysis still normalizes the windows once.
+- Directional, view and egocentric encoders record the normalized
+  `spike_window` on singular, population and zero-unit results. Population
+  indexing/iteration preserves it, and xarray exports include the assumption
+  as an integer and explicit windows as a flat array for NetCDF round-trips.
+- `compute_directional_rates`, `compute_view_rates`, and
+  `compute_egocentric_rates` share the population-silence heuristic: with no
+  `spike_window`, at least five units silent for at least 60 seconds within
+  a tracked run produce one warning. The scan respects gaps and epochs,
+  includes leading and trailing silence, and ignores invalid directional,
+  view or polar bins; silence is not proof of recording coverage.
+- `compute_directional_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_head_direction_cell`, `is_spatial_view_cell`,
+  and `is_object_vector_cell` accept keyword-only `max_gap`, `epochs`, and
+  `spike_window`. They parse windows once and apply one shared analysis mask
+  across units, including empty populations. Directional, view and egocentric
+  rates now recover a 5 Hz synthetic rate across a 1000-second recording pause
+  instead of charging the pause to a single bin. In an unsmoothed example,
+  pooled directional/egocentric rates rise from 0.833 Hz to 5.001 Hz and view
+  rates from 0.717 Hz to 4.916 Hz; no bin absorbs the 1000-second pause.
+- Directional, view and object-vector rates warn, like spatial rates, when
+  the gates exclude every interval (for example `epochs` in milliseconds) or
+  when more than half of the spikes fall outside the tracked time (for
+  example `spike_times` in milliseconds), instead of silently returning an
+  empty or truncated map.
+- Directional, view and egocentric binning helpers use one interval mask for
+  both spike counts and occupancy. Their default `max_gap=0.5` excludes
+  recording pauses instead of charging them to one bin, and their normalized
+  `epochs` and `spike_window` keywords restrict the same intervals on both
+  sides. **Behavior change:** a spike at `times[-1]` is no longer counted;
+  the final sample starts no half-open interval.
+- Malformed numeric attributes on IntervalSet-like windows now report the
+  window argument, conversion problem, `Why:` and `Fix:` together, without
+  hiding invalid values in the other time-window argument.
+- `compute_spatial_rates` warns once when at least five units are all silent
+  for at least 60 seconds of continuously tracked time and no `spike_window`
+  was supplied. This recording-outage heuristic includes leading and trailing
+  silence and rest, but never combines silence across untracked pauses;
+  an explicit window suppresses it. Its absence does not prove coverage.
+- Every rate result exposes `spike_window` and the read-only
+  `spike_window_assumed` flag in `summary()`. Spatial encoders record the
+  normalized acquisition windows, preserving them when indexing a population
+  and in direction-conditioned place fields. Spatial population xarray exports
+  store the assumption as an integer and supplied windows as a flat array,
+  so both round-trip through NetCDF. Frame-family encoders now record their
+  acquisition windows as well.
+- **Breaking:** `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
+  same window parser as spatial analyses. Nested sequences always describe
+  `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form,
+  and a tuple or list of two 1-D NumPy arrays raises (naming
+  `np.column_stack([starts, stops])`) instead of being read as two rows.
+  Overlapping or touching rows merge, zero-width and empty window sets raise
+  with a fix, and `epochs=None` leaves data unrestricted. Point membership
+  still uses the requested `closed=` setting on the normalized windows.
+- Spatial rate functions, `is_place_cell`, and `compute_directional_place_fields`
+  accept `epochs=` and `spike_window=`. One shared analysis mask excludes the
+  same intervals from spike counts and occupancy, including GLM and empty
+  populations. Direction-labelled runs use epochs instead of concatenated
+  samples, removing artificial occupancy across breaks (1.6 s instead of
+  1.9 s in a repeated-label example).
+- **Behavior change:** with `max_gap=None`, intervals starting outside the
+  environment now exclude their spikes as well as their occupancy. A spike
+  exactly at the last position timestamp, `times[-1]`, lies outside all
+  half-open sampling intervals and is no longer counted; it is reported as
+  time-dropped.
+- `Environment.occupancy` accepts `epochs=` as half-open windows in seconds.
+  It excludes intervals that cross window boundaries for both start and
+  linear time allocation, interval counts, and smoothed occupancy.
+
+### Fixed — numerical and I/O corrections
+
+- **Behavior change:** `pre_decision_heading_stats` now excludes samples below
+  `min_speed` using the same uninterpolated velocity and speed as goal
+  alignment. On an east/stop/north path, circular variance and resultant length
+  are 0.2929 and 0.7071 (formerly 0.1849 and 0.8151 from stationary headings).
+  The all-stationary result remains `(0.0, 1.0, 0.0)`.
+
+- **Behavior change:** `instantaneous_goal_alignment` now returns NaN for
+  samples below `min_speed`, and `goal_bias` averages moving samples only.
+  On an east/stop/north path, all 30 stopped samples are excluded and
+  `goal_bias` is 0.5055 (formerly 0.5862 from interpolated stationary headings).
+  Fully stationary trajectories still return NaN without raising.
+
+- **Behavior change:** `heading_from_velocity` and `heading_from_body_orientation`
+  interpolate missing or low-speed headings along the shorter arc, uniformly
+  in angle. Near a 180° turn, filled headings formerly snapped toward the
+  endpoints (errors up to 0.785 rad) because interpolation followed the chord.
+  Antipodal turns follow the sign of the stored angle difference; unmasked
+  NaN headings no longer contaminate neighboring filled samples.
+
+- **Behavior change:** `heat_kernel_wavelet_basis` now uses the finite-volume
+  diffusion generator, scaled by squared bin spacing. On uniform Cartesian
+  grids its standard deviation is `sqrt(2 * scale)` bins at every bin size
+  (scale 1 formerly spread 2.77, 3.91, and 6.17 bins at sizes 1, 2, and 5).
+  Layouts without finite-volume geometry now raise `NotImplementedError`
+  with a fix. `chebyshev_filter_basis` keeps its graph-hop locality and
+  distance-weighted, spectrally rescaled operator.
+
+- **Behavior change:** `gradient`, `divergence`, and
+  `compute_differential_operator` now use the finite-volume cell geometry of
+  `env.smooth`: gradient divides by edge length, and divergence weights face
+  flux by cell volume with positive values at sources. For `f=x`, gradients
+  are 1 at bin spacings 1, 2, and 4 (formerly 1, 2.83, and 8);
+  `div(grad(x²+y²))` is 4 in grid interiors (formerly -15.31, -122.51,
+  and -980.08). The Laplacian has the continuum sign and units Hz/cm² for
+  rates in Hz and positions in cm. Layouts without finite-volume geometry,
+  including NWB-reconstructed environments, now raise `NotImplementedError`
+  with a fix instead of returning physically inconsistent derivatives.
+- `decode_position` (and every decoder built on `normalize_to_posterior`)
+  floored the prior at `1e-10`, so a bin with zero prior could still win the
+  posterior given a large enough likelihood (for example a MAP in an excluded
+  bin with posterior `0.999998`). Zero-prior bins now get exactly zero
+  posterior, small positive priors are no longer floored, and the
+  `handle_degenerate="uniform"` fallback spreads mass only over bins with
+  positive prior (NaN when the prior has none).
+- `theta_phase` used a transfer-function Butterworth band-pass that is
+  numerically unstable for a narrow theta band at typical LFP sampling rates:
+  on a clean 8 Hz sine the phase was off by ~1.56 rad at 2-5 kHz and all-NaN
+  at 10 kHz and above. It now filters with second-order sections
+  (`sosfiltfilt`); the phase error is below 0.01 rad at 2-30 kHz.
+- `circular_linear_correlation`, `circular_circular_correlation` and
+  `circular_basis_metrics` computed p-values as `1 - cdf`, which cancels to
+  exactly `0.0` for strong effects (below about `1e-16`). They now use survival
+  functions, so a strong effect reports its true tiny p-value (for example
+  `exp(-500)` for a perfect circular-linear correlation over 1000 samples).
+- `Environment.from_grid_mask` (and every `MaskedGridLayout`, including
+  `env.subset`) accepted nonuniform, decreasing, duplicate or non-finite
+  `grid_edges`, then reported wrong bin sizes (for example `[-1, -1]` or
+  `[0, 0]`) and used one width per axis for cell volumes and diffusion. It now
+  raises `ValueError` naming the axis unless the edges are finite, strictly
+  increasing and uniformly spaced (to within float rounding), and raises when
+  coordinates are so large that float64 cannot resolve the bin width, with a fix
+  to subtract an origin offset.
+- **Behavior change:** `BayesianDecoder.predict`, `predict_summary` and `score`
+  passed spike trains to the encoding models by position even when both the fit
+  and the predict input were labelled, so a reordered or different pynapple
+  `TsGroup` silently paired each unit's spikes with another unit's model. When
+  both the fit (a labelled group, or `unit_ids=` at construction) and the
+  predict input carry labels, trains are now matched by label in any order, and
+  a label mismatch raises `ValueError` listing the missing and unexpected
+  labels. Otherwise trains are still paired by position, and a unit-count
+  mismatch now raises a `ValueError` that says so (previously a Poisson
+  likelihood shape error). A predict input that repeats a label raises.
+- `compute_directional_rates`, `compute_view_rates` and
+  `compute_egocentric_rates` mis-read a pynapple `TsGroup` (it was coerced as
+  one train, giving one unit labelled `0`). They now accept it like
+  `compute_spatial_rates`: one rate map per unit, with the group's index as
+  `unit_ids`.
+- **Behavior change:** passing `unit_ids=` together with a labelled `TsGroup`
+  silently replaced the group's labels, so in `compute_spatial_rates` a group
+  keyed `[10, 20]` with `unit_ids=[20, 10]` attached unit 10's spikes to label
+  20. All four population encoders now raise `ValueError` listing both label
+  sets unless `unit_ids` equals the group's index.
+- **Behavior change:** repeated `unit_ids` were accepted (for example
+  `compute_spatial_rates(..., unit_ids=[5, 5])`). Every place that takes
+  `unit_ids` now raises `ValueError` naming the repeated labels: the population
+  encoders, `population_peri_event_histogram`, the `BayesianDecoder`
+  constructor and `fit` (fitted labels) and `predict` input labels, and
+  population result constructors (including `summary_table(unit_ids=)`
+  relabelling). `SpikeTrains` already rejected them.
+- **Behavior change:** `to_pynapple` passed unsorted timestamps to pynapple,
+  which sorts the times without reordering the values, so
+  `to_pynapple([0, 2, 1], [10, 20, 30])` returned `t=[0, 1, 2]`,
+  `d=[10, 20, 30]` (each value paired with another sample's time). It now
+  raises `ValueError` for unsorted, repeated or non-finite timestamps, naming
+  the first offending indices, and for a `columns` list whose length does not
+  match the value columns (pynapple silently renamed them `0, 1, ...`). These
+  checks run before pynapple is imported.
+- `DirectionalRatesResult.to_xarray()` wrote `attrs["bandwidth"] = None` for
+  unsmoothed results (`bandwidth=None`), so `Dataset.to_netcdf()` raised
+  `TypeError`. The attribute is now omitted when no smoothing was applied, as
+  for spatial results.
+- `read_environment` estimated the bin sizes of reloaded non-grid environments
+  (graph tracks, hexagonal, triangular mesh) from the nearest neighbour's
+  *index* instead of its distance: a Y-track with 2.94 cm² bins came back with
+  1640.25. The estimate now uses the median nearest-neighbour spacing.
+- Writing a non-grid environment (graph track, hexagonal, triangular mesh) to
+  NWB and reading it back lost its geometry: bin sizes were re-estimated
+  (2.94 became 8.68 on a Y-track), `grid_edges` came back `None`, and every
+  edge's direction `vector` was reversed (81 of 81 on the Y-track). The NWB
+  environment schema is now 1.1: it stores the exact bin sizes and graph grid
+  edges, and writes each edge so its vector round-trips. Schema 1.0 files
+  still read, with estimated bin sizes.
+- **Behavior change:** `DecodingResult` kept a reference to the caller's
+  posterior and cached `map_estimate` and the other derived properties, so
+  editing that array in place (or reassigning `result.posterior`) left the
+  cached values stale (for example a MAP of bin 0 while `posterior.argmax`
+  was bin 1). `DecodingResult` is now frozen, and its constructor stores
+  read-only copies of `posterior` and `times`. Use
+  `dataclasses.replace(result, posterior=new)` for a modified result.
+  `decode_position` hands over its freshly computed posterior without a copy.
+- **Behavior change:** `to_linear` returned wrong positions on graph
+  environments whose `edge_order` differs from `graph.edges()` order, such as
+  `Environment.maze("w", ...)`: on a W maze with 50 cm segments, `(75, 0)` on
+  the base mapped to 175 instead of 75 and `(0, 40)` on the left arm to 114.03
+  instead of 140, and about 38% of on-track points disagreed with `bin_at`.
+  `track_linearization` looks a point's nearest segment up by its `edge_id`
+  attribute but finds it by its position in `graph.edges()`. Graph layouts now
+  linearize a copy numbered in `graph.edges()` order, so `to_linear` returns
+  along-track distance for `from_graph`, `maze`, `linear_track` and reloaded
+  environments. Any `edge_id` on an input graph is ignored, and the caller's
+  graph is not modified.
+- **Behavior change:** polar tuning plots were drawn mirrored relative to the
+  library's angle conventions. `plot_head_direction_tuning` and
+  `plot_circular_basis_tuning` drew 0 at the top and clockwise, so a
+  North-preferring (π/2) cell pointed East; they now draw angles as in the
+  arena, 0 = East (right), π/2 = North (up), counter-clockwise, and reset a
+  caller-supplied polar axis to that orientation. `plot_object_vector_tuning`
+  drew +π/2 (left of the animal) on the right; it keeps "ahead" at the top
+  and now draws left on the left.
+- **Behavior change:** `read_position`, `read_head_direction` and `read_pose`
+  returned an NWB series' *stored* values and ignored its `conversion` and
+  `offset`, which NWB defines as the map to `unit` (`data * conversion +
+  offset`). A pixel series stored 0-500 with `unit="meters"`,
+  `conversion=0.002`, `offset=0.1` came back as 0-500 instead of 0.1-1.1 m, and
+  `environment_from_position` built a 500 × 500 environment. The readers now
+  return values in the series' `unit` (head direction converts before the
+  degree-to-radian step), and `lazy=True` raises `ValueError` for a series
+  whose scaling is not the identity rather than returning unconverted handles.
+  The NWB overlays inherit the fix. `environment_from_position` maps NWB unit
+  names to the `Environment.units` registry, so pynwb's default `"meters"`
+  becomes `"m"` (no unrecognized-units warning), and likewise `cm`, `mm` and
+  `px`.
+- **Behavior change:** `environment_from_position` silently set
+  `env.units = "cm"` when the position series declared no unit (`unit=""`).
+  It now emits a `UserWarning` naming the series and saying to pass `units=`,
+  then still assumes `"cm"`. Passing `units=` skips the lookup and the
+  warning.
+- **Behavior change:** `population_peri_event_histogram` raised
+  `AxisError: axis -1 is out of bounds` for a pynapple `TsGroup`, because it
+  iterated the group (which yields unit keys, not trains). It now accepts a
+  labelled group like the population encoders: one PSTH per unit, with the
+  group's index as `unit_ids`. A `unit_ids=` passed with a labelled group must
+  equal its index, or the call raises `ValueError` listing both.
+- **Behavior change:** `compute_vte_session` cut each pre-decision window from
+  the whole session, so a window reached back past the trial start into the
+  inter-trial interval or the previous trial. A trial starting at 5.0 s that
+  entered the decision region at 5.267 s got the window `[4.267, 5.267]` and a
+  head sweep of 12.57 rad, all from movement before the trial; the trial's own
+  straight run has 0. Windows are now clipped at the trial start, and
+  `window_start` reports the clipped start. A trial left with fewer than 3
+  samples before its entry is skipped, now with a `UserWarning` (it was
+  skipped silently). `compute_vte_trial` is unchanged.
+- **Behavior change:** `method="diffusion_kde"` (the default for
+  `compute_spatial_rate(s)` and `smooth_rate_map(s)`) reported huge rates in
+  bins far from all occupancy: a simulated 50 Hz place cell in a 40 s open-field
+  session got 20,554 Hz in a corner the animal never approached, so the map's
+  peak (and anything using it) landed there. Far from occupancy both smoothed
+  densities fall to the diffusion operator's numerical accuracy (1e-6 of the
+  largest value when its eigenbasis is truncated, float64 roundoff otherwise),
+  and the ratio was noise over noise. Bins whose smoothed occupancy is within
+  1000 times that accuracy of zero, relative to the largest in their connected
+  component (typically 4-7 bandwidths from any occupancy), are now NaN, like
+  other unsupported bins (`fill_value=` replaces them). The remaining rates
+  match the exact dense kernel to within 1e-4 of the peak rate at bandwidths
+  5-20.
+- **Behavior change:** the simulators' default place-field width was
+  `3 * mean(env.bin_sizes)`, but `bin_sizes` holds per-bin volumes (areas in
+  2-D), so a 2-D grid with 2 cm bins got 12 cm fields and one with 5 cm bins
+  got 75 cm fields. `PlaceCellModel(width=None)`, and through it
+  `simulate_session`, `open_field_session`, `linear_track_session` and
+  `tmaze_alternation_session`, now default to 3 × the bin spacing (the median
+  bin length along a track, otherwise the median distance between neighbouring
+  bin centres, which is `bin_size` on a regular grid): 6 cm at 2 cm bins, 15 cm
+  at 5 cm bins. A one-bin
+  environment now raises `ValueError` asking for `width=`. Likewise
+  `validate_simulation`'s default `max_center_error` is 2 × the bin spacing
+  (4 cm at 2 cm bins, previously 8 cm).
+- **Behavior change:** `method="binned"` with `bandwidth > 0` had the same
+  far-field problem: on a corridor visited only at x < 40 cm, with raw rates
+  of at most 50 Hz, it reported 295,658 Hz at x = 104 cm (bandwidth 10) and
+  237,467 Hz at x = 190 cm (bandwidth 20). Its smoothed rate is a ratio of
+  two diffused sums, and far from every visited bin both are noise. Those
+  bins are now NaN under the same rule as `diffusion_kde`; the remaining
+  rates match the exact dense average to within 1e-4 of the peak rate.
+
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
 `compute_spatial_rate` and `compute_spatial_rates` gain a fourth estimator,
@@ -352,11 +984,94 @@ messages, a few APIs were made consistent, and the docs/viewers were polished.
   architecture page; colorblind-safe `viridis` in examples; example-notebook
   links normalized with an internal link-check step in docs CI.
 
-## [v0.6.0] - 2026-07-03
 
-## What's Changed
 
-### Features
+### Additional release notes
+
+- **BREAKING: `smoothing_method` renamed to `method`.** The smoothing/estimator
+  keyword is now uniformly named `method` across every smoothing encoder
+  (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_place_cell`,
+  `compute_directional_place_fields`), the four rate result classes
+  (`SpatialRateResult`/`SpatialRatesResult`, `ViewRateResult`/`ViewRatesResult`),
+  the decoder (`decode_session`, `decode_session_summary`, `BayesianDecoder`),
+  and `simulation.validate_simulation`. This is a hard rename with no alias;
+  defaults and numerics are unchanged (`"diffusion_kde"`, or `"binned"` for the
+  egocentric encoders). NWB `write_spatial_rates` stores the estimator under the
+  key `"method"` (schema bumped to `2.0`); this is a clean break with no
+  back-compatibility shim, so spatial-rates tables written by earlier versions
+  (schema `1.x`) no longer read. On
+  `decode_session_summary`, `method` now names the smoothing estimator, so it is
+  no longer accepted as a per-block decode kwarg (Poisson is the only likelihood
+  and is applied unconditionally).
+
+- **`method="binned"` is not a dense-kernel memory mitigation.**
+  Earlier notes (through 0.6.0) recommended `binned` to avoid the dense
+  `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
+  diffusion kernel (via `env.smooth`), so all smoothing methods build a dense
+  kernel. The only memory mitigation is fewer bins (a larger `bin_size`).
+
+- **`add_positions` is now `add_positions(events, *, times, positions)`** —
+  reordered to the canonical `(data, times, positions)` order and made
+  **keyword-only** (a bare 1-D trajectory made a positional swap
+  shape-indistinguishable). *Migration:*
+  `add_positions(events, times=times, positions=positions)`.
+
+- **Assembly functions take `(n_time_bins, n_neurons)`** — `detect_assemblies`,
+  `assembly_activation`, `pairwise_correlations`, `reactivation_strength` now
+  match `decode_position` / `bin_spikes_in_time`. *Migration:* feed the default
+  `bin_spikes_in_time(...)` output as-is, or transpose an old
+  `(n_neurons, n_time_bins)` matrix.
+
+- **Behavior result `summary()` returns a `dict`** (was a formatted string).
+  *Migration:* use `str(result)` for the human-readable form.
+
+- **Fail-loud instead of silent sentinels** — `bin_at` raises on wrong-dimension
+  points on a graph/track env; `heading_from_velocity` raises when every sample
+  is below `min_speed` (opt out with `allow_all_nan=True`); graph queries reject
+  a multi-point coordinate batch.
+
+- **`units=` / `frame=` keyword args** on `from_samples`, `open_field`,
+  `linear_track`, and `maze` set the metadata at construction.
+
+- **Graph queries accept coordinates** (not just bin indices) — `neighbors`,
+  `path_between`, `reachable_from` map a coordinate via `bin_at`.
+
+- **`ResultMixin` on every result class** — concise repr/HTML and a scalar
+  `summary()` dict.
+
+- `dir(neurospatial.ops)` surfaces the lazily-exported ops (autocomplete).
+
+- **`min_occupancy` thresholds raw occupancy seconds, not smoothed density** —
+  fixes silent all-zero place fields; consistent across all smoothing methods
+  (single and batch); `min_occupancy=0.0` unchanged.
+
+- **Grid allocation is preflighted** — a transposed `(2, N)` trajectory raises
+  fast instead of OOMing; a likely-transposed array warns rather than
+  false-rejecting a valid low-sample N-D environment.
+
+- Non-finite query rows map to the `-1` sentinel per row (one NaN no longer
+  empties the whole map).
+
+- `to_file` no-overwrite default; `occupancy()` shape-before-monotonicity;
+  `from_graph` edge-`distance` validation.
+
+- `SpatialRateResult.plot()` colorbar docs corrected + "Firing Rate (Hz)" label;
+  actionable batch `plot()` error.
+
+- **Interactive-viewer accessibility** — HTML player keyboard-focus guard,
+  `:focus-visible`, aria-live toggled off during autoplay; napari region dock and
+  track-builder layout/labels.
+
+- Version bumped to 0.8.0; dead links and fork-clone fixed; value-first runnable
+  quickstart; grouped/collapsible nav; new advanced architecture page; `viridis`
+  defaults; example-notebook links normalized + internal link-check in docs CI.
+
+## [0.6.0] - 2026-07-03
+
+### Commit highlights
+
+#### Features
 - feat(io/nwb): SpatialRatesResult round-trip (write_spatial_rates/read_place_field) + lazy reads (92cb14a)
 - feat(decoding): add immutable BayesianDecoder (fit/predict/predict_summary/score) over the decode core (5ec00da)
 - feat(recording): add frozen Session bundle + load_session (from_arrays/from_nwb, with_environment/restrict) (5edf393)
@@ -490,10 +1205,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the project is pre-1.0, minor releases may still include breaking changes;
 these are called out under a dedicated **Breaking changes** heading.
-
-## [Unreleased]
-
-## [0.6.0] - 2026-07-03
 
 ### Changed
 
@@ -1272,6 +1983,151 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   many-neuron users to `compute_spatial_rates` (plural), which shares occupancy
   and smoothing-kernel work across the whole population.
 
+### Additional release notes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray`.
+  - Population rate results (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) use dims `("unit_id", "bin")`.
+    The rate matrix lives in the `firing_rate` data variable and `unit_id`
+    stores real per-unit identity labels.
+  - Decode results (`DecodingResult`) use dims `("time", "bin")`; they have no
+    `unit_id` axis.
+  - Duplicate `unit_ids` raise `ValueError` because label-based xarray
+    selection requires unique labels.
+
+- Batch encoding `to_dataframe()` is now dense tidy: one row per `(unit, bin)`,
+  always carrying `unit_id`, bin-center coordinates, `firing_rate`, and
+  `occupancy`.
+
+- Per-unit metric tables moved to `summary_table()`, which is indexed by
+  `unit_id`. The old `neuron_ids=` relabeling keyword is replaced by
+  `unit_ids=` on `summary_table()`.
+
+- Real unit identity on population results via `unit_ids`, plus singular
+  `unit_id` on indexed/iterated single-unit results.
+
+- `summary_table()` on batch encoding results and population PSTH results.
+
+- Experiment-shaped environment presets:
+  `Environment.open_field(...)`, `Environment.linear_track(...)`, and
+  `Environment.maze(...)`.
+
+- `SpatialRatesResult.label_cell_types()` for multi-class labels, with
+  `SpatialRatesResult.classify()` reserved for the boolean place-cell predicate.
+
+- `decode_position()` accepts population rate result objects directly, and
+  preserves their dtype (a `float32` rate result decodes in `float32` rather
+  than being promoted back to `float64`).
+
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  returns a new `DecodingSummary` result that streams over time and reduces
+  each block to per-time scalars/vectors (`map_position` / `map_bin`,
+  `mean_position`, `posterior_entropy`, `peak_prob`) without ever
+  materializing the full `(n_time, n_bins)` posterior. `decode_session_summary`
+  is the matching one-call encode -> bin -> decode wrapper, and now also
+  streams the time-binning so the full count matrix is never materialized
+  either. `DecodingSummary` carries the standard terminal verbs
+  (`to_dataframe()`, `summary()`, `plot()`, `to_xarray()`).
+
+- `decode_session()` and `decode_session_summary()` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`) that is honored
+  **end-to-end** — a single `dtype=np.float32` controls both the encoding-model
+  working set and the posterior, halving the decode working set on the golden
+  path (no silent promotion back to `float64`). Default `np.float64` leaves
+  every existing caller byte-for-byte unchanged; any other dtype raises
+  `ValueError`.
+
+- `decode_position()` gains keyword-only `dtype` (`np.float32` / `np.float64`,
+  default `np.float64`) and a **hybrid** `time_chunk`. `time_chunk=None` (the
+  default) keeps the full-matmul path byte-for-byte unchanged;
+  `decode_position(time_chunk=N)` computes the Poisson likelihood blockwise
+  directly into the preallocated posterior, cutting the transient peak to ~1×
+  over the returned posterior (tolerance-equal to the default, not byte-exact).
+  `decode_session()` forwards both.
+
+- The summary decoders (`decode_position_summary` / `decode_session_summary`)
+  **reject `time_chunk=None`** (raising a clear `ValueError`): a `None` value
+  would set the streaming block to the full session length and materialize the
+  full `(n_time, n_bins)` posterior, defeating their never-materialize contract.
+  `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
+
+- `compute_spatial_rates()` gains a keyword-only `dtype` (`np.float32` /
+  `np.float64`, default `np.float64`) to halve the memory of stored rate maps.
+
+- Speed filtering on the encode path: `compute_spatial_rate` /
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` (forwarded by
+  **both** `decode_session` and `decode_session_summary`). When `min_speed` is
+  set, **one shared per-interval speed gate** filters **both** the spike
+  numerator and the occupancy denominator, so a `min_speed` knob can never bias
+  firing rates by filtering only one side.
+
+- `population_coverage()` gains a keyword-only `n_jobs` parameter to
+  parallelize per-neuron coverage; results are identical regardless of
+  `n_jobs`.
+
+- `decode_session` / `decode_session_summary` now **validate `dt`** (finite,
+  `> 0`; non-numeric and `bool` rejected) up front with a clear `ValueError`,
+  matching `bin_spikes_in_time`. Previously the shared decode-grid builder
+  bypassed that guard, so an invalid `dt` leaked a cryptic downstream error
+  (`dt=0` -> `ZeroDivisionError`, `dt=NaN` -> "cannot convert float NaN to
+  integer", `dt<0` -> a misleading "span smaller than one bin" message).
+
+- `bin_spikes_in_time` now **validates `dt` consistently** via the same shared
+  helper: a non-numeric `dt` (including a numeric string like `"0.1"`) and a
+  `bool` (`dt=True`) now raise a clear `ValueError` ("dt must be a finite
+  number > 0, ..."). Previously a numeric string leaked a raw `TypeError` and
+  `dt=True` was silently accepted as a chunk size of `1`.
+
+- `decode_position` now **preserves `float32`** when handed a rate-result
+  object (anything exposing `.firing_rates`). Previously the friendly object
+  path promoted a `float32` `.firing_rates` to `float64`, silently losing part
+  of the `dtype=np.float32` memory win the raw-array path already delivered.
+  The object path now matches the raw-array path byte-for-byte: `float32` stays
+  `float32`, `float64` stays `float64`, an integer rate map is promoted to
+  `float64`, and a `None` / dict / non-2-D `.firing_rates` still raises the
+  same clear `ValueError`.
+
+- `time_chunk` is now **validated as a positive integer (not `bool`)** across
+  `normalize_to_posterior`, `decode_position`, `decode_position_summary`, and
+  `decode_session_summary`, raising a clear `ValueError` naming the value and
+  its type. Previously a float (`1.5`) or string (`"2"`) leaked a raw
+  `TypeError`, and `True` was silently accepted as a chunk size of `1`.
+
+- **Firing-rate numerator/denominator alignment (behavior change for gappy /
+  out-of-bounds data).** `compute_spatial_rate` / `compute_spatial_rates` gain
+  a keyword-only `max_gap` (default `0.5 s`); spikes inside large tracking gaps
+  and out-of-bounds excursions are now excluded from the numerator so it drops
+  the **identical** set of intervals that `env.occupancy` drops from the
+  denominator. Rate maps now differ (and are more correct) for sessions with
+  large tracking gaps or out-of-bounds samples; pass `max_gap=None` to disable
+  gap gating on both sides.
+
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores (single pass, faster for large populations).
+
+- The dense smoothing kernels (`diffusion_kde` and `gaussian_kde`) are
+  `O(n_bins²)` memory by construction. For very large bin counts they now emit
+  a loud `UserWarning` (with the estimated size) and **proceed** — there is no
+  hard limit and no opt-out parameter. To reduce memory, use
+  `smoothing_method="binned"` (or fewer bins / a larger `bin_size`).
+
+- `EgocentricRatesResult.detect_ovcs(...)` -> `classify(...)`
+
+- `ViewRatesResult.detect_view_cells(...)` -> `classify(...)`
+
+- `DirectionalRatesResult.detect_hd_cells(...)` -> `classify(...)`
+
+- `SpatialRatesResult.detect_cell_types(...)` -> `label_cell_types(...)`
+
+- `ViewRateResult.peak_view_location()` -> `peak_location()`
+
+- `ViewRatesResult.peak_view_location()` -> `peak_locations()`
+
+- `detect_region_crossings(position_bins, times, region_name, env, ...)` ->
+  `detect_region_crossings(position_bins, times, env, *, region_name, ...)`
+
 ## [v0.5.0] - 2026-06-04
 
 ## What's Changed
@@ -1455,7 +2311,7 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   bump it, so stale caches are surfaced loudly instead of returning
   silently-wrong results.
 - **`Environment.__str__` returns `info()`** for quick inspection.
-- **Glossary page** at [docs/glossary.md](docs/glossary.md) defining 14
+- **Glossary page** at [docs/glossary.md](https://edeno.github.io/neurospatial/glossary/) defining 14
   core terms. Linked from `docs/getting-started/core-concepts.md` and
   the README.
 - **`docs/api/index.md` expansion.** Structured sections for
@@ -1759,3 +2615,33 @@ names that were renamed during the M2 consolidation pass (see
 [0.4.0]: https://github.com/edeno/neurospatial/compare/v0.2.0...v0.4.0
 [0.2.0]: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/edeno/neurospatial/releases/tag/v0.1.0
+
+### Additional release notes
+
+- Initial release of neurospatial
+
+- Core `Environment` class with factory methods
+
+- Multiple layout engines (regular grid, hexagonal, triangular, graph-based)
+
+- Region support for defining ROIs
+
+- Composite environment functionality
+
+- Alignment and transformation tools
+
+- Comprehensive test suite
+
+- NumPy-style docstrings throughout
+
+- Automatic active bin detection from data samples
+
+- NetworkX-based connectivity graphs
+
+- 1D linearization for track-based experiments
+
+- Spatial queries (bin_at, neighbors, shortest_path, distance_between)
+
+- Visualization with matplotlib
+
+- Morphological operations (dilation, closing, hole filling)

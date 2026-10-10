@@ -25,7 +25,7 @@ class TestMapPointsToBins:
     def test_map_points_basic(self, grid_env):
         """Test basic point mapping."""
         points = np.array([[5.0, 5.0], [0.0, 0.0], [10.0, 10.0]])
-        bins = map_points_to_bins(points, grid_env)
+        bins = map_points_to_bins(grid_env, points)
 
         assert bins.shape == (3,)
         assert bins.dtype == np.int_
@@ -35,7 +35,7 @@ class TestMapPointsToBins:
     def test_map_points_with_distances(self, grid_env):
         """Test that return_dist=True returns distances."""
         points = np.array([[5.0, 5.0]])
-        bins, dists = map_points_to_bins(points, grid_env, return_dist=True)
+        bins, dists = map_points_to_bins(grid_env, points, return_dist=True)
 
         assert bins.shape == (1,)
         assert dists.shape == (1,)
@@ -46,8 +46,8 @@ class TestMapPointsToBins:
         # Point exactly on boundary between bins
         points = np.array([[1.0, 1.0]])
 
-        bins1 = map_points_to_bins(points, grid_env, tie_break="lowest_index")
-        bins2 = map_points_to_bins(points, grid_env, tie_break="lowest_index")
+        bins1 = map_points_to_bins(grid_env, points, tie_break="lowest_index")
+        bins2 = map_points_to_bins(grid_env, points, tie_break="lowest_index")
 
         # Should be deterministic
         assert bins1[0] == bins2[0]
@@ -55,7 +55,7 @@ class TestMapPointsToBins:
     def test_tie_break_closest_center(self, grid_env):
         """Test closest_center tie-breaking mode."""
         points = np.array([[5.0, 5.0]])
-        bins = map_points_to_bins(points, grid_env, tie_break="closest_center")
+        bins = map_points_to_bins(grid_env, points, tie_break="closest_center")
 
         assert bins.shape == (1,)
         assert bins[0] >= 0
@@ -65,17 +65,17 @@ class TestMapPointsToBins:
         points = np.array([[5.0, 5.0]])
 
         with pytest.raises(ValueError, match="Invalid tie_break value"):
-            map_points_to_bins(points, grid_env, tie_break="invalid")
+            map_points_to_bins(grid_env, points, tie_break="invalid")
 
     def test_kdtree_caching_behavior(self, grid_env):
         """Test that repeated calls produce identical results (caching behavior)."""
         points = np.array([[5.0, 5.0], [2.0, 3.0], [8.0, 7.0]])
 
         # First call
-        bins1 = map_points_to_bins(points, grid_env)
+        bins1 = map_points_to_bins(grid_env, points)
 
         # Second call should return identical results
-        bins2 = map_points_to_bins(points, grid_env)
+        bins2 = map_points_to_bins(grid_env, points)
 
         np.testing.assert_array_equal(bins1, bins2)
 
@@ -84,13 +84,13 @@ class TestMapPointsToBins:
         points = np.array([[5.0, 5.0], [2.0, 3.0], [8.0, 7.0]])
 
         # First mapping
-        bins_before = map_points_to_bins(points, grid_env)
+        bins_before = map_points_to_bins(grid_env, points)
 
         # Clear cache
         grid_env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
         # Mapping after clear should return identical results
-        bins_after = map_points_to_bins(points, grid_env)
+        bins_after = map_points_to_bins(grid_env, points)
 
         np.testing.assert_array_equal(bins_before, bins_after)
 
@@ -98,7 +98,7 @@ class TestMapPointsToBins:
         """Test that far out-of-bounds points are marked as -1."""
         # Points very far from environment
         points = np.array([[1000.0, 1000.0], [5.0, 5.0]])
-        bins = map_points_to_bins(points, grid_env)
+        bins = map_points_to_bins(grid_env, points)
 
         # Far point should be -1, close point should be valid
         assert bins[0] == -1
@@ -109,7 +109,7 @@ class TestMapPointsToBins:
         rng = np.random.default_rng(42)
         points = rng.random((1000, 2)) * 10
 
-        bins = map_points_to_bins(points, grid_env)
+        bins = map_points_to_bins(grid_env, points)
 
         assert bins.shape == (1000,)
         assert np.all((bins >= -1) & (bins < grid_env.n_bins))
@@ -117,7 +117,7 @@ class TestMapPointsToBins:
     def test_single_point(self, grid_env):
         """Test mapping a single point."""
         points = np.array([[5.0, 5.0]])
-        bins = map_points_to_bins(points, grid_env)
+        bins = map_points_to_bins(grid_env, points)
 
         assert bins.shape == (1,)
         assert bins[0] >= 0
@@ -141,7 +141,7 @@ class TestEnvironmentClearCache:
 
         # Populate KDTree cache via map_points_to_bins
         points = np.array([[50.0, 50.0]])
-        map_points_to_bins(points, env)
+        map_points_to_bins(env, points)
 
         # Populate kernel cache
         _ = env.compute_kernel(bandwidth=10.0)
@@ -167,7 +167,7 @@ class TestEnvironmentClearCache:
         points = np.array([[50.0, 50.0], [30.0, 70.0]])
 
         # Get values before clearing
-        bins_before = map_points_to_bins(points, env)
+        bins_before = map_points_to_bins(env, points)
         kernel_before = env.compute_kernel(bandwidth=10.0)
         diff_op_before = env.get_differential_operator().copy()
         boundary_before = env.boundary_bins.copy()
@@ -176,7 +176,7 @@ class TestEnvironmentClearCache:
         env.clear_cache()
 
         # Recompute and verify identical results
-        bins_after = map_points_to_bins(points, env)
+        bins_after = map_points_to_bins(env, points)
         kernel_after = env.compute_kernel(bandwidth=10.0)
         diff_op_after = env.get_differential_operator()
         boundary_after = env.boundary_bins
@@ -203,7 +203,7 @@ class TestEnvironmentClearCache:
         env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
         # KDTree should recompute correctly
-        bins_after = map_points_to_bins(points, env)
+        bins_after = map_points_to_bins(env, points)
         assert bins_after[0] >= 0  # Valid bin mapping
 
         # Other caches should return same values (not recomputed)
@@ -221,7 +221,7 @@ class TestEnvironmentClearCache:
         points = np.array([[50.0, 50.0]])
 
         # Get initial values
-        bins_before = map_points_to_bins(points, env)
+        bins_before = map_points_to_bins(env, points)
         boundary_before = env.boundary_bins.copy()
 
         # Clear only kernel cache
@@ -232,7 +232,7 @@ class TestEnvironmentClearCache:
         assert kernel_after.shape[0] == env.n_bins
 
         # Other caches should return same values
-        bins_after = map_points_to_bins(points, env)
+        bins_after = map_points_to_bins(env, points)
         boundary_after = env.boundary_bins
 
         np.testing.assert_array_equal(bins_before, bins_after)
@@ -244,7 +244,7 @@ class TestEnvironmentClearCache:
         points = np.array([[50.0, 50.0]])
 
         # Get initial values
-        bins_before = map_points_to_bins(points, env)
+        bins_before = map_points_to_bins(env, points)
         kernel_before = env.compute_kernel(bandwidth=10.0)
 
         # Clear only cached properties
@@ -259,7 +259,7 @@ class TestEnvironmentClearCache:
         assert len(boundary_after) > 0
 
         # Other caches should return same values
-        bins_after = map_points_to_bins(points, env)
+        bins_after = map_points_to_bins(env, points)
         kernel_after = env.compute_kernel(bandwidth=10.0)
 
         np.testing.assert_array_equal(bins_before, bins_after)
@@ -273,7 +273,7 @@ class TestEnvironmentClearCache:
         points = np.array([[50.0, 50.0]])
 
         # Get values before
-        bins_before = map_points_to_bins(points, env)
+        bins_before = map_points_to_bins(env, points)
         kernel_before = env.compute_kernel(bandwidth=10.0)
         boundary_before = env.boundary_bins.copy()
 
@@ -281,7 +281,7 @@ class TestEnvironmentClearCache:
         env.clear_cache(kdtree=False, kernels=False, cached_properties=False)
 
         # Values should be unchanged
-        bins_after = map_points_to_bins(points, env)
+        bins_after = map_points_to_bins(env, points)
         kernel_after = env.compute_kernel(bandwidth=10.0)
         boundary_after = env.boundary_bins
 
@@ -302,7 +302,7 @@ class TestEnvironmentClearCache:
 
         # Environment should still function correctly after clearing
         points = np.array([[25.0, 25.0]])
-        bins = map_points_to_bins(points, env)
+        bins = map_points_to_bins(env, points)
         assert bins[0] >= 0  # Valid bin mapping
 
     def test_clear_cache_different_environments_independent(self):
@@ -316,15 +316,15 @@ class TestEnvironmentClearCache:
         points = np.array([[25.0, 25.0]])
 
         # Populate caches on both
-        bins1_before = map_points_to_bins(points, env1)
-        bins2_before = map_points_to_bins(points, env2)
+        bins1_before = map_points_to_bins(env1, points)
+        bins2_before = map_points_to_bins(env2, points)
 
         # Clear only env1
         env1.clear_cache()
 
         # env1 should recompute correctly, env2 should be unaffected
-        bins1_after = map_points_to_bins(points, env1)
-        bins2_after = map_points_to_bins(points, env2)
+        bins1_after = map_points_to_bins(env1, points)
+        bins2_after = map_points_to_bins(env2, points)
 
         np.testing.assert_array_equal(bins1_before, bins1_after)
         np.testing.assert_array_equal(bins2_before, bins2_after)

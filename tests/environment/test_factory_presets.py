@@ -427,3 +427,103 @@ class TestFactoryMetadataKwargs:
         env = Environment.open_field(pts, bin_size=5.0, units="cm", frame="s1")
         assert env.units == "cm"
         assert env.frame == "s1"
+
+
+# ---------------------------------------------------------------------------
+# Linearization of graphs whose edge_order differs from graph.edges() order
+# ---------------------------------------------------------------------------
+# W maze: base bl--bm--br along y=0, one vertical arm up from each base node.
+# Its edge_order (base first, then arms) differs from graph.edges() order,
+# which networkx groups by node: (bl,bm), (bl,al), (bm,br), (bm,am), (br,ar).
+_W_COORDS = [(0, 0), (50, 0), (100, 0), (0, 50), (50, 50), (100, 50)]
+_W_QUERY = np.array([(25, 0), (75, 0), (0, 40), (50, 25), (100, 25), (100, 45)], float)
+# Along-track distance with edge_order bl-bm, bm-br, bl-al, bm-am, br-ar
+# (50 cm each, no spacing).
+_W_EXPECTED = np.array([25.0, 75.0, 140.0, 175.0, 225.0, 245.0])
+
+
+def _w_maze(labels):
+    return Environment.maze(
+        "w", node_positions=dict(zip(labels, _W_COORDS, strict=True)), bin_size=5.0
+    )
+
+
+@pytest.fixture(scope="module")
+def w_maze_env():
+    return _w_maze(["bl", "bm", "br", "al", "am", "ar"])
+
+
+class TestGraphLinearization:
+    @pytest.mark.parametrize(
+        "labels",
+        [["bl", "bm", "br", "al", "am", "ar"], [0, 1, 2, 3, 4, 5]],
+        ids=["str labels", "int labels"],
+    )
+    def test_w_maze_to_linear_matches_track_distance(self, labels):
+        env = _w_maze(labels)
+        np.testing.assert_allclose(env.to_linear(_W_QUERY), _W_EXPECTED, atol=1e-9)
+
+    def test_w_maze_to_linear_agrees_with_bin_at(self, w_maze_env):
+        env = w_maze_env
+        graph = env.layout_parameters["graph_definition"]
+        rng = np.random.default_rng(0)
+        edges = list(graph.edges())
+        edge_index = rng.integers(0, len(edges), 2000)
+        t = rng.uniform(0.02, 0.98, 2000)[:, None]
+        starts = np.array([graph.nodes[edges[i][0]]["pos"] for i in edge_index], float)
+        stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
+        samples = starts * (1 - t) + stops * t
+
+        via_linear = env.layout.linear_point_to_bin_ind(env.to_linear(samples))
+        assert np.mean(via_linear != env.bin_at(samples)) == 0.0
+
+    def test_from_graph_ignores_input_edge_ids(self):
+        graph = nx.Graph()
+        labels = ["bl", "bm", "br", "al", "am", "ar"]
+        for label, pos in zip(labels, _W_COORDS, strict=True):
+            graph.add_node(label, pos=pos)
+        edge_order = [
+            ("bl", "bm"),
+            ("bm", "br"),
+            ("bl", "al"),
+            ("bm", "am"),
+            ("br", "ar"),
+        ]
+        # edge_ids numbered by edge_order, not by graph.edges() enumeration.
+        for edge_id, (u, v) in enumerate(edge_order):
+            graph.add_edge(u, v, distance=50.0, edge_id=edge_id)
+        caller_ids = dict(nx.get_edge_attributes(graph, "edge_id"))
+
+        env = Environment.from_graph(graph, edge_order, edge_spacing=0.0, bin_size=5.0)
+
+        np.testing.assert_allclose(env.to_linear(_W_QUERY), _W_EXPECTED, atol=1e-9)
+        assert nx.get_edge_attributes(graph, "edge_id") == caller_ids
+
+    def test_w_maze_to_linear_survives_file_roundtrip(self, w_maze_env, tmp_path):
+        w_maze_env.to_file(tmp_path / "w_maze")
+        loaded = Environment.from_file(tmp_path / "w_maze")
+        np.testing.assert_allclose(loaded.to_linear(_W_QUERY), _W_EXPECTED, atol=1e-9)
+
+    @pytest.mark.parametrize(
+        ("kind", "nodes", "query", "expected"),
+        [
+            (
+                "plus",
+                {"c": (0, 0), "n": (0, 50), "s": (0, -50), "e": (50, 0), "w": (-50, 0)},
+                [(0, 25), (0, -30), (40, 0), (-10, 0), (0, 49)],
+                [25.0, 80.0, 140.0, 160.0, 49.0],
+            ),
+            (
+                "t",
+                {"stem": (50, 0), "j": (50, 50), "l": (0, 50), "r": (100, 50)},
+                [(50, 10), (50, 45), (20, 50), (80, 50), (99, 50)],
+                [10.0, 45.0, 80.0, 130.0, 149.0],
+            ),
+        ],
+    )
+    def test_plus_and_t_maze_to_linear_unchanged(self, kind, nodes, query, expected):
+        """Mazes whose edge_order already matches graph.edges() order."""
+        env = Environment.maze(kind, node_positions=nodes, bin_size=5.0)
+        np.testing.assert_allclose(
+            env.to_linear(np.asarray(query, float)), expected, atol=1e-9
+        )

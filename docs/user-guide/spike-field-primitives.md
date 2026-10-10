@@ -108,7 +108,7 @@ compute_spatial_rate(env, spike_times, times, positions, ...)
 # This matches the existing neurospatial API:
 env.occupancy(times, positions)
 env.smooth(field, bandwidth)
-map_points_to_bins(points, env)
+map_points_to_bins(env, points)
 distance_field(env.connectivity, sources)
 ```
 
@@ -186,7 +186,7 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 # UserWarning: "X spikes fall outside trajectory time range [0.0, 50.0] and were excluded"
 ```
 
-Similarly, spikes whose interpolated positions fall outside the environment bounds are filtered with a warning.
+An interval between two tracking samples counts only when both samples lie inside the environment. An interval that ends in a tracking dropout (NaN) or outside the environment is left out of both the spike counts and the occupancy, rather than guessing where the animal was; fill short dropouts in your tracking preprocessing if you want that time back. Spikes whose interpolated position still falls outside the environment bins (for example, across a hole between two tracked samples) are filtered with a warning.
 
 ### 1D Trajectories
 

@@ -176,7 +176,7 @@ from neurospatial.behavior.trajectory import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
 _msd = mean_square_displacement(
-    positions, times, metric="euclidean", max_tau=10.0
+    times, positions, metric="euclidean", max_tau=10.0
 )
 tau_values, msd_values = _msd.lags, _msd.msd
 
@@ -232,6 +232,7 @@ $$
 
 Detect when the animal enters or exits named regions.
 
+<!-- docs-test: run setup=docs_trajectory_region_crossings -->
 ```python
 from neurospatial.behavior.segmentation import detect_region_crossings
 
@@ -316,8 +317,8 @@ from neurospatial.behavior.segmentation import segment_by_velocity
 
 # Segment into movement epochs
 movement_epochs = segment_by_velocity(
-    positions,
     times,
+    positions,
     min_speed=10.0,  # cm/s
     min_duration=0.5,  # seconds
     hysteresis=2.0,  # ratio for exit threshold
@@ -940,8 +941,8 @@ for i in range(0, len(positions) - window_size, hop_size):
 
     # Use continuous positions for accurate diffusion exponent
     _msd = mean_square_displacement(
-        window_positions,
         window_times,
+        window_positions,
         metric="euclidean",
         max_tau=5.0
     )

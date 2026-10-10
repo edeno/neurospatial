@@ -6,7 +6,8 @@ distributions from neural decoding and computes derived properties lazily.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, _coord_dim_names
 
 if TYPE_CHECKING:
@@ -22,7 +24,25 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-@dataclass(repr=False)
+def _read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
+    """Return a read-only copy that no caller-held view can alias."""
+    owned = np.array(array, dtype=dtype, copy=True)
+    owned.flags.writeable = False
+    return owned
+
+
+def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
+    """Indices ``i`` where a pause separates ``times[i]`` and ``times[i + 1]``.
+
+    A step longer than 1.5 times the shortest step marks a recording break.
+    """
+    if times is None or times.size < 2:
+        return np.empty(0, dtype=np.intp)
+    d = np.diff(times)
+    return np.flatnonzero(d > 1.5 * np.min(d))
+
+
+@dataclass(frozen=True, repr=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
@@ -42,6 +62,9 @@ class DecodingResult(ResultMixin):
     times : NDArray[np.float64] | None, optional
         Time bin centers in seconds. If provided, used for plotting
         and DataFrame export. Default is None.
+    spike_window : NDArray[np.float64] | None, optional
+        Normalized spike-recording windows, copied read-only. ``None`` records
+        the assumption that spikes were observed wherever position was.
 
     Attributes
     ----------
@@ -51,6 +74,10 @@ class DecodingResult(ResultMixin):
         Reference to environment for coordinate transforms.
     times : NDArray[np.float64] | None
         Optional time bin centers (seconds).
+    spike_window : NDArray[np.float64] | None
+        Read-only spike-recording windows, or ``None`` for assumed coverage.
+    spike_window_assumed : bool
+        Whether spike-recording coverage was assumed.
 
     Examples
     --------
@@ -70,15 +97,16 @@ class DecodingResult(ResultMixin):
     >>> result = DecodingResult(posterior=posterior, env=env)
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
-    >>> print(
-    ...     f"Mean entropy: {result.posterior_entropy.mean():.2f} bits"
-    ... )  # doctest: +SKIP
+    >>> print(f"Mean entropy: {result.posterior_entropy.mean():.2f} bits")
+    Mean entropy: ... bits
 
     Notes
     -----
-    The class uses ``@dataclass`` (not frozen) to allow ``@cached_property``.
-    The class is effectively immutable since modifying ``posterior`` or ``env``
-    after construction would invalidate cached properties without clearing them.
+    The result is frozen, and its array fields are read-only copies
+    that the result owns: the constructor always copies them, so later edits to
+    the arrays (or views of them) that the caller passed in cannot change the
+    result or leave its cached properties stale. To get a modified result, use
+    ``dataclasses.replace(result, posterior=new)``, which copies ``new``.
 
     Memory usage is dominated by the posterior array:
     ``n_time_bins * n_bins * 8 bytes`` (float64).
@@ -91,6 +119,113 @@ class DecodingResult(ResultMixin):
     posterior: NDArray[np.float64]
     env: Environment
     times: NDArray[np.float64] | None = None
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        """Take ownership of input arrays as read-only copies, checking shapes."""
+        object.__setattr__(self, "posterior", _read_only_copy(self.posterior))
+        if self.times is not None:
+            object.__setattr__(self, "times", _read_only_copy(self.times, np.float64))
+        problems = []
+        if self.posterior.ndim != 2:
+            problems.append(
+                f"posterior must be 2-D (n_time_bins, n_bins), got shape "
+                f"{self.posterior.shape}"
+            )
+        elif self.posterior.shape[1] != self.env.n_bins:
+            problems.append(
+                f"posterior has {self.posterior.shape[1]} columns but env has "
+                f"n_bins={self.env.n_bins}"
+            )
+        if (
+            self.times is not None
+            and self.posterior.ndim == 2
+            and self.times.shape != (self.posterior.shape[0],)
+        ):
+            problems.append(
+                f"times has shape {self.times.shape}, expected "
+                f"({self.posterior.shape[0]},) to match the posterior's time bins"
+            )
+        if problems:
+            raise ValueError(
+                _format_error(
+                    "DecodingResult: " + "; ".join(problems) + ".",
+                    why=(
+                        "Why: posterior column j is the probability of "
+                        "env.bin_centers[j], and row i belongs to times[i]."
+                    ),
+                    fix=(
+                        "pass the env the posterior was decoded on and one "
+                        "time per posterior row"
+                    ),
+                )
+            )
+        if self.spike_window is not None:
+            object.__setattr__(
+                self, "spike_window", _read_only_copy(self.spike_window, np.float64)
+            )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        self.posterior.flags.writeable = False
+        if self.times is not None:
+            self.times.flags.writeable = False
+        if self.spike_window is not None:
+            self.spike_window.flags.writeable = False
+
+    @classmethod
+    def _from_owned_posterior(
+        cls, posterior: NDArray[Any], **fields: Any
+    ) -> DecodingResult:
+        """Build from a posterior this module just allocated (no aliases exist).
+
+        Internal use only: the caller guarantees no other reference to
+        ``posterior``, so it is marked read-only instead of copied. ``fields``
+        must name every other dataclass field.
+        """
+        posterior.flags.writeable = False
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, "posterior", posterior)
+        for name, value in fields.items():
+            object.__setattr__(obj, name, value)
+        if obj.times is not None:
+            object.__setattr__(obj, "times", _read_only_copy(obj.times, np.float64))
+        if obj.spike_window is not None:
+            object.__setattr__(
+                obj, "spike_window", _read_only_copy(obj.spike_window, np.float64)
+            )
+        return obj
+
+    def _evolve(self, **changes: Any) -> DecodingResult:
+        """Return a copy with changes applied, sharing this result's posterior.
+
+        Internal use only. This result owns its read-only posterior, so sharing
+        it with the new result cannot create a writable alias.
+        """
+        if "posterior" in changes:
+            raise ValueError(
+                "_evolve never replaces the posterior; use dataclasses.replace."
+            )
+        fields = {
+            f.name: getattr(self, f.name)
+            for f in dataclasses.fields(self)
+            if f.name != "posterior"
+        }
+        fields.update(changes)
+        return type(self)._from_owned_posterior(self.posterior, **fields)
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
 
     @property
     def n_time_bins(self) -> int:
@@ -287,7 +422,14 @@ class DecodingResult(ResultMixin):
             )
 
         When ``times`` is provided, the x-axis shows time in seconds with
-        proper extent. Otherwise, the x-axis shows time bin indices.
+        proper extent for contiguous bins. Recording breaks use bin indices
+        with dashed lines marking the breaks. Without ``times``, the x-axis
+        also shows bin indices. With only two timestamps, a gap cannot be
+        distinguished from a larger uniform bin width, so time is used.
+        For a uniform continuous clock, image edges extend half a bin beyond
+        the first and last center. A single timestamp uses a 1-second display
+        width centered on that timestamp; this width is a plotting convention.
+        An explicit ``extent=`` overrides these default edges.
 
         The MAP trajectory (``show_map=True``) shows the bin with highest
         posterior probability at each time step as a white line.
@@ -304,11 +446,20 @@ class DecodingResult(ResultMixin):
 
         # Compute extent for proper axis labeling
         # extent = [left, right, bottom, top]
-        if self.times is not None:
+        breaks = _recording_breaks(self.times)
+        if self.times is not None and breaks.size == 0:
             # Use actual time values
             t_min = float(self.times[0])
             t_max = float(self.times[-1])
-            extent = [t_min, t_max, -0.5, self.posterior.shape[1] - 0.5]
+            width = (
+                (t_max - t_min) / (self.times.size - 1) if self.times.size > 1 else 1.0
+            )
+            extent = [
+                t_min - width / 2,
+                t_max + width / 2,
+                -0.5,
+                self.posterior.shape[1] - 0.5,
+            ]
             x_label = "Time (s)"
         else:
             # Use bin indices
@@ -318,7 +469,9 @@ class DecodingResult(ResultMixin):
                 -0.5,
                 self.posterior.shape[1] - 0.5,
             ]
-            x_label = "Time bin"
+            x_label = (
+                "Time bin (dashed lines: recording gaps)" if breaks.size else "Time bin"
+            )
 
         # Build imshow kwargs
         im_kwargs: dict[str, Any] = {
@@ -340,7 +493,7 @@ class DecodingResult(ResultMixin):
         # Add MAP trajectory overlay if requested
         if show_map:
             # Get time coordinates for plotting
-            if self.times is not None:
+            if self.times is not None and breaks.size == 0:
                 x_coords: NDArray[np.float64] = self.times
             else:
                 x_coords = np.arange(self.n_time_bins, dtype=np.float64)
@@ -355,6 +508,9 @@ class DecodingResult(ResultMixin):
                 alpha=0.8,
                 label="MAP",
             )
+
+        for boundary in breaks:
+            ax.axvline(boundary + 0.5, linestyle="--", color="black", alpha=0.6)
 
         ax.set_xlabel(x_label)
         ax.set_ylabel("Spatial bin")
@@ -372,6 +528,8 @@ class DecodingResult(ResultMixin):
             bins), ``mean_entropy`` (float, bits), and ``max_entropy`` (float,
             bits) -- the latter being ``log2(n_bins)``, the entropy of a
             uniform posterior.
+            Also includes ``spike_window_assumed`` (bool) and ``spike_window``
+            (a list of interval pairs, or ``None``).
 
         Examples
         --------
@@ -383,7 +541,7 @@ class DecodingResult(ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> result = DecodingResult(posterior=posterior, env=env)
         >>> sorted(result.summary())
-        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins']
+        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'spike_window', 'spike_window_assumed']
         """
         n_bins = int(self.posterior.shape[1])
         return {
@@ -391,6 +549,10 @@ class DecodingResult(ResultMixin):
             "n_bins": n_bins,
             "mean_entropy": float(np.mean(self.posterior_entropy)),
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": self.spike_window.tolist()
+            if self.spike_window is not None
+            else None,
         }
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -547,7 +709,7 @@ class DecodingResult(ResultMixin):
                     f"shape {time_coord.shape}.\n"
                     "  WHY: the xarray 'time' coordinate labels one posterior "
                     "row per decoded time bin.\n"
-                    "  HOW: pass a 1-D times array with length "
+                    "  Fix: pass a 1-D times array with length "
                     "posterior.shape[0], or leave times=None to use integer "
                     "time-bin indices."
                 )
@@ -558,7 +720,7 @@ class DecodingResult(ResultMixin):
                     f"{n_time} time bin(s).\n"
                     "  WHY: the xarray 'time' coordinate must align one-to-one "
                     "with posterior rows.\n"
-                    "  HOW: pass times with length posterior.shape[0], or "
+                    "  Fix: pass times with length posterior.shape[0], or "
                     "leave times=None to use integer time-bin indices."
                 )
         else:
@@ -577,7 +739,10 @@ class DecodingResult(ResultMixin):
             **units_attr(self.env),
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
+            "spike_window_assumed": int(self.spike_window_assumed),
         }
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
 
         return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
 
@@ -762,6 +927,9 @@ class DecodingSummary(ResultMixin):
         Reference to the environment used for decoding.
     map_bin : NDArray[np.int64], shape (n_time_bins,)
         MAP bin index per time bin.
+    spike_window : NDArray[np.float64] | None, optional
+        Normalized spike-recording windows, copied read-only. ``None`` records
+        the assumption that spikes were observed wherever position was.
 
     See Also
     --------
@@ -776,6 +944,9 @@ class DecodingSummary(ResultMixin):
     peak_prob: NDArray[np.float64]
     env: Environment
     map_bin: NDArray[np.int64]
+    spike_window: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate that all per-time arrays share a consistent shape.
@@ -787,6 +958,10 @@ class DecodingSummary(ResultMixin):
         per-time field must agree (``(n_time,)`` for scalars, ``(n_time,
         n_dims)`` for position vectors, and ``times`` likewise when provided).
         """
+        if self.spike_window is not None:
+            object.__setattr__(
+                self, "spike_window", _read_only_copy(self.spike_window, np.float64)
+            )
         n_time = self.map_bin.shape[0]
         n_dims = self.env.n_dims
         checks: list[tuple[str, NDArray[Any] | None, tuple[int, ...]]] = [
@@ -807,6 +982,16 @@ class DecodingSummary(ResultMixin):
                     + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
                     + "). All per-time fields must share the same n_time."
                 )
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
 
     @property
     def n_time_bins(self) -> int:
@@ -887,6 +1072,8 @@ class DecodingSummary(ResultMixin):
             environment's spatial bin count), ``mean_entropy`` (float, bits),
             ``max_entropy`` (float, bits = ``log2(n_bins)``), and
             ``mean_peak_prob`` (float).
+            Also includes ``spike_window_assumed`` (bool) and ``spike_window``
+            (a list of interval pairs, or ``None``).
 
         Notes
         -----
@@ -906,6 +1093,10 @@ class DecodingSummary(ResultMixin):
             "mean_peak_prob": float(np.mean(self.peak_prob))
             if self.peak_prob.size
             else 0.0,
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": self.spike_window.tolist()
+            if self.spike_window is not None
+            else None,
         }
 
     def plot(
@@ -919,7 +1110,9 @@ class DecodingSummary(ResultMixin):
 
         Since there is no full posterior to display as a heatmap, this plots a
         per-time scalar over time: either the posterior entropy (default) or
-        the MAP position coordinate(s).
+        the MAP position coordinate(s). Lines break at recording gaps (a step
+        longer than 1.5 times the shortest time step), so no segment is drawn
+        across a pause.
 
         Parameters
         ----------
@@ -948,13 +1141,24 @@ class DecodingSummary(ResultMixin):
             x = np.arange(self.n_time_bins, dtype=np.float64)
             x_label = "Time bin"
 
+        # A NaN after each recording break stops a line from drawing a
+        # straight segment across the pause; the axis keeps real time.
+        breaks = _recording_breaks(self.times) + 1
+
+        def broken(values: NDArray[Any]) -> NDArray[np.float64]:
+            return np.insert(np.asarray(values, dtype=np.float64), breaks, np.nan)
+
+        x = broken(x)
+
         if quantity == "entropy":
-            ax.plot(x, self.posterior_entropy, **kwargs)
+            ax.plot(x, broken(self.posterior_entropy), **kwargs)
             ax.set_ylabel("Posterior entropy (bits)")
             ax.set_title("Posterior entropy over time")
         elif quantity == "map":
             for i, name in enumerate(self._dim_names()):
-                ax.plot(x, self.map_position[:, i], label=f"map_{name}", **kwargs)
+                ax.plot(
+                    x, broken(self.map_position[:, i]), label=f"map_{name}", **kwargs
+                )
             ax.set_ylabel("MAP position")
             ax.set_title("MAP position over time")
             ax.legend()
@@ -1031,7 +1235,10 @@ class DecodingSummary(ResultMixin):
             **units_attr(self.env),
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
+            "spike_window_assumed": int(self.spike_window_assumed),
         }
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
 
         return xr.Dataset(
             data_vars=data_vars,

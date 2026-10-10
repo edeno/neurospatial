@@ -134,6 +134,7 @@ conda install -c conda-forge ffmpeg
 
 Here's a minimal example showing how to create an environment from spatial data:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -184,12 +185,13 @@ around and spikes from a neuron — show me where the cell fires." Here
 is the end-to-end pipeline using simulated data so you can run it
 right now without any setup:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
 
 from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 from neurospatial.simulation import generate_population_spikes
 from neurospatial.simulation.models import PlaceCellModel
 from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -211,14 +213,17 @@ cell = PlaceCellModel(env, center=np.array([30.0, 30.0]), width=8.0,
 
 # 4. Generate the spike train from the cell's firing model + trajectory.
 spike_times = generate_population_spikes(
-    [cell], positions_t, times, seed=42, show_progress=False,
+    [cell], times, positions_t, seed=42, show_progress=False,
 )[0]
 
 # 5. Recover the place field from spikes + trajectory.
 result = compute_spatial_rate(
     env, spike_times, times, positions_t,
-    method="diffusion_kde", bandwidth=5.0,
+    bandwidth=5.0,
 )
+
+# Fast screen; field detection and cell classification are separate questions.
+print("Place candidate:", result.is_place_cell(criterion="spatial_info"))
 
 # 6. Plot.
 fig, ax = plt.subplots()
@@ -231,6 +236,10 @@ The recovered field will be a Gaussian-like blob centered near `(30,
 30)` — the same location we put the simulated cell. From here you can
 swap in real spike times, change the trajectory, add more cells, or
 detect place fields with [`detect_place_fields`](https://edeno.github.io/neurospatial/api/).
+A field or fixed information cutoff can also flag untuned low-count units.
+For a calibrated verdict under a circular-shift null, call
+`is_place_cell(env, spike_times, times, positions_t, criterion="shuffle", rng=0)`
+with the raw arrays (about 1000 map recomputes by default).
 See [example 11](https://github.com/edeno/neurospatial/blob/main/examples/11_place_field_analysis.ipynb)
 for the full tutorial.
 
@@ -238,9 +247,27 @@ To go the other way — reconstruct position from population spikes — the one-
 path is
 [`decode_session`](https://edeno.github.io/neurospatial/api/):
 `from neurospatial.decoding import decode_session` runs the whole encode → bin →
-decode pipeline and returns a `DecodingResult`. See
+decode pipeline and returns a `DecodingResult`. With precomputed count matrices
+and population rate maps, use
+`decode_position(env, spike_counts, encoding_models, dt)`. Pauses in tracking
+are never decoded: time bins are formed only within recorded stretches, and
+`epochs=`/`spike_window=` restrict them further. See
 [example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
 for the full Bayesian decoding tutorial.
+
+### Recording gaps and time windows
+
+Gaps longer than `max_gap=0.5` seconds are detected from `times` and excluded automatically.
+`epochs=` selects analysis windows; `spike_window=` covers ephys that started late or stopped early.
+Without `spike_window`, spikes are assumed recorded whenever position was; `result.spike_window_assumed` says so.
+
+<!-- docs-test: run -->
+```python
+run_epochs = [(float(times[0]), float(times[-1]))]
+t_ephys_start, t_ephys_stop = run_epochs[0]
+result = compute_spatial_rate(env, spike_times, times, positions_t,
+    epochs=run_epochs, spike_window=(t_ephys_start, t_ephys_stop))
+```
 
 ## Core Concepts
 
@@ -284,6 +311,7 @@ You typically don't interact with layout engines directly; instead, use the `Env
 
 ### 1. Analyzing Animal Position Data
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -309,18 +337,20 @@ env = Environment.from_samples(
     name="Experiment1_OpenField"
 )
 
+# Treat this intentionally coarse 1 Hz example as continuous with max_gap=None.
 # Compute occupancy with speed filtering
 occupancy = env.occupancy(
     times=times,
     positions=position,
     speed=speeds,
     min_speed=2.5,  # cm/s - filter slow periods
-    bandwidth=10.0  # cm - smooth the occupancy map
+    bandwidth=10.0,  # cm - smooth the occupancy map
+    max_gap=None,
 )
 
 # Analyze movement patterns
-transitions = env.transitions(times=times, positions=position, normalize=True)
-bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True)
+transitions = env.transitions(times=times, positions=position, normalize=True, max_gap=None)
+bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True, max_gap=None)
 ```
 
 ### 2. Creating Masked Environments
@@ -410,6 +440,7 @@ neurospatial includes a comprehensive simulation subpackage for generating synth
 
 ### Quick Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -424,7 +455,7 @@ from neurospatial.simulation import (
 arena_data = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
 
 # Create environment
-env = Environment.from_samples(arena_data, bin_size=2.0)
+env = Environment.from_samples(arena_data, bin_size=5.0)
 env.units = "cm"  # Required for trajectory simulation
 
 # Generate realistic trajectory using Ornstein-Uhlenbeck process.
@@ -451,14 +482,14 @@ firing_rates = place_cell.firing_rate(positions, times)
 spike_times = generate_poisson_spikes(firing_rates, times, seed=42)
 
 # Validate with neurospatial analysis
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 result = compute_spatial_rate(env, spike_times, times, positions)
 detected_field = result.firing_rate
 
 # Compare detected field to ground truth
 true_center = place_cell.ground_truth['center']
 print(f"True field center: {true_center}")
-print(f"Detected peak: {env.bin_centers[detected_field.argmax()]}")
+print(f"Detected peak: {result.peak_location()}")
 ```
 
 ### Available Features
@@ -500,12 +531,13 @@ Visualize how spatial fields evolve over time with multi-backend animation suppo
 
 ### Quick Example
 
+<!-- docs-test: skip Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate for a CI smoke test. Animation behavior is exercised by notebooks 16-18 and the dedicated animation tests. -->
 ```python
 import numpy as np
 
 from neurospatial import Environment
 from neurospatial.animation import subsample_frames
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial import compute_spatial_rates
 
 # Assumes you already have:
 #   positions:   shape (n_samples, 2) animal trajectory
@@ -552,6 +584,7 @@ env.animate_fields(fields, frame_times=frame_times, backend="widget")
 
 For sessions with 100K+ frames (e.g., 1-hour recording at 250 Hz):
 
+<!-- docs-test: skip Same as readme_animation_napari_block: requires napari/ffmpeg. -->
 ```python
 import numpy as np
 from neurospatial.animation import subsample_frames
@@ -609,7 +642,6 @@ src/neurospatial/
 ├── annotation/     # Interactive video and track-graph annotation
 ├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
 ├── regions/        # Standalone region containers, operations, I/O, and plotting
-├── recording.py    # Session bundle and NWB session loader
 └── composite.py    # Multi-environment composition
 
 tests/                 # More than 9,000 automated tests across the package

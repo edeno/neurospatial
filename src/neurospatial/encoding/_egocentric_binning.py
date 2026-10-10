@@ -52,8 +52,16 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.encoding._binning import (
+    count_frames_and_occupancy,
+    count_spikes_by_frame,
+)
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.environment.trajectory import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
+from neurospatial.ops.egocentric import _wrap_angle, compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -160,22 +168,22 @@ def normalize_object_positions(
     )
 
 
-def _compute_egocentric_coords(
+def _compute_object_coords(
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute egocentric coordinates to nearest object at each timepoint.
+    """Compute polar coordinates to the nearest object in the selected frame.
 
     Parameters
     ----------
     positions : ndarray, shape (n_time, 2)
         Animal positions in allocentric coordinates.
     headings : ndarray, shape (n_time,)
-        Animal heading at each time (radians, 0=East in allocentric frame).
+        Heading at each time (radians, 0=East), or None for allocentric bearing.
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
     metric : {"euclidean", "geodesic"}, default="euclidean"
@@ -241,7 +249,11 @@ def _compute_egocentric_coords(
 
     # Compute bearings to all objects (egocentric)
     # bearings_all: (n_time, n_objects)
-    bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
+    if headings is None:
+        delta = object_positions[None, :, :] - positions[:, None, :]
+        bearings_all = _wrap_angle(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
+    else:
+        bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
 
     # Find nearest object at each timepoint
     # Handle NaN distances (objects/positions outside environment with geodesic metric):
@@ -375,7 +387,7 @@ def _coords_to_flat_bin_idx(
 def compute_egocentric_occupancy(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
@@ -383,6 +395,9 @@ def compute_egocentric_occupancy(
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
     """Compute egocentric occupancy (time at each distance/direction bin).
 
@@ -413,6 +428,26 @@ def compute_egocentric_occupancy(
     env : Environment, optional
         Required when metric="geodesic". The allocentric environment
         used to compute geodesic distances.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
 
     Returns
     -------
@@ -455,7 +490,9 @@ def compute_egocentric_occupancy(
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    headings = (
+        None if headings is None else np.asarray(headings, dtype=np.float64).ravel()
+    )
     object_positions = np.asarray(object_positions, dtype=np.float64)
 
     n_samples = len(times)
@@ -465,13 +502,13 @@ def compute_egocentric_occupancy(
         raise ValueError(
             f"times length ({n_samples}) must match positions length ({len(positions)})"
         )
-    if len(headings) != n_samples:
+    if headings is not None and len(headings) != n_samples:
         raise ValueError(
             f"times length ({n_samples}) must match headings length ({len(headings)})"
         )
 
     # Validate times
-    _validate_times(times, context="egocentric occupancy computation")
+    _validate_times(times, context="compute_egocentric_occupancy")
 
     # Validate metric
     if metric not in ("euclidean", "geodesic"):
@@ -493,7 +530,7 @@ def compute_egocentric_occupancy(
     n_bins = polar_env.n_bins
 
     # Compute egocentric coordinates
-    nearest_distances, nearest_bearings = _compute_egocentric_coords(
+    nearest_distances, nearest_bearings = _compute_object_coords(
         positions,
         headings,
         object_positions,
@@ -514,20 +551,14 @@ def compute_egocentric_occupancy(
         n_direction_bins,
     )
 
-    # Compute per-sample time deltas
-    dt = np.diff(times)
-
-    # Compute occupancy
-    occupancy = np.zeros(n_bins, dtype=np.float64)
-
-    # Each interval[i] (from time[i] to time[i+1]) is assigned to bin at time[i]
-    interval_bins = bin_indices[:-1]  # Exclude last position (no following interval)
-    valid_interval_mask = interval_bins >= 0
-
-    valid_bins = interval_bins[valid_interval_mask]
-    valid_dt = dt[valid_interval_mask]
-    np.add.at(occupancy, valid_bins, valid_dt)
-
+    mask = interval_valid_mask(
+        times,
+        start_bin=bin_indices,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    occupancy = start_allocated_occupancy(bin_indices, np.diff(times), mask, n_bins)
     return occupancy, polar_env
 
 
@@ -535,7 +566,7 @@ def bin_egocentric_spike_train(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
@@ -543,6 +574,9 @@ def bin_egocentric_spike_train(
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
     """Bin spike train by egocentric coordinates.
 
@@ -572,6 +606,26 @@ def bin_egocentric_spike_train(
     env : Environment, optional
         Required when metric="geodesic".
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
+
     Returns
     -------
     spike_counts : ndarray, shape (n_bins,)
@@ -589,7 +643,7 @@ def bin_egocentric_spike_train(
     Notes
     -----
     Spikes are assigned to bins using nearest-neighbor lookup to the behavioral
-    frame closest in time. Spikes outside the trajectory time range are excluded.
+    frame at or before each spike. Spikes outside the trajectory time range are excluded.
 
     Examples
     --------
@@ -617,13 +671,13 @@ def bin_egocentric_spike_train(
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    headings = (
+        None if headings is None else np.asarray(headings, dtype=np.float64).ravel()
+    )
     object_positions = np.asarray(object_positions, dtype=np.float64)
 
     # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="egocentric spike binning")
-
-    n_samples = len(times)
+    _validate_times(times, context="bin_egocentric_spike_train")
 
     # Validate metric and env
     if metric not in ("euclidean", "geodesic"):
@@ -643,65 +697,36 @@ def bin_egocentric_spike_train(
     )
     n_bins = polar_env.n_bins
 
-    spike_counts = np.zeros(n_bins, dtype=np.float64)
-
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return spike_counts, polar_env
-
-    # Filter spikes to valid time range
-    t_min, t_max = times[0], times[-1]
-    valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
-    spike_times_valid = spike_times[valid_time_mask]
-
-    if len(spike_times_valid) == 0:
-        return spike_counts, polar_env
-
-    # Compute egocentric coordinates for all behavioral frames
-    nearest_distances, nearest_bearings = _compute_egocentric_coords(
+    nearest_distances, nearest_bearings = _compute_object_coords(
         positions,
         headings,
         object_positions,
         metric=metric,
         env=env,
     )
-
-    # Flatten
-    nearest_distances = nearest_distances.ravel()
-    nearest_bearings = nearest_bearings.ravel()
-
-    # Find nearest behavioral frame for each spike
-    spike_frame_idx = np.searchsorted(times, spike_times_valid, side="right") - 1
-    spike_frame_idx = np.clip(spike_frame_idx, 0, n_samples - 1)
-
-    # Get egocentric coordinates at spike times
-    spike_distances = nearest_distances[spike_frame_idx]
-    spike_bearings = nearest_bearings[spike_frame_idx]
-
-    # Convert to flat bin indices
-    spike_bin_indices = _coords_to_flat_bin_idx(
-        spike_distances,
-        spike_bearings,
+    bin_indices = _coords_to_flat_bin_idx(
+        nearest_distances.ravel(),
+        nearest_bearings.ravel(),
         distance_range,
         n_distance_bins,
         n_direction_bins,
     )
-
-    # Count valid spikes per bin
-    valid_spike_mask = spike_bin_indices >= 0
-    valid_spike_bins = spike_bin_indices[valid_spike_mask]
-
-    if len(valid_spike_bins) > 0:
-        np.add.at(spike_counts, valid_spike_bins, 1.0)
-
-    return spike_counts, polar_env
+    mask = interval_valid_mask(
+        times,
+        start_bin=bin_indices,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    counts = count_spikes_by_frame(spike_times, times, bin_indices, mask, n_bins)
+    return counts, polar_env
 
 
 def bin_egocentric_spike_trains(
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
@@ -709,7 +734,12 @@ def bin_egocentric_spike_trains(
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
+    frame_bins: NDArray[np.int64] | None = None,
+    polar_env: EgocentricPolarEnvironment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], EgocentricPolarEnvironment]:
     """Bin multiple spike trains by egocentric coordinates.
 
@@ -742,8 +772,33 @@ def bin_egocentric_spike_trains(
         Distance metric.
     env : Environment, optional
         Required when metric="geodesic".
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
+    frame_bins : ndarray of int, shape (n_samples,), optional
+        Polar bin per sample for exactly these samples and binning settings.
+        Passing it skips the egocentric coordinate computation.
+    polar_env : EgocentricPolarEnvironment, optional
+        The polar environment for these binning settings, reused instead of
+        rebuilt. Callers that bin many spike sets on one trajectory pass both.
 
     Returns
     -------
@@ -795,14 +850,13 @@ def bin_egocentric_spike_trains(
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
-    n_neurons = len(spike_times_list)
 
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    headings = (
+        None if headings is None else np.asarray(headings, dtype=np.float64).ravel()
+    )
     object_positions = np.asarray(object_positions, dtype=np.float64)
-
-    n_samples = len(times)
 
     # Validate metric and env
     if metric not in ("euclidean", "geodesic"):
@@ -817,96 +871,46 @@ def bin_egocentric_spike_trains(
         )
 
     # Validate times
-    _validate_times(times, context="spike binning")
+    _validate_times(times, context="bin_egocentric_spike_trains")
 
     # Create egocentric environment
-    polar_env = _create_egocentric_environment(
-        distance_range, n_distance_bins, n_direction_bins
-    )
+    if polar_env is None:
+        polar_env = _create_egocentric_environment(
+            distance_range, n_distance_bins, n_direction_bins
+        )
     n_bins = polar_env.n_bins
 
-    # Compute egocentric coordinates ONCE (shared across all neurons)
-    nearest_distances, nearest_bearings = _compute_egocentric_coords(
-        positions,
-        headings,
-        object_positions,
-        metric=metric,
-        env=env,
-    )
-
-    # Flatten
-    nearest_distances = nearest_distances.ravel()
-    nearest_bearings = nearest_bearings.ravel()
-
-    # Precompute bin indices for all behavioral frames
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances,
-        nearest_bearings,
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
-
-    # Compute occupancy from precomputed bin indices
-    dt = np.diff(times)
-    occupancy = np.zeros(n_bins, dtype=np.float64)
-    interval_bins = bin_indices[:-1]
-    valid_interval_mask = interval_bins >= 0
-    valid_bins = interval_bins[valid_interval_mask]
-    valid_dt = dt[valid_interval_mask]
-    np.add.at(occupancy, valid_bins, valid_dt)
-
-    # Handle empty neuron list
-    if n_neurons == 0:
-        spike_counts = np.zeros((0, n_bins), dtype=np.float64)
-        return spike_counts, occupancy, polar_env
-
-    # Helper to bin a single neuron using precomputed bin_indices
-    def _bin_single_neuron(
-        neuron_spike_times: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        counts = np.zeros(n_bins, dtype=np.float64)
-
-        if len(neuron_spike_times) == 0:
-            return counts
-
-        # Filter spikes to valid time range
-        t_min, t_max = times[0], times[-1]
-        valid_mask = (neuron_spike_times >= t_min) & (neuron_spike_times <= t_max)
-        valid_spike_times = neuron_spike_times[valid_mask]
-
-        if len(valid_spike_times) == 0:
-            return counts
-
-        # Find nearest behavioral frame for each spike
-        spike_frame_idx = np.searchsorted(times, valid_spike_times, side="right") - 1
-        spike_frame_idx = np.clip(spike_frame_idx, 0, n_samples - 1)
-
-        # Get precomputed bin index at each spike time
-        spike_bins = bin_indices[spike_frame_idx]
-
-        # Count valid spikes per bin
-        valid_spike_mask = spike_bins >= 0
-        valid_spike_bins = spike_bins[valid_spike_mask]
-
-        if len(valid_spike_bins) > 0:
-            np.add.at(counts, valid_spike_bins, 1.0)
-
-        return counts
-
-    # Process neurons
-    if n_jobs == 1:
-        # Sequential processing
-        spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
-        for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = _bin_single_neuron(spikes)
-    else:
-        # Parallel processing with joblib
-        from joblib import Parallel, delayed
-
-        results = Parallel(n_jobs=n_jobs)(
-            delayed(_bin_single_neuron)(spikes) for spikes in spike_times_list
+    if frame_bins is None:
+        # Compute egocentric coordinates ONCE (shared across all neurons)
+        nearest_distances, nearest_bearings = _compute_object_coords(
+            positions,
+            headings,
+            object_positions,
+            metric=metric,
+            env=env,
         )
-        spike_counts = np.array(results, dtype=np.float64)
 
+        # Flatten
+        nearest_distances = nearest_distances.ravel()
+        nearest_bearings = nearest_bearings.ravel()
+
+        # Precompute bin indices for all behavioral frames
+        frame_bins = _coords_to_flat_bin_idx(
+            nearest_distances,
+            nearest_bearings,
+            distance_range,
+            n_distance_bins,
+            n_direction_bins,
+        )
+
+    spike_counts, occupancy = count_frames_and_occupancy(
+        spike_times_list,
+        times,
+        frame_bins,
+        n_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        n_jobs=n_jobs,
+    )
     return spike_counts, occupancy, polar_env

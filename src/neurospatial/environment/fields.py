@@ -134,10 +134,8 @@ class EnvironmentFields:
         explicit ``(n, n)`` matrix. For a smaller matrix, increase ``bin_size``.
 
         The physical-σ guarantee assumes uniform bin spacing per axis (the
-        standard grid, hex, polar-sector, graph, and mesh layouts). A custom
-        *nonuniform* Cartesian ``grid_edges`` inherits a uniform-cell
-        approximation for both the face measure and the cell volume, so it is
-        outside this guarantee (a tracked follow-up).
+        standard grid, hex, polar-sector, graph, and mesh layouts).
+        ``MaskedGridLayout.build`` rejects nonuniform ``grid_edges``.
 
         Examples
         --------
@@ -527,7 +525,9 @@ class EnvironmentFields:
             _finite_volume_geometry,
         )
 
-        graph, volumes = _finite_volume_geometry(cast("EnvironmentProtocol", self))
+        graph, volumes = _finite_volume_geometry(
+            cast("EnvironmentProtocol", self), operation="smoothing"
+        )
         volumes = np.asarray(volumes, dtype=np.float64)
         W = _assemble_W(graph, int(volumes.shape[0]))
         n_components, labels = _components_from_W(W)
@@ -838,8 +838,8 @@ class EnvironmentFields:
         bin_indices = cast(
             "NDArray[np.int64]",
             map_points_to_bins(
-                points,
                 cast("Environment", self),
+                points,
                 tie_break="lowest_index",
                 return_dist=False,
             ),

@@ -491,3 +491,40 @@ def sample_polar_environment():
     env.units = "cm"
     env.frame = "egocentric"
     return env
+
+
+@pytest.fixture
+def make_scaled_position_nwb():
+    """Return a factory for an NWB file whose Position series is scaled.
+
+    ``make_scaled_position_nwb(unit="meters", conversion=0.002, offset=0.1)``
+    stores pixel coordinates (100 rows at 30 Hz cycling ``(0, 0)``,
+    ``(500, 0)``, ``(500, 500)``, ``(0, 500)``, ``(250, 250)``) in a
+    ``SpatialSeries`` with the given ``unit``, ``conversion`` and ``offset``.
+    """
+    _get_pynwb()
+    from pynwb.behavior import Position, SpatialSeries
+
+    corners = np.array([(0, 0), (500, 0), (500, 500), (0, 500), (250, 250)], float)
+
+    def make(unit: str = "meters", conversion: float = 0.002, offset: float = 0.1):
+        nwbfile = create_empty_nwb()
+        position = Position(name="Position")
+        position.add_spatial_series(
+            SpatialSeries(
+                name="position",
+                description="Pixel coordinates",
+                data=np.tile(corners, (20, 1)),
+                timestamps=np.arange(100) / 30.0,
+                reference_frame="Image corner (0, 0)",
+                unit=unit,
+                conversion=conversion,
+                offset=offset,
+            )
+        )
+        nwbfile.create_processing_module(
+            name="behavior", description="Behavioral data"
+        ).add(position)
+        return nwbfile
+
+    return make

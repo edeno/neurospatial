@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
 from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
@@ -172,6 +173,7 @@ def _normalize_block(
     axis: int,
     handle_degenerate: Literal["uniform", "nan", "raise"],
     out: NDArray[np.float64],
+    prior_support: NDArray[np.bool_] | None = None,
 ) -> None:
     """Normalize one time-block of log-likelihood in place into ``out``.
 
@@ -183,7 +185,10 @@ def _normalize_block(
 
     Degenerate-row handling matches the full-array path exactly: rows whose
     per-row max is non-finite (all ``-inf`` zero-rate rows, or rows containing
-    ``NaN``) are filled per ``handle_degenerate``.
+    ``NaN``) are filled per ``handle_degenerate``. With ``"uniform"``, a
+    ``prior_support`` mask (bins with positive prior, shape ``(n_bins,)`` or
+    matching ``ll_block``) restricts the uniform fill to supported bins; a row
+    with no supported bins becomes NaN.
     """
     ll_max = ll_block.max(axis=axis, keepdims=True)
 
@@ -207,21 +212,33 @@ def _normalize_block(
             if n_nan > 0:
                 n_neg_inf = n_degenerate - n_nan
                 raise ValueError(
-                    f"Found {n_degenerate} degenerate row(s): {n_nan} contain "
-                    f"NaN values (upstream corruption, e.g. a NaN firing rate "
-                    f"leaking into the likelihood) and {n_neg_inf} are all -inf "
-                    f"(zero-rate). Fix the NaN source; the -inf rows can be "
-                    f"handled with handle_degenerate='uniform' or 'nan'."
+                    _format_error(
+                        f"Found {n_degenerate} degenerate row(s): {n_nan} contain NaN values (upstream corruption, e.g. a NaN firing rate leaking into the likelihood) and {n_neg_inf} are all -inf (zero-rate). Fix the NaN source; the -inf rows can be handled with handle_degenerate='uniform' or 'nan'.",
+                        fix="fix non-finite likelihood inputs first; for all -inf rows pass handle_degenerate='uniform'",
+                        why="Why: NaN or all -inf likelihoods cannot be normalized to a posterior.",
+                    )
                 )
             raise ValueError(
-                f"Found {n_degenerate} degenerate row(s) with all -inf values "
-                f"(zero-rate). Consider using handle_degenerate='uniform' or "
-                f"'nan'."
+                _format_error(
+                    f"Found {n_degenerate} degenerate row(s) with all -inf values (zero-rate). Consider using handle_degenerate='uniform' or 'nan'.",
+                    fix="pass handle_degenerate='uniform' or 'nan' for zero-rate rows",
+                    why="Why: all -inf rows have zero likelihood mass and cannot be normalized to a posterior.",
+                )
             )
         elif handle_degenerate == "uniform":
-            n_bins = ll_block.shape[axis]
-            uniform_prob = 1.0 / n_bins
-            out[degenerate_mask] = uniform_prob
+            if prior_support is None:
+                out[degenerate_mask] = 1.0 / ll_block.shape[axis]
+            else:
+                supported = np.broadcast_to(prior_support, ll_block.shape)[
+                    degenerate_mask
+                ]
+                n_supported = supported.sum(axis=-1, keepdims=True)
+                out[degenerate_mask] = np.divide(
+                    supported,
+                    n_supported,
+                    out=np.full(supported.shape, np.nan, dtype=out.dtype),
+                    where=n_supported > 0,
+                )
         elif handle_degenerate == "nan":
             out[degenerate_mask] = np.nan
 
@@ -254,7 +271,9 @@ def normalize_to_posterior(
 
         **Note**: Priors are treated as **probability distributions** (not
         unnormalized weights). They are normalized internally to sum to 1.0
-        along the position axis before applying.
+        along the position axis before applying. Exact zeros exclude bins
+        from the posterior (they get exactly zero probability); positive
+        probabilities are not floored.
     axis : int, default=-1
         Axis along which to normalize.
     handle_degenerate : {"uniform", "nan", "raise"}, default="uniform"
@@ -263,8 +282,10 @@ def normalize_to_posterior(
         encoding model) or if it contains a ``NaN`` (upstream corruption,
         e.g. a NaN firing rate leaking into the likelihood):
 
-        - "uniform": Return uniform distribution (1/n_bins per bin) for
-          every degenerate row. This masks NaN corruption the same as a
+        - "uniform": Return a uniform distribution for every degenerate row,
+          restricted to the bins with positive prior when a prior is given
+          (1/n_bins per bin otherwise). A row whose prior has no positive
+          bin becomes NaN. This masks NaN corruption the same as a
           zero-rate row; use "raise" if you need corruption to surface.
         - "nan": Return NaN for degenerate rows.
         - "raise": Raise ValueError if any row is degenerate. The message
@@ -306,7 +327,8 @@ def normalize_to_posterior(
         # Add log-prior to log-likelihood
         if prior is not None:
             prior = prior / prior.sum(axis=axis, keepdims=True)  # Normalize
-            log_prior = np.log(np.clip(prior, 1e-10, 1.0))
+            with np.errstate(divide="ignore"):
+                log_prior = np.log(prior)  # log(0) = -inf excludes the bin
             ll = log_likelihood + log_prior
         else:
             ll = log_likelihood
@@ -374,6 +396,7 @@ def normalize_to_posterior(
             f"only supports normalization along the last axis."
         )
     ll = log_likelihood.copy()
+    prior_support = None
 
     # Apply prior if provided
     if prior is not None:
@@ -412,9 +435,11 @@ def normalize_to_posterior(
             # Avoid division by zero
             prior_arr = np.where(prior_sum > 0, prior_arr / prior_sum, prior_arr)
 
-        # Clip prior to avoid log(0)
-        prior_clipped = np.clip(prior_arr, 1e-10, 1.0)
-        log_prior = np.log(prior_clipped)
+        # Keep exact zeros as -inf in log space. Flooring them would let a
+        # large enough likelihood select a bin the prior excludes.
+        prior_support = prior_arr > 0
+        with np.errstate(divide="ignore"):
+            log_prior = np.log(prior_arr)
 
         # Add log-prior to log-likelihood
         ll = ll + log_prior
@@ -441,7 +466,13 @@ def normalize_to_posterior(
 
     n_time = ll.shape[0]
     if time_chunk is None:
-        _normalize_block(ll, axis=axis, handle_degenerate=handle_degenerate, out=out)
+        _normalize_block(
+            ll,
+            axis=axis,
+            handle_degenerate=handle_degenerate,
+            out=out,
+            prior_support=prior_support,
+        )
     else:
         for start in range(0, n_time, time_chunk):
             stop = min(start + time_chunk, n_time)
@@ -450,6 +481,11 @@ def normalize_to_posterior(
                 axis=axis,
                 handle_degenerate=handle_degenerate,
                 out=out[start:stop],
+                prior_support=(
+                    prior_support[start:stop]
+                    if prior_support is not None and prior_support.ndim == 2
+                    else prior_support
+                ),
             )
 
     return cast("NDArray[np.float64]", out)
@@ -493,15 +529,17 @@ def decode_position(
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
         ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
-        ``(neuron, bin)`` is treated as a zero-rate observation and excluded
-        from that neuron's contribution to the Poisson log-likelihood at that
-        bin, and a single :class:`UserWarning` is emitted per call. This is
-        defense-in-depth so a ``fill_value=None`` encoding model still decodes;
-        the recommended path is still to pass ``fill_value=0.0`` to the
-        encoder so no NaN reaches the decoder.
+        ``(neuron, bin)`` is excluded from that neuron's contribution to the
+        Poisson log-likelihood at that bin, so the neuron is uninformative
+        there, and a single :class:`UserWarning` is emitted per call. This is
+        not the same as a zero rate: a spike from that neuron cannot count
+        against the bin. It is defense-in-depth so a ``fill_value=None``
+        encoding model still decodes; the recommended path is still to pass
+        ``fill_value=0.0`` to the encoder, which models those bins as
+        zero-rate.
 
         Inf entries are handled the same way, but only with ``validate=False``:
-        each Inf ``(neuron, bin)`` is excluded as a zero-rate observation, so a
+        each Inf ``(neuron, bin)`` is excluded in the same way, so a
         partial-Inf model such as ``rates=[inf, inf, 5]`` concentrates posterior
         mass on the one finite bin rather than collapsing to a uniform
         posterior. Under ``validate=True`` (the default) Inf entries are instead
@@ -711,8 +749,11 @@ def decode_position(
                 f"centers, one per row of spike_counts."
             )
 
-    # Return DecodingResult
-    return DecodingResult(posterior=posterior, env=env, times=times)
+    # The posterior was allocated above and nothing else references it, so the
+    # result takes it without a copy.
+    return DecodingResult._from_owned_posterior(
+        posterior, env=env, times=times, spike_window=None
+    )
 
 
 def _validate_prior_shape(
@@ -911,7 +952,9 @@ def _prepare_decode_inputs(
     """
     from neurospatial.encoding._validation import validate_env_fitted
 
-    validate_env_fitted(env, context=context)
+    validate_env_fitted(
+        env, context=context, arguments="spike_counts, encoding_models, dt"
+    )
 
     # Validate method
     if method != "poisson":
@@ -1028,10 +1071,10 @@ def _prepare_decode_inputs(
         warnings.warn(
             f"encoding_models contains {n_bad} non-finite bin(s) (NaN or Inf; "
             "e.g. low-occupancy bins masked by the encoder's min_occupancy "
-            "with fill_value=None). Treating each as a zero-rate observation "
-            "(excluded from that neuron's Poisson contribution at that bin). "
-            "Pass fill_value=0.0 to the encoder to silence this and make the "
-            "model explicitly zero-rate there.",
+            "with fill_value=None). Each such (neuron, bin) is left out of that "
+            "neuron's Poisson likelihood, so the neuron says nothing about that "
+            "bin. Pass fill_value=0.0 to the encoder to silence this and model "
+            "those bins as zero-rate instead; the posteriors differ.",
             UserWarning,
             stacklevel=3,
         )
@@ -1337,6 +1380,19 @@ def decode_position_summary(
     decode_position : Full-posterior decode (return contract unchanged).
     DecodingSummary : Streamed per-time reductions container.
     decode_session_summary : One-call encode->bin->summary-decode wrapper.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding import decode_position_summary
+    >>> positions = np.c_[np.arange(10.0), np.zeros(10)]
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> counts = np.ones((4, 2), dtype=np.int64)
+    >>> models = np.full((2, env.n_bins), 5.0)
+    >>> summary = decode_position_summary(env, counts, models, dt=0.1, time_chunk=2)
+    >>> summary.map_position.shape
+    (4, 2)
     """
     if time_chunk is None:
         raise ValueError(
@@ -1518,9 +1574,11 @@ def _log_poisson_likelihood_nan_safe(
         )
     if spike_counts.shape[1] != encoding_models.shape[0]:
         raise ValueError(
-            f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} "
-            f"neurons (axis 1) but encoding_models has {encoding_models.shape[0]} "
-            f"neurons (axis 0). These must agree for the Poisson likelihood."
+            _format_error(
+                f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {encoding_models.shape[0]} neurons (axis 0). These must agree for the Poisson likelihood.",
+                fix="build spike_counts and encoding_models from the same unit list, in the same order",
+                why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
+            )
         )
 
     # Replace NaN rates with the floor so log/exp stay finite, then zero out
@@ -1634,10 +1692,10 @@ def _validate_inputs(
 
     # Encoding models must be defined on the decoding environment.
     if encoding_models.ndim == 2 and encoding_models.shape[1] != env.n_bins:
-        raise ValueError(
+        raise IncompatibleEnvironmentError(
             f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
-            f"but env has {env.n_bins} active bins. Recompute the place "
-            f"fields on this environment before decoding."
+            f"but env has {env.n_bins} active bins.",
+            fix="recompute the place fields on the decoding environment.",
         )
 
     # Check prior if provided. Convert to ndarray first because the
@@ -1649,11 +1707,10 @@ def _validate_inputs(
     #
     # - finite (NaN/Inf can't pass the < 0 check cleanly),
     # - non-negative (a probability mass cannot be negative),
-    # - has positive total mass (a zero-sum prior would otherwise be
-    #   silently rebuilt as a uniform prior by normalize_to_posterior's
-    #   1e-10 clip, which is the silent-wrong-result path the validator
-    #   exists to prevent). For time-varying priors, every row must
-    #   carry positive mass.
+    # - has positive total mass (a zero-sum prior excludes every bin, so
+    #   normalize_to_posterior would return an all-NaN posterior rather
+    #   than a decode). For time-varying priors, every row must carry
+    #   positive mass.
     if prior is not None:
         prior_arr = np.asarray(prior, dtype=np.float64)
         if not np.isfinite(prior_arr).all():

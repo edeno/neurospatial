@@ -1,4 +1,3 @@
-import warnings
 from collections.abc import Sequence
 from typing import Any
 
@@ -69,7 +68,6 @@ class ImageMaskLayout(_GridMixin):
         ],  # Defines candidate pixels, shape (n_rows, n_cols)
         pixel_size: float | tuple[float, float] | None = None,
         connect_diagonal_neighbors: bool = True,
-        bin_size: float | tuple[float, float] | None = None,  # deprecated alias
     ) -> None:
         """Build the layout from a 2D image mask.
 
@@ -88,14 +86,10 @@ class ImageMaskLayout(_GridMixin):
             The spatial size of each pixel, in units per pixel.
             If float: pixels are square (size x size).
             If tuple (width, height): specifies pixel width (x) and pixel
-            height (y). If None and `bin_size` is also None, defaults to 1.0
+            height (y). If None, defaults to 1.0
             (one unit per pixel).
         connect_diagonal_neighbors : bool, default=True
             If True, connect diagonally adjacent active pixel-bins.
-        bin_size : float or tuple of (float, float) or None, optional
-            Deprecated alias for `pixel_size`, kept for backward compatibility.
-            Emits a `DeprecationWarning` when used. Cannot be combined with
-            `pixel_size`.
 
         Raises
         ------
@@ -103,28 +97,11 @@ class ImageMaskLayout(_GridMixin):
             If `image_mask` is not a NumPy array.
         ValueError
             If `image_mask` is not 2D, not boolean, contains no True values,
-            if `pixel_size` is invalid (wrong type/shape or non-positive), or
-            if both `pixel_size` and the deprecated `bin_size` alias are given.
+            or if `pixel_size` is invalid (wrong type/shape or non-positive).
 
         """
-        # Resolve the pixel-size argument. ``pixel_size`` is the public name;
-        # ``bin_size`` is accepted as a deprecated alias for backward
-        # compatibility with callers that forwarded the legacy key.
-        if pixel_size is not None and bin_size is not None:
-            raise ValueError(
-                "Pass either 'pixel_size' or the deprecated 'bin_size' alias, not both."
-            )
         if pixel_size is None:
-            if bin_size is None:
-                pixel_size = 1.0  # one unit per pixel
-            else:
-                warnings.warn(
-                    "'bin_size' is deprecated for ImageMaskLayout; use "
-                    "'pixel_size' instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                pixel_size = bin_size
+            pixel_size = 1.0  # one unit per pixel
 
         if not isinstance(image_mask, np.ndarray):
             raise TypeError("image_mask must be a numpy array.")

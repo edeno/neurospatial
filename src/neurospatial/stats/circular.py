@@ -30,7 +30,7 @@ Which Function Should I Use?
 
 **Phase precession analysis?**
     See ``neurospatial.encoding.phase_precession`` module for
-    ``phase_precession()``, ``has_phase_precession()``, and
+    ``compute_phase_precession()``, ``has_phase_precession()``, and
     ``plot_phase_precession()``.
 
 **GLM-based circular regression?**
@@ -830,7 +830,7 @@ def circular_linear_correlation(
     # P-value from chi-squared distribution with 2 degrees of freedom
     # Test statistic: n * r^2 follows chi-squared(2) under null hypothesis
     chi2_stat = n * r_squared
-    pval = float(1.0 - chi2.cdf(chi2_stat, df=2))
+    pval = float(chi2.sf(chi2_stat, df=2))
 
     # Ensure p-value is in valid range
     pval = float(np.clip(pval, 0.0, 1.0))
@@ -1009,7 +1009,7 @@ def circular_circular_correlation(
 
     # Test statistic follows standard normal under null hypothesis
     ts = np.sqrt((n * l20 * l02) / l22) * rho
-    pval = float(2 * (1 - stats.norm.cdf(np.abs(ts))))
+    pval = float(2 * stats.norm.sf(np.abs(ts)))
 
     # Ensure p-value is in valid range
     pval = float(np.clip(pval, 0.0, 1.0))
@@ -1328,7 +1328,7 @@ def _wald_test_magnitude(
         return np.nan
 
     # P-value from chi-squared with 2 df
-    pval = float(1.0 - chi2.cdf(wald_stat, df=2))
+    pval = float(chi2.sf(wald_stat, df=2))
 
     return float(np.clip(pval, 0.0, 1.0))
 
@@ -1680,6 +1680,13 @@ def plot_circular_basis_tuning(
     circular_basis_metrics : Compute amplitude/phase from coefficients.
     circular_basis : Create design matrix for GLM.
 
+    Notes
+    -----
+    The polar projection draws angles as in the arena: 0 = East (right),
+    π/2 = North (up), counter-clockwise, the convention in which
+    ``circular_basis_metrics`` reports the preferred direction. A
+    caller-supplied polar axis is reset to this orientation.
+
     Examples
     --------
     **Head direction GLM tuning curve**:
@@ -1795,9 +1802,9 @@ def plot_circular_basis_tuning(
     if projection == "polar":
         polar_ax = cast("PolarAxes", ax)
 
-        # Configure polar plot: 0° at top (North), clockwise direction
-        polar_ax.set_theta_zero_location("N")
-        polar_ax.set_theta_direction(-1)
+        # Draw angles as in the arena: 0 = East (right), counter-clockwise.
+        polar_ax.set_theta_zero_location("E")
+        polar_ax.set_theta_direction(1)
 
         # Plot confidence band (behind curve)
         if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:

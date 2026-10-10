@@ -31,14 +31,17 @@ class SimulationSession:
         at a specific time point.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds corresponding to each position.
-    spike_trains : list[NDArray[np.float64]]
+    spike_times : list[NDArray[np.float64]]
         List of spike time arrays, one per neuron. Each array contains the
         spike times (in seconds) for a single neuron.
     models : list[NeuralModel]
         Neural model instances used to generate the spikes. These implement
         the NeuralModel protocol and can be used to regenerate firing rates.
-    ground_truth : dict[str, Any]
-        True parameters for each cell, indexed by cell identifier. This
+    unit_ids : NDArray[np.int64], shape (n_units,)
+        Unit labels aligned one-to-one with spike_times and models. Simulators
+        generate np.arange(n_units).
+    ground_truth : dict[int, dict[str, Any]]
+        True parameters for each cell, keyed by integer unit label. This
         typically contains ground truth from each model's `.ground_truth`
         property, enabling validation of analysis methods.
     metadata : dict[str, Any]
@@ -84,13 +87,13 @@ class SimulationSession:
     ... ]
 
     >>> # Generate spikes
-    >>> spike_trains = generate_population_spikes(
-    ...     models, positions, times
+    >>> spike_times = generate_population_spikes(
+    ...     models, times, positions
     ... )  # doctest: +SKIP
 
     >>> # Collect ground truth
     >>> ground_truth = {  # doctest: +SKIP
-    ...     f"cell_{i}": model.ground_truth for i, model in enumerate(models)
+    ...     i: model.ground_truth for i, model in enumerate(models)
     ... }
 
     >>> # Create session
@@ -98,17 +101,27 @@ class SimulationSession:
     ...     env=env,
     ...     positions=positions,
     ...     times=times,
-    ...     spike_trains=spike_trains,
+    ...     spike_times=spike_times,
+    ...     unit_ids=np.arange(len(spike_times), dtype=np.int64),
     ...     models=models,
     ...     ground_truth=ground_truth,
     ...     metadata={"duration": 60.0, "cell_type": "place"},
     ... )
 
+    >>> from neurospatial import compute_spatial_rates  # doctest: +SKIP
+    >>> rates = compute_spatial_rates(  # doctest: +SKIP
+    ...     session.env,
+    ...     session.spike_times,
+    ...     session.times,
+    ...     session.positions,
+    ...     unit_ids=session.unit_ids,
+    ... )
+
     >>> # Access fields with typed attributes
     >>> print(f"Session duration: {session.times[-1]:.1f}s")  # doctest: +SKIP
-    >>> print(f"Number of cells: {len(session.spike_trains)}")  # doctest: +SKIP
+    >>> print(f"Number of cells: {len(session.spike_times)}")  # doctest: +SKIP
     >>> print(
-    ...     f"Total spikes: {sum(len(st) for st in session.spike_trains)}"
+    ...     f"Total spikes: {sum(len(st) for st in session.spike_times)}"
     ... )  # doctest: +SKIP
 
     See Also
@@ -119,12 +132,43 @@ class SimulationSession:
     """
 
     env: Environment
-    positions: NDArray[np.float64]
+    spike_times: list[NDArray[np.float64]]
+    unit_ids: NDArray[np.int64]
     times: NDArray[np.float64]
-    spike_trains: list[NDArray[np.float64]]
+    positions: NDArray[np.float64]
     models: list[NeuralModel]
-    ground_truth: dict[str, Any]
+    ground_truth: dict[int, dict[str, Any]]
     metadata: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        n = len(self.spike_times)
+        if not (len(self.unit_ids) == len(self.models) == n):
+            raise ValueError(
+                f"spike_times has {n} units, unit_ids {len(self.unit_ids)}, models "
+                f"{len(self.models)}; these must match one-to-one.\n"
+                "Fix: build unit_ids as np.arange(len(spike_times))."
+            )
+        if len(self.times) != len(self.positions):
+            raise ValueError(
+                f"times has {len(self.times)} samples but positions has "
+                f"{len(self.positions)}; they must match one-to-one.\n"
+                "Fix: pass one position row per timestamp."
+            )
+        labels = {int(label) for label in self.unit_ids}
+        if len(labels) != len(self.unit_ids):
+            raise ValueError(
+                f"unit_ids {[int(label) for label in self.unit_ids]} are not "
+                f"unique; each unit needs its own label.\n"
+                "Fix: build unit_ids as np.arange(len(spike_times)), or give "
+                "every unit a distinct label."
+            )
+        if set(self.ground_truth) != labels:
+            raise ValueError(
+                f"ground_truth is keyed by {sorted(self.ground_truth)} but "
+                f"unit_ids are {sorted(labels)}; they must match one-to-one.\n"
+                "Fix: key ground_truth by each unit's label, "
+                "{label: model.ground_truth}."
+            )
 
 
 def simulate_session(
@@ -149,7 +193,9 @@ def simulate_session(
     env : Environment
         The spatial environment.
     duration : float
-        Session duration in seconds.
+        Session duration in seconds. For ``trajectory_method='laps'``, samples
+        occur at ``k / sampling_frequency`` in ``[0, duration)``; the final
+        sample is within one sample period of ``duration``.
     n_cells : int, optional
         Number of neurons to simulate (default: 50).
     cell_type : {'place', 'boundary', 'grid', 'mixed'}, optional
@@ -184,12 +230,25 @@ def simulate_session(
 
         - speed_mean : float - Mean speed for OU process (default varies by method)
         - coherence_time : float - Temporal coherence for OU process
-        - n_laps : int - Number of laps for 'laps' trajectory method
+        - n_laps : int - Number of one-way traversals for 'laps' (default: 10),
+          alternating outbound/inbound starting outbound
+        - sampling_frequency : float - Lap samples per second (default: 500)
+        - pause_duration : float - Pause between traversals (default: 0.5 s),
+          rounded down to whole samples
+        - speed_mean, speed_std : float - For laps, speed draws (clipped below
+          at 0.01 environment units/s) determine relative traversal times.
+          Absolute speeds are determined by duration, path lengths and n_laps.
+          Every traversal retains at least two samples; fixed pauses are
+          reserved first, then remaining samples are allocated in proportion
+          to path length divided by the sampled speed.
 
         **Place cell parameters** (cell_type='place' or 'mixed'):
 
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float | NDArray - Field width in environment units (default: 3*bin_size)
+        - width : float | NDArray - Field width in environment units (default:
+          3 × bin spacing, the median distance between neighbouring bin centres,
+          or the median bin length on a track; equals ``bin_size`` on a
+          regular grid)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
         - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
@@ -219,7 +278,8 @@ def simulate_session(
         - env: Environment instance
         - positions: NDArray, shape (n_time, n_dims) - trajectory
         - times: NDArray, shape (n_time,) - time points
-        - spike_trains: list[NDArray] - spike times per cell
+        - spike_times: list[NDArray] - spike times per unit
+        - unit_ids: NDArray[np.int64] - integer unit labels
         - models: list[NeuralModel] - neural model instances
         - ground_truth: dict - true parameters for each cell
         - metadata: dict - session parameters
@@ -234,6 +294,9 @@ def simulate_session(
         If coverage is not one of: 'uniform', 'random'.
     ValueError
         If grid cells requested but environment is not 2D.
+    ValueError
+        If lap duration is non-finite or too short for fixed pauses and two
+        samples per traversal, or lap timing parameters are invalid.
 
     Examples
     --------
@@ -245,7 +308,7 @@ def simulate_session(
     >>> env.units = "cm"
     >>> session = simulate_session(env, duration=2.0, n_cells=3, show_progress=False)
     >>> positions = session.positions  # Typed access
-    >>> spike_trains = session.spike_trains  # IDE autocomplete
+    >>> spike_times = session.spike_times  # IDE autocomplete
     >>> ground_truth = session.ground_truth  # Discoverable
 
     >>> # Mixed cell types with custom trajectory parameters
@@ -291,7 +354,7 @@ def simulate_session(
     )
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
-        simulate_trajectory_laps,
+        _simulate_trajectory_laps,
         simulate_trajectory_ou,
         simulate_trajectory_sinusoidal,
     )
@@ -414,9 +477,10 @@ def simulate_session(
         # Extract n_laps separately to avoid duplicate keyword argument
         n_laps = kwargs.pop("n_laps", 10)
         laps_kwargs = {k: v for k, v in kwargs.items() if k != "return_metadata"}
-        result = simulate_trajectory_laps(
+        result = _simulate_trajectory_laps(
             env,
             n_laps=n_laps,
+            duration=duration,
             seed=trajectory_seed,
             return_metadata=False,
             **laps_kwargs,
@@ -519,16 +583,16 @@ def simulate_session(
         raise ValueError(f"Unknown cell_type: {cell_type}")
 
     # Generate spikes for all cells using the independent spike seed.
-    spike_trains = generate_population_spikes(
+    spike_times = generate_population_spikes(
         models,
-        positions,
         times,
+        positions,
         seed=spike_seed,
         show_progress=show_progress,
     )
 
     # Collect ground truth from each model
-    ground_truth = {f"cell_{i}": model.ground_truth for i, model in enumerate(models)}
+    ground_truth = {i: model.ground_truth for i, model in enumerate(models)}
 
     # Create metadata dict
     metadata = {
@@ -540,13 +604,21 @@ def simulate_session(
         "seed": seed,
         **kwargs,  # Include any additional parameters
     }
+    if trajectory_method == "laps":
+        metadata.update(
+            n_laps=n_laps,
+            sampling_frequency=kwargs.get("sampling_frequency", 500.0),
+            pause_duration=kwargs.get("pause_duration", 0.5),
+            sampling_convention="k / sampling_frequency in [0, duration)",
+        )
 
     # Return SimulationSession
     return SimulationSession(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,

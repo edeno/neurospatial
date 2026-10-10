@@ -257,3 +257,203 @@ def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains)
     peak_cols = [c for c in table.columns if c.startswith("peak_")]
     # The dead unit's peak coordinates must be NaN, others finite.
     assert table.iloc[0][[c for c in peak_cols if c != "peak_rate"]].isna().all()
+
+
+# ---------------------------------------------------------------------------
+# Labelled spike input: labels are never overridden, never repeated
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_rates_accept_spike_group(name, trajectory, spike_trains, make_spike_group):
+    """A labelled group gives the list-input rates and carries its labels."""
+    env, times, positions, headings = trajectory
+    trains = spike_trains[:2]
+    group = make_spike_group(trains, [101, 202])
+
+    from_group = _compute(name, env, times, positions, headings, group)
+    from_list = _compute(name, env, times, positions, headings, trains)
+
+    assert from_group.firing_rates.shape[0] == 2
+    np.testing.assert_array_equal(from_group.unit_ids, [101, 202])
+    np.testing.assert_array_equal(from_group.firing_rates, from_list.firing_rates)
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_unit_ids_must_match_group_labels(
+    name, trajectory, spike_trains, make_spike_group
+):
+    """unit_ids= with a labelled group must equal the group's own labels."""
+    env, times, positions, headings = trajectory
+    trains = spike_trains[:2]
+    group = make_spike_group(trains, [10, 20])
+
+    with pytest.raises(ValueError) as excinfo:
+        _compute(name, env, times, positions, headings, group, unit_ids=[20, 10])
+    message = str(excinfo.value)
+    assert "[20, 10]" in message
+    assert "[10, 20]" in message
+    assert "\nFix:" in message
+
+    same = _compute(name, env, times, positions, headings, group, unit_ids=[10, 20])
+    np.testing.assert_array_equal(same.unit_ids, [10, 20])
+
+    # Plain lists carry no labels, so unit_ids= names them.
+    relabelled = _compute(
+        name, env, times, positions, headings, trains, unit_ids=[20, 10]
+    )
+    np.testing.assert_array_equal(relabelled.unit_ids, [20, 10])
+
+
+def test_resolve_unit_ids_input_labels():
+    with pytest.raises(ValueError, match="already labelled"):
+        resolve_unit_ids([20, 10], 2, input_ids=[10, 20])
+    np.testing.assert_array_equal(
+        resolve_unit_ids(None, 2, input_ids=[10, 20]), [10, 20]
+    )
+    np.testing.assert_array_equal(resolve_unit_ids([3, 4], 2, input_ids=None), [3, 4])
+    # Labels that differ only by type are different labels.
+    with pytest.raises(ValueError, match="already labelled"):
+        resolve_unit_ids(["10", "20"], 2, input_ids=[10, 20])
+
+
+def test_resolve_unit_ids_rejects_duplicates():
+    with pytest.raises(ValueError, match="unique") as excinfo:
+        resolve_unit_ids([7, 7, 9], 3)
+    assert "[7]" in str(excinfo.value)
+    assert "\nFix:" in str(excinfo.value)
+
+    # Mixed int/str labels cannot be sorted; the check must still name them.
+    with pytest.raises(ValueError, match=r"unique.*\[1\]"):
+        resolve_unit_ids(np.array([1, "a", 1], dtype=object), 3)
+
+    with pytest.raises(ValueError, match=r"unique.*\[4\]") as excinfo:
+        resolve_unit_ids(None, 3, input_ids=[4, 4, 5])
+    # Repeats from the spike input: the fix is on the input, not unit_ids=.
+    assert "group.index" in str(excinfo.value)
+    assert "omit unit_ids" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("name", [*ALL, "peri_event"])
+def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trains):
+    env, times, positions, headings = trajectory
+    trains = spike_trains[:2]
+    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+        if name == "peri_event":
+            from neurospatial.events import population_peri_event_histogram
+
+            population_peri_event_histogram(
+                trains, np.array([10.0, 20.0]), (-1.0, 1.0), unit_ids=[5, 5]
+            )
+        else:
+            _compute(name, env, times, positions, headings, trains, unit_ids=[5, 5])
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_summary_table_relabel_rejects_duplicates(name, trajectory, spike_trains):
+    env, times, positions, headings = trajectory
+    result = _compute(name, env, times, positions, headings, spike_trains[:2])
+    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+        result.summary_table(unit_ids=[5, 5])
+    assert result.summary_table(unit_ids=[5, 6]).index.tolist() == [5, 6]
+    # Mixed int/str labels are kept as given, and "1" and 1 are distinct.
+    assert result.summary_table(unit_ids=["a", 1]).index.tolist() == ["a", 1]
+    assert result.summary_table(unit_ids=["1", 1]).index.tolist() == ["1", 1]
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_unlabelled_spike_trains_carry_no_labels(name, trajectory, spike_trains):
+    """SpikeTrains built without unit_ids has generated labels, which an
+    explicit unit_ids= may replace; supplied labels are still protected."""
+    from neurospatial.encoding import SpikeTrains
+
+    env, times, positions, headings = trajectory
+    trains = spike_trains[:2]
+
+    named = _compute(
+        name, env, times, positions, headings, SpikeTrains(trains), unit_ids=[5, 6]
+    )
+    np.testing.assert_array_equal(named.unit_ids, [5, 6])
+
+    labelled = SpikeTrains(trains, unit_ids=[10, 20])
+    with pytest.raises(ValueError, match="already labelled"):
+        _compute(name, env, times, positions, headings, labelled, unit_ids=[20, 10])
+
+
+def test_spike_trains_records_generated_labels():
+    import dataclasses
+
+    import pandas as pd
+
+    from neurospatial.encoding import SpikeTrains
+
+    trains = [np.array([0.1]), np.array([0.2])]
+    generated = SpikeTrains(trains, unit_table=pd.DataFrame({"ok": [True, False]}))
+    assert generated._unit_ids_generated is True
+    assert generated.filter("ok")._unit_ids_generated is True
+    assert dataclasses.replace(generated)._unit_ids_generated is True
+    assert SpikeTrains(trains, unit_ids=[0, 1])._unit_ids_generated is False
+
+
+def test_mixed_type_labels_keep_their_types():
+    """[1, "u"] must not become ["1", "u"]; an int label stays an int."""
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding import SpikeTrains
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+
+    resolved = resolve_unit_ids([1, "u"], 2)
+    assert resolved.tolist() == [1, "u"]
+    assert [type(label) for label in resolved.tolist()] == [int, str]
+
+    group = SpikeTrains([np.array([0.1]), np.array([0.2, 0.3])], unit_ids=[1, "u"])
+    trains, labels = as_spike_trains_with_ids(group)
+    assert labels.tolist() == [1, "u"]
+    np.testing.assert_array_equal(trains[1], [0.2, 0.3])
+
+
+def test_mixed_type_labels_keep_shuffle_streams():
+    """A unit's null depends on its label and seed, not on its neighbours' types."""
+    from neurospatial.encoding import head_direction_cell_significance
+
+    times = np.arange(0, 120, 0.05)
+    headings = np.sin(times / 5)
+    rng = np.random.default_rng(0)
+    a, b = (np.sort(rng.uniform(0, 119, 300)) for _ in range(2))
+    options = {"n_shuffles": 20, "rng": 3}
+    population = head_direction_cell_significance(
+        [a, b], times, headings, unit_ids=[1, "u"], **options
+    )
+    single = head_direction_cell_significance(
+        [a], times, headings, unit_ids=[1], **options
+    )
+    assert list(population) == [1, "u"]
+    np.testing.assert_allclose(
+        population[1].null_scores, single[1].null_scores, rtol=1e-12, atol=1e-12
+    )
+    assert population[1].p_value == single[1].p_value
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
+def test_indexing_population_keeps_mixed_label_types(family):
+    times = np.arange(0, 60, 0.05)
+    positions = np.c_[50 + 30 * np.sin(times / 5), 50 + 30 * np.cos(times / 7)]
+    headings = np.sin(times / 5)
+    env = Environment.from_samples(positions, bin_size=5.0)
+    trains = [np.sort(np.random.default_rng(0).uniform(0, 59, 100))] * 2
+    options = {"unit_ids": [1, "u"]}
+    rates = {
+        "spatial": lambda: compute_spatial_rates(
+            env, trains, times, positions, method="binned", **options
+        ),
+        "directional": lambda: compute_directional_rates(
+            trains, times, headings, **options
+        ),
+        "view": lambda: compute_view_rates(
+            env, trains, times, positions, headings, method="binned", **options
+        ),
+        "egocentric": lambda: compute_egocentric_rates(
+            env, trains, times, positions, headings, np.array([[50.0, 50.0]]), **options
+        ),
+    }[family]()
+    assert [unit.unit_id for unit in rates] == [1, "u"]
+    assert type(rates[0].unit_id) is int

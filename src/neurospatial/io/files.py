@@ -31,6 +31,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 
@@ -288,19 +290,14 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     json_path = path_obj.with_suffix(".json")
     npz_path = path_obj.with_suffix(".npz")
 
-    # Refuse to clobber an existing environment unless explicitly allowed. The
-    # atomic .tmp + replace write below protects against a partial save, not
-    # against overwriting the wrong target -- without this guard a single
-    # accidental re-run silently destroys a saved env (and any hand-placed
-    # regions), with no way to recover it.
-    if not overwrite:
-        existing = [str(p) for p in (json_path, npz_path) if p.exists()]
-        if existing:
-            raise FileExistsError(
-                f"Refusing to overwrite existing environment file(s): "
-                f"{', '.join(existing)}. Pass overwrite=True to replace them, "
-                "or choose a different path."
-            )
+    from neurospatial._validation import check_writable
+
+    check_writable(
+        [json_path, npz_path],
+        overwrite=overwrite,
+        what="environment file(s)",
+        argument="path",
+    )
 
     # Ensure parent directory exists
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -439,9 +436,21 @@ def from_file(path: PathLike) -> Environment:
     npz_path = path_obj.with_suffix(".npz")
 
     if not json_path.exists():
-        raise FileNotFoundError(f"Metadata file not found: {json_path}")
+        raise FileNotFoundError(
+            _format_error(
+                f"Metadata file not found: {json_path}",
+                fix="save both files with env.to_file(path), then load using the same path prefix",
+                why="Why: loading an environment requires both its .json metadata and .npz arrays.",
+            )
+        )
     if not npz_path.exists():
-        raise FileNotFoundError(f"Array file not found: {npz_path}")
+        raise FileNotFoundError(
+            _format_error(
+                f"Array file not found: {npz_path}",
+                fix="save both files with env.to_file(path), then load using the same path prefix",
+                why="Why: loading an environment requires both its .json metadata and .npz arrays.",
+            )
+        )
 
     # Load metadata
     with json_path.open("r") as f:

@@ -39,7 +39,7 @@ class TestOpenFieldSession:
         session = open_field_session(duration=10.0, n_place_cells=n_cells)
 
         assert len(session.models) == n_cells
-        assert len(session.spike_trains) == n_cells
+        assert len(session.spike_times) == n_cells
         assert len(session.ground_truth) == n_cells
 
     def test_open_field_session_uses_place_cells(self):
@@ -63,7 +63,7 @@ class TestOpenFieldSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
     def test_open_field_session_custom_duration(self):
@@ -108,7 +108,7 @@ class TestOpenFieldSession:
         session = open_field_session(duration=30.0, n_place_cells=5, seed=42)
 
         # At least some cells should have spikes
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0, "No spikes generated in session"
 
     def test_open_field_session_trajectory_within_bounds(self):
@@ -127,7 +127,7 @@ class TestOpenFieldSession:
         # Check ground_truth keys
         assert len(session.ground_truth) == n_cells
         for i in range(n_cells):
-            key = f"cell_{i}"
+            key = i
             assert key in session.ground_truth
 
             # For place cells, should have center, width, max_rate, baseline_rate
@@ -177,7 +177,7 @@ class TestLinearTrackSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
     def test_linear_track_session_custom_duration(self):
@@ -246,7 +246,7 @@ class TestLinearTrackSession:
         )
 
         # At least some cells should have spikes
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0, "No spikes generated in session"
 
     def test_linear_track_session_trajectory_within_bounds(self):
@@ -310,7 +310,7 @@ class TestTmazeAlternationSession:
         )
 
         assert len(session.models) == n_cells
-        assert len(session.spike_trains) == n_cells
+        assert len(session.spike_times) == n_cells
         assert len(session.ground_truth) == n_cells
 
     def test_tmaze_alternation_session_seed_reproducibility(self):
@@ -329,7 +329,7 @@ class TestTmazeAlternationSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
         # Trial choices should be identical
@@ -352,7 +352,7 @@ class TestTmazeAlternationSession:
         )
 
         # At least some cells should have spikes
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0, "No spikes generated in session"
 
     def test_tmaze_alternation_session_trajectory_within_bounds(self):
@@ -411,7 +411,7 @@ class TestBoundaryCellSession:
 
         total_cells = n_boundary + n_place
         assert len(session.models) == total_cells
-        assert len(session.spike_trains) == total_cells
+        assert len(session.spike_times) == total_cells
         assert len(session.ground_truth) == total_cells
 
     def test_boundary_cell_session_uses_mixed_cell_types(self):
@@ -446,7 +446,7 @@ class TestBoundaryCellSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
     def test_boundary_cell_session_custom_duration(self):
@@ -493,7 +493,7 @@ class TestBoundaryCellSession:
         )
 
         # At least some cells should have spikes
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0, "No spikes generated in session"
 
     def test_boundary_cell_session_ground_truth_structure(self):
@@ -511,7 +511,7 @@ class TestBoundaryCellSession:
         total_cells = n_boundary + n_place
         assert len(session.ground_truth) == total_cells
         for i in range(total_cells):
-            key = f"cell_{i}"
+            key = i
             assert key in session.ground_truth
 
             # All cells should have some ground truth parameters
@@ -576,7 +576,7 @@ class TestGridCellSession:
         # Should create session
         assert isinstance(session, SimulationSession)
         assert session.env is not None
-        assert len(session.spike_trains) > 0
+        assert len(session.spike_times) > 0
 
     def test_grid_cell_session_creates_2d_arena(self):
         """grid_cell_session() should create 2D arena environment."""
@@ -599,7 +599,7 @@ class TestGridCellSession:
         session = grid_cell_session(duration=10.0, n_grid_cells=n_cells)
 
         assert len(session.models) == n_cells
-        assert len(session.spike_trains) == n_cells
+        assert len(session.spike_times) == n_cells
         assert len(session.ground_truth) == n_cells
 
     def test_grid_cell_session_uses_grid_cells(self):
@@ -623,7 +623,7 @@ class TestGridCellSession:
         np.testing.assert_array_equal(session1.times, session2.times)
 
         # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
     def test_grid_cell_session_custom_duration(self):
@@ -671,7 +671,7 @@ class TestGridCellSession:
         session = grid_cell_session(duration=30.0, n_grid_cells=5, seed=42)
 
         # At least some cells should have spikes
-        total_spikes = sum(len(st) for st in session.spike_trains)
+        total_spikes = sum(len(st) for st in session.spike_times)
         assert total_spikes > 0, "No spikes generated in session"
 
     def test_grid_cell_session_trajectory_within_bounds(self):
@@ -690,7 +690,7 @@ class TestGridCellSession:
         # Check ground_truth keys
         assert len(session.ground_truth) == n_cells
         for i in range(n_cells):
-            key = f"cell_{i}"
+            key = i
             assert key in session.ground_truth
 
             # For grid cells, should have grid-specific parameters

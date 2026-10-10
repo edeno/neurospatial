@@ -23,10 +23,8 @@ Shuffle Categories
 | **Posterior** | Trajectory detection is not biased |
 | **Trial** | Trial identity is not significant |
 | **ISI** | Inter-spike interval ordering is not significant |
+| **Circular Spike Time** | Spike alignment to behavior exceeds shifted alignment |
 
-Note: Surrogate generation functions (Poisson, inhomogeneous Poisson, jitter)
-have been moved to ``neurospatial.stats.surrogates`` but are re-exported here
-for backward compatibility.
 
 Imports
 -------
@@ -62,15 +60,11 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+from neurospatial._intervals import as_intervals
+
 # Import internal utilities from canonical location
 from neurospatial.stats._utils import _ensure_rng
-
-# Re-export surrogate functions from canonical location for backward compatibility.
-# These functions are now defined in neurospatial.stats.surrogates.
-from neurospatial.stats.surrogates import (  # noqa: F401
-    generate_inhomogeneous_poisson_surrogates,
-    generate_poisson_surrogates,
-)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -81,6 +75,165 @@ if TYPE_CHECKING:
 # =============================================================================
 # I. Temporal Order Shuffles - Test sequential structure within events
 # =============================================================================
+
+
+def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
+    """Reject invalid counts and offsets before allocating shuffle output."""
+    problems = []
+    if (
+        isinstance(n_shuffles, (bool, np.bool_))
+        or not isinstance(n_shuffles, (int, np.integer))
+        or n_shuffles < 1
+    ):
+        problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
+    if (
+        not isinstance(min_shift, (int, float, np.integer, np.floating))
+        or not np.isfinite(min_shift)
+        or min_shift < 0
+    ):
+        problems.append(f"min_shift={min_shift!r} must be finite and non-negative")
+    if problems:
+        raise ValueError(
+            _format_error(
+                "; ".join(problems) + ".",
+                why="Why: a null distribution needs a positive draw count and a valid time offset",
+                fix="pass n_shuffles=1000 and a finite min_shift>=0 in seconds",
+            )
+        )
+
+
+def shuffle_spike_times_circular(
+    spike_times: NDArray[np.float64],
+    windows: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Circularly shift spikes on the joined analyzed-time axis.
+
+    Join valid recording windows into one circular axis. Each draw adds one
+    uniform offset in [min_shift, T-min_shift] to all retained spikes. Counts
+    and circular spacings on that compressed clock are preserved; spikes never
+    enter a recording gap. Physical spacings across removed gaps can differ.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Spike timestamps in seconds. Spikes outside windows are dropped.
+    windows : ndarray, shape (n_windows, 2)
+        Half-open analyzed recording windows in seconds, on the spike clock.
+        The shared interval normalizer sorts and merges touching/overlapping rows.
+    n_shuffles : int, default=1000
+        Positive number of shifted trains to yield.
+    min_shift : float, default=20.0
+        Minimum offset in either direction, in seconds of analyzed time.
+    rng : numpy.random.Generator, int or None, default=None
+        Random generator or reproducible integer seed.
+
+    Yields
+    ------
+    ndarray, shape (n_spikes_in_windows,)
+        Sorted shifted spike times on the original recording clock.
+
+    Raises
+    ------
+    ValueError
+        If windows/settings are invalid or analyzed time is not longer than
+        twice min_shift.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.stats import shuffle_spike_times_circular
+    >>> draws = list(
+    ...     shuffle_spike_times_circular(
+    ...         np.array([1.0, 10.0, 205.0]),
+    ...         np.array([[0.0, 100.0], [200.0, 300.0]]),
+    ...         n_shuffles=3,
+    ...         rng=7,
+    ...     )
+    ... )
+    >>> [len(train) for train in draws]
+    [3, 3, 3]
+    """
+    _validate_circular_shift_settings(n_shuffles, min_shift)
+    try:
+        normalized = as_intervals(windows, name="windows")
+    except ValueError as exc:
+        problems = str(exc).split("\nWhy:", 1)[0]
+        raise ValueError(
+            _format_error(
+                f"shuffle_spike_times_circular: {problems}",
+                why="Why: circular shifting requires finite half-open analyzed-time windows with start < stop",
+                fix="pass windows=np.array([[0.0, 100.0], [200.0, 300.0]]) in seconds",
+            )
+        ) from None
+    if normalized is None:
+        raise ValueError(
+            _format_error(
+                "windows must contain analyzed recording intervals.",
+                why="Why: spikes need explicit valid time bounds for circular shifting",
+                fix="pass windows=np.array([[start, stop]]) in seconds",
+            )
+        )
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
+        raise ValueError(
+            _format_error(
+                f"spike_times must be a finite 1-D array, got shape {spike_times.shape}.",
+                why="Why: circular shifting operates on one spike train in seconds",
+                fix="pass a finite 1-D spike_times array",
+            )
+        )
+    offsets = np.concatenate([[0.0], np.cumsum(normalized[:, 1] - normalized[:, 0])])
+    total = float(offsets[-1])
+    if total <= 2.0 * min_shift:
+        raise ValueError(
+            _format_error(
+                f"Analyzed time is {total:.1f} s, not longer than 2 * min_shift = {2.0 * min_shift:.1f} s.",
+                why="Why: no circular offset can move spikes by at least min_shift in both directions",
+                fix=f"pass min_shift={total / 4:.1f}, or analyze a longer recording",
+            )
+        )
+    idx = np.searchsorted(normalized[:, 0], spike_times, side="right") - 1
+    inside = (idx >= 0) & (spike_times < normalized[np.maximum(idx, 0), 1])
+    idx = idx[inside]
+    compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
+    # Validation above runs at call time; only the draws are lazy.
+    return _circular_shift_draws(
+        compressed,
+        normalized,
+        offsets,
+        total,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        generator=_ensure_rng(rng),
+    )
+
+
+def _circular_shift_draws(
+    compressed: NDArray[np.float64],
+    windows: NDArray[np.float64],
+    offsets: NDArray[np.float64],
+    total: float,
+    *,
+    n_shuffles: int,
+    min_shift: float,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Yield shifted spike trains from validated, compressed-clock inputs."""
+    for _ in range(n_shuffles):
+        wrapped = np.mod(
+            compressed + generator.uniform(min_shift, total - min_shift), total
+        )
+        j = np.minimum(
+            np.searchsorted(offsets, wrapped, side="right") - 1, len(windows) - 1
+        )
+        shifted = windows[j, 0] + (wrapped - offsets[j])
+        # A sum on a large absolute clock may round up to an excluded stop.
+        shifted = np.minimum(shifted, np.nextafter(windows[j, 1], windows[j, 0]))
+        yield np.sort(shifted)
 
 
 def shuffle_time_bins(
@@ -418,8 +571,8 @@ def shuffle_place_fields_circular(
 
 
 def shuffle_place_fields_circular_2d(
-    encoding_models: NDArray[np.float64],
     env: Environment,
+    encoding_models: NDArray[np.float64],
     *,
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
@@ -434,10 +587,10 @@ def shuffle_place_fields_circular_2d(
 
     Parameters
     ----------
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) for each neuron.
     env : Environment
         2D environment with grid layout (provides ``grid_shape``).
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps (place fields) for each neuron.
     n_shuffles : int, default=1000
         Number of shuffled versions to generate.
     rng : np.random.Generator | int | None, default=None
@@ -469,7 +622,7 @@ def shuffle_place_fields_circular_2d(
     ...     (3, env.n_bins)
     ... )  # doctest: +SKIP
     >>> for i, shuffled in enumerate(  # doctest: +SKIP
-    ...     shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=3, rng=42)
+    ...     shuffle_place_fields_circular_2d(env, encoding_models, n_shuffles=3, rng=42)
     ... ):
     ...     print(f"Shuffle {i}: shape={shuffled.shape}")
     Shuffle 0: shape=(3, 36)
@@ -811,11 +964,12 @@ class ShuffleTestResult:
         The score computed from the original (non-shuffled) data.
     null_scores : NDArray[np.float64]
         Array of scores computed from shuffled data, forming the null
-        distribution.
+        distribution. Stored as a read-only float64 copy.
     p_value : float
         Monte Carlo p-value with correction: (k + 1) / (n + 1) where k is
-        the count of null scores at least as extreme as observed and n is
-        the number of shuffles.
+        the count of finite null scores at least as extreme as observed and
+        n is the number of finite null scores (``n_shuffles`` unless some
+        shuffles produced NaN).
     z_score : float
         Standard score: (observed - mean(null)) / std(null). NaN if null
         has zero variance.
@@ -859,6 +1013,12 @@ class ShuffleTestResult:
     z_score: float
     shuffle_type: str
     n_shuffles: int
+
+    def __post_init__(self) -> None:
+        """Own the null distribution as a read-only copy."""
+        null = np.array(self.null_scores, dtype=np.float64, copy=True)
+        null.flags.writeable = False
+        object.__setattr__(self, "null_scores", null)
 
     @property
     def is_significant(self) -> bool:

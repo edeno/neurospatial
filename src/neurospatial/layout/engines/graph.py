@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from track_linearization import get_linearized_position as _get_linearized_position
 from track_linearization import plot_graph_as_1D
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -84,6 +85,8 @@ class GraphLayout(_KDTreeMixin):
             The original NetworkX graph. Nodes must have a 'pos' attribute
             (e.g., `(x, y)` coordinates) and edges should ideally have a
             'distance' attribute if not relying on Euclidean distance calculation.
+            ``edge_id`` is numbered by ``graph.edges()`` order on an internal
+            copy; any ``edge_id`` on the input graph is ignored.
         edge_order : List[Tuple[Any, Any]]
             An ordered sequence of edge tuples (node_id_1, node_id_2) from
             `graph_definition` that defines the ordering of edges in the
@@ -110,9 +113,18 @@ class GraphLayout(_KDTreeMixin):
         if bin_size <= 0:
             raise ValueError("bin_size must be positive.")
 
+        # track_linearization finds a point's nearest segment by its position in
+        # ``graph.edges()`` but looks that segment up by its ``edge_id`` attribute,
+        # so the two must coincide. Linearize a copy numbered by enumeration; the
+        # caller's graph is never mutated.
+        track_graph = graph_definition.copy()
+        for enumeration_index, (u, v) in enumerate(track_graph.edges()):
+            track_graph.edges[u, v]["edge_id"] = enumeration_index
+        self._build_params_used["graph_definition"] = track_graph
+
         (linear_bin_centers, self.grid_edges, self.active_mask, edge_ids) = (
             _get_graph_bins(
-                graph=graph_definition,
+                graph=track_graph,
                 edge_order=edge_order,
                 edge_spacing=edge_spacing,
                 bin_size=bin_size,
@@ -122,13 +134,13 @@ class GraphLayout(_KDTreeMixin):
         self.linear_bin_centers_ = linear_bin_centers[self.active_mask]
         self.bin_centers = _project_1d_to_2d(
             self.linear_bin_centers_,
-            graph_definition,
+            track_graph,
             edge_order,
             edge_spacing,
         )
         self.grid_shape = (len(self.grid_edges[0]) - 1,)
         self.connectivity = _create_graph_layout_connectivity_graph(
-            graph=graph_definition,
+            graph=track_graph,
             bin_centers_nd=self.bin_centers,
             linear_bin_centers=self.linear_bin_centers_,
             original_edge_ids=edge_ids,
@@ -383,7 +395,14 @@ class GraphLayout(_KDTreeMixin):
 
         """
         if self.grid_edges is None or self.active_mask is None:
-            raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "active_mask")
+                    if getattr(self, name) is None
+                ),
+            )
 
         full_grid_ind = _find_bin_for_linear_position(
             data_points,
@@ -419,7 +438,14 @@ class GraphLayout(_KDTreeMixin):
 
         """
         if self.grid_edges is None or self.active_mask is None:  # pragma: no cover
-            raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "active_mask")
+                    if getattr(self, name) is None
+                ),
+            )
         if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
             raise ValueError(
                 "grid_edges (1D) are not properly defined for length calculation.",

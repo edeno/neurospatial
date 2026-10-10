@@ -216,14 +216,6 @@ class TestHeadSweepMagnitude:
 
 
 # =============================================================================
-# Test integrated_absolute_rotation alias
-# =============================================================================
-
-
-class TestIntegratedAbsoluteRotationAlias:
-    """Test that integrated_absolute_rotation is an alias for head_sweep_magnitude."""
-
-
 class TestHeadSweepFromPositions:
     """Test head_sweep_from_positions() function."""
 
@@ -241,7 +233,7 @@ class TestHeadSweepFromPositions:
             ]
         )
 
-        result = head_sweep_from_positions(positions, times, min_speed=5.0)
+        result = head_sweep_from_positions(times, positions, min_speed=5.0)
 
         # Straight line -> constant heading -> head sweep ≈ 0
         assert result < 0.1  # Allow small numerical error
@@ -264,7 +256,7 @@ class TestHeadSweepFromPositions:
                 y[i] = 55
         positions = np.column_stack([x, y])
 
-        result = head_sweep_from_positions(positions, times, min_speed=0.1)
+        result = head_sweep_from_positions(times, positions, min_speed=0.1)
 
         # Zigzag should have significant head sweep
         assert result > 0.5  # At least some rotation
@@ -283,7 +275,7 @@ class TestHeadSweepFromPositions:
             ]
         )
 
-        result = head_sweep_from_positions(positions, times, min_speed=5.0)
+        result = head_sweep_from_positions(times, positions, min_speed=5.0)
 
         # Stationary -> no valid headings -> head sweep = 0
         assert result == 0.0
@@ -894,8 +886,8 @@ def test_compute_vte_session_env_first(t_maze_environment):
     # Signature: env must be the first positional parameter.
     params = list(inspect.signature(compute_vte_session).parameters)
     assert params[0] == "env"
-    assert params[1] == "positions"
-    assert params[2] == "times"
+    assert params[1] == "times"
+    assert params[2] == "positions"
 
     # Build a slow head-scanning trajectory approaching the center region.
     n = 60
@@ -918,11 +910,82 @@ def test_compute_vte_session_env_first(t_maze_environment):
     # Positional (env, positions, times) call runs without error.
     result = compute_vte_session(
         env,
-        positions,
         times,
+        positions,
         decision_region="center",
         trials=trials,
         window_duration=0.5,
         min_speed=1.0,
     )
     assert result is not None
+
+
+@pytest.fixture
+def zig_zag_then_run(simple_2d_environment):
+    """An east-west zig-zag before 5 s, then a straight eastward run.
+
+    The run starts at 5.0 s and enters the "decision" region at 5.267 s.
+    Returns ``(env, times, positions)``.
+    """
+    from shapely.geometry import box
+
+    env = simple_2d_environment
+    env.regions.add("decision", polygon=box(45, 40, 60, 60))
+    times = np.arange(0, 10, 1 / 30)
+    phase = (times * 3.0 + 0.5) % 1.0
+    zig_zag = 34 + 6 * (1 - np.abs(2 * phase - 1))  # x in [34, 40], 3 Hz
+    run = np.minimum(40 + 30 * (times - 5.0), 90.0)  # east at 30 cm/s
+    x = np.where(times < 5.0, zig_zag, run)
+    positions = np.column_stack([x, np.full_like(times, 50.0)])
+    return env, times, positions
+
+
+def test_session_window_clamped_to_trial_start(zig_zag_then_run):
+    """The pre-decision window never reaches back before the trial start.
+
+    A 1 s window before the 5.267 s entry would otherwise cover the zig-zag
+    that precedes the trial.
+    """
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env, times, positions = zig_zag_then_run
+
+    with warnings.catch_warnings():
+        # One trial: z-scores are undefined and warn; not under test here.
+        warnings.simplefilter("ignore", UserWarning)
+        result = compute_vte_session(
+            env,
+            times,
+            positions,
+            decision_region="decision",
+            trials=[Trial(5.0, 9.9, "start", "decision", True)],
+            window_duration=1.0,
+        )
+
+    (trial,) = result.trial_results
+    assert trial.window_start == 5.0
+    assert_allclose(trial.window_end, 5.0 + 8 / 30, rtol=1e-12)
+    assert abs(trial.head_sweep_magnitude) < 1e-12
+
+
+def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
+    """A trial that enters the region within 2 samples of its start is skipped
+    with a warning, not silently.
+    """
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env, times, positions = zig_zag_then_run
+
+    with pytest.warns(UserWarning, match=r"only 2 sample\(s\)"):
+        result = compute_vte_session(
+            env,
+            times,
+            positions,
+            decision_region="decision",
+            trials=[Trial(5.2, 9.9, "start", "decision", True)],
+            window_duration=1.0,
+        )
+
+    assert result.trial_results == []

@@ -12,73 +12,34 @@ Available backends:
 
 Public API
 ----------
-subsample_frames : function
-    Subsample frames to target frame rate for large-scale sessions
-estimate_colormap_range_from_subset : function
-    Estimate colormap vmin/vmax from random subset of frames
-large_session_napari_config : function
-    Get recommended napari settings for large datasets
+PositionOverlay, BodypartOverlay, HeadDirectionOverlay, ObjectVectorOverlay : class
+    Sample-aligned spatial overlays.
+EventOverlay, TimeSeriesOverlay, VideoOverlay : class
+    Discrete events, scalar signals and calibrated video overlays.
+ScaleBarConfig : class
+    Scale-bar settings shared by renderers.
 Skeleton : class
-    Immutable skeleton definition for pose tracking
-MOUSE_SKELETON, RAT_SKELETON, SIMPLE_SKELETON : Skeleton
-    Common skeleton presets
-VideoOverlay : class
-    Video background overlay for displaying recorded footage
-EventOverlay : class
-    Overlay for discrete timestamped events (spikes, rewards, zone entries)
-SpikeOverlay : class
-    Convenience alias for EventOverlay for neural spike visualization
-TimeSeriesOverlay : class
-    Time series visualization in right column (speed, LFP, etc.)
-VideoCalibration : class
-    Coordinate transform from video pixels to environment cm
-VideoReaderProtocol : Protocol
-    Interface for video readers (for type checking custom implementations)
+    Immutable pose skeleton, with mouse, rat and simple presets.
 calibrate_video : function
-    Convenience function to calibrate video to environment coordinates
-
-Extensibility
--------------
-OverlayProtocol : Protocol
-    Protocol for creating custom overlays. Implement ``times``, ``interp``,
-    and ``convert_to_data()`` to create custom overlay types.
-PositionData, BodypartData, HeadDirectionData, VideoData, EventData, TimeSeriesData, ObjectVectorData : dataclass
-    Internal data containers returned by ``convert_to_data()``. Custom overlays
-    should return one of these types.
-ObjectVectorOverlay : class
-    Overlay for visualizing vectors from animal to objects (object-vector cells).
+    Calibrate video coordinates using the canonical ops.VideoCalibration type.
+subsample_frames, estimate_colormap_range_from_subset, large_session_napari_config : function
+    Frame selection, colormap estimation and settings for large sessions.
 """
 
-from neurospatial.animation._video_io import VideoReaderProtocol
 from neurospatial.animation.calibration import calibrate_video
-from neurospatial.animation.config import (
-    ScaleBarConfig,
-    add_scale_bar_to_axes,
-    compute_nice_length,
-    configure_napari_scale_bar,
-    format_scale_label,
-)
+from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.core import (
     estimate_colormap_range_from_subset,
     large_session_napari_config,
     subsample_frames,
 )
 from neurospatial.animation.overlays import (
-    BodypartData,
     BodypartOverlay,
-    EventData,
     EventOverlay,
-    HeadDirectionData,
     HeadDirectionOverlay,
-    ObjectVectorData,
     ObjectVectorOverlay,
-    OverlayProtocol,
-    PositionData,
     PositionOverlay,
-    SpikeOverlay,
-    TimeSeriesData,
     TimeSeriesOverlay,
-    VideoData,
     VideoOverlay,
 )
 from neurospatial.animation.skeleton import (
@@ -87,38 +48,22 @@ from neurospatial.animation.skeleton import (
     SIMPLE_SKELETON,
     Skeleton,
 )
-from neurospatial.ops.transforms import VideoCalibration
 
 __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
-    "BodypartData",
     "BodypartOverlay",
-    "EventData",
     "EventOverlay",
-    "HeadDirectionData",
     "HeadDirectionOverlay",
-    "ObjectVectorData",
     "ObjectVectorOverlay",
-    "OverlayProtocol",
-    "PositionData",
     "PositionOverlay",
     "ScaleBarConfig",
     "Skeleton",
-    "SpikeOverlay",
-    "TimeSeriesData",
     "TimeSeriesOverlay",
-    "VideoCalibration",
-    "VideoData",
     "VideoOverlay",
-    "VideoReaderProtocol",
-    "add_scale_bar_to_axes",
     "calibrate_video",
-    "compute_nice_length",
-    "configure_napari_scale_bar",
     "estimate_colormap_range_from_subset",
-    "format_scale_label",
     "large_session_napari_config",
     "subsample_frames",
 ]

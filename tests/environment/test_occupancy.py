@@ -7,6 +7,39 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 
 
+@pytest.mark.parametrize("time_allocation", ["start", "linear"])
+def test_occupancy_epochs_restricts_and_matches_slicing(
+    continuous_recording, time_allocation
+):
+    recording = continuous_recording
+    keep = recording.times <= 100
+    actual = recording.env.occupancy(
+        recording.times,
+        recording.positions,
+        epochs=[(0.0, 100.0)],
+        time_allocation=time_allocation,
+    )
+    expected = recording.env.occupancy(
+        recording.times[keep],
+        recording.positions[keep],
+        time_allocation=time_allocation,
+    )
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0)
+    assert actual.sum() == pytest.approx(100.0, abs=1e-9)
+
+
+def test_occupancy_epochs_counts_and_smoothing(continuous_recording):
+    recording = continuous_recording
+    counts = recording.env.occupancy(
+        recording.times, recording.positions, epochs=(0, 100), return_seconds=False
+    )
+    assert counts.sum() == 5000
+    smoothed = recording.env.occupancy(
+        recording.times, recording.positions, epochs=(0, 100), bandwidth=5.0
+    )
+    assert smoothed.sum() == pytest.approx(100.0, abs=1e-9)
+
+
 class TestOccupancyBasic:
     """Basic occupancy computation tests.
 
@@ -341,7 +374,7 @@ class TestOccupancyValidation:
 
         # Swapped: positions passed as `times` -> must be a 1-D shape error, and
         # must NOT be the monotonicity message.
-        with pytest.raises(ValueError, match=r"1-dimensional") as exc:
+        with pytest.raises(ValueError, match=r"1-D") as exc:
             env.occupancy(positions, times)
         assert "monotonic" not in str(exc.value).lower()
 
@@ -351,7 +384,7 @@ class TestOccupancyValidation:
         times = np.array([0.0, 2.0, 1.0])  # decreasing at index 1
         positions = np.array([[5.0, 5.0], [6.0, 6.0], [7.0, 7.0]])
 
-        with pytest.raises(ValueError, match=r"monotonically increasing"):
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
             env.occupancy(times, positions)
 
 
@@ -675,7 +708,9 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
         occ = env.occupancy(times, positions, max_gap=None)
 
         # bin_sequence agrees: the middle sample is -1.
-        bin_seq = env.bin_sequence(times, positions, dedup=False, outside_value=-1)
+        bin_seq = env.bin_sequence(
+            times, positions, dedup=False, outside_value=-1, max_gap=None
+        )
         assert bin_seq[1] == -1
 
         # The interval (t=1 to t=2) starts at the out-of-env sample and

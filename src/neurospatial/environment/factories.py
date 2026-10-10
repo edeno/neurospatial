@@ -32,6 +32,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.layout.factories import (
     LayoutType,
     create_layout,
@@ -61,18 +62,15 @@ except ModuleNotFoundError:
 PolygonType = type[_shp.Polygon]
 
 
-def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any, edge_id: int) -> None:
-    """Add an edge to `graph` with `distance` (from node pos) and `edge_id`.
+def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any) -> None:
+    """Add an edge to `graph` with `distance` computed from node positions.
 
-    Only ``distance`` is consumed by neurospatial's linearization path
-    (``_get_graph_bins`` builds its own edge_id map from edge enumeration and
-    never reads the input ``edge_id``). The ``edge_id`` attribute is set for
-    interoperability/parity with ``track_linearization.make_track_graph`` but is
-    not required for ``to_linear()`` to work.
+    ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()`` order; any
+    ``edge_id`` on the input graph is ignored.
     """
     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
-    graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)), edge_id=edge_id)
+    graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)))
 
 
 def _assemble_maze_graph(
@@ -124,7 +122,6 @@ def _assemble_maze_graph(
         graph.add_node(label, pos=tuple(float(c) for c in pos))
 
     edge_order: list[tuple[Any, Any]] = []
-    edge_id = 0
 
     if kind == "plus":
         # Order contract: [center, arm1, arm2, arm3, arm4].
@@ -137,9 +134,8 @@ def _assemble_maze_graph(
             )
         center = labels[0]
         for arm in labels[1:]:
-            _add_edge_with_distance(graph, center, arm, edge_id)
+            _add_edge_with_distance(graph, center, arm)
             edge_order.append((center, arm))
-            edge_id += 1
 
     elif kind == "t":
         # Order contract: [stem_end, junction, arm_left, arm_right].
@@ -151,13 +147,11 @@ def _assemble_maze_graph(
                 f"Got {len(labels)}."
             )
         stem_end, junction, arm_left, arm_right = labels
-        _add_edge_with_distance(graph, stem_end, junction, edge_id)
+        _add_edge_with_distance(graph, stem_end, junction)
         edge_order.append((stem_end, junction))
-        edge_id += 1
         for arm in (arm_left, arm_right):
-            _add_edge_with_distance(graph, junction, arm, edge_id)
+            _add_edge_with_distance(graph, junction, arm)
             edge_order.append((junction, arm))
-            edge_id += 1
 
     elif kind == "w":
         # Order contract:
@@ -176,17 +170,21 @@ def _assemble_maze_graph(
         arms = labels[3:]
         # Horizontal connector along the base (base_left -> base_mid -> base_right).
         for left, right in itertools.pairwise(base):
-            _add_edge_with_distance(graph, left, right, edge_id)
+            _add_edge_with_distance(graph, left, right)
             edge_order.append((left, right))
-            edge_id += 1
         # Vertical arms: each base node up to the arm at the matching position.
         for base_node, arm_node in zip(base, arms, strict=True):
-            _add_edge_with_distance(graph, base_node, arm_node, edge_id)
+            _add_edge_with_distance(graph, base_node, arm_node)
             edge_order.append((base_node, arm_node))
-            edge_id += 1
 
     else:
-        raise ValueError(f"Unknown maze kind {kind!r}")
+        raise ValueError(
+            _format_error(
+                f"Unknown maze kind {kind!r}",
+                fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                why="Why: maze topology depends on a supported maze kind.",
+            )
+        )
 
     return graph, edge_order
 
@@ -319,6 +317,10 @@ class EnvironmentFactories:
         add_boundary_bins : bool, default False
             If True, add peripheral bins around the bounding region of samples.
 
+        **layout_specific_kwargs : Any
+            Additional options passed to the selected layout engine; see
+            ``get_layout_parameters(layout)`` for supported names.
+
         Returns
         -------
         env : Environment
@@ -420,8 +422,11 @@ class EnvironmentFactories:
 
         if positions.ndim != 2:
             raise ValueError(
-                f"positions must be a 2D array of shape (n_points, n_dims), "
-                f"got shape {positions.shape}.",
+                _format_error(
+                    f"positions must be a 2D array of shape (n_points, n_dims), got shape {positions.shape}.",
+                    fix="use positions[:, None] for 1-D data; if positions has shape (n_dims, n_samples), pass positions.T",
+                    why="Why: each row must be one sample and each column one spatial coordinate.",
+                )
             )
 
         # Warn on a likely-transposed positions array before building the grid.
@@ -501,6 +506,31 @@ class EnvironmentFactories:
             **layout_specific_kwargs,
         }
 
+        finite_rows = np.all(np.isfinite(positions), axis=1)
+        finite_positions = positions if np.all(finite_rows) else positions[finite_rows]
+        try:
+            sizes = np.asarray(bin_size, dtype=float)
+        except (TypeError, ValueError):
+            sizes = None  # Preserve the layout's existing invalid-value error.
+        if (
+            sizes is not None
+            and np.all(np.isfinite(sizes))
+            and np.all(sizes > 0)
+            and len(finite_positions)
+            and (sizes.ndim == 0 or sizes.shape == (n_dims,))
+        ):
+            extent = np.ptp(finite_positions, axis=0)
+            if np.any(extent > 0) and np.all(sizes >= extent):
+                suggested = float(np.max(extent)) / 50.0
+                warnings.warn(
+                    _format_error(
+                        f"bin_size={bin_size} is at least the per-axis data extent {extent.tolist()} in every dimension.",
+                        why="Why: this produces very few bins and may indicate a units mismatch.",
+                        fix=f"use bin_size={suggested:g} (in the same units as positions), or choose a size below the data extent",
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
         env = cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
         if units is not None:
             env.units = units
@@ -737,7 +767,7 @@ class EnvironmentFactories:
             graph.add_node(i, pos=pos)
         edge_order: list[tuple[Any, Any]] = []
         for i in range(len(points) - 1):
-            _add_edge_with_distance(graph, i, i + 1, edge_id=i)
+            _add_edge_with_distance(graph, i, i + 1)
             edge_order.append((i, i + 1))
 
         total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
@@ -894,8 +924,11 @@ class EnvironmentFactories:
         kind_normalized = kind.lower() if isinstance(kind, str) else kind
         if kind_normalized not in allowed:
             raise ValueError(
-                f"Unknown maze kind {kind!r}. `kind` must be one of "
-                f"{allowed} (W maze, plus/cross maze, or T maze)."
+                _format_error(
+                    f"Unknown maze kind {kind!r}. `kind` must be one of {allowed} (W maze, plus/cross maze, or T maze).",
+                    fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
+                    why="Why: maze topology depends on a supported maze kind.",
+                )
             )
 
         if track_graph is not None and node_positions is not None:
@@ -916,20 +949,14 @@ class EnvironmentFactories:
             # Operate on a copy so the caller's graph is never mutated.
             graph = track_graph.copy()
             edge_order = list(graph.edges())
-            # Fill in `distance` from node positions where missing; this is the
-            # only edge attribute the neurospatial linearization path consumes
-            # (`_get_graph_bins` builds its own edge_id map from edge
-            # enumeration and never reads an input `edge_id`). We also set
-            # `edge_id` for interoperability/parity with
-            # ``track_linearization.make_track_graph``, but neurospatial's
-            # ``to_linear()`` does not consume it.
-            for assigned_id, (u, v) in enumerate(graph.edges()):
+            # Fill in `distance` from node positions where missing.
+            # `GraphLayout.build` numbers `edge_id` by `graph.edges()` order;
+            # any `edge_id` on the input graph is ignored.
+            for u, v in graph.edges():
                 if "distance" not in graph.edges[u, v]:
                     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
                     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
                     graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
-                if "edge_id" not in graph.edges[u, v]:
-                    graph.edges[u, v]["edge_id"] = assigned_id
         elif node_positions is not None:
             graph, edge_order = _assemble_maze_graph(kind_normalized, node_positions)
         else:
@@ -986,6 +1013,8 @@ class EnvironmentFactories:
         graph : nx.Graph
             The NetworkX graph defining the track segments. Nodes are expected
             to have a 'pos' attribute for their N-D coordinates.
+            ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()``
+            order; any ``edge_id`` on the input graph is ignored.
         edge_order : List[Tuple[Any, Any]]
             An ordered list of edge tuples (node1, node2) from `graph` that
             defines the 1D bin ordering.
@@ -1210,7 +1239,9 @@ class EnvironmentFactories:
             A tuple where each element is a 1D NumPy array of bin edge positions
             for that dimension, in physical units (e.g., cm, meters). The edges
             define the boundaries of bins along each dimension. For example, edges
-            [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30].
+            [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30]. Edges
+            must be finite, strictly increasing, and uniformly spaced along each
+            axis; axes may differ.
         name : str, optional
             A name for the created environment. Defaults to "".
         connect_diagonal_neighbors : bool, optional

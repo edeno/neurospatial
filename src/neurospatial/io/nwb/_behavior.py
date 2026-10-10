@@ -7,17 +7,21 @@ data from pynwb.behavior containers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.io.nwb._adapters import (
+    data_from_series,
+    position_units_from_series,
+    require_unscaled_for_lazy,
     timestamps_from_series,
     timestamps_handle_from_series,
     validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
+from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
@@ -37,7 +41,7 @@ def read_position(
     position_name: str | None = None,
     *,
     lazy: bool = False,
-) -> tuple[NDArray[np.float64] | Any, NDArray[np.float64] | Any]:
+) -> NWBPosition:
     """
     Read position data from NWB file.
 
@@ -54,26 +58,29 @@ def read_position(
         If None and multiple exist, uses first alphabetically with INFO log.
     lazy : bool, default False
         If ``False`` (default), positions and timestamps are fully materialized
-        into ``NDArray[np.float64]`` -- the historical, byte-for-byte-unchanged
-        behavior. If ``True``, the h5py-backed ``SpatialSeries.data`` handle (and
-        the timestamps handle) are returned **without** copying, so they
-        materialize only when sliced or ``np.asarray``-ed. Use this to keep large
-        recordings off-RAM.
+        into ``NDArray[np.float64]``. If ``True``, the h5py-backed
+        ``SpatialSeries.data`` handle (and the timestamps handle) are returned
+        **without** copying, so they materialize only when sliced or
+        ``np.asarray``-ed. Use this to keep large recordings off-RAM. Values are
+        in the series' ``unit``: stored × ``conversion`` + ``offset``;
+        ``lazy=True`` raises when that map is not the identity.
 
     Returns
     -------
-    positions : NDArray[np.float64] or h5py.Dataset, shape (n_samples, n_dims)
-        Position coordinates. A materialized array when ``lazy=False``; a lazy
-        handle when ``lazy=True``.
-    timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
-        Timestamps in seconds. A materialized array when ``lazy=False``; a lazy
-        handle when ``lazy=True`` and the series carries explicit timestamps (a
-        rate-based series still returns a computed array).
+    NWBPosition
+        Frozen, non-iterable holder with ``times`` in seconds, ``positions``
+        in the declared physical ``units`` after conversion and offset, and
+        ``units=None`` when no unit is declared. Recognized unit aliases are
+        normalized to m/cm/mm/px without rescaling values. Arrays are eager
+        float64 by default; lazy handles remain inside the holder.
 
     Raises
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    ValueError
+        If ``lazy=True`` and the series declares a non-identity ``conversion``
+        or ``offset``.
     ImportError
         If pynwb is not installed.
 
@@ -96,17 +103,36 @@ def read_position(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     positions, timestamps = read_position(nwbfile)
+    >>> from datetime import datetime, timezone
+    >>> from pynwb import NWBFile, NWBHDF5IO
+    >>> nwbfile = NWBFile(
+    ...     "Example recording", "example", datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ... )
+    >>> import numpy as np
+    >>> from pynwb.behavior import Position, SpatialSeries
+    >>> from neurospatial.io.nwb import read_position
+    >>> position = Position(name="Position")
+    >>> _ = position.add_spatial_series(
+    ...     SpatialSeries(
+    ...         name="xy",
+    ...         data=np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]),
+    ...         timestamps=np.arange(3) / 30.0,
+    ...         reference_frame="arena origin",
+    ...         unit="cm",
+    ...     )
+    ... )
+    >>> _ = nwbfile.create_processing_module("behavior", "Tracking").add(position)
+    >>> pos = read_position(nwbfile, processing_module="behavior", position_name="xy")
+    >>> pos.positions.shape
+    (3, 2)
+    >>> with NWBHDF5IO("position.nwb", "w") as io:
+    ...     io.write(nwbfile)
+    >>> with NWBHDF5IO("position.nwb", "r") as io:
+    ...     pos_lazy = read_position(io.read(), lazy=True)
+    ...     first_position = np.asarray(pos_lazy.positions[:1])
+    >>> first_position.tolist()
+    [[0.0, 0.0]]
 
-    Lazy read (materialize a slice inside the open-file block):
-
-    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     positions, timestamps = read_position(nwbfile, lazy=True)
-    ...     first_100 = positions[:100]  # only this slice is read from disk
     """
     _require_pynwb()
     from pynwb.behavior import Position as PositionType
@@ -122,6 +148,7 @@ def read_position(
     )
 
     if lazy:
+        require_unscaled_for_lazy(spatial_series, context="read_position")
         # Return the h5py-backed handles without copying; they materialize on
         # slice / np.asarray. Validate lengths using the handles' .shape[0]
         # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
@@ -135,16 +162,20 @@ def read_position(
                 "timestamps": int(timestamps_handle.shape[0]),
             }
         )
-        return data_handle, timestamps_handle
+        return NWBPosition(
+            timestamps_handle, data_handle, position_units_from_series(spatial_series)
+        )
 
     # Extract position data and timestamps
-    positions = np.asarray(spatial_series.data[:], dtype=np.float64)
+    positions = data_from_series(spatial_series)
     timestamps = _get_timestamps(spatial_series)
 
     from neurospatial._validation import validate_lengths
 
     validate_lengths({"positions": positions, "timestamps": timestamps})
-    return positions, timestamps
+    return NWBPosition(
+        timestamps, positions, position_units_from_series(spatial_series)
+    )
 
 
 def _get_behavior_container(
@@ -181,8 +212,8 @@ def _get_behavior_container(
         # Look in specific module
         if processing_module not in nwbfile.processing:
             raise KeyError(
-                f"Processing module '{processing_module}' not found in NWB file. "
-                f"Available modules: {list(nwbfile.processing.keys())}"
+                f"Processing module '{processing_module}' not found in NWB file. Available modules: {list(nwbfile.processing.keys())}"
+                + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
             )
         module = nwbfile.processing[processing_module]
         # Find container in this module
@@ -198,6 +229,7 @@ def _get_behavior_container(
                 return obj
         raise KeyError(
             f"No {type_name} found in processing module '{processing_module}'"
+            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
         )
 
     # Auto-discover using priority search
@@ -207,6 +239,7 @@ def _get_behavior_container(
         searched_locations = ["processing/*", "acquisition"]
         raise KeyError(
             f"No {type_name} data found in NWB file. Searched: {searched_locations}"
+            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
         )
 
     # Return the first one (highest priority due to sort order)
@@ -302,7 +335,7 @@ def read_head_direction(
     nwbfile: NWBFile,
     processing_module: str | None = None,
     compass_name: str | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> NWBHeadDirection:
     """
     Read head direction data from NWB file.
 
@@ -320,14 +353,11 @@ def read_head_direction(
 
     Returns
     -------
-    angles : NDArray[np.float64], shape (n_samples,)
-        Head direction angles in radians, allocentric convention
-        (0 = East, increasing counterclockwise; range as stored, typically
-        (-pi, pi] from arctan2 or [0, 2*pi) from a wrapped angle series).
-        If the source SpatialSeries reports a degree unit, values are
-        converted to radians on read.
-    timestamps : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
+    NWBHeadDirection
+        Frozen, non-iterable holder with ``times`` in seconds and ``headings``
+        in radians, zero East and increasing counterclockwise. Stored values
+        pass through conversion and offset before degree-to-radian conversion
+        or unit-vector arctan2 extraction.
 
     Raises
     ------
@@ -342,7 +372,7 @@ def read_head_direction(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     angles, timestamps = read_head_direction(nwbfile)
+    ...     hd = read_head_direction(nwbfile)
     """
     _require_pynwb()
     from pynwb.behavior import CompassDirection as CompassDirectionType
@@ -361,7 +391,7 @@ def read_head_direction(
     # head direction as either a 1-D angle series or an (n, 2) unit-vector
     # series; handle both. Angles are returned in the allocentric convention
     # (0 = East, increasing counterclockwise).
-    raw = np.asarray(spatial_series.data[:], dtype=np.float64)
+    raw = data_from_series(spatial_series)
     timestamps = _get_timestamps(spatial_series)
 
     if raw.ndim == 2 and raw.shape[1] == 2:
@@ -380,4 +410,4 @@ def read_head_direction(
 
     validate_lengths({"angles": angles, "timestamps": timestamps})
 
-    return angles, timestamps
+    return NWBHeadDirection(timestamps, angles)

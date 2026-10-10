@@ -215,6 +215,7 @@ class TestDetectGoalDirectedRuns:
             goal_region="goal",
             directedness_threshold=0.5,  # Lower threshold for imperfect path
             min_progress=10.0,
+            max_gap=None,
         )
 
         # Should detect at least one goal-directed run
@@ -250,6 +251,7 @@ class TestDetectGoalDirectedRuns:
             goal_region="goal",
             directedness_threshold=0.8,  # high threshold
             min_progress=20.0,
+            max_gap=None,
         )
 
         # Random walk should not produce high-directedness runs
@@ -282,6 +284,7 @@ class TestDetectGoalDirectedRuns:
             goal_region="goal",
             directedness_threshold=0.5,
             min_progress=50.0,  # high threshold - should filter out
+            max_gap=None,
         )
 
         # Should be filtered by min_progress

@@ -32,6 +32,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
+from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created, log_graph_validation
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
@@ -48,7 +49,10 @@ from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
 )
-from neurospatial.ops.calculus import compute_differential_operator
+from neurospatial.ops.calculus import (
+    _compute_divergence_operator,
+    compute_differential_operator,
+)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -334,22 +338,17 @@ class _BaseEnvironment(
             Parameters used to build the layout. If None, inferred from
             `layout._build_params_used`. Defaults to None.
 
+        regions : Regions or None, optional
+            Initial named regions; an empty container is created when omitted.
+
         """
         if layout is None:
             raise ValueError(
-                "[E1006] Environment cannot be constructed directly — "
-                "use a factory method.\n\n"
-                "Most common (from positions you recorded):\n"
-                "    env = Environment.from_samples(positions, bin_size=2.0)\n\n"
-                "Other factories, chosen by the data you have:\n"
-                "    from_polygon     — a Shapely polygon boundary\n"
-                "    from_graph       — a track/maze graph (linearized 1D)\n"
-                "    from_grid_mask   — an N-D boolean mask + grid edges\n"
-                "    from_pixel_mask  — a 2D image / pixel mask\n\n"
-                "Avoid:\n"
-                "    env = Environment()  # not supported\n\n"
-                "See each factory's docstring for its exact arguments, or:\n"
-                "    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly"
+                _format_error(
+                    "[E1006] Environment cannot be constructed directly — use a factory method.\n\nMost common (from positions you recorded):\n    env = Environment.from_samples(positions, bin_size=2.0)\n\nOther factories, chosen by the data you have:\n    from_polygon     — a Shapely polygon boundary\n    from_graph       — a track/maze graph (linearized 1D)\n    from_grid_mask   — an N-D boolean mask + grid edges\n    from_pixel_mask  — a 2D image / pixel mask\n\nAvoid:\n    env = Environment()  # not supported\n\nSee each factory's docstring for its exact arguments, or:\n    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
+                    fix="env = Environment.from_samples(positions, bin_size=2.0)",
+                    why="Why: a factory builds the geometry and connectivity required by Environment.",
+                )
             )
 
         self.name = name
@@ -1047,7 +1046,7 @@ class _BaseEnvironment(
 
     @check_fitted
     def get_differential_operator(self) -> sparse.csc_matrix:
-        """Compute and cache the differential operator matrix for graph signal processing.
+        """Compute and cache the inverse-distance edge differential operator.
 
         The differential operator D is a sparse matrix of shape (n_bins, n_edges)
         that encodes the oriented edge structure of the connectivity graph. It
@@ -1064,21 +1063,20 @@ class _BaseEnvironment(
         ------
         RuntimeError
             If called before the environment is fitted.
+        NotImplementedError
+            If the layout has no finite-volume geometry builder.
 
         Notes
         -----
-        The differential operator satisfies the fundamental relationship:
-        L = D @ D.T, where L is the graph Laplacian matrix.
+        Each oriented edge i -> j contributes -1/d at i and +1/d at j,
+        using the finite-volume distances (including track junctions).
+        ``D.T @ f`` gives directional derivatives in field units per length.
+        Divergence uses a separate cached operator ``-M**-1 D diag(A*d)``;
+        ``div(grad(f)) = -M**-1 (Deg - W) f`` with ``W = A/d``, the negative
+        of the generator used by ``env.smooth``.
 
-        This property is cached using ``@cached_property``, meaning the matrix
-        is computed only once and reused on subsequent accesses. The cache is
-        cleared when the environment is copied or modified.
-
-        The differential operator enables efficient graph signal processing:
-
-        - Gradient: grad(f) = D.T @ f  (scalar field → edge field)
-        - Divergence: div(g) = D @ g   (edge field → scalar field)
-        - Laplacian: lap(f) = D @ D.T @ f = div(grad(f))
+        Both matrices use ``@versioned_cached_property`` and are recomputed
+        when the environment's state version changes.
 
         Examples
         --------
@@ -1111,11 +1109,16 @@ class _BaseEnvironment(
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        # compute_differential_operator only reads self.connectivity; the cast
-        # bridges the _BaseEnvironment self type to its Environment-typed param.
+        # Bridge the shared base to the operator's concrete Environment type.
         from typing import cast
 
         return compute_differential_operator(cast("Environment", self))
+
+    @versioned_cached_property
+    def _divergence_operator_cached(self) -> sparse.csc_matrix:
+        from typing import cast
+
+        return _compute_divergence_operator(cast("Environment", self))
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> _BaseEnvironment:
@@ -1376,6 +1379,17 @@ class Environment(_BaseEnvironment):
 
     See :class:`_BaseEnvironment` for the full attribute and terminology
     reference shared by both environment types.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> positions = np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]])
+    >>> env = Environment.from_samples(positions, bin_size=1.0, units="cm")
+    >>> env.n_dims
+    2
+    >>> env.bin_at(positions).shape
+    (4,)
     """
 
     _POLAR: ClassVar[bool] = False
@@ -1399,6 +1413,28 @@ class Environment(_BaseEnvironment):
         See that class's
         :meth:`~neurospatial.environment.polar.EgocentricPolarEnvironment.create`
         for the full parameter documentation.
+
+        Parameters
+        ----------
+        distance_range : tuple of (float, float)
+            The (min, max) range of distances in physical units (e.g., cm).
+            Must have min < max.
+        angle_range : tuple of (float, float)
+            The (min, max) range of angles in radians. For full circle
+            coverage use (-π, π) or (0, 2π). Must have min < max.
+        distance_bin_size : float
+            Size of each distance bin, same units as ``distance_range``.
+            Must be positive.
+        angle_bin_size : float
+            Size of each angle bin in radians. Must be positive.
+        circular_angle : bool, default=True
+            If True, the angle dimension wraps circularly, connecting the
+            first and last angle bins at each distance ring. Appropriate
+            when ``angle_range`` spans a full circle.
+        connect_diagonal_neighbors : bool, default=True
+            Whether to connect diagonally adjacent (distance, angle) bins.
+        name : str, default=""
+            Optional name for the environment.
 
         Returns
         -------

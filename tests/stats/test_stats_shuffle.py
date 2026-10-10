@@ -283,7 +283,7 @@ class TestShufflePlaceFieldsCircular2D:
             pytest.skip("Environment has masked bins")
 
         for shuffled in shuffle_place_fields_circular_2d(
-            encoding_models, env, n_shuffles=3, rng=42
+            env, encoding_models, n_shuffles=3, rng=42
         ):
             assert shuffled.shape == encoding_models.shape
 
@@ -298,7 +298,7 @@ class TestShufflePlaceFieldsCircular2D:
         encoding_models = np.random.default_rng(42).random((3, env.n_bins))
 
         with pytest.raises(ValueError, match="requires a 2D environment"):
-            next(shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=1))
+            next(shuffle_place_fields_circular_2d(env, encoding_models, n_shuffles=1))
 
 
 class TestShufflePairingDestruction:

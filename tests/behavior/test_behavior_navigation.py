@@ -142,7 +142,7 @@ class TestNavigationFunctionality:
         goal = np.array([50.0, 30.0])
 
         result = compute_path_efficiency(
-            simple_env, positions, times, goal, metric="euclidean"
+            simple_env, times, positions, goal, metric="euclidean"
         )
 
         # Efficiency should be between 0 and 1
@@ -159,7 +159,7 @@ class TestNavigationFunctionality:
         goal = np.array([50.0, 50.0])
 
         result = compute_goal_directed_metrics(
-            simple_env, positions, times, goal, min_speed=0.1
+            simple_env, times, positions, goal, min_speed=0.1
         )
 
         assert hasattr(result, "goal_bias")
@@ -199,7 +199,7 @@ class TestPathEfficiencyFunctions:
         times = np.linspace(0, 5, 11)  # 5 seconds
 
         eff = time_efficiency(
-            positions, times, reference_speed=10.0, optimal_distance=50.0
+            times, positions, reference_speed=10.0, optimal_distance=50.0
         )
 
         # Optimal time = 50/10 = 5s, actual = 5s, efficiency = 1.0
@@ -214,7 +214,7 @@ class TestPathEfficiencyFunctions:
         goal = np.array([90.0, 90.0])
 
         result = compute_path_efficiency(
-            simple_env, positions, times, goal, metric="euclidean", reference_speed=10.0
+            simple_env, times, positions, goal, metric="euclidean", reference_speed=10.0
         )
 
         assert hasattr(result, "efficiency")
@@ -235,7 +235,7 @@ class TestGoalDirectedFunctions:
         times = np.linspace(0, 5, 11)
         goal = np.array([100.0, 0.0])
 
-        rates = approach_rate(positions, times, goal)
+        rates = approach_rate(times, positions, goal)
 
         # Should be negative (distance decreasing)
         assert np.nanmean(rates) < 0
@@ -248,7 +248,7 @@ class TestGoalDirectedFunctions:
         times = np.linspace(0, 10, 101)
         goal = np.array([100.0, 0.0])
 
-        bias = goal_bias(positions, times, goal, min_speed=0.1)
+        bias = goal_bias(times, positions, goal, min_speed=0.1)
 
         # Should be close to 1.0 (moving directly toward goal)
         assert bias > 0.8
@@ -261,7 +261,7 @@ class TestGoalDirectedFunctions:
         times = np.linspace(0, 10, 51)
         goal = np.array([100.0, 0.0])
 
-        alignment = instantaneous_goal_alignment(positions, times, goal, min_speed=0.01)
+        alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=0.01)
 
         # Should be close to 1.0 for most samples
         assert np.nanmean(alignment) > 0.8
@@ -342,3 +342,24 @@ class TestBehavioralFunctions:
         )
 
         assert len(distances) == len(position_bins)
+
+
+def test_goal_alignment_nan_when_stationary(east_stop_north):
+    from neurospatial.behavior import goal_bias, instantaneous_goal_alignment
+
+    positions, times = east_stop_north
+    goal = np.array([1000.0, 20.0])
+    stationary = (times >= 1) & (times < 4)
+    alignment = instantaneous_goal_alignment(times, positions, goal)
+    assert stationary.sum() == 30
+    assert np.isnan(alignment[stationary]).all()
+    assert np.isfinite(alignment[~stationary]).all()
+    assert goal_bias(times, positions, goal) == pytest.approx(0.5055, abs=1e-4)
+
+
+def test_goal_bias_all_stationary_is_nan():
+    from neurospatial.behavior import goal_bias
+
+    assert np.isnan(
+        goal_bias(np.arange(10) / 10, np.ones((10, 2)), np.array([100.0, 20.0]))
+    )

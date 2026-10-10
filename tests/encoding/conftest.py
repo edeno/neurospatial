@@ -8,6 +8,290 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pytest
 
+
+@pytest.fixture(scope="module")
+def rate_family_inputs():
+    from neurospatial import Environment
+
+    times = np.arange(1800) / 30.0
+    positions = 50 + 40 * np.column_stack(
+        [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
+    )
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    velocity = np.gradient(positions, times, axis=0)
+    headings = np.arctan2(velocity[:, 1], velocity[:, 0])
+    rng = np.random.default_rng(0)
+    spikes = [np.sort(rng.uniform(0, times[-1], count)) for count in (200, 50, 300)]
+    return env, times, positions, headings, spikes, np.array([[30.0, 30.0]])
+
+
+@pytest.fixture(scope="module")
+def rate_family_results(rate_family_inputs):
+    from neurospatial.encoding import (
+        compute_directional_rates,
+        compute_egocentric_rates,
+        compute_object_vector_rates,
+        compute_spatial_rates,
+        compute_view_rates,
+    )
+
+    env, times, positions, headings, spikes, objects = rate_family_inputs
+    return {
+        "spatial": compute_spatial_rates(env, spikes, times, positions),
+        "view": compute_view_rates(env, spikes, times, positions, headings),
+        "allocentric": compute_object_vector_rates(
+            env, spikes, times, positions, objects
+        ),
+        "egocentric": compute_egocentric_rates(
+            env, spikes, times, positions, headings, objects
+        ),
+        "directional": compute_directional_rates(spikes, times, headings),
+    }
+
+
+def _ou_trajectory(duration_s, seed, fs=30.0, arena=100.0):
+    """Reflect an Ornstein-Uhlenbeck velocity trajectory inside a square."""
+    rng = np.random.default_rng(seed)
+    n, dt = int(duration_s * fs), 1.0 / fs
+    pos = np.empty((n, 2))
+    pos[0] = arena / 2
+    velocity = np.zeros(2)
+    for i in range(1, n):
+        velocity += -velocity * dt + 15.0 * np.sqrt(2.0 * dt) * rng.standard_normal(2)
+        point = pos[i - 1] + velocity * dt
+        for dimension in range(2):
+            if point[dimension] < 0 or point[dimension] > arena:
+                velocity[dimension] = -velocity[dimension]
+                point[dimension] = np.clip(point[dimension], 0, arena)
+        pos[i] = point
+    vel = np.gradient(pos, dt, axis=0)
+    return np.arange(n) * dt, pos, np.arctan2(vel[:, 1], vel[:, 0])
+
+
+@pytest.fixture(scope="session")
+def ou_10min():
+    return _ou_trajectory(600.0, seed=0)
+
+
+@pytest.fixture(scope="session")
+def ou_2min():
+    return _ou_trajectory(120.0, seed=0)
+
+
+@pytest.fixture(scope="session")
+def noise_trains():
+    def generate(duration, seed=1):
+        rng = np.random.default_rng(seed)
+        return [
+            np.sort(rng.uniform(0, duration, rng.poisson(0.5 * duration)))
+            for _ in range(20)
+        ]
+
+    return generate
+
+
+@pytest.fixture(scope="session")
+def obj():
+    return np.array([[50.0, 50.0]])
+
+
+@pytest.fixture(scope="session")
+def ou_env(ou_10min):
+    from neurospatial import Environment
+
+    return Environment.from_samples(ou_10min[1], bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def ou_2min_env(ou_2min):
+    from neurospatial import Environment
+
+    return Environment.from_samples(ou_2min[1], bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def allocentric_field_spikes(ou_env, ou_10min, obj):
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    times, positions, _ = ou_10min
+    model = PlaceCellModel(ou_env, center=obj[0] + [20, 0], width=6, max_rate=10)
+    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+
+
+@pytest.fixture(scope="session")
+def egocentric_ovc_spikes(ou_env, ou_10min, obj):
+    from neurospatial.simulation import ObjectVectorCellModel, generate_poisson_spikes
+
+    times, positions, headings = ou_10min
+    model = ObjectVectorCellModel(
+        ou_env,
+        object_positions=obj,
+        preferred_distance=20,
+        distance_width=5,
+        preferred_direction=0.0,
+        direction_frame="egocentric",
+        max_rate=10,
+    )
+    return generate_poisson_spikes(
+        model.firing_rate(positions, headings=headings), times, seed=5
+    )
+
+
+@pytest.fixture(scope="session")
+def strong_field_spikes(ou_2min_env, ou_2min, obj):
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    times, positions, _ = ou_2min
+    model = PlaceCellModel(ou_2min_env, center=obj[0] + [20, 0], width=10, max_rate=20)
+    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+
+
+@pytest.fixture
+def significance_recording():
+    from types import SimpleNamespace
+
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(7)
+    times = np.arange(0, 60, 0.1)
+    xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
+    return SimpleNamespace(
+        env=Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5),
+        times=times,
+        positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
+        headings=np.sin(times / 5),
+        objects=np.array([[50.0, 50.0]]),
+        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [40, 55, 65]],
+        speed=np.full(len(times), 5.0),
+        gaze_offsets=np.zeros(len(times)),
+    )
+
+
+@pytest.fixture(
+    params=[
+        "place",
+        "head_direction",
+        "view",
+        "object_vector",
+        "egocentric_object_vector",
+    ]
+)
+def significance_family(request):
+    import importlib
+    from types import SimpleNamespace
+
+    name = request.param
+    module_name = {
+        "place": "spatial",
+        "head_direction": "directional",
+        "view": "view",
+        "object_vector": "egocentric",
+        "egocentric_object_vector": "egocentric",
+    }[name]
+    compute_name = {
+        "place": "compute_spatial_rates",
+        "head_direction": "compute_directional_rates",
+        "view": "compute_view_rates",
+        "object_vector": "compute_object_vector_rates",
+        "egocentric_object_vector": "compute_egocentric_rates",
+    }[name]
+    significance_name = (
+        "spatial_view_cell_significance"
+        if name == "view"
+        else f"{name}_cell_significance"
+    )
+    module = importlib.import_module(f"neurospatial.encoding.{module_name}")
+
+    def args(recording, trains=None):
+        trains = recording.trains if trains is None else trains
+        if name == "head_direction":
+            return (trains, recording.times, recording.headings)
+        result = (recording.env, trains, recording.times, recording.positions)
+        if name in ("view", "egocentric_object_vector"):
+            result += (recording.headings,)
+        if "object_vector" in name:
+            result += (recording.objects,)
+        return result
+
+    defaults = {"bandwidth": None} if name == "head_direction" else {"method": "binned"}
+    return SimpleNamespace(
+        name=name,
+        module=module,
+        function=getattr(module, significance_name),
+        compute=getattr(module, compute_name),
+        compute_name=compute_name,
+        # The rate function each significance null calls; view and
+        # object-vector nulls reuse trajectory geometry through private ones.
+        statistic_name={
+            "view": "_compute_view_rates",
+            "object_vector": "_object_vector_rates",
+            "egocentric_object_vector": "_object_vector_rates",
+        }.get(name, compute_name),
+        args=args,
+        defaults=defaults,
+    )
+
+
+@pytest.fixture(params=["directional", "view", "egocentric"])
+def frame_family(request):
+    """Real rate and binning functions with shared family-specific arguments."""
+    import importlib
+    from types import SimpleNamespace
+
+    name = request.param
+    module = importlib.import_module(f"neurospatial.encoding.{name}")
+    binning = importlib.import_module(f"neurospatial.encoding._{name}_binning")
+    predicate_name = {
+        "directional": "is_head_direction_cell",
+        "view": "is_spatial_view_cell",
+        "egocentric": "is_egocentric_object_vector_cell",
+    }[name]
+
+    def args(recording, spikes=None, *, occupancy=False, kernel=False):
+        if name == "directional":
+            lead = () if occupancy else (spikes,)
+            values = (*lead, recording.times, recording.headings)
+            return (*values, np.pi / 30) if kernel else values
+        lead = () if name == "egocentric" and kernel else (recording.env,)
+        if not occupancy:
+            lead = (*lead, spikes)
+        values = (*lead, recording.times, recording.positions, recording.headings)
+        if name == "egocentric":
+            values = (*values, np.array([[50.0, 50.0]]))
+        return values
+
+    defaults = (
+        {"bandwidth": None}
+        if name == "directional"
+        else {
+            "method": "binned",
+            "bandwidth": 0.0,
+        }
+    )
+    kernel_defaults = {}
+    if name == "view":
+        defaults["view_distance"] = kernel_defaults["view_distance"] = 5.0
+    if name == "egocentric":
+        defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
+    return SimpleNamespace(
+        name=name,
+        module=module,
+        binning=binning,
+        args=args,
+        single=getattr(module, f"compute_{name}_rate"),
+        plural=getattr(module, f"compute_{name}_rates"),
+        predicate=getattr(module, predicate_name),
+        defaults=defaults,
+        kernel_defaults=kernel_defaults,
+        count=getattr(binning, f"bin_{name}_spike_train"),
+        counts=getattr(binning, f"bin_{name}_spike_trains"),
+        occupancy=getattr(
+            binning,
+            "compute_occupancy" if name == "view" else f"compute_{name}_occupancy",
+        ),
+    )
+
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 
@@ -528,8 +812,8 @@ def ovc_session() -> tuple[
     consistent egocentric bearing. Spikes are concentrated whenever the
     object is at that preferred egocentric (distance, direction), producing a
     non-degenerate egocentric rate map -- so both the free
-    :func:`is_object_vector_cell` and
-    :meth:`EgocentricRateResult.is_object_vector_cell` return a meaningful,
+    :func:`is_egocentric_object_vector_cell` and
+    :meth:`ObjectVectorRateResult.is_object_vector_cell` return a meaningful,
     equal boolean across thresholds.
 
     Returns

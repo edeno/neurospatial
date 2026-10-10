@@ -70,11 +70,13 @@ def position_overlay_from_nwb(
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
-    positions, timestamps = read_position(
+    position_data = read_position(
         nwbfile,
         processing_module=processing_module,
         position_name=position_name,
     )
+    positions = position_data.positions
+    timestamps = position_data.times
 
     # Create and return PositionOverlay
     return PositionOverlay(
@@ -218,11 +220,13 @@ def head_direction_overlay_from_nwb(
     from neurospatial.io.nwb._behavior import read_head_direction
 
     # Read head direction data from NWB
-    angles, timestamps = read_head_direction(
+    head_direction_data = read_head_direction(
         nwbfile,
         processing_module=processing_module,
         compass_name=compass_name,
     )
+    angles = head_direction_data.headings
+    timestamps = head_direction_data.times
 
     # Create and return HeadDirectionOverlay
     return HeadDirectionOverlay(

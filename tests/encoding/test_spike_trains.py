@@ -23,9 +23,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment, SpikeTrains
-from neurospatial.encoding import SpikeTrains as SpikeTrainsFromEncoding
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial import Environment
+from neurospatial.encoding import SpikeTrains, compute_spatial_rates
 from neurospatial.encoding._spikes import (
     _looks_like_spike_group,
     as_spike_trains_with_ids,
@@ -217,10 +216,6 @@ def test_list_input_still_accepted(trains: list[np.ndarray]) -> None:
     st = SpikeTrains(list(trains))
     assert isinstance(st.trains, tuple)
     assert len(st) == len(trains)
-
-
-def test_top_level_and_encoding_export_same_class() -> None:
-    assert SpikeTrains is SpikeTrainsFromEncoding
 
 
 # ---------------------------------------------------------------------------

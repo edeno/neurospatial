@@ -87,22 +87,10 @@ def test_image_mask_bin_centers_match_dimension_ranges():
     assert np.all(layout.bin_centers[:, 1] <= y_hi)
 
 
-def test_image_mask_pixel_size_param_and_bin_size_alias():
-    """pixel_size and the deprecated bin_size alias are equivalent; both errors."""
-    image_mask = np.ones((3, 4), dtype=bool)
-
-    layout_pixel = ImageMaskLayout()
-    layout_pixel.build(image_mask=image_mask, pixel_size=2.0)
-
-    layout_alias = ImageMaskLayout()
-    with pytest.warns(DeprecationWarning):
-        layout_alias.build(image_mask=image_mask, bin_size=2.0)
-
-    np.testing.assert_allclose(layout_alias.bin_centers, layout_pixel.bin_centers)
-
-    layout_both = ImageMaskLayout()
-    with pytest.raises(ValueError):
-        layout_both.build(image_mask=image_mask, pixel_size=2.0, bin_size=2.0)
+def test_image_mask_rejects_removed_bin_size_keyword():
+    layout = ImageMaskLayout()
+    with pytest.raises(TypeError, match="bin_size"):
+        layout.build(image_mask=np.ones((3, 4), dtype=bool), bin_size=2.0)
 
 
 def test_image_mask_square_pixel_unchanged():

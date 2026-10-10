@@ -710,7 +710,7 @@ class TestShufflePlaceFieldsCircular2D:
         n_shuffles = 10
         shuffles = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=n_shuffles, rng=42
+                env_2d, encoding_models_2d, n_shuffles=n_shuffles, rng=42
             )
         )
         assert len(shuffles) == n_shuffles
@@ -723,7 +723,7 @@ class TestShufflePlaceFieldsCircular2D:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         for shuffled in shuffle_place_fields_circular_2d(
-            encoding_models_2d, env_2d, n_shuffles=10, rng=42
+            env_2d, encoding_models_2d, n_shuffles=10, rng=42
         ):
             for i in range(encoding_models_2d.shape[0]):
                 original_sorted = sorted(encoding_models_2d[i, :].tolist())
@@ -738,12 +738,12 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
@@ -759,12 +759,12 @@ class TestShufflePlaceFieldsCircular2D:
         rng2 = np.random.default_rng(42)
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=rng1
+                env_2d, encoding_models_2d, n_shuffles=5, rng=rng1
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=rng2
+                env_2d, encoding_models_2d, n_shuffles=5, rng=rng2
             )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
@@ -778,12 +778,12 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=42
+                env_2d, encoding_models_2d, n_shuffles=5, rng=42
             )
         )
         shuffles2 = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=123
+                env_2d, encoding_models_2d, n_shuffles=5, rng=123
             )
         )
         any_different = any(
@@ -800,7 +800,7 @@ class TestShufflePlaceFieldsCircular2D:
 
         shuffles = list(
             shuffle_place_fields_circular_2d(
-                encoding_models_2d, env_2d, n_shuffles=5, rng=None
+                env_2d, encoding_models_2d, n_shuffles=5, rng=None
             )
         )
         assert len(shuffles) == 5
@@ -820,7 +820,7 @@ class TestShufflePlaceFieldsCircular2D:
         with pytest.raises(ValueError, match="2D"):
             list(
                 shuffle_place_fields_circular_2d(
-                    encoding_models, env_1d, n_shuffles=5, rng=42
+                    env_1d, encoding_models, n_shuffles=5, rng=42
                 )
             )
 
@@ -839,7 +839,7 @@ class TestShufflePlaceFieldsCircular2D:
         with pytest.raises(ValueError, match="inactive bins"):
             list(
                 shuffle_place_fields_circular_2d(
-                    encoding_models, env, n_shuffles=5, rng=42
+                    env, encoding_models, n_shuffles=5, rng=42
                 )
             )
 
@@ -1258,7 +1258,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         n_surrogates = 10
         surrogates = list(
@@ -1268,7 +1268,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
         """Surrogate spike counts should be non-negative."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
             spike_counts, n_surrogates=10, rng=42
@@ -1281,7 +1281,7 @@ class TestGeneratePoissonSurrogates:
         Surrogates are generated from mean rates, so average across many
         surrogates should approximate original mean.
         """
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         # Compute original mean rate per neuron
         original_mean_per_neuron = spike_counts.mean(axis=0)
@@ -1307,7 +1307,7 @@ class TestGeneratePoissonSurrogates:
 
         Each time bin is independently sampled, so temporal patterns are lost.
         """
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         # This is a statistical property test - surrogates should not replicate
         # the exact temporal pattern of the original
@@ -1320,7 +1320,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
         """Same seed should produce same surrogates."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         surrogates1 = list(
             generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
@@ -1333,7 +1333,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
         """Same generator state should produce same surrogates."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -1350,7 +1350,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray
     ) -> None:
         """Different seeds should produce different surrogates."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         surrogates1 = list(
             generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
@@ -1366,7 +1366,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
         """rng=None should still produce valid surrogates."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         surrogates = list(
             generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=None)
@@ -1377,7 +1377,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_empty_spike_counts(self) -> None:
         """Should handle empty spike counts gracefully."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         empty = np.zeros((0, 3), dtype=np.int64)
         surrogates = list(generate_poisson_surrogates(empty, n_surrogates=5, rng=42))
@@ -1387,7 +1387,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_single_time_bin(self) -> None:
         """Should handle single time bin."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         single = np.array([[5, 3, 2]], dtype=np.int64)
         for surrogate in generate_poisson_surrogates(single, n_surrogates=5, rng=42):
@@ -1396,7 +1396,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_single_neuron(self) -> None:
         """Should work with single neuron."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
         for surrogate in generate_poisson_surrogates(
@@ -1407,7 +1407,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         zeros = np.zeros((5, 3), dtype=np.int64)
         for surrogate in generate_poisson_surrogates(zeros, n_surrogates=5, rng=42):
@@ -1417,7 +1417,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_high_firing_rate(self) -> None:
         """Should handle high firing rates."""
-        from neurospatial.stats.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         high_rate = np.full((5, 3), 50, dtype=np.int64)  # 50 spikes per bin
         for surrogate in generate_poisson_surrogates(high_rate, n_surrogates=5, rng=42):
@@ -1456,7 +1456,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1470,7 +1470,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
         """Surrogate spike counts should be non-negative."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1489,7 +1489,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         # Compute smoothed rates from original (what surrogate should match)
         from scipy.ndimage import uniform_filter1d
 
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1514,7 +1514,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
         """Same seed should produce same surrogates."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1533,7 +1533,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
         """Same generator state should produce same surrogates."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1556,7 +1556,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray
     ) -> None:
         """Different seeds should produce different surrogates."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1578,7 +1578,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
         """rng=None should still produce valid surrogates."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1593,7 +1593,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_smoothing_window_parameter(self, spike_counts: np.ndarray) -> None:
         """Different smoothing windows should produce different rate estimates."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1619,7 +1619,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_empty_spike_counts(self) -> None:
         """Should handle empty spike counts gracefully."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1633,7 +1633,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_single_time_bin(self) -> None:
         """Should handle single time bin (smoothing has no effect)."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1646,7 +1646,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_single_neuron(self) -> None:
         """Should work with single neuron."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1659,7 +1659,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.stats.shuffle import (
+        from neurospatial.stats.surrogates import (
             generate_inhomogeneous_poisson_surrogates,
         )
 

@@ -17,7 +17,7 @@ This module has moved from ``neurospatial.transforms`` to ``neurospatial.ops.tra
 
 Two complementary APIs
 ----------------------
-1.  *Composable objects* (`AffineND`, `Affine2D`, `Affine3D`)
+1.  *Composable objects* (`AffineND`, `Affine2D`)
     Build a transform once, reuse everywhere, keep provenance.
 2.  *Quick helpers* (`flip_y_data`, `convert_to_cm`, `convert_to_pixels`)
     One-liners for scripts that just need a NumPy array back.
@@ -26,14 +26,14 @@ For 2D (backward compatible):
     Use `Affine2D` or factory functions like `translate()`, `scale_2d()`.
 
 For 3D (new in v0.3):
-    Use `Affine3D` or factory functions like `translate_3d()`, `scale_3d()`,
+    Use `AffineND` or factory functions like `translate_3d()`, `scale_3d()`,
     or `from_rotation_matrix()` with scipy.spatial.transform.Rotation.
 
 Notes
 -----
 **Version History**:
 - v0.2.x and earlier: 2D-only (`Affine2D`)
-- v0.3+: Added 3D support (`AffineND`, `Affine3D`)
+- v0.3+: Added 3D support (`AffineND`)
 - v0.4+: Moved to ``neurospatial.ops.transforms``; merged ``calibration.py``
 """
 
@@ -55,7 +55,6 @@ if TYPE_CHECKING:
 __all__ = [
     # Core classes
     "Affine2D",
-    "Affine3D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",
@@ -137,7 +136,6 @@ class AffineND(SpatialTransform):
     See Also
     --------
     Affine2D : Alias for 2D transforms (backward compatible)
-    Affine3D : Alias for 3D transforms
     from_rotation_matrix : Create transform from rotation matrix
     """
 
@@ -602,7 +600,7 @@ def calibrate_from_scale_bar(
         raise ValueError(
             f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
             f"WHY: A scale bar must have positive real-world length.\n"
-            f"HOW: Provide a positive value for known_length_cm."
+            f"Fix: Provide a positive value for known_length_cm."
         )
 
     # Compute pixel distance between endpoints
@@ -614,7 +612,7 @@ def calibrate_from_scale_bar(
         raise ValueError(
             f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
             f"WHY: Cannot compute scale from coincident endpoints.\n"
-            f"HOW: Provide two distinct points for the scale bar."
+            f"Fix: Provide two distinct points for the scale bar."
         )
 
     # Compute cm per pixel (uniform scaling assumed)
@@ -700,14 +698,14 @@ def calibrate_from_landmarks(
         raise ValueError(
             f"WHAT: landmarks_px must have shape (n_points, 2), got {landmarks_px.shape}.\n"
             f"WHY: Each landmark needs (x, y) coordinates.\n"
-            f"HOW: Provide landmarks as shape (n_points, 2) array."
+            f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
 
     if landmarks_cm.ndim != 2 or landmarks_cm.shape[1] != 2:
         raise ValueError(
             f"WHAT: landmarks_cm must have shape (n_points, 2), got {landmarks_cm.shape}.\n"
             f"WHY: Each landmark needs (x, y) coordinates.\n"
-            f"HOW: Provide landmarks as shape (n_points, 2) array."
+            f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
 
     n_px = len(landmarks_px)
@@ -718,14 +716,14 @@ def calibrate_from_landmarks(
             f"WHAT: landmarks_px ({n_px} points) and landmarks_cm ({n_cm} points) "
             f"must have the same number of points.\n"
             f"WHY: Each pixel landmark must have a corresponding cm landmark.\n"
-            f"HOW: Ensure both arrays have the same length."
+            f"Fix: Ensure both arrays have the same length."
         )
 
     if n_px < 3:
         raise ValueError(
             f"WHAT: Need at least 3 landmarks for transform estimation (got {n_px}).\n"
             f"WHY: Affine transforms have at least 4 degrees of freedom.\n"
-            f"HOW: Provide at least 3 non-collinear landmark pairs."
+            f"Fix: Provide at least 3 non-collinear landmark pairs."
         )
 
     # Apply Y-flip to pixel coordinates before estimation
@@ -753,7 +751,7 @@ def calibrate_from_landmarks(
                 f"(spread ratio={ratio:.1e}).\n"
                 f"WHY: Landmarks are collinear or too close together. "
                 f"2D transforms require points that span both x and y directions.\n"
-                f"HOW: Use landmarks that span the full video frame with good spread. "
+                f"Fix: Use landmarks that span the full video frame with good spread. "
                 f"Ensure at least 3 non-collinear points."
             )
 
@@ -1042,7 +1040,6 @@ def identity_nd(n_dims: int = 2) -> AffineND:
 
 
 # Convenience aliases
-Affine3D = AffineND  # Type alias for 3D transforms
 
 
 # ---------------------------------------------------------------------
@@ -1232,7 +1229,6 @@ def estimate_transform(
     --------
     AffineND : N-D affine transformation class
     Affine2D : 2D affine transformation (same as AffineND with n_dims=2)
-    Affine3D : 3D affine transformation (same as AffineND with n_dims=3)
     apply_transform_to_environment : Apply transform to Environment
 
     """

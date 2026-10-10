@@ -5,8 +5,6 @@ Covers, without pynapple installed:
 - ``EnvironmentLike`` is a purpose-built NARROW Protocol (not the internal
   ``EnvironmentProtocol`` mixin re-export) that ``Environment`` and the polar
   sibling both structurally satisfy, matched to ``is_environment_like``.
-- ``as_times_positions`` normalizes both the array pair and a duck-typed
-  ``PositionLike`` object.
 - ``is_environment_like`` accepts an ``Environment`` and the polar sibling
   (regression for the ``isinstance(env, Environment)``-False surprise) and
   rejects arbitrary objects.
@@ -24,35 +22,10 @@ import pytest
 from neurospatial import Environment
 from neurospatial._typing import (
     EnvironmentLike,
-    as_times_positions,
     is_environment_like,
 )
 from neurospatial.environment._protocols import EnvironmentProtocol
 from neurospatial.environment.polar import EgocentricPolarEnvironment
-
-
-class _FakeTsd:
-    """Minimal duck-typed ``PositionLike`` exposing ``.t`` and ``.values``."""
-
-    def __init__(self, t: np.ndarray, values: np.ndarray) -> None:
-        self._t = t
-        self._values = values
-
-    @property
-    def t(self) -> np.ndarray:
-        return self._t
-
-    @property
-    def values(self) -> np.ndarray:
-        return self._values
-
-
-class _FakeTsdD:
-    """Duck-typed ``PositionLike`` exposing ``.t`` and the pynapple ``.d`` alias."""
-
-    def __init__(self, t: np.ndarray, d: np.ndarray) -> None:
-        self.t = t
-        self.d = d
 
 
 @pytest.fixture
@@ -87,50 +60,6 @@ def test_environmentlike_is_narrow_protocol(
     _accepts_env_like(polar_env)
     assert is_environment_like(env)
     assert is_environment_like(polar_env)
-
-
-def test_as_times_positions_array_pair_returns_float64() -> None:
-    times = np.array([0, 1, 2], dtype=np.int64)
-    positions = np.array([[0, 0], [1, 1], [2, 2]], dtype=np.int64)
-
-    out_times, out_positions = as_times_positions(times, positions)
-
-    assert out_times.dtype == np.float64
-    assert out_positions.dtype == np.float64
-    np.testing.assert_array_equal(out_times, times.astype(np.float64))
-    np.testing.assert_array_equal(out_positions, positions.astype(np.float64))
-
-
-def test_as_times_positions_positionlike_values() -> None:
-    times = np.linspace(0.0, 1.0, 5)
-    positions = np.column_stack([times, times * 2])
-
-    out_times, out_positions = as_times_positions(_FakeTsd(times, positions))
-
-    np.testing.assert_array_equal(out_times, times)
-    np.testing.assert_array_equal(out_positions, positions)
-
-
-def test_as_times_positions_positionlike_d_alias() -> None:
-    times = np.linspace(0.0, 1.0, 4)
-    positions = np.column_stack([times, times])
-
-    out_times, out_positions = as_times_positions(_FakeTsdD(times, positions))
-
-    np.testing.assert_array_equal(out_times, times)
-    np.testing.assert_array_equal(out_positions, positions)
-
-
-def test_as_times_positions_positionlike_with_positions_raises() -> None:
-    times = np.array([0.0, 1.0])
-    positions = np.array([[0.0], [1.0]])
-    with pytest.raises(ValueError, match="EITHER a single PositionLike"):
-        as_times_positions(_FakeTsd(times, positions), positions)
-
-
-def test_as_times_positions_array_without_positions_raises() -> None:
-    with pytest.raises(ValueError, match="no `positions`"):
-        as_times_positions(np.array([0.0, 1.0, 2.0]))
 
 
 def test_is_environment_like_accepts_environment(env: Environment) -> None:

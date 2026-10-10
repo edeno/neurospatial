@@ -3,7 +3,7 @@ Core dataclasses and validation helpers for the events module.
 
 This module provides:
 - Result dataclasses: PeriEventResult, PopulationPeriEventResult
-- Validation helpers: validate_events_dataframe, validate_spatial_columns
+- Validation helpers: _validate_events_dataframe, _validate_spatial_columns
 - Visualization: plot_peri_event_histogram
 """
 
@@ -47,6 +47,8 @@ class PeriEventResult(ResultMixin):
         event (SEM is undefined).
     n_events : int
         Number of events used in analysis.
+    n_events_dropped : int
+        Number of events excluded because their windows leave the recording.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -67,11 +69,16 @@ class PeriEventResult(ResultMixin):
 
     Examples
     --------
-    >>> result = peri_event_histogram(spikes, events, window=(-1, 2))  # doctest: +SKIP
-    >>> # Access firing rate
-    >>> rate = result.firing_rate  # doctest: +SKIP
-    >>> # Find peak response time
-    >>> peak_time = result.bin_centers[np.argmax(rate)]  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.events import peri_event_histogram
+    >>> spikes = np.array([0.8, 1.0, 1.2, 2.8, 3.0, 3.2])
+    >>> events = np.array([1.0, 3.0])
+    >>> result = peri_event_histogram(spikes, events, window=(-0.5, 0.5), bin_size=0.1)
+    >>> rate = result.firing_rate
+    >>> rate.shape == result.bin_centers.shape
+    True
+    >>> peak_time = result.bin_centers[np.argmax(rate)]
+
     """
 
     bin_centers: NDArray[np.float64]
@@ -81,6 +88,7 @@ class PeriEventResult(ResultMixin):
     window: tuple[float, float]
     bin_size: float
     unit_id: int | str | None = None
+    n_events_dropped: int = 0
     firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -160,7 +168,7 @@ class PeriEventResult(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['baseline_rate', 'n_events', 'peak_latency', 'peak_rate', 'unit_id']
+        ['baseline_rate', 'n_events', 'n_events_dropped', 'peak_latency', 'peak_rate', 'unit_id']
         >>> round(s["peak_latency"], 3)
         0.0
         """
@@ -179,6 +187,7 @@ class PeriEventResult(ResultMixin):
         return {
             "unit_id": self.unit_id,
             "n_events": int(self.n_events),
+            "n_events_dropped": int(self.n_events_dropped),
             "peak_rate": peak_rate,
             "peak_latency": peak_latency,
             "baseline_rate": baseline_rate,
@@ -228,6 +237,8 @@ class PopulationPeriEventResult(ResultMixin):
         Number of events used in analysis.
     n_units : int
         Number of units in population.
+    n_events_dropped : int
+        Number of events excluded because their windows leave the recording.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -255,13 +266,18 @@ class PopulationPeriEventResult(ResultMixin):
 
     Examples
     --------
-    >>> result = population_peri_event_histogram(  # doctest: +SKIP
-    ...     spike_trains, events, window=(-1, 2)
+    >>> import numpy as np
+    >>> from neurospatial.events import population_peri_event_histogram
+    >>> spikes = [np.array([0.8, 1.0, 3.2]), np.array([1.2, 2.8, 3.0])]
+    >>> events = np.array([1.0, 3.0])
+    >>> result = population_peri_event_histogram(
+    ...     spikes, events, window=(-0.5, 0.5), bin_size=0.1
     ... )
-    >>> # Get firing rates for all units
-    >>> rates = result.firing_rates  # shape: (n_units, n_bins)  # doctest: +SKIP
-    >>> # Get population average firing rate (Hz)
-    >>> pop_rate = result.mean_firing_rate  # shape: (n_bins,)  # doctest: +SKIP
+    >>> rates = result.firing_rates
+    >>> rates.shape[0]
+    2
+    >>> pop_rate = result.mean_firing_rate
+
     """
 
     bin_centers: NDArray[np.float64]
@@ -274,6 +290,7 @@ class PopulationPeriEventResult(ResultMixin):
     bin_size: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    n_events_dropped: int = field(default=0, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
@@ -356,6 +373,7 @@ class PopulationPeriEventResult(ResultMixin):
             window=self.window,
             bin_size=self.bin_size,
             unit_id=unit_id,
+            n_events_dropped=self.n_events_dropped,
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -516,7 +534,7 @@ class PopulationPeriEventResult(ResultMixin):
         ...     bin_size=0.5,
         ... )
         >>> sorted(result.summary())
-        ['mean_peak_rate', 'n_events', 'n_units', 'population_peak_latency']
+        ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
         """
         mean_rate = np.asarray(self.mean_firing_rate)
         bin_centers = np.asarray(self.bin_centers)
@@ -534,6 +552,7 @@ class PopulationPeriEventResult(ResultMixin):
         return {
             "n_units": int(self.n_units),
             "n_events": int(self.n_events),
+            "n_events_dropped": int(self.n_events_dropped),
             "mean_peak_rate": mean_peak_rate,
             "population_peak_latency": pop_peak_latency,
         }
@@ -564,6 +583,7 @@ class PopulationPeriEventResult(ResultMixin):
             n_events=self.n_events,
             window=self.window,
             bin_size=self.bin_size,
+            n_events_dropped=self.n_events_dropped,
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 
@@ -571,7 +591,7 @@ class PopulationPeriEventResult(ResultMixin):
 # --- Validation Helpers ---
 
 
-def validate_events_dataframe(
+def _validate_events_dataframe(
     df: pd.DataFrame,
     *,
     required_columns: list[str] | None = None,
@@ -596,6 +616,11 @@ def validate_events_dataframe(
     context : str, optional
         Additional context for error messages (e.g., function name).
 
+    Returns
+    -------
+    None
+        Returns normally when the DataFrame is valid; otherwise raises.
+
     Raises
     ------
     TypeError
@@ -607,10 +632,10 @@ def validate_events_dataframe(
     --------
     >>> import pandas as pd
     >>> df = pd.DataFrame({"timestamp": [1.0, 2.0, 3.0]})
-    >>> validate_events_dataframe(df)  # No error
+    >>> _validate_events_dataframe(df)  # No error
 
     >>> df_bad = pd.DataFrame({"time": [1.0, 2.0]})
-    >>> validate_events_dataframe(df_bad)  # doctest: +IGNORE_EXCEPTION_DETAIL
+    >>> _validate_events_dataframe(df_bad)  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
         ...
     ValueError: Missing required columns: ['timestamp']...
@@ -622,7 +647,7 @@ def validate_events_dataframe(
         raise TypeError(
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
             "  WHY: Events must be a pandas DataFrame for NWB compatibility.\n"
-            "  HOW: Convert using pd.DataFrame({'timestamp': times})"
+            "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
 
     # Check required columns
@@ -633,7 +658,7 @@ def validate_events_dataframe(
         raise ValueError(
             f"Missing required columns: {missing}.\n"
             f"  WHY: These columns are needed{context_str}.\n"
-            f"  HOW: Add missing columns to DataFrame.\n"
+            f"  Fix: Add missing columns to DataFrame.\n"
             f"  Available columns: {list(df.columns)}"
         )
 
@@ -642,12 +667,12 @@ def validate_events_dataframe(
         raise ValueError(
             f"Timestamp column '{timestamp_column}' contains non-numeric values.\n"
             "  WHY: Timestamps must be numeric (seconds from session start).\n"
-            f"  HOW: Convert timestamps: df['{timestamp_column}'] = "
+            f"  Fix: Convert timestamps: df['{timestamp_column}'] = "
             f"df['{timestamp_column}'].astype(float)"
         )
 
 
-def validate_spatial_columns(
+def _validate_spatial_columns(
     df: pd.DataFrame,
     *,
     require_positions: bool = False,
@@ -683,14 +708,14 @@ def validate_spatial_columns(
     --------
     >>> import pandas as pd
     >>> df = pd.DataFrame({"timestamp": [1.0], "x": [10.0], "y": [20.0]})
-    >>> validate_spatial_columns(df)
+    >>> _validate_spatial_columns(df)
     True
 
     >>> df_no_spatial = pd.DataFrame({"timestamp": [1.0]})
-    >>> validate_spatial_columns(df_no_spatial)
+    >>> _validate_spatial_columns(df_no_spatial)
     False
 
-    >>> validate_spatial_columns(  # doctest: +IGNORE_EXCEPTION_DETAIL
+    >>> _validate_spatial_columns(  # doctest: +IGNORE_EXCEPTION_DETAIL
     ...     df_no_spatial, require_positions=True
     ... )
     Traceback (most recent call last):
@@ -706,7 +731,7 @@ def validate_spatial_columns(
         raise ValueError(
             "Events DataFrame missing spatial columns ('x', 'y').\n"
             f"  WHY: {context_str} requires event positions.\n"
-            "  HOW: Use add_positions(events, times=times, positions=positions)"
+            "  Fix: Use add_positions(events, times=times, positions=positions)"
         )
 
     return has_positions

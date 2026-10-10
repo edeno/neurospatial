@@ -160,6 +160,7 @@ def realistic_head_direction_overlay_data():
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_napari_update_latency_pose_and_trail(
     realistic_env,
     realistic_fields,
@@ -256,6 +257,7 @@ def test_napari_update_latency_pose_and_trail(
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_napari_update_latency_all_overlays(
     realistic_env,
     realistic_fields,
@@ -423,6 +425,7 @@ def test_napari_batched_vs_individual_updates():
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_napari_multi_animal_performance(
     realistic_env,
     realistic_fields,

@@ -2,6 +2,28 @@
 
 Complete API documentation for neurospatial, automatically generated from source code docstrings.
 
+## Start with the root workflows
+
+<!-- docs-test: run -->
+```python
+from neurospatial import (
+    Environment,
+    compute_spatial_rate,
+    compute_spatial_rates,
+    SpatialRateResult,
+    SpatialRatesResult,
+    decode_position,
+    DecodingResult,
+    peri_event_histogram,
+    PeriEventResult,
+)
+```
+
+These workflows load lazily. Use domain imports for specialized analyses.
+The [shared-unit workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics)
+shows simulation and four-array encoding followed by separate decoding and
+population-statistics branches.
+
 ## Core Modules
 
 ### [neurospatial.environment](neurospatial/environment/index.md)
@@ -87,6 +109,7 @@ egocentric targets, and gaze.
 - `compute_directional_rate()`: Head-direction tuning curve
 - `compute_egocentric_rate()`: Object-vector tuning
 - `compute_view_rate()`: Spatial-view tuning
+- `compute_phase_precession()`: Theta-phase slope, offset and fit quality
 - `detect_place_fields()`: Threshold-and-cluster on a rate map
 - `spatial_information()`, `sparsity()`, `selectivity()`, `border_score()`,
   `grid_score()`: Classic place / boundary / grid metrics
@@ -113,6 +136,23 @@ Bayesian decoding of position from spike counts.
 - `DecodingResult`: Posterior + helpers (MAP, mean, entropy)
 - `DecodingSummary`: Per-time decode summary (MAP / mean / entropy /
   peak) from the memory-safe summary decoders
+
+### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
+
+Population covariance and reactivation analyses take count matrices, with
+consistent units and column order across template, match and control periods:
+
+- `detect_assemblies()`: Dimensions above the Marchenko-Pastur reference and
+  fitted patterns; a selected dimension may have no thresholded core members
+- `assembly_activation()`: Standardized projection in a chosen period;
+  relative activity rather than a calibrated bin-level significance test
+- `pairwise_correlations()`: Upper-triangle neuron-pair correlations
+- `explained_variance_reactivation()`: EV and controlled REV effect sizes;
+  pass an explicit baseline control and avoid treating EV > REV as a p-value
+- `reactivation_strength()`: Ratio of mean absolute projections on one shared
+  template-normalized scale; an effect size rather than a significance verdict
+
+See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ### [neurospatial.behavior](neurospatial/behavior/index.md)
 
@@ -145,7 +185,7 @@ Allocentric ↔ egocentric coordinate transforms.
 
 **Key Functions:**
 
-- `heading_from_velocity()`, `heading_from_body_orientation()`:
+- `heading_from_velocity(times, positions)`, `heading_from_body_orientation()`:
   Derive head direction from tracking data
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions
@@ -202,7 +242,7 @@ Field animation backends (napari / video / HTML / widget).
 
 **Key Classes:**
 
-- `PositionOverlay`, `EventOverlay`, `SpikeOverlay`,
+- `PositionOverlay`, `EventOverlay`,
   `HeadDirectionOverlay`, `BodypartOverlay`, `VideoOverlay`:
   Composable overlays for animations
 
@@ -212,7 +252,7 @@ NWB (Neurodata Without Borders) read / write integration.
 
 **Key Functions:**
 
-- `read_environment()`, `read_position()`, `read_pose()`,
+- `read_environment()`, `read_position()`, `read_units()`, `read_head_direction()`, `read_pose()`,
   `read_events()`, `read_intervals()`, `read_trials()`: Read NWB
   components into neurospatial types
 - `write_environment()`, `write_place_field()`,
@@ -257,21 +297,20 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 
 - [Simulation Workflows Tutorial](../examples/15_simulation_workflows.ipynb): Comprehensive examples and quick start guide
 
-### Interoperability & Session Ergonomics
+### Interoperability and data holders
 
-Optional, session-first conveniences layered **on top of** the array-first API
+Named data holders and optional adapters for the array-first API
 (see the [Interoperability guide](../user-guide/interoperability.md)). The array
 path never depends on these; `import neurospatial` never imports pynapple or
 pynwb.
 
-**Session bundle** ([neurospatial.recording](neurospatial/recording.md)):
+**Simulator holder** ([neurospatial.simulation.session](neurospatial/simulation/session.md)):
 
-- `Session`: Frozen bundle of `env` + position + `spikes` (+ optional `epochs` /
-  `metadata`). `Session.from_arrays(...)` / `Session.from_nwb(...)` build it;
-  `.times` / `.positions` / `.env` / `.spikes` accessors expose the raw data;
-  `.with_environment(env)` and `.restrict(epochs)` return **new** sessions.
-- `load_session(path_or_nwbfile)`: Load a `Session` from an NWB path or open
-  `NWBFile` (dispatches to `Session.from_nwb`).
+- `SimulationSession`: Frozen attributes `env`, `spike_times`, `unit_ids`,
+  `times`, `positions`, `models`, integer-label `ground_truth`, and `metadata`.
+  Pass attributes explicitly to analyses.
+- `validate_simulation(sim, *, unit_ids=...)` and
+  `plot_session_summary(sim, *, unit_ids=...)` select simulation units by label.
 
 **Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
 
@@ -284,7 +323,7 @@ pynwb.
 - `restrict(times, *arrays, epochs=...)`: Slice `times` and time-aligned arrays
   to a set of epochs.
 - `in_epochs(t, epochs)`: Boolean mask, `True` where `t` falls in any epoch.
-- `restrict_spike_trains(trains, epochs)`: Mask ragged per-unit trains, each by
+- `restrict_spike_trains(spike_times, epochs)`: Mask ragged per-unit trains, each by
   its own timestamps.
 
 **Bayesian decoder object** ([neurospatial.decoding.estimator](neurospatial/decoding/estimator.md)):
@@ -292,6 +331,13 @@ pynwb.
 - `BayesianDecoder`: Frozen `fit(...)` → `predict(...)` / `predict_summary(...)`
   / `score(...)` wrapper over `decode_session` (byte-exact). Decodes through the
   `Environment`, so linearized-track / geodesic decoding works.
+- `BayesianDecoder.from_rates(rates, dt=...)`: Fitted decoder from a
+  `SpatialRatesResult`, preserving unit identity and training spike-window
+  provenance. Prediction takes spikes and array timestamps; supplied labels
+  align by identity, generated labels pair by position.
+- `fit(spike_times, times, positions, unit_ids=...)` requires tracking positions;
+  explicit labels must match a labelled spike group's values and order.
+  `decode_session` also requires positions and computes its own encoding maps.
 
 **pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
 
@@ -301,9 +347,19 @@ pynwb.
 
 **NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:
 
-- `read_units(nwbfile, *, unit_ids=None, lazy=False)`: `(trains, unit_ids)` from
-  the NWB `units` table. `read_position` / `read_pose` / `read_units` accept
-  `lazy=True` (handles valid only while the file is open).
+- `read_position(...)` → `NWBPosition(times, positions, units)` and
+  `read_head_direction(...)` → `NWBHeadDirection(times, headings)`.
+- `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
+  `NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`. Unit labels
+  are table IDs; `spike_window` intersects the selected units' acquisition
+  coverage. Choose analysis epochs with `read_intervals(nwbfile, "epochs")`.
+- Holders are frozen and cannot be tuple-unpacked. Position units describe
+  converted values; missing declarations are `None`. `read_position` /
+  `read_pose` / `read_units` accept `lazy=True` (handles valid only while the
+  file is open; eager arrays remain usable after close).
+- The [complete NWB recipe](../user-guide/interoperability.md#population-fields-decoding-and-a-truthful-overlay)
+  carries physical units, labels, selected epochs and acquisition coverage
+  through population fields, a fitted decoder, summary tables and overlays.
 - `write_spatial_rates(nwbfile, result)` / `read_place_field(nwbfile, env=None)`:
   Round-trip a `SpatialRatesResult` (firing rates / occupancy / unit ids /
   `unit_table` + a persisted, connected environment).

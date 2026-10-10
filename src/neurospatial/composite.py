@@ -41,6 +41,7 @@ from numpy.typing import NDArray
 from sklearn.neighbors import KDTree
 
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
+from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_composite_build
 from neurospatial._typing import is_environment_like
 from neurospatial.environment import Environment
@@ -66,7 +67,10 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     TypeError
         If subenvs is wrong type or contains non-Environment objects.
     ValueError
-        If subenvs is empty, environments not fitted, or have mismatched dimensions.
+        If subenvs is empty or environments are not fitted.
+    IncompatibleEnvironmentError
+        If the environments have mismatched dimensions (a ``ValueError``
+        subclass).
 
     """
     # Type check
@@ -101,16 +105,15 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     first_ndims = subenvs[0].n_dims
     for i, env in enumerate(subenvs[1:], start=1):
         if env.n_dims != first_ndims:
-            raise ValueError(
+            raise IncompatibleEnvironmentError(
                 f"[E1003] All sub-environments must share the same n_dims. "
-                f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}.\n"
-                "\n"
-                "Common cause: Mixing environments with different dimensionalities "
-                "(e.g., 2D position data and 3D spatial data).\n"
-                "\n"
-                "To fix:\n"
-                "  1. Check that all position data arrays have the same number of columns\n"
-                "  2. Verify each environment's n_dims property before creating the composite"
+                f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}. A common "
+                "cause is mixing 2D position data with 3D spatial data.",
+                fix=(
+                    "build every sub-environment from position arrays with the "
+                    "same number of columns, and check each env.n_dims before "
+                    "creating the composite."
+                ),
             )
 
     return list(subenvs)  # Normalize to list
@@ -157,6 +160,19 @@ class CompositeEnvironment:
     _layout_params_used : Dict[str, Any]
         Parameters used to construct the composite.
 
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import CompositeEnvironment, Environment
+    >>> corners = np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]])
+    >>> left = Environment.from_samples(corners, bin_size=1.0, name="left")
+    >>> right = Environment.from_samples(
+    ...     corners + [4.0, 0.0], bin_size=1.0, name="right"
+    ... )
+    >>> combined = CompositeEnvironment([left, right])
+    >>> combined.n_bins == left.n_bins + right.n_bins
+    True
     """
 
     is_linearized_track: bool
@@ -197,8 +213,10 @@ class CompositeEnvironment:
         TypeError
             If subenvs is not a list or tuple, or if any element is not an Environment instance.
         ValueError
-            If subenvs is empty, if any environment is not fitted, or if environments
-            have different dimensionalities.
+            If subenvs is empty or if any environment is not fitted.
+        IncompatibleEnvironmentError
+            If environments have different dimensionalities (a ``ValueError``
+            subclass).
 
         Common Pitfalls
         ---------------

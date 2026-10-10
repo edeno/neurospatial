@@ -147,9 +147,13 @@ def foo(x, y):
 ⚠️ **Creates large grid** (will warn but succeed):
 
 ```python
-positions = np.random.uniform(0, 100000, (1000, 2))
-env = Environment.from_samples(positions, bin_size=1.0)  # ResourceWarning
+positions = np.random.uniform(0, 4000, (1000, 2))
+env = Environment.from_samples(positions, bin_size=1.0)  # UserWarning, ~16M bins
 ```
+
+A grid whose bin-center array would exceed 8 GiB (for example
+`uniform(0, 100000)` at `bin_size=1.0`, about 1e10 bins) raises `ValueError`
+before allocating.
 
 ✅ **Better:**
 
@@ -355,9 +359,10 @@ git add .
 git commit -m "message"
 ```
 
-### `ResourceWarning: Creating large grid`
+### `UserWarning: Creating large grid`
 
-**Cause**: Grid estimated to use >100MB memory.
+**Cause**: Grid estimated to use >100MB memory. Past an 8 GiB bin-center
+array the factory raises `ValueError` instead.
 
 **Solution**: This is a warning, not an error. Consider:
 
@@ -368,8 +373,11 @@ env = Environment.from_samples(positions, bin_size=10.0)
 # Fix 2: Enable active bin filtering
 env = Environment.from_samples(positions, bin_size=1.0, infer_active_bins=True)
 
-# Fix 3: Disable warning (if intentional)
-env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
+# Fix 3: Silence it when the size is intentional
+import warnings
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message="Creating large grid")
+    env = Environment.from_samples(positions, bin_size=1.0)
 ```
 
 ### `ImportError: pynwb is required for NWB integration`
@@ -414,10 +422,12 @@ print(nwbfile.processing.keys())
 print(nwbfile.acquisition.keys())
 
 # If Position is in custom processing module
-positions, timestamps = read_position(nwbfile, processing_module="custom_module")
+pos = read_position(nwbfile, processing_module="custom_module")
+positions, timestamps = pos.positions, pos.times
 
 # If there are multiple SpatialSeries, specify which one
-positions, timestamps = read_position(nwbfile, position_name="position_xy")
+pos = read_position(nwbfile, position_name="position_xy")
+positions, timestamps = pos.positions, pos.times
 ```
 
 ### `ValueError: Place field '{name}' already exists` when writing to NWB

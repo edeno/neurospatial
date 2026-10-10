@@ -51,12 +51,11 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.encoding import (
-    FieldOfView,
     compute_spatial_rate,
     compute_view_rate,
-    compute_viewed_location,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
+from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 from neurospatial.simulation import (
     PlaceCellModel,
     SpatialViewCellModel,
@@ -104,7 +103,7 @@ positions = 50 + np.cumsum(velocities * dt, axis=0)
 positions = np.clip(positions, 10, 90)  # Stay in bounds
 
 # Compute heading from velocity
-headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
+headings = heading_from_velocity(times, positions, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {n_time} samples, {times[-1]:.1f}s duration")
 print(
@@ -366,14 +365,15 @@ print(
 # compare view tuning against position tuning.
 
 # %%
-# Classify cells
+# Screen candidates with the same estimator used for the displayed maps.
+# For a circular-shift verdict, use spatial_view_cell_significance on raw arrays.
 svc_view_info = svc_view_result.view_spatial_information()
 svc_place_info = svc_place_result.spatial_information()
-svc_is_svc = svc_view_result.is_spatial_view_cell()
+svc_is_svc = svc_view_result.is_spatial_view_cell(min_info=0.5)
 
 pc_view_info = pc_view_result.view_spatial_information()
 pc_place_info = pc_place_result.spatial_information()
-pc_is_svc = pc_view_result.is_spatial_view_cell()
+pc_is_svc = pc_view_result.is_spatial_view_cell(min_info=0.5)
 
 print("=" * 60)
 print("SPATIAL VIEW CELL METRICS")

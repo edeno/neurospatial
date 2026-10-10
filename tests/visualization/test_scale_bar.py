@@ -204,24 +204,14 @@ class TestPlotFieldWithScaleBar:
         plt.close()
 
     def test_scale_bar_1d_env(self, small_1d_env, rng):
-        """Test scale bar with 1D environments.
-
-        Note: 1D environments that have grid_shape with 1 dimension will raise
-        NotImplementedError from plot_field() because pcolormesh requires 2D grids.
-        This is a pre-existing limitation, not related to scale bar functionality.
-        """
+        """Native 1D field lines retain physical coordinates with a scale bar."""
         field = rng.random(small_1d_env.n_bins)
-        # 1D graph layouts go through the 1D plotting path, not grid path
-        # Check if it's a 1D layout that can be plotted
-        if small_1d_env.layout.is_linearized_track:
-            # 1D layouts use line plots, scale bar still works
-            small_1d_env.plot_field(field, scale_bar=True)
-            plt.close()
-        else:
-            # Non-1D with 1D grid shape will fail
-            with pytest.raises(NotImplementedError):
-                small_1d_env.plot_field(field, scale_bar=True)
-            plt.close("all")
+        ax = small_1d_env.plot_field(field, scale_bar=True)
+        np.testing.assert_array_equal(
+            ax.lines[0].get_xdata(), small_1d_env.bin_centers[:, 0]
+        )
+        np.testing.assert_array_equal(ax.lines[0].get_ydata(), field)
+        plt.close(ax.figure)
 
     def test_no_scale_bar_default(self, small_2d_env, rng):
         """Test scale_bar=False (default) adds no scale bar."""
@@ -264,6 +254,7 @@ class TestAnimateFieldsWithScaleBar:
                 frame_times=frame_times,
                 backend="video",
                 save_path=f.name,
+                overwrite=True,
                 scale_bar=True,
                 # Serial rendering: this test checks scale_bar parameter flow,
                 # not parallelism. The default n_workers is cpu_count // 2, which

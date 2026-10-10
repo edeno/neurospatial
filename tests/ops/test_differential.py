@@ -1,15 +1,127 @@
 """Tests for differential operators on graph-discretized environments.
 
 This module tests the computation of the differential operator D and its
-relationship to the graph Laplacian L = D @ D.T.
+relationship to the finite-volume diffusion generator.
 """
 
-import networkx as nx
 import numpy as np
+import pytest
 from scipy import sparse
 
 from neurospatial import Environment
-from neurospatial.ops.calculus import compute_differential_operator
+from neurospatial.ops.calculus import (
+    _compute_divergence_operator,
+    compute_differential_operator,
+)
+
+
+def _diffusion_generator(env):
+    """Reference generator assembled from the diffusion geometry."""
+    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
+
+    graph, volumes = _finite_volume_geometry(env)
+    weights = _assemble_W(graph, env.n_bins)
+    return sparse.diags(1 / volumes) @ (
+        sparse.diags(np.asarray(weights.sum(axis=1)).ravel()) - weights
+    )
+
+
+@pytest.mark.parametrize("spacing", [1.0, 2.0, 4.0])
+def test_gradient_of_x_is_unit_slope(uniform_grid, spacing):
+    from neurospatial.ops.calculus import gradient
+
+    env = uniform_grid(spacing, n=int(20 / spacing))
+    edges = np.array(list(env.connectivity.edges()))
+    delta = env.bin_centers[edges[:, 1]] - env.bin_centers[edges[:, 0]]
+    x_edges = (delta[:, 0] != 0) & (delta[:, 1] == 0)
+    np.testing.assert_allclose(
+        np.abs(gradient(env, env.bin_centers[:, 0]))[x_edges], 1, atol=1e-12
+    )
+
+
+@pytest.mark.parametrize("spacing", [1.0, 2.0, 4.0])
+def test_div_grad_quadratic_is_continuum_laplacian(uniform_grid, spacing):
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = uniform_grid(spacing, n=int(20 / spacing))
+    field = np.sum(env.bin_centers**2, axis=1)
+    interior = np.array([degree == 8 for _, degree in env.connectivity.degree()])
+    np.testing.assert_allclose(
+        divergence(env, gradient(env, field))[interior], 4, atol=1e-12
+    )
+
+
+def test_div_grad_equals_negative_diffusion_generator(fv_env):
+    from neurospatial.ops.calculus import divergence, gradient
+    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
+
+    graph, volumes = _finite_volume_geometry(fv_env)
+    weights = _assemble_W(graph, fv_env.n_bins)
+    laplacian = sparse.diags(1 / volumes) @ (
+        sparse.diags(np.asarray(weights.sum(axis=1)).ravel()) - weights
+    )
+    field = np.random.default_rng(0).normal(size=fv_env.n_bins)
+    np.testing.assert_allclose(
+        divergence(fv_env, gradient(fv_env, field)),
+        -laplacian @ field,
+        rtol=1e-10,
+        atol=1e-12,
+    )
+
+
+def test_divergence_is_negative_adjoint_of_gradient(fv_env):
+    from neurospatial.ops.calculus import divergence, gradient
+    from neurospatial.ops.diffusion import _finite_volume_geometry
+
+    graph, volumes = _finite_volume_geometry(fv_env)
+    rng = np.random.default_rng(3)
+    field = rng.normal(size=fv_env.n_bins)
+    flux = rng.normal(size=graph.number_of_edges())
+    edge_measure = np.array(
+        [data["A"] * data["distance"] for _, _, data in graph.edges(data=True)]
+    )
+    np.testing.assert_allclose(
+        np.sum(edge_measure * gradient(fv_env, field) * flux),
+        -np.sum(volumes * field * divergence(fv_env, flux)),
+        rtol=1e-10,
+    )
+
+
+@pytest.mark.parametrize("spacing", [1.0, 2.0, 4.0])
+def test_goal_is_a_sink(uniform_grid, spacing):
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = uniform_grid(spacing, n=int(20 / spacing))
+    goal = np.argmin(np.linalg.norm(env.bin_centers - 10, axis=1))
+    distance = np.linalg.norm(env.bin_centers - env.bin_centers[goal], axis=1)
+    assert divergence(env, -gradient(env, distance))[goal] < 0
+
+
+def test_operator_edge_order_matches_connectivity(fv_env):
+    from neurospatial.ops.calculus import gradient
+    from neurospatial.ops.diffusion import _finite_volume_geometry
+
+    graph, _ = _finite_volume_geometry(fv_env)
+    assert list(graph.edges()) == list(fv_env.connectivity.edges())
+    field = np.random.default_rng(5).normal(size=fv_env.n_bins)
+    expected = [
+        (field[v] - field[u]) / distance
+        for u, v, distance in graph.edges(data="distance")
+    ]
+    np.testing.assert_allclose(gradient(fv_env, field), expected, atol=1e-12)
+
+
+def test_operators_raise_without_finite_volume_geometry(reloaded_graph_env):
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = reloaded_graph_env
+    for func, field in [
+        (gradient, np.ones(env.n_bins)),
+        (divergence, np.ones(env.connectivity.number_of_edges())),
+    ]:
+        with pytest.raises(NotImplementedError, match=r"gradient/divergence.*") as exc:
+            func(env, field)
+        assert "\nFix:" in str(exc.value)
 
 
 class TestDifferentialOperatorComputation:
@@ -30,7 +142,7 @@ class TestDifferentialOperatorComputation:
         assert isinstance(D, sparse.csc_matrix)
 
     def test_laplacian_from_differential(self):
-        """Test that D @ D.T equals the graph Laplacian matrix."""
+        """Test that the negative divergence of the gradient equals the diffusion generator."""
         # Create simple 1D chain environment
         data = np.array([[0.0], [1.0], [2.0], [3.0]])
         env = Environment.from_samples(data, bin_size=1.0)
@@ -38,13 +150,13 @@ class TestDifferentialOperatorComputation:
         D = compute_differential_operator(env)
 
         # Compute Laplacian from differential operator
-        L_from_D = (D @ D.T).toarray()
+        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
 
-        # Get networkx Laplacian (unnormalized)
-        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        # Get finite-volume diffusion generator
+        L_fv = _diffusion_generator(env).toarray()
 
         # They should be equal (within numerical precision)
-        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
     def test_differential_operator_sparse(self):
         """Test that differential operator is sparse (CSC format)."""
@@ -58,7 +170,7 @@ class TestDifferentialOperatorComputation:
         assert isinstance(D, sparse.csc_matrix)
 
     def test_differential_operator_edge_weights(self):
-        """Test that differential operator uses sqrt of edge distances."""
+        """Test that differential operator uses inverse edge distances."""
         # Simple 1D chain with known distances
         data = np.array([[0.0], [1.0], [2.0]])
         env = Environment.from_samples(data, bin_size=1.0)
@@ -66,7 +178,7 @@ class TestDifferentialOperatorComputation:
         D = compute_differential_operator(env)
 
         # For a 1D chain, edge distances should be 1.0
-        # D should contain +/-sqrt(1) = +/-1
+        # D should contain +/-1/d = +/-1 for d=1
         D_dense = D.toarray()
 
         # Non-zero elements should be +1 or -1
@@ -97,10 +209,10 @@ class TestDifferentialOperatorComputation:
         n_edges = len(env.connectivity.edges)
         assert D.shape == (n_bins, n_edges)
 
-        # Laplacian relationship should still hold
-        L_from_D = (D @ D.T).toarray()
-        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
-        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+        # Finite-volume generator relationship should still hold
+        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_fv = _diffusion_generator(env).toarray()
+        np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
 
 class TestEnvironmentCachedProperty:
@@ -165,10 +277,10 @@ class TestDifferentialOperatorEdgeCases:
         n_edges = len(env.connectivity.edges)
         assert D.shape == (n_bins, n_edges)
 
-        # Laplacian relationship should hold
-        L_from_D = (D @ D.T).toarray()
-        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
-        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+        # Finite-volume generator relationship should hold
+        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_fv = _diffusion_generator(env).toarray()
+        np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
     def test_differential_operator_irregular_spacing(self):
         """Test on irregularly spaced points."""
@@ -178,19 +290,19 @@ class TestDifferentialOperatorEdgeCases:
 
         D = env.get_differential_operator()
 
-        # Should still satisfy Laplacian relationship
-        L_from_D = (D @ D.T).toarray()
-        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
-        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+        # Should still satisfy Finite-volume generator relationship
+        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_fv = _diffusion_generator(env).toarray()
+        np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
     def test_differential_operator_preserves_symmetry(self):
-        """Test that D @ D.T produces symmetric Laplacian."""
+        """Test that the diffusion generator is symmetric on a uniform-volume grid."""
         rng = np.random.default_rng(42)
         data = rng.random((30, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = env.get_differential_operator()
-        L = (D @ D.T).toarray()
+        L = (-_compute_divergence_operator(env) @ D.T).toarray()
 
         # Laplacian should be symmetric
         np.testing.assert_allclose(L, L.T, rtol=1e-10, atol=1e-10)
@@ -252,8 +364,8 @@ class TestGradientOperator:
         grad_field = gradient(env, field)
 
         # For uniform grid with spacing 1.0 and slope 2.0,
-        # gradient should be constant (approximately 2.0 * sqrt(1.0) = 2.0)
-        # The differential operator uses sqrt(distance), so we expect consistent values
+        # gradient should be constant (2.0 / 1.0 = 2.0)
+        # The derivative divides the field difference by the edge distance
         grad_values = np.abs(grad_field)
 
         # All gradient magnitudes should be similar (constant gradient)
@@ -309,7 +421,7 @@ class TestDivergenceOperator:
         assert isinstance(div_field, np.ndarray)
 
     def test_divergence_gradient_is_laplacian(self):
-        """Test that div(grad(f)) equals Laplacian(f) for scalar field f."""
+        """Test that div(grad(f)) equals the negative diffusion generator applied to f for scalar field f."""
         # Create 1D chain environment
         data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
         env = Environment.from_samples(data, bin_size=1.0)
@@ -324,12 +436,12 @@ class TestDivergenceOperator:
         div_grad_field = divergence(env, grad_field)
 
         # Compute Laplacian directly
-        L = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        L = _diffusion_generator(env).toarray()
         laplacian_field = L @ field
 
         # They should be equal (within numerical precision)
         np.testing.assert_allclose(
-            div_grad_field, laplacian_field, rtol=1e-10, atol=1e-10
+            div_grad_field, -laplacian_field, rtol=1e-10, atol=1e-10
         )
 
     def test_divergence_zero_edge_field(self):

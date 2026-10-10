@@ -16,10 +16,13 @@ as a convenience for code that wants the transposed layout.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._exceptions import _format_error
+from neurospatial._intervals import as_intervals
 
 
 def validate_dt(dt: float) -> float:
@@ -61,12 +64,110 @@ def validate_dt(dt: float) -> float:
     return dt
 
 
-def bin_spikes_in_time(
+def _time_bin_rounding(
+    windows: NDArray[np.float64],
+    dt: float,
+    *,
+    context: str = "Time bins",
+    width_name: str = "dt",
+    clock_fix: str | None = None,
+) -> NDArray[np.float64]:
+    """Return edge rounding allowance, refusing unrepresentable bin widths."""
+    start, stop = windows[:, 0], windows[:, 1]
+    rounding: NDArray[np.float64] = 4.0 * np.spacing(
+        np.maximum(np.abs(start), np.abs(stop))
+    )
+    imprecise = rounding > 1e-2 * dt
+    if imprecise.any():
+        w = int(np.flatnonzero(imprecise)[0])
+        fix = clock_fix or (
+            "subtract a time origin first (e.g. times - times[0], and the same "
+            "offset from spike times and windows), or use a larger dt."
+        )
+        raise ValueError(
+            f"{context} of {width_name}={dt:g} s cannot be represented at timestamps near "
+            f"{start[w]:.6g} s: float64 rounding there is {rounding[w]:.3g} s, more "
+            f"than 1% of {width_name}.\nFix: {fix}"
+        )
+    return rounding
+
+
+def time_bins_in_windows(
+    windows: NDArray[np.float64], dt: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Tile each ``[start, stop)`` window with whole bins of width ``dt``.
+
+    Each window is tiled independently, so no bin spans the space between two
+    windows. A remainder shorter than one bin at the end of a window is
+    dropped, because the decoder's Poisson likelihood assumes every bin is
+    ``dt`` long. A window that is a whole number of bins up to float rounding
+    keeps its last bin, whose right edge is clamped to exactly ``stop``.
+
+    Parameters
+    ----------
+    windows : ndarray, shape (n_windows, 2)
+        Sorted, disjoint windows (seconds).
+    dt : float
+        Bin width (seconds), already validated.
+
+    Returns
+    -------
+    left, right : ndarray, shape (n_time_bins,)
+        Bin edges, ``left = start + dt * k``. Within a window
+        ``right[i] == left[i + 1]`` exactly (same ``k``), and every
+        ``right <= stop`` of its window.
+    """
+    start, stop = windows[:, 0], windows[:, 1]
+    # Rounding error of the edges is a few ulp of the timestamps' magnitude.
+    # If that is not small against dt, the edges cannot be represented to bin
+    # precision, so refuse instead of inventing or merging bins.
+    rounding = _time_bin_rounding(windows, dt)
+    ratio = (stop - start) / dt
+    # A shortfall below the rounding allowance is rounding, not a partial bin.
+    # After the precision check the allowance is at most ~0.01, so it can
+    # never add a whole bin. A final bin may therefore be up to 1% short; it
+    # is kept and clamped to the window stop.
+    slack = rounding / dt + 4.0 * np.finfo(np.float64).eps * ratio
+    n_per = np.maximum(np.floor(ratio + slack), 0).astype(np.int64)
+    window_idx = np.repeat(np.arange(windows.shape[0]), n_per)
+    k = np.arange(int(n_per.sum())) - np.repeat(np.cumsum(n_per) - n_per, n_per)
+    left = start[window_idx] + dt * k
+    right = np.minimum(start[window_idx] + dt * (k + 1), stop[window_idx])
+    return left, right
+
+
+def count_spikes_in_time_bins(
     spike_trains: Sequence[NDArray[np.float64]],
+    left: NDArray[np.float64],
+    right: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    """Count spikes per half-open bin ``[left[i], right[i])``.
+
+    Spikes that fall between bins (outside every window) are not counted.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_time_bins, n_neurons)
+    """
+    counts = np.zeros((left.size, len(spike_trains)), dtype=np.int64)
+    if left.size == 0:
+        return counts
+    for unit, train in enumerate(spike_trains):
+        s = np.asarray(train, dtype=np.float64)
+        idx = np.searchsorted(left, s, side="right") - 1
+        inside = idx >= 0
+        inside[inside] = s[inside] < right[idx[inside]]
+        counts[:, unit] = np.bincount(idx[inside], minlength=left.size)
+    return counts
+
+
+def bin_spikes_in_time(
+    spike_times: Sequence[NDArray[np.float64]],
     dt: float,
     t_start: float | None = None,
     t_stop: float | None = None,
     *,
+    epochs: Any = None,
     orient: Literal["time_x_neuron", "neuron_x_time"] = "time_x_neuron",
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
     """Bin per-neuron spike times into a count matrix on a regular time grid.
@@ -78,7 +179,7 @@ def bin_spikes_in_time(
 
     Parameters
     ----------
-    spike_trains : Sequence[NDArray[np.float64]]
+    spike_times : Sequence[NDArray[np.float64]]
         One 1-D array of spike times per neuron. Arrays may have different
         lengths (different numbers of spikes); a neuron with no spikes is
         allowed and yields an all-zero row/column. Times are in the same
@@ -95,6 +196,11 @@ def bin_spikes_in_time(
         train is empty), so the last spike always lands inside the final bin
         and a single-spike train produces a valid result. When passed
         explicitly, must be strictly greater than ``t_start``.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as the spike times). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+        Cannot be combined with ``t_start`` or ``t_stop``.
     orient : {"time_x_neuron", "neuron_x_time"}, optional
         Axis order of the returned ``counts`` matrix. ``"time_x_neuron"``
         (default) returns shape ``(n_time_bins, n_neurons)`` — the one convention
@@ -117,30 +223,16 @@ def bin_spikes_in_time(
     ValueError
         If ``dt`` is not finite or not strictly positive, if an explicitly
         passed ``t_stop`` is not strictly greater than ``t_start``, if the
-        span ``t_stop - t_start`` is smaller than a single bin ``dt``, or if
+        windows contain no whole bin, if ``epochs`` is combined with explicit
+        bounds, or if
         ``orient`` is not one of the allowed values.
 
     Notes
     -----
-    The number of bins is ``n_bins = floor((t_stop - t_start) / dt)`` and the
-    edges are constructed deterministically as
-    ``edges = t_start + dt * arange(n_bins + 1)``, so the grid spans exactly
-    ``[t_start, t_start + n_bins * dt]`` and **no bin ever extends past
-    ``t_stop``**. (A small ``1e-9`` slack is added inside the ``floor`` so an
-    exact multiple of ``dt`` is not lost to floating-point error.) When the
-    span is not an exact multiple of ``dt`` the trailing partial interval
-    ``[t_start + n_bins * dt, t_stop)`` is dropped, and any spike at or beyond
-    the final edge ``t_start + n_bins * dt`` is excluded — with one boundary
-    exception below.
-
-    Bins are half-open on the left, ``[edge, edge + dt)``, following
-    :func:`numpy.histogram` semantics, except that the last bin is closed on
-    the right: a spike falling exactly on the final edge
-    ``t_start + n_bins * dt`` is counted in the last bin. ``bin_centers`` are
-    ``edges[:-1] + dt / 2`` and stay aligned with the count rows.
-
-    The grid must contain at least one whole bin; a span smaller than ``dt``
-    raises :class:`ValueError`.
+    Bins are half-open ``[left, right)`` and are tiled independently inside
+    each normalized epoch. A trailing remainder shorter than ``dt`` is
+    dropped. A spike exactly at ``t_stop`` or any window stop is not counted.
+    Edges that round past a window stop are clamped to that stop.
 
     Examples
     --------
@@ -149,12 +241,12 @@ def bin_spikes_in_time(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.decoding import bin_spikes_in_time, decode_position
-    >>> spike_trains = [
+    >>> spike_times = [
     ...     np.array([0.01, 0.06, 0.07]),  # neuron 0
     ...     np.array([0.03, 0.09]),  # neuron 1
     ... ]
     >>> counts, bin_centers = bin_spikes_in_time(
-    ...     spike_trains, dt=0.025, t_start=0.0, t_stop=0.1
+    ...     spike_times, dt=0.025, t_start=0.0, t_stop=0.1
     ... )
     >>> counts
     array([[1, 0],
@@ -178,26 +270,37 @@ def bin_spikes_in_time(
     True
     """
     dt = validate_dt(dt)
-    trains = [np.asarray(s, dtype=np.float64) for s in spike_trains]
-    if t_start is None:
-        t_start = min((s.min() for s in trains if s.size), default=0.0)
-    if t_stop is None:
-        # Auto-bound: extend one bin past the last spike so it lands inside
-        # the final bin and a single-spike (or single-timestamp) train works.
-        t_stop = max((s.max() for s in trains if s.size), default=t_start) + dt
-    elif t_stop <= t_start:
-        raise ValueError(f"t_stop ({t_stop}) must be > t_start ({t_start}).")
-    n_bins = int(np.floor((t_stop - t_start) / dt + 1e-9))
-    if n_bins < 1:
+    trains = [np.asarray(s, dtype=np.float64) for s in spike_times]
+    if epochs is not None:
+        if t_start is not None or t_stop is not None:
+            raise ValueError(
+                "bin_spikes_in_time got both epochs and t_start/t_stop. "
+                "\nWhy: epochs already defines where bins are formed. "
+                "\nFix: pass either epochs=[(start, stop), ...] or "
+                "t_start=..., t_stop=..., not both."
+            )
+        windows = as_intervals(epochs, name="epochs")
+        assert windows is not None
+    else:
+        if t_start is None:
+            t_start = min((s.min() for s in trains if s.size), default=0.0)
+        if t_stop is None:
+            t_stop = max((s.max() for s in trains if s.size), default=t_start) + dt
+        elif t_stop <= t_start:
+            raise ValueError(f"t_stop ({t_stop}) must be > t_start ({t_start}).")
+        windows = np.array([[t_start, t_stop]], dtype=np.float64)
+    left, right = time_bins_in_windows(windows, dt)
+    if left.size == 0:
+        longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
         raise ValueError(
-            f"Span t_stop - t_start ({t_stop - t_start}) is smaller than one "
-            f"bin dt ({dt}); no whole time bin fits."
+            _format_error(
+                f"Window span ({longest}) is smaller than one bin dt ({dt}); no whole time bin fits.",
+                fix=f"use dt <= {longest:g} or widen the time windows",
+                why="Why: each analyzed window must contain at least one full time bin.",
+            )
         )
-    edges = t_start + dt * np.arange(n_bins + 1, dtype=np.float64)
-    counts = np.stack([np.histogram(s, bins=edges)[0] for s in trains], axis=1).astype(
-        np.int64
-    )  # (n_time_bins, n_neurons)
-    bin_centers = edges[:-1] + dt / 2.0
+    counts = count_spikes_in_time_bins(trains, left, right)
+    bin_centers = left + dt / 2.0
     if orient == "neuron_x_time":
         counts = counts.T
     elif orient != "time_x_neuron":

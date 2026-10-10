@@ -12,7 +12,6 @@ All functions are importable from `behavior.vte`:
         VTESessionResult,
         head_sweep_magnitude,
         head_sweep_from_positions,
-        integrated_absolute_rotation,
         normalize_vte_scores,
         compute_vte_index,
         classify_vte,
@@ -44,8 +43,8 @@ VTE analysis:
 >>> from neurospatial.behavior import compute_vte_session
 >>> result = compute_vte_session(
 ...     env,
-...     positions,
 ...     times,
+...     positions,
 ...     decision_region="center",
 ...     trials=trials,
 ...     window_duration=1.0,
@@ -92,7 +91,6 @@ __all__ = [
     "compute_vte_trial",
     "head_sweep_from_positions",
     "head_sweep_magnitude",
-    "integrated_absolute_rotation",
     "normalize_vte_scores",
 ]
 
@@ -129,7 +127,8 @@ class VTETrialResult(ResultMixin):
     is_vte : bool or None
         True if vte_index > threshold. None if not classified.
     window_start : float
-        Start time of analysis window (seconds).
+        Requested window start (seconds), clipped at the trial start in
+        session analysis. Available samples may start later after a pause.
     window_end : float
         End time of window (decision region entry time, seconds).
     """
@@ -313,32 +312,49 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
 
 
 # Alias for backward compatibility and paper terminology
-integrated_absolute_rotation = head_sweep_magnitude
 
 
 def head_sweep_from_positions(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> float:
     """Compute head sweep magnitude (IdPhi) from position trajectory.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     float
         Sum of absolute heading changes (radians).
         Returns 0.0 if fewer than 2 valid heading samples.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    The result sums head-sweep magnitudes within runs, without connecting
+    the last heading of one recording to the first of another.
 
     Examples
     --------
@@ -347,26 +363,34 @@ def head_sweep_from_positions(
     >>> # Straight line trajectory (low head sweep)
     >>> times = np.linspace(0, 2, 20)
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.ones(20) * 50])
-    >>> head_sweep_from_positions(positions, times, min_speed=1.0)  # doctest: +SKIP
+    >>> head_sweep_from_positions(times, positions, min_speed=1.0)  # doctest: +SKIP
     0.0
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="head_sweep_from_positions"
+    )
+    from neurospatial.environment.trajectory import observed_runs
     from neurospatial.ops.egocentric import heading_from_velocity
 
+    runs = observed_runs(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return 0.0
-
-    # Compute dt from times (heading_from_velocity expects scalar dt)
-    # Use median dt to handle irregular sampling
-    dt = float(np.median(np.diff(times)))
 
     # Get headings. allow_all_nan: a VTE window is often a slow head-sweeping
     # pause, so an all-below-min_speed (all-NaN) heading is expected here, not an
     # error; head_sweep_magnitude handles the NaN.
     headings = heading_from_velocity(
-        positions, dt, min_speed=min_speed, allow_all_nan=True
+        times,
+        positions,
+        min_speed=min_speed,
+        allow_all_nan=True,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
-    return head_sweep_magnitude(headings)
+    return sum(head_sweep_magnitude(headings[run]) for run in runs)
 
 
 # =============================================================================
@@ -532,27 +556,37 @@ def classify_vte(
 
 
 def compute_vte_trial(
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> VTETrialResult:
     """Compute VTE metrics for a single trial.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates for entire trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates for entire trajectory.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window (seconds).
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -561,6 +595,15 @@ def compute_vte_trial(
         Note: z-scores and classification are None for single trial analysis.
         Use compute_vte_session() for session-level analysis with z-scoring.
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    The pre-decision samples are restricted to the run containing entry_time.
+    Result window bounds describe the requested window; fewer samples
+    may be available within that window.
+
     Examples
     --------
     >>> import numpy as np
@@ -568,18 +611,31 @@ def compute_vte_trial(
     >>> times = np.linspace(0, 3, 90)
     >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
     >>> result = compute_vte_trial(
-    ...     positions, times, entry_time=2.0, window_duration=1.0
+    ...     times, positions, entry_time=2.0, window_duration=1.0
     ... )
     >>> result.window_start
     1.0
     >>> result.window_end
     2.0
     """
-    from neurospatial.behavior.decisions import extract_pre_decision_window
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_vte_trial"
+    )
+    from neurospatial.behavior.decisions import (
+        extract_pre_decision_window,
+        pre_decision_speed_stats,
+    )
 
     # Extract pre-decision window
     window_positions, window_times = extract_pre_decision_window(
-        positions, times, entry_time, window_duration
+        times,
+        positions,
+        entry_time,
+        window_duration,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     window_start = entry_time - window_duration
@@ -587,7 +643,11 @@ def compute_vte_trial(
 
     # Compute head sweep magnitude
     head_sweep = head_sweep_from_positions(
-        window_positions, window_times, min_speed=min_speed
+        window_times,
+        window_positions,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Compute speed statistics
@@ -595,11 +655,9 @@ def compute_vte_trial(
         mean_spd = 0.0
         min_spd = 0.0
     else:
-        dt = np.diff(window_times)
-        velocity = np.diff(window_positions, axis=0) / dt[:, np.newaxis]
-        speeds = np.linalg.norm(velocity, axis=1)
-        mean_spd = float(np.mean(speeds))
-        min_spd = float(np.min(speeds))
+        mean_spd, min_spd = pre_decision_speed_stats(
+            window_times, window_positions, max_gap=max_gap, epochs=epochs
+        )
 
     return VTETrialResult(
         head_sweep_magnitude=head_sweep,
@@ -616,8 +674,8 @@ def compute_vte_trial(
 
 def compute_vte_session(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     decision_region: str,
     trials: list[Trial],
@@ -625,6 +683,8 @@ def compute_vte_session(
     min_speed: float = 5.0,
     alpha: float = 0.5,
     vte_threshold: float = 0.5,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> VTESessionResult:
     """Compute VTE metrics for all trials in a session.
 
@@ -632,10 +692,10 @@ def compute_vte_session(
     ----------
     env : Environment
         Environment with region definitions.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates for entire session.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates for entire session.
     decision_region : str
         Name of decision region in env.regions.
     trials : list[Trial]
@@ -643,6 +703,8 @@ def compute_vte_session(
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds.
         Typical values: 0.5-2.0s depending on maze size and task.
+        The window is clipped at the trial start; samples before
+        ``trial.start_time`` are never used.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
     alpha : float, default=0.5
@@ -651,19 +713,37 @@ def compute_vte_session(
     vte_threshold : float, default=0.5
         Threshold for VTE classification.
         Trial is VTE if vte_index > threshold.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     VTESessionResult
         Session-level VTE analysis with per-trial metrics.
 
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Each pre-decision window uses only its trial samples and the run
+    containing the decision-region entry. Result window bounds describe
+    the requested window clipped at the trial start; fewer samples may
+    be available within that window.
+
     Examples
     --------
     >>> from neurospatial.behavior import compute_vte_session
     >>> result = compute_vte_session(
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     decision_region="center",
     ...     trials=trials,
     ...     window_duration=1.0,
@@ -672,9 +752,15 @@ def compute_vte_session(
     ...     f"VTE trials: {result.n_vte_trials}/{len(result.trial_results)}"
     ... )  # doctest: +SKIP
     """
+    from neurospatial._validation import validate_times_positions
+
+    times, positions = validate_times_positions(
+        times, positions, call="compute_vte_session"
+    )
     from neurospatial.behavior.decisions import (
         decision_region_entry_time,
         extract_pre_decision_window,
+        pre_decision_speed_stats,
     )
 
     # First pass: compute raw metrics for all trials
@@ -710,31 +796,50 @@ def compute_vte_session(
             )
             continue
 
-        # Extract pre-decision window
+        # Extract the pre-decision window from this trial's samples only, so
+        # it stops at the trial start.
         window_positions, window_times = extract_pre_decision_window(
-            positions, times, entry_time, window_duration
+            trial_times,
+            trial_positions,
+            entry_time,
+            window_duration,
+            max_gap=max_gap,
+            epochs=epochs,
         )
 
         if len(window_positions) < 3:
-            # Not enough samples for heading analysis - skip
+            # Not enough samples for heading analysis - skip, observably.
+            warnings.warn(
+                f"Skipping trial spanning [{trial.start_time:.3f}, "
+                f"{trial.end_time:.3f}] s: only {len(window_positions)} "
+                f"sample(s) between the trial start and its decision-region "
+                f"entry at {entry_time:.3f} s; heading analysis needs at "
+                "least 3.",
+                UserWarning,
+                stacklevel=2,
+            )
             continue
 
         # Compute head sweep magnitude
         head_sweep = head_sweep_from_positions(
-            window_positions, window_times, min_speed=min_speed
+            window_times,
+            window_positions,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
         )
 
         # Compute speed statistics
-        dt = np.diff(window_times)
-        velocity = np.diff(window_positions, axis=0) / dt[:, np.newaxis]
-        speeds = np.linalg.norm(velocity, axis=1)
-        mean_spd = float(np.mean(speeds))
-        min_spd = float(np.min(speeds))
+        mean_spd, min_spd = pre_decision_speed_stats(
+            window_times, window_positions, max_gap=max_gap, epochs=epochs
+        )
 
         raw_head_sweeps.append(head_sweep)
         raw_speeds.append(mean_spd)
         raw_min_speeds.append(min_spd)
-        trial_windows.append((entry_time - window_duration, entry_time))
+        trial_windows.append(
+            (max(entry_time - window_duration, trial.start_time), entry_time)
+        )
 
     # Convert to arrays
     head_sweeps_arr = np.array(raw_head_sweeps)

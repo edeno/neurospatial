@@ -217,7 +217,7 @@ nav:
       - Architecture & Internals: advanced/architecture.md
       - Errors: errors.md
       - Glossary: glossary.md
-      - Migrating to v0.6: migration/v0.6.md
+      - Migrating to v0.6 and later: migration/v0.6.md
   - API Reference:
       - api/index.md
   - About:

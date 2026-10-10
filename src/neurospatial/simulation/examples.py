@@ -40,7 +40,9 @@ def open_field_session(
     **kwargs : Any
         Additional parameters passed to PlaceCellModel. Common options:
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float - Place field width in cm (default: 3*bin_size)
+        - width : float - Place field width in cm (default: 3 × bin spacing,
+          the median distance between neighbouring bin centres, or the median
+          bin length on a track; equals ``bin_size`` on a regular grid)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
@@ -50,7 +52,7 @@ def open_field_session(
         - env: Square arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -69,8 +71,8 @@ def open_field_session(
     >>> from neurospatial.simulation import open_field_session
     >>> session = open_field_session(duration=5.0, n_place_cells=3)
     >>> env = session.env
-    >>> spike_trains = session.spike_trains
-    >>> len(spike_trains)
+    >>> spike_times = session.spike_times
+    >>> len(spike_times)
     3
 
     Validate neurospatial's place field detection:
@@ -194,7 +196,8 @@ def linear_track_session(
     Parameters
     ----------
     duration : float, optional
-        Session duration in seconds (default: 240.0).
+        Session duration in seconds (default: 240.0). Samples at 500 Hz cover
+        ``[0, duration)``; the final sample is within 0.002 s of ``duration``.
     track_length : float, optional
         Track length in cm (default: 200.0).
     bin_size : float, optional
@@ -202,7 +205,8 @@ def linear_track_session(
     n_place_cells : int, optional
         Number of place cells (default: 40).
     n_laps : int, optional
-        Number of back-and-forth laps (default: 20).
+        Number of one-way traversals (default: 20), alternating outbound and
+        inbound starting outbound. Two traversals form one out-and-back cycle.
     seed : int | None, optional
         Random seed for reproducibility (default: None).
 
@@ -213,7 +217,7 @@ def linear_track_session(
         - env: 1D linear track Environment with units="cm"
         - positions: Trajectory from lap-based running
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -224,6 +228,9 @@ def linear_track_session(
         If duration, track_length, bin_size, n_place_cells, or n_laps are non-positive.
     ValueError
         If bin_size >= track_length (would create too few bins).
+    ValueError
+        If duration is non-finite or too short for the requested traversals:
+        at least two samples per traversal and 0.5 s between traversals.
 
     Examples
     --------
@@ -234,7 +241,7 @@ def linear_track_session(
     >>> env = session.env
     >>> env.n_dims
     1
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
 
     Validate place field detection on 1D track:
@@ -262,13 +269,17 @@ def linear_track_session(
     - Track length: 200 cm - standard linear track length
     - Bin size: 1 cm - fine spatial resolution for 1D
     - Number of cells: 40 - typical hippocampal CA1 recording
-    - Number of laps: 20 - provides good spatial coverage
+    - Number of traversals: 20 - ten out-and-back cycles
 
     **Trajectory**:
 
     Uses lap-based trajectory generation with automatic path finding. The
-    animal runs back and forth along the track, with speed variations and
-    brief pauses at endpoints to simulate realistic behavior.
+    animal runs back and forth along the track, preserving all ``n_laps``
+    traversals and fixed 0.5 s pauses between them. Remaining samples are
+    distributed using seeded relative speed variations; absolute speeds are
+    determined by ``duration`` and the traversal count, with no imposed speed
+    cap. Infeasible sample budgets raise an error rather than dropping laps.
+    Metadata records the requested duration and the sampling convention.
 
     **Coverage**:
 
@@ -349,7 +360,8 @@ def tmaze_alternation_session(
     Parameters
     ----------
     duration : float, optional
-        Session duration in seconds (default: 300.0).
+        Session duration in seconds (default: 300.0). Samples at 500 Hz cover
+        ``[0, duration)``; the final sample is within 0.002 s of ``duration``.
     n_trials : int, optional
         Number of alternation trials (default: 20).
     n_place_cells : int, optional
@@ -364,7 +376,7 @@ def tmaze_alternation_session(
         - env: T-maze graph Environment with units="cm"
         - positions: Trajectory from lap-based running with alternation
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each place cell
+        - spike_times: Poisson spikes for each place cell
         - models: PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration including 'trial_choices'
@@ -373,6 +385,9 @@ def tmaze_alternation_session(
     ------
     ValueError
         If duration, n_trials, or n_place_cells are non-positive.
+    ValueError
+        If duration is non-finite or too short for two samples per traversal
+        and fixed 0.5 s pauses between the ``n_trials`` traversals.
 
     Examples
     --------
@@ -381,7 +396,7 @@ def tmaze_alternation_session(
     >>> from neurospatial.simulation import tmaze_alternation_session
     >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, n_place_cells=3)
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
     >>> "trial_choices" in session.metadata
     True
@@ -439,6 +454,11 @@ def tmaze_alternation_session(
     Uses lap-based trajectory generation. The animal alternates between
     left and right arms according to a perfect alternation pattern,
     starting with a random first choice determined by the seed.
+
+    Session timing preserves ``n_trials`` one-way traversals and fixed 0.5 s
+    pauses between them. Absolute speeds follow from the requested duration;
+    seeded speed draws determine relative traversal times. Metadata records
+    duration and the sampling convention; infeasible sample budgets raise.
 
     **Trial Metadata**:
 
@@ -583,7 +603,7 @@ def boundary_cell_session(
         - env: Arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each cell (boundary + place)
+        - spike_times: Poisson spikes for each cell (boundary + place)
         - models: BoundaryCellModel and PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -606,7 +626,7 @@ def boundary_cell_session(
     ...     duration=5.0, n_boundary_cells=3, n_place_cells=2
     ... )
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     5
 
     Check cell type distribution:
@@ -735,7 +755,7 @@ def boundary_cell_session(
         model = BoundaryCellModel(env)
         models.append(model)
         # Store ground truth for boundary cell
-        ground_truth[f"cell_{i}"] = {
+        ground_truth[i] = {
             "cell_type": "boundary",
             "preferred_distance": float(model.preferred_distance),
             "distance_tolerance": float(model.distance_tolerance),
@@ -760,7 +780,7 @@ def boundary_cell_session(
         place_model = PlaceCellModel(env, center=center)
         models.append(place_model)
         # Store ground truth for place cell
-        ground_truth[f"cell_{cell_idx}"] = {
+        ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
             "max_rate": float(place_model.max_rate),
@@ -768,8 +788,8 @@ def boundary_cell_session(
         }
 
     # Generate spikes for all cells
-    spike_trains = generate_population_spikes(
-        models, positions, times, seed=seed, show_progress=False
+    spike_times = generate_population_spikes(
+        models, times, positions, seed=seed, show_progress=False
     )
 
     # Create metadata
@@ -791,7 +811,8 @@ def boundary_cell_session(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,
@@ -836,7 +857,7 @@ def grid_cell_session(
         - env: Square arena Environment with units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_trains: Poisson spikes for each grid cell
+        - spike_times: Poisson spikes for each grid cell
         - models: GridCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
@@ -855,7 +876,7 @@ def grid_cell_session(
     >>> from neurospatial.simulation import grid_cell_session
     >>> session = grid_cell_session(duration=5.0, n_grid_cells=3)
     >>> env = session.env
-    >>> len(session.spike_trains)
+    >>> len(session.spike_times)
     3
 
     Use custom grid spacing:
@@ -989,7 +1010,7 @@ def grid_cell_session(
         models.append(model)
 
         # Store ground truth
-        ground_truth[f"cell_{i}"] = {
+        ground_truth[i] = {
             "cell_type": "grid",
             "grid_spacing": float(grid_spacing),
             "phase_offset": phase.tolist(),
@@ -999,8 +1020,8 @@ def grid_cell_session(
         }
 
     # Generate spikes for all cells
-    spike_trains = generate_population_spikes(
-        models, positions, times, seed=seed, show_progress=False
+    spike_times = generate_population_spikes(
+        models, times, positions, seed=seed, show_progress=False
     )
 
     # Create metadata
@@ -1022,7 +1043,8 @@ def grid_cell_session(
         env=env,
         positions=positions,
         times=times,
-        spike_trains=spike_trains,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(spike_times), dtype=np.int64),
         models=models,
         ground_truth=ground_truth,
         metadata=metadata,

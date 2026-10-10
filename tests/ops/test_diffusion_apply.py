@@ -24,8 +24,10 @@ import pytest
 from diffusion_fixtures import (
     BASELINE_PATH,
     GEOMETRIES,
+    MESH_BASELINE_FINGERPRINT,
     MODES,
     PERF_SIGMA,
+    bin_center_fingerprint,
     build_grid_2d_split,
     build_perf_grid,
     build_scaling_grid,
@@ -78,6 +80,23 @@ def _m_norm_rel(a, ref, volumes) -> float:
     return num / den if den > 0 else num
 
 
+def _dense_oracle(env, geom: str, case: dict) -> dict:
+    """Dense-kernel action on the case's fields, for the env under test.
+
+    The frozen baseline holds the dense action for every geometry except the
+    mesh, whose triangulation is platform dependent (see
+    ``MESH_BASELINE_FINGERPRINT``); for it the dense kernel is computed live on
+    the same env. That is still an independent oracle for ``env.diffuse``:
+    dense expm against the matrix-free eigenbasis apply.
+    """
+    if geom != "mesh":
+        return case["kernel_at_field"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        kernel = env.compute_kernel(case["sigma"], mode=case["mode"], cache=False)
+    return {name: kernel @ case["fields"][name] for name in _ORACLE_FIELDS}
+
+
 def _geometry(env):
     graph, volumes = _finite_volume_geometry(env)
     volumes = np.asarray(volumes, dtype=np.float64)
@@ -99,10 +118,11 @@ def test_apply_matches_dense_full_rank(geom, mode, cases_by_key):
     env, _ = _build_env(geom)
     case = cases_by_key[(geom, "small", mode)]
     sigma = case["sigma"]
+    oracle = _dense_oracle(env, geom, case)
     for name in _ORACLE_FIELDS:
         field = case["fields"][name]
         out = np.asarray(env.diffuse(field, sigma, mode=mode))
-        ref = case["kernel_at_field"][name]
+        ref = oracle[name]
         np.testing.assert_allclose(
             out, ref, rtol=1e-8, atol=1e-10, err_msg=f"{geom}/{mode}/{name}"
         )
@@ -121,10 +141,11 @@ def test_apply_matches_dense_truncated(geom, mode, cases_by_key):
     _W, volumes = _geometry(env)
     case = cases_by_key[(geom, "large", mode)]
     sigma = case["sigma"]
+    oracle = _dense_oracle(env, geom, case)
     for name in _ORACLE_FIELDS:
         field = case["fields"][name]
         out = np.asarray(env.diffuse(field, sigma, mode=mode))
-        ref = case["kernel_at_field"][name]
+        ref = oracle[name]
         rel = _m_norm_rel(out, ref, volumes)
         assert rel < _TRUNC_MNORM_TOL, f"{geom}/{mode}/{name}: M-norm {rel:.2e}"
 
@@ -166,6 +187,11 @@ def test_compute_kernel_unchanged(geom, cases_by_key):
     1e-12 absorbs cross-platform BLAS ULP differences).
     """
     env, _ = _build_env(geom)
+    if geom == "mesh" and bin_center_fingerprint(env) != MESH_BASELINE_FINGERPRINT:
+        pytest.skip(
+            "this platform's Delaunay tie-break builds a different (equally valid) "
+            "mesh from the square lattice than the one the baseline was captured on"
+        )
     for sigma_label in ("small", "large"):
         for mode in MODES:
             case = cases_by_key[(geom, sigma_label, mode)]
@@ -658,6 +684,7 @@ def test_jax_backend_return_type_and_grad():
 # Performance: apply-path vs the captured dense baseline
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_perf_large_grid(baseline):
     """The matrix-free apply-path is dramatically faster and lower-memory than the
     baseline dense expm on a large grid, and scales to ~10k bins where the dense

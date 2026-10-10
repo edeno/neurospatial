@@ -19,6 +19,7 @@ The block below is complete and runnable top to bottom. It creates an
 environment, simulates a foraging trajectory and one place cell's spikes with
 neurospatial's built-in simulators, and estimates the cell's firing-rate map.
 
+<!-- docs-test: run -->
 ```python
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +30,7 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 
 rng = np.random.default_rng(1)
 
@@ -58,20 +59,34 @@ result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
     `env` from your recorded trajectory instead of `arena_samples`. Nothing
     else changes.
 
+Required tracking pairs always put timestamps before positions:
+`compute_spatial_rate(env, spike_times, times, positions)`, and behavior uses
+`(env, times, positions)` or `(times, positions)`. For pynapple tracking, pass
+`tsd.t, tsd.values` explicitly. Spatial rate functions require the positions
+argument; a tracking object cannot replace the timestamp array.
+
 ## Inspect and plot the result
 
 `compute_spatial_rate` returns a `SpatialRateResult`. Ask it for headline
 numbers, then plot the map:
 
 ```python
-# Scalar headline metrics as a plain dict.
+# Scalar headline metrics include peak_firing_rate, spatial_info and sparsity.
 print(result.summary())
 # -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~9.3 Hz,
-#    ~300 s total occupancy (exact values depend on the simulation).
+#    spatial_info in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
 print("Spatial information (bits/spike):", result.spatial_information())
+print("Place candidate (information screen):", result.is_place_cell(criterion="spatial_info"))
+print("Has a detected field:", result.has_place_field())
+
+# One-row table has the same columns as a population rate table.
+table = result.summary_table()
+print(table)
+print("Metric units:", table.attrs["units"])
+print("Heuristic thresholds:", table.attrs["classification_thresholds"])
 
 # Plot the firing-rate map; returns a Matplotlib Axes you can further style.
 ax = result.plot()
@@ -83,9 +98,35 @@ The peak sits near `(50, 50)` cm — right where the place cell was tuned — an
 the map is a smooth bump over the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
 
+Cell classification requires choosing a criterion: `"spatial_info"` is a fast
+screen biased upward at low spike counts; `"shuffle"` compares information with
+circularly shifted spike trains. Call
+`is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
+for that verdict using the raw arrays. It costs about 1000 map recomputes by
+default. Results offer screens and field detection; they keep no raw arrays.
+
+### Native 1D fields
+
+Native 1D grids and graph tracks both support rate plots. A native grid plots
+firing rate in Hz over physical bin coordinates. Pass simulator arrays and
+labels explicitly, then choose a population row or its singular result:
+
+```python
+from neurospatial import compute_spatial_rates
+from neurospatial.simulation import linear_track_session
+
+sim = linear_track_session(duration=60, n_place_cells=3, seed=0)
+track_rates = compute_spatial_rates(
+    sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
+)
+ax = track_rates.plot(idx=0)  # Same field as track_rates[0].plot().
+ax.set_title(f"Unit {track_rates.unit_ids[0]}: native 1D firing rate")
+plt.show()
+```
+
 ## What just happened
 
-Three concepts carried that analysis. They are worth a minute now; the
+Four concepts carried that analysis. They are worth a minute now; the
 [Core Concepts](core-concepts.md) page goes deeper.
 
 **Environment.** `Environment.from_samples(...)` discretized the continuous
@@ -112,6 +153,12 @@ same graph powers geodesic distances and shortest paths:
 center_bin = env.bin_at([[50.0, 50.0]])[0]
 print("Neighbors of the center bin:", env.neighbors(center_bin))
 ```
+
+**Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds
+are detected from `times` and excluded automatically. Use `epochs=` to select
+analysis windows and `spike_window=` when ephys started late or stopped early.
+Without it, spikes are assumed recorded whenever position was;
+`result.spike_window_assumed` makes that assumption visible.
 
 ## Next steps
 

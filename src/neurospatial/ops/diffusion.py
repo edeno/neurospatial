@@ -66,6 +66,9 @@ __all__ = [
 _HEAT_KERNEL_RANK_TOL = 1e-6
 _HEAT_KERNEL_DENSE_FRACTION = 0.5
 _HEAT_KERNEL_RANK_START = 32
+# Relative accuracy of an untruncated (full-basis) apply: float64 roundoff in
+# the eigenbasis product, measured near 1e-14 of the largest output.
+_FULL_BASIS_APPLY_RTOL = 1e-13
 
 # MRF penalty-basis resolver constant (consumed by ``select_live_basis`` and the
 # ``Environment._mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
@@ -1163,6 +1166,34 @@ def diffusion_component_labels(
     return int(n_components), labels
 
 
+def diffusion_apply_rtol(env: EnvironmentProtocol, sigma: float) -> float:
+    """Relative accuracy of ``env.diffuse(fields, sigma)`` (its noise floor).
+
+    Errors of the apply are about this fraction of the largest output value:
+    ``_HEAT_KERNEL_RANK_TOL`` when the bandwidth's eigenbasis is truncated, and
+    float64 roundoff (``_FULL_BASIS_APPLY_RTOL``) when the full basis is used.
+    Values below this level are indistinguishable from zero.
+
+    Parameters
+    ----------
+    env : Environment
+        A fitted environment.
+    sigma : float
+        The bandwidth passed to ``env.diffuse``.
+
+    Returns
+    -------
+    float
+        The relative noise floor. A bandwidth that ``env.diffuse`` has not yet
+        resolved reports the truncation tolerance (the larger of the two).
+    """
+    holder = cast("Any", env)._diffusion_eigenbasis
+    rank = holder.get("resolved", {}).get((float(sigma), _HEAT_KERNEL_RANK_TOL))
+    if rank == "dense" or (isinstance(rank, int) and rank >= env.n_bins):
+        return _FULL_BASIS_APPLY_RTOL
+    return _HEAT_KERNEL_RANK_TOL
+
+
 def component_support_mask(
     labels: NDArray[np.int_], n_components: int, valid: NDArray[np.bool_]
 ) -> NDArray[np.bool_]:
@@ -1248,6 +1279,8 @@ def diffusion_kernel(
 
 def _finite_volume_geometry(
     env: EnvironmentProtocol,
+    *,
+    operation: str = "diffusion_kernel",
 ) -> tuple[nx.Graph, NDArray[np.float64]]:
     """Dispatch to the per-geometry finite-volume builder.
 
@@ -1275,10 +1308,40 @@ def _finite_volume_geometry(
     try:
         builder = builders[engine]
     except KeyError:
-        raise NotImplementedError(
-            f"diffusion kernel unsupported for layout {engine!r}. Supported "
-            f"layouts: {sorted(builders)} (and egocentric polar)."
-        ) from None
+        from neurospatial._exceptions import _format_error
+
+        original = getattr(env.layout, "_build_params_used", {}).get(
+            "original_layout_type"
+        )
+        if engine == "_ReconstructedLayout" and original:
+            message = _format_error(
+                f"{operation} needs finite-volume cell geometry, which is not "
+                f"available for this {original} environment read from NWB.",
+                why=(
+                    "Why: read_environment restores bin centers, connectivity "
+                    "and bin measures for non-grid layouts, but not the layout "
+                    "engine that defines cell faces."
+                ),
+                fix=(
+                    f"rebuild the environment with the factory and {original} "
+                    f"layout parameters that created it, and run {operation} "
+                    "on that; grid layouts read from NWB support it directly"
+                ),
+            )
+        else:
+            message = _format_error(
+                f"{operation} needs finite-volume cell geometry, which layout "
+                f"{engine!r} does not provide.",
+                why=(
+                    f"Why: supported layouts are {sorted(builders)} and "
+                    "egocentric polar."
+                ),
+                fix=(
+                    "build the environment with a factory method, e.g. "
+                    "Environment.from_samples(positions, bin_size=...)"
+                ),
+            )
+        raise NotImplementedError(message) from None
     return builder(env)
 
 
@@ -1290,9 +1353,7 @@ def _per_axis_bin_widths(env: EnvironmentProtocol) -> NDArray[np.float64]:
 
     Uses the first spacing per axis, matching ``_GridMixin.bin_sizes``' uniform
     cell assumption, so the face measure ``A`` and the mass ``M`` stay mutually
-    consistent. Custom nonuniform ``grid_edges`` therefore inherit this uniform
-    approximation and are outside the physical-sigma guarantee (a tracked
-    follow-up), rather than silently mixing a nonuniform ``M`` with a uniform ``A``.
+    consistent. ``MaskedGridLayout.build`` rejects nonuniform ``grid_edges``.
     """
     grid_edges = cast("Any", env.layout).grid_edges
     return np.array([float(np.diff(edges)[0]) for edges in grid_edges])

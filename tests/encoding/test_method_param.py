@@ -28,7 +28,7 @@ from neurospatial.encoding.spatial import (
     compute_directional_place_fields,
     compute_spatial_rate,
     compute_spatial_rates,
-    is_place_cell,
+    has_place_field,
 )
 from neurospatial.encoding.view import compute_view_rate, compute_view_rates
 
@@ -72,10 +72,10 @@ def _ego_rates(session, method):
     return compute_egocentric_rates(env, [st, st], t, pos, hd, obj, **kw)
 
 
-def _is_place_cell(session, method):
+def _has_place_field(session, method):
     env, st, t, pos, _hd, _obj = session
     kw = {} if method is None else {"method": method}
-    return is_place_cell(env, st, t, pos, **kw)
+    return has_place_field(env, st, t, pos, **kw)
 
 
 # (id, call, default_method): encoders whose explicit-default call must match the
@@ -87,7 +87,7 @@ KWARG_CASES = [
     ("compute_view_rates", _view_rates, "diffusion_kde"),
     ("compute_egocentric_rate", _ego_rate, "binned"),
     ("compute_egocentric_rates", _ego_rates, "binned"),
-    ("is_place_cell", _is_place_cell, "diffusion_kde"),
+    ("has_place_field", _has_place_field, "diffusion_kde"),
 ]
 
 
@@ -97,7 +97,7 @@ def _firing(result):
         return np.asarray(result.firing_rates)
     if hasattr(result, "firing_rate"):
         return np.asarray(result.firing_rate)
-    return np.asarray(result)  # is_place_cell -> bool
+    return np.asarray(result)  # has_place_field -> bool
 
 
 @pytest.mark.parametrize(
@@ -147,7 +147,7 @@ def _old_kwarg_calls(session):
         "compute_egocentric_rates": lambda: compute_egocentric_rates(
             env, [st], t, pos, hd, obj, smoothing_method="binned"
         ),
-        "is_place_cell": lambda: is_place_cell(
+        "has_place_field": lambda: has_place_field(
             env, st, t, pos, smoothing_method="diffusion_kde"
         ),
         "compute_directional_place_fields": lambda: compute_directional_place_fields(
@@ -165,7 +165,7 @@ def _old_kwarg_calls(session):
         "compute_view_rates",
         "compute_egocentric_rate",
         "compute_egocentric_rates",
-        "is_place_cell",
+        "has_place_field",
         "compute_directional_place_fields",
     ],
 )
@@ -241,7 +241,8 @@ def test_method_in_projections(ovc_session):
         df = result.to_dataframe()
         assert "method" in df.columns and (df["method"] == "binned").all()
         table = result.summary_table()
-        assert "method" in table.columns and (table["method"] == "binned").all()
+        assert "method" not in table.columns
+        assert table.attrs["method"] == "binned"
 
 
 def test_method_in_xarray_attrs(ovc_session):

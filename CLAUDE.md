@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2026-01-08 (Encoding API updated to use result classes)
+**Last Updated**: 2026-10-09 (time windows, recording gaps and v0.6 naming contract)
 
 ---
 
@@ -41,7 +41,7 @@ West----+----East                 Back----+----Ahead
 
 All public functions follow a consistent argument order pattern:
 
-```python
+```text
 # Neural encoding functions (place fields, object-vector, spatial view, etc.)
 func(
     env,                    # 1. Environment (spatial context)
@@ -69,6 +69,10 @@ func(
     *,                      # 4. Keyword-only separator
     region_params,          # 5. Region specifications (start_region, end_regions, etc.)
 )
+
+# Behavior with required coordinate samples
+func(env, times, positions, ...)  # When spatial context is required
+func(times, positions, ...)       # Without an environment
 ```
 
 **Key principles:**
@@ -76,6 +80,8 @@ func(
 - **Environment first** for encoding functions (establishes spatial context)
 - **Animal state before targets** for egocentric ops (positions, headings, then targets)
 - **Data before metadata** (spike_times before times, positions before headings)
+- **Times before positions** whenever both are required; positions-first
+  functions keep optional timestamps in their documented slot.
 - **Use `positions`** not `trajectory` for coordinate arrays (consistency)
 - **Use `position_bins`** not `trajectory_bins` for discretized indices
 
@@ -105,10 +111,17 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 - **`summary_table()`** → **one row per unit**, **`unit_id`-indexed**, scalar
   metric columns (peak location/rate, spatial info, grid/border score, cell
   type, preferred direction/distance). The default a 1000-unit user wants.
-  Accepts an optional `unit_ids=` to relabel the index.
+  Singular and population rate results have identical columns. Population
+  tables accept `unit_ids=` to relabel the index. Constant `method`, physical
+  `units`, and `classification_thresholds` live in `df.attrs`; object-vector
+  tables also record `direction_frame` there. Primary metrics come first and
+  classification last, so both remain visible in truncated tables.
 - **`to_xarray()`** → labeled **`xr.Dataset`** (requires the optional `xarray`
   extra). **Two distinct shapes — never conflate them:**
-  - **Population rate results** → dims `("unit_id", "bin")`; `unit_id` is the
+  - **All rate results** → dims `("unit_id", "bin")`; singular results have
+    a one-unit axis. A standalone result without `unit_id` uses `<NA>`;
+    supply a label or index a population result for NetCDF-safe identity.
+    `unit_id` is the
     index coord (the real `result.unit_ids` labels — `.sel(unit_id=…)` selects
     by label), `bin_center_x`/`y`/`z` (or `bin_center_distance`/`angle` for
     polar/directional) are non-index coords on `bin`. Duplicate `unit_ids`
@@ -116,22 +129,61 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
   - **Decode results** (`DecodingResult`) → dims `("time", "bin")` (posterior
     over space per time bin; **no `unit_id` axis**). `attrs` carry
     `units` (when set) / env fingerprint / `software_version`.
-- **`summary()`** → flat dict of scalar headline metrics.
+- **`summary()`** → flat dict of scalar headline metrics. Population rates
+  name `n_units` and `max_peak_firing_rate`; `total_occupancy` counts the shared
+  occupancy map once. Singular rates keep `peak_firing_rate` and add cheap
+  information, sparsity or directional metrics for their family.
 - **`plot(ax=None, ...)`** → returns the `Axes`.
 - PSTH results (`PeriEventResult`, `PopulationPeriEventResult`) carry
   `ResultMixin` and implement `to_dataframe()` / `summary()` / `plot()`, plus
   `summary_table()` on the population class. They do **not** implement
   `to_xarray()`.
 
+### Root and domain imports
+
+The root lazily exposes `compute_spatial_rate(s)`, `SpatialRateResult` and
+`SpatialRatesResult`, `decode_position` and `DecodingResult`, and
+`peri_event_histogram` and `PeriEventResult`, alongside core spatial types,
+public exceptions and domain submodules. Static analyzers resolve concrete
+types; importing the root does not load decoding. Simulator and NWB readers
+return frozen holders: pass `.spike_times`, `.times`, `.positions`, and
+`.unit_ids` explicitly. NWB `.spike_window` preserves acquisition coverage;
+select analysis epochs separately with `read_intervals`.
+
+Use `neurospatial.encoding.SpikeTrains`, `neurospatial.behavior.restrict`, and
+`neurospatial.decoding.BayesianDecoder` / `bin_spikes_in_time` through their
+owning domains. The phase-precession callable is `compute_phase_precession`;
+`encoding.phase_precession` is its module. Built-in overlays use `EventOverlay`
+for spikes/events; video calibration types come from `ops`. Normalizers,
+validation helpers and renderer/cache internals are not domain-root exports.
+The public names/signatures are checked by `tests/test_public_api_snapshot.py`;
+intentional changes regenerate `tests/data/public_api.txt` with
+`NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.py`.
+
 ### Cell-type API (one learnable rule)
 
-- **Single-unit predicate:** `is_<celltype>_cell(...)` exists BOTH as a free
-  function and as a result method. The shipped predicates are exactly
-  `is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`, and
+- **Single-unit predicate:** free functions and result methods share each
+  family's threshold rule. The shipped free predicates are exactly
+  `is_place_cell` (required `criterion="spatial_info" | "shuffle"`),
+  `is_head_direction_cell`, `is_object_vector_cell`
+  (allocentric), `is_egocentric_object_vector_cell`, and
   `is_spatial_view_cell`. There are **no** `is_border_cell` / `is_grid_cell`
   predicates — `border` and `grid` are reachable only as *labels* via
   `SpatialRatesResult.label_cell_types()` (see below), not as predicate
-  functions.
+  functions. Object-vector results use `is_object_vector_cell()` in their
+  recorded `direction_frame`; they have no separate egocentric method.
+- **Field detection:** `has_place_field` (free and method) keeps the detector's
+  behavior; a detected field is not a cell-type verdict.
+- **Raw-array shuffle computations:** `place_cell_significance`,
+  `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and `egocentric_object_vector_cell_significance`
+  return label-keyed `ShuffleTestResult` objects. Free cell predicates accept
+  `criterion="shuffle"`; seeded streams agree across single/population calls
+  when `unit_id` matches. Wrong-mode keywords raise together.
+- **Result methods and batch classifiers:** threshold screens only; results
+  keep no raw input arrays or recompute closures. Threshold defaults resolve
+  from private read-only family constants, with inclusive `>=` comparisons
+  (Rayleigh p-values remain `< alpha`).
 - **Batch boolean predicate:** `result.classify(*, ...) -> NDArray[bool]` on
   every plural result class — a **single-type** is-this-cell-type predicate.
 - **Batch multi-class labeler:** `SpatialRatesResult.label_cell_types(*, ...)
@@ -155,7 +207,7 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
   `peak_locations()`: directional results (`DirectionalRateResult` /
   `DirectionalRatesResult`) use `preferred_direction()` /
   `preferred_directions()` (angle, radians); egocentric/object-vector results
-  (`EgocentricRateResult` / `EgocentricRatesResult`) use
+  (`ObjectVectorRateResult` / `ObjectVectorRatesResult`) use
   `preferred_distance()` / `preferred_distances()` and `preferred_direction()`
   / `preferred_directions()` (polar radius + angle). A Cartesian
   `peak_locations()` is intentionally not provided for these.
@@ -176,8 +228,8 @@ See **"Canonical Argument Order"** above (encoding env-first, directional
 exception, egocentric `(positions, headings, targets)`, segmentation
 `(position_bins, times, env, *, region_params)`). v0.6 adds:
 **`detect_region_crossings(position_bins, times, env, *, region_name,
-direction)`** — env in slot 3 (matches segmentation). The old positional order
-`(..., region_name, env)` still works for one release but warns.
+direction)`** — env in slot 3 (matches segmentation), with required
+keyword-only `region_name`.
 
 ### Factory presets (experiment vocabulary over `from_*`)
 
@@ -235,7 +287,8 @@ from neurospatial import Environment
 import numpy as np
 
 # Generate sample position data
-positions = np.random.rand(100, 2) * 100  # 100 points in 2D
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, (5000, 2))  # Dense coverage of the arena
 
 # Create environment (bin_size is REQUIRED)
 env = Environment.from_samples(positions, bin_size=2.0)
@@ -246,7 +299,7 @@ env.frame = "session1"
 
 # Query the environment
 bin_idx = env.bin_at([50.0, 50.0])
-neighbors = env.neighbors(bin_idx)
+neighbors = env.neighbors(int(bin_idx[0]))
 ```
 
 **Need different layout?** See [QUICKSTART.md - Environment Creation](.claude/QUICKSTART.md#environment-creation)
@@ -254,7 +307,7 @@ neighbors = env.neighbors(bin_idx)
 ### 2. Compute Place Fields
 
 ```python
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial import compute_spatial_rate
 
 # Compute place field for one neuron (returns SpatialRateResult)
 result = compute_spatial_rate(
@@ -264,6 +317,9 @@ result = compute_spatial_rate(
     fill_value=0.0,  # Replace any NaN bins with 0 Hz for the decoding golden path
 )
 firing_rate = result.firing_rate  # Access firing rate from result object
+has_field = result.has_place_field()  # Field detection, not cell identity
+candidate = result.is_place_cell(criterion="spatial_info")  # Fast, biased screen
+# For a shuffle verdict use is_place_cell(..., criterion="shuffle") on raw arrays.
 
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 # Result also has: result.occupancy, result.env, result.spatial_information(), etc.
@@ -274,18 +330,22 @@ firing_rate = result.firing_rate  # Access firing rate from result object
 # then masks exactly `result.occupancy < min_occupancy`. (Do not treat it as a
 # density -- an over-large value in seconds masks the whole map and now warns.)
 #
+# diffusion_kde and binned return NaN in bins too far from all occupancy for
+# the smoothing to resolve (typically 4-7 bandwidths away).
+#
 # fill_value default is None: masked/unreachable bins stay NaN (no behavior
 # change for existing callers). Pass fill_value=0.0 when feeding
 # decode_position() so the model is explicitly zero-rate there -- the documented
 # encode->decode golden path then composes with no manual np.nan_to_num.
-# decode_position() also tolerates residual NaN bins (treats them as zero-rate,
-# warns once).
+# decode_position() also tolerates residual NaN bins: it leaves those
+# (neuron, bin) terms out of the likelihood (NOT zero-rate) and warns once.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
 
 ### 3. Animate Spatial Fields
 
+<!-- docs-test: skip requires a display and ffmpeg -->
 ```python
 # IMPORTANT: frame_times is REQUIRED
 frame_times = np.arange(len(fields)) / 30.0  # 30 Hz timestamps
@@ -297,7 +357,7 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 env.clear_cache()  # Required before parallel rendering
 env.animate_fields(
     fields, frame_times=frame_times, speed=1.0,
-    backend="video", save_path="animation.mp4", n_workers=4
+    backend="video", save_path="animation.mp4", overwrite=True, n_workers=4
 )
 ```
 
@@ -315,7 +375,10 @@ position_overlay = PositionOverlay(
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
 )
-env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
+env.animate_fields(
+    fields, frame_times=frame_times, overlays=[position_overlay],
+    backend="html", save_path="trajectory_overlay.html",
+)
 ```
 
 **Need pose tracking or events?** See [QUICKSTART.md - Overlays](.claude/QUICKSTART.md#visualization--animation)
@@ -323,7 +386,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
 ### 5. Compute Peri-Event Histogram (PSTH)
 
 ```python
-from neurospatial.events import peri_event_histogram
+from neurospatial import peri_event_histogram
 
 # Compute PSTH around reward events
 result = peri_event_histogram(
@@ -362,8 +425,7 @@ from neurospatial.ops.egocentric import (
 )
 
 # Compute heading from movement direction (min_speed in cm/s)
-dt = times[1] - times[0]  # time step in seconds
-headings = heading_from_velocity(positions, dt, min_speed=5.0)  # cm/s
+headings = heading_from_velocity(times, positions, min_speed=5.0)  # cm/s
 
 # Compute egocentric bearing to objects (0=ahead, π/2=left, -π/2=right)
 object_positions = np.array([[50, 50], [75, 25]])  # 2 objects, coordinates in cm
@@ -380,19 +442,20 @@ distances = compute_egocentric_distance(
 ### 8. Compute Object-Vector Field
 
 ```python
-from neurospatial.encoding import compute_egocentric_rate
+from neurospatial.encoding import compute_object_vector_rate, compute_egocentric_rate
 
-# Compute firing field in egocentric polar coordinates (returns EgocentricRateResult)
-result = compute_egocentric_rate(
-    env, spike_times, times, positions, headings, object_positions,
-    distance_range=(0.0, 50.0),  # min/max distance to object (cm)
-    n_distance_bins=10,          # radial resolution
-    n_direction_bins=12,         # angular resolution (full circle)
+# World-frame direction to the object: 0 = East, +pi/2 = North; no headings.
+allocentric = compute_object_vector_rate(
+    env, spike_times, times, positions, object_positions,
+    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
 )
-# result.firing_rate: firing rate in egocentric polar bins
-# result.env: the egocentric polar environment
-# result.occupancy: time spent in each bin
-# result.preferred_distance(), result.preferred_direction(): peak location
+# Animal-relative bearing: 0 = ahead, +pi/2 = left; headings required.
+egocentric = compute_egocentric_rate(
+    env, spike_times, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
+)
+# Both return ObjectVectorRateResult and record result.direction_frame.
+# preferred_direction() measures animal -> object; add pi for object -> animal.
 ```
 
 **Egocentric polar environments are a DISTINCT type.**
@@ -456,9 +519,10 @@ uv add package
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises ValueError -->
 ```python
-env = Environment()  # Not fitted!
-env.bin_at([10.0, 5.0])  # RuntimeError
+env = Environment()  # ValueError [E1006]: use a factory
+env.bin_at([10.0, 5.0])
 ```
 
 ✅ **Right:**
@@ -472,8 +536,9 @@ env.bin_at([10.0, 5.0])  # Works
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises TypeError -->
 ```python
-env = Environment.from_samples(data)  # TypeError
+env = Environment.from_samples(positions)  # bin_size is required
 ```
 
 ✅ **Right:**
@@ -486,32 +551,38 @@ env = Environment.from_samples(positions, bin_size=2.0)
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises AttributeError -->
 ```python
-env.regions['goal'].point = new_point  # AttributeError
+env.regions.add("goal", point=(50.0, 50.0))
+new_point = (60.0, 60.0)
+env.regions["goal"].data = np.asarray(new_point)  # Immutable region
 ```
 
 ✅ **Right:**
 
 ```python
-env.regions.update_region('goal', point=new_point)  # No warning
+env.regions.add("goal", point=(50.0, 50.0))
+new_point = (60.0, 60.0)
+env.regions.update_region("goal", point=new_point)
 ```
 
 ### Gotcha 5: Check `is_linearized_track` before linearization
 
 ❌ **Wrong:**
 
+<!-- docs-test: raises AttributeError -->
 ```python
 env = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
-linear_pos = env.to_linear(position)  # AttributeError
+linear_pos = env.to_linear(positions[:1])
 ```
 
 ✅ **Right:**
 
 ```python
 if env.is_linearized_track:
-    linear_pos = env.to_linear(position)
+    linear_pos = env.to_linear(positions[:1])
 else:
-    bin_idx = env.bin_at(position)
+    bin_idx = env.bin_at(positions[:1])
 ```
 
 **More gotchas?** See [TROUBLESHOOTING.md - Common Gotchas](.claude/TROUBLESHOOTING.md#common-gotchas)
@@ -527,7 +598,7 @@ uv sync  # From project root
 uv run python -c "import neurospatial; print(neurospatial.__file__)"
 ```
 
-### Error: `RuntimeError: Environment must be fitted before calling this method`
+### Error: `ValueError: [E1006] Environment cannot be constructed directly`
 
 Use factory methods:
 
@@ -676,7 +747,7 @@ This documentation is organized into focused modules:
 | ValueError: no active bins | "When Things Break" above |
 | Tests fail | [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing) |
 | Pre-commit hooks fail | [TROUBLESHOOTING.md - Pre-commit](.claude/TROUBLESHOOTING.md#pre-commit-hooks-fail-on-commit) |
-| Memory warning | [TROUBLESHOOTING.md - ResourceWarning](.claude/TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) |
+| Memory warning | [TROUBLESHOOTING.md - Creating large grid](.claude/TROUBLESHOOTING.md#userwarning-creating-large-grid) |
 | Type errors | [PATTERNS.md - Mypy](.claude/PATTERNS.md#mypy-type-checking-requirements) |
 | Slow napari animations | [PROFILING.md - Common Performance Issues](.claude/PROFILING.md#common-performance-issues) |
 
@@ -736,6 +807,9 @@ def function_name(param1, param2):
 ## 🧪 Testing Quick Reference
 
 ```bash
+# Execute public Markdown and flagship docstring examples
+uv run pytest tests/docs -n 4
+
 # Run all tests
 uv run pytest
 
@@ -751,6 +825,23 @@ uv run pytest --doctest-modules src/neurospatial/
 # Skip slow tests
 uv run pytest -m "not slow"
 ```
+
+Documentation tests execute README and the getting-started quickstart cumulatively
+without injected names. CLAUDE patterns and opted-in reference fragments each get
+a fresh NumPy recording fixture, so variables do not carry between blocks.
+Place a marker directly above a Python fence:
+
+- `<!-- docs-test: run -->` opts a reference fragment into execution.
+- `<!-- docs-test: run setup=quickstart_vte_session -->` selects a named setup
+  migrated from the former snippet manifest. Every setup name must exist in
+  `SETUPS` in `tests/docs/test_executable_docs.py` and be used by a marker.
+- `<!-- docs-test: skip requires a display -->` skips execution with a required reason.
+- `<!-- docs-test: raises ValueError -->` checks an intentionally wrong call.
+
+Figures use the Agg backend and outputs go into temporary directories. Animation
+setup patches are restored after each test. NWB recipes marked `<!-- nwb-docs-test: run -->` execute against a real HDF5
+fixture in `tests/nwb/test_documented_workflow.py` with the NWB extra installed.
+Module doctests remain a separate check: `uv run pytest --doctest-modules src/neurospatial/ -n 0`.
 
 **More testing options:** [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
 
@@ -771,7 +862,7 @@ uv run pytest -m "not slow"
 - Visualization (interactive animation with napari, video export, HTML players)
 - NWB integration (read/write NeurodataWithoutBorders files - optional)
 
-**Current Version:** v0.3.x (Domain-centric package reorganization)
+**Current Version:** v0.8.0 (unreleased changes in CHANGELOG.md)
 
 ---
 

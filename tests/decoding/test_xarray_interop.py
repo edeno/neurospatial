@@ -16,6 +16,39 @@ from neurospatial.decoding import DecodingResult
 from neurospatial.decoding.metrics import decoding_error
 
 
+@pytest.mark.parametrize("streamed", [False, True])
+@pytest.mark.parametrize("window", [None, (100.0, 200.0)])
+def test_decode_spike_window_attrs(continuous_recording, tmp_path, streamed, window):
+    """Recording coverage survives scipy-engine NetCDF serialization."""
+    xr = pytest.importorskip("xarray")
+    from neurospatial.decoding import decode_session, decode_session_summary
+
+    r = continuous_recording
+    decode = decode_session_summary if streamed else decode_session
+    result = decode(
+        r.env,
+        [r.spike_times],
+        r.times,
+        r.positions,
+        method="binned",
+        spike_window=window,
+    )
+    dataset = result.to_xarray()
+    assert dataset.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in dataset.attrs
+    else:
+        np.testing.assert_array_equal(dataset.attrs["spike_window"], [100.0, 200.0])
+    path = tmp_path / "decode.nc"
+    dataset.to_netcdf(path, engine="scipy")
+    restored = xr.load_dataset(path, engine="scipy")
+    assert restored.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in restored.attrs
+    else:
+        np.testing.assert_array_equal(restored.attrs["spike_window"], [100.0, 200.0])
+
+
 def _delta_posterior(env, bin_indices):
     """Build a one-hot posterior placing all mass on the given bins."""
     posterior = np.zeros((len(bin_indices), env.n_bins), dtype=np.float64)
@@ -133,31 +166,23 @@ class TestToXarrayDims:
 
     def test_bad_times_length_raises_neurospatial_error(self, small_2d_env):
         """Direct DecodingResult construction validates time-coordinate length."""
-        pytest.importorskip("xarray")
-
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
-        result = DecodingResult(
-            posterior=posterior,
-            env=small_2d_env,
-            times=np.asarray([0.0, 1.0]),
-        )
-
-        with pytest.raises(ValueError, match="times length mismatch"):
-            result.to_xarray()
+        with pytest.raises(ValueError, match=r"times has shape \(2,\)"):
+            DecodingResult(
+                posterior=posterior,
+                env=small_2d_env,
+                times=np.asarray([0.0, 1.0]),
+            )
 
     def test_non_1d_times_raise_neurospatial_error(self, small_2d_env):
         """Direct DecodingResult construction validates time-coordinate shape."""
-        pytest.importorskip("xarray")
-
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
-        result = DecodingResult(
-            posterior=posterior,
-            env=small_2d_env,
-            times=np.asarray([[0.0], [1.0], [2.0]]),
-        )
-
-        with pytest.raises(ValueError, match="times must be 1-D"):
-            result.to_xarray()
+        with pytest.raises(ValueError, match=r"times has shape \(3, 1\)"):
+            DecodingResult(
+                posterior=posterior,
+                env=small_2d_env,
+                times=np.asarray([[0.0], [1.0], [2.0]]),
+            )
 
 
 class TestErrorAgainst:
