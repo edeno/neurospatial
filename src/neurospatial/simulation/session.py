@@ -155,6 +155,13 @@ class SimulationSession:
                 "Fix: pass one position row per timestamp."
             )
         labels = {int(label) for label in self.unit_ids}
+        if len(labels) != len(self.unit_ids):
+            raise ValueError(
+                f"unit_ids {[int(label) for label in self.unit_ids]} are not "
+                f"unique; each unit needs its own label.\n"
+                "Fix: build unit_ids as np.arange(len(spike_times)), or give "
+                "every unit a distinct label."
+            )
         if set(self.ground_truth) != labels:
             raise ValueError(
                 f"ground_truth is keyed by {sorted(self.ground_truth)} but "

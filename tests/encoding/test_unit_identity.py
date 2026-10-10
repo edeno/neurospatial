@@ -393,3 +393,67 @@ def test_spike_trains_records_generated_labels():
     assert generated.filter("ok")._unit_ids_generated is True
     assert dataclasses.replace(generated)._unit_ids_generated is True
     assert SpikeTrains(trains, unit_ids=[0, 1])._unit_ids_generated is False
+
+
+def test_mixed_type_labels_keep_their_types():
+    """[1, "u"] must not become ["1", "u"]; an int label stays an int."""
+    from neurospatial._results import resolve_unit_ids
+    from neurospatial.encoding import SpikeTrains
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+
+    resolved = resolve_unit_ids([1, "u"], 2)
+    assert resolved.tolist() == [1, "u"]
+    assert [type(label) for label in resolved.tolist()] == [int, str]
+
+    group = SpikeTrains([np.array([0.1]), np.array([0.2, 0.3])], unit_ids=[1, "u"])
+    trains, labels = as_spike_trains_with_ids(group)
+    assert labels.tolist() == [1, "u"]
+    np.testing.assert_array_equal(trains[1], [0.2, 0.3])
+
+
+def test_mixed_type_labels_keep_shuffle_streams():
+    """A unit's null depends on its label and seed, not on its neighbours' types."""
+    from neurospatial.encoding import head_direction_cell_significance
+
+    times = np.arange(0, 120, 0.05)
+    headings = np.sin(times / 5)
+    rng = np.random.default_rng(0)
+    a, b = (np.sort(rng.uniform(0, 119, 300)) for _ in range(2))
+    options = {"n_shuffles": 20, "rng": 3}
+    population = head_direction_cell_significance(
+        [a, b], times, headings, unit_ids=[1, "u"], **options
+    )
+    single = head_direction_cell_significance(
+        [a], times, headings, unit_ids=[1], **options
+    )
+    assert list(population) == [1, "u"]
+    np.testing.assert_allclose(
+        population[1].null_scores, single[1].null_scores, rtol=1e-12, atol=1e-12
+    )
+    assert population[1].p_value == single[1].p_value
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
+def test_indexing_population_keeps_mixed_label_types(family):
+    times = np.arange(0, 60, 0.05)
+    positions = np.c_[50 + 30 * np.sin(times / 5), 50 + 30 * np.cos(times / 7)]
+    headings = np.sin(times / 5)
+    env = Environment.from_samples(positions, bin_size=5.0)
+    trains = [np.sort(np.random.default_rng(0).uniform(0, 59, 100))] * 2
+    options = {"unit_ids": [1, "u"]}
+    rates = {
+        "spatial": lambda: compute_spatial_rates(
+            env, trains, times, positions, method="binned", **options
+        ),
+        "directional": lambda: compute_directional_rates(
+            trains, times, headings, **options
+        ),
+        "view": lambda: compute_view_rates(
+            env, trains, times, positions, headings, method="binned", **options
+        ),
+        "egocentric": lambda: compute_egocentric_rates(
+            env, trains, times, positions, headings, np.array([[50.0, 50.0]]), **options
+        ),
+    }[family]()
+    assert [unit.unit_id for unit in rates] == [1, "u"]
+    assert type(rates[0].unit_id) is int

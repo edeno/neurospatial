@@ -51,6 +51,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial._results import label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -852,7 +853,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             distance_range=self.distance_range,
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
-            unit_id=np.asarray(self.unit_ids)[idx].item(),
+            unit_id=label_at(self.unit_ids, idx),
             spike_window=self.spike_window,
             direction_frame=self.direction_frame,
         )

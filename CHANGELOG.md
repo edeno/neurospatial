@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- Unit labels of mixed types keep their types: `unit_ids=[1, "u"]` no
+  longer turns `1` into the string `"1"`. Result keys, indexed results,
+  labelled spike groups and shuffle random streams all use the label as
+  given, so a unit's seeded null is the same in single and population calls.
 - **Behavior change:** spatial rates use only intervals whose two tracking
   samples both lie inside the environment. An interval ending in a dropout
   (NaN) or outside was previously kept in the occupancy while its spikes
@@ -91,6 +95,8 @@
 - `SimulationSession` checks that `times` and `positions` have one row per
   sample and that `ground_truth` is keyed by exactly the `unit_ids`, so
   relabeling units with `dataclasses.replace` must re-key `ground_truth` too.
+  Duplicate `unit_ids` are rejected, since two cells sharing a label would
+  both be validated against one ground truth.
   `NWBUnits` checks that `unit_ids` and `obs_intervals` align with
   `spike_times`.
 - `ObjectVectorRateResult` and `ObjectVectorRatesResult` reject a

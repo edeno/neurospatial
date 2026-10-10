@@ -234,7 +234,9 @@ def as_spike_trains_with_ids(
         # ``UserDict`` (a ``Mapping``), so iterating it yields the unit-id KEYS,
         # not the per-unit trains (iterating would silently produce 0-d id
         # arrays and wrong rates/posterior).
-        unit_ids = np.asarray(list(spike_times.index))
+        from neurospatial._results import as_label_array
+
+        unit_ids = as_label_array(list(spike_times.index))
         if isinstance(spike_times, Mapping):
             # TsGroup (UserDict) & dict-like: index -> per-unit ``Ts`` with ``.t``
             # (fall back to the value itself if it is already a plain array).
