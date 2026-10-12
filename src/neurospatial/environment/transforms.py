@@ -891,7 +891,8 @@ class EnvironmentTransforms:
             If environment is not fitted (use factory methods like
             `Environment.from_samples()`).
         ValueError
-            If transform dimensionality doesn't match environment dimensionality.
+            If transform dimensionality doesn't match environment dimensionality,
+            or the transform is not invertible.
 
         See Also
         --------

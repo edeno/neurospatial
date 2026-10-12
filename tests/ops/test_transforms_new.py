@@ -6,6 +6,7 @@ import pytest
 from neurospatial import Environment
 from neurospatial.ops.transforms import (
     Affine2D,
+    AffineND,
     apply_transform_to_environment,
     estimate_transform,
     translate,
@@ -231,6 +232,88 @@ class TestApplyTransformToEnvironment:
         # Centers should be translated
         expected = simple_2d_env.bin_centers + np.array([10, 20])
         assert np.allclose(transformed_env.bin_centers, expected)
+
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            translate(10, 20),
+            Affine2D(np.array([[0.0, -2.0, 10.0], [0.5, 0.0, 20.0], [0, 0, 1]])),
+            Affine2D(np.array([[1.0, 2.0, 0.0], [0.0, -1.0, 0.0], [0, 0, 1]])),
+        ],
+        ids=["translation", "rotation_and_scaling", "shear_and_reflection"],
+    )
+    def test_transform_preserves_containment_and_occupancy(self, transform):
+        """Outside points and inactive cells stay excluded after alignment."""
+        mask = np.ones((3, 3), dtype=bool)
+        mask[1, 1] = False
+        env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+        points = np.array([[0.1, 0.9], [1.5, 1.5], [8.0, 8.0], [2.5, 2.5]])
+        expected = env.bin_at(points)
+        assert expected.tolist() == [0, -1, -1, 7]
+
+        transformed = env.apply_transform(transform)
+        mapped = transform(points)
+        np.testing.assert_array_equal(transformed.bin_at(mapped), expected)
+        np.testing.assert_array_equal(transformed.contains(mapped), expected >= 0)
+
+        times = np.arange(len(points)) / 10
+        np.testing.assert_allclose(
+            transformed.occupancy(times, mapped), env.occupancy(times, points)
+        )
+        # Applying another transform must preserve the same containment rules.
+        again = transformed.apply_transform(translate(-3, 4))
+        np.testing.assert_array_equal(
+            again.bin_at(mapped + np.array([-3, 4])), expected
+        )
+
+    @pytest.mark.parametrize("n_dims", [1, 3])
+    def test_transform_preserves_nd_containment(self, n_dims):
+        """Inverse mapping also preserves inactive bins for AffineND layouts."""
+        mask = np.ones((2,) * n_dims, dtype=bool)
+        mask[(1,) * n_dims] = False
+        env = Environment.from_grid_mask(mask, grid_edges=(np.arange(3.0),) * n_dims)
+        matrix = np.eye(n_dims + 1)
+        matrix[:n_dims, :n_dims] *= 2
+        matrix[:n_dims, -1] = 10
+        transform = AffineND(matrix)
+        points = np.array([[0.5] * n_dims, [1.5] * n_dims, [8.0] * n_dims])
+
+        transformed = env.apply_transform(transform)
+        np.testing.assert_array_equal(
+            transformed.bin_at(transform(points)), [0, -1, -1]
+        )
+
+    def test_singular_environment_transform_raises(self, simple_2d_env):
+        """Collapsed cells cannot support an inverse containment query."""
+        with pytest.raises(ValueError, match="invertible"):
+            simple_2d_env.apply_transform(Affine2D(np.diag([0.0, 1.0, 1.0])))
+
+    def test_transform_preserves_polygon_holes(self):
+        """Excluded regions stay excluded under both translation and reflection."""
+        from shapely.geometry import Point, Polygon
+
+        env = Environment.from_grid_mask(
+            np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+        )
+        polygon = Polygon(
+            [(0, 0), (4, 0), (4, 4), (0, 4)],
+            holes=[
+                [(1, 1), (2, 1), (2, 2), (1, 2)],
+                [(3, 1), (3.5, 1), (3.5, 2), (3, 2)],
+            ],
+        )
+        env.regions.add("arena", polygon=polygon)
+        transform = Affine2D(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
+        transformed = env.apply_transform(transform)
+        region = transformed.regions["arena"].data
+
+        assert len(region.interiors) == 2
+        assert region.area == pytest.approx(polygon.area * 6)
+        for point in ([0.5, 0.5], [1.5, 1.5], [3.25, 1.5], [8.0, 8.0]):
+            assert region.contains(
+                Point(transform(np.array(point)))
+            ) == polygon.contains(Point(point))
+        assert env.regions["arena"].data.equals(polygon)
 
     def test_transform_preserves_n_bins(self, simple_2d_env):
         """Test that transformation preserves number of bins."""

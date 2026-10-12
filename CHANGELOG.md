@@ -58,6 +58,8 @@
 
 ### Fixed
 
+- Preserve containment and inactive bins after affine environment transforms, including chained transforms, and retain polygon-region holes. Reject singular transforms that collapse bin geometry.
+
 - Unit labels of mixed types keep their types: `unit_ids=[1, "u"]` no
   longer turns `1` into the string `"1"`. Result keys, indexed results,
   labelled spike groups and shuffle random streams all use the label as

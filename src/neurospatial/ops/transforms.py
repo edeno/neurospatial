@@ -1373,7 +1373,8 @@ def apply_transform_to_environment(
     Raises
     ------
     ValueError
-        If transform dimensionality doesn't match environment dimensionality.
+        If transform dimensionality doesn't match environment dimensionality,
+        or the transform is not invertible.
     RuntimeError
         If environment is not fitted.
 
@@ -1466,6 +1467,17 @@ def apply_transform_to_environment(
             f"environment dimensionality ({env.n_dims}D)."
         )
 
+    # Containment is evaluated in the original layout's coordinate frame.
+    # A singular transform collapses cells, so there is no unambiguous inverse.
+    try:
+        inverse_transform = transform.inverse()
+    except np.linalg.LinAlgError as exc:
+        raise ValueError(
+            "Environment transform must be invertible.\n"
+            "Why: a singular transform collapses bins and cannot preserve containment.\n"
+            "Fix: use nonzero scale factors and an invertible affine matrix."
+        ) from exc
+
     # Transform bin centers
     transformed_centers = transform(env.bin_centers)
 
@@ -1536,6 +1548,8 @@ def apply_transform_to_environment(
             self.bin_centers = centers
             self.connectivity = graph
             self.dimension_ranges = dim_ranges
+            self._original_layout = original_layout
+            self._inverse_transform = inverse_transform
             self.is_linearized_track = original_layout.is_linearized_track
             self._layout_type_tag = f"{original_layout._layout_type_tag}_transformed"
             self._build_params_used = {
@@ -1552,12 +1566,14 @@ def apply_transform_to_environment(
             pass  # Already built
 
         def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-            # Use KD-tree on transformed centers
-            from scipy.spatial import cKDTree
-
-            kdtree = cKDTree(self.bin_centers)
-            _, indices = kdtree.query(points)
-            return np.asarray(indices, dtype=np.intp)
+            # Preserve cell boundaries and inactive bins, including under shear
+            # where the nearest transformed center need not own the point.
+            return np.asarray(
+                self._original_layout.point_to_bin_index(
+                    self._inverse_transform(points)
+                ),
+                dtype=np.intp,
+            )
 
         def bin_sizes(self) -> NDArray[np.float64]:
             """Approximate per-bin area/volume of the transformed layout.
@@ -1631,7 +1647,10 @@ def apply_transform_to_environment(
                     )
                 old_coords = np.array(region.data.exterior.coords)
                 new_coords = transform(old_coords)
-                new_poly = shp.Polygon(new_coords)
+                new_holes = [
+                    transform(np.asarray(ring.coords)) for ring in region.data.interiors
+                ]
+                new_poly = shp.Polygon(new_coords, holes=new_holes)
                 new_region = Region(
                     name=region.name,
                     kind="polygon",
