@@ -696,7 +696,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
     unit_table : pandas.DataFrame or None
         Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
         quality, depth, inclusion flags), one row per unit; ``None`` when not
-        provided. Rides alongside the rates for downstream filtering/grouping.
+        provided. A unit_id column or named/non-default index aligns rows
+        by identity; an unnamed default RangeIndex uses unit order.
+        Mismatched or duplicate labels raise ValueError.
 
     Notes
     -----
@@ -765,7 +767,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         return _egocentric_xarray_attrs(self)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids, validate_unit_table
+        from neurospatial._results import align_unit_table, resolve_unit_ids
 
         _check_direction_frame(self.direction_frame, context="ObjectVectorRatesResult")
         n_units = int(np.asarray(self.firing_rates).shape[0])
@@ -774,7 +776,13 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
-        validate_unit_table(self.unit_table, n_units, context="ObjectVectorRatesResult")
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(
+                self.unit_table, self.unit_ids, context="ObjectVectorRatesResult"
+            ),
+        )
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:

@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import resolve_unit_ids, validate_unit_table
+from neurospatial._results import align_unit_table, resolve_unit_ids
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -80,9 +80,11 @@ class SpikeTrains:
         a length mismatch or duplicate labels raise :class:`ValueError`.
     unit_table : pandas.DataFrame or None, optional
         Per-unit metadata aligned to :attr:`unit_ids` (e.g. region, quality,
-        depth, inclusion), one row per unit. When provided its length must
-        equal ``len(trains)`` or :class:`ValueError` is raised. Enables
-        :meth:`filter`.
+        depth, inclusion), one row per unit. A ``unit_id`` column or a named
+        or non-default index aligns rows by identity; missing, extra or
+        duplicate labels raise :class:`ValueError`. A plain unnamed
+        ``RangeIndex`` without a ``unit_id`` column uses train order. The
+        table is copied at construction. Enables :meth:`filter`.
 
     Attributes
     ----------
@@ -145,7 +147,11 @@ class SpikeTrains:
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
         object.__setattr__(self, "unit_ids", resolved)
 
-        validate_unit_table(self.unit_table, n_units, context="SpikeTrains")
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(self.unit_table, self.unit_ids, context="SpikeTrains"),
+        )
 
     @property
     def index(self) -> NDArray[Any]:
@@ -239,7 +245,7 @@ class SpikeTrains:
         -------
         SpikeTrains
             A new container with only the matching units (trains, ids, and a
-            row-subset of the table, its index reset).
+            row-subset of the table, preserving its identity index).
 
         Raises
         ------
@@ -269,14 +275,20 @@ class SpikeTrains:
                 "unit) before calling filter()."
             )
 
-        # Compute matched *positions* on a positionally-indexed copy so the
-        # result is robust to any original index (including non-unique labels).
+        import pandas as pd
+
+        # Metadata was aligned to unit_ids at construction. Query a positional
+        # copy so selection preserves that alignment and the identity index.
         positional = self.unit_table.reset_index(drop=True)
         positions = positional.query(query).index.to_numpy()
 
         new_trains = [self.trains[i] for i in positions]
         new_unit_ids = np.asarray(self.unit_ids)[positions]
-        new_table = self.unit_table.iloc[positions].reset_index(drop=True)
+        new_table = self.unit_table.iloc[positions].copy()
+        if self.unit_table.index.name is None and self.unit_table.index.equals(
+            pd.RangeIndex(len(self))
+        ):
+            new_table = new_table.reset_index(drop=True)
         return SpikeTrains(
             trains=new_trains,
             unit_ids=new_unit_ids,

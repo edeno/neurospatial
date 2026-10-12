@@ -233,7 +233,8 @@ def test_unit_table_correct_length_accepted(trajectory, spike_trains):
         bandwidth=result.bandwidth,
         unit_table=good_table,
     )
-    assert rebuilt.unit_table is good_table
+    pd.testing.assert_frame_equal(rebuilt.unit_table, good_table)
+    assert rebuilt.unit_table is not good_table
 
 
 def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains):

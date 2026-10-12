@@ -208,6 +208,54 @@ def validate_unit_table(
         )
 
 
+def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
+    """Align labelled metadata by identity; accept a plain RangeIndex by position.
+
+    A ``unit_id`` column or a non-default/named index declares unit identity.
+    Missing, extra or duplicate labels raise instead of selecting another unit.
+    """
+    import pandas as pd
+
+    ids = np.asarray(unit_ids)
+    validate_unit_table(unit_table, len(ids), context=context)
+    if unit_table is None:
+        return None
+    if not isinstance(unit_table, pd.DataFrame):
+        raise ValueError(f"{context}: unit_table must be a pandas DataFrame.")
+    positional = (
+        isinstance(unit_table.index, pd.RangeIndex)
+        and unit_table.index.equals(pd.RangeIndex(len(ids)))
+        and unit_table.index.name is None
+    )
+    if "unit_id" in unit_table.columns:
+        labels = pd.Index(unit_table["unit_id"], name="unit_id")
+        if not positional and not labels.equals(unit_table.index):
+            raise ValueError(
+                f"{context}: unit_table index and unit_id column disagree. "
+                "Fix: use one consistent unit identity for each row."
+            )
+    elif positional:
+        return unit_table.copy()
+    else:
+        labels = unit_table.index
+    if not labels.is_unique or labels.hasnans:
+        raise ValueError(
+            f"{context}: unit_table labels must be unique and non-missing. "
+            "Fix: provide one metadata row per unit_id."
+        )
+    order = labels.get_indexer(ids)
+    if np.any(order < 0):
+        raise ValueError(
+            f"{context}: unit_table labels do not match unit_ids={ids.tolist()}. "
+            "Fix: provide metadata for exactly these units; a plain unnamed "
+            "RangeIndex is accepted only for rows already in spike order."
+        )
+    aligned = unit_table.iloc[order].copy()
+    if positional:
+        aligned = aligned.reset_index(drop=True)
+    return aligned
+
+
 def software_version() -> str:
     """Return the installed ``neurospatial`` version string.
 

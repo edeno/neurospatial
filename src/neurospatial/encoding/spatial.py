@@ -1551,7 +1551,9 @@ class SpatialRatesResult(SpatialResultMixin):
     unit_table : pandas.DataFrame or None
         Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
         quality, depth, inclusion flags), one row per unit; ``None`` when not
-        provided. Rides alongside the rates for downstream filtering/grouping.
+        provided. A unit_id column or named/non-default index aligns rows
+        by identity; an unnamed default RangeIndex uses unit order.
+        Mismatched or duplicate labels raise ValueError.
     spike_window : NDArray[np.float64] or None
         Normalized spike-recording windows in seconds, copied read-only.
         Shared by the population and preserved on indexed single-unit results.
@@ -1681,7 +1683,7 @@ class SpatialRatesResult(SpatialResultMixin):
     def __post_init__(self) -> None:
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
-        from neurospatial._results import resolve_unit_ids, validate_unit_table
+        from neurospatial._results import align_unit_table, resolve_unit_ids
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
         # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
@@ -1712,7 +1714,13 @@ class SpatialRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
-        validate_unit_table(self.unit_table, n_units, context="SpatialRatesResult")
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(
+                self.unit_table, self.unit_ids, context="SpatialRatesResult"
+            ),
+        )
 
     def __len__(self) -> int:
         """Return number of units.

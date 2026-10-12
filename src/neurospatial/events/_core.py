@@ -250,7 +250,8 @@ class PopulationPeriEventResult(ResultMixin):
     unit_table : pandas.DataFrame or None
         Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
         quality, depth, inclusion flags), one row per unit; ``None`` when not
-        provided. Rides alongside the rates for downstream filtering/grouping.
+        provided. Labelled tables align by unit identity; an unnamed default
+        RangeIndex uses unit order. Mismatched or duplicate labels raise ValueError.
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit firing rates (Hz). Cached on construction as
         ``histograms / bin_size``; treat as a read-only attribute.
@@ -295,7 +296,7 @@ class PopulationPeriEventResult(ResultMixin):
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids, validate_unit_table
+        from neurospatial._results import align_unit_table, resolve_unit_ids
 
         # Frozen dataclass: bypass setattr to populate the cached fields.
         object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
@@ -308,8 +309,12 @@ class PopulationPeriEventResult(ResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
-        validate_unit_table(
-            self.unit_table, n_units, context="PopulationPeriEventResult"
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(
+                self.unit_table, self.unit_ids, context="PopulationPeriEventResult"
+            ),
         )
 
     def __len__(self) -> int:
