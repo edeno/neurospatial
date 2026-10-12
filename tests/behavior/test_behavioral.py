@@ -499,6 +499,25 @@ def test_path_progress_edge_case_disconnected():
     assert np.all(np.isnan(progress))
 
 
+@pytest.mark.parametrize(
+    "n_cells", [4, 5002], ids=["distance_matrix", "distance_field"]
+)
+def test_path_progress_disconnected_current_position(n_cells):
+    """A reachable goal does not make a position on another component valid."""
+    from neurospatial.behavior.navigation import path_progress
+
+    mask = np.ones(n_cells, dtype=bool)
+    mask[2] = False
+    env = Environment.from_grid_mask(mask, grid_edges=(np.arange(n_cells + 1.0),))
+    progress = path_progress(
+        np.array([0, 1, 2, 2]),
+        env,
+        start_bins=np.array([0, 0, 0, 0]),
+        goal_bins=np.array([1, 1, 1, 0]),
+    )
+    np.testing.assert_allclose(progress, [0.0, 1.0, np.nan, np.nan], equal_nan=True)
+
+
 def test_path_progress_large_environment():
     """Test path progress with large environment (n_bins > 5000, test fallback)."""
     from neurospatial.behavior.navigation import path_progress

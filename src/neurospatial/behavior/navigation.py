@@ -659,7 +659,7 @@ def path_progress(
     same_start_goal = start_bins == goal_bins
     progress[same_start_goal] = 1.0
 
-    disconnected = np.isinf(total_distances)
+    disconnected = ~np.isfinite(total_distances) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
 
     invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
