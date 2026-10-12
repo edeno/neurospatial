@@ -314,7 +314,6 @@ result = compute_spatial_rate(
     env, spike_times, times, positions,
     method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
-    fill_value=0.0,  # Replace any NaN bins with 0 Hz for the decoding golden path
 )
 firing_rate = result.firing_rate  # Access firing rate from result object
 has_field = result.has_place_field()  # Field detection, not cell identity
@@ -333,12 +332,13 @@ candidate = result.is_place_cell(criterion="spatial_info")  # Fast, biased scree
 # diffusion_kde and binned return NaN in bins too far from all occupancy for
 # the smoothing to resolve (typically 4-7 bandwidths away).
 #
-# fill_value default is None: masked/unreachable bins stay NaN (no behavior
-# change for existing callers). Pass fill_value=0.0 when feeding
-# decode_position() so the model is explicitly zero-rate there -- the documented
-# encode->decode golden path then composes with no manual np.nan_to_num.
-# decode_position() also tolerates residual NaN bins: it leaves those
-# (neuron, bin) terms out of the likelihood (NOT zero-rate) and warns once.
+# fill_value defaults to None: missing/under-sampled rates stay NaN.
+# Population rates carry spatial_support and analysis_settings. Prefer
+# BayesianDecoder.from_rates(rates), which excludes unsupported locations.
+# Explicit decode_position(..., rates.firing_rates, ...) needs
+# prior=rates.spatial_support.astype(float). Zero filling alone is not support.
+# Default spatial bandwidth is 5 cm converted to declared metric units, or
+# 2.5 median graph-edge lengths for unspecified/custom coordinate units.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)

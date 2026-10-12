@@ -523,9 +523,11 @@ def decode_position(
         A population rate result object (anything exposing a ``firing_rates``
         attribute, e.g.
         :class:`~neurospatial.encoding.spatial.SpatialRatesResult`) may be
-        passed directly; its ``firing_rates`` array is used. This removes the
-        ``np.stack([r.firing_rate ...])`` glue between the encoding and
-        decoding steps.
+        passed directly. Its ``spatial_support`` excludes unobserved,
+        below-threshold or non-finite training bins, intersecting any supplied
+        prior. This mask is retained even when stored rates were zero-filled.
+        When passing raw arrays, provide a prior that excludes unsupported bins,
+        such as ``prior=rates.spatial_support.astype(float)``.
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
         ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
@@ -533,10 +535,9 @@ def decode_position(
         Poisson log-likelihood at that bin, so the neuron is uninformative
         there, and a single :class:`UserWarning` is emitted per call. This is
         not the same as a zero rate: a spike from that neuron cannot count
-        against the bin. It is defense-in-depth so a ``fill_value=None``
-        encoding model still decodes; the recommended path is still to pass
-        ``fill_value=0.0`` to the encoder, which models those bins as
-        zero-rate.
+        against the bin. These raw-array semantics cannot distinguish missing
+        training coverage from a valid rate estimate; pass the rate result
+        directly to retain its support mask.
 
         Inf entries are handled the same way, but only with ``validate=False``:
         each Inf ``(neuron, bin)`` is excluded in the same way, so a
@@ -692,6 +693,14 @@ def decode_position(
     dt = validate_dt(dt)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
+    from neurospatial.decoding._support import models_on_support, supported_prior
+
+    support = getattr(encoding_models, "spatial_support", None)
+    if support is not None:
+        prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
+        encoding_models = models_on_support(
+            cast("SpatialRatesLike", encoding_models).firing_rates, support
+        )
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
         spike_counts,
@@ -1038,9 +1047,9 @@ def _prepare_decode_inputs(
             raise ValueError(
                 "encoding_models has no finite bins; every spatial bin is "
                 "non-finite (NaN or Inf) across all neurons -- cannot decode. "
-                "Recompute place fields or pass fill_value (e.g. "
-                "fill_value=0.0 to the encoder) so the model is explicitly "
-                "zero-rate there."
+                "Recompute place fields from valid training observations; "
+                "check coverage, epochs and occupancy thresholds. Filling "
+                "missing rates cannot supply the absent training evidence."
             )
 
     # Defense-in-depth for non-finite encoding-model bins. Two distinct
@@ -1073,8 +1082,9 @@ def _prepare_decode_inputs(
             "e.g. low-occupancy bins masked by the encoder's min_occupancy "
             "with fill_value=None). Each such (neuron, bin) is left out of that "
             "neuron's Poisson likelihood, so the neuron says nothing about that "
-            "bin. Pass fill_value=0.0 to the encoder to silence this and model "
-            "those bins as zero-rate instead; the posteriors differ.",
+            "bin. Pass the SpatialRatesResult directly to retain its training "
+            "support, or supply a prior excluding unsupported locations. "
+            "Zero filling alone treats missing observations as silence.",
             UserWarning,
             stacklevel=3,
         )
@@ -1329,8 +1339,10 @@ def decode_position_summary(
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
         Firing-rate maps (place fields) for each neuron, or a population rate
-        result object exposing ``firing_rates``. Same semantics (NaN/Inf
-        handling, no-finite-bins guard) as :func:`decode_position`.
+        result object exposing ``firing_rates``. Rate results also carry
+        ``spatial_support``, which excludes unsupported training bins and
+        intersects any supplied prior. Same semantics (NaN/Inf handling,
+        no-finite-bins guard) as :func:`decode_position`.
     dt : float
         Time-bin width in seconds.
     prior : NDArray[np.float64] | None, default=None
@@ -1410,6 +1422,14 @@ def decode_position_summary(
     # raw TypeError (dt="0.1") or silently accepting dt=True as 1.
     dt = validate_dt(dt)
 
+    from neurospatial.decoding._support import models_on_support, supported_prior
+
+    support = getattr(encoding_models, "spatial_support", None)
+    if support is not None:
+        prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
+        encoding_models = models_on_support(
+            cast("SpatialRatesLike", encoding_models).firing_rates, support
+        )
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
         spike_counts,

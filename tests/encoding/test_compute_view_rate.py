@@ -365,15 +365,19 @@ class TestComputeViewRateSmoothing:
         )
         assert result.bandwidth == 8.0
 
-    def test_default_bandwidth_is_5(
+    @pytest.mark.parametrize("units, expected", [(None, 25.0), ("cm", 5.0)])
+    def test_default_bandwidth_uses_units_or_bin_spacing(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
+        units: str | None,
+        expected: float,
     ) -> None:
-        """Default bandwidth should be 5.0."""
+        """Use 5 cm with metric units, otherwise 2.5 of the 10-unit grid steps."""
         from neurospatial.encoding.view import compute_view_rate
 
+        simple_env.units = units
         times, positions, headings = trajectory_data
         result = compute_view_rate(
             simple_env,
@@ -382,7 +386,7 @@ class TestComputeViewRateSmoothing:
             positions,
             headings,
         )
-        assert result.bandwidth == 5.0
+        assert result.bandwidth == expected
 
 
 # ==============================================================================

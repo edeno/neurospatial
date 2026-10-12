@@ -33,8 +33,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.encoding._binning import (
-    count_frames_and_occupancy,
+    FrameBinning,
     count_spikes_by_frame,
+    prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
 from neurospatial.environment.trajectory import (
@@ -414,6 +415,53 @@ def bin_view_spike_train(
     return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
 
+def prepare_view_binning(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    view_bins: NDArray[np.intp] | None = None,
+) -> FrameBinning:
+    """Prepare geometry and exact temporal support before counting spikes."""
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+
+    # Validate times (minimum samples and monotonicity)
+    _validate_times(times, context="bin_view_spike_trains")
+
+    # Precompute view bins ONCE (shared across all neurons) unless the caller
+    # already holds them for these exact samples and gaze settings.
+    # This is the expensive computation - computed once instead of per-neuron
+    if view_bins is None:
+        view_bins = _precompute_view_bins(
+            env,
+            positions,
+            headings,
+            gaze_model=gaze_model,
+            view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
+        )
+
+    n_bins = env.n_bins
+    prepared = prepare_frame_binning(
+        times,
+        view_bins,
+        n_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    return prepared
+
+
 def bin_view_spike_trains(
     env: Environment,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
@@ -543,35 +591,18 @@ def bin_view_spike_trains(
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
 
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="bin_view_spike_trains")
-
-    # Precompute view bins ONCE (shared across all neurons) unless the caller
-    # already holds them for these exact samples and gaze settings.
-    # This is the expensive computation - computed once instead of per-neuron
-    if view_bins is None:
-        view_bins = _precompute_view_bins(
-            env,
-            positions,
-            headings,
-            gaze_model=gaze_model,
-            view_distance=view_distance,
-            gaze_offsets=gaze_offsets,
-        )
-
-    n_bins = env.n_bins
-    spike_counts, occupancy = count_frames_and_occupancy(
-        spike_times_list,
+    prepared = prepare_view_binning(
+        env,
         times,
-        view_bins,
-        n_bins,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
-        n_jobs=n_jobs,
+        view_bins=view_bins,
     )
+    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
     return spike_counts, occupancy

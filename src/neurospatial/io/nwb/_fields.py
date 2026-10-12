@@ -7,7 +7,7 @@ This module provides functions for writing spatial analysis results
 Schema note
 -----------
 The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.3"``). Schema ``2.1`` persists the
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.4"``). Schema ``2.1`` persists the
 ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
 ``reml_objective``). Schema ``2.2`` adds the per-neuron-``lambda``
@@ -20,6 +20,8 @@ fields and read back with them ``None``. Schema ``2.3`` adds
 unit-pairing semantics and spike-recording coverage. Older files default to
 explicit unit labels and assumed coverage; their missing provenance cannot be
 recovered from the stored labels or rate maps.
+Schema ``2.4`` adds resolved ``analysis_settings`` (including epochs, observed
+intervals and occupancy thresholds). Older files report these as unknown.
 
 ``read_place_field`` enforces the schema **major** version: it reads only tables
 whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
@@ -88,7 +90,8 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 #      as per-unit columns when they are vectors. A 2.1 file (no ``pooled`` key)
 #      reads back method-conditionally (glm -> pooled=True, ratio -> None).
 # 2.3: adds generated-unit-label provenance and spike-recording windows.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.3"
+# 2.4: records resolved analysis settings for reproducible spatial support.
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.4"
 
 # The reader accepts any table sharing this MAJOR version (minor bumps only add
 # optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
@@ -723,6 +726,7 @@ def write_spatial_rates(
         "unit_table_columns": unit_table_columns,
         "occupancy_name": occupancy_name,
         "unit_ids_generated": bool(result._unit_ids_generated),
+        "analysis_settings": result.analysis_settings,
         "spike_window": (
             None if result.spike_window is None else result.spike_window.tolist()
         ),
@@ -1201,5 +1205,6 @@ def read_place_field(
         unit_table=unit_table,
         _unit_ids_generated=unit_ids_generated,
         spike_window=spike_window,
+        analysis_settings=meta.get("analysis_settings"),
         **gam_fields,  # type: ignore[arg-type]
     )

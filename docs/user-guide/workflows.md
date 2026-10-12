@@ -2,6 +2,87 @@
 
 This page demonstrates end-to-end analysis workflows that integrate multiple neurospatial features.
 
+## Compare conditions with explicit windows
+
+Use one environment and the same estimator settings for both conditions. Keep
+the original tracking arrays and pass each condition's windows to the analysis;
+this prevents excluded time from reconnecting after slicing. The example uses
+two halves of a simulated recording as stand-ins for experimental conditions.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import compute_spatial_rates
+from neurospatial.simulation import linear_track_session
+
+session = linear_track_session(duration=30, n_place_cells=3, seed=3)
+midpoint = float(session.times[len(session.times) // 2])
+conditions = {
+    "first": (float(session.times[0]), midpoint),
+    "second": (midpoint, float(session.times[-1])),
+}
+maps = {
+    name: compute_spatial_rates(
+        session.env, session.spike_times, session.times, session.positions,
+        unit_ids=session.unit_ids, epochs=window, bandwidth=5.0,
+        min_occupancy=0.05,
+    )
+    for name, window in conditions.items()
+}
+# Compare only bins with observed support in both conditions.
+shared = maps["first"].spatial_support & maps["second"].spatial_support
+assert shared.any()
+rate_change = (
+    maps["second"].firing_rates[:, shared]
+    - maps["first"].firing_rates[:, shared]
+)
+print("Units:", session.unit_ids)
+print("Mean rate change over shared bins (Hz):", rate_change.mean(axis=1))
+print("Observed time by condition (s):",
+      {name: result.occupancy.sum() for name, result in maps.items()})
+```
+
+This is a descriptive comparison. Unequal sampling, trial structure and repeated
+measurements matter when choosing a statistical test; a rate difference alone
+is not evidence of a condition effect. Preserve the condition windows and
+`analysis_settings` when exporting maps.
+
+## Evaluate decoding on held-out data
+
+Fit on training trials or time blocks, select settings on validation data, and
+evaluate once on a separate test block. `decode_session` fits and decodes the
+same recording; use `BayesianDecoder` for this separation.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
+from neurospatial.simulation import linear_track_session
+
+session = linear_track_session(duration=30, n_place_cells=5, seed=4)
+spikes = SpikeTrains(session.spike_times, unit_ids=session.unit_ids)
+split = float(session.times[len(session.times) // 2])
+training = (float(session.times[0]), split)
+testing = (split, float(session.times[-1]))
+decoder = BayesianDecoder(session.env, dt=0.1, bandwidth=5.0).fit(
+    spikes, session.times, session.positions, epochs=training,
+)
+prediction = decoder.predict(spikes, session.times, epochs=testing)
+errors = prediction.error_against(session.times, session.positions)
+assert prediction.times.min() >= split
+assert np.all(prediction.posterior[:, ~decoder.spatial_support] == 0)
+print("Held-out median error:", np.nanmedian(errors), session.env.units)
+print("Training coverage:", int(decoder.spatial_support.sum()),
+      "of", session.env.n_bins, "bins")
+```
+
+Locations without supported training observations have zero posterior
+probability. Report coverage alongside error: a decoder cannot learn an
+unobserved location. Spatial uncertainty and held-out error answer different
+questions. Choose independent trials/blocks appropriate to the experiment;
+the split here demonstrates the API, not a universal evaluation design.
+
 ## Workflow 1: Place Field Analysis
 
 A complete workflow for analyzing spatial firing patterns of neurons during navigation.
@@ -318,7 +399,7 @@ synthetic sequence, is covered in
 `decode_session` requires tracking and computes its own maps. For maps already
 computed on a training epoch, use `BayesianDecoder.from_rates(rates)`; prediction
 takes spike times and a plain timestamp array. An explicit array handoff uses
-`rates.firing_rates` with binned counts. This example decodes the second recording
+`rates.firing_rates` with binned counts and `prior=rates.spatial_support.astype(float)` to retain the training mask. This example decodes the second recording
 run through both routes. It bins only that run and uses each decoder's returned
 timestamps, so the 10–20 s pause is never represented by a decode bin.
 
@@ -350,7 +431,8 @@ result = decoder.predict(
 counts, centers = bin_spikes_in_time(
     spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
 )
-array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers)
+array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers,
+    prior=rates.spatial_support.astype(float))
 np.testing.assert_array_equal(result.times, array_result.times)
 np.testing.assert_array_equal(result.posterior, array_result.posterior)
 assert np.all((result.times >= 20.0) & (result.times < 30.0))

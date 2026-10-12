@@ -1,13 +1,22 @@
 """Scientific meaning survives common user choices and operation handoffs."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment, compute_spatial_rates
+from neurospatial import Environment, compute_spatial_rate, compute_spatial_rates
 from neurospatial.behavior import in_epochs, restrict
 from neurospatial.behavior.decisions import compute_pre_decision_metrics
 from neurospatial.behavior.trajectory import compute_step_lengths
+from neurospatial.decoding import (
+    BayesianDecoder,
+    decode_position,
+    decode_position_summary,
+    decode_session,
+    decode_session_summary,
+)
 from neurospatial.encoding import SpikeTrains
 
 
@@ -21,6 +30,81 @@ def partial_recording():
     positions = np.full((len(times), 1), 5.0)
     spikes = [np.arange(0.05, 10.0, 0.1)]
     return env, spikes, times, positions
+
+
+def test_unsupported_space_never_becomes_evidence_of_silence(partial_recording):
+    env, spikes, times, positions = partial_recording
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, min_occupancy=0.1, fill_value=0.0
+    )
+    expected_support = np.arange(env.n_bins) == 0
+    np.testing.assert_array_equal(rates.spatial_support, expected_support)
+    silent = [np.array([])]
+    fitted = BayesianDecoder(env, dt=0.1, min_occupancy=0.1).fit(
+        spikes, times, positions
+    )
+    for decoder in (fitted, BayesianDecoder.from_rates(rates, dt=0.1)):
+        result = decoder.predict(silent, times)
+        np.testing.assert_array_equal(result.posterior[:, 0], 1.0)
+        np.testing.assert_array_equal(result.posterior[:, 1:], 0.0)
+        summary = decoder.predict_summary(silent, times, time_chunk=7)
+        np.testing.assert_array_equal(summary.map_position, result.map_position)
+        np.testing.assert_allclose(summary.posterior_entropy, 0.0, atol=1e-12)
+    for chunk in (None, 7):
+        result = decode_position(env, np.zeros((10, 1)), rates, 0.1, time_chunk=chunk)
+        np.testing.assert_array_equal(result.posterior[:, 1:], 0.0)
+    summary = decode_position_summary(env, np.zeros((10, 1)), rates, 0.1)
+    np.testing.assert_array_equal(summary.map_position, 5.0)
+
+
+def test_session_support_intersects_static_and_time_varying_priors(partial_recording):
+    env, spikes, times, positions = partial_recording
+    result = decode_session(env, spikes, times, positions, dt=0.1, min_occupancy=0.1)
+    for prior in (np.ones(env.n_bins), np.ones_like(result.posterior)):
+        decoded = decode_session(
+            env, spikes, times, positions, dt=0.1, min_occupancy=0.1, prior=prior
+        )
+        summary = decode_session_summary(
+            env,
+            spikes,
+            times,
+            positions,
+            dt=0.1,
+            min_occupancy=0.1,
+            prior=prior,
+            time_chunk=7,
+        )
+        np.testing.assert_array_equal(decoded.posterior[:, 1:], 0.0)
+        np.testing.assert_array_equal(summary.map_position, decoded.map_position)
+    with pytest.raises(ValueError, match="no probability to supported"):
+        decode_session(
+            env,
+            spikes,
+            times,
+            positions,
+            dt=0.1,
+            min_occupancy=0.1,
+            prior=np.r_[0.0, np.ones(env.n_bins - 1)],
+        )
+
+
+def test_low_occupancy_support_survives_zero_filling(partial_recording):
+    env, spikes, times, positions = partial_recording
+    positions = positions.copy()
+    positions[-2:] = 15.0
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, min_occupancy=0.5, fill_value=0.0
+    )
+    assert 0 < rates.occupancy[1] < 0.5
+    assert rates.firing_rates[0, 1] == 0.0
+    assert not rates.spatial_support[1]
+    decoded = decode_position(env, np.zeros((3, 1)), rates, 0.1)
+    np.testing.assert_array_equal(decoded.posterior[:, 1:], 0.0)
+    unsupported = compute_spatial_rates(
+        env, spikes, times, positions, min_occupancy=100, fill_value=0.0
+    )
+    with pytest.raises(ValueError, match="supported training data"):
+        BayesianDecoder.from_rates(unsupported)
 
 
 @pytest.mark.parametrize("missing", [100.0, np.nan])
@@ -52,6 +136,31 @@ def test_stationary_tracking_is_not_head_scanning():
     assert result.mean_speed == 0.0
     assert not result.is_valid
     assert not result.suggests_deliberation()
+
+
+@pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+def test_default_smoothing_is_invariant_to_physical_units(method):
+    bins = np.tile(np.arange(20), 20)
+    times = np.arange(len(bins)) / 10
+    positions = (bins * 5.0 + 2.5)[:, None]
+    spikes = times[bins == 5] + 0.01
+    reference = None
+    for scale, units in [(1.0, "cm"), (0.01, "m"), (10.0, "mm")]:
+        env = Environment.from_grid_mask(
+            np.ones(20, dtype=bool), grid_edges=(np.arange(21.0) * 5 * scale,)
+        )
+        env.units = units
+        result = compute_spatial_rate(
+            env, spikes, times, positions * scale, method=method
+        )
+        assert result.bandwidth == pytest.approx(5.0 * scale)
+        assert result.spatial_information() > 1.0
+        if reference is None:
+            reference = result.firing_rate
+        else:
+            np.testing.assert_allclose(result.firing_rate, reference, atol=1e-10)
+    with pytest.warns(UserWarning, match="erase spatial tuning"):
+        compute_spatial_rate(env, spikes, times, positions * scale, bandwidth=1000)
 
 
 def test_epoch_workflow_preserves_excluded_time():
@@ -92,3 +201,43 @@ def test_metadata_filtering_and_encoding_preserve_identity(partial_recording, id
     pd.testing.assert_frame_equal(table, original)
     with pytest.raises(ValueError, match="labels do not match"):
         SpikeTrains([spikes[0], spikes[0]], unit_ids=[1, 2], unit_table=table)
+
+
+def test_analysis_settings_survive_indexing_and_exports(partial_recording, tmp_path):
+    env, spikes, times, positions = partial_recording
+    result = compute_spatial_rates(
+        env,
+        spikes,
+        times,
+        positions,
+        epochs=(0, 5),
+        spike_window=(0, 10),
+        max_gap=0.3,
+        min_occupancy=0.2,
+        fill_value=0.0,
+        bandwidth=2.0,
+        speed=np.full(len(times), 10.0),
+        min_speed=5.0,
+    )
+    settings = result.analysis_settings
+    assert settings["epochs"] == [[0, 5]]
+    assert settings["observed_intervals"] == [[0, 5]]
+    assert settings["max_gap"] == 0.3
+    assert settings["speed_source"] == "provided"
+    assert settings["min_speed"] == 5.0
+    assert settings["min_occupancy"] == 0.2
+    assert result[0].analysis_settings == settings
+    assert result.summary_table().attrs["analysis_settings"] == settings
+    frame = result.to_dataframe()
+    assert frame.attrs["analysis_settings"] == settings
+    assert frame.attrs["units"]["bin_center_x"] == "cm"
+    frame.attrs["analysis_settings"]["max_gap"] = 99
+    assert result.analysis_settings["max_gap"] == 0.3
+    xr = pytest.importorskip("xarray")
+    dataset = result.to_xarray()
+    assert json.loads(dataset.attrs["analysis_settings"]) == settings
+    path = tmp_path / "rates.nc"
+    dataset.to_netcdf(path)
+    with xr.open_dataset(path) as restored:
+        assert json.loads(restored.attrs["analysis_settings"]) == settings
+        np.testing.assert_array_equal(restored.spatial_support, result.spatial_support)

@@ -53,8 +53,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.encoding._binning import (
-    count_frames_and_occupancy,
+    FrameBinning,
     count_spikes_by_frame,
+    prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
 from neurospatial.environment.trajectory import (
@@ -722,6 +723,87 @@ def bin_egocentric_spike_train(
     return counts, polar_env
 
 
+def prepare_egocentric_binning(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    frame_bins: NDArray[np.int64] | None = None,
+    polar_env: EgocentricPolarEnvironment | None = None,
+) -> tuple[FrameBinning, EgocentricPolarEnvironment]:
+    """Prepare geometry and exact temporal support before counting spikes."""
+    times = np.asarray(times, dtype=np.float64).ravel()
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = (
+        None if headings is None else np.asarray(headings, dtype=np.float64).ravel()
+    )
+    object_positions = np.asarray(object_positions, dtype=np.float64)
+
+    # Validate metric and env
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
+        )
+
+    if metric == "geodesic" and env is None:
+        raise ValueError(
+            "metric='geodesic' requires env parameter.\n"
+            "Pass the allocentric environment to compute geodesic distances."
+        )
+
+    # Validate times
+    _validate_times(times, context="bin_egocentric_spike_trains")
+
+    # Create egocentric environment
+    if polar_env is None:
+        polar_env = _create_egocentric_environment(
+            distance_range, n_distance_bins, n_direction_bins
+        )
+    n_bins = polar_env.n_bins
+
+    if frame_bins is None:
+        # Compute egocentric coordinates ONCE (shared across all neurons)
+        nearest_distances, nearest_bearings = _compute_object_coords(
+            positions,
+            headings,
+            object_positions,
+            metric=metric,
+            env=env,
+        )
+
+        # Flatten
+        nearest_distances = nearest_distances.ravel()
+        nearest_bearings = nearest_bearings.ravel()
+
+        # Precompute bin indices for all behavioral frames
+        frame_bins = _coords_to_flat_bin_idx(
+            nearest_distances,
+            nearest_bearings,
+            distance_range,
+            n_distance_bins,
+            n_direction_bins,
+        )
+
+    prepared = prepare_frame_binning(
+        times,
+        frame_bins,
+        n_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    return prepared, polar_env
+
+
 def bin_egocentric_spike_trains(
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     times: NDArray[np.float64],
@@ -851,66 +933,21 @@ def bin_egocentric_spike_trains(
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
 
-    times = np.asarray(times, dtype=np.float64).ravel()
-    positions = np.asarray(positions, dtype=np.float64)
-    headings = (
-        None if headings is None else np.asarray(headings, dtype=np.float64).ravel()
-    )
-    object_positions = np.asarray(object_positions, dtype=np.float64)
-
-    # Validate metric and env
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
-        )
-
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
-
-    # Validate times
-    _validate_times(times, context="bin_egocentric_spike_trains")
-
-    # Create egocentric environment
-    if polar_env is None:
-        polar_env = _create_egocentric_environment(
-            distance_range, n_distance_bins, n_direction_bins
-        )
-    n_bins = polar_env.n_bins
-
-    if frame_bins is None:
-        # Compute egocentric coordinates ONCE (shared across all neurons)
-        nearest_distances, nearest_bearings = _compute_object_coords(
-            positions,
-            headings,
-            object_positions,
-            metric=metric,
-            env=env,
-        )
-
-        # Flatten
-        nearest_distances = nearest_distances.ravel()
-        nearest_bearings = nearest_bearings.ravel()
-
-        # Precompute bin indices for all behavioral frames
-        frame_bins = _coords_to_flat_bin_idx(
-            nearest_distances,
-            nearest_bearings,
-            distance_range,
-            n_distance_bins,
-            n_direction_bins,
-        )
-
-    spike_counts, occupancy = count_frames_and_occupancy(
-        spike_times_list,
+    prepared, polar_env = prepare_egocentric_binning(
         times,
-        frame_bins,
-        n_bins,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        env=env,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
-        n_jobs=n_jobs,
+        frame_bins=frame_bins,
+        polar_env=polar_env,
     )
+    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
     return spike_counts, occupancy, polar_env

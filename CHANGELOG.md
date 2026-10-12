@@ -4,13 +4,17 @@
 
 ### Added
 
+- Preserve spatial `analysis_settings` through population indexing, tables,
+  xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
+  speed and occupancy gates. Expose `spatial_support` on rate results and fitted
+  decoders. Legacy results identify unavailable settings as `None`.
 - Add scientific invariants across layout transforms, coordinate-unit conversions, single/population estimation, labelled unit permutations and disk NWB round trips, covering grid, masked, hexagonal and graph layouts.
 
 - Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
 
 - Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
 
-- Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity and training spike-window metadata. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction preserves the existing warning and likelihood behavior for non-finite maps.
+- Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity, training support and analysis settings. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction excludes bins without supported training observations.
 
 - Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
 
@@ -32,6 +36,19 @@
 
 ### Changed
 
+- Extend rate-result `analysis_settings` and `spatial_support` to directional,
+  view and object-vector analyses, preserving exact retained intervals and
+  family settings through indexing, tables and NetCDF-compatible xarray exports.
+  Shared binning preparation keeps counts, occupancy and provenance aligned.
+- **Behavior change:** view and smoothed object-vector encoders now use the same
+  unit-aware physical bandwidth default as spatial encoding. Polar results
+  inherit the supplied environment's distance units; angular smoothing retains
+  its existing units and defaults.
+
+- **Behavior change:** spatial encoding defaults to a 5 cm smoothing bandwidth
+  in declared metric units (0.05 m / 50 mm), or 2.5 median graph-edge lengths
+  for unspecified/custom units. Explicit bandwidths retain their coordinate
+  units; bandwidths spanning the environment warn about lost spatial tuning.
 - Align unit-indexed metadata by identity in spike containers and population
   results. Reject missing, duplicate or conflicting metadata identities; an
   unnamed default RangeIndex retains positional interpretation.
@@ -64,33 +81,33 @@
 
 ### Fixed
 
-- Preserve missing geodesic steps as NaN instead of indexing the last spatial
-  bin with the outside-position sentinel. Report missing pre-decision/heading
-  observations as NaN and expose `PreDecisionMetrics.is_valid`; missing evidence
-  cannot produce a positive deliberation label.
-
-- Warn when slicing aligned arrays loses boundaries between observation windows;
-  document using original arrays with `epochs=` and half-open event cohorts.
-  Correct epoch input forms and the home-range area recipe, and execute those
-  recipes in documentation tests.
-
-- Whiten PCA scores before ICA assembly detection, handle null components, and
-  compute explained variance for the recovered ICA components.
-
-- Correct reverse explained variance to swap pre- and post-behavior periods
-  while retaining the behavioral template.
-
 - Correct spatial information and sparsity for missing data in NumPy and JAX,
   including per-neuron support normalization in population metrics. Observed
   zero activity remains distinct from missing rates.
-
 - Correct missing-bin centering in spatial autocorrelation so zero lag is one
   and constant firing-rate offsets cannot change the correlogram.
-
+- Whiten PCA scores before ICA assembly detection, handle null components, and
+  compute explained variance for the recovered ICA components.
+- Correct reverse explained variance to swap pre- and post-behavior periods
+  while retaining the behavioral template.
 - **Breaking:** `mutual_information` now computes discrete mutual information
   from a joint position-response histogram in bits per observation. Old rate-map
   calls raise migration guidance; use `information_per_second` for the previous
   Skaggs information-rate calculation in bits/second.
+
+- Exclude unsupported training locations from fitted/session decoding and
+  functional decoding of rate results, including silent bins, explicit priors
+  and streamed summaries. Explicit raw-array decoding must supply the support
+  prior separately; computational zero filling no longer supplies evidence for
+  unobserved space in the fitted workflows.
+- Preserve missing geodesic steps as NaN instead of indexing the last spatial
+  bin with the outside-position sentinel. Report missing pre-decision/heading
+  observations as NaN and expose `PreDecisionMetrics.is_valid`; missing evidence
+  cannot produce a positive deliberation label.
+- Warn when slicing aligned arrays loses boundaries between observation windows;
+  document using original arrays with `epochs=` and half-open event cohorts.
+  Correct epoch input forms and the home-range area recipe, and execute those
+  recipes in documentation tests.
 
 - Correct workflow guidance on raw-second occupancy thresholds and smoothing missing support, with executable occupancy examples.
 

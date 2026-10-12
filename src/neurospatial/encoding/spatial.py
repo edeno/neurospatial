@@ -521,36 +521,6 @@ def _index_per_unit(value: Any, idx: int) -> Any:
     return arr[idx].item()
 
 
-def _spatial_xarray_attrs(
-    result: SpatialRateResult | SpatialRatesResult,
-) -> dict[str, Any]:
-    """Shared serialization metadata for this rate family."""
-    from neurospatial._results import (
-        env_fingerprint,
-        software_version,
-        units_attr,
-    )
-
-    attrs: dict[str, Any] = {
-        **units_attr(result.env),
-        "method": result.method,
-        "env": env_fingerprint(result.env),
-        "software_version": software_version(),
-        "spike_window_assumed": int(result.spike_window_assumed),
-    }
-    # Guard on the value, not on ``method``: NetCDF attributes cannot hold
-    # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
-    # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
-    # ``bandwidth is not None`` guards exactly that serialization precondition
-    # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
-    # correct even if a ratio result ever carried a ``None`` bandwidth.
-    if result.spike_window is not None:
-        attrs["spike_window"] = result.spike_window.ravel()
-    if result.bandwidth is not None:
-        attrs["bandwidth"] = result.bandwidth
-    return attrs
-
-
 def _label_from_scores(
     spatial_info: NDArray,
     grid: NDArray,
@@ -638,6 +608,7 @@ def _spatial_summary_frame(
         "peak_y": result.env.units or "",
     }
     df.attrs["classification_thresholds"] = dict(PLACE_GRID_BORDER_THRESHOLDS)
+    df.attrs.update(result._analysis_attrs())
     return df
 
 
@@ -694,6 +665,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    analysis_settings : dict or None
+        Resolved epochs, observed intervals, gap/speed/occupancy gates and
+        estimator settings. None for manually constructed or legacy results.
+    spatial_support : ndarray of bool, shape (n_bins,)
+        Observed bins meeting the occupancy threshold with finite rates.
     spike_window : NDArray[np.float64] or None
         Normalized spike-recording windows in seconds, copied read-only.
         ``None`` records the assumption that spikes were observed whenever
@@ -785,8 +761,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=False, repr=False, compare=False, kw_only=True
     )
 
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _spatial_xarray_attrs(self)
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, compare=False, repr=False
+    )
 
     def summary_table(self, include_classification: bool = True) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -1554,6 +1531,11 @@ class SpatialRatesResult(SpatialResultMixin):
         provided. A unit_id column or named/non-default index aligns rows
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
+    analysis_settings : dict or None
+        Resolved epochs, observed intervals, gap/speed/occupancy gates and
+        estimator settings. None for manually constructed or legacy results.
+    spatial_support : ndarray of bool, shape (n_bins,)
+        Observed bins meeting the occupancy threshold with finite rates.
     spike_window : NDArray[np.float64] or None
         Normalized spike-recording windows in seconds, copied read-only.
         Shared by the population and preserved on indexed single-unit results.
@@ -1677,8 +1659,9 @@ class SpatialRatesResult(SpatialResultMixin):
         default=False, repr=False, compare=False, kw_only=True
     )
 
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _spatial_xarray_attrs(self)
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if self.unit_ids is None:
@@ -1784,6 +1767,7 @@ class SpatialRatesResult(SpatialResultMixin):
             unit_id=label_at(self.unit_ids, idx),
             _unit_ids_generated=self._unit_ids_generated,
             spike_window=self.spike_window,
+            analysis_settings=self._analysis_attrs()["analysis_settings"],
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -2780,23 +2764,20 @@ default="diffusion_kde"
 
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        larger values produce more smoothing. ``None`` resolves to ``5.0``.
+        larger values produce more smoothing. ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
+        or 2.5 median graph-edge lengths for unspecified/custom units.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
-        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
-        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN is preserved so existing callers see no behavior change.
-        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
-        zero-rate map composes directly with
-        :func:`~neurospatial.decoding.posterior.decode_position` without manual
-        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
-        which bins were masked via ``result.occupancy < min_occupancy``.
-        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+        Ratio methods only: replace missing or masked stored rates with this
+        value. None preserves NaN. Filling never changes ``spatial_support``.
+        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
+        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        Zero filling without that prior treats unobserved space as silence.
+        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -2980,7 +2961,7 @@ default="diffusion_kde"
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _resolve_spatial_interval_mask,
+        _resolve_spatial_time_support,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -3031,9 +3012,10 @@ default="diffusion_kde"
     # with a ratio method is the harmless default; pooled=False with one raises.
     validate_pooled(pooled, method)
     # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
-    # returns before any smoothing and stamps bandwidth=None on the result); for
-    # ratio methods this restores the historical defaults byte-for-byte.
-    bandwidth = 5.0 if bandwidth is None else bandwidth
+    # returns before any smoothing and stamps bandwidth=None on the result).
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    bandwidth = resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
     min_occupancy = 0.0 if min_occupancy is None else min_occupancy
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
@@ -3054,7 +3036,7 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    interval_mask, _, resolved_spike_window = _resolve_spatial_interval_mask(
+    time_support = _resolve_spatial_time_support(
         env,
         times,
         positions,
@@ -3064,6 +3046,24 @@ default="diffusion_kde"
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
+    )
+
+    interval_mask = time_support.mask
+    resolved_spike_window = time_support.spike_window
+    from neurospatial.encoding._provenance import rate_analysis_settings
+
+    settings = rate_analysis_settings(
+        time_support,
+        min_speed=min_speed,
+        speed=speed,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        backend=resolved_backend,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
     )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
@@ -3127,6 +3127,7 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            analysis_settings=settings,
             spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
             occupancy=single_occupancy,
@@ -3173,6 +3174,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        analysis_settings=settings,
         spike_window=resolved_spike_window,
         firing_rate=firing_rate,
         occupancy=occupancy_out,
@@ -3256,22 +3258,19 @@ default="diffusion_kde"
         ``gaussian_kde`` builds a dense O(n_bins²) kernel.
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
+        ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
+        or 2.5 median graph-edge lengths for unspecified/custom units. Mutually exclusive with ``method="glm"``.
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
         with ``method="glm"``.
     fill_value : float | None, default=None
-        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
-        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN is preserved so existing callers see no behavior change.
-        Pass ``fill_value=0.0`` for the recommended decoding golden path:
-        zero-rate maps compose directly with
-        :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
-        scrubbing. ``occupancy`` is unaffected, so callers can still recover which
-        bins were masked via ``result.occupancy < min_occupancy``. Mutually
-        exclusive with ``method="glm"`` (glm rates are already finite).
+        Ratio methods only: replace missing or masked stored rates with this
+        value. None preserves NaN. Filling never changes ``spatial_support``.
+        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
+        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        Zero filling without that prior treats unobserved space as silence.
+        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
         selects ``λ`` by REML, which raises ``ValueError`` on pathologically
@@ -3505,7 +3504,7 @@ default="diffusion_kde"
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _resolve_spatial_interval_mask,
+        _resolve_spatial_time_support,
         _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
@@ -3575,7 +3574,9 @@ default="diffusion_kde"
     # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
     # with a ratio method is the harmless default; pooled=False with one raises.
     validate_pooled(pooled, method)
-    bandwidth = 5.0 if bandwidth is None else bandwidth
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    bandwidth = resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
     min_occupancy = 0.0 if min_occupancy is None else min_occupancy
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
@@ -3618,18 +3619,37 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    interval_mask, resolved_epochs, resolved_spike_window = (
-        _resolve_spatial_interval_mask(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-            warn_on_drop=warn_on_drop,
-        )
+    time_support = _resolve_spatial_time_support(
+        env,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+    )
+
+    interval_mask = time_support.mask
+    resolved_epochs, resolved_spike_window = (
+        time_support.epochs,
+        time_support.spike_window,
+    )
+    from neurospatial.encoding._provenance import rate_analysis_settings
+
+    settings = rate_analysis_settings(
+        time_support,
+        min_speed=min_speed,
+        speed=speed,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        backend=resolved_backend,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
     )
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
@@ -3703,6 +3723,8 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            analysis_settings=settings,
+            unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
             firing_rates=glm_firing_rates,
             occupancy=batch_occupancy,
@@ -3755,6 +3777,8 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            analysis_settings=settings,
+            unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
             firing_rates=firing_rates_result,
             occupancy=occupancy_result,
@@ -3818,6 +3842,8 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        analysis_settings=settings,
+        unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,
         firing_rates=firing_rates,
         occupancy=occupancy_out,
@@ -4223,7 +4249,7 @@ def compute_directional_place_fields(
     direction_labels: NDArray[np.object_],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -4252,8 +4278,10 @@ def compute_directional_place_fields(
         from results, allowing unlabeled periods to be ignored.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
-    bandwidth : float, default=5.0
+    bandwidth : float or None, default=None
         Smoothing bandwidth in environment units (e.g., cm).
+        None uses 5 cm in declared metric units, or 2.5 median graph-edge
+        lengths for unspecified/custom units.
     min_occupancy : float, default=0.0
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
@@ -4597,7 +4625,7 @@ def has_place_field(
     positions: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
     spike_window: Any = None,
@@ -4636,8 +4664,10 @@ def has_place_field(
 
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
-    bandwidth : float, default=5.0
+    bandwidth : float or None, default=None
         Smoothing bandwidth in environment units.
+        None uses 5 cm in declared metric units, or 2.5 median graph-edge
+        lengths for unspecified/custom units.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -4670,16 +4700,12 @@ def has_place_field(
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
-        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
-        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN is preserved so existing callers see no behavior change.
-        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
-        zero-rate map composes directly with
-        :func:`~neurospatial.decoding.posterior.decode_position` without manual
-        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
-        which bins were masked via ``result.occupancy < min_occupancy``.
-        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+        Ratio methods only: replace missing or masked stored rates with this
+        value. None preserves NaN. Filling never changes ``spatial_support``.
+        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
+        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        Zero filling without that prior treats unobserved space as silence.
+        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -4928,23 +4954,20 @@ def is_place_cell(
 
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        larger values produce more smoothing. ``None`` resolves to ``5.0``.
+        larger values produce more smoothing. ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
+        or 2.5 median graph-edge lengths for unspecified/custom units.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
-        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
-        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN bins stay NaN.
-        Pass ``fill_value=0.0`` for the recommended decoding golden path: a
-        zero-rate map composes directly with
-        :func:`~neurospatial.decoding.posterior.decode_position` without manual
-        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
-        which bins were masked via ``result.occupancy < min_occupancy``.
-        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+        Ratio methods only: replace missing or masked stored rates with this
+        value. None preserves NaN. Filling never changes ``spatial_support``.
+        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
+        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        Zero filling without that prior treats unobserved space as silence.
+        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -5504,22 +5527,19 @@ def place_cell_significance(
         ``gaussian_kde`` builds a dense O(n_bins²) kernel.
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
+        ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
+        or 2.5 median graph-edge lengths for unspecified/custom units. Mutually exclusive with ``method="glm"``.
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
         with ``method="glm"``.
     fill_value : float | None, default=None
-        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
-        bins beyond the smoothing's reach of any occupancy). When ``None`` (the
-        default), NaN is preserved so existing callers see no behavior change.
-        Pass ``fill_value=0.0`` for the recommended decoding golden path:
-        zero-rate maps compose directly with
-        :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
-        scrubbing. ``occupancy`` is unaffected, so callers can still recover which
-        bins were masked via ``result.occupancy < min_occupancy``. Mutually
-        exclusive with ``method="glm"`` (glm rates are already finite).
+        Ratio methods only: replace missing or masked stored rates with this
+        value. None preserves NaN. Filling never changes ``spatial_support``.
+        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
+        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        Zero filling without that prior treats unobserved space as silence.
+        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
         selects ``λ`` by REML, which raises ``ValueError`` on pathologically

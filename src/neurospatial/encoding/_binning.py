@@ -23,12 +23,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial._intervals import TimeSupport, resolve_time_windows, run_time_bounds
 from neurospatial.environment.trajectory import (
     _external_stacklevel,
     interval_valid_mask,
@@ -297,8 +298,23 @@ def count_spikes_by_frame(
 _WARN_ON_DROP_HINT = "Set warn_on_drop=False to suppress this warning."
 
 
-def count_frames_and_occupancy(
-    spike_times_list: Sequence[NDArray[np.float64]],
+@dataclass(frozen=True)
+class FrameBinning:
+    """Prepared frame geometry and time support shared by counts and occupancy."""
+
+    times: NDArray[np.float64]
+    frame_bins: NDArray[np.intp]
+    n_bins: int
+    support: TimeSupport
+
+    def count(
+        self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Count a population and its shared occupancy on the prepared support."""
+        return count_frames_and_occupancy(spike_times, self, n_jobs=n_jobs)
+
+
+def prepare_frame_binning(
     times: NDArray[np.float64],
     frame_bins: NDArray[np.intp],
     n_bins: int,
@@ -306,19 +322,8 @@ def count_frames_and_occupancy(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
-    n_jobs: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Count every unit's spikes and the shared occupancy over one frame mask.
-
-    Warns, at the caller's call site, when the gates exclude every interval or
-    when most spikes fall outside the tracked time (the same checks the
-    spatial family applies under ``warn_on_drop=True``).
-
-    Returns
-    -------
-    spike_counts : ndarray, shape (n_units, n_bins)
-    occupancy : ndarray, shape (n_bins,)
-    """
+) -> FrameBinning:
+    """Resolve frame support once for counting and result provenance."""
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
@@ -326,12 +331,28 @@ def count_frames_and_occupancy(
         epochs=epochs,
         spike_window=spike_window,
     )
+    support = TimeSupport.from_mask(
+        times, mask, epochs=epochs, spike_window=spike_window, max_gap=max_gap
+    )
+    return FrameBinning(times, frame_bins, n_bins, support)
+
+
+def count_frames_and_occupancy(
+    spike_times_list: Sequence[NDArray[np.float64]],
+    prepared: FrameBinning,
+    *,
+    n_jobs: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Count spikes and dwell time using exactly the recorded interval mask."""
+    times, frame_bins, n_bins = prepared.times, prepared.frame_bins, prepared.n_bins
+    support = prepared.support
+    mask = support.mask
     _emit_all_excluded_intervals_warning(
         mask,
-        max_gap=max_gap,
+        max_gap=support.max_gap,
         min_speed=None,
-        epochs=epochs,
-        spike_window=spike_window,
+        epochs=support.epochs,
+        spike_window=support.spike_window,
         suppress_hint="",
     )
     if len(times):
@@ -437,7 +458,7 @@ def _spatial_interval_mask(
     return mask & (sample_bins[1:] >= 0)
 
 
-def _resolve_spatial_interval_mask(
+def _resolve_spatial_time_support(
     env: Environment,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -448,12 +469,8 @@ def _resolve_spatial_interval_mask(
     epochs: Any,
     spike_window: Any,
     warn_on_drop: bool,
-) -> tuple[NDArray[np.bool_], NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Normalize time windows, build the shared mask and warn if it is empty.
-
-    Returns ``(interval_mask, epochs, spike_window)`` with the windows
-    normalized. The all-excluded warning is attributed to the public caller.
-    """
+) -> TimeSupport:
+    """Resolve training support shared by counting, occupancy and provenance."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     interval_mask = _spatial_interval_mask(
         env,
@@ -473,7 +490,13 @@ def _resolve_spatial_interval_mask(
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
         )
-    return interval_mask, resolved_epochs, resolved_spike_window
+    return TimeSupport.from_mask(
+        times,
+        interval_mask,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        max_gap=max_gap,
+    )
 
 
 def _emit_all_excluded_intervals_warning(

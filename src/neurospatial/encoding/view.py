@@ -123,24 +123,8 @@ VIEW_THRESHOLDS = MappingProxyType({"min_info": 0.5})
 
 
 def _view_xarray_attrs(result: ViewRateResult | ViewRatesResult) -> dict[str, Any]:
-    """Shared serialization metadata for this rate family."""
-    from neurospatial._results import (
-        env_fingerprint,
-        software_version,
-        units_attr,
-    )
-
-    attrs: dict[str, Any] = {
-        **units_attr(result.env),
-        "method": result.method,
-        "bandwidth": result.bandwidth,
-        "env": env_fingerprint(result.env),
-        "software_version": software_version(),
-    }
-    attrs["spike_window_assumed"] = int(result.spike_window_assumed)
-    if result.spike_window is not None:
-        attrs["spike_window"] = result.spike_window.ravel()
-    return attrs
+    """Coordinate and estimator metadata specific to this rate family."""
+    return {"gaze_model": result.gaze_model, "view_distance": result.view_distance}
 
 
 def _view_classify(
@@ -179,6 +163,7 @@ def _view_summary_frame(
         "peak_y": result.env.units or "",
     }
     df.attrs["classification_thresholds"] = dict(VIEW_THRESHOLDS)
+    df.attrs.update(result._analysis_attrs())
     return df
 
 
@@ -237,8 +222,20 @@ class ViewRateResult(SpatialResultMixin):
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
         for a standalone single-unit computation.
 
+    Other Parameters
+    ----------------
+    analysis_settings : dict or None
+        Resolved analysis windows, retained time intervals, smoothing and
+        family-specific settings. Preserved by indexing and table/xarray
+        exports. None for manually constructed results without provenance.
+
     Notes
     -----
+    ``spatial_support`` is a boolean mask over this result's bins. A bin must
+    have positive occupancy, meet the recorded minimum occupancy and have
+    finite rates for every unit. Angular and polar results use their own bin
+    coordinates; unsupported bins are not evidence of neural silence.
+
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
@@ -296,6 +293,9 @@ class ViewRateResult(SpatialResultMixin):
 
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
+    )
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
 
     def _xarray_attrs(self) -> dict[str, Any]:
@@ -615,8 +615,20 @@ class ViewRatesResult(SpatialResultMixin):
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
 
+    Other Parameters
+    ----------------
+    analysis_settings : dict or None
+        Resolved analysis windows, retained time intervals, smoothing and
+        family-specific settings. Preserved by indexing and table/xarray
+        exports. None for manually constructed results without provenance.
+
     Notes
     -----
+    ``spatial_support`` is a boolean mask over this result's bins. A bin must
+    have positive occupancy, meet the recorded minimum occupancy and have
+    finite rates for every unit. Angular and polar results use their own bin
+    coordinates; unsupported bins are not evidence of neural silence.
+
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
@@ -676,6 +688,9 @@ class ViewRatesResult(SpatialResultMixin):
 
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
+    )
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
 
     def _xarray_attrs(self) -> dict[str, Any]:
@@ -764,6 +779,7 @@ class ViewRatesResult(SpatialResultMixin):
             bandwidth=self.bandwidth,
             unit_id=label_at(self.unit_ids, idx),
             spike_window=self.spike_window,
+            analysis_settings=self._analysis_attrs()["analysis_settings"],
         )
 
     def __iter__(self) -> Iterator[ViewRateResult]:
@@ -1156,7 +1172,7 @@ def compute_view_rate(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> ViewRateResult:
@@ -1229,9 +1245,10 @@ def compute_view_rate(
         - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
         - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size. Larger values
-        produce more smoothing.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -1351,7 +1368,7 @@ def compute_view_rate(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import bin_view_spike_trains
+    from neurospatial.encoding._view_binning import prepare_view_binning
 
     validate_env_fitted(
         env,
@@ -1378,6 +1395,9 @@ def compute_view_rate(
             f"Must be one of {sorted(valid_gaze_models)}"
         )
 
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    bandwidth = resolve_spatial_bandwidth(env, bandwidth)
     _validate_smoothing_parameters(method, bandwidth)
 
     # Convert inputs to arrays
@@ -1407,20 +1427,32 @@ def compute_view_rate(
 
     # Reuse the batch binning path for the single-neuron API so viewed
     # coordinates are computed once and shared by spike counts and occupancy.
-    spike_counts_batch, occupancy = bin_view_spike_trains(
+    prepared = prepare_view_binning(
         env,
-        [spike_times],
         times,
         positions,
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        n_jobs=1,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
     )
+    spike_counts_batch, occupancy = prepared.count([spike_times])
+    from neurospatial.encoding._provenance import rate_analysis_settings
+
+    settings = rate_analysis_settings(
+        prepared.support,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=resolved_backend,
+        gaze_model=gaze_model,
+        view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
+        gaze_offsets_source="provided" if gaze_offsets is not None else None,
+    )
+
     spike_counts = spike_counts_batch[0]
 
     # Apply smoothing to compute firing rate
@@ -1453,6 +1485,7 @@ def compute_view_rate(
         method=method,
         bandwidth=bandwidth,
         spike_window=resolved_spike_window,
+        analysis_settings=settings,
     )
 
 
@@ -1470,7 +1503,7 @@ def compute_view_rates(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1549,8 +1582,10 @@ def compute_view_rates(
         assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1
@@ -1736,7 +1771,7 @@ def _compute_view_rates(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1761,7 +1796,7 @@ def _compute_view_rates(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import bin_view_spike_trains
+    from neurospatial.encoding._view_binning import prepare_view_binning
 
     validate_env_fitted(
         env,
@@ -1780,6 +1815,9 @@ def _compute_view_rates(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    bandwidth = resolve_spatial_bandwidth(env, bandwidth)
     _validate_smoothing_parameters(method, bandwidth)
 
     # Validate gaze_model
@@ -1840,71 +1878,49 @@ def _compute_view_rates(
         spike_window=resolved_spike_window,
     )
 
-    # Handle edge case: no neurons
-    if n_neurons == 0:
-        # Still need to compute occupancy for consistency
-        from neurospatial.encoding._view_binning import compute_occupancy
-
-        occupancy = compute_occupancy(
-            env,
-            times,
-            positions,
-            headings,
-            gaze_model=gaze_model,
-            view_distance=view_distance,
-            gaze_offsets=gaze_offsets,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-        )
-        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
-        occupancy_result: ArrayLike = occupancy
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
-        return ViewRatesResult(
-            firing_rates=firing_rates_result,
-            occupancy=occupancy_result,
-            env=env,
-            gaze_model=gaze_model,
-            view_distance=view_distance,
-            method=method,
-            bandwidth=bandwidth,
-            unit_ids=resolved_unit_ids,
-            spike_window=resolved_spike_window,
-        )
-
     # Bin spike trains by viewed location and compute view occupancy
-    # bin_view_spike_trains returns (spike_counts, occupancy)
-    spike_counts, occupancy = bin_view_spike_trains(
+    prepared = prepare_view_binning(
         env,
-        spike_times_list,
         times,
         positions,
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        n_jobs=n_jobs,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         view_bins=view_bins,
     )
 
-    # Apply batch smoothing to compute firing rates
-    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
-    firing_rates = smooth_rate_maps_batch(
-        env,
-        spike_counts,
-        occupancy,
+    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
+    from neurospatial.encoding._provenance import rate_analysis_settings
+
+    settings = rate_analysis_settings(
+        prepared.support,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
+        gaze_model=gaze_model,
+        view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
+        gaze_offsets_source="provided" if gaze_offsets is not None else None,
     )
+
+    # Apply batch smoothing to compute firing rates
+    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
+    if n_neurons == 0:
+        firing_rates: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
+    else:
+        firing_rates = smooth_rate_maps_batch(
+            env,
+            spike_counts,
+            occupancy,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=resolved_backend,
+        )
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
@@ -1913,6 +1929,7 @@ def _compute_view_rates(
         import jax.numpy as jnp
 
         occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
 
     # Return result
     return ViewRatesResult(
@@ -1925,6 +1942,7 @@ def _compute_view_rates(
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
+        analysis_settings=settings,
     )
 
 
@@ -1954,7 +1972,7 @@ def is_spatial_view_cell(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
@@ -2022,9 +2040,10 @@ def is_spatial_view_cell(
         - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
         - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size. Larger values
-        produce more smoothing.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2170,7 +2189,7 @@ def spatial_view_cell_significance(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2251,8 +2270,10 @@ def spatial_view_cell_significance(
         assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1

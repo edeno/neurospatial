@@ -192,6 +192,25 @@ class SpatialResultMixin(ResultMixin):
     """
 
     spike_window: NDArray[np.float64] | None = None
+    analysis_settings: dict[str, Any] | None = None
+
+    @property
+    def spatial_support(self) -> NDArray[np.bool_]:
+        """Observed, sufficiently occupied bins with finite rates.
+
+        The mask follows the result's coordinates: spatial locations, viewed
+        locations, polar object vectors or angular bins. Zero-filling a rate
+        never supplies missing coverage.
+        """
+        from neurospatial.encoding._provenance import spatial_support
+
+        return spatial_support(self)
+
+    def _analysis_attrs(self) -> dict[str, Any]:
+        """Independent metadata for table exports and indexed results."""
+        from copy import deepcopy
+
+        return {"analysis_settings": deepcopy(self.analysis_settings)}
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -442,7 +461,9 @@ class SpatialResultMixin(ResultMixin):
         pandas.DataFrame
             Long-form table with columns ``unit_id``, ``bin`` (int),
             the ``bin_center_*`` coordinate columns (float), ``firing_rate``
-            (float, Hz), and ``occupancy`` (float, seconds).
+            (float, Hz), and ``occupancy`` (float, seconds). Spatial results
+            also include ``spatial_support``. Units and available analysis
+            settings are stored in ``attrs``; CSV does not preserve these.
 
         Examples
         --------
@@ -490,7 +511,19 @@ class SpatialResultMixin(ResultMixin):
         if hasattr(self, "method"):
             data["method"] = self.method
 
-        return pd.DataFrame(data)
+        frame = pd.DataFrame(data)
+        coordinate_units = getattr(getattr(self, "env", None), "units", None)
+        frame.attrs["units"] = {
+            "firing_rate": "Hz",
+            "occupancy": "s",
+            **{
+                name: "rad" if name.endswith("angle") else coordinate_units or ""
+                for name in self._bin_center_columns()
+            },
+        }
+        frame.attrs.update(self._analysis_attrs())
+        frame["spatial_support"] = np.tile(self.spatial_support, n_neurons)
+        return frame
 
     def to_xarray(self) -> Any:
         """Export a labeled Dataset with dimensions (unit_id, bin).
@@ -531,10 +564,11 @@ class SpatialResultMixin(ResultMixin):
         1
         """
         from neurospatial._results import build_population_dataset
+        from neurospatial.encoding._provenance import rate_xarray_attrs
 
         rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
         env = getattr(self, "env", None)
-        return build_population_dataset(
+        dataset = build_population_dataset(
             np.atleast_2d(rates),
             self._row_unit_ids(),
             env=env,
@@ -542,8 +576,10 @@ class SpatialResultMixin(ResultMixin):
             if env is not None
             else np.asarray(self.bin_centers, dtype=np.float64),  # type: ignore[attr-defined]
             occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),  # type: ignore[attr-defined]
-            attrs=self._xarray_attrs(),
+            attrs={**rate_xarray_attrs(self), **self._xarray_attrs()},
         )
+        dataset["spatial_support"] = ("bin", self.spatial_support)
+        return dataset
 
     def _xarray_attrs(self) -> dict[str, Any]:
         """Family metadata; concrete rate results override this hook."""

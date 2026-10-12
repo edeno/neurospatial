@@ -115,23 +115,13 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
 def _egocentric_xarray_attrs(
     result: ObjectVectorRateResult | ObjectVectorRatesResult,
 ) -> dict[str, Any]:
-    """Shared serialization metadata for this rate family."""
-    from neurospatial._results import (
-        env_fingerprint,
-        software_version,
-        units_attr,
-    )
-
-    attrs: dict[str, Any] = {
-        **units_attr(result.env),
+    """Coordinate and estimator metadata specific to this rate family."""
+    return {
         "direction_frame": result.direction_frame,
-        "env": env_fingerprint(result.env),
-        "software_version": software_version(),
+        "distance_range": list(result.distance_range),
+        "n_distance_bins": result.n_distance_bins,
+        "n_direction_bins": result.n_direction_bins,
     }
-    attrs["spike_window_assumed"] = int(result.spike_window_assumed)
-    if result.spike_window is not None:
-        attrs["spike_window"] = result.spike_window.ravel()
-    return attrs
 
 
 def _object_vector_classify(
@@ -172,6 +162,7 @@ def _object_vector_summary_frame(
         "preferred_direction_deg": "deg",
     }
     df.attrs["classification_thresholds"] = dict(OBJECT_VECTOR_THRESHOLDS)
+    df.attrs.update(result._analysis_attrs())
     return df
 
 
@@ -227,8 +218,20 @@ class ObjectVectorRateResult(SpatialResultMixin):
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
         for a standalone single-unit computation.
 
+    Other Parameters
+    ----------------
+    analysis_settings : dict or None
+        Resolved analysis windows, retained time intervals, smoothing and
+        family-specific settings. Preserved by indexing and table/xarray
+        exports. None for manually constructed results without provenance.
+
     Notes
     -----
+    ``spatial_support`` is a boolean mask over this result's bins. A bin must
+    have positive occupancy, meet the recorded minimum occupancy and have
+    finite rates for every unit. Angular and polar results use their own bin
+    coordinates; unsupported bins are not evidence of neural silence.
+
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
@@ -276,6 +279,9 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
+    )
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
 
     def __post_init__(self) -> None:
@@ -700,8 +706,20 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
 
+    Other Parameters
+    ----------------
+    analysis_settings : dict or None
+        Resolved analysis windows, retained time intervals, smoothing and
+        family-specific settings. Preserved by indexing and table/xarray
+        exports. None for manually constructed results without provenance.
+
     Notes
     -----
+    ``spatial_support`` is a boolean mask over this result's bins. A bin must
+    have positive occupancy, meet the recorded minimum occupancy and have
+    finite rates for every unit. Angular and polar results use their own bin
+    coordinates; unsupported bins are not evidence of neural silence.
+
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
@@ -761,6 +779,9 @@ class ObjectVectorRatesResult(SpatialResultMixin):
 
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
+    )
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
 
     def _xarray_attrs(self) -> dict[str, Any]:
@@ -863,6 +884,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
             n_direction_bins=self.n_direction_bins,
             unit_id=label_at(self.unit_ids, idx),
             spike_window=self.spike_window,
+            analysis_settings=self._analysis_attrs()["analysis_settings"],
             direction_frame=self.direction_frame,
         )
 
@@ -1416,7 +1438,7 @@ def compute_egocentric_rate(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> ObjectVectorRateResult:
@@ -1491,8 +1513,11 @@ def compute_egocentric_rate(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -1643,7 +1668,7 @@ def compute_object_vector_rate(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> ObjectVectorRateResult:
@@ -1712,8 +1737,11 @@ def compute_object_vector_rate(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -1860,7 +1888,7 @@ def _object_vector_rate(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     context: str,
@@ -1874,8 +1902,8 @@ def _object_vector_rate(
         is_jax_available,
     )
     from neurospatial.encoding._egocentric_binning import (
-        bin_egocentric_spike_trains,
         normalize_object_positions,
+        prepare_egocentric_binning,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -1915,7 +1943,7 @@ def _object_vector_rate(
 
     _validate_object_vector_metric(env, metric, context=context)
 
-    _validate_smoothing_parameters(method, bandwidth)
+    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
 
     # Convert inputs to arrays (1D required for spike_times/times/headings)
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -1939,12 +1967,8 @@ def _object_vector_rate(
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
-    # The third return is the *polar* env that indexes the (distance,
-    # direction) bins; keep it under a distinct name so the cartesian
-    # ``env`` parameter (used for geodesic distance, validated above)
-    # is not shadowed mid-function.
-    spike_counts_batch, occupancy, polar_env = bin_egocentric_spike_trains(
-        [spike_times],
+    # Keep the prepared polar geometry separate from the allocentric env.
+    prepared, polar_env = prepare_egocentric_binning(
         times,
         positions,
         headings,
@@ -1954,11 +1978,34 @@ def _object_vector_rate(
         n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
-        n_jobs=1,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
     )
+    spike_counts_batch, occupancy = prepared.count([spike_times])
+    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    # Polar graph distances are physical lengths; angles remain radians.
+    polar_env.units = env.units if env is not None else None
+    bandwidth = (
+        resolve_spatial_bandwidth(polar_env, bandwidth)
+        if method != "binned"
+        else (1.0 if bandwidth is None else bandwidth)
+    )
+    settings = rate_analysis_settings(
+        prepared.support,
+        method=method,
+        bandwidth=bandwidth if method != "binned" else None,
+        min_occupancy=min_occupancy,
+        backend=resolved_backend,
+        direction_frame="allocentric" if headings is None else "egocentric",
+        distance_range=[float(value) for value in distance_range],
+        n_distance_bins=int(n_distance_bins),
+        n_direction_bins=int(n_direction_bins),
+        metric=metric,
+    )
+
     spike_counts = spike_counts_batch[0]
 
     firing_rate = _egocentric_firing_rate(
@@ -1989,6 +2036,7 @@ def _object_vector_rate(
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
         spike_window=resolved_spike_window,
+        analysis_settings=settings,
     )
 
 
@@ -2008,7 +2056,7 @@ def compute_egocentric_rates(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2095,8 +2143,11 @@ def compute_egocentric_rates(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2301,7 +2352,7 @@ def compute_object_vector_rates(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2382,8 +2433,11 @@ def compute_object_vector_rates(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2531,7 +2585,7 @@ def _object_vector_rates(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2553,8 +2607,8 @@ def _object_vector_rates(
         is_jax_available,
     )
     from neurospatial.encoding._egocentric_binning import (
-        bin_egocentric_spike_trains,
         normalize_object_positions,
+        prepare_egocentric_binning,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -2591,7 +2645,7 @@ def _object_vector_rates(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    _validate_smoothing_parameters(method, bandwidth)
+    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
 
     _validate_object_vector_metric(env, metric, context=context)
 
@@ -2637,56 +2691,9 @@ def _object_vector_rates(
         spike_window=resolved_spike_window,
     )
 
-    # Handle edge case: no neurons
-    if n_neurons == 0:
-        # Still need to compute occupancy for consistency
-        from neurospatial.encoding._egocentric_binning import (
-            compute_egocentric_occupancy,
-        )
-
-        # The third return is the polar (distance, direction) env;
-        # bind it under a distinct name to avoid shadowing the
-        # cartesian ``env`` parameter (used for geodesic distance).
-        occupancy, polar_env = compute_egocentric_occupancy(
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=distance_range,
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-            metric=metric,
-            env=env,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-        )
-        firing_rates_result: ArrayLike = np.empty(
-            (0, polar_env.n_bins), dtype=np.float64
-        )
-        occupancy_result: ArrayLike = occupancy
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
-        return ObjectVectorRatesResult(
-            direction_frame="allocentric" if headings is None else "egocentric",
-            firing_rates=firing_rates_result,
-            occupancy=occupancy_result,
-            env=polar_env,
-            distance_range=distance_range,
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-            unit_ids=resolved_unit_ids,
-            spike_window=resolved_spike_window,
-        )
-
     # Bin spike trains by egocentric coordinates and compute occupancy.
-    # Third return is the polar env (see above); rebind to ``polar_env``
-    # so the cartesian ``env`` parameter remains accessible.
-    spike_counts, occupancy, polar_env = bin_egocentric_spike_trains(
-        spike_times_list,
+    # Retain the exact binning support for result provenance.
+    prepared, polar_env = prepare_egocentric_binning(
         times,
         positions,
         headings,
@@ -2696,7 +2703,6 @@ def _object_vector_rates(
         n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
-        n_jobs=n_jobs,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
@@ -2704,11 +2710,37 @@ def _object_vector_rates(
         polar_env=polar_env,
     )
 
+    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
+    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+
+    # Polar graph distances are physical lengths; angles remain radians.
+    polar_env.units = env.units if env is not None else None
+    bandwidth = (
+        resolve_spatial_bandwidth(polar_env, bandwidth)
+        if method != "binned"
+        else (1.0 if bandwidth is None else bandwidth)
+    )
+    settings = rate_analysis_settings(
+        prepared.support,
+        method=method,
+        bandwidth=bandwidth if method != "binned" else None,
+        min_occupancy=min_occupancy,
+        backend=resolved_backend,
+        direction_frame="allocentric" if headings is None else "egocentric",
+        distance_range=[float(value) for value in distance_range],
+        n_distance_bins=int(n_distance_bins),
+        n_direction_bins=int(n_direction_bins),
+        metric=metric,
+    )
+
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
     # smoothing): diffusion over the polar env bleeds rate across distance rings
     # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
     firing_rates: ArrayLike
-    if method == "binned":
+    if n_neurons == 0:
+        firing_rates = np.empty((0, polar_env.n_bins), dtype=np.float64)
+    elif method == "binned":
         _warn_if_fully_masked(occupancy, min_occupancy)
         firing_rates = np.stack(
             [
@@ -2739,6 +2771,7 @@ def _object_vector_rates(
         import jax.numpy as jnp
 
         occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
 
     # Return result
     return ObjectVectorRatesResult(
@@ -2751,6 +2784,7 @@ def _object_vector_rates(
         n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
+        analysis_settings=settings,
     )
 
 
@@ -2912,7 +2946,7 @@ def is_object_vector_cell(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
@@ -2976,8 +3010,11 @@ def is_object_vector_cell(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3135,7 +3172,7 @@ def is_egocentric_object_vector_cell(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
@@ -3205,8 +3242,11 @@ def is_egocentric_object_vector_cell(
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3477,7 +3517,7 @@ def _object_vector_significance(
     epochs: Any,
     spike_window: Any,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
-    bandwidth: float,
+    bandwidth: float | None,
     min_occupancy: float,
     n_jobs: int,
     backend: Literal["numpy", "jax", "auto"],
@@ -3644,7 +3684,7 @@ def object_vector_cell_significance(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -3726,8 +3766,11 @@ def object_vector_cell_significance(
           smoothing may not apply.
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3833,7 +3876,7 @@ def egocentric_object_vector_cell_significance(
     epochs: Any = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -3921,8 +3964,11 @@ def egocentric_object_vector_cell_significance(
           smoothing may not apply.
         - **diffusion_kde**: Graph-based boundary-aware KDE.
         - **gaussian_kde**: Standard Euclidean KDE.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    bandwidth : float or None, default=None
+        Physical smoothing length in environment units. None uses 5 cm
+        converted to declared metric units, or 2.5 median graph-edge lengths
+        for unspecified/custom units. The polar environment inherits ``env.units``
+        when an environment is supplied. Unused for ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.

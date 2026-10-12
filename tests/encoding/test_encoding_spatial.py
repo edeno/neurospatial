@@ -3220,7 +3220,7 @@ class TestComputeSpatialRateFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Default bandwidth should be 5.0."""
+        """Undeclared coordinate units use the environment's bin spacing."""
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         result = compute_spatial_rate(
@@ -3229,7 +3229,11 @@ class TestComputeSpatialRateFunction:
             trajectory_times,
             trajectory_positions,
         )
-        assert result.bandwidth == 5.0
+        # Undeclared units use 2.5 median bin spacings, not an assumed cm scale.
+        spacing = np.median(
+            [d["distance"] for _, _, d in trajectory_env.connectivity.edges(data=True)]
+        )
+        assert result.bandwidth == pytest.approx(2.5 * spacing)
 
     def test_firing_rates_are_non_negative(
         self,
@@ -3849,7 +3853,7 @@ class TestComputeSpatialRatesFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Default bandwidth should be 5.0."""
+        """Undeclared coordinate units use the environment's bin spacing."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(
@@ -3858,7 +3862,11 @@ class TestComputeSpatialRatesFunction:
             trajectory_times,
             trajectory_positions,
         )
-        assert result.bandwidth == 5.0
+        # Undeclared units use 2.5 median bin spacings, not an assumed cm scale.
+        spacing = np.median(
+            [d["distance"] for _, _, d in trajectory_env.connectivity.edges(data=True)]
+        )
+        assert result.bandwidth == pytest.approx(2.5 * spacing)
 
     def test_firing_rates_are_non_negative(
         self,

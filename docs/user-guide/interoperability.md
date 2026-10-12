@@ -132,6 +132,41 @@ rates = compute_spatial_rates(env, st, times, positions)
 
 ### Restricting to epochs
 
+For occupancy, firing rates, movement metrics and decoding, keep the original
+arrays and pass `epochs=` directly to each analysis. This preserves excluded
+intervals even when they are shorter than `max_gap`. For example:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import compute_spatial_rates
+
+run_epochs = np.array([[1.0, 4.0], [7.0, 9.0]])
+rates = compute_spatial_rates(
+    env, spike_times_list, times, positions, epochs=run_epochs,
+)
+print("Analyzed windows:", rates.analysis_settings["epochs"])
+print("Observed time (s):", rates.occupancy.sum())
+```
+
+Spatial, directional, view and object-vector rate results all carry
+`analysis_settings` and `spatial_support`. The settings record the resolved
+windows, the intervals actually retained after filtering, and the estimator's
+choices. The support mask identifies bins with positive, sufficient occupancy
+and finite rates; its coordinates follow the result (locations, angles or
+polar object vectors). Smoothing can predict a finite rate outside observed
+coverage, so use the support mask when an analysis requires observed bins.
+These fields survive population indexing, DataFrame and xarray export; xarray
+stores the settings as JSON for NetCDF compatibility. Manually constructed
+results default to `analysis_settings=None`.
+
+Spatial and view smoothing, and smoothed object-vector maps, share a physical
+bandwidth default: 5 cm converted to declared metric units, or 2.5 median
+graph-edge lengths for unspecified/custom units. Object-vector results inherit
+the supplied environment's distance units; their angles remain radians.
+Directional smoothing keeps its explicit angular bandwidth, and object-vector
+`method="binned"` applies no smoothing. Supply explicit distance ranges and gaze
+distances in your coordinate units.
+
 `restrict`, `in_epochs`, and `restrict_spike_trains` select time windows.
 `restrict(times, *arrays, epochs=...)` slices `times` and any number of arrays
 **aligned to it** by the same in-epoch mask; `in_epochs(t, epochs)` returns the
@@ -153,16 +188,45 @@ mask = in_epochs(times, run_epochs)
 kept = restrict_spike_trains(st, run_epochs)
 ```
 
-`epochs` accepts several forms: `(start, end)` scalars, an `(n, 2)` array,
-parallel `(starts, ends)` 1-D arrays (whose length is **not** 2), or a pynapple
-`IntervalSet` (duck-typed — no pynapple import).
+`epochs` accepts a `(start, stop)` pair, an `(n, 2)` array or list of interval
+rows (including `[[0, 5], [10, 15]]`), or a pynapple `IntervalSet`. Parallel
+start/stop arrays are rejected: convert them with `np.column_stack([starts, stops])`.
 
-!!! warning "The one ambiguous `epochs` form"
-    A bare **length-2 pair of length-2 sequences** (e.g. `[[0, 5], [10, 15]]`)
-    is ambiguous — it could mean two `(start, end)` interval rows *or* two
-    parallel `(starts, ends)` arrays — so it **raises**. Disambiguate by passing
-    an `(n, 2)` NumPy array (`np.asarray([[0, 5], [10, 15]])`) for interval rows,
-    or explicit 1-D `start` / `end` arrays.
+!!! warning "Sliced samples do not retain observation windows"
+    `restrict()` warns when aligned arrays would join separate windows. Passing
+    those arrays to an analysis without `epochs=` can reintroduce excluded time.
+    Prefer the original arrays with `epochs=`; if using sliced arrays, pass the
+    windows again. Point selection defaults to inclusive endpoints; use
+    `closed="left"` when dividing spikes or events into adjacent train/test
+    cohorts. Analysis windows always use `[start, stop)`.
+
+## Analysis settings and exports
+
+Spatial rate results retain `analysis_settings`: selected epochs, the intervals
+actually observed after gating, spike-recording windows, speed source and
+threshold, gap threshold, occupancy threshold, smoothing and estimator choices.
+`spatial_support` marks observed bins meeting the occupancy threshold with finite
+rates. Indexing a population result preserves these settings.
+
+<!-- docs-test: run -->
+```python
+from neurospatial import compute_spatial_rates
+
+rates = compute_spatial_rates(
+    env, spike_times_list, times, positions, epochs=(1.0, 4.0),
+    bandwidth=5.0, min_occupancy=0.05,
+)
+table = rates.to_dataframe()
+assert table.attrs["analysis_settings"]["epochs"] == [[1.0, 4.0]]
+print(table.attrs["units"])
+print("Supported bins:", int(rates.spatial_support.sum()))
+```
+
+`to_xarray()` stores these settings as JSON in `attrs["analysis_settings"]`,
+alongside a `spatial_support` variable; they survive NetCDF export. NWB spatial
+rate schema 2.4 preserves them too. Legacy or manually constructed results use
+`analysis_settings=None` when these choices are unknown. CSV does not preserve
+DataFrame attributes: save the settings as a JSON sidecar, or use NetCDF/NWB.
 
 ## `BayesianDecoder`
 

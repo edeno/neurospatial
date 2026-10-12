@@ -35,8 +35,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.encoding._binning import (
-    count_frames_and_occupancy,
+    FrameBinning,
     count_spikes_by_frame,
+    prepare_frame_binning,
 )
 from neurospatial.environment.trajectory import (
     interval_valid_mask,
@@ -334,6 +335,35 @@ def bin_directional_spike_train(
     return count_spikes_by_frame(spike_times, times, frame_bins, mask, n_bins)
 
 
+def prepare_directional_binning(
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    bin_size: float,
+    *,
+    angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+) -> tuple[FrameBinning, NDArray[np.float64]]:
+    """Prepare geometry and exact temporal support before counting spikes."""
+    times = np.asarray(times, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+    _validate_directional_samples(times, headings)
+    frame_bins, bin_centers = directional_frame_bins(
+        headings, bin_size, angle_unit=angle_unit
+    )
+    n_bins = len(bin_centers)
+    prepared = prepare_frame_binning(
+        times,
+        frame_bins,
+        n_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    return prepared, bin_centers
+
+
 def bin_directional_spike_trains(
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     times: NDArray[np.float64],
@@ -435,21 +465,14 @@ def bin_directional_spike_trains(
     from neurospatial.encoding._spikes import as_spike_trains
 
     spike_times_list = as_spike_trains(spike_times)
-    times = np.asarray(times, dtype=np.float64).ravel()
-    headings = np.asarray(headings, dtype=np.float64).ravel()
-    _validate_directional_samples(times, headings)
-    frame_bins, bin_centers = directional_frame_bins(
-        headings, bin_size, angle_unit=angle_unit
-    )
-    n_bins = len(bin_centers)
-    spike_counts, occupancy = count_frames_and_occupancy(
-        spike_times_list,
+    prepared, bin_centers = prepare_directional_binning(
         times,
-        frame_bins,
-        n_bins,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
-        n_jobs=n_jobs,
     )
+    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
     return spike_counts, occupancy, bin_centers

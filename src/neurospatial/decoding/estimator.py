@@ -68,7 +68,8 @@ class BayesianDecoder:
         Decoding time-bin width in seconds.
     bandwidth : float or None, default=None
         Smoothing bandwidth (position units) for the ratio-method encoding step.
-        ``None`` resolves to the encoder default (5.0); a ratio-only param, so it
+        ``None`` uses 5 cm in declared metric units, otherwise 2.5 median bin
+        spacings; a ratio-only param, so it
         must stay ``None`` when ``method="glm"`` (validated at construction).
     method : str, default="diffusion_kde"
         Estimator for the encoding step. One of ``"diffusion_kde"``,
@@ -76,8 +77,8 @@ class BayesianDecoder:
         tuned with ``penalty`` / ``rank``).
     min_occupancy : float or None, default=None
         Minimum occupancy (seconds) for a bin to enter the ratio-method encoding
-        model. Low-occupancy bins are filled with ``0.0`` Hz (``fill_value=0.0``),
-        never ``NaN``. ``None`` resolves to the encoder default (0.0); a
+        model. Unoccupied bins and bins below this threshold are excluded
+        from the posterior by ``spatial_support``. ``None`` resolves to 0.0; a
         ratio-only param, so it must stay ``None`` when ``method="glm"``.
     penalty : float or None, default=None
         ``method="glm"`` smoothness penalty ``lambda``; ``None`` chooses it by
@@ -153,6 +154,12 @@ warn_on_drop
         Internal identity flag carried by selection or fitting when unit labels
         were generated. Leave it at its default when supplying real unit IDs.
 
+    spatial_support : ndarray of bool or None
+        Training bins allowed in the posterior. Set by fit/from_rates from
+        observed occupancy and the occupancy threshold. None for explicit
+        hand-built models whose support is the caller's responsibility.
+    analysis_settings : dict or None
+        Recorded training settings, including observed intervals and gates.
     spike_window : ndarray or None
         Spike-recording windows carried from training or precomputed rates as
         provenance. Prediction takes its own explicit observation window.
@@ -196,6 +203,13 @@ warn_on_drop
     _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
+    )
+
+    spatial_support: NDArray[np.bool_] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
+    analysis_settings: dict[str, Any] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
     )
 
     def __post_init__(self) -> None:
@@ -263,6 +277,9 @@ warn_on_drop
             from neurospatial._results import resolve_unit_ids
 
             resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder")
+            from neurospatial.decoding._support import supported_prior
+
+            supported_prior(None, self.spatial_support, self.env.n_bins, 0)
 
     @property
     def is_fitted(self) -> bool:
@@ -311,10 +328,10 @@ warn_on_drop
         Caller-supplied labels align labelled prediction inputs by identity.
         Generated row numbers retain positional pairing. The spike window is
         training provenance; pass the prediction recording's ``spike_window``
-        explicitly when decoding. Non-finite map bins follow ``decode_position``:
-        prediction warns once, excludes their Poisson contributions, and points
-        to ``fill_value=0.0`` for explicitly zero-rate maps. The maps are not
-        recomputed or silently filled by this constructor.
+        explicitly when decoding. Observed occupancy, the recorded occupancy
+        threshold and finite rates determine ``spatial_support``. Unsupported
+        bins have zero posterior probability; maps are not recomputed.
+        ``analysis_settings`` retains the recorded training choices.
 
         Examples
         --------
@@ -353,6 +370,8 @@ warn_on_drop
             unit_ids=np.asarray(rates.unit_ids),
             _unit_ids_generated=rates._unit_ids_generated,
             spike_window=rates.spike_window,
+            spatial_support=rates.spatial_support,
+            analysis_settings=rates.analysis_settings,
         )
 
     def _check_fitted(self) -> NDArray[np.float64]:
@@ -443,16 +462,11 @@ warn_on_drop
 
         Notes
         -----
-        The default ``min_occupancy=None`` (resolving to ``0.0``, paired with the
-        ratio decode golden path's ``fill_value=0.0``) means a small epoch or
-        sparse training data can build a **degenerate low-coverage** encoding
-        model *without erroring* -- most bins fall back to ``0.0`` Hz, so the fit
-        "succeeds" but decodes poorly. For short epochs, raise ``min_occupancy``
-        (ratio methods) or check the fitted model's spatial coverage before
-        trusting a decode. ``method="glm"`` has no such knob -- occupancy enters
-        as a log-offset, so every bin gets a finite rate. A fit whose gates
-        leave no occupied bin at all raises ``ValueError`` rather than
-        returning a model that decodes every time bin as uniform.
+        ``spatial_support`` includes only occupied bins meeting the occupancy
+        threshold with finite model rates. Predictions assign zero probability
+        elsewhere, including during silence. Inspect this mask alongside errors:
+        a short training epoch may cover little of the test trajectory. A fit
+        with no supported bin raises an actionable ValueError.
 
         When predicting with the fitted decoder, decode time bins are formed
         separately within each run of samples whose
@@ -485,7 +499,7 @@ warn_on_drop
             epochs, spike_window
         )
 
-        firing_rates = _build_encoding_model(
+        built = _build_encoding_model(
             self.env,
             trains,
             times,
@@ -504,11 +518,15 @@ warn_on_drop
             context="BayesianDecoder.fit",
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
-        )[1]
+        )
+        firing_rates = built[1]
+        rates_result = built[4]
 
         return replace(
             self,
             encoding_models=firing_rates,
+            spatial_support=rates_result.spatial_support,
+            analysis_settings=rates_result.analysis_settings,
             unit_ids=resolved_ids,
             _unit_ids_generated=unit_ids is None and extracted_ids is None,
             spike_window=resolved_spike_window,
@@ -630,6 +648,7 @@ warn_on_drop
             self._align_to_fitted_units(spike_times, "predict"),
             times,
             encoding_models,
+            spatial_support=self.spatial_support,
             dt=self.dt,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
@@ -713,6 +732,7 @@ warn_on_drop
             self._align_to_fitted_units(spike_times, "predict_summary"),
             times,
             encoding_models,
+            spatial_support=self.spatial_support,
             dt=self.dt,
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,

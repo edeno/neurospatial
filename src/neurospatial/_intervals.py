@@ -9,6 +9,7 @@ seconds, on the same clock as ``times``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -19,6 +20,61 @@ _ACCEPTED_FORMS = (
     "or an object with 1-D .start and .end arrays (for example a pynapple "
     "IntervalSet)"
 )
+
+
+@dataclass(frozen=True)
+class TimeSupport:
+    """Resolved windows and the exact intervals retained by an operation.
+
+    ``mask`` gates both spike counts and dwell time. ``runs`` records its
+    contiguous half-open time bounds without retaining the recording arrays.
+    Recording support and training support are separate instances: training
+    may additionally exclude slow movement or invalid coordinates.
+    """
+
+    mask: NDArray[np.bool_]
+    runs: NDArray[np.float64]
+    epochs: NDArray[np.float64] | None
+    spike_window: NDArray[np.float64] | None
+    max_gap: float | None
+
+    @classmethod
+    def from_mask(
+        cls,
+        times: NDArray[np.float64],
+        mask: NDArray[np.bool_],
+        *,
+        epochs: NDArray[np.float64] | None,
+        spike_window: NDArray[np.float64] | None,
+        max_gap: float | None,
+    ) -> TimeSupport:
+        """Snapshot an interval mask and already normalized time windows."""
+
+        def snapshot(array: Any) -> Any:
+            if array is None:
+                return None
+            copied = np.array(array, copy=True)
+            copied.setflags(write=False)
+            return copied
+
+        return cls(
+            snapshot(mask),
+            snapshot(run_time_bounds(times, mask)),
+            snapshot(epochs),
+            snapshot(spike_window),
+            max_gap,
+        )
+
+    def analysis_settings(self) -> dict[str, Any]:
+        """Export independent, JSON-compatible temporal provenance."""
+        return {
+            "epochs": None if self.epochs is None else self.epochs.tolist(),
+            "spike_window": (
+                None if self.spike_window is None else self.spike_window.tolist()
+            ),
+            "observed_intervals": self.runs.tolist(),
+            "max_gap": None if self.max_gap is None else float(self.max_gap),
+        }
 
 
 def _format_rows(idx: NDArray[np.intp]) -> str:

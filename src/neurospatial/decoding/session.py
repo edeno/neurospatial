@@ -30,6 +30,7 @@ _SUMMARY_DEFAULT_TIME_CHUNK = 1024
 
 if TYPE_CHECKING:
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
 
 
@@ -145,7 +146,7 @@ def decode_session(
     bandwidth : float or None, optional
         Smoothing bandwidth (same units as positions) for the ratio-method
         encoding step. ``None`` (default) resolves to the encoder's default
-        (5.0); a ratio-only param, so it must stay ``None`` when
+        (5 cm in declared metric units, otherwise 2.5 median bin spacings); a ratio-only param, so it must stay ``None`` when
         ``method="glm"``.
     method : str, optional
         Estimator passed to :func:`~neurospatial.encoding.compute_spatial_rates`.
@@ -153,8 +154,8 @@ def decode_session(
         and ``"glm"`` (penalized-Poisson GAM, tuned with ``penalty`` / ``rank``).
     min_occupancy : float or None, optional
         Minimum occupancy (seconds) for a spatial bin to be included in the
-        ratio-method encoding model. Bins below threshold are set to
-        ``fill_value=0.0`` so the decoder never receives NaN rates. ``None``
+        ratio-method encoding model. Unoccupied bins and bins below this
+        threshold have zero posterior probability. ``None``
         (default) resolves to the encoder's default (0.0, no threshold); a
         ratio-only param, so it must stay ``None`` when ``method="glm"``.
     penalty : float or None, optional
@@ -251,17 +252,13 @@ def decode_session(
     :func:`~neurospatial.decoding.decode_position` expects for its
     ``spike_counts`` argument.  No transposition is performed.
 
-    **Encoding fill value**:
-    When a ratio method is used, this
-    function passes ``fill_value=0.0`` to the encoder so that low-occupancy bins
-    produce zero-rate predictions rather than NaN, keeping the posterior valid.
-    ``method="glm"`` needs no fill (occupancy enters as a log-offset, so every
-    bin gets a finite rate), so no ``fill_value`` is passed there. If you need
-    NaN-masked bins in the encoding model, compute
-    :func:`~neurospatial.encoding.compute_spatial_rates` separately and
-    use ``BayesianDecoder.from_rates(rates).predict(spike_times, times)``.
-    For explicit rate arrays, bin counts with ``bin_spikes_in_time`` and pass
-    the count array and ``rates.firing_rates`` to ``decode_position``.
+    **Training spatial support**:
+    Unoccupied bins, bins below ``min_occupancy`` and non-finite model bins
+    are excluded from the posterior, even during silent decoding intervals.
+    An explicit ``prior`` is intersected with this support. Internal finite
+    placeholders in excluded bins do not represent measured zero activity.
+    For precomputed maps use ``BayesianDecoder.from_rates(rates)``; an explicit
+    array call must carry ``prior=rates.spatial_support.astype(float)``.
 
     **Time grid**:
     Each valid run is tiled separately with half-open decode bins. The spike
@@ -319,10 +316,17 @@ def decode_session(
     >>> counts, centers = bin_spikes_in_time(
     ...     spike_times, dt=0.1, t_start=times[0], t_stop=times[-1]
     ... )
-    >>> result = decode_position(env, counts, rates.firing_rates, 0.1, times=centers)
+    >>> result = decode_position(
+    ...     env,
+    ...     counts,
+    ...     rates.firing_rates,
+    ...     0.1,
+    ...     times=centers,
+    ...     prior=rates.spatial_support.astype(float),
+    ... )
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    trains, firing_rates, _, _ = _build_encoding_model(
+    trains, firing_rates, _, _, rates_result = _build_encoding_model(
         env,
         spike_times,
         times,
@@ -352,6 +356,7 @@ def decode_session(
         spike_window=resolved_spike_window,
         warn_on_drop=False,
         dtype=dtype,
+        spatial_support=rates_result.spatial_support,
         **decode_kwargs,
     )
 
@@ -438,7 +443,7 @@ def _prepare_session_decode(
     if warn_on_drop:
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
-    from neurospatial._intervals import run_time_bounds
+    from neurospatial._intervals import TimeSupport
     from neurospatial.decoding._binning import time_bins_in_windows
     from neurospatial.environment.trajectory import interval_valid_mask
 
@@ -449,7 +454,10 @@ def _prepare_session_decode(
     observed = interval_valid_mask(
         times_arr, max_gap=max_gap, epochs=epochs, spike_window=spike_window
     )
-    runs = run_time_bounds(times_arr, observed)
+    recording_support = TimeSupport.from_mask(
+        times_arr, observed, epochs=epochs, spike_window=spike_window, max_gap=max_gap
+    )
+    runs = recording_support.runs
     bin_left, bin_right = time_bins_in_windows(runs, dt)
     if bin_left.size == 0:
         longest = float(np.max(np.diff(runs, axis=1), initial=0.0))
@@ -490,6 +498,7 @@ def _build_encoding_model(
     NDArray[np.float64],
     NDArray[np.float64],
     NDArray[np.float64],
+    SpatialRatesResult,
 ]:
     """Encode tracking data, then prepare the shared observed-run decode bins."""
     from neurospatial._validation import validate_times_positions
@@ -518,9 +527,8 @@ def _build_encoding_model(
     )
     _method = cast("Literal['diffusion_kde', 'gaussian_kde', 'binned', 'glm']", method)
     # glm produces finite rates everywhere (occupancy is a log-offset), so it
-    # needs no NaN fill; passing fill_value to a glm result would be rejected
-    # as a ratio-only param. Ratio methods keep the golden-path 0.0 fill so
-    # low-occupancy bins decode as zero-rate, never NaN.
+    # needs no NaN fill. Ratio methods use finite placeholders; spatial_support
+    # separately excludes unsupported bins from the posterior in every path.
     fill_value = None if method == "glm" else 0.0
     # The encoder owns spike/position coverage diagnostics and already
     # emits the spike-drop warning (and additionally an inactive-bin /
@@ -585,7 +593,7 @@ def _build_encoding_model(
                 ),
             )
         )
-    return prepared
+    return (*prepared, rates_result)
 
 
 def _decode_with_models(
@@ -600,6 +608,7 @@ def _decode_with_models(
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    spatial_support: NDArray[np.bool_] | None = None,
     **decode_kwargs: Any,
 ) -> DecodingResult:
     """Decode existing models on the per-run recording clock."""
@@ -617,6 +626,12 @@ def _decode_with_models(
         warn_on_drop=warn_on_drop,
         dtype=dtype,
     )
+    from neurospatial.decoding._support import models_on_support, supported_prior
+
+    decode_kwargs["prior"] = supported_prior(
+        decode_kwargs.get("prior"), spatial_support, env.n_bins, len(bin_left)
+    )
+    firing_rates = models_on_support(firing_rates, spatial_support)
     counts = count_spikes_in_time_bins(trains, bin_left, bin_right)
     centers = bin_left + dt / 2.0
     return decode_position(
@@ -764,7 +779,7 @@ warn_on_drop, dtype
     _validate_time_chunk(
         decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
     )
-    trains, firing_rates, _, _ = _build_encoding_model(
+    trains, firing_rates, _, _, rates_result = _build_encoding_model(
         env,
         spike_times,
         times,
@@ -795,6 +810,7 @@ warn_on_drop, dtype
         spike_window=resolved_spike_window,
         warn_on_drop=False,
         dtype=dtype,
+        spatial_support=rates_result.spatial_support,
         **decode_kwargs,
     )
 
@@ -811,6 +827,7 @@ def _decode_with_models_summary(
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    spatial_support: NDArray[np.bool_] | None = None,
     **decode_kwargs: Any,
 ) -> DecodingSummary:
     """Stream reductions over existing models and per-run time bins."""
@@ -856,6 +873,10 @@ def _decode_with_models_summary(
         context="decode_session_summary",
     )
 
+    from neurospatial.decoding._support import models_on_support, supported_prior
+
+    prior = supported_prior(prior, spatial_support, env.n_bins, len(bin_left))
+    firing_rates = models_on_support(firing_rates, spatial_support)
     n_time = bin_left.size
     bin_centers_time = bin_left + dt / 2.0
 

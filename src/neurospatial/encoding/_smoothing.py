@@ -105,6 +105,73 @@ _GAUSSIAN_KERNEL_CACHE: dict[
 _GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
+def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
+    """Resolve a length-scale default and diagnose smoothing across the arena.
+
+    The default is 5 cm in declared metric units. For unspecified, pixel or
+    custom units, it is 2.5 median graph-edge lengths (or bin widths when no
+    edges exist). Polar environments use physical graph lengths and radial
+    extent; their angular coordinate never enters a length comparison.
+    An explicit value is always in environment coordinates.
+    """
+    if bandwidth is None:
+        unit = str(env.units or "").lower().strip()
+        metric_scales = {
+            "m": 0.05,
+            "meter": 0.05,
+            "meters": 0.05,
+            "metre": 0.05,
+            "metres": 0.05,
+            "cm": 5.0,
+            "centimeter": 5.0,
+            "centimeters": 5.0,
+            "centimetre": 5.0,
+            "centimetres": 5.0,
+            "mm": 50.0,
+            "millimeter": 50.0,
+            "millimeters": 50.0,
+            "millimetre": 50.0,
+            "millimetres": 50.0,
+            "um": 50000.0,
+            "µm": 50000.0,
+            "micrometer": 50000.0,
+            "micrometers": 50000.0,
+            "micrometre": 50000.0,
+        }
+        if unit in metric_scales:
+            bandwidth = metric_scales[unit]
+        else:
+            lengths = np.asarray(
+                [
+                    edge["distance"]
+                    for _, _, edge in env.connectivity.edges(data=True)
+                    if edge.get("distance", 0) > 0
+                ]
+            )
+            if lengths.size == 0:
+                if getattr(env, "_POLAR", False):
+                    lengths = np.diff(env.grid_edges[0])
+                else:
+                    lengths = np.asarray(env.bin_sizes) ** (1.0 / env.n_dims)
+            bandwidth = 2.5 * float(np.median(lengths))
+    ranges = (
+        env.dimension_ranges[:1]
+        if getattr(env, "_POLAR", False)
+        else env.dimension_ranges
+    )
+    extent = max(stop - start for start, stop in ranges)
+    if extent > 0 and bandwidth >= extent:
+        warnings.warn(
+            f"bandwidth={bandwidth:g} spans the environment (extent {extent:g} "
+            f"{env.units or 'coordinate units'}), which can erase spatial tuning. "
+            "Choose an explicit bandwidth in the same units as positions; "
+            "check env.units and the scale of your recording.",
+            UserWarning,
+            stacklevel=3,
+        )
+    return float(bandwidth)
+
+
 def _get_gaussian_kernel(
     env: _BaseEnvironment, bandwidth: float
 ) -> NDArray[np.float64]:

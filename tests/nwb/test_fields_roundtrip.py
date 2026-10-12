@@ -403,7 +403,7 @@ class TestSpatialRatesRoundTrip:
         from neurospatial.io.nwb import write_spatial_rates
 
         env = sample_environment
-        bad_table = pd.DataFrame({"unit_id": [1, 2, 3], "region": ["a", "b", "c"]})
+        bad_table = pd.DataFrame({"unit_id": [0, 1, 2], "region": ["a", "b", "c"]})
         result = _make_rates_result(env, unit_table=bad_table)
 
         with pytest.raises(ValueError, match="reserved"):

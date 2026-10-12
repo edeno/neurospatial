@@ -289,7 +289,15 @@ def test_epochs_restrict_encoding(sim) -> None:
     assert_array_equal(fitted.encoding_models, models)
     held_out = (mid, float(times[-1]))
     predicted = fitted.predict(spikes, times, epochs=held_out)
-    reference = _decode_with_models(env, spikes, times, models, dt=0.5, epochs=held_out)
+    reference = _decode_with_models(
+        env,
+        spikes,
+        times,
+        models,
+        dt=0.5,
+        epochs=held_out,
+        spatial_support=fitted.spatial_support,
+    )
     assert_array_equal(predicted.posterior, reference.posterior)
     full = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
     assert not np.array_equal(fitted.encoding_models, full.encoding_models)
@@ -769,7 +777,14 @@ class TestUnitAlignment:
     def test_predict_plain_arrays_stay_positional(self, sim) -> None:
         env, spikes, times, positions = sim
         decoder = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
-        ref = _decode_with_models(env, spikes, times, decoder.encoding_models, dt=0.5)
+        ref = _decode_with_models(
+            env,
+            spikes,
+            times,
+            decoder.encoding_models,
+            dt=0.5,
+            spatial_support=decoder.spatial_support,
+        )
         assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
 
     def test_unlabelled_spike_trains_fit_pairs_by_position(
@@ -983,7 +998,7 @@ def test_from_rates_rejects_other_types():
         BayesianDecoder.from_rates(rates)
 
 
-def test_from_rates_nan_bins_use_existing_decoder_contract(sim):
+def test_from_rates_nan_bins_are_excluded_from_spatial_support(sim):
     from neurospatial.decoding import bin_spikes_in_time, decode_position
     from neurospatial.encoding import SpatialRatesResult
 
@@ -992,14 +1007,12 @@ def test_from_rates_nan_bins_use_existing_decoder_contract(sim):
     maps[0, 0] = np.nan
     rates = SpatialRatesResult(maps, np.ones(env.n_bins), env, "binned", 5)
     decoder = BayesianDecoder.from_rates(rates, dt=0.5)
-    with pytest.warns(UserWarning, match="fill_value=0.0") as captured:
-        actual = decoder.predict(spikes[:2], times)
-    assert len(captured) == 1
+    actual = decoder.predict(spikes[:2], times)
+    np.testing.assert_array_equal(actual.posterior[:, 0], 0.0)
     counts, centers = bin_spikes_in_time(
         spikes[:2], dt=0.5, t_start=times[0], t_stop=times[-1]
     )
-    with pytest.warns(UserWarning, match="fill_value=0.0"):
-        expected = decode_position(env, counts, maps, 0.5, times=centers)
+    expected = decode_position(env, counts, rates, 0.5, times=centers)
     np.testing.assert_array_equal(actual.posterior, expected.posterior)
     assert np.isnan(maps[0, 0])
 

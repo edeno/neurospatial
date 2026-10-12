@@ -308,9 +308,11 @@ def test_results_do_not_retain_inputs(significance_family, significance_recordin
 def test_is_place_cell_spatial_info(ou_2min_env, ou_2min, noise_trains):
     t, p, _ = ou_2min
     trains = noise_trains(120)
-    rates = encoding.compute_spatial_rates(ou_2min_env, trains, t, p)
+    rates = encoding.compute_spatial_rates(ou_2min_env, trains, t, p, bandwidth=5.0)
     flags = [
-        encoding.is_place_cell(ou_2min_env, tr, t, p, criterion="spatial_info")
+        encoding.is_place_cell(
+            ou_2min_env, tr, t, p, criterion="spatial_info", bandwidth=5.0
+        )
         for tr in trains
     ]
     np.testing.assert_array_equal(flags, rates.classify())

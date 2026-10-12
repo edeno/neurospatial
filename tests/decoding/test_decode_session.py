@@ -260,6 +260,7 @@ class TestDecodeSessionEquivalence:
             firing_rates,
             dt,
             times=centers,
+            prior=rates_result.spatial_support.astype(float),
         )
 
         # --- decode_session path ---
@@ -314,7 +315,12 @@ class TestDecodeSessionEquivalence:
             t_stop=times_arr.max(),
         )
         manual_result = decode_position(
-            env, counts, rates_result.firing_rates, dt, times=centers
+            env,
+            counts,
+            rates_result.firing_rates,
+            dt,
+            times=centers,
+            prior=rates_result.spatial_support.astype(float),
         )
         session_result = decode_session(
             env,
@@ -363,7 +369,12 @@ class TestDecodeSessionEncodingModelsPassthrough:
 
         # Call with precomputed models
         result_precomputed = _decode_with_models(
-            env, spike_times, times, precomputed, dt=dt
+            env,
+            spike_times,
+            times,
+            precomputed,
+            dt=dt,
+            spatial_support=rates_result.spatial_support,
         )
 
         # Call without (fit internally, same params)
@@ -855,7 +866,7 @@ class TestDecodeSessionMaxGap:
 
 
 def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **kw):
-    """PRE-R5 reference: materialize the FULL count matrix, then stream-decode.
+    """Reference: preserve training support, bin the full recording, stream-decode.
 
     This is exactly what decode_session_summary did before R5 (encode -> bin
     the WHOLE session into a dense (n_time, n_neurons) count matrix ->
@@ -878,7 +889,7 @@ def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **
         method="diffusion_kde",
         min_occupancy=0.0,
         fill_value=0.0,
-    ).firing_rates
+    )
     counts, centers = bin_spikes_in_time(
         spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
     )
