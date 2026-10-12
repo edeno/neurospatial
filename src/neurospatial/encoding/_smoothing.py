@@ -67,6 +67,7 @@ from numpy.typing import ArrayLike, NDArray
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
     component_support_mask,
@@ -225,7 +226,7 @@ def _get_gaussian_kernel(
             f"method='diffusion_kde' (matrix-free, boundary-aware, "
             f"O(n * rank)) or increase bin_size (fewer bins).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     two_sigma_sq = 2.0 * bandwidth**2
@@ -878,8 +879,6 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
     """
     if min_occupancy <= 0.0:
         return
-    from neurospatial.environment.trajectory import _external_stacklevel
-
     occupancy = np.asarray(occupancy, dtype=np.float64)
     occupied = occupancy > 0.0
     n_occupied = int(np.count_nonzero(occupied))
