@@ -64,6 +64,8 @@
 
 - Clarify cell-screen thresholds and the scope of synthetic, biological and cross-package validation.
 
+- Label decoding errors as in-sample and interpret sequence shuffle tests relative to their null. Refresh notebook outputs and synchronize the source and documentation copies.
+
 - Preserve containment and inactive bins after affine environment transforms, including chained transforms, and retain polygon-region holes. Reject singular transforms that collapse bin geometry.
 - Preserve generated unit-label provenance and spike-recording windows in NWB spatial-rate round trips (schema `2.3`), so reloaded maps retain their decoder pairing and coverage. Older `2.x` files remain readable with their existing defaults.
 - Return `NaN` path progress when the current position is disconnected from the start, even if the goal is reachable.

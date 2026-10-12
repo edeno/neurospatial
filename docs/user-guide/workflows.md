@@ -190,10 +190,10 @@ result = decode_session(env, spike_times, times, positions, dt=0.1)
 
 print(f"Decoded {result.posterior.shape[0]} time bins over {env.n_bins} bins")
 
-# Step 3: Evaluate — the decoded MAP position should track the trajectory.
+# Step 3: Inspect in-sample error: these spikes also fitted the rate maps.
 actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 median_err = np.nanmedian(decoding_error(result.map_position, actual))
-print(f"Median decoding error: {median_err:.1f} cm")
+print(f"Median in-sample decoding error: {median_err:.1f} cm")
 
 # Step 4: Plot decoded vs. actual position.
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -211,6 +211,15 @@ plt.show()
 `.map_position` (n_time, n_dims), `.mean_position`, `.posterior_entropy`, and
 `.times`. See [`decoding_error`](../api/neurospatial/decoding/index.md) and
 related helpers for accuracy metrics.
+
+This example fits the rate maps and decodes the **same recording**. Its error
+is in-sample and does not measure generalization. For held-out evaluation,
+fit maps using training epochs, then predict and score disjoint trials or time
+blocks with `BayesianDecoder`. Select parameters using training/validation
+data before evaluating the test block. The
+[rate-map reuse example](#reusing-rate-maps-on-a-recording-with-gaps) shows the
+separate training and prediction epochs. Posterior entropy describes spread
+under the chosen model; it is not a calibrated confidence level.
 
 ### Overlaying actual position on a posterior
 
@@ -300,8 +309,8 @@ dt, *, time_chunk=...)` is the array-level equivalent.
 your own `encoding_models`, reusing fitted place fields across sessions, or
 inspecting the binned spike counts — use the manual three-call path
 (`compute_spatial_rates` → `bin_spikes_in_time` → `decode_position`). That
-walk-through, plus trajectory analysis and shuffle-based significance testing
-for replay detection, is covered in
+walk-through, plus trajectory analysis and a time-order shuffle test on a
+synthetic sequence, is covered in
 [example 20](../examples/20_bayesian_decoding.ipynb).
 
 ### Reusing rate maps on a recording with gaps
