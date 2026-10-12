@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add scientific invariants across layout transforms, coordinate-unit conversions, single/population estimation, labelled unit permutations and disk NWB round trips, covering grid, masked, hexagonal and graph layouts.
+
 - Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
 
 - Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.

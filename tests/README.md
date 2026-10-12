@@ -60,6 +60,34 @@ uv run pytest tests/benchmarks/ --benchmark-histogram
 
 ## Test Organization
 
+### Scientific invariants across operations
+
+`test_analysis_invariants.py` compares equivalent analyses through public APIs:
+all unit permutations, single versus population estimates, physical coordinate
+unit conversions, and generated transform/inverse chains. Fixtures cover grid,
+masked, hexagonal and graph layouts, all four spatial estimators, nonuniform
+firing and recording gaps. Fixed-penalty GLM fits are compared across unit order
+and batching; a fixed GLM penalty is not treated as a physical bandwidth during
+coordinate-unit conversion.
+
+`nwb/test_analysis_invariants.py` writes computed results to real files, closes
+them, then checks restored geometry, unit identity, coverage and predictions
+with reordered spike inputs. It runs in the existing optional-NWB CI job.
+Non-grid NWB layouts restore centers/connectivity/measures, not a full layout
+engine; these tests reuse saved rates rather than claiming those layouts can
+be refitted with finite-volume methods.
+
+```bash
+MPLBACKEND=Agg uv run pytest tests/test_analysis_invariants.py tests/nwb/test_analysis_invariants.py -n 4
+```
+
+These tests establish equivalence under the named operations, not held-out
+decoding accuracy or calibrated biological classification. Use asymmetric
+fixtures and explicit nondegeneracy assertions so uniformly zero fields or
+uniform posteriors cannot satisfy the comparisons accidentally.
+
+### Directory layout
+
 The test suite mirrors the source code package structure for easy navigation:
 
 ```

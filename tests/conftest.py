@@ -80,6 +80,54 @@ settings.register_profile(
 _profile = os.environ.get("HYPOTHESIS_PROFILE", "dev")
 settings.load_profile(_profile)
 
+
+@pytest.fixture(params=["grid", "masked", "hexagonal", "graph"])
+def analysis_invariant_env(request):
+    """Small environments for testing scientific meaning across API boundaries."""
+    if request.param == "graph":
+        env = Environment.linear_track(endpoints=[[0.0, 0.0], [6.0, 0.0]], bin_size=1.0)
+    elif request.param == "hexagonal":
+        points = np.array([[0.0, 0.0], [4.0, 4.0]])
+        env = Environment.from_samples(
+            points, bin_size=1.0, layout="hexagonal", infer_active_bins=False
+        )
+    else:
+        mask = np.ones((3, 3), dtype=bool)
+        if request.param == "masked":
+            mask[1, 1] = False
+        env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+    env.units = "cm"
+    env.frame = "arena"
+    return env
+
+
+@pytest.fixture
+def analysis_invariant_recording(analysis_invariant_env):
+    """Labelled, nonuniform firing with a tracking gap and explicit coverage."""
+    from neurospatial.encoding import SpikeTrains
+
+    env = analysis_invariant_env
+    bins = np.tile(np.repeat(np.arange(env.n_bins), 4), 4)
+    positions = env.bin_centers[bins]
+    times = np.arange(len(bins), dtype=float) * 0.05
+    mid = len(times) // 2
+    times[mid:] += 2.0
+    coverage = np.array([[times[0], times[mid - 1]], [times[mid], times[-1]]])
+    # Exact sample times avoid interpolation across a turn or an inactive bin.
+    # Different bin preferences make unit mispairing visible in the posterior.
+    trains = [times[:-1][(bins[:-1] + offset) % 3 == 0] for offset in range(3)]
+    spikes = SpikeTrains(trains, unit_ids=["CA1-c", "CA1-a", "CA1-b"])
+    return env, spikes, times, positions, coverage
+
+
+@pytest.fixture(params=["binned", "gaussian_kde", "diffusion_kde", "glm"])
+def analysis_invariant_method(request):
+    """Exercise every spatial estimator without backend or optimizer randomness."""
+    if request.param == "glm":
+        return {"method": "glm", "penalty": 1.0, "rank": 5}
+    return {"method": request.param, "bandwidth": 0.8, "fill_value": 0.0}
+
+
 # =============================================================================
 # Test Configuration Constants
 # =============================================================================
