@@ -1,6 +1,20 @@
 # User Guide
 
-This guide provides detailed explanations of neurospatial's features and workflows.
+Start with the scientific question you want to answer. Each route below uses
+public APIs and explains the assumptions needed to interpret the output.
+
+## Choose a Scientific Task
+
+| I want to… | Start here | Check before interpreting |
+| --- | --- | --- |
+| Analyze my recorded spikes and tracking | [Load NWB data](interoperability.md#nwb-interop) | Position units, clocks, unit labels and recording windows |
+| Find where a neuron fires | [First place field](../getting-started/quickstart.md#your-first-place-field) | Occupancy, smoothing scale and missing spatial coverage |
+| Compare conditions or trials | [Compare analysis windows](workflows.md#compare-conditions-with-explicit-windows) | Shared geometry, identical analysis settings and observed duration |
+| Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
+| Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Disjoint training/test windows and training spatial support |
+| Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
+| Measure responses around events | [Peri-event example](../examples/26_peri_event_psth.ipynb) | Full event-window coverage and the retained event cohort |
+| Save results I can interpret later | [Analysis settings and exports](interoperability.md#analysis-settings-and-exports) | Units, identity, analysis windows and estimator settings |
 
 ## Contents
 
@@ -13,7 +27,7 @@ This guide provides detailed explanations of neurospatial's features and workflo
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
 - **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
-- **[Interoperability](interoperability.md)**: Session bundle, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters
+- **[Interoperability](interoperability.md)**: Recording holders, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters
 
 ## Who This Guide Is For
 

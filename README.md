@@ -3,9 +3,22 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs. It provides tools for spatial analysis, particularly for neuroscience applications involving place fields, position tracking, and spatial navigation.
+**neurospatial** is a Python library for spatial neuroscience. It helps scientists
+analyze how animals move through space and how neural activity represents it,
+with tools for environments, behavior, neural encoding and decoding, simulation,
+and visualization.
 
-Whether you're analyzing animal navigation data, modeling place cells, or working with any spatial discretization problem, neurospatial gives you flexible, powerful tools to represent and analyze spatial environments.
+Our highest design priority is the scientist's experience: common analyses should
+be easy to discover, behave as a scientist reasonably expects, and produce
+scientifically correct, interpretable results. Clear assumptions, consistent
+interfaces, and useful error messages are part of that experience.
+
+The long-term goal is to encompass the operations of spatial neuroscience in a
+coherent workflow, from recorded data and environment definition through analysis,
+statistical evaluation, visualization, and export. Spatial discretization and
+connectivity graphs provide a shared foundation for these operations. See the
+[design principles](docs/contributing.md#design-principles) for how we evaluate
+changes toward this goal.
 
 ## Key Features
 

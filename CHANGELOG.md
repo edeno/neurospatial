@@ -8,6 +8,9 @@
   xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
   speed and occupancy gates. Expose `spatial_support` on rate results and fitted
   decoders. Legacy results identify unavailable settings as `None`.
+- Add runnable condition-comparison and held-out decoding workflows and a
+  scientific-task index linking recording import through analysis and export.
+
 - Add scientific invariants across layout transforms, coordinate-unit conversions, single/population estimation, labelled unit permutations and disk NWB round trips, covering grid, masked, hexagonal and graph layouts.
 
 - Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.

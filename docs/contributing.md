@@ -2,6 +2,51 @@
 
 Thank you for your interest in contributing to neurospatial! This guide will help you get started.
 
+## Design Principles
+
+The scientist's experience is neurospatial's highest design priority. Scientific
+correctness is part of usability: a convenient call that silently changes the
+meaning of an analysis is a usability failure. Scientists should be able to
+discover an operation, understand its assumptions, and interpret its result
+without reading implementation code.
+
+The long-term scope is the operations of spatial neuroscience: loading and
+validating recordings, representing environments, analyzing behavior and neural
+activity, evaluating statistical evidence, simulating experiments, visualizing
+results, and exporting them. Grow this coverage through workflows that work
+together and preserve scientific meaning across steps.
+
+Use these principles when designing and reviewing changes:
+
+- **Start with the scientific task.** Describe what the scientist has and wants
+  to learn. Use familiar experimental vocabulary and provide a clear recommended
+  path for common tasks, with advanced controls available when needed.
+- **Make expected behavior scientifically sound.** Choose defensible defaults
+  and document their assumptions. Require an explicit choice when alternatives
+  change the scientific question and there is no defensible default. Preserve
+  the distinction between missing observations and measured zero activity;
+  expose how recording gaps, analysis windows, and insufficient coverage affect
+  the result.
+- **Make the interface learnable across domains.** Keep names, argument order,
+  units, shapes, and result methods consistent. Moving from one neuron to a
+  population or from encoding to decoding should reuse what the scientist has
+  already learned. Follow the existing public API contracts when extending them.
+- **Preserve meaning between operations.** Keep timestamps, coordinate frames,
+  spatial support, and unit identities aligned through filtering, analysis,
+  plotting, and export. Validate incompatible inputs and explain how to fix
+  them instead of silently guessing an alignment or conversion.
+- **Make results and recovery understandable.** Label plots and tables with
+  quantities and units, avoid relying on color alone, and expose the assumptions
+  needed to interpret a result. Distinguish descriptive metrics and candidate
+  cell labels from statistical evidence. Errors should identify the problem
+  and give a concrete next step.
+- **Evaluate complete workflows.** For analysis changes, verify the path from
+  realistic inputs to an interpretable result using public APIs and runnable
+  examples. Test scientific invariants and relevant edge cases, including gaps,
+  empty data, and mismatched identities, rather than checking only that a call
+  completes. Judge added functionality by whether scientists can use it correctly
+  alongside existing operations.
+
 ## Getting Started
 
 ### Development Setup

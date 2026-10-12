@@ -2,7 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2026-10-09 (time windows, recording gaps and v0.6 naming contract)
+**Last Updated**: 2026-10-12 (scientist experience and spatial neuroscience scope)
+
+---
+
+## Primary Design Priority: Scientist Experience
+
+The scientist's experience is this repository's highest design priority.
+Scientific correctness is part of UX: the accessible, obvious path must preserve
+the meaning of the analysis and behave as a scientist reasonably expects.
+The long-term goal is to encompass the operations of spatial neuroscience in
+coherent workflows, from recorded data through analysis, visualization, and export.
+
+Apply the [contributor design principles](docs/contributing.md#design-principles)
+to all changes:
+
+- Start with the scientific task and familiar experimental vocabulary.
+- Make common workflows discoverable through public APIs and runnable examples;
+  scientists should not need to read implementation code to use them correctly.
+- Use consistent names, signatures, and result semantics across domains and
+  single-unit/population analyses; follow the existing contracts below.
+- Use defensible defaults, expose assumptions, and require explicit scientific
+  choices when no defensible default exists.
+- Preserve time support, coordinate frames, physical units, and unit identity
+  across operations. Keep missing observations distinguishable from zero activity.
+- Make outputs interpretable and errors actionable. Validate scientific
+  invariants and complete workflows when changing analysis behavior.
 
 ---
 
@@ -849,7 +874,10 @@ Module doctests remain a separate check: `uv run pytest --doctest-modules src/ne
 
 ## 📖 Project Context
 
-**neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs. It provides tools for spatial analysis, particularly for neuroscience applications involving place fields, position tracking, and spatial navigation.
+**neurospatial** is a Python library for spatial neuroscience, designed around
+scientists' analysis workflows. Spatial discretization and connectivity graphs
+provide a shared foundation for environment representation, behavioral analysis,
+neural encoding and decoding, simulation, and visualization.
 
 **Key Features:**
 
