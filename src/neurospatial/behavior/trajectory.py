@@ -236,6 +236,8 @@ def compute_step_lengths(
     -------
     NDArray[np.float64], shape (n_samples - 1,)
         Step lengths in the same units as the position coordinates.
+        Geodesic steps touching a missing or out-of-environment position are
+        NaN. Steps between disconnected valid bins are infinite.
 
     Raises
     ------
@@ -350,8 +352,13 @@ def compute_step_lengths(
             env.connectivity, env.n_bins, weight="distance"
         )
 
-        # Look up distances from precomputed matrix (vectorized)
-        step_lengths = dist_matrix[position_bins[:-1], position_bins[1:]]
+        # Outside/missing positions map to -1, which is not a graph node.
+        # Never let NumPy interpret it as the last bin.
+        valid = (position_bins[:-1] >= 0) & (position_bins[1:] >= 0)
+        step_lengths = np.full(n_steps, np.nan, dtype=np.float64)
+        step_lengths[valid] = dist_matrix[
+            position_bins[:-1][valid], position_bins[1:][valid]
+        ]
 
     return step_lengths
 

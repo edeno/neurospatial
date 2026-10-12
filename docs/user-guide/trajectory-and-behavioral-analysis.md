@@ -2,7 +2,9 @@
 
 This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory` and `neurospatial.behavior.segmentation` modules.
 
-> **Note**: Trajectory functions have been moved to `neurospatial.behavior.trajectory`. Old imports from `neurospatial.metrics.trajectory` still work for backward compatibility.
+Import trajectory operations from `neurospatial.behavior.trajectory`.
+Missing or outside positions produce `NaN` geodesic steps. Check observation
+coverage before reducing movement metrics; a missing interval is not zero movement.
 
 ## Overview
 
@@ -133,6 +135,7 @@ print(f"Step length CV: {step_cv:.3f}")
 
 Home range is the set of bins containing a specified percentile of time spent. This metric uses discretized bins (occupancy-based).
 
+<!-- docs-test: run -->
 ```python
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial import Environment
@@ -142,13 +145,14 @@ env = Environment.from_samples(positions, bin_size=5.0)
 position_bins = env.bin_at(positions)
 
 # Compute core territory (95th percentile)
-home_range_bins = compute_home_range(position_bins, percentile=95.0)
+home_range_bins = compute_home_range(position_bins, times=times, percentile=95.0)
 
 # Compute home range area
-home_range_area = len(home_range_bins) * env.bin_area
+home_range_area = env.bin_sizes[home_range_bins].sum()
 
 print(f"Home range: {home_range_area:.1f} cm²")
-print(f"Core area (50%): {len(compute_home_range(position_bins, percentile=50.0))}")
+core_bins = compute_home_range(position_bins, times=times, percentile=50.0)
+print(f"Core area (50%): {env.bin_sizes[core_bins].sum():.1f} cm²")
 ```
 
 **Key Points**:

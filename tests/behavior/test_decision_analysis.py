@@ -273,8 +273,8 @@ class TestPreDecisionHeadingStats:
         # Higher variance for zigzag heading
         assert circ_var > 0.3
 
-    def test_stationary_returns_max_variance(self):
-        """Test that all-stationary trajectory returns max variance."""
+    def test_stationary_returns_missing_heading_statistics(self):
+        """Stationary tracking supplies no heading evidence."""
         from neurospatial.behavior.decisions import pre_decision_heading_stats
 
         # Stationary trajectory
@@ -286,10 +286,8 @@ class TestPreDecisionHeadingStats:
             times, positions, min_speed=5.0
         )
 
-        # Max variance when no valid headings
-        assert circ_var == 1.0
-        # Zero mean resultant length
-        assert mrl == 0.0
+        assert np.isnan(circ_var)
+        assert np.isnan(mrl)
 
 
 # =============================================================================
@@ -757,8 +755,6 @@ def test_pre_decision_heading_stats_excludes_stationary(east_stop_north):
 def test_pre_decision_heading_stats_all_stationary():
     from neurospatial.behavior import pre_decision_heading_stats
 
-    assert pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2))) == (
-        0.0,
-        1.0,
-        0.0,
-    )
+    assert np.isnan(
+        pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2)))
+    ).all()

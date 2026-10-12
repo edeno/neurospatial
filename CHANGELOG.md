@@ -64,6 +64,16 @@
 
 ### Fixed
 
+- Preserve missing geodesic steps as NaN instead of indexing the last spatial
+  bin with the outside-position sentinel. Report missing pre-decision/heading
+  observations as NaN and expose `PreDecisionMetrics.is_valid`; missing evidence
+  cannot produce a positive deliberation label.
+
+- Warn when slicing aligned arrays loses boundaries between observation windows;
+  document using original arrays with `epochs=` and half-open event cohorts.
+  Correct epoch input forms and the home-range area recipe, and execute those
+  recipes in documentation tests.
+
 - Whiten PCA scores before ICA assembly detection, handle null components, and
   compute explained variance for the recovered ICA components.
 

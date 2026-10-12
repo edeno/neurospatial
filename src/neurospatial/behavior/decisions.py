@@ -131,6 +131,9 @@ class PreDecisionMetrics:
         May be shorter than requested if trajectory starts late.
     n_samples : int
         Number of samples in window.
+    is_valid : bool
+        Whether observed movement and heading support interpretation of these
+        metrics. Missing or insufficient observations have NaN metrics.
     """
 
     mean_speed: float
@@ -140,6 +143,16 @@ class PreDecisionMetrics:
     heading_mean_resultant_length: float
     window_duration: float
     n_samples: int
+
+    @property
+    def is_valid(self) -> bool:
+        """Whether enough observations support speed and heading metrics."""
+        return bool(
+            self.n_samples >= 2
+            and self.window_duration > 0
+            and np.isfinite(self.mean_speed)
+            and np.isfinite(self.heading_circular_variance)
+        )
 
     def suggests_deliberation(
         self,
@@ -158,10 +171,13 @@ class PreDecisionMetrics:
         Returns
         -------
         bool
-            True if high heading variance AND low speed.
+            True if valid observations show high heading variance AND low
+            speed. False for missing evidence; inspect ``is_valid`` to
+            distinguish missing evidence from an observed negative result.
         """
         return (
-            self.heading_circular_variance > variance_threshold
+            self.is_valid
+            and self.heading_circular_variance > variance_threshold
             and self.mean_speed < min_speed
         )
 
@@ -470,8 +486,8 @@ def pre_decision_heading_stats(
     - circular_variance = 1 - mean_resultant_length
     - mean_direction = atan2(mean(sin(theta)), mean(cos(theta)))
 
-    If all samples are stationary (below min_speed), returns:
-    mean_direction=0, circular_variance=1, mean_resultant_length=0.
+    If no movement provides a valid heading (including stationary samples
+    below min_speed), all three statistics are NaN.
 
     Examples
     --------
@@ -491,18 +507,19 @@ def pre_decision_heading_stats(
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
-        return 0.0, 1.0, 0.0
+        return np.nan, np.nan, np.nan
 
     headings, speed = _velocity_heading_and_speed(
         times,
         positions,
         interval_mask=interval_mask,
     )
-    valid_headings = headings[speed >= min_speed]
+    valid_headings = headings[
+        (speed >= min_speed) & (speed > 0) & np.isfinite(headings)
+    ]
 
     if len(valid_headings) == 0:
-        # No valid headings: undefined direction, max variance
-        return 0.0, 1.0, 0.0
+        return np.nan, np.nan, np.nan
 
     # Compute circular statistics directly
     cos_headings = np.cos(valid_headings)
@@ -653,11 +670,11 @@ def compute_pre_decision_metrics(
     # Handle edge case of empty or too-short window
     if len(window_pos) < 2:
         return PreDecisionMetrics(
-            mean_speed=0.0,
-            min_speed=0.0,
-            heading_mean_direction=0.0,
-            heading_circular_variance=1.0,
-            heading_mean_resultant_length=0.0,
+            mean_speed=np.nan,
+            min_speed=np.nan,
+            heading_mean_direction=np.nan,
+            heading_circular_variance=np.nan,
+            heading_mean_resultant_length=np.nan,
             window_duration=0.0,
             n_samples=len(window_pos),
         )

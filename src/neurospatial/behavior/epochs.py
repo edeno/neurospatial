@@ -33,13 +33,14 @@ masked against itself.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import as_intervals, intervals_contain
 
 __all__ = ["in_epochs", "restrict", "restrict_spike_trains"]
 
@@ -194,6 +195,12 @@ def restrict(
     (each unit its own timestamps, no shared axis), use
     :func:`restrict_spike_trains` instead.
 
+    For occupancy, firing rates, velocity or decoding, pass the original arrays
+    with ``epochs=`` to the analysis. Sliced arrays cannot encode the excluded
+    time between windows; an analysis may otherwise reconnect nearby windows.
+    This function warns when aligned arrays would lose such a boundary.
+    Use ``closed="left"`` for point events in disjoint train/test cohorts.
+
     Parameters
     ----------
     times : ndarray, shape (n,)
@@ -253,6 +260,21 @@ def restrict(
     times_kept = times_arr[mask]
     if not coerced:
         return times_kept
+    intervals = as_intervals(epochs, name="epochs")
+    if (
+        intervals is not None
+        and len(times_kept) > 1
+        and not np.all(intervals_contain(intervals, times_kept[:-1], times_kept[1:]))
+    ):
+        warnings.warn(
+            "restrict() returns samples without their observation windows; "
+            "joining these samples can bridge excluded time. "
+            "For occupancy, rates, movement or decoding, pass the original "
+            "times and arrays with epochs= to the analysis. If you use these "
+            "sliced arrays, pass epochs= again; max_gap alone is insufficient.",
+            UserWarning,
+            stacklevel=2,
+        )
     return (times_kept, *(arr[mask] for arr in coerced))
 
 
