@@ -7,7 +7,7 @@ This module provides functions for writing spatial analysis results
 Schema note
 -----------
 The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.2"``). Schema ``2.1`` persists the
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.3"``). Schema ``2.1`` persists the
 ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
 ``reml_objective``). Schema ``2.2`` adds the per-neuron-``lambda``
@@ -15,11 +15,15 @@ The estimator is stored under the metadata key ``"method"``
 the metadata blob, and -- when ``penalty`` / ``reml_objective`` /
 ``reml_at_boundary`` are per-unit vectors -- those plus ``penalty_selected_by_reml``
 as extra per-unit table columns. Ratio-method tables carry none of the GAM
-fields and read back with them ``None``.
+fields and read back with them ``None``. Schema ``2.3`` adds
+``unit_ids_generated`` and ``spike_window`` to the metadata, preserving decoder
+unit-pairing semantics and spike-recording coverage. Older files default to
+explicit unit labels and assumed coverage; their missing provenance cannot be
+recovered from the stored labels or rate maps.
 
 ``read_place_field`` enforces the schema **major** version: it reads only tables
 whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
-``2.1``, and ``2.2`` are mutually readable, since a minor bump only *adds*
+``2.1``, ``2.2``, and ``2.3`` are readable, since a minor bump only *adds*
 optional fields), and rejects any other (missing, ``1.x``, or an incompatible
 future major) with a clear ``ValueError``. A **schema-2.1** glm file carries no
 ``pooled`` key; the reader defaults it **method-conditionally** -- ``pooled=True``
@@ -45,6 +49,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import as_intervals
 from neurospatial.io.nwb._core import (
     _get_or_create_processing_module,
     _require_pynwb,
@@ -82,7 +87,8 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 #      ``reml_objective`` / ``reml_at_boundary`` / ``penalty_selected_by_reml``
 #      as per-unit columns when they are vectors. A 2.1 file (no ``pooled`` key)
 #      reads back method-conditionally (glm -> pooled=True, ratio -> None).
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.2"
+# 2.3: adds generated-unit-label provenance and spike-recording windows.
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.3"
 
 # The reader accepts any table sharing this MAJOR version (minor bumps only add
 # optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
@@ -505,8 +511,9 @@ def write_spatial_rates(
     the ``analysis`` processing module, with a ``unit_id`` column, a 2-D
     ``firing_rate`` column of shape ``(n_units, n_bins)`` on the bin axis, and
     one column per ``unit_table`` field. ``method``, ``bandwidth``,
-    ``n_bins``, ``n_units`` and the ``unit_table`` column names are stored as a
-    JSON blob in the table description. Occupancy is stored once (it is shared
+    ``n_bins``, ``n_units``, ``unit_ids_generated``, ``spike_window`` and the
+    ``unit_table`` column names are stored as a JSON blob in the table
+    description. Occupancy is stored once (it is shared
     across units) as a companion ``TimeSeries`` named ``f"{name}_occupancy"``,
     and the environment's bin-center coordinates are stored once via the shared
     ``bin_centers`` dataset (deduplicated with any place fields).
@@ -542,8 +549,8 @@ def write_spatial_rates(
     result : SpatialRatesResult
         Population spatial-rate result to serialize. Its ``env``,
         ``firing_rates`` ``(n_units, n_bins)``, ``occupancy`` ``(n_bins,)``,
-        ``unit_ids``, ``unit_table``, ``method`` and ``bandwidth`` are
-        all preserved.
+        ``unit_ids`` (including whether generated), ``spike_window``,
+        ``unit_table``, ``method`` and ``bandwidth`` are all preserved.
     name : str, default "spatial_rates"
         Name for the spatial-rates DynamicTable in ``analysis/``.
     overwrite : bool, default False
@@ -715,6 +722,10 @@ def write_spatial_rates(
         "n_units": n_units,
         "unit_table_columns": unit_table_columns,
         "occupancy_name": occupancy_name,
+        "unit_ids_generated": bool(result._unit_ids_generated),
+        "spike_window": (
+            None if result.spike_window is None else result.spike_window.tolist()
+        ),
     }
 
     # GAM (method="glm") diagnostics: scalars + the (rank,) penalty_weights go
@@ -922,7 +933,9 @@ def read_place_field(
 
     The inverse of :func:`write_spatial_rates`. Reconstructs the per-unit
     firing-rate maps, shared occupancy, ``unit_ids``, optional ``unit_table``,
-    ``method`` and ``bandwidth``.
+    ``method`` and ``bandwidth``. Schema 2.3 also restores generated-label
+    provenance and ``spike_window``; older files retain explicit-label pairing
+    and assumed coverage because they did not store this provenance.
 
     Parameters
     ----------
@@ -1022,6 +1035,16 @@ def read_place_field(
     unit_table_columns = meta.get("unit_table_columns", [])
     occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")
     meta_n_bins = int(meta["n_bins"])
+
+    unit_ids_generated = meta.get("unit_ids_generated", False)
+    if not isinstance(unit_ids_generated, bool):
+        raise ValueError(
+            f"Spatial rates '{name}' has invalid unit_ids_generated metadata; "
+            "expected a boolean to distinguish generated from explicit labels."
+        )
+    spike_window = as_intervals(meta.get("spike_window"), name=f"{name}.spike_window")
+    if spike_window is not None:
+        spike_window.setflags(write=False)
 
     firing_rates = np.asarray(table[COL_FIRING_RATE][:])
     unit_ids = np.asarray(table[COL_UNIT_ID][:])
@@ -1176,5 +1199,7 @@ def read_place_field(
         bandwidth=bandwidth,
         unit_ids=unit_ids,
         unit_table=unit_table,
+        _unit_ids_generated=unit_ids_generated,
+        spike_window=spike_window,
         **gam_fields,  # type: ignore[arg-type]
     )

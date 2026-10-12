@@ -47,6 +47,102 @@ def _make_rates_result(env, *, unit_ids=None, unit_table=None, n_units=3, seed=0
 class TestSpatialRatesRoundTrip:
     """write_spatial_rates -> read_place_field population round-trip."""
 
+    @pytest.mark.parametrize("explicit_ids", [False, True])
+    @pytest.mark.parametrize("spike_window", [None, [[0.0, 0.5], [1.0, 2.0]]])
+    def test_disk_roundtrip_preserves_decode_pairing_and_coverage(
+        self, empty_nwb, tmp_path, explicit_ids, spike_window
+    ):
+        """Persistence preserves label semantics, recording windows and decoding."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.decoding import BayesianDecoder
+        from neurospatial.encoding import SpatialRatesResult, SpikeTrains
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = Environment.from_grid_mask(
+            np.ones(2, dtype=bool), grid_edges=(np.arange(3.0),)
+        )
+        rates = SpatialRatesResult(
+            firing_rates=np.array([[20.0, 1.0], [1.0, 20.0]]),
+            occupancy=np.ones(2),
+            env=env,
+            method="binned",
+            bandwidth=0.0,
+            unit_ids=np.arange(2) if explicit_ids else None,
+            spike_window=None if spike_window is None else np.array(spike_window),
+        )
+        # The same numeric IDs must retain positional or label pairing as supplied.
+        spikes = SpikeTrains(
+            [np.array([0.05, 0.75, 1.05]), np.array([])], unit_ids=[1, 0]
+        )
+        times = np.arange(21) / 10
+        expected = BayesianDecoder.from_rates(rates, dt=0.1).predict(
+            spikes, times, spike_window=rates.spike_window
+        )
+
+        write_spatial_rates(empty_nwb, rates)
+        path = tmp_path / "rates.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
+        with NWBHDF5IO(str(path), "r") as io:
+            restored = read_place_field(io.read())
+
+        assert restored._unit_ids_generated == rates._unit_ids_generated
+        assert restored.spike_window_assumed == rates.spike_window_assumed
+        if spike_window is not None:
+            np.testing.assert_array_equal(restored.spike_window, rates.spike_window)
+            assert not restored.spike_window.flags.writeable
+            np.testing.assert_array_equal(restored[0].spike_window, rates.spike_window)
+
+        actual = BayesianDecoder.from_rates(restored, dt=0.1).predict(
+            spikes, times, spike_window=restored.spike_window
+        )
+        np.testing.assert_array_equal(actual.times, expected.times)
+        np.testing.assert_allclose(actual.posterior, expected.posterior)
+
+    @pytest.mark.parametrize("schema_version", ["2.0", "2.1", "2.2"])
+    def test_older_metadata_keeps_existing_provenance_defaults(
+        self, empty_nwb, sample_environment, schema_version
+    ):
+        """Old files lack provenance: do not infer it from numeric unit labels."""
+        import json
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
+        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        meta = json.loads(table.description)
+        meta["schema_version"] = schema_version
+        meta.pop("unit_ids_generated", None)
+        meta.pop("spike_window", None)
+        table.fields["description"] = json.dumps(meta)
+
+        restored = read_place_field(empty_nwb)
+        assert not restored._unit_ids_generated
+        assert restored.spike_window is None
+        assert restored.spike_window_assumed
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [("unit_ids_generated", "false"), ("spike_window", [[1.0, 0.0]])],
+    )
+    def test_invalid_provenance_metadata_raises(
+        self, empty_nwb, sample_environment, key, value
+    ):
+        """Corrupt metadata must not silently change label pairing or coverage."""
+        import json
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
+        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        meta = json.loads(table.description)
+        meta[key] = value
+        table.fields["description"] = json.dumps(meta)
+        with pytest.raises(ValueError, match=key):
+            read_place_field(empty_nwb)
+
     def test_full_roundtrip_equal(self, empty_nwb, sample_environment):
         """firing_rates/occupancy/unit_ids/unit_table/smoothing/bandwidth equal."""
         from neurospatial.encoding.spatial import SpatialRatesResult
