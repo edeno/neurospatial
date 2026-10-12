@@ -87,6 +87,13 @@ class LayoutEngine(Protocol):
     space into a set of bins or elements and constructing a graph representation
     of their connectivity.
 
+    Diffusion is an optional capability, defined separately by
+    ``DiffusionGeometryProvider`` in ``layout._diffusion``. Its
+    ``diffusion_geometry()`` method returns validated conductances and cell
+    measures in active-bin order. Layouts with physical cell faces also provide
+    ``finite_volume_geometry()`` for gradients and divergence. Neither
+    capability is required for point mapping or visualization.
+
     Attributes
     ----------
     bin_centers : NDArray[np.float64]

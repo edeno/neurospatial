@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Sequence
 from typing import Any, cast
 
@@ -16,6 +17,7 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -27,8 +29,11 @@ from neurospatial.layout.helpers.triangular_mesh import (
 )
 from neurospatial.layout.validation import validate_connectivity_graph
 
+_MESH_SKEW_ANGLE_DEG = 30.0
+_MESH_SKEW_FRACTION = 0.05
 
-class TriangularMeshLayout:
+
+class TriangularMeshLayout(_FiniteVolumeDiffusion):
     """A LayoutEngine that builds a triangular mesh over interior points
     (auto-generated) clipped to a boundary polygon. Each triangle whose centroid
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
@@ -511,3 +516,65 @@ class TriangularMeshLayout:
         volumes = np.abs(determinants) / n_factorial
 
         return np.asarray(volumes, dtype=np.float64)
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Triangle-mesh face measure: the shared triangle-edge length on every edge.
+
+        Bins are triangle centroids; the shared face between two adjacent triangles
+        is their common edge (two shared vertices), whose length is ``A``. Centroid
+        two-point flux is exact only as the dual approaches K-orthogonality, so a
+        skew guard warns when too many interior edges are strongly non-orthogonal.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        g = self.connectivity.copy()
+        if self._full_delaunay_tri is None:
+            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        tri = self._full_delaunay_tri
+        active_to_original = np.asarray(self._active_original_simplex_indices)
+        points = tri.points
+        simplices = tri.simplices
+        centers = self.bin_centers
+
+        skew_angle_rad = np.deg2rad(_MESH_SKEW_ANGLE_DEG)
+        n_interior = 0
+        n_skewed = 0
+
+        for u, v, data in g.edges(data=True):
+            verts_u = set(simplices[active_to_original[u]].tolist())
+            verts_v = set(simplices[active_to_original[v]].tolist())
+            shared = sorted(verts_u & verts_v)
+            if len(shared) != 2:
+                # Adjacent triangles must share an edge; if not, no diffusion face.
+                data["A"] = 0.0
+                continue
+            p1 = points[shared[0]]
+            p2 = points[shared[1]]
+            edge_vec = np.asarray(p2 - p1, dtype=float)
+            data["A"] = float(np.linalg.norm(edge_vec))
+
+            # Skew: angle between the centroid-connection line and the shared-edge
+            # normal (0 = K-orthogonal).
+            n_interior += 1
+            centroid_line = np.asarray(centers[v] - centers[u], dtype=float)
+            edge_len = np.linalg.norm(edge_vec)
+            line_len = np.linalg.norm(centroid_line)
+            if edge_len > 0.0 and line_len > 0.0:
+                normal = np.array([-edge_vec[1], edge_vec[0]]) / edge_len
+                cos_angle = abs(float(np.dot(centroid_line / line_len, normal)))
+                angle = float(np.arccos(np.clip(cos_angle, 0.0, 1.0)))
+                if angle > skew_angle_rad:
+                    n_skewed += 1
+
+        if n_interior > 0 and (n_skewed / n_interior) > _MESH_SKEW_FRACTION:
+            warnings.warn(
+                f"Triangular mesh is non-K-orthogonal: {n_skewed}/{n_interior} "
+                f"({100.0 * n_skewed / n_interior:.1f}%) of interior edges exceed "
+                f"{_MESH_SKEW_ANGLE_DEG:.0f} degrees of non-orthogonality "
+                f"(threshold {100.0 * _MESH_SKEW_FRACTION:.0f}%). The diffusion "
+                f"bandwidth (sigma) is only approximate on this mesh; refine toward "
+                f"well-shaped (near-equilateral) triangles for an exact physical sigma.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return g, self.bin_sizes()

@@ -25,15 +25,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import (
-    DiffusionGeometry,
     EnvironmentProtocol,
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.layout._diffusion import (
+    DiffusionGeometry,
+    DiffusionGeometryProvider,
+    FiniteVolumeGeometryProvider,
+)
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -510,28 +515,40 @@ class EnvironmentFields:
 
     @versioned_cached_property
     def _diffusion_geometry(
-        self,
+        self: EnvironmentProtocol,
     ) -> DiffusionGeometry:
-        """Cached finite-volume geometry ``(W, volumes, n_components, labels)``.
+        """Cached diffusion geometry ``(W, volumes, n_components, labels)``.
 
         Geometry-only, so it is built once and dropped wholesale on any
         ``_state_version`` bump (like every ``versioned_cached_property``). Shared
-        by :meth:`diffuse`'s eigenbasis build and the W-component support gates
-        the smoothing consumers use.
+        by dense kernels, :meth:`diffuse`, smoothness bases, and the
+        W-component support gates. Layout providers own geometry assembly;
+        this mixin owns the snapshot and eigencache lifetimes.
         """
-        from neurospatial.ops.diffusion import (
-            _assemble_W,
-            _components_from_W,
-            _finite_volume_geometry,
-        )
+        if not isinstance(self.layout, DiffusionGeometryProvider):
+            raise NotImplementedError(
+                f"Layout {type(self.layout).__name__!r} does not provide diffusion geometry. "
+                "Build the environment with a supported factory, or implement "
+                "diffusion_geometry() on the layout."
+            )
+        geometry = self.layout.diffusion_geometry()
+        if geometry.volumes.shape != (self.n_bins,):
+            raise ValueError(
+                "Diffusion geometry must use the environment's active-bin order and size."
+            )
+        return geometry
 
-        graph, volumes = _finite_volume_geometry(
-            cast("EnvironmentProtocol", self), operation="smoothing"
-        )
-        volumes = np.asarray(volumes, dtype=np.float64)
-        W = _assemble_W(graph, int(volumes.shape[0]))
-        n_components, labels = _components_from_W(W)
-        return DiffusionGeometry(W, volumes, n_components, labels)
+    def _finite_volume_geometry(
+        self: EnvironmentProtocol,
+    ) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Resolve cell faces separately from the diffusion-only capability."""
+        if not isinstance(self.layout, FiniteVolumeGeometryProvider):
+            raise NotImplementedError(
+                f"Layout {type(self.layout).__name__!r} does not provide finite-volume cell geometry. "
+                "Gradient and divergence require face measures and edge distances; "
+                "implement finite_volume_geometry() on the layout."
+            )
+        return self.layout.finite_volume_geometry()
 
     @versioned_cached_property
     def _diffusion_eigenbasis(self) -> dict[str, Any]:

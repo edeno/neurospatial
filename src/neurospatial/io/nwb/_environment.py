@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
+from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
@@ -863,7 +864,7 @@ def _reconstruct_environment(
     return env
 
 
-class _ReconstructedLayout:
+class _ReconstructedLayout(_FiniteVolumeDiffusion):
     """
     A minimal layout for reconstructed environments that uses KDTree for point mapping.
 
@@ -911,6 +912,27 @@ class _ReconstructedLayout:
         self.grid_edges = grid_edges
         self.grid_shape = grid_shape
         self.active_mask = None
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Explain why legacy non-grid NWB records lack diffusion cell faces."""
+        from neurospatial._exceptions import _format_error
+
+        original = self._build_params_used["original_layout_type"]
+        raise NotImplementedError(
+            _format_error(
+                f"This {original} environment read from NWB needs finite-volume cell geometry.",
+                why=(
+                    "Why: read_environment restores bin centers, connectivity "
+                    "and bin measures for non-grid layouts, but not the layout "
+                    "engine that defines cell faces."
+                ),
+                fix=(
+                    f"rebuild the environment with the factory and {original} "
+                    "layout parameters that created it; grid layouts read from NWB "
+                    "support diffusion directly"
+                ),
+            )
+        )
 
     @property
     def is_linearized_track(self) -> bool:

@@ -97,7 +97,7 @@ References
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -106,7 +106,6 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
     "chebyshev_filter_basis",
@@ -582,12 +581,11 @@ def _diffusion_generator(env: Environment) -> sparse.csr_matrix:
     from scipy.spatial import cKDTree
 
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
-    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
 
-    graph, volumes = _finite_volume_geometry(
-        cast("EnvironmentProtocol", env), operation="heat_kernel_wavelet_basis"
-    )
-    weights = _assemble_W(graph, env.n_bins)
+    try:
+        weights, volumes, _n_components, _labels = env._diffusion_geometry
+    except NotImplementedError as exc:
+        raise NotImplementedError(f"heat_kernel_wavelet_basis: {exc}") from None
     degree = sparse.diags(np.asarray(weights.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
     return (

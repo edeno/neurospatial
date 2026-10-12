@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.helpers.regular_grid import (
     _points_to_regular_grid_bin_ind,
 )
@@ -225,7 +226,7 @@ class _KDTreeMixin:
         return np.asarray(final_bin_indices, dtype=np.intp)
 
 
-class _GridMixin:
+class _GridMixin(_FiniteVolumeDiffusion):
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
@@ -476,3 +477,29 @@ class _GridMixin:
         single_bin_measure = np.prod(bin_dimension_sizes)
 
         return np.full(self.bin_centers.shape[0], single_bin_measure)
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Cartesian face measure: product of the OTHER axes' widths for an
+        axis-aligned neighbor; corner-only (diagonal) neighbors get ``A = 0``.
+
+        On a uniform grid this is ``A = h**(n_dims - 1)`` for face-adjacent edges
+        (and ``A = 1`` in 1D). Masks/holes only drop nodes; the geometry of the
+        remaining edges is unchanged.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        g = self.connectivity.copy()
+        assert self.bin_centers is not None
+        centers = self.bin_centers
+        n_dims = centers.shape[1]
+        assert self.grid_edges is not None
+        widths = np.array([float(np.diff(edges)[0]) for edges in self.grid_edges])
+        for u, v, data in g.edges(data=True):
+            offset = centers[u] - centers[v]
+            moved = np.abs(offset) > 1e-9
+            if moved.sum() != 1:  # diagonal / Moore edge -> shares only a corner
+                data["A"] = 0.0
+                continue
+            axis = int(np.flatnonzero(moved)[0])
+            data["A"] = float(np.prod([widths[d] for d in range(n_dims) if d != axis]))
+        return g, self.bin_sizes()

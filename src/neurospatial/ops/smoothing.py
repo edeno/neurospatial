@@ -10,10 +10,10 @@ application for smoothing spatial fields on graphs. The main functions are:
 
 The operator itself (``H = exp(-t L)``, ``L = M^-1 (D - W)``,
 ``W[i, j] = A[i, j] / d[i, j]``) lives in
-:mod:`neurospatial.ops.diffusion`; the per-geometry face measures and the
-``Environment``-level dispatch live there too. This module is the graph-level
-seam: given ``"A"`` already on the edges, it builds ``W`` and normalizes the
-kernel to the requested ``mode``.
+:mod:`neurospatial.ops.diffusion`; geometry providers in ``layout`` and the
+polar environment supply the per-geometry face measures. This module is the
+graph-level seam: given ``"A"`` already on the edges, it builds ``W`` and
+normalizes the kernel to the requested ``mode``.
 
 Examples
 --------
@@ -51,8 +51,9 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout._diffusion import DiffusionGeometry
 from neurospatial.ops._types import KernelMode
-from neurospatial.ops.diffusion import _assemble_W, heat_kernel_from_W
+from neurospatial.ops.diffusion import heat_kernel_from_W
 
 __all__ = [
     "apply_kernel",
@@ -176,34 +177,13 @@ def compute_diffusion_kernels(
     if not (np.isfinite(sigma) and sigma > 0.0):
         raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
 
-    n_bins = graph.number_of_nodes()
+    geometry = DiffusionGeometry.from_graph(graph, volumes)
+    _warn_dense_kernel(geometry.volumes.size)
+    return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
 
-    # 2) Validate node labels: contiguous integers 0..n-1 (used directly as
-    #    sparse-matrix indices). bool subclasses int and 0.0 == 0, so require
-    #    true integer labels AND the full contiguous 0..n-1 set.
-    nodes = list(graph.nodes)
-    if not all(
-        isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in nodes
-    ) or {int(x) for x in nodes} != set(range(n_bins)):
-        raise ValueError(
-            "graph nodes must be contiguous integer labels 0..n-1 (no float/bool)."
-        )
 
-    # 3) Validate volumes: correct shape, finite and strictly positive (the
-    #    operator divides by volumes, so a zero/negative/NaN must fail loudly).
-    volumes = np.asarray(volumes, dtype=np.float64)
-    if volumes.shape != (n_bins,):
-        raise ValueError(
-            f"volumes must have shape ({n_bins},), but got {volumes.shape}."
-        )
-    if not np.all(np.isfinite(volumes)) or np.any(volumes <= 0.0):
-        raise ValueError(
-            "volumes must be finite and strictly positive (per-bin cell volume)."
-        )
-
-    # 4) Warn (never raise) for large environments. The dense heat kernel
-    #    exp(-tL) costs n_bins**2 * 8 bytes of float64 memory; we estimate that
-    #    and proceed. There is no hard limit -- the call always returns a kernel.
+def _warn_dense_kernel(n_bins: int) -> None:
+    """Warn about the dense allocation for either dense-kernel entry point."""
     if n_bins > _LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
@@ -221,14 +201,6 @@ def compute_diffusion_kernels(
             UserWarning,
             stacklevel=2,
         )
-
-    # 5) Build the finite-volume weight matrix W[i, j] = A[i, j] / d[i, j].
-    #    Shared with the env.diffuse eigenbasis path so both operate on an
-    #    identical W (a missing/invalid "A"/"distance" raises there too).
-    W = _assemble_W(graph, n_bins)
-
-    # 6) Assemble and normalize the heat operator for the requested mode.
-    return heat_kernel_from_W(W, volumes, sigma, mode=mode)
 
 
 def apply_kernel(

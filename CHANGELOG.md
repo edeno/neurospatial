@@ -39,6 +39,11 @@
 
 ### Changed
 
+- Assemble diffusion geometry through explicit layout capabilities. Dense kernels,
+  spectral diffusion, and smoothness bases share one validated operator snapshot;
+  gradients and divergence retain the separate cell-face capability. Existing
+  public APIs and numerical schemes are unchanged.
+
 - Extend rate-result `analysis_settings` and `spatial_support` to directional,
   view and object-vector analyses, preserving exact retained intervals and
   family settings through indexing, tables and NetCDF-compatible xarray exports.

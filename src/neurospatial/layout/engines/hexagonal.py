@@ -11,6 +11,7 @@ from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
@@ -25,7 +26,7 @@ from neurospatial.layout.helpers.utils import (
 from neurospatial.layout.validation import validate_connectivity_graph
 
 
-class HexagonalLayout:
+class HexagonalLayout(_FiniteVolumeDiffusion):
     """2D layout that tiles a rectangular area with a hexagonal lattice.
 
     Bin centers are the centers of the hexagons. Hexagons are connected to their
@@ -375,3 +376,19 @@ class HexagonalLayout:
         # For pointy-top hexagons, side_length (s) is equal to hex_radius_ (R, center to vertex).
         single_hex_area = 3.0 * np.sqrt(3.0) / 2.0 * self.hex_radius_**2.0
         return np.full(self.bin_centers.shape[0], single_hex_area)
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Hex face measure: the shared hexagon side length ``s`` on every edge.
+
+        For a pointy-top regular hexagonal lattice adjacent centers are ``sqrt(3)*s``
+        apart, so ``s`` is derived per edge as ``distance / sqrt(3)`` from the
+        edge's center-to-center ``"distance"`` (equivalently the layout's stored
+        side length). Hex lattices are K-orthogonal, so no hand-tuned constant is
+        needed.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        g = self.connectivity.copy()
+        for _u, _v, data in g.edges(data=True):
+            data["A"] = float(data["distance"]) / np.sqrt(3.0)
+        return g, self.bin_sizes()

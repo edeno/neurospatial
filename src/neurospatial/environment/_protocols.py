@@ -25,12 +25,14 @@ See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeVar
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
+
+from neurospatial.layout._diffusion import DiffusionGeometry as DiffusionGeometry
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -42,20 +44,6 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.regions import Region, Regions
-
-
-class DiffusionGeometry(NamedTuple):
-    """Finite-volume geometry cached by ``_diffusion_geometry``.
-
-    Built once and dropped wholesale on any ``_state_version`` bump; shared by
-    ``diffuse``'s eigenbasis build and the smoothing consumers' W-component
-    support gates.
-    """
-
-    W: sparse.csr_matrix
-    volumes: NDArray[np.float64]
-    n_components: int
-    labels: NDArray[np.int_]
 
 
 class EnvironmentProtocol(Protocol):
@@ -93,6 +81,10 @@ class EnvironmentProtocol(Protocol):
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool
     _kdtree_cache: cKDTree | None
+
+    def _finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Resolve the optional finite-volume faces for differential operators."""
+        ...
 
     # Computed properties
     @property

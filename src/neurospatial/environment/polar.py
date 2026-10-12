@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 
 from neurospatial.environment.core import _BaseEnvironment
 from neurospatial.environment.decorators import versioned_cached_property
+from neurospatial.layout._diffusion import DiffusionGeometry
 
 
 class EgocentricPolarEnvironment(_BaseEnvironment):
@@ -95,6 +96,42 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     """
 
     _POLAR: ClassVar[bool] = True
+
+    @versioned_cached_property
+    def _diffusion_geometry(self) -> DiffusionGeometry:
+        """Build polar diffusion from annular-sector faces and cell areas."""
+        return DiffusionGeometry.from_graph(*self._finite_volume_geometry())
+
+    def _finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Polar face measure from whether two bins are radial or angular neighbors.
+
+        ``bin_centers[:, 0]`` is radius, ``[:, 1]`` is angle. A pure radial neighbor
+        shares the arc ``r_face * dtheta`` at the boundary radius; a pure angular
+        (or seam) neighbor shares the radial segment ``dr`` of that ring; a diagonal
+        neighbor (both differ) shares only a corner (``A = 0``), mirroring Cartesian
+        diagonals. Polar sectors are K-orthogonal, so this is analytically exact.
+        """
+        g = self.connectivity.copy()
+        r = self.bin_centers[:, 0]
+        theta = self.bin_centers[:, 1]
+        assert self.grid_edges is not None
+        distance_edges, angle_edges = self.grid_edges
+        dtheta_bin = float(np.diff(angle_edges).mean())
+        radial_edges = np.asarray(distance_edges, dtype=float)
+
+        for u, v, data in g.edges(data=True):
+            dr = abs(float(r[u]) - float(r[v])) > 1e-9
+            dth = _angular_delta(float(theta[u]), float(theta[v])) > 1e-9
+            if dr and not dth:  # pure radial: face = arc at the shared boundary radius
+                r_face = 0.5 * (float(r[u]) + float(r[v]))
+                data["A"] = float(r_face * dtheta_bin)
+            elif (
+                dth and not dr
+            ):  # pure angular / seam: face = radial extent of the ring
+                data["A"] = _radial_bin_width(radial_edges, float(r[u]))
+            else:  # diagonal (both differ) or degenerate: corner touch, no face
+                data["A"] = 0.0
+        return g, self.bin_sizes
 
     @classmethod
     def create(
@@ -649,3 +686,21 @@ def _fix_polar_edge_geometry(connectivity: nx.Graph) -> None:
         arc = r_mean * d_theta
         distance = float(np.hypot(d_r, arc))
         data["distance"] = distance
+
+
+def _angular_delta(theta_a: float, theta_b: float) -> float:
+    """Minimal absolute angular difference in radians, wrapped to [0, pi].
+
+    Wrapping by ``2*pi`` collapses the polar seam (an angular step spanning the
+    full ring "the wrong way") back to a single angular step, so seam edges are
+    correctly classified as pure-angular.
+    """
+    d = (theta_b - theta_a + np.pi) % (2.0 * np.pi) - np.pi
+    return float(abs(d))
+
+
+def _radial_bin_width(radial_edges: NDArray[np.float64], r_value: float) -> float:
+    """Radial extent ``dr`` of the ring whose center radius is ``r_value``."""
+    idx = int(np.searchsorted(radial_edges, r_value) - 1)
+    idx = int(np.clip(idx, 0, len(radial_edges) - 2))
+    return float(radial_edges[idx + 1] - radial_edges[idx])

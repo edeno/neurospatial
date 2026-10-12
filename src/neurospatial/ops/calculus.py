@@ -29,11 +29,10 @@ __all__ = ["compute_differential_operator", "divergence", "gradient"]
 
 def _fv_edges(env: Environment) -> tuple[nx.Graph, NDArray[np.float64]]:
     """Resolve face measures, along-edge distances and cell volumes."""
-    from neurospatial.ops.diffusion import _finite_volume_geometry
-
-    return _finite_volume_geometry(
-        cast("EnvironmentProtocol", env), operation="gradient/divergence"
-    )
+    try:
+        return cast("EnvironmentProtocol", env)._finite_volume_geometry()
+    except NotImplementedError as exc:
+        raise NotImplementedError(f"gradient/divergence: {exc}") from None
 
 
 def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
