@@ -11,7 +11,6 @@ from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
@@ -26,7 +25,7 @@ from neurospatial.layout.helpers.utils import (
 from neurospatial.layout.validation import validate_connectivity_graph
 
 
-class HexagonalLayout(_FiniteVolumeDiffusion):
+class HexagonalLayout:
     """2D layout that tiles a rectangular area with a hexagonal lattice.
 
     Bin centers are the centers of the hexagons. Hexagons are connected to their

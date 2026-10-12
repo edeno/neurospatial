@@ -28,7 +28,7 @@ Three views of the same operator serve the three consumers (see
   **intensive** field (rate maps), volume-unbiased on non-uniform ``M``.
 
 Public entry points are ``Environment.compute_kernel`` / ``Environment.smooth``;
-:func:`diffusion_kernel` is the internal dispatcher they route through.
+:func:`diffusion_kernel` is the internal adapter they route through.
 """
 
 from __future__ import annotations
@@ -36,7 +36,6 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-import networkx as nx
 import numpy as np
 import scipy.linalg
 import scipy.sparse
@@ -44,12 +43,7 @@ import scipy.sparse.csgraph
 import scipy.sparse.linalg
 from numpy.typing import NDArray
 
-from neurospatial.layout._diffusion import (
-    _assemble_W as _assemble_W,
-)
-from neurospatial.layout._diffusion import (
-    _components_from_W as _components_from_W,
-)
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
@@ -57,7 +51,7 @@ if TYPE_CHECKING:
 
 # Public entry points. The eigenbasis/apply-path functions below
 # (apply_heat_operator, diffusion_apply, heat_kernel_rank,
-# diffusion_component_labels, component_support_mask, _assemble_W) are internal
+# diffusion_component_labels, component_support_mask) are internal
 # machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
     "diffusion_kernel",
@@ -173,6 +167,29 @@ def _raw_heat_operator(
     return np.asarray(kernel, dtype=np.float64)
 
 
+def _warn_dense_kernel(n_bins: int) -> None:
+    """Warn (never raise) before a dense ``(n_bins, n_bins)`` heat kernel is built."""
+    from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
+
+    if n_bins > _LARGE_KERNEL_THRESHOLD:
+        estimated_gb = n_bins * n_bins * 8 / 1e9
+        warnings.warn(
+            f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
+            f"kernel exp(-tL) is dense by construction (every entry > 0), so it "
+            f"requires an {n_bins} x {n_bins} float64 matrix "
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
+            f"matrix exponential). Proceeding anyway; this may be slow and "
+            f"memory-intensive. To avoid this dense kernel entirely, smooth "
+            f"matrix-free via env.diffuse (or the 'diffusion_kde' / 'binned' "
+            f"encoding methods, which route through it) -- both scale as "
+            f"O(n * rank), not O(n^2). Only compute_kernel (this call) and the "
+            f"'gaussian_kde' method build a dense kernel. You can also increase "
+            f"bin_size to reduce the bin count.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def heat_kernel_from_W(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
@@ -211,7 +228,14 @@ def heat_kernel_from_W(
     Raises
     ------
     ValueError
-        If ``mode`` is not one of the three supported values.
+        If ``mode`` is not one of the three supported values, or ``sigma`` is
+        not finite and positive.
+
+    Warns
+    -----
+    UserWarning
+        When ``n_bins`` exceeds the large-kernel threshold: the kernel is a
+        dense ``(n_bins, n_bins)`` float64 matrix whatever the mode.
 
     Notes
     -----
@@ -221,12 +245,15 @@ def heat_kernel_from_W(
     normalization is inherently within-component; no explicit component loop is
     needed here.
     """
-    # Validate mode before the dense matrix exponential so a direct caller with
-    # a bad mode fails fast rather than after paying the O(n^3) expm cost.
+    # Validate before the high-bin warning and the dense matrix exponential so a
+    # bad argument fails fast rather than after paying the O(n^3) expm cost.
     if mode not in ("transition", "density", "average"):
         raise ValueError(
             f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
         )
+    if not (np.isfinite(sigma) and sigma > 0.0):
+        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
+    _warn_dense_kernel(volumes.shape[0])
 
     # Clip round-off negatives (real cross-block lobes only appear under the
     # truncated env.diffuse apply-path, not on this full-rank dense path).
@@ -886,7 +913,7 @@ def _warn_large_dense_basis(n: int) -> None:
             f"may be slow and memory-intensive. To reduce the cost, increase the "
             f"bandwidth or the bin_size (fewer bins).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
 
@@ -1083,8 +1110,8 @@ def diffusion_component_labels(
     labels : NDArray[np.int_], shape (n_bins,)
         Per-bin component id (``0..n_components-1``).
     """
-    _W, _volumes, n_components, labels = env._diffusion_geometry
-    return int(n_components), labels
+    geometry = env._diffusion_geometry
+    return geometry.n_components, geometry.labels
 
 
 def diffusion_apply_rtol(env: EnvironmentProtocol, sigma: float) -> float:
@@ -1184,31 +1211,10 @@ def diffusion_kernel(
     Raises
     ------
     NotImplementedError
-        If the environment's layout has no finite-volume builder.
+        If the environment's layout supplies no diffusion geometry.
     ValueError
-        On invalid ``sigma``, ``volumes``, node labels, or edge attributes
-        (see :func:`~neurospatial.ops.smoothing.compute_diffusion_kernels`).
+        On invalid ``sigma`` or ``mode``, or on provider geometry that violates
+        the diffusion contract.
     """
-    from neurospatial.ops.smoothing import _warn_dense_kernel
-
-    if mode not in ("transition", "density", "average"):
-        raise ValueError(
-            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-        )
-    if not (np.isfinite(sigma) and sigma > 0.0):
-        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
     geometry = env._diffusion_geometry
-    _warn_dense_kernel(geometry.volumes.size)
     return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
-
-
-def _finite_volume_geometry(
-    env: EnvironmentProtocol,
-    *,
-    operation: str = "diffusion_kernel",
-) -> tuple[nx.Graph, NDArray[np.float64]]:
-    """Resolve the separate finite-volume capability (private compatibility seam)."""
-    try:
-        return env._finite_volume_geometry()
-    except NotImplementedError as exc:
-        raise NotImplementedError(f"{operation}: {exc}") from None

@@ -42,8 +42,8 @@ from neurospatial.layout.factories import _normalize_name as _normalize_layout_n
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
-    pass
     from neurospatial.environment.core import Environment
+    from neurospatial.layout.base import LayoutEngine
 
 try:
     import shapely.geometry as _shp
@@ -1402,11 +1402,18 @@ class EnvironmentFactories:
         from_graph : Create 1D linearized track environment.
 
         """
-        layout_instance = create_layout(kind=kind, **layout_params)
+        layout_instance = cls._create_layout(kind, layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
         return env_cls(name, layout_instance, kind, layout_params, regions=regions)
+
+    @classmethod
+    def _create_layout(
+        cls, kind: LayoutType | str, layout_params: dict[str, Any]
+    ) -> LayoutEngine:
+        """Build the layout engine ``from_layout`` wraps; subclasses may substitute."""
+        return create_layout(kind=kind, **layout_params)
 
     @classmethod
     def from_nwb(

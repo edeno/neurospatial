@@ -11,7 +11,6 @@ from track_linearization import get_linearized_position as _get_linearized_posit
 from track_linearization import plot_graph_as_1D
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -23,7 +22,7 @@ from neurospatial.layout.mixins import _KDTreeMixin
 from neurospatial.layout.validation import validate_connectivity_graph
 
 
-class GraphLayout(_KDTreeMixin, _FiniteVolumeDiffusion):
+class GraphLayout(_KDTreeMixin):
     """Layout defined by a user-provided graph, typically for 1D tracks.
 
     The graph's nodes (with 'pos' attributes) and a specified edge order

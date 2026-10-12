@@ -95,35 +95,42 @@ uv run mypy src/neurospatial
 
 ### Diffusion geometry providers
 
-Diffusion consumes conductances and cell measures independently of coordinates.
-The internal contracts live in `neurospatial.layout._diffusion`:
+Smoothing, diffusion, smoothness bases, gradients and divergence all use one
+layout capability, defined in `neurospatial.layout._diffusion`:
 
-- `DiffusionGeometryProvider.diffusion_geometry()` supplies a `DiffusionGeometry`
-  snapshot in active-bin order. Construct it with `from_weights(weights, volumes)`
-  to validate symmetric, finite, nonnegative conductances and positive cell
-  measures. Components come from positive conductances, including isolated bins.
-- `FiniteVolumeGeometryProvider.finite_volume_geometry()` additionally supplies
-  a copy of the connectivity graph with face measures (`A`) and edge distances
-  (`distance`), plus cell measures. Preserve the connectivity edge order for
-  gradient and divergence. `_FiniteVolumeDiffusion` derives diffusion data from
-  this capability using `DiffusionGeometry.from_graph`.
+- `FiniteVolumeGeometryProvider.finite_volume_geometry()` returns a copy of the
+  layout's connectivity graph with face measures (`A`) and edge distances
+  (`distance`) on every edge, plus cell measures in active-bin order. Gradient
+  and divergence index edge fields by `env.connectivity`, so the environment
+  rejects a graph whose edges differ from it.
+- `FaceGeometry.from_graph` validates those faces into read-only per-edge arrays
+  in connectivity edge order. `DiffusionGeometry.from_faces` assembles the
+  conductances `W = A / distance`; components come from positive conductances,
+  so zero-area (corner-touching) edges and isolated bins form separate
+  components.
 
-Grid, hexagonal, track, and mesh layouts own their geometry assembly. Polar
-environments override the provider because their storage layout is Cartesian
-but their physical cells are annular sectors. A new layout or subclass does not
-need registration in the diffusion solver. These are internal interfaces, not
-additional scientist-facing factory requirements.
+A layout has the capability only when it defines the method, so `isinstance`
+against the protocol is a truthful capability check. A layout that cannot
+supply geometry may define `_explain_missing_geometry(operation)` to tailor the
+error, as layouts read from non-grid NWB records do.
 
-`Environment._diffusion_geometry` caches one snapshot shared by dense kernels,
-spectral diffusion, MRF smoothness bases, and heat-kernel wavelets. The snapshot
-copies its input buffers and makes them read-only. Environment retains ownership
-of its geometry and eigenbasis cache lifetimes through the existing state-version
-and `clear_cache()` mechanisms. Do not mutate cached operator data.
+Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
+Polar environments are built on `_PolarGridLayout`, a masked grid over
+`(distance, angle)` whose cell and face measures are the grid's scaled by
+radius. A new layout or subclass does not need registration in the diffusion
+solver. These are internal interfaces, not additional scientist-facing factory
+requirements.
 
-Operator data alone does not imply support for point assignment, interpolation,
-or differential operators. In particular, legacy non-grid NWB records still lack
-the face geometry required to reconstruct their operator; this refactor does not
-change the storage schema or infer missing conductances.
+Layouts read their own `connectivity` and `bin_centers`. Code that replaces the
+environment's graph after construction, such as the file and NWB readers, must
+assign the same graph to `env.layout`; `copy()` rebuilds from the layout too.
+
+`Environment._face_geometry` caches the validated faces once per state version;
+the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
+operators all derive from it. Consumers read it through
+`_require_face_geometry(operation)`, which names the analysis when the layout
+has no cell faces. The existing state-version and `clear_cache()` mechanisms
+own every cache lifetime.
 
 ## Code Standards
 

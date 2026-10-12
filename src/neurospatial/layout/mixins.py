@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
 from neurospatial.layout.helpers.regular_grid import (
     _points_to_regular_grid_bin_ind,
 )
@@ -226,7 +225,7 @@ class _KDTreeMixin:
         return np.asarray(final_bin_indices, dtype=np.intp)
 
 
-class _GridMixin(_FiniteVolumeDiffusion):
+class _GridMixin:
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
@@ -470,13 +469,18 @@ class _GridMixin(_FiniteVolumeDiffusion):
                 "grid_edges are not properly defined for area/volume calculation.",
             )
 
-        # Assume uniform bin sizes from the first diff of each dimension's edges
-        bin_dimension_sizes = np.array(
-            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges],
-        )
-        single_bin_measure = np.prod(bin_dimension_sizes)
+        single_bin_measure = np.prod(self._axis_widths())
 
         return np.full(self.bin_centers.shape[0], single_bin_measure)
+
+    def _axis_widths(self) -> NDArray[np.float64]:
+        """Per-axis bin width from the first spacing of each axis's grid edges.
+
+        Shared by the cell measure and the face measure so the two stay
+        consistent; ``MaskedGridLayout.build`` rejects nonuniform edges.
+        """
+        assert self.grid_edges is not None
+        return np.array([float(np.diff(edges)[0]) for edges in self.grid_edges])
 
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
         """Cartesian face measure: product of the OTHER axes' widths for an
@@ -492,8 +496,7 @@ class _GridMixin(_FiniteVolumeDiffusion):
         assert self.bin_centers is not None
         centers = self.bin_centers
         n_dims = centers.shape[1]
-        assert self.grid_edges is not None
-        widths = np.array([float(np.diff(edges)[0]) for edges in self.grid_edges])
+        widths = self._axis_widths()
         for u, v, data in g.edges(data=True):
             offset = centers[u] - centers[v]
             moved = np.abs(offset) > 1e-9

@@ -41,10 +41,8 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     from scipy.spatial import cKDTree
 
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
-    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
 
-    graph, volumes = _finite_volume_geometry(fv_env)
-    weights = _assemble_W(graph, fv_env.n_bins)
+    weights, volumes, _, _ = fv_env._diffusion_geometry
     spacing = _estimate_typical_bin_spacing(
         cKDTree(fv_env.bin_centers), fv_env.bin_centers
     )

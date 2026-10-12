@@ -40,9 +40,12 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     import shapely
 
+    from neurospatial.layout.base import LayoutEngine
+    from neurospatial.layout.factories import LayoutType
+
 from neurospatial.environment.core import _BaseEnvironment
 from neurospatial.environment.decorators import versioned_cached_property
-from neurospatial.layout._diffusion import DiffusionGeometry
+from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
 
 class EgocentricPolarEnvironment(_BaseEnvironment):
@@ -97,41 +100,32 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
 
     _POLAR: ClassVar[bool] = True
 
-    @versioned_cached_property
-    def _diffusion_geometry(self) -> DiffusionGeometry:
-        """Build polar diffusion from annular-sector faces and cell areas."""
-        return DiffusionGeometry.from_graph(*self._finite_volume_geometry())
+    @classmethod
+    def _create_layout(
+        cls, kind: LayoutType | str, layout_params: dict[str, Any]
+    ) -> LayoutEngine:
+        """Store polar bins on the masked grid whose cells are annular sectors.
 
-    def _finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Polar face measure from whether two bins are radial or angular neighbors.
+        :meth:`create` and the file and NWB readers build through
+        ``from_layout``; copies keep the layout class.
 
-        ``bin_centers[:, 0]`` is radius, ``[:, 1]`` is angle. A pure radial neighbor
-        shares the arc ``r_face * dtheta`` at the boundary radius; a pure angular
-        (or seam) neighbor shares the radial segment ``dr`` of that ring; a diagonal
-        neighbor (both differ) shares only a corner (``A = 0``), mirroring Cartesian
-        diagonals. Polar sectors are K-orthogonal, so this is analytically exact.
+        Raises
+        ------
+        ValueError
+            If ``kind`` does not name the masked grid.
         """
-        g = self.connectivity.copy()
-        r = self.bin_centers[:, 0]
-        theta = self.bin_centers[:, 1]
-        assert self.grid_edges is not None
-        distance_edges, angle_edges = self.grid_edges
-        dtheta_bin = float(np.diff(angle_edges).mean())
-        radial_edges = np.asarray(distance_edges, dtype=float)
+        from neurospatial.layout.factories import _normalize_name
 
-        for u, v, data in g.edges(data=True):
-            dr = abs(float(r[u]) - float(r[v])) > 1e-9
-            dth = _angular_delta(float(theta[u]), float(theta[v])) > 1e-9
-            if dr and not dth:  # pure radial: face = arc at the shared boundary radius
-                r_face = 0.5 * (float(r[u]) + float(r[v]))
-                data["A"] = float(r_face * dtheta_bin)
-            elif (
-                dth and not dr
-            ):  # pure angular / seam: face = radial extent of the ring
-                data["A"] = _radial_bin_width(radial_edges, float(r[u]))
-            else:  # diagonal (both differ) or degenerate: corner touch, no face
-                data["A"] = 0.0
-        return g, self.bin_sizes
+        if _normalize_name(str(getattr(kind, "value", kind))) != "maskedgrid":
+            raise ValueError(
+                f"Polar environments are stored on a 'MaskedGrid' layout, got "
+                f"{kind!r}. Build one with Environment.from_polar_egocentric(...)."
+            )
+        layout = _PolarGridLayout()
+        layout.build(**layout_params)
+        # Like every grid engine, the layout satisfies LayoutEngine at runtime;
+        # mypy rejects its richer plot() signature.
+        return cast("LayoutEngine", layout)
 
     @classmethod
     def create(
@@ -221,10 +215,7 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         grid_edges = (distance_edges, angle_edges)
         active_mask = np.ones((n_distance, n_angle), dtype=bool)
 
-        # Build the polar env via the shared from_layout machinery. Because
-        # this is called on EgocentricPolarEnvironment (cls), from_layout
-        # constructs the polar type, NOT a Cartesian Environment. (Going
-        # through Environment.from_grid_mask would return an Environment.)
+        # from_layout on cls builds the polar type on _PolarGridLayout.
         env = cast(
             "EgocentricPolarEnvironment",
             cls.from_layout(
@@ -450,39 +441,6 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         """Unavailable on polar environments (Cartesian-grid operation)."""
         self._raise_cartesian_only("subset", reason="Cartesian-grid operation")
 
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]:
-        """Physical area of each polar bin (annular sector).
-
-        The base implementation would return the layout's Cartesian cell area
-        ``Δr · Δθ``, treating the angular extent (radians) as a length. The
-        physically correct area of the annular sector spanning ``[r0, r1]`` in
-        radius and ``Δθ`` in angle is ``0.5 · (r1² - r0²) · Δθ``, which equals
-        ``r̄ · Δr · Δθ`` with ``r̄`` the mean radius.
-
-        Returns
-        -------
-        ndarray of shape (n_bins,)
-            Annular-sector area of each active bin, in (length unit)².
-        """
-        grid_edges = self.grid_edges
-        if grid_edges is None or len(grid_edges) != 2:
-            # Fall back to the layout area if grid edges are unavailable.
-            return self.layout.bin_sizes()
-
-        distance_edges, angle_edges = grid_edges
-        r0 = distance_edges[:-1]
-        r1 = distance_edges[1:]
-        d_theta = np.diff(angle_edges)
-        # Annular-sector area per (distance_idx, angle_idx) cell.
-        sector_area = 0.5 * (r1**2 - r0**2)[:, None] * d_theta[None, :]
-        sector_flat = sector_area.ravel()
-
-        active_mask = self.active_mask
-        if active_mask is not None:
-            return np.asarray(sector_flat[active_mask.ravel()], dtype=np.float64)
-        return np.asarray(sector_flat, dtype=np.float64)
-
     @versioned_cached_property
     def _angular_is_circular(self) -> bool:
         """Whether the angular axis wraps circularly across the ±π seam.
@@ -540,6 +498,47 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         # while regular angular edges do not.
         threshold = 1.5 * min_step
         return any(dt > threshold for dt in same_ring_dtheta)
+
+
+class _PolarGridLayout(MaskedGridLayout):
+    """Masked grid over ``(distance, angle)`` whose cells are annular sectors.
+
+    Storage, indexing and connectivity are the masked grid's, carrying the
+    polar edge lengths and seam edges set by
+    :meth:`EgocentricPolarEnvironment.create`. Cell areas and shared faces are
+    the grid's ``Δr · Δθ`` measures scaled by radius, so diffusion and
+    finite-volume operators read physical sector geometry from the layout.
+    """
+
+    def bin_sizes(self) -> NDArray[np.float64]:
+        """Annular-sector area ``r̄ · Δr · Δθ`` of each active bin.
+
+        The masked grid reports ``Δr · Δθ``, treating the angular extent
+        (radians) as a length. The sector spanning ``[r0, r1]`` has area
+        ``0.5 · (r1² - r0²) · Δθ``, which equals ``r̄ · Δr · Δθ`` with ``r̄`` the
+        bin's center radius.
+
+        Returns
+        -------
+        ndarray of shape (n_bins,)
+            Annular-sector area of each active bin, in (length unit)².
+        """
+        return super().bin_sizes() * self.bin_centers[:, 0]
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Grid faces with each radial face lengthened to its arc ``r_face · Δθ``.
+
+        On the ``(distance, angle)`` grid the masked grid already gives angular
+        (and seam) neighbors the radial face ``Δr``, radial neighbors ``Δθ``, and
+        diagonal neighbors no face (``A = 0``). Only a radial face's arc length
+        depends on radius. Polar sectors are K-orthogonal, so this is exact.
+        """
+        graph, volumes = super().finite_volume_geometry()
+        r = self.bin_centers[:, 0]
+        for u, v, data in graph.edges(data=True):
+            if abs(r[u] - r[v]) > 1e-9:  # radial step (diagonals keep A = 0)
+                data["A"] *= 0.5 * (r[u] + r[v])
+        return graph, volumes
 
 
 def _add_circular_connectivity(
@@ -686,21 +685,3 @@ def _fix_polar_edge_geometry(connectivity: nx.Graph) -> None:
         arc = r_mean * d_theta
         distance = float(np.hypot(d_r, arc))
         data["distance"] = distance
-
-
-def _angular_delta(theta_a: float, theta_b: float) -> float:
-    """Minimal absolute angular difference in radians, wrapped to [0, pi].
-
-    Wrapping by ``2*pi`` collapses the polar seam (an angular step spanning the
-    full ring "the wrong way") back to a single angular step, so seam edges are
-    correctly classified as pure-angular.
-    """
-    d = (theta_b - theta_a + np.pi) % (2.0 * np.pi) - np.pi
-    return float(abs(d))
-
-
-def _radial_bin_width(radial_edges: NDArray[np.float64], r_value: float) -> float:
-    """Radial extent ``dr`` of the ring whose center radius is ``r_value``."""
-    idx = int(np.searchsorted(radial_edges, r_value) - 1)
-    idx = int(np.clip(idx, 0, len(radial_edges) - 2))
-    return float(radial_edges[idx + 1] - radial_edges[idx])

@@ -17,7 +17,7 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._diffusion import _FiniteVolumeDiffusion
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -33,7 +33,7 @@ _MESH_SKEW_ANGLE_DEG = 30.0
 _MESH_SKEW_FRACTION = 0.05
 
 
-class TriangularMeshLayout(_FiniteVolumeDiffusion):
+class TriangularMeshLayout:
     """A LayoutEngine that builds a triangular mesh over interior points
     (auto-generated) clipped to a boundary polygon. Each triangle whose centroid
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
@@ -524,6 +524,8 @@ class TriangularMeshLayout(_FiniteVolumeDiffusion):
         is their common edge (two shared vertices), whose length is ``A``. Centroid
         two-point flux is exact only as the dual approaches K-orthogonality, so a
         skew guard warns when too many interior edges are strongly non-orthogonal.
+        The skew is a property of the mesh, so an environment warns once, when it
+        first builds (and caches) its diffusion geometry, at the scientist's call.
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
@@ -575,6 +577,6 @@ class TriangularMeshLayout(_FiniteVolumeDiffusion):
                 f"bandwidth (sigma) is only approximate on this mesh; refine toward "
                 f"well-shaped (near-equilateral) triangles for an exact physical sigma.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
         return g, self.bin_sizes()

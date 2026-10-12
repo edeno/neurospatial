@@ -32,14 +32,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
-from neurospatial.layout._diffusion import DiffusionGeometry as DiffusionGeometry
-
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment.trajectory import BinSequenceWithRuns
+    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
@@ -73,6 +72,7 @@ class EnvironmentProtocol(Protocol):
     # Finite-volume geometry + growable truncated-eigenbasis caches for
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
     _diffusion_geometry: DiffusionGeometry
+    _face_geometry: FaceGeometry
     _diffusion_eigenbasis: dict[str, Any]
     # Growable global eigenbasis holder for the MRF penalty-basis resolver
     # (versioned_cached_property; geometry-keyed, dropped on _state_version).
@@ -82,8 +82,8 @@ class EnvironmentProtocol(Protocol):
     _is_linearized_track_env: bool
     _kdtree_cache: cKDTree | None
 
-    def _finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Resolve the optional finite-volume faces for differential operators."""
+    def _require_face_geometry(self, operation: str) -> FaceGeometry:
+        """Cached cell faces, or an error naming ``operation`` if unsupported."""
         ...
 
     # Computed properties

@@ -39,10 +39,14 @@
 
 ### Changed
 
-- Assemble diffusion geometry through explicit layout capabilities. Dense kernels,
-  spectral diffusion, and smoothness bases share one validated operator snapshot;
-  gradients and divergence retain the separate cell-face capability. Existing
-  public APIs and numerical schemes are unchanged.
+- Layout engines, including a polar layout with annular-sector cells, supply
+  their own finite-volume cell faces. Dense kernels, spectral diffusion,
+  smoothness bases, gradients and divergence all use that one capability, and
+  the diffusion consumers share one validated operator snapshot. Numerical
+  schemes are unchanged.
+- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
+  multigraphs, whose reciprocal or parallel edges were summed into doubled
+  conductances. Collapse them first with `nx.Graph(graph)`.
 
 - Extend rate-result `analysis_settings` and `spatial_support` to directional,
   view and object-vector analyses, preserving exact retained intervals and
@@ -94,6 +98,8 @@
   work on 4-connected grids read from NWB, and `copy()` of a read-back
   environment keeps 4-connectivity and polar seam edges and arc lengths
   instead of reverting to the rebuilt layout's graph.
+- Point dense-kernel and mesh-skew warnings at the scientist's call rather
+  than library code.
 - Correct spatial information and sparsity for missing data in NumPy and JAX,
   including per-neuron support normalization in population metrics. Observed
   zero activity remains distinct from missing rates.

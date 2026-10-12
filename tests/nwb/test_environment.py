@@ -2264,17 +2264,30 @@ def test_finite_volume_ops_on_nwb_layout_explain_the_round_trip(
     from neurospatial.ops.calculus import divergence, gradient
 
     env = hexagonal_env_from_nwb
+    # Each call, and the analysis its error must name.
     calls = {
-        "gradient": lambda: gradient(env, np.ones(env.n_bins)),
-        "divergence": lambda: divergence(
-            env, np.ones(env.connectivity.number_of_edges())
+        "gradient": (
+            lambda: gradient(env, np.ones(env.n_bins)),
+            "gradient/divergence",
         ),
-        "smooth": lambda: env.smooth(np.ones(env.n_bins), bandwidth=5.0),
-        "basis": lambda: heat_kernel_wavelet_basis(env, centers=np.array([0])),
+        "divergence": (
+            lambda: divergence(env, np.ones(env.connectivity.number_of_edges())),
+            "gradient/divergence",
+        ),
+        "smooth": (
+            lambda: env.smooth(np.ones(env.n_bins), bandwidth=5.0),
+            "smoothing",
+        ),
+        "basis": (
+            lambda: heat_kernel_wavelet_basis(env, centers=np.array([0])),
+            "heat_kernel_wavelet_basis",
+        ),
     }
+    call, named = calls[operation]
     with pytest.raises(NotImplementedError) as exc:
-        calls[operation]()
+        call()
     message = str(exc.value)
+    assert message.startswith(f"{named} needs ")
     assert "read from NWB" in message
     assert "Hexagonal" in message
     assert "\nFix:" in message

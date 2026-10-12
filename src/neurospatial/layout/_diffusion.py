@@ -1,9 +1,17 @@
-"""Internal diffusion data and optional geometry-provider contracts.
+"""Internal finite-volume diffusion data and the layout geometry contract.
 
-This foundation module knows no Environment or solver. Cell measures and
-conductances suffice for diffusion; finite-volume faces are a separate
-capability used by gradient and divergence. Geometry is a snapshot in active
-bin order, constructed with ``from_weights`` or ``from_graph``.
+This foundation module knows no Environment or solver. A layout that supports
+diffusion and differential operators defines ``finite_volume_geometry()``: a
+copy of its connectivity graph with face measures (``A``) and edge distances,
+plus cell measures. ``FaceGeometry.from_graph`` validates that into per-edge
+arrays in connectivity edge order, from which gradient and divergence are built
+and ``DiffusionGeometry.from_faces`` assembles the conductance snapshot every
+diffusion consumer shares.
+
+A layout has the capability only if it defines the method, so ``isinstance``
+against ``FiniteVolumeGeometryProvider`` answers "can this layout supply it?".
+A layout that cannot may define ``_explain_missing_geometry(operation) -> str``
+to say why in the error the environment raises.
 """
 
 from __future__ import annotations
@@ -17,93 +25,50 @@ from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
 
-class DiffusionGeometry(NamedTuple):
-    """Coordinate-independent, validated diffusion data in active-bin order.
+class FaceGeometry(NamedTuple):
+    """Validated, read-only cell faces in connectivity edge order.
 
-    ``W`` contains symmetric nonnegative conductances; ``volumes`` contains
-    positive cell measures (lengths, areas, or volumes). Components are derived
-    from positive conductances, not from a layout's navigation graph. Factory
-    methods copy their inputs and make the array buffers read-only, so cached
-    operators cannot change through aliases to layout data.
-
-    Environment owns the snapshot's lifetime and invalidates it together with
-    its eigencaches when geometry changes. No eigensolver cache lives here.
+    ``edges[k] = (u, v)`` is the ``k``-th edge as the graph iterates it, so edge
+    fields from gradient and divergence line up with ``env.connectivity``.
     """
 
-    W: sparse.csr_matrix
+    edges: NDArray[np.intp]
+    A: NDArray[np.float64]
+    distance: NDArray[np.float64]
     volumes: NDArray[np.float64]
-    n_components: int
-    labels: NDArray[np.int_]
 
     @classmethod
-    def from_weights(
-        cls, weights: sparse.spmatrix, volumes: NDArray[np.float64]
-    ) -> DiffusionGeometry:
-        """Validate and snapshot conductances and cell measures.
-
-        Parameters
-        ----------
-        weights : scipy.sparse matrix, shape (n_bins, n_bins)
-            Symmetric, finite, nonnegative conductances.
-        volumes : ndarray, shape (n_bins,)
-            Finite, strictly positive cell measures in the same bin order.
-
-        Returns
-        -------
-        DiffusionGeometry
-            Independent snapshot including its diffusion components.
-
-        Raises
-        ------
-        ValueError
-            If weights or measures violate the diffusion contract.
-        """
-        if (
-            not sparse.issparse(weights)
-            or weights.ndim != 2
-            or weights.shape[0] != weights.shape[1]
-        ):
-            raise ValueError("diffusion weights must be a square sparse matrix.")
-        if np.issubdtype(weights.dtype, np.complexfloating):
-            raise ValueError("diffusion weights must be real.")
-        matrix = sparse.csr_matrix(weights, dtype=np.float64, copy=True)
-        matrix.sum_duplicates()
-        matrix.eliminate_zeros()
-        matrix.sort_indices()
-        if not np.all(np.isfinite(matrix.data)) or np.any(matrix.data < 0.0):
-            raise ValueError("diffusion weights must be finite and nonnegative.")
-        if (matrix != matrix.T).nnz:
-            raise ValueError("diffusion weights must be symmetric.")
-        measures = _validate_volumes(volumes, matrix.shape[0]).copy()
-        n_components, labels = _components_from_W(matrix)
-        for array in (matrix.data, matrix.indices, matrix.indptr, measures, labels):
-            array.setflags(write=False)
-        return cls(matrix, measures, n_components, labels)
-
-    @classmethod
-    def from_graph(
-        cls, graph: nx.Graph, volumes: NDArray[np.float64]
-    ) -> DiffusionGeometry:
-        """Build a snapshot from finite-volume face measures and distances.
+    def from_graph(cls, graph: nx.Graph, volumes: NDArray[np.float64]) -> FaceGeometry:
+        """Validate and snapshot face measures, distances and cell measures.
 
         Parameters
         ----------
         graph : networkx.Graph
             Undirected simple graph with integer nodes ``0..n_bins-1``.
             Each edge supplies finite ``A >= 0`` and ``distance > 0``.
-            Zero-area edges do not connect diffusion components.
         volumes : ndarray, shape (n_bins,)
-            Positive cell measures in node-index order.
+            Finite, strictly positive cell measures in node-index order.
 
         Returns
         -------
-        DiffusionGeometry
-            Validated snapshot with ``W[i, j] = A[i, j] / distance[i, j]``.
+        FaceGeometry
+            Independent snapshot with read-only arrays of shape ``(n_edges, 2)``,
+            ``(n_edges,)``, ``(n_edges,)`` and ``(n_bins,)``.
+
+        Raises
+        ------
+        ValueError
+            If the graph is directed or a multigraph, its nodes are not
+            ``0..n_bins-1``, the cell measures are invalid, or an edge lacks a
+            valid ``A`` or ``distance``.
         """
         n_bins = graph.number_of_nodes()
         if graph.is_directed() or graph.is_multigraph():
             raise ValueError(
-                "finite-volume geometry requires an undirected simple graph."
+                f"finite-volume geometry needs an undirected simple nx.Graph, got "
+                f"{type(graph).__name__}. Each edge is one shared face, so reciprocal "
+                "or parallel edges would sum into a doubled conductance. Collapse "
+                "them first, e.g. nx.Graph(graph) after merging parallel edges."
             )
         nodes = list(graph.nodes)
         if not all(
@@ -112,8 +77,92 @@ class DiffusionGeometry(NamedTuple):
             raise ValueError(
                 "graph nodes must be contiguous integer labels 0..n-1 (no float/bool)."
             )
-        measures = _validate_volumes(volumes, n_bins)
-        return cls.from_weights(_assemble_W(graph, n_bins), measures)
+        measures = _validate_volumes(volumes, n_bins).copy()
+
+        edges: list[tuple[int, int]] = []
+        areas: list[float] = []
+        distances: list[float] = []
+        for u, v, data in graph.edges(data=True):
+            if "A" not in data or "distance" not in data:
+                raise ValueError(
+                    f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
+                )
+            edges.append((int(u), int(v)))
+            areas.append(float(data["A"]))
+            distances.append(float(data["distance"]))
+        edge_array = np.array(edges, dtype=np.intp).reshape(-1, 2)
+        area = np.array(areas, dtype=np.float64)
+        distance = np.array(distances, dtype=np.float64)
+        bad = ~(np.isfinite(area) & (area >= 0.0))
+        if bad.any():
+            k = int(np.argmax(bad))
+            u, v = edge_array[k]
+            raise ValueError(f"edge ({u},{v}) has invalid face measure A={area[k]}.")
+        bad = ~(np.isfinite(distance) & (distance > 0.0))
+        if bad.any():
+            k = int(np.argmax(bad))
+            u, v = edge_array[k]
+            raise ValueError(f"edge ({u},{v}) has invalid distance d={distance[k]}.")
+        for array in (edge_array, area, distance, measures):
+            array.setflags(write=False)
+        return cls(edge_array, area, distance, measures)
+
+
+class DiffusionGeometry(NamedTuple):
+    """Validated finite-volume diffusion data in active-bin order.
+
+    ``W[i, j] = A[i, j] / distance[i, j]`` holds symmetric nonnegative
+    conductances; ``volumes`` holds positive cell measures (lengths, areas, or
+    volumes). Components are derived from positive conductances, not from a
+    layout's navigation graph: corner-touching bins (``A = 0``) are separate
+    components, which the truncated ``env.diffuse`` eigenbasis and the support
+    gates rely on. Arrays are read-only, so cached operators cannot change
+    through aliases to layout data.
+
+    Environment owns the snapshot's lifetime and invalidates it together with
+    its eigencaches when geometry changes.
+    """
+
+    W: sparse.csr_matrix
+    volumes: NDArray[np.float64]
+    n_components: int
+    labels: NDArray[np.int_]
+
+    @classmethod
+    def from_faces(cls, faces: FaceGeometry) -> DiffusionGeometry:
+        """Assemble conductances ``A / distance`` and their components.
+
+        Parameters
+        ----------
+        faces : FaceGeometry
+            Validated cell faces and measures.
+
+        Returns
+        -------
+        DiffusionGeometry
+            Read-only snapshot sharing ``faces.volumes``.
+        """
+        n_bins = faces.volumes.size
+        conductance = faces.A / faces.distance
+        flows = conductance > 0.0  # zero-area faces carry no diffusion
+        u, v = faces.edges[flows, 0], faces.edges[flows, 1]
+        w = conductance[flows]
+        weights = sparse.csr_matrix(
+            (np.concatenate([w, w]), (np.concatenate([u, v]), np.concatenate([v, u]))),
+            shape=(n_bins, n_bins),
+            dtype=np.float64,
+        )
+        n_components, labels = connected_components(weights, directed=False)
+        for array in (weights.data, weights.indices, weights.indptr, labels):
+            array.setflags(write=False)
+        return cls(weights, faces.volumes, int(n_components), labels)
+
+    @classmethod
+    def from_graph(
+        cls, graph: nx.Graph, volumes: NDArray[np.float64]
+    ) -> DiffusionGeometry:
+        """Validate faces from ``graph`` (see ``FaceGeometry.from_graph``) and assemble."""
+        return cls.from_faces(FaceGeometry.from_graph(graph, volumes))
 
 
 def _validate_volumes(volumes: NDArray[np.float64], n_bins: int) -> NDArray[np.float64]:
@@ -131,109 +180,9 @@ def _validate_volumes(volumes: NDArray[np.float64], n_bins: int) -> NDArray[np.f
 
 
 @runtime_checkable
-class DiffusionGeometryProvider(Protocol):
-    """Optional layout capability; requires no coordinate representation."""
-
-    def diffusion_geometry(self) -> DiffusionGeometry:
-        """Return validated diffusion data in active-bin order."""
-        ...
-
-
-@runtime_checkable
 class FiniteVolumeGeometryProvider(Protocol):
-    """Additional capability for edge gradients and flux divergence."""
+    """Layout capability behind diffusion, edge gradients and flux divergence."""
 
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
         """Return a graph copy with face measures and distances, plus cell measures."""
         ...
-
-
-class _FiniteVolumeDiffusion:
-    """Assemble diffusion data for providers with finite-volume faces."""
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Return the provider's face geometry in active-bin order."""
-        raise NotImplementedError("This provider has no finite-volume cell geometry.")
-
-    def diffusion_geometry(self) -> DiffusionGeometry:
-        """Build validated diffusion data from this provider's cell faces."""
-        return DiffusionGeometry.from_graph(*self.finite_volume_geometry())
-
-
-def _components_from_W(W: sparse.spmatrix) -> tuple[int, NDArray[np.int_]]:
-    """Connected components of the diffusion-weight matrix ``W`` (nonzero ``A``).
-
-    Component structure for any component-aware step is derived from ``W``, NOT
-    ``env.connectivity``: corner-touching 8-connected bins have ``A = 0`` and so
-    are separate diffusion components. Load-bearing for the truncated
-    ``env.diffuse`` apply-path (component-local eigenvectors + the W-component
-    support gates).
-
-    Parameters
-    ----------
-    W : scipy.sparse matrix, shape (n_bins, n_bins)
-        Finite-volume weight matrix.
-
-    Returns
-    -------
-    n_components : int
-        Number of connected components.
-    labels : NDArray[np.int_], shape (n_bins,)
-        Component label per node.
-    """
-    n_components, labels = connected_components(W, directed=False)
-    return int(n_components), labels
-
-
-def _assemble_W(graph: nx.Graph, n_bins: int) -> sparse.csr_matrix:
-    """Finite-volume weight matrix ``W[i, j] = A[i, j] / d[i, j]`` from a graph.
-
-    ``A`` (shared-face measure) and ``distance`` (center-to-center) are per-edge
-    contract fields; a missing or invalid value raises rather than silently
-    degrading the operator. An explicit ``A == 0`` means no diffusion across that
-    edge (e.g. corner-touching Cartesian bins) and is skipped. This is the single
-    W-assembly used by both the dense ``compute_diffusion_kernels`` path and the
-    ``env.diffuse`` eigenbasis, so the two operate on an identical ``W``.
-
-    Parameters
-    ----------
-    graph : nx.Graph
-        Nodes are contiguous integers ``0..n_bins-1``; each edge carries ``"A"``
-        (finite, >= 0) and ``"distance"`` (finite, > 0).
-    n_bins : int
-        Number of nodes (matrix dimension).
-
-    Returns
-    -------
-    W : sparse.csr_matrix, shape (n_bins, n_bins)
-        Symmetric finite-volume weight matrix.
-
-    Raises
-    ------
-    ValueError
-        If an edge is missing ``"A"``/``"distance"`` or carries a non-finite /
-        negative ``"A"`` or a non-finite / non-positive ``"distance"``.
-    """
-    rows: list[int] = []
-    cols: list[int] = []
-    vals: list[float] = []
-    for u, v, data in graph.edges(data=True):
-        if "A" not in data or "distance" not in data:
-            raise ValueError(
-                f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
-            )
-        area = float(data["A"])
-        d = float(data["distance"])
-        if not (np.isfinite(area) and area >= 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid face measure A={area}.")
-        if not (np.isfinite(d) and d > 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}.")
-        if area == 0.0:
-            continue  # explicit A == 0 => no diffusion across this edge
-        w = area / d
-        rows += [int(u), int(v)]
-        cols += [int(v), int(u)]
-        vals += [w, w]
-    return sparse.csr_matrix(
-        (vals, (rows, cols)), shape=(n_bins, n_bins), dtype=np.float64
-    )

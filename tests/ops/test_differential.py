@@ -17,10 +17,7 @@ from neurospatial.ops.calculus import (
 
 def _diffusion_generator(env):
     """Reference generator assembled from the diffusion geometry."""
-    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
-
-    graph, volumes = _finite_volume_geometry(env)
-    weights = _assemble_W(graph, env.n_bins)
+    weights, volumes, _, _ = env._diffusion_geometry
     return sparse.diags(1 / volumes) @ (
         sparse.diags(np.asarray(weights.sum(axis=1)).ravel()) - weights
     )
@@ -53,13 +50,8 @@ def test_div_grad_quadratic_is_continuum_laplacian(uniform_grid, spacing):
 
 def test_div_grad_equals_negative_diffusion_generator(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
-    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
 
-    graph, volumes = _finite_volume_geometry(fv_env)
-    weights = _assemble_W(graph, fv_env.n_bins)
-    laplacian = sparse.diags(1 / volumes) @ (
-        sparse.diags(np.asarray(weights.sum(axis=1)).ravel()) - weights
-    )
+    laplacian = _diffusion_generator(fv_env)
     field = np.random.default_rng(0).normal(size=fv_env.n_bins)
     np.testing.assert_allclose(
         divergence(fv_env, gradient(fv_env, field)),
@@ -71,9 +63,8 @@ def test_div_grad_equals_negative_diffusion_generator(fv_env):
 
 def test_divergence_is_negative_adjoint_of_gradient(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
-    from neurospatial.ops.diffusion import _finite_volume_geometry
 
-    graph, volumes = _finite_volume_geometry(fv_env)
+    graph, volumes = fv_env.layout.finite_volume_geometry()
     rng = np.random.default_rng(3)
     field = rng.normal(size=fv_env.n_bins)
     flux = rng.normal(size=graph.number_of_edges())
@@ -99,9 +90,8 @@ def test_goal_is_a_sink(uniform_grid, spacing):
 
 def test_operator_edge_order_matches_connectivity(fv_env):
     from neurospatial.ops.calculus import gradient
-    from neurospatial.ops.diffusion import _finite_volume_geometry
 
-    graph, _ = _finite_volume_geometry(fv_env)
+    graph, _ = fv_env.layout.finite_volume_geometry()
     assert list(graph.edges()) == list(fv_env.connectivity.edges())
     field = np.random.default_rng(5).normal(size=fv_env.n_bins)
     expected = [

@@ -27,8 +27,6 @@ from neurospatial import Environment
 from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.ops.diffusion import (
-    _components_from_W,
-    _finite_volume_geometry,
     _raw_heat_operator,
     diffusion_kernel,
 )
@@ -274,7 +272,7 @@ def test_sigma_recovery_graph():
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
         env = build_track(bin_size, straight=False)
-        graph_fv, _ = _finite_volume_geometry(env)
+        graph_fv, _ = env.layout.finite_volume_geometry()
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
         junction_edges = [
@@ -357,7 +355,7 @@ def test_density_integrates_to_one(polar_env):
 
 def test_low_level_average_row_stochastic(polar_env):
     """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
-    graph_fv, volumes = _finite_volume_geometry(polar_env)
+    graph_fv, volumes = polar_env.layout.finite_volume_geometry()
     kernel = compute_diffusion_kernels(
         graph_fv, volumes=volumes, sigma=5.0, mode="average"
     )
@@ -368,7 +366,7 @@ def test_low_level_average_row_stochastic(polar_env):
 def test_raw_heat_operator_m_self_adjoint(polar_env):
     """Raw operator (pre clip/normalize): H @ 1 = 1 and M_i H_ij = M_j H_ji on a
     non-uniform-M (polar) env -- the C1 invariants the mode outputs no longer expose."""
-    graph_fv, volumes = _finite_volume_geometry(polar_env)
+    graph_fv, volumes = polar_env.layout.finite_volume_geometry()
     W = build_W_from_graph(graph_fv)
     H = _raw_heat_operator(W, volumes, sigma=5.0)
 
@@ -381,7 +379,7 @@ def test_raw_heat_operator_m_self_adjoint(polar_env):
 # ===========================================================================
 # W-component structure (C5) + no leakage
 # ===========================================================================
-def test_components_from_W_corner_split():
+def test_corner_split_gives_two_diffusion_components():
     """Corner-only 8-connected pair -> 2 W-components; no mass crosses the corner."""
     # Two active bins touching only at a corner; connect_diagonal_neighbors links
     # them in env.connectivity, but the diagonal shares only a corner => A = 0.
@@ -393,12 +391,11 @@ def test_components_from_W_corner_split():
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"
 
-    graph_fv, _ = _finite_volume_geometry(env)
+    graph_fv, _ = env.layout.finite_volume_geometry()
     assert graph_fv.edges[0, 1]["A"] == 0.0, "corner-touching edge must have A == 0"
-
-    W = build_W_from_graph(graph_fv)
-    n_components, _labels = _components_from_W(W)
-    assert n_components == 2, "corner-only pair must be two W-components"
+    assert env._diffusion_geometry.n_components == 2, (
+        "corner-only pair must be two W-components"
+    )
 
     kernel = diffusion_kernel(env, 3.0, mode="transition")
     assert kernel[1, 0] == pytest.approx(0.0, abs=1e-12), "no mass across the corner"
@@ -590,7 +587,7 @@ def test_mesh_skew_guard_warns():
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
-        _finite_volume_geometry(env_ok)
+        env_ok.layout.finite_volume_geometry()
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
     # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
@@ -604,4 +601,4 @@ def test_mesh_skew_guard_warns():
         layout_params={"boundary_polygon": Polygon(sheared), "point_spacing": 4.0},
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
-        _finite_volume_geometry(env_skew)
+        env_skew.layout.finite_volume_geometry()

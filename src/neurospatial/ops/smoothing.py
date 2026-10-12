@@ -10,10 +10,10 @@ application for smoothing spatial fields on graphs. The main functions are:
 
 The operator itself (``H = exp(-t L)``, ``L = M^-1 (D - W)``,
 ``W[i, j] = A[i, j] / d[i, j]``) lives in
-:mod:`neurospatial.ops.diffusion`; geometry providers in ``layout`` and the
-polar environment supply the per-geometry face measures. This module is the
-graph-level seam: given ``"A"`` already on the edges, it builds ``W`` and
-normalizes the kernel to the requested ``mode``.
+:mod:`neurospatial.ops.diffusion`; each layout engine (including the polar
+layout) supplies its own face measures. This module is the graph-level seam:
+given ``"A"`` already on the edges, it builds ``W`` and normalizes the kernel to
+the requested ``mode``.
 
 Examples
 --------
@@ -44,7 +44,6 @@ True
 
 from __future__ import annotations
 
-import warnings
 from typing import Literal
 
 import networkx as nx
@@ -83,15 +82,16 @@ def compute_diffusion_kernels(
     smoothing on any K-orthogonal layout, independent of bin size.
 
     This is the low-level primitive. Most callers should use
-    :meth:`Environment.compute_kernel` / :meth:`Environment.smooth`, which
-    resolve the per-geometry face measures via
-    :func:`neurospatial.ops.diffusion.diffusion_kernel`.
+    :meth:`Environment.compute_kernel` / :meth:`Environment.smooth`, which take
+    the face measures from the environment's layout engine.
 
     Parameters
     ----------
     graph : nx.Graph
-        Nodes are bins and MUST be contiguous integer labels ``0..n-1`` (they
-        are used directly as sparse-matrix indices). Each edge MUST carry:
+        Undirected simple graph (not a ``DiGraph`` or multigraph: each edge is
+        one shared face). Nodes are bins and MUST be contiguous integer labels
+        ``0..n-1`` (they are used directly as sparse-matrix indices). Each edge
+        MUST carry:
 
         - ``"distance"``: center-to-center distance ``d`` (finite, > 0).
         - ``"A"``: measure of the face shared by the two bins (finite, >= 0).
@@ -120,12 +120,14 @@ def compute_diffusion_kernels(
     Raises
     ------
     ValueError
-        If ``sigma`` is non-finite or ``<= 0``; if ``volumes`` has the wrong
-        shape or any non-finite / non-positive entry; if node labels are not
-        contiguous integers ``0..n-1`` (float or bool labels are rejected); if
-        any edge is missing ``"A"`` or ``"distance"``, or has a non-finite /
-        negative ``"A"`` or a non-finite / non-positive ``"distance"``; or if
-        ``mode`` is invalid.
+        If ``sigma`` is non-finite or ``<= 0``; if ``graph`` is directed or a
+        multigraph (reciprocal or parallel edges would sum into one doubled
+        conductance; collapse them with ``nx.Graph(graph)``); if ``volumes`` has
+        the wrong shape or any non-finite / non-positive entry; if node labels
+        are not contiguous integers ``0..n-1`` (float or bool labels are
+        rejected); if any edge is missing ``"A"`` or ``"distance"``, or has a
+        non-finite / negative ``"A"`` or a non-finite / non-positive
+        ``"distance"``; or if ``mode`` is invalid.
 
     Notes
     -----
@@ -167,40 +169,8 @@ def compute_diffusion_kernels(
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
       avoid materializing a full dense posterior.
     """
-    # 1) Validate mode and sigma up front, before any O(n^2)/O(n^3) work (the
-    #    high-bin warning, W assembly, or the dense matrix exponential): a typo
-    #    on a large graph must fail fast, not after building the kernel.
-    if mode not in ("transition", "density", "average"):
-        raise ValueError(
-            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-        )
-    if not (np.isfinite(sigma) and sigma > 0.0):
-        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
-
     geometry = DiffusionGeometry.from_graph(graph, volumes)
-    _warn_dense_kernel(geometry.volumes.size)
     return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
-
-
-def _warn_dense_kernel(n_bins: int) -> None:
-    """Warn about the dense allocation for either dense-kernel entry point."""
-    if n_bins > _LARGE_KERNEL_THRESHOLD:
-        estimated_gb = n_bins * n_bins * 8 / 1e9
-        warnings.warn(
-            f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
-            f"kernel exp(-tL) is dense by construction (every entry > 0), so it "
-            f"requires an {n_bins} x {n_bins} float64 matrix "
-            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
-            f"matrix exponential). Proceeding anyway; this may be slow and "
-            f"memory-intensive. To avoid this dense kernel entirely, smooth "
-            f"matrix-free via env.diffuse (or the 'diffusion_kde' / 'binned' "
-            f"encoding methods, which route through it) -- both scale as "
-            f"O(n * rank), not O(n^2). Only compute_kernel (this call) and the "
-            f"'gaussian_kde' method build a dense kernel. You can also increase "
-            f"bin_size to reduce the bin count.",
-            UserWarning,
-            stacklevel=2,
-        )
 
 
 def apply_kernel(

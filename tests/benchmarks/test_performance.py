@@ -319,10 +319,8 @@ class TestGraphOperationPerformance:
 
     def test_compute_diffusion_kernels(self, benchmark, medium_env):
         """Benchmark diffusion kernel computation."""
-        from neurospatial.ops.diffusion import _finite_volume_geometry
-
         # Resolve the finite-volume geometry once; benchmark just the primitive.
-        graph_fv, volumes = _finite_volume_geometry(medium_env)
+        graph_fv, volumes = medium_env.layout.finite_volume_geometry()
         result = benchmark(
             compute_diffusion_kernels,
             graph_fv,
