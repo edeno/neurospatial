@@ -262,7 +262,7 @@ class ExplainedVarianceResult(ResultMixin):
         partialled for the baseline control when one is supplied. Range [0, 1].
     reversed_ev : float
         With a baseline control, the squared partial correlation between
-        control and match vectors, partialled for the template. Without a
+        template and control vectors, partialled for the match. Without a
         control, equals explained_variance by construction.
     partial_correlation : float
         Partial correlation between template and match, controlling for
@@ -274,8 +274,8 @@ class ExplainedVarianceResult(ResultMixin):
     -----
     **Interpretation**:
 
-    With a baseline control, EV > REV describes more template-related than
-    baseline-related correlation structure in the match period. Without that
+    With a baseline control, EV > REV describes more template-related
+    correlation structure after behavior than before behavior. Without that
     control, EV == REV, so the comparison provides no directional evidence.
     These are effect sizes, not p-values: a fixed cutoff such as EV > 0.1 or
     EV > 0.3 does not establish statistical significance. Statistical inference
@@ -483,10 +483,13 @@ def detect_assemblies(
     1. Z-score spike counts for each neuron
     2. Compute correlation matrix
     3. Eigendecomposition to find significant dimensions (Marchenko-Pastur)
-    4. Project onto significant PCs
+    4. Project onto significant PCs (and whiten their scores for ICA)
     5. Apply ICA/PCA/NMF to extract assembly patterns
     6. Threshold weights to identify core members
     7. Compute activation time series
+
+    For ICA, requested components beyond the numerical rank of the data
+    have zero weights, activations, and explained variance.
 
     **Choosing a Method**:
 
@@ -708,7 +711,11 @@ def _detect_pca(
     # Explained variance ratio from singular values
     # Eigenvalues of C are s^2 / T
     total_var = np.sum(s**2)
-    explained_var = (s[:n_components] ** 2) / total_var
+    explained_var = (
+        (s[:n_components] ** 2) / total_var
+        if total_var > 0
+        else np.zeros(n_components, dtype=np.float64)
+    )
 
     return patterns, activations, explained_var
 
@@ -734,39 +741,42 @@ def _detect_ica(
     from sklearn.decomposition import FastICA
 
     # First reduce to n_components via PCA
-    patterns_pca, activations_pca, explained_var_pca = _detect_pca(
-        spike_counts_z, n_components
-    )
-    # patterns_pca: (n_components, n_neurons)
-    # activations_pca: (n_components, n_time_bins)
+    patterns_pca, activations_pca, _ = _detect_pca(spike_counts_z, n_components)
 
-    # Apply ICA to the PCA-reduced activations
-    # ICA finds mixing matrix W such that: activations_pca ≈ W @ sources
-    # We want sources (independent components) which become our new activations
+    # PCA decorrelates scores but leaves their variances equal to the
+    # eigenvalues. FastICA must whiten these scores before its rotation.
+    # Exclude null PCs so whitening cannot amplify numerical noise or divide
+    # by zero on constant / rank-deficient recordings.
+    score_norms = np.linalg.norm(activations_pca, axis=1)
+    rank_tol = np.finfo(np.float64).eps * max(spike_counts_z.shape) * score_norms.max()
+    live = score_norms > rank_tol
+    n_live = int(live.sum())
+    patterns = np.zeros((n_components, spike_counts_z.shape[0]), dtype=np.float64)
+    activations = np.zeros((n_components, spike_counts_z.shape[1]), dtype=np.float64)
+    explained_var = np.zeros(n_components, dtype=np.float64)
+    if n_live == 0:
+        return patterns, activations, explained_var
+
     ica = FastICA(
-        n_components=n_components,
+        n_components=n_live,
         random_state=random_state,
         max_iter=1000,
-        whiten=False,  # Already done by PCA
+        whiten="unit-variance",
     )
+    sources = ica.fit_transform(activations_pca[live].T)
+    activations[:n_live] = sources.T
 
-    # ICA on transposed data: (n_time_bins, n_components) -> (n_time_bins, n_components)
-    # sources = ica.fit_transform(activations_pca.T) gives (n_time_bins, n_components)
-    sources = ica.fit_transform(activations_pca.T)
-    activations = sources.T  # (n_components, n_time_bins)
+    # components_ includes the whitening transform as well as the ICA
+    # rotation. Compose it with the projection to preserve neuron-space
+    # weights @ z-scored counts == activations.
+    patterns[:n_live] = ica.components_ @ patterns_pca[live]
 
-    # To get patterns in neuron space:
-    # activations_pca = W @ sources.T = W @ activations
-    # activations_pca = patterns_pca @ spike_counts_z
-    # So patterns_pca @ spike_counts_z = W @ (patterns_ica @ spike_counts_z)
-    # patterns_pca = W @ patterns_ica
-    # patterns_ica = W^-1 @ patterns_pca
-    # Since ica.components_ = W^-1 (unmixing matrix), we have:
-    # patterns_ica = ica.components_ @ patterns_pca
-    patterns = ica.components_ @ patterns_pca  # (n_components, n_neurons)
-
-    # Explained variance from PCA (ICA doesn't change total variance)
-    explained_var = explained_var_pca
+    # Unit-variance, uncorrelated sources contribute the squared norm of
+    # their neuron-space mixing column to the reconstructed variance.
+    # Individual PCA variances do not correspond to the rotated ICA sources.
+    loadings = patterns_pca[live].T @ ica.mixing_
+    total_var = np.sum(spike_counts_z**2) / spike_counts_z.shape[1]
+    explained_var[:n_live] = np.sum(loadings**2, axis=0) / total_var
 
     return patterns, activations, explained_var
 
@@ -1175,16 +1185,15 @@ def explained_variance_reactivation(
 
     **Reversed EV (REV)**:
 
-    REV (Kudrimoti 1999) is the same partial-correlation-squared with the
-    roles of template and control **swapped** — the match's correlation
-    with the control, partialled for the template:
+    REV (Pennartz et al. 2004) swaps the pre- and post-behavior periods:
+    the template's correlation with the control, partialled for the match:
 
     .. math::
 
-        REV = r_{partial}(control, match \\mid template)^2
+        REV = r_{partial}(template, control \\mid match)^2
 
     With a control, EV exceeding REV indicates a larger template-related
-    effect than baseline-related effect in the match period; it is not a
+    effect after behavior than before behavior; it is not a
     calibrated significance test. Without a control there is no asymmetry to
     break, so ``EV == REV`` by construction. Neither a fixed EV cutoff nor
     EV > REV alone establishes significant reactivation.
@@ -1217,6 +1226,9 @@ def explained_variance_reactivation(
     ----------
     Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of
         hippocampal cell assemblies. J Neurosci 19(10):4090-4101.
+    Pennartz CMA et al. (2004). The ventral striatum in off-line processing:
+        ensemble reactivation during sleep and modulation by hippocampal
+        ripples. J Neurosci 24(29):6446-6456.
     """
     template_correlations = np.asarray(template_correlations, dtype=np.float64)
     match_correlations = np.asarray(match_correlations, dtype=np.float64)
@@ -1279,13 +1291,10 @@ def explained_variance_reactivation(
         partial_corr = (r_tm - r_tc * r_mc) / denom_ev if denom_ev > 1e-10 else 0.0
         ev = partial_corr**2
 
-        # REV (Kudrimoti 1999): swap the roles of template and control.
-        # The match's correlation with the control, partialled for the
-        # template, is the reverse-direction "explained variance". For
-        # genuine reactivation EV should exceed REV.
-        #   r_partial(control, match | template)
-        denom_rev = np.sqrt((1.0 - r_tc**2) * (1.0 - r_tm**2))
-        rev_partial = (r_mc - r_tc * r_tm) / denom_rev if denom_rev > 1e-10 else 0.0
+        # Reverse time by swapping pre (control) and post (match):
+        # r_partial(template, control | match).
+        denom_rev = np.sqrt((1.0 - r_tm**2) * (1.0 - r_mc**2))
+        rev_partial = (r_tc - r_tm * r_mc) / denom_rev if denom_rev > 1e-10 else 0.0
         rev = rev_partial**2
     else:
         # No control: EV is the plain squared correlation. REV reduces to

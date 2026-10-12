@@ -60,6 +60,12 @@
 
 ### Fixed
 
+- Whiten PCA scores before ICA assembly detection, handle null components, and
+  compute explained variance for the recovered ICA components.
+
+- Correct reverse explained variance to swap pre- and post-behavior periods
+  while retaining the behavioral template.
+
 - Correct spatial information and sparsity for missing data in NumPy and JAX,
   including per-neuron support normalization in population metrics. Observed
   zero activity remains distinct from missing rates.

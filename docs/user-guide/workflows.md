@@ -782,7 +782,8 @@ preserves relative magnitude on that shared template scale, but remains an
 effect size rather than a calibrated tail probability.
 
 Controlled EV is `r(template, match | control)^2`, while controlled REV
-is `r(control, match | template)^2`. EV > REV is an effect-size comparison,
+is `r(template, control | match)^2`, swapping the pre- and post-behavior
+periods. EV > REV is an effect-size comparison,
 not calibrated reactivation significance. Report control choice, preprocessing,
 unit selection and a separately justified null when a significance claim is
 needed.

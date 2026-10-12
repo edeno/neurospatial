@@ -689,16 +689,38 @@ class TestEdgeCases:
 
 
 class TestExplainedVarianceControlAndREV:
-    """EV/REV must use the control and the role-swapped partial correlation."""
+    """EV/REV swap pre- and post-behavior periods, retaining the template."""
+
+    def test_reverse_ev_matches_residual_regression_and_time_reversal(self):
+        template = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0]) / 10
+        pre = np.array([1.0, -1.0, 0.0, 0.0, -1.0, 1.0]) / 10
+        post = 0.8 * pre + np.array([0.0, 1.0, -1.0, -1.0, 1.0, 0.0]) / 100
+        design = np.column_stack([np.ones(post.size), post])
+        residuals = np.column_stack([template, pre])
+        residuals -= design @ np.linalg.lstsq(design, residuals, rcond=None)[0]
+        expected = np.corrcoef(residuals.T)[0, 1] ** 2
+        result = explained_variance_reactivation(
+            template, post, control_correlations=pre
+        )
+        reversed_result = explained_variance_reactivation(
+            template, pre, control_correlations=post
+        )
+        assert_allclose(result.reversed_ev, expected, atol=1e-12)
+        assert_allclose(
+            result.reversed_ev, reversed_result.explained_variance, atol=1e-12
+        )
+        assert_allclose(
+            result.explained_variance, reversed_result.reversed_ev, atol=1e-12
+        )
 
     def test_explained_variance_rev_differs_from_ev_with_control(
         self,
         corr_triplet: tuple[np.ndarray, np.ndarray, np.ndarray],
     ) -> None:
-        """With a control, REV is the role-swapped partial corr, not == EV.
+        """With a control, REV reverses the two rest periods.
 
         On a reactivation-positive triplet (template->match correlation
-        stronger than control->match after partialling) EV should exceed
+        stronger than template->control after partialling) EV should exceed
         REV, and the two must not be equal.
         """
         template, match, control = corr_triplet
@@ -799,6 +821,41 @@ class TestDetectAssembliesShortRecording:
         # Clamped to min(n_neurons, n_time_bins) == 3 patterns; no crash.
         assert len(result.patterns) <= 3
         assert result.activations.shape[1] == 3  # n_time_bins preserved
+
+
+@pytest.mark.parametrize("n_components", [2, 3])
+def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
+    """ICA recovers sources with unequal PCA variances, including a null PC."""
+    from scipy.stats import zscore
+
+    rng = np.random.default_rng(42)
+    sources = rng.poisson([2.0, 7.0], size=(20000, 2))
+    counts = sources @ np.array([[1, 2, 3, 0], [3, 1, 0, 2]])
+    result = detect_assemblies(
+        counts, algorithm="ica", n_components=n_components, rng=0
+    )
+    recovered = result.activations[:2]
+    assert_allclose(np.cov(recovered, bias=True), np.eye(2), atol=1e-10)
+    recovery_correlations = np.abs(np.corrcoef(sources.T, recovered)[:2, 2:])
+    assert np.all(recovery_correlations.max(axis=1) > 0.98)
+
+    standardized = zscore(counts, axis=0)
+    weights = np.array([pattern.weights for pattern in result.patterns])
+    assert_allclose(weights @ standardized.T, result.activations, atol=1e-12)
+
+    # Fit the reconstruction independently, then measure the variance each
+    # recovered source contributes in neuron space.
+    reconstruction_coeffs = np.linalg.lstsq(recovered.T, standardized, rcond=None)[0]
+    total_variance = standardized.var(axis=0).sum()
+    for i, pattern in enumerate(result.patterns[:2]):
+        reconstructed = np.outer(recovered[i], reconstruction_coeffs[i])
+        expected = reconstructed.var(axis=0).sum() / total_variance
+        assert_allclose(pattern.explained_variance_ratio, expected, atol=1e-12)
+    assert_allclose(sum(p.explained_variance_ratio for p in result.patterns), 1.0)
+    if n_components == 3:
+        assert_allclose(result.activations[2], 0.0)
+        assert_allclose(weights[2], 0.0)
+        assert result.patterns[2].explained_variance_ratio == 0.0
 
 
 class TestOneCountConvention:
