@@ -1,15 +1,19 @@
 """Provider boundary, numerical contracts, and geometry-cache ownership."""
 
+from datetime import datetime, timezone
+
 import networkx as nx
 import numpy as np
 import pytest
 from scipy import linalg, sparse
 
 from neurospatial import Environment
+from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout._diffusion import DiffusionGeometry
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.factories import _LAYOUT_MAP
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
+from neurospatial.ops.calculus import divergence, gradient
 
 
 class ConductanceLayout(MaskedGridLayout):
@@ -184,3 +188,65 @@ def test_anisotropic_3d_grid_face_weights_and_cell_measures():
         expected = 8.0 / np.sum(offset) ** 2 if np.count_nonzero(offset) == 1 else 0.0
         assert geometry.W[u, v] == expected
         assert "A" not in env.connectivity.edges[u, v]
+
+
+# ---------------------------------------------------------------------------
+# Reconstructed environments keep the saved graph on their layout.
+# ---------------------------------------------------------------------------
+def _round_trip(env, how, tmp_path):
+    if how == "dict":
+        return from_dict(to_dict(env))
+    if how == "file":
+        to_file(env, tmp_path / "env")
+        return from_file(tmp_path / "env")
+    pynwb = pytest.importorskip("pynwb")
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    nwbfile = pynwb.NWBFile(
+        session_description="round trip",
+        identifier="round-trip",
+        session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    write_environment(nwbfile, env)
+    return read_environment(nwbfile)
+
+
+def _four_connected_grid():
+    positions = np.random.default_rng(0).uniform(0, 30, (4000, 2))
+    return Environment.from_samples(
+        positions, bin_size=3.0, connect_diagonal_neighbors=False
+    )
+
+
+def _polar():
+    return Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+    )
+
+
+@pytest.mark.parametrize("how", ["dict", "file", "nwb"])
+@pytest.mark.parametrize(
+    "make_env", [_four_connected_grid, _polar], ids=["grid4", "polar"]
+)
+def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_path):
+    """Read-back environments and their copies keep 4-connectivity and polar seams.
+
+    The rebuilt layout would otherwise supply an 8-connected grid graph (NWB) or
+    a Cartesian, seamless polar graph, which copy() and the geometry read.
+    """
+    original = make_env()
+    field = np.sin(np.arange(original.n_bins) * 0.37)
+    expected_divergence = divergence(original, gradient(original, field))
+    restored = _round_trip(original, how, tmp_path)
+    for env in (restored, restored.copy()):
+        assert list(env.connectivity.edges()) == list(original.connectivity.edges())
+        np.testing.assert_allclose(gradient(env, field), gradient(original, field))
+        np.testing.assert_allclose(
+            divergence(env, gradient(env, field)), expected_divergence
+        )
+        np.testing.assert_allclose(
+            env.compute_kernel(3.0), original.compute_kernel(3.0), atol=1e-12
+        )

@@ -89,6 +89,11 @@
 
 ### Fixed
 
+- Keep the saved connectivity of environments read with `from_file`,
+  `from_dict` or `read_environment` on their layout. Gradients and divergence
+  work on 4-connected grids read from NWB, and `copy()` of a read-back
+  environment keeps 4-connectivity and polar seam edges and arc lengths
+  instead of reverting to the rebuilt layout's graph.
 - Correct spatial information and sparsity for missing data in NumPy and JAX,
   including per-neuron support normalization in population metrics. Observed
   zero activity remains distinct from missing rates.

@@ -529,9 +529,11 @@ def from_file(path: PathLike) -> Environment:
     else:
         env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
 
-    # Override attributes with saved values (handles cases where layout recreation differs)
-    env.bin_centers = bin_centers
-    env.connectivity = connectivity
+    # Override attributes with saved values (handles cases where layout recreation
+    # differs). The layout gets the saved graph too: diffusion and finite-volume
+    # geometry, and copy(), read the layout, so it must match env.connectivity.
+    env.bin_centers = env.layout.bin_centers = bin_centers
+    env.connectivity = env.layout.connectivity = connectivity
     env.dimension_ranges = dimension_ranges
     env.grid_edges = grid_edges
     env.grid_shape = grid_shape
@@ -730,9 +732,10 @@ def from_dict(data: dict[str, Any]) -> Environment:
     else:
         env = Environment.from_layout(layout_type, layout_params, name=data["name"])
 
-    # Override attributes
-    env.bin_centers = bin_centers
-    env.connectivity = connectivity
+    # Override attributes. The layout gets the saved graph too: diffusion and
+    # finite-volume geometry, and copy(), read the layout.
+    env.bin_centers = env.layout.bin_centers = bin_centers
+    env.connectivity = env.layout.connectivity = connectivity
     env.dimension_ranges = dimension_ranges
     env.grid_edges = grid_edges
     env.grid_shape = grid_shape

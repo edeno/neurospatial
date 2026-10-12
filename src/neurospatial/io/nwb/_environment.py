@@ -830,8 +830,10 @@ def _reconstruct_environment(
                 regions=regions,
             )
 
-            # Override connectivity with stored values (preserves edge weights)
-            env.connectivity = connectivity
+            # Override connectivity with stored values (preserves edge weights and
+            # 4-connectivity). The layout gets it too: diffusion and finite-volume
+            # geometry, and copy(), read the layout's graph.
+            env.connectivity = env.layout.connectivity = connectivity
             env.dimension_ranges = dimension_ranges
 
             return env
