@@ -61,6 +61,7 @@
 - Preserve containment and inactive bins after affine environment transforms, including chained transforms, and retain polygon-region holes. Reject singular transforms that collapse bin geometry.
 - Preserve generated unit-label provenance and spike-recording windows in NWB spatial-rate round trips (schema `2.3`), so reloaded maps retain their decoder pairing and coverage. Older `2.x` files remain readable with their existing defaults.
 - Return `NaN` path progress when the current position is disconnected from the start, even if the goal is reachable.
+- Compute video calibration scale from transformed axis lengths so rotations and reflections do not change the reported `cm_per_px`.
 
 - Unit labels of mixed types keep their types: `unit_ids=[1, "u"]` no
   longer turns `1` into the string `"1"`. Result keys, indexed results,

@@ -319,6 +319,24 @@ class TestVideoCalibration:
 
         assert_allclose(calib.cm_per_px, 0.5, atol=1e-10)
 
+    @pytest.mark.parametrize("angle", [0.0, np.pi / 4, np.pi / 2])
+    @pytest.mark.parametrize("scales", [(0.5, 0.5), (0.25, -0.75)])
+    def test_cm_per_px_invariant_under_rotation(self, angle, scales):
+        """Rotating or reflecting calibrated axes does not change their scale."""
+        from neurospatial.ops.transforms import VideoCalibration
+
+        rotation = Affine2D(
+            np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 10],
+                    [np.sin(angle), np.cos(angle), 20],
+                    [0, 0, 1],
+                ]
+            )
+        )
+        calib = VideoCalibration(rotation @ scale_2d(*scales), (640, 480))
+        assert calib.cm_per_px == pytest.approx(np.mean(np.abs(scales)))
+
     def test_transform_cm_to_px_inverse(self):
         """transform_cm_to_px is the inverse of transform_px_to_cm."""
         from neurospatial.ops.transforms import VideoCalibration

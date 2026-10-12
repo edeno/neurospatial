@@ -834,19 +834,17 @@ class VideoCalibration:
     def cm_per_px(self) -> float:
         """Get approximate scale factor (cm per pixel).
 
-        Returns the average of x and y scale factors from the transform matrix.
+        Returns the mean length of the transformed x and y unit vectors.
+        This is invariant under rotations and reflections; for anisotropic
+        scaling or shear it summarizes the two axis scales with their mean.
 
         Returns
         -------
         float
             Approximate cm per pixel scale factor.
         """
-        # Extract scale from transform matrix diagonal
-        # For uniform scaling, A[0,0] = A[1,1] = scale
-        # For non-uniform, average the absolute values
-        sx = float(abs(self.transform_px_to_cm.A[0, 0]))
-        sy = float(abs(self.transform_px_to_cm.A[1, 1]))
-        return (sx + sy) / 2.0
+        axis_scales = np.linalg.norm(self.transform_px_to_cm.A[:2, :2], axis=0)
+        return float(np.mean(axis_scales))
 
     def to_dict(self) -> dict:
         """Serialize calibration to dict for JSON storage.
