@@ -62,6 +62,8 @@
 
 - Correct workflow guidance on raw-second occupancy thresholds and smoothing missing support, with executable occupancy examples.
 
+- Clarify cell-screen thresholds and the scope of synthetic, biological and cross-package validation.
+
 - Preserve containment and inactive bins after affine environment transforms, including chained transforms, and retain polygon-region holes. Reject singular transforms that collapse bin geometry.
 - Preserve generated unit-label provenance and spike-recording windows in NWB spatial-rate round trips (schema `2.3`), so reloaded maps retain their decoder pairing and coverage. Older `2.x` files remain readable with their existing defaults.
 - Return `NaN` path progress when the current position is disconnected from the start, even if the goal is reachable.

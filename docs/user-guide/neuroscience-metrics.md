@@ -1,6 +1,10 @@
 # Neuroscience Metrics for Spatial Analysis
 
-This guide covers standard neuroscience metrics implemented in neurospatial for analyzing spatial cells, including place cells, boundary cells, and population-level spatial representations. These metrics are validated against field-standard packages (opexebo, neurocode, buzcode) and implement algorithms from peer-reviewed publications.
+This guide covers metrics for spatial firing fields, boundary association and
+population representations. The implementations draw on published methods
+and adapt some of them to graph-based environments. Agreement with a formula
+or successful synthetic tests does not by itself establish equivalence to
+another package or identify a biological cell type.
 
 ## Overview
 
@@ -255,7 +259,7 @@ $$
 - **1**: Perfect overlap (identical fields)
 - **~0.5**: Moderate overlap (typical for neighboring place cells)
 
-### Count Place Cells
+### Count Place-Cell Candidates
 
 Count cells exceeding a spatial information threshold:
 
@@ -269,7 +273,7 @@ spatial_info = [
     spatial_information(rate_map3, occupancy),
 ]
 
-# Count place cells
+# Count candidates exceeding the selected information screen
 n_place_cells = count_place_cells(
     spatial_info,
     threshold=0.5  # bits/spike
@@ -277,7 +281,9 @@ n_place_cells = count_place_cells(
 # Returns: integer count
 ```
 
-Standard threshold: **0.5 bits/spike** (Skaggs et al., 1996; Thompson & Best, 1989).
+The 0.5 bits/spike cutoff is a screening choice, not a universal significance
+threshold. Information depends on sample size, occupancy, binning and smoothing;
+see [information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
 ### Population Vector Correlation
 
@@ -298,7 +304,8 @@ corr_matrix = population_vector_correlation(population_matrix)
 # Returns: (n_cells, n_cells) correlation matrix
 ```
 
-Useful for identifying cell assemblies and functional clustering in spatial representations.
+This describes similarity of spatial maps. Shared spatial tuning alone does
+not establish coordinated temporal activity or membership in a cell assembly.
 
 ## Boundary Cell Metrics
 
@@ -331,10 +338,11 @@ score = border_score(
 4. Border score: `(cM - d) / (cM + d)`
 
 **Interpretation:**
-- **+1**: Perfect border cell (field covers boundary, far from center)
-- **0**: No boundary preference (uniform or mixed)
+- **+1**: Maximal boundary association under this score
+- **0**: Boundary coverage equals normalized boundary distance
 - **-1**: Anti-border (field in center, far from boundaries)
-- **>0.5**: Strong boundary cell (Solstad et al. criterion)
+- **>0.5**: A possible candidate-screen cutoff; its calibration does not
+  automatically transfer from a rectangular arena to this graph adaptation
 
 **Key differences from original algorithm:**
 
@@ -352,14 +360,14 @@ This adaptation is appropriate for irregular layouts, mazes, and complex environ
 - `threshold`: Fraction of peak for field segmentation (default 0.3 = 30%, following Solstad et al.)
 - `min_area`: Minimum field area to compute score (default 0.0, Solstad et al. used 200 cm² for rats)
 
-**Example: Validating a border cell**
+**Example: Checking a synthetic boundary field**
 
 ```python
-# Expected behavior for a true border cell:
+# Construct an idealized boundary-associated field:
 # - High firing along one or more walls
 # - Low firing in center
 
-# Generate synthetic border cell
+# Generate the synthetic field
 firing_rate = np.zeros(env.n_bins)
 boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
@@ -370,7 +378,7 @@ print(f"Border score: {score:.3f}")  # Should be > 0.5
 # Visualize
 import matplotlib.pyplot as plt
 env.plot_field(firing_rate, cmap='hot')
-plt.title(f"Border Cell (score = {score:.2f})")
+plt.title(f"Boundary field (score = {score:.2f})")
 plt.show()
 ```
 
@@ -387,39 +395,20 @@ plt.show()
 **Boundary Cell Analysis:**
 - Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008). Representation of geometric borders in the entorhinal cortex. Science, 322(5909), 1865-1868.
 
-### Package Cross-References
-
-**opexebo** - Open-source spatial analysis toolbox:
-- Place field detection: Similar iterative approach
-- Spatial information: Matches Skaggs formula exactly
-- Sparsity: Compatible definition (validated)
-- Border score: Different implementation (rectangular arenas only)
-
-**neurocode** - AyA Lab analysis tools (MATLAB):
-- Place field detection: This implementation follows neurocode's `FindPlaceFields.m` algorithm
-- Subfield discrimination: Matches neurocode's recursive thresholding approach
-- Parameters: Default thresholds match neurocode standards
-
-**buzcode** - Buzsaki Lab analysis suite (MATLAB):
-- Spatial information: Compatible with buzcode's `bz_spatialInfo.m`
-- Interneuron exclusion: 10 Hz threshold matches buzcode standards
-
 ### Validation Notes
 
-The neurospatial metrics have been **validated** to match reference implementations where applicable:
+The repository tests analytical properties, synthetic examples and behavior
+across operations. The cell-significance tests also exercise untuned spike
+trains and planted tuning under specified simulation conditions. These checks
+have a defined scope; they are not evidence of biological classification
+accuracy on a new recording.
 
-1. **Place field detection**: Algorithm validated against neurocode (iterative peak-based approach with subfield discrimination)
-2. **Spatial information**: Formula matches opexebo, neurocode, and buzcode exactly
-3. **Sparsity**: Definition compatible with all three reference packages
-4. **Border score**: Intentionally different adaptation for irregular graphs (see algorithm notes above)
-
-**Key advantages of neurospatial metrics:**
-
-- ✅ **Graph-based environments**: Works on irregular layouts, not just rectangular grids
-- ✅ **Consistent API**: All metrics follow neurospatial's parameter order convention
-- ✅ **Type-safe**: Full mypy type checking with zero errors
-- ✅ **Well-documented**: Comprehensive NumPy-style docstrings with examples
-- ✅ **Scientific validation**: Algorithms from peer-reviewed publications
+When comparing with opexebo, neurocode or buzcode, match bin geometry,
+occupancy windows, smoothing, NaN handling and thresholds, and record package
+versions and numerical differences. This guide does not provide an executable
+cross-package benchmark. The border score intentionally uses a graph
+adaptation and should not be treated as numerically interchangeable with the
+original per-wall calculation.
 
 ## Information bias and cell verdicts
 
@@ -566,10 +555,10 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 # Compute border score
 score = border_score(env, firing_rate, threshold=0.3, min_area=200.0)
 
-# Classify as border cell
-is_border_cell = score > 0.5  # Solstad et al. criterion
+# Screen for a boundary-associated candidate; not a calibrated cell verdict
+is_border_candidate = score >= 0.5  # Illustrative cutoff
 print(f"Border score: {score:.3f}")
-print(f"Border cell: {is_border_cell}")
+print(f"Border candidate: {is_border_candidate}")
 
 # Visualize with boundaries highlighted
 import matplotlib.pyplot as plt
