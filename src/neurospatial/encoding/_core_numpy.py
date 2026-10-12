@@ -335,16 +335,16 @@ def spatial_information_single(
     """Compute Skaggs spatial information (bits per spike) for a single neuron.
 
     NumPy mirror of :func:`neurospatial.encoding._core_jax.spatial_information_single`.
-    Both implementations follow the same algorithm: NaN-clean inputs,
-    mask invalid bins, normalize occupancy, return ``0.0`` for degenerate
+    Both implementations follow the same algorithm: exclude non-finite
+    rate/occupancy pairs, normalize occupancy, return ``0.0`` for degenerate
     occupancy or non-positive mean rate, clamp to non-negative.
 
     Parameters
     ----------
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate map in Hz. NaNs are treated as 0.
+        Firing rate map in Hz. Bins with non-finite rates are excluded.
     occupancy : NDArray[np.float64], shape (n_bins,)
-        Time spent in each bin. NaNs are treated as 0.
+        Time spent in each bin. Bins with non-finite occupancy are excluded.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits, ``np.e`` for nats.
 
@@ -357,8 +357,9 @@ def spatial_information_single(
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
-    firing_rate_clean = np.nan_to_num(firing_rate, nan=0.0)
-    occupancy_clean = np.nan_to_num(occupancy, nan=0.0)
+    valid = np.isfinite(firing_rate) & np.isfinite(occupancy)
+    firing_rate_clean = np.where(valid, firing_rate, 0.0)
+    occupancy_clean = np.where(valid, occupancy, 0.0)
 
     occ_sum = occupancy_clean.sum()
     occupancy_prob = np.where(
@@ -409,13 +410,13 @@ def spatial_information_batch(
     if n_neurons == 0:
         return np.empty(0, dtype=np.float64)
 
-    firing_rates_clean = np.nan_to_num(firing_rates, nan=0.0)
-    occupancy_clean = np.nan_to_num(occupancy, nan=0.0)
+    # Each neuron may have a different set of observed spatial bins.
+    valid = np.isfinite(firing_rates) & np.isfinite(occupancy)
+    firing_rates_clean = np.where(valid, firing_rates, 0.0)
+    occupancy_clean = np.where(valid, occupancy, 0.0)
 
-    occ_sum = occupancy_clean.sum()
-    if occ_sum <= 0:
-        return np.zeros(n_neurons, dtype=np.float64)
-    occ_prob = (occupancy_clean / occ_sum)[np.newaxis, :]
+    occ_sum = occupancy_clean.sum(axis=1, keepdims=True)
+    occ_prob = occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0)
 
     mean_rates = (occ_prob * firing_rates_clean).sum(axis=1)
     valid_neuron = mean_rates > 0
@@ -454,8 +455,9 @@ def sparsity_single(
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
-    firing_rate_clean = np.nan_to_num(firing_rate, nan=0.0)
-    occupancy_clean = np.nan_to_num(occupancy, nan=0.0)
+    valid = np.isfinite(firing_rate) & np.isfinite(occupancy)
+    firing_rate_clean = np.where(valid, firing_rate, 0.0)
+    occupancy_clean = np.where(valid, occupancy, 0.0)
 
     occ_sum = occupancy_clean.sum()
     occupancy_prob = np.where(
@@ -489,13 +491,12 @@ def sparsity_batch(
     if n_neurons == 0:
         return np.empty(0, dtype=np.float64)
 
-    firing_rates_clean = np.nan_to_num(firing_rates, nan=0.0)
-    occupancy_clean = np.nan_to_num(occupancy, nan=0.0)
+    valid = np.isfinite(firing_rates) & np.isfinite(occupancy)
+    firing_rates_clean = np.where(valid, firing_rates, 0.0)
+    occupancy_clean = np.where(valid, occupancy, 0.0)
 
-    occ_sum = occupancy_clean.sum()
-    if occ_sum <= 0:
-        return np.zeros(n_neurons, dtype=np.float64)
-    occ_prob = (occupancy_clean / occ_sum)[np.newaxis, :]
+    occ_sum = occupancy_clean.sum(axis=1, keepdims=True)
+    occ_prob = occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0)
 
     numerator = (occ_prob * firing_rates_clean).sum(axis=1) ** 2
     denominator = (occ_prob * firing_rates_clean**2).sum(axis=1)

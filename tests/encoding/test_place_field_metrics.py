@@ -1088,36 +1088,17 @@ class TestInformationMetrics:
         # Uniform firing → 0 bits/spike → 0 bits/second
         assert_allclose(info_rate, 0.0, atol=1e-10)
 
-    def test_mutual_information_equals_info_per_second(self, medium_2d_env):
-        """Test that MI equals information_per_second."""
-        rng = np.random.default_rng(42)
-        env = medium_2d_env
-        firing_rate = rng.random(env.n_bins) * 10.0
-        occupancy = np.ones(env.n_bins) / env.n_bins
-
-        from neurospatial.encoding._metrics import (
-            information_per_second,
-            mutual_information,
-        )
-
-        mi = mutual_information(firing_rate, occupancy)
-        info_rate = information_per_second(firing_rate, occupancy)
-
-        # Should be identical
-        assert_allclose(mi, info_rate)
-
-    def test_mutual_information_uniform_zero(self, medium_2d_env):
-        """Test that uniform firing gives zero MI."""
-        env = medium_2d_env
-        firing_rate = np.ones(env.n_bins) * 5.0
-        occupancy = np.ones(env.n_bins) / env.n_bins
-
+    def test_mutual_information_identifying_response(self):
+        """Two equiprobable positions identified by response carry one bit."""
         from neurospatial.encoding._metrics import mutual_information
 
-        mi = mutual_information(firing_rate, occupancy)
+        assert_allclose(mutual_information([[50, 0], [0, 50]]), 1.0)
 
-        # Uniform firing → 0 MI
-        assert_allclose(mi, 0.0, atol=1e-10)
+    def test_mutual_information_uniform_zero(self):
+        """Position-independent responses give zero MI."""
+        from neurospatial.encoding._metrics import mutual_information
+
+        assert_allclose(mutual_information(np.ones((3, 4))), 0.0, atol=1e-10)
 
 
 class TestSpatialCoverage:

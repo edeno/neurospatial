@@ -181,7 +181,7 @@ def spatial_autocorrelation(
     Spatial autocorrelation measures the similarity between a cell's firing
     pattern and shifted versions of itself; for grid cells this reveals the
     characteristic hexagonal periodicity. This entry point computes the
-    opexebo-compatible 2D autocorrelogram and is the input to
+    circular 2D autocorrelogram and is the input to
     :func:`grid_score`. For irregular environments without a regular 2D grid
     layout, use :func:`spatial_autocorrelation_radial` instead, which returns
     a 1D distance-correlation profile from the connectivity graph.
@@ -212,9 +212,9 @@ def spatial_autocorrelation(
     Algorithm:
 
     1. Reshape firing rate to 2D grid shape
-    2. Normalize: subtract mean, handle NaN
-    3. Compute 2D autocorrelation via FFT convolution
-    4. Normalize by unbiased variance estimate
+    2. Subtract the mean of observed bins; set missing centered values to zero
+    3. Compute circular 2D autocorrelation via FFT (periodic boundaries)
+    4. Normalize by the sum of squared centered values at observed bins
     5. Output shape matches environment grid
 
     Interpretation:
@@ -462,10 +462,8 @@ def _spatial_autocorrelation_fft(
         reshaped = firing_rate.reshape(grid_shape)
         rate_map_2d[:, :] = reshaped
 
-    # Handle NaN: replace with 0 for computation
-    # (NaN indicates unvisited bins, contribute zero to autocorrelation)
+    # Missing bins contribute no centered signal, including inactive grid cells.
     valid_mask = np.isfinite(rate_map_2d)
-    rate_map_clean = np.where(valid_mask, rate_map_2d, 0.0)
 
     # Normalize: subtract mean of valid bins
     valid_rates = rate_map_2d[valid_mask]
@@ -473,7 +471,7 @@ def _spatial_autocorrelation_fft(
         raise ValueError("No valid (non-NaN) firing rates")
 
     mean_rate = np.mean(valid_rates)
-    rate_map_normalized = rate_map_clean - mean_rate
+    rate_map_normalized = np.where(valid_mask, rate_map_2d - mean_rate, 0.0)
 
     # Compute 2D autocorrelation via FFT
     # autocorr(r) = IFFT(|FFT(rate_map)|^2)
@@ -484,8 +482,8 @@ def _spatial_autocorrelation_fft(
     # Shift zero lag to center
     autocorr = fft.fftshift(autocorr)
 
-    # Normalize by variance and number of valid overlaps
-    # This ensures autocorr[center] ≈ 1.0
+    # Normalize by the observed centered energy. This ensures zero lag is 1
+    # and, by Cauchy-Schwarz, circular correlations stay in [-1, 1].
     variance = np.var(valid_rates)
     if variance == 0:
         raise ValueError("Firing rate has zero variance")

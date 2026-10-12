@@ -12,6 +12,37 @@ import pytest
 from neurospatial import Environment
 
 
+@pytest.mark.parametrize("inactive", [False, True])
+def test_autocorrelation_missing_bins_preserves_normalization(inactive):
+    """Missing rate bins and inactive cells have no centered signal."""
+    from neurospatial.encoding.grid import spatial_autocorrelation
+
+    mask = np.ones((5, 6), dtype=bool)
+    if inactive:
+        mask[0, 0] = False
+    env = Environment.from_grid_mask(mask, (np.arange(6.0), np.arange(7.0)))
+    rates = np.arange(1.0, env.n_bins + 1.0)
+    rates[3] = np.nan
+    actual = spatial_autocorrelation(env, rates)
+    np.testing.assert_allclose(actual[2, 3], 1.0, atol=1e-12)
+    assert np.max(np.abs(actual)) <= 1 + 1e-12
+    np.testing.assert_allclose(
+        spatial_autocorrelation(env, rates * 3 + 100), actual, atol=1e-12
+    )
+
+    # Direct circular inner products are independent of the FFT implementation.
+    observed = np.full(mask.shape, np.nan)
+    observed[mask] = rates
+    centered = np.where(np.isfinite(observed), observed - np.nanmean(observed), 0)
+    energy = np.sum(centered**2)
+    expected = np.empty(mask.shape)
+    for i in range(mask.shape[0]):
+        for j in range(mask.shape[1]):
+            shifted = np.roll(centered, (i - 2, j - 3), axis=(0, 1))
+            expected[i, j] = np.sum(centered * shifted) / energy
+    np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+
 class TestSpatialAutocorrelation:
     """Tests for spatial_autocorrelation function."""
 

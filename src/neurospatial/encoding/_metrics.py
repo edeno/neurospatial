@@ -185,11 +185,12 @@ def spatial_information(
     Parameters
     ----------
     firing_rate : ArrayLike, shape (n_bins,)
-        Firing rate map in Hz. Can contain NaN values which are ignored.
+        Firing rate map in Hz. Bins with non-finite rates are excluded.
         Accepts NumPy arrays or JAX arrays.
     occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
-        to probability internally. Can contain NaN values which are ignored.
+        over bins with finite rates and occupancy. Observed zero rates remain
+        included.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), np.e for nats.
 
@@ -294,7 +295,8 @@ def batch_spatial_information(
         Firing rate maps for each neuron in Hz.
         Accepts NumPy arrays or JAX arrays.
     occupancy : ArrayLike, shape (n_bins,)
-        Shared occupancy for all neurons (time spent in each bin).
+        Shared occupancy for all neurons (time spent in each bin), normalized
+        separately over each neuron's finite rate/occupancy pairs.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), np.e for nats.
 
@@ -378,11 +380,12 @@ def sparsity(
     Parameters
     ----------
     firing_rate : ArrayLike, shape (n_bins,)
-        Firing rate map in Hz. Can contain NaN values which are ignored.
+        Firing rate map in Hz. Bins with non-finite rates are excluded.
         Accepts NumPy arrays or JAX arrays.
     occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
-        to probability internally. Can contain NaN values which are ignored.
+        over bins with finite rates and occupancy. Observed zero rates remain
+        included.
 
     Returns
     -------
@@ -481,7 +484,8 @@ def batch_sparsity(
         Firing rate maps for each neuron in Hz.
         Accepts NumPy arrays or JAX arrays.
     occupancy : ArrayLike, shape (n_bins,)
-        Shared occupancy for all neurons (time spent in each bin).
+        Shared occupancy for all neurons (time spent in each bin), normalized
+        separately over each neuron's finite rate/occupancy pairs.
 
     Returns
     -------
@@ -1066,7 +1070,7 @@ def information_per_second(
     See Also
     --------
     spatial_information : Spatial information (bits/spike)
-    mutual_information : Mutual information between position and firing
+    mutual_information : Mutual information from a joint position-response histogram
 
     References
     ----------
@@ -1101,77 +1105,108 @@ def information_per_second(
 
 
 def mutual_information(
-    firing_rate: ArrayLike,
-    occupancy: ArrayLike,
+    joint_counts: ArrayLike,
+    occupancy: ArrayLike | None = None,
     *,
     base: float = 2.0,
 ) -> float:
-    """Compute mutual information between position and firing rate.
-
-    Mutual information quantifies how much knowing the animal's position
-    reduces uncertainty about the neuron's firing rate. This is a fundamental
-    information-theoretic measure of spatial coding.
+    r"""Compute mutual information from a joint position-response histogram.
 
     Parameters
     ----------
-    firing_rate : ArrayLike, shape (n_bins,)
-        Firing rate map (Hz or spikes/second).
-    occupancy : ArrayLike, shape (n_bins,)
-        Occupancy probability (normalized to sum to 1).
+    joint_counts : ArrayLike, shape (n_position_bins, n_response_bins)
+        Non-negative joint counts, weights, or probabilities. Rows index
+        positions and columns index discrete neural responses (for example,
+        spike counts in fixed-duration observation windows). The array is
+        normalized to sum to one. All entries must be finite, with at least
+        one positive entry. Zero-mass rows and columns are allowed.
+    occupancy : None, optional
+        Retired argument from the former rate-map alias. Supplying it raises
+        an error with migration guidance; mean rates and occupancy alone do
+        not determine the joint response distribution.
     base : float, default=2.0
-        Logarithm base for information calculation. Use 2.0 for bits,
-        np.e for nats.
+        Finite logarithm base greater than one. Use 2.0 for bits or ``np.e``
+        for nats.
 
     Returns
     -------
     float
-        Mutual information in bits (or nats if base=e). Returns NaN if
-        firing rate or occupancy are all NaN or if mean rate is zero.
+        Mutual information per observation in bits (or nats if base=e).
+        Zero for independent position and response distributions.
+
+    Raises
+    ------
+    ValueError
+        If the histogram is not a nonempty, finite, non-negative 2-D array
+        with positive total mass, if ``occupancy`` is supplied, or if the
+        logarithm base is invalid.
 
     Notes
     -----
-    **Relationship to other metrics**:
+    The discrete plug-in estimate is
 
-    - ``mutual_information`` = ``spatial_information`` x ``mean_rate``
-    - ``mutual_information`` = ``information_per_second``
-    - MI is symmetric: MI(position; firing) = MI(firing; position)
+    .. math::
 
-    **Interpretation**:
+        I(X; R) = \sum_{x,r} p(x,r)
+                  \log\frac{p(x,r)}{p(x)p(r)}.
 
-    - **MI = 0**: Position and firing are independent (no place field)
-    - **MI > 0**: Position provides information about firing
-    - Higher MI indicates stronger spatial coding
+    Zero joint probabilities contribute zero. The estimate is symmetric
+    and bounded above by each marginal entropy. Finite-sample bias is not
+    corrected. Choose and report the response bins and observation-window
+    duration; different choices define different response variables.
 
-    **Difference from Skaggs information**: Skaggs info is bits per spike,
-    MI is total bits. A cell with high Skaggs but low firing rate will have
-    lower MI than a moderately selective cell that fires frequently.
+    Earlier versions returned Skaggs information rate under this name.
+    To retain that rate-map calculation in bits/second, use
+    ``information_per_second(firing_rate, occupancy)``. A mean rate map does
+    not specify response variability and cannot determine mutual information
+    without an additional response model or observed joint histogram.
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from neurospatial.encoding._metrics import mutual_information
-
-    >>> # Strong place field
-    >>> firing_rate = np.ones(100) * 0.5
-    >>> firing_rate[40:50] = 10.0
-    >>> occupancy = np.ones(100) / 100
-    >>> mi = mutual_information(firing_rate, occupancy)
-    >>> mi > 0
-    True
+    >>> mutual_information([[50, 0], [0, 50]])  # Response identifies position
+    1.0
+    >>> mutual_information([[25, 25], [25, 25]])  # Independent response
+    0.0
 
     See Also
     --------
-    spatial_information : Spatial information (bits/spike)
-    information_per_second : Information rate (equivalent to MI)
-    sparsity : Sparsity measure
-
-    References
-    ----------
-    .. [1] Skaggs et al. (1993). An information-theoretic approach to deciphering
-           the hippocampal code. NIPS.
+    spatial_information : Skaggs spatial information (bits/spike).
+    information_per_second : Skaggs information rate from a rate map (bits/second).
     """
-    # MI is mathematically equivalent to information_per_second
-    return information_per_second(firing_rate, occupancy, base=base)
+    migration = (
+        "mutual_information requires a 2-D joint position-response histogram. "
+        "Mean firing rates and occupancy do not determine mutual information. "
+        "Use information_per_second(firing_rate, occupancy) for the previous "
+        "Skaggs calculation in bits/second."
+    )
+    if occupancy is not None:
+        raise ValueError(migration)
+    joint = np.asarray(joint_counts, dtype=np.float64)
+    if joint.ndim != 2 or joint.size == 0:
+        raise ValueError(migration)
+    if not np.all(np.isfinite(joint)) or np.any(joint < 0):
+        raise ValueError("joint_counts must contain only finite, non-negative values.")
+    if not np.isfinite(base) or base <= 1:
+        raise ValueError("base must be finite and greater than one (2 for bits).")
+    scale = float(joint.max())
+    if scale == 0:
+        raise ValueError("joint_counts must contain positive total mass.")
+
+    # Scaling first avoids overflow when summing large but finite counts.
+    joint = joint / scale
+    joint /= joint.sum()
+    position_prob = joint.sum(axis=1)
+    response_prob = joint.sum(axis=0)
+    rows, columns = np.nonzero(joint)
+    probability = joint[rows, columns]
+    # Subtract logs rather than dividing by a possibly underflowing product.
+    log_ratio = (
+        np.log(probability)
+        - np.log(position_prob[rows])
+        - np.log(response_prob[columns])
+    )
+    information = np.sum(probability * log_ratio) / np.log(base)
+    return float(max(information, 0.0))
 
 
 def spatial_coverage_single_cell(

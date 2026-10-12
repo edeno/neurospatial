@@ -373,10 +373,11 @@ def spatial_information_single(
     Parameters
     ----------
     firing_rate : jax.Array, shape (n_bins,)
-        Firing rate map in Hz. Can contain NaN values which are ignored.
+        Firing rate map in Hz. Bins with non-finite rates are excluded.
     occupancy : jax.Array, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
-        to probability internally. Can contain NaN values which are ignored.
+        over bins with finite rates and occupancy. Observed zero rates remain
+        included.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), e for nats.
 
@@ -420,13 +421,14 @@ def spatial_information_single(
 def _spatial_information_kernel(
     firing_rate: Array, occupancy: Array, base: float
 ) -> Array:
-    firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
-    occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
+    valid = jnp.isfinite(firing_rate) & jnp.isfinite(occupancy)
+    firing_rate_clean = jnp.where(valid, firing_rate, 0.0)
+    occupancy_clean = jnp.where(valid, occupancy, 0.0)
 
     occ_sum = jnp.sum(occupancy_clean)
     occupancy_prob = jnp.where(
         occ_sum > 0,
-        occupancy_clean / occ_sum,
+        occupancy_clean / jnp.where(occ_sum > 0, occ_sum, 1.0),
         jnp.zeros_like(occupancy_clean),
     )
 
@@ -435,7 +437,7 @@ def _spatial_information_kernel(
 
     ratio = jnp.where(
         (mean_rate > 0) & valid_mask,
-        firing_rate_clean / mean_rate,
+        firing_rate_clean / jnp.where(mean_rate > 0, mean_rate, 1.0),
         1.0,
     )
     # Subnormal firing_rate / mean_rate can underflow to 0; clamp so the
@@ -474,7 +476,8 @@ def spatial_information_batch(
     firing_rates : jax.Array, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
     occupancy : jax.Array, shape (n_bins,)
-        Shared occupancy for all neurons (time spent in each bin).
+        Shared occupancy for all neurons (time spent in each bin), normalized
+        separately over each neuron's finite rate/occupancy pairs.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), e for nats.
 
@@ -521,10 +524,11 @@ def sparsity_single(
     Parameters
     ----------
     firing_rate : jax.Array, shape (n_bins,)
-        Firing rate map in Hz. Can contain NaN values which are ignored.
+        Firing rate map in Hz. Bins with non-finite rates are excluded.
     occupancy : jax.Array, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
-        to probability internally. Can contain NaN values which are ignored.
+        over bins with finite rates and occupancy. Observed zero rates remain
+        included.
 
     Returns
     -------
@@ -570,13 +574,14 @@ def sparsity_single(
 
 @jax.jit
 def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
-    firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
-    occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
+    valid = jnp.isfinite(firing_rate) & jnp.isfinite(occupancy)
+    firing_rate_clean = jnp.where(valid, firing_rate, 0.0)
+    occupancy_clean = jnp.where(valid, occupancy, 0.0)
 
     occ_sum = jnp.sum(occupancy_clean)
     occupancy_prob = jnp.where(
         occ_sum > 0,
-        occupancy_clean / occ_sum,
+        occupancy_clean / jnp.where(occ_sum > 0, occ_sum, 1.0),
         jnp.zeros_like(occupancy_clean),
     )
 
@@ -584,7 +589,7 @@ def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
     denominator = jnp.sum(occupancy_prob * firing_rate_clean**2)
     sparsity_value = jnp.where(
         denominator > 0,
-        numerator / denominator,
+        numerator / jnp.where(denominator > 0, denominator, 1.0),
         0.0,
     )
     return jnp.clip(sparsity_value, 0.0, 1.0)
@@ -608,7 +613,8 @@ def sparsity_batch(
     firing_rates : jax.Array, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
     occupancy : jax.Array, shape (n_bins,)
-        Shared occupancy for all neurons (time spent in each bin).
+        Shared occupancy for all neurons (time spent in each bin), normalized
+        separately over each neuron's finite rate/occupancy pairs.
 
     Returns
     -------

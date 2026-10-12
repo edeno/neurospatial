@@ -60,6 +60,18 @@
 
 ### Fixed
 
+- Correct spatial information and sparsity for missing data in NumPy and JAX,
+  including per-neuron support normalization in population metrics. Observed
+  zero activity remains distinct from missing rates.
+
+- Correct missing-bin centering in spatial autocorrelation so zero lag is one
+  and constant firing-rate offsets cannot change the correlogram.
+
+- **Breaking:** `mutual_information` now computes discrete mutual information
+  from a joint position-response histogram in bits per observation. Old rate-map
+  calls raise migration guidance; use `information_per_second` for the previous
+  Skaggs information-rate calculation in bits/second.
+
 - Correct workflow guidance on raw-second occupancy thresholds and smoothing missing support, with executable occupancy examples.
 
 - Clarify cell-screen thresholds and the scope of synthetic, biological and cross-package validation.
