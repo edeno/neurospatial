@@ -784,7 +784,6 @@ def _reconstruct_environment(
     from neurospatial import Environment
     from neurospatial.environment.core import _BaseEnvironment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
-    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
     env_cls: type[_BaseEnvironment] = (
         EgocentricPolarEnvironment if is_polar else Environment
@@ -810,15 +809,8 @@ def _reconstruct_environment(
             # Reshape active_mask from flat to N-D
             active_mask = active_mask_flat.reshape(tuple(grid_shape))
 
-            # Create MaskedGridLayout with exact grid structure
-            layout = MaskedGridLayout()
-            layout.build(
-                active_mask=active_mask,
-                grid_edges=grid_edges,
-                connect_diagonal_neighbors=True,  # Conservative default
-            )
-
-            # Create environment from layout (polar type when is_polar)
+            # Rebuild the exact grid (polar type when is_polar). Its default
+            # 8-connected graph is replaced by the stored connectivity below.
             env = env_cls.from_layout(
                 kind="MaskedGrid",
                 layout_params={
