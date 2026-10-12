@@ -19,7 +19,10 @@ $$
 \text{firing rate}_i = \frac{\text{spike count}_i}{\text{occupancy}_i}
 $$
 
-Without occupancy normalization, bins visited more frequently would appear to have higher firing rates simply due to increased sampling, not actual spatial preference. This normalization is **standard practice** in place field analysis and is used universally in neuroscience literature (O'Keefe & Dostrovsky, 1971; Muller et al., 1987).
+Without occupancy normalization, more frequently visited bins can accumulate
+more spikes simply because they were observed longer. The equation above is
+the unsmoothed binned estimator. KDE methods smooth spike counts and occupancy
+before dividing; smoothing the already divided rate gives a different estimator.
 
 ### What is Occupancy?
 
@@ -59,6 +62,7 @@ result = compute_spatial_rate(
     times,
     positions,
     method="binned",
+    bandwidth=0.0,  # No smoothing: spike count / occupancy
     min_occupancy=0.5,  # Exclude bins with < 0.5 seconds occupancy
 )
 firing_rate = result.firing_rate
@@ -73,7 +77,8 @@ firing_rate = result.firing_rate
 - Parameter order: **environment comes first**, followed by spike data and trajectory data
 - Returns firing rate in **spikes/second**
 - Bins with occupancy less than `min_occupancy` are set to `NaN`
-- Default `min_occupancy=0.0` includes all bins
+- Default `min_occupancy=0.0` disables occupancy masking; bins without
+  sufficient estimator support can still be `NaN`
 
 ### One-Liner with Smoothing: `compute_spatial_rate()`
 
@@ -95,11 +100,14 @@ result = compute_spatial_rate(
 place_field = result.firing_rate
 ```
 
-Use `method="binned"` when you want the unsmoothed occupancy-normalized rate map.
+Use `method="binned", bandwidth=0.0` for an unsmoothed count/occupancy map.
+With positive bandwidth, `binned` smooths the rate after division; KDE methods
+smooth the numerator and denominator separately.
 
 ## Parameter Order: Environment First
 
-**Important:** All neurospatial functions follow a consistent API pattern where the **environment comes first**:
+Spatial encoding functions take the **environment first**. Other domains have
+their own signatures; for example, directional encoding does not need an environment.
 
 ```python
 # Correct parameter order
@@ -120,58 +128,80 @@ This design decision ensures:
 
 ## Min Occupancy Threshold: Best Practices
 
-The `min_occupancy` parameter controls reliability filtering:
+For `diffusion_kde`, `gaussian_kde` and `binned`, `min_occupancy` thresholds
+**raw occupancy in seconds**, after recording windows, tracking gaps and any
+speed filter have been applied. It does not threshold smoothed density.
+`method="glm"` rejects this option and uses its own penalty/rank controls.
 
 ```python
-# Include all bins (default)
+# Disable occupancy masking (default); unsupported bins can still be NaN
 firing_rate = compute_spatial_rate(
     env, spike_times, times, positions, min_occupancy=0.0
 ).firing_rate
 
-# Exclude bins with < 0.5 seconds occupancy (typical for place fields)
+# Illustrative threshold: exclude bins with < 0.5 seconds occupancy
 firing_rate = compute_spatial_rate(
     env, spike_times, times, positions, min_occupancy=0.5
 ).firing_rate
 
-# More conservative (1 second threshold)
+# Stricter occupancy mask (1 second); not a confidence threshold
 firing_rate = compute_spatial_rate(
     env, spike_times, times, positions, min_occupancy=1.0
 ).firing_rate
 ```
 
-**Recommendations:**
+Choose the threshold together with bin size, recording duration and the
+scientific question. The values above illustrate the API; no fixed occupancy
+threshold establishes reliable tuning or a confidence level. Inspect the
+occupancy map and sensitivity to parameter choices.
 
-- **Default (0.0)**: Use when you need complete spatial coverage or will apply additional filtering
-- **0.5 seconds**: Standard for place field analysis - excludes bins with too few samples for reliable rate estimates
-- **1.0+ seconds**: Conservative threshold for high-confidence place field detection
+Sub-threshold bins are `NaN` unless `fill_value` is supplied. A finite KDE rate
+in an unvisited bin reflects smoothing from observed bins; it is not evidence
+that the animal visited that bin. Keep `result.occupancy` when using
+`fill_value=0.0`, since zero-filled missing support and observed silence can
+otherwise look identical. Check the NaN policy of each downstream statistic.
 
-Bins with occupancy below the threshold are set to **NaN** (not zero), which:
+### Checking the Occupancy Mask
 
-- Allows you to distinguish between "silent" bins (visited but no spikes) and "unsampled" bins
-- Prevents these bins from contaminating spatial statistics
-- Works correctly with `env.smooth()` which handles NaN values appropriately
+This small example has 0.6 seconds in the first bin, 0.4 in the second and
+none in the third. All three ratio estimators mask the same two bins at a
+0.5-second threshold, regardless of their different smoothing rules.
 
-### Why Not Use Default Filtering?
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment, compute_spatial_rate
 
-The default `min_occupancy=0.0` (no filtering) is intentional:
-
-1. **Flexibility**: Users can inspect all bins and make informed filtering decisions
-2. **Transparency**: All data is preserved, no hidden thresholding
-3. **Composability**: You can apply custom filters after computing firing rates
-
-For typical place field analysis, **explicitly set `min_occupancy=0.5`** to match standard neuroscience practices.
+env = Environment.from_grid_mask(
+    np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
+)
+times = np.arange(11) / 10
+positions = np.array([0.5] * 6 + [1.5] * 5).reshape(-1, 1)
+spike_times = np.array([0.05, 0.15, 0.25, 0.65, 0.75])
+for method in ("binned", "gaussian_kde", "diffusion_kde"):
+    result = compute_spatial_rate(
+        env, spike_times, times, positions,
+        method=method, bandwidth=0.8, min_occupancy=0.5,
+    )
+    np.testing.assert_allclose(result.occupancy, [0.6, 0.4, 0.0])
+    np.testing.assert_array_equal(
+        np.isnan(result.firing_rate), result.occupancy < 0.5
+    )
+    assert np.isfinite(result.firing_rate[0])
+```
 
 ## Edge Cases and Validation
 
 ### Empty Spike Trains
 
-Empty spike arrays (no spikes) produce fields of zeros:
+Empty spike arrays produce zero rates where the estimator has occupancy
+support. Masked or unsupported bins can remain `NaN`:
 
 ```python
 spike_times = np.array([])  # No spikes
 
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
-# Result: all zeros (or NaN where occupancy < min_occupancy)
+# Result: zeros where supported; NaN in masked/unsupported bins
 ```
 
 ### Out-of-Bounds Spikes
@@ -215,36 +245,21 @@ compute_spatial_rate(env, spike_times, times, positions, min_occupancy=-1.0)
 # Raises ValueError: "min_occupancy must be non-negative (got -1.0)"
 ```
 
-## NaN Handling in Smoothing
+## Smoothing and Missing Support
 
-When using `compute_spatial_rate()` with smoothing, NaN values from low-occupancy bins are handled by the smoothing implementation:
+`diffusion_kde` and `gaussian_kde` smooth counts and occupancy separately,
+divide where the smoothed denominator has support, then apply the raw-seconds
+occupancy mask. `diffusion_kde` respects the environment's connectivity;
+`gaussian_kde` uses Euclidean proximity and can smooth across nearby walls.
 
-1. NaN bins are temporarily filled with 0
-2. Gaussian smoothing is applied
-3. NaN values are restored to their original locations
+`binned` divides counts by occupancy first. With positive bandwidth it uses
+a masked average that excludes undefined and sub-threshold input rates, then
+reapplies the output occupancy mask. This is not zero-filling missing bins
+before averaging. Set `bandwidth=0.0` to inspect the unsmoothed estimate.
 
-**Important caveat:** This approach can artificially **reduce firing rates near unvisited regions** due to the zero-filling. For scientific applications requiring high precision near boundaries, use the two-step workflow:
-
-```python
-# Manual workflow with custom NaN handling
-firing_rate = compute_spatial_rate(
-    env,
-    spike_times,
-    times,
-    positions,
-    method="binned",
-    min_occupancy=0.5,
-).firing_rate
-
-# Option 1: Smooth only valid bins (NaN stays NaN)
-smoothed = env.smooth(firing_rate, bandwidth=5.0)
-
-# Option 2: Inpaint NaN before smoothing (advanced)
-from scipy.ndimage import distance_transform_edt
-# ... custom NaN handling ...
-```
-
-For most use cases, the default NaN handling in `compute_spatial_rate()` is appropriate and matches common neuroscience practice.
+Smoothing a returned rate map again with `env.smooth()` changes the estimator
+and is not equivalent to KDE. Likewise, replacing `NaN` with zero changes the
+meaning of missing support; retain the original occupancy when doing so.
 
 ## Visualizing Results
 
@@ -261,6 +276,7 @@ firing_rate = compute_spatial_rate(
     times,
     positions,
     method="binned",
+    bandwidth=0.0,
     min_occupancy=0.5,
 ).firing_rate
 place_field = compute_spatial_rate(
@@ -299,6 +315,7 @@ plt.show()
 
 Here's a complete workflow from trajectory data to smoothed place field:
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -311,11 +328,14 @@ positions = np.column_stack([
     10 * np.cos(0.5 * times)   # Y coordinate
 ])  # Circular trajectory
 
-# 2. Generate spike train (simulated place cell)
+# 2. Generate spike train from a position-dependent rate (Hz)
+random = np.random.default_rng(42)
 preferred_location = np.array([5.0, 5.0])
 distances = np.linalg.norm(positions - preferred_location, axis=1)
-firing_prob = 0.5 * np.exp(-distances**2 / (2 * 3**2))  # Gaussian tuning
-spike_times = times[np.random.rand(len(times)) < firing_prob * 0.033]
+rate_hz = 15.0 * np.exp(-distances**2 / (2 * 3**2))
+dt = np.diff(times)
+# Bernoulli approximation on short intervals: at most one spike per interval.
+spike_times = times[:-1][random.random(len(dt)) < 1 - np.exp(-rate_hz[:-1] * dt)]
 
 # 3. Create environment
 env = Environment.from_samples(positions, bin_size=2.5)
@@ -332,6 +352,12 @@ result = compute_spatial_rate(
     bandwidth=5.0,
 )
 place_field = result.firing_rate
+
+assert spike_times.size > 0
+assert np.nanmax(place_field) > 0
+np.testing.assert_array_equal(
+    np.isnan(place_field), result.occupancy < 0.5
+)
 
 # 5. Visualize
 import matplotlib.pyplot as plt

@@ -25,6 +25,7 @@ OPT_IN = (
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",
     "docs/user-guide/interoperability.md",
+    "docs/user-guide/spike-field-primitives.md",
     "docs/user-guide/trajectory-and-behavioral-analysis.md",
     "docs/user-guide/video-annotation.md",
     "docs/user-guide/workflows.md",

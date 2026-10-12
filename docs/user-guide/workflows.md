@@ -76,10 +76,10 @@ result = compute_spatial_rate(
     positions,
     method="diffusion_kde",  # boundary-aware graph-based KDE
     bandwidth=5.0,                     # smoothing bandwidth in cm
-    # min_occupancy threshold is applied to the *smoothed* occupancy density,
-    # not raw seconds. Low-coverage bins are excluded by bin_count_threshold
-    # when creating the environment; leave min_occupancy at its default (0.0)
-    # unless you have a specific density threshold in mind.
+    # min_occupancy thresholds raw time in each bin (seconds), for every
+    # ratio estimator. The default 0.0 disables this additional mask.
+    # bin_count_threshold above counts samples when constructing geometry;
+    # it does not replace an occupancy threshold on the analyzed recording.
 )
 firing_rate = result.firing_rate
 
@@ -119,14 +119,18 @@ print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
 - Rule of thumb: 2-5 cm for rat open field (100x100 cm arena)
 
 **Occupancy Threshold** (`min_occupancy`):
-- For the default KDE methods (`diffusion_kde`/`gaussian_kde`), `min_occupancy`
-  is a threshold on the *smoothed* occupancy density (the firing-rate
-  denominator), not raw seconds — leave it at the default `0.0` unless you have
-  a specific density threshold in mind. Low-coverage bins are already excluded
-  at environment creation via `bin_count_threshold`.
-- Only the legacy `method="binned"` thresholds raw per-bin occupancy
-  in seconds.
-- Bins below the threshold are set to `NaN` in `result.firing_rate`.
+- `diffusion_kde`, `gaussian_kde` and `binned` all threshold raw per-bin
+  occupancy in **seconds**, after applying the analysis windows, tracking-gap
+  rules and any speed filter. Recover this mask with
+  `result.occupancy < min_occupancy`.
+- The default `0.0` disables this mask. It does not guarantee a finite rate
+  in every bin: some bins may have no occupancy within the estimator's reach.
+- Masked rates remain `NaN` unless `fill_value` is supplied. A zero-filled map
+  still needs its occupancy map to distinguish missing support from silence.
+- `bin_count_threshold` counts tracking samples during environment creation;
+  it is separate from time observed during the selected analysis.
+- `method="glm"` uses its penalty/rank controls and rejects `min_occupancy`.
+  See the [worked occupancy check](spike-field-primitives.md#checking-the-occupancy-mask).
 
 **Smoothing**:
 - `"diffusion_kde"` (default) is boundary-aware and works on any graph layout
