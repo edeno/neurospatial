@@ -157,7 +157,7 @@ def as_spike_trains(
 
 
 def _looks_like_spike_group(obj: Any) -> bool:
-    """Return whether ``obj`` is a ``SpikeTrainsLike`` group carrying unit ids.
+    """Return whether ``obj`` is a spike group carrying unit ids.
 
     Duck-typed detection of a real pynapple ``TsGroup`` (or the future
     ``SpikeTrains`` container): an object that is **not** one of the canonical
@@ -178,7 +178,7 @@ def as_spike_trains_with_ids(
     """Coerce spike input to canonical trains AND surface unit ids when present.
 
     A companion to :func:`as_spike_trains` that additionally extracts per-unit
-    identity labels from a ``SpikeTrainsLike`` group (a real pynapple
+    identity labels from a spike group (a real pynapple
     ``TsGroup``, or the future ``SpikeTrains`` container). Its purpose is to keep
     unit identity from being silently dropped when a group object flows into a
     batch encoding function.

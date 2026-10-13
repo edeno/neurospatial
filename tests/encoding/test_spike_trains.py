@@ -2,7 +2,7 @@
 
 ``SpikeTrains`` is the one justified new container in Phase 3: ragged per-unit
 spike times genuinely do not fit a rectangular array. It must duck-type as a
-``SpikeTrainsLike`` group so it flows through the Phase 3.1 spike-input adapter
+spike group so it flows through the Phase 3.1 spike-input adapter
 (:func:`as_spike_trains_with_ids`) via the **iterate-yields-trains** branch:
 
 - it is NOT a ``collections.abc.Mapping`` (so the adapter iterates it),
@@ -261,7 +261,7 @@ def test_copied_container_stays_read_only(trains: list[np.ndarray], how: str) ->
 
 
 # ---------------------------------------------------------------------------
-# 6. Duck-typing as SpikeTrainsLike (the footgun guard)
+# 6. Duck-typing as a spike group (the footgun guard)
 # ---------------------------------------------------------------------------
 
 

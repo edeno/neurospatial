@@ -87,6 +87,7 @@ jobs:
           uv run mypy tests/typing/top_level_lazy_exports.py
           tests/typing/finite_volume_consumers.py
           tests/typing/environment_protocol.py
+          tests/typing/spike_inputs.py
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 

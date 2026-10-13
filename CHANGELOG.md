@@ -129,6 +129,13 @@
   copies of its rate maps, labels and training support, so editing
   `rates.firing_rates` after `BayesianDecoder.from_rates(rates)` no longer
   changes its predictions. Arrays stay read-only after pickling and deep copies.
+- Static type checkers such as mypy accept every documented spike input: a
+  list of per-unit arrays, a 1-D or NaN-padded 2-D array, `SpikeTrains` or a
+  pynapple `TsGroup`. This covers every population encoder and significance
+  test, `population_peri_event_histogram`, `decode_session`,
+  `decode_session_summary` and the `BayesianDecoder` methods. Previously,
+  passing a plain list or `SpikeTrains` to `BayesianDecoder.fit` failed type
+  checking.
 - Predicting with an unfitted `BayesianDecoder` now explains that `fit()`
   returns a new decoder and shows the fix,
   `decoder = decoder.fit(spike_times, times, positions)`. The old message told

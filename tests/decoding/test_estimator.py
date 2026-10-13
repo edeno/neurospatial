@@ -13,7 +13,7 @@ Tests
 4. train/test epoch split: fit(epochs=...) restricts the encoding models.
 5. Unfitted predict/predict_summary/score raise a clear RuntimeError.
 6. Immutability: fit returns a new object; original stays unfitted; frozen.
-7. SpikeTrains (a SpikeTrainsLike group) input yields the plain-list posterior.
+7. SpikeTrains (a spike group) input yields the plain-list posterior.
 8. Linearized-track smoke: fit + predict runs on a 1-D track env.
 """
 

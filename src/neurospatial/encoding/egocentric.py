@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
     from neurospatial import Environment
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
@@ -2044,7 +2045,7 @@ def _object_vector_rate(
 
 def compute_egocentric_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -2341,7 +2342,7 @@ def compute_egocentric_rates(
 
 def compute_object_vector_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     object_positions: NDArray[np.float64],
@@ -2573,7 +2574,7 @@ def compute_object_vector_rates(
 
 def _object_vector_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -3503,7 +3504,7 @@ def plot_object_vector_tuning(
 
 def _object_vector_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -3673,7 +3674,7 @@ def _object_vector_significance(
 
 def object_vector_cell_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     object_positions: NDArray[np.float64],
@@ -3864,7 +3865,7 @@ def object_vector_cell_significance(
 
 def egocentric_object_vector_cell_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],

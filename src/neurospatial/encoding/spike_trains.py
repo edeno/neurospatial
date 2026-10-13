@@ -11,7 +11,7 @@ users positional access (``st[i]``), label selection
 
 Interop role
 ------------
-``SpikeTrains`` **duck-types as a** ``SpikeTrainsLike`` **group** so it flows
+``SpikeTrains`` **duck-types as a spike group** so it flows
 straight into the batch encoding/decoding functions through the shared
 spike-input adapter (``neurospatial.encoding._spikes.as_spike_trains_with_ids``).
 That adapter detects a group via a non-callable ``.index`` and then extracts
@@ -63,7 +63,7 @@ class SpikeTrains(UnitSelectionMixin):
     per-unit metadata. The container is frozen: "modifying" it (e.g.
     :meth:`filter`) returns a new instance and never mutates the original.
 
-    ``SpikeTrains`` duck-types as a ``SpikeTrainsLike`` group, so it can be
+    ``SpikeTrains`` duck-types as a spike group, so it can be
     passed directly where a batch encoding/decoding function accepts spike
     input (e.g. :func:`~neurospatial.encoding.compute_spatial_rates`); its
     :attr:`unit_ids` are then carried into the result.
@@ -169,7 +169,7 @@ class SpikeTrains(UnitSelectionMixin):
 
     @property
     def index(self) -> NDArray[Any]:
-        """Unit ids, one per train (the ``SpikeTrainsLike`` group key surface).
+        """Unit ids, one per train (the spike-group key surface).
 
         A non-callable property (unlike a ``list``/``tuple``'s ``.index``
         method), so the spike-input adapter's group detector recognizes this
@@ -197,7 +197,7 @@ class SpikeTrains(UnitSelectionMixin):
 
         Iteration yields the **train arrays** (not the unit ids), which is what
         the spike-input adapter's iterate branch relies on to extract trains
-        from a non-Mapping ``SpikeTrainsLike`` group.
+        from a non-Mapping spike group.
 
         Yields
         ------

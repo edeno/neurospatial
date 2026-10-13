@@ -35,7 +35,7 @@ name, so keep it when adding another: `uv sync --extra dev --extra nwb`.
 ```bash
 uv run pytest --doctest-modules src/neurospatial/ -n 0   # doctests run serially
 uv run mypy src/neurospatial
-uv run mypy tests/typing/top_level_lazy_exports.py tests/typing/finite_volume_consumers.py tests/typing/environment_protocol.py
+uv run mypy tests/typing/top_level_lazy_exports.py tests/typing/finite_volume_consumers.py tests/typing/environment_protocol.py tests/typing/spike_inputs.py
 NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.py  # after an intentional API change; review the diff
 ```
 

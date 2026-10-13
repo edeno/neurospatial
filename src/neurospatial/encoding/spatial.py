@@ -3183,7 +3183,7 @@ default="diffusion_kde"
 
 def compute_spatial_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
@@ -3579,7 +3579,7 @@ default="diffusion_kde"
         _validate_smoothing_parameters(method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing any
-    # unit ids the spikes object carries (a SpikeTrainsLike group, e.g. a
+    # unit ids the spikes object carries (a spike group, e.g. a
     # pynapple-TsGroup-like). Plain-array/sequence inputs return `None` ids, so
     # the trains are byte-for-byte identical to `as_spike_trains(spike_times)`.
     spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
@@ -5449,7 +5449,7 @@ def _detect_subfields(
 
 def place_cell_significance(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,

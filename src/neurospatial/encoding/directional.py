@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
@@ -2119,7 +2120,7 @@ def compute_directional_rate(
 
 
 def compute_directional_rates(
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
@@ -2853,7 +2854,7 @@ def plot_head_direction_tuning(
 
 
 def head_direction_cell_significance(
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,

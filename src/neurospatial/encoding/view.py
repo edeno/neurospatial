@@ -103,6 +103,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -1493,7 +1494,7 @@ def compute_view_rate(
 
 def compute_view_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1761,7 +1762,7 @@ def compute_view_rates(
 
 def _compute_view_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -2179,7 +2180,7 @@ def is_spatial_view_cell(
 
 def spatial_view_cell_significance(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],

@@ -17,14 +17,19 @@ Design rules:
   first-party :class:`EnvironmentProtocol`; it never imports pynapple, pynwb,
   xarray, or any other optional/heavy dependency.
 
-Protocols
----------
+Types
+-----
 SpikeTrainsLike
+    Every spike input a population function accepts, as ``ArrayLike`` names
+    every array input: a sequence of per-unit arrays, a 1-D or NaN-padded 2-D
+    array, a :class:`~neurospatial.encoding.SpikeTrains` container or a
+    :class:`SpikeGroupLike` group.
+SpikeGroupLike
     A per-unit spike-train collection **indexable by unit id**: exposes
     ``.index`` (the unit ids / keys) and ``obj[unit_id]`` returning a per-unit
     timestamp source with a ``.t`` attribute. A real pynapple ``TsGroup`` (a
-    ``collections.UserDict`` — iterating it yields **keys**, not trains) and the
-    future :class:`SpikeTrains` container both satisfy this.
+    ``collections.UserDict`` — iterating it yields **keys**, not trains)
+    satisfies this.
 EnvironmentLike
     The minimal structural surface shared by
     :class:`~neurospatial.environment.Environment` and its polar sibling
@@ -35,16 +40,22 @@ EnvironmentLike
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import networkx as nx
+    from numpy.typing import ArrayLike
+
+    from neurospatial.encoding.spike_trains import SpikeTrains
 
 __all__ = [
     "EnvironmentLike",
+    "SpikeGroupLike",
     "SpikeTrainsLike",
     "is_environment_like",
 ]
@@ -59,7 +70,7 @@ class _HasTimes(Protocol):
         ...
 
 
-class SpikeTrainsLike(Protocol):
+class SpikeGroupLike(Protocol):
     """Structural type for a per-unit spike-train collection indexable by id.
 
     Captures the *interesting* third-party case — a real pynapple ``TsGroup``
@@ -73,13 +84,8 @@ class SpikeTrainsLike(Protocol):
     **indexing each id** (``obj[uid].t``); for a ``TsGroup`` it must NOT iterate
     the object, because iterating a ``UserDict`` yields its keys, not its trains.
 
-    It is primarily a *documentation / typing* alias for the union of inputs the
-    spike boundary accepts. In practice
-    :func:`neurospatial.encoding.as_spike_trains` /
-    :func:`neurospatial.encoding.as_spike_trains_with_ids` accept **more** than
-    this Protocol: a ``Sequence[NDArray]`` (the canonical format), a 2-D
-    NaN-padded ``(n_units, max_spikes)`` array, or a single 1-D array. Those
-    plain-array forms carry no unit ids; only a ``SpikeTrainsLike`` object
+    The spike boundary accepts more than this Protocol; :data:`SpikeTrainsLike`
+    names the full set. Plain-array forms carry no unit ids; only a group
     surfaces ``unit_ids``. Normalization is done by the adapter, not by an
     ``isinstance`` check against this Protocol.
     """
@@ -92,6 +98,20 @@ class SpikeTrainsLike(Protocol):
     def __getitem__(self, unit_id: Any) -> _HasTimes:
         """Return the per-unit timestamp source for ``unit_id``."""
         ...
+
+
+SpikeTrainsLike: TypeAlias = (
+    "ArrayLike | Sequence[ArrayLike] | SpikeTrains | SpikeGroupLike"
+)
+"""Spike input accepted by every population encoder, test and decoder.
+
+A sequence of per-unit spike-time arrays (the canonical form), a 1-D array
+(one unit), a NaN-padded 2-D ``(n_units, max_spikes)`` array, a
+:class:`~neurospatial.encoding.SpikeTrains` container or a
+:class:`SpikeGroupLike` group such as a pynapple ``TsGroup``. Groups and
+``SpikeTrains`` with caller-supplied labels carry their ``unit_ids`` into the
+result.
+"""
 
 
 class EnvironmentLike(Protocol):
