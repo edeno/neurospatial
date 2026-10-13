@@ -41,7 +41,11 @@ from neurospatial.layout._diffusion import (
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
     from neurospatial.ops.diffusion import MRFBasis
 
 
@@ -605,7 +609,7 @@ class EnvironmentFields:
         return DiffusionGeometry.from_faces(self._require_face_geometry("smoothing"))
 
     @versioned_cached_property
-    def _diffusion_eigenbasis(self) -> dict[str, Any]:
+    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
         """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
 
         Returns a small mutable holder (the max-rank truncated basis, grown by
@@ -618,7 +622,7 @@ class EnvironmentFields:
         return {}
 
     @versioned_cached_property
-    def _mrf_eigenbasis(self) -> dict[str, Any]:
+    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
         A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``

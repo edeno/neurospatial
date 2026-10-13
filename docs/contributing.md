@@ -145,6 +145,15 @@ operators all derive from it. Consumers read it through
 has no cell faces. The existing state-version and `clear_cache()` mechanisms
 own every cache lifetime.
 
+Numerical consumers declare their small environment requirements in
+`ops._protocols`, so Cartesian and polar environments satisfy them without
+casts to the entire mixin interface. `ops._types` describes the diffusion and
+MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
+libraries at runtime. The dense-operation warning threshold lives in
+`ops._constants`, shared by diffusion and Gaussian smoothing without an import
+back into the smoothing adapter. CI type-checks both concrete environment
+types against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
+
 ## Code Standards
 
 ### Python Style

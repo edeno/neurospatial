@@ -18,7 +18,7 @@ from neurospatial.layout._diffusion import (
 )
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.factories import _LAYOUT_MAP
-from neurospatial.ops import smoothing
+from neurospatial.ops import _constants
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.smoothing import compute_diffusion_kernels
@@ -467,7 +467,7 @@ def test_compute_diffusion_kernels_rejects_graphs_that_sum_edges(graph_type):
 
 
 def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
-    monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+    monkeypatch.setattr(_constants, "_LARGE_KERNEL_THRESHOLD", 1)
     graph = nx.path_graph(3)
     nx.set_edge_attributes(graph, 1.0, "A")
     nx.set_edge_attributes(graph, 1.0, "distance")

@@ -22,6 +22,7 @@ from neurospatial.encoding._smoothing import (
     smooth_rate_map,
     smooth_rate_maps_batch,
 )
+from neurospatial.ops import _constants
 
 # =============================================================================
 # Test Fixtures
@@ -1226,8 +1227,7 @@ class TestGaussianKernelMemoryWarning:
     ``UserWarning`` (with a GB estimate) and proceeds -- there is no hard limit.
     Tests run FAST by monkeypatching the threshold to a tiny value where
     ``_get_gaussian_kernel`` reads it
-    (``neurospatial.ops.smoothing._LARGE_KERNEL_THRESHOLD`` is imported into
-    ``_smoothing``).
+    (``neurospatial.ops._constants._LARGE_KERNEL_THRESHOLD``).
     """
 
     def test_warns_and_returns_above_threshold(
@@ -1237,7 +1237,7 @@ class TestGaussianKernelMemoryWarning:
         from neurospatial.encoding import _smoothing
 
         # Patch the threshold below the env's bin count so it trips.
-        monkeypatch.setattr(_smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+        monkeypatch.setattr(_constants, "_LARGE_KERNEL_THRESHOLD", 1)
 
         with pytest.warns(UserWarning) as record:
             kernel = _smoothing._get_gaussian_kernel(simple_env, bandwidth=5.0)
@@ -1289,9 +1289,8 @@ class TestGaussianKernelMemoryWarning:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The batch gaussian path warns (naming GB) and still computes rates."""
-        from neurospatial.encoding import _smoothing
 
-        monkeypatch.setattr(_smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+        monkeypatch.setattr(_constants, "_LARGE_KERNEL_THRESHOLD", 1)
 
         with pytest.warns(UserWarning, match="GB"):
             batch = smooth_rate_maps_batch(

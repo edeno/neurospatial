@@ -81,9 +81,11 @@ jobs:
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 
-      - name: Type-check lazy root exports
+      - name: Type-check API contracts
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
-        run: uv run mypy tests/typing/top_level_lazy_exports.py
+        run: >-
+          uv run mypy tests/typing/top_level_lazy_exports.py
+          tests/typing/finite_volume_consumers.py
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 

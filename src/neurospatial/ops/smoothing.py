@@ -59,12 +59,6 @@ __all__ = [
     "compute_diffusion_kernels",
 ]
 
-# Threshold for warning about large kernel computation
-# Matrix exponential is O(n³) and dense, so warn for large environments. This
-# is the SOLE high-bin guard: there is no hard limit -- a large request always
-# warns (with a GB estimate) and proceeds.
-_LARGE_KERNEL_THRESHOLD = 3000
-
 
 def compute_diffusion_kernels(
     graph: nx.Graph,

@@ -68,13 +68,13 @@ from numpy.typing import ArrayLike, NDArray
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.ops import _constants
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
     component_support_mask,
     diffusion_apply_rtol,
     diffusion_component_labels,
 )
-from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
 
 # A smoothed denominator is resolved when it exceeds this many times the
 # diffusion apply's noise floor (``diffusion_apply_rtol``) relative to the
@@ -215,7 +215,7 @@ def _get_gaussian_kernel(
     # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
     # its threshold. Placed after the cache-hit check so it fires once per
     # build, not per call.
-    if n_bins > _LARGE_KERNEL_THRESHOLD:
+    if n_bins > _constants._LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
             f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "

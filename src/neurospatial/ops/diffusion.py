@@ -44,10 +44,18 @@ import scipy.sparse.linalg
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.ops import _constants
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._protocols import (
+        DiffusionAccuracyConsumer,
+        DiffusionGeometryConsumer,
+    )
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
 
 # Public entry points. The eigenbasis/apply-path functions below
 # (apply_heat_operator, diffusion_apply, heat_kernel_rank,
@@ -169,9 +177,7 @@ def _raw_heat_operator(
 
 def _warn_dense_kernel(n_bins: int) -> None:
     """Warn (never raise) before a dense ``(n_bins, n_bins)`` heat kernel is built."""
-    from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
-
-    if n_bins > _LARGE_KERNEL_THRESHOLD:
+    if n_bins > _constants._LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
             f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
@@ -452,7 +458,7 @@ def _symmetric_eigenbasis(
 # in the sparse (persisted) regime* (a near-full-rank dense solve is transient).
 # ---------------------------------------------------------------------------
 def _ensure_global_modes(
-    holder: dict[str, Any],
+    holder: MRFEigenbasisCache,
     S: scipy.sparse.spmatrix,
     labels: NDArray[np.int_],
     needed_G: int,
@@ -511,7 +517,7 @@ def _ensure_global_modes(
     # leak cross-component entries and silently corrupt this map.
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
     if not dense:  # persist truncated bases only (transient-dense policy)
-        holder.update(Q=Q, Lam=Lam, mode_comp=mode_comp, G=Q.shape[1])
+        holder.update({"Q": Q, "Lam": Lam, "mode_comp": mode_comp, "G": Q.shape[1]})
     return Q, Lam, mode_comp
 
 
@@ -901,9 +907,7 @@ def _warn_large_dense_basis(n: int) -> None:
     """Warn (never raise) before a near-full-rank ``env.diffuse`` builds a dense
     ``(n, n)`` eigenvector basis -- the inherent cost of a light bandwidth on a
     large grid. Mirrors the dense ``compute_kernel`` GB-estimate warning."""
-    from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
-
-    if n > _LARGE_KERNEL_THRESHOLD:
+    if n > _constants._LARGE_KERNEL_THRESHOLD:
         estimated_gb = n * n * 8 / 1e9
         warnings.warn(
             f"env.diffuse resolved a near-full-rank basis for {n} bins (a light "
@@ -918,7 +922,7 @@ def _warn_large_dense_basis(n: int) -> None:
 
 
 def _resolve_basis(
-    holder: dict[str, Any],
+    holder: DiffusionEigenbasisCache,
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
@@ -1011,7 +1015,7 @@ def _transient_dense_basis(
 
 
 def diffusion_apply(
-    holder: dict[str, Any],
+    holder: DiffusionEigenbasisCache,
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
@@ -1089,7 +1093,7 @@ def diffusion_apply(
 
 
 def diffusion_component_labels(
-    env: EnvironmentProtocol,
+    env: DiffusionGeometryConsumer,
 ) -> tuple[int, NDArray[np.int_]]:
     """``(n_components, labels)`` of the finite-volume ``W`` for ``env``.
 
@@ -1114,7 +1118,7 @@ def diffusion_component_labels(
     return geometry.n_components, geometry.labels
 
 
-def diffusion_apply_rtol(env: EnvironmentProtocol, sigma: float) -> float:
+def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
     """Relative accuracy of ``env.diffuse(fields, sigma)`` (its noise floor).
 
     Errors of the apply are about this fraction of the largest output value:
@@ -1182,7 +1186,7 @@ def component_support_mask(
 # Environment adapters (no layout-specific geometry assembly).
 # ---------------------------------------------------------------------------
 def diffusion_kernel(
-    env: EnvironmentProtocol,
+    env: DiffusionGeometryConsumer,
     sigma: float,
     *,
     mode: KernelMode = "density",

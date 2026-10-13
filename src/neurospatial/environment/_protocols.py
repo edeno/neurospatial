@@ -40,7 +40,11 @@ if TYPE_CHECKING:
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.layout.base import LayoutEngine
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.regions import Region, Regions
 
@@ -73,10 +77,10 @@ class EnvironmentProtocol(Protocol):
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
     _diffusion_geometry: DiffusionGeometry
     _face_geometry: FaceGeometry
-    _diffusion_eigenbasis: dict[str, Any]
+    _diffusion_eigenbasis: DiffusionEigenbasisCache
     # Growable global eigenbasis holder for the MRF penalty-basis resolver
     # (versioned_cached_property; geometry-keyed, dropped on _state_version).
-    _mrf_eigenbasis: dict[str, Any]
+    _mrf_eigenbasis: MRFEigenbasisCache
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool

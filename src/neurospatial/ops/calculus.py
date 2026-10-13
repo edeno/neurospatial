@@ -12,28 +12,25 @@ Import from ``neurospatial.ops`` or ``neurospatial.ops.calculus``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.layout._diffusion import FaceGeometry
+    from neurospatial.ops._protocols import DivergenceConsumer, FaceGeometryConsumer
 
 __all__ = ["compute_differential_operator", "divergence", "gradient"]
 
 
-def _faces(env: Environment) -> FaceGeometry:
+def _faces(env: FaceGeometryConsumer) -> FaceGeometry:
     """Cached face measures, along-edge distances and cell volumes."""
-    return cast("EnvironmentProtocol", env)._require_face_geometry(
-        "gradient/divergence"
-    )
+    return env._require_face_geometry("gradient/divergence")
 
 
-def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
+def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
     """Build the inverse-distance oriented edge operator.
 
     For edge e = (i -> j), ``D[i, e] = -1/d_e`` and ``D[j, e] = 1/d_e``.
@@ -95,7 +92,7 @@ def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
     )
 
 
-def _compute_divergence_operator(env: Environment) -> sparse.csc_matrix:
+def _compute_divergence_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
     """Build the negative volume-weighted adjoint of the gradient."""
     faces = _faces(env)
     return (
@@ -105,7 +102,9 @@ def _compute_divergence_operator(env: Environment) -> sparse.csc_matrix:
     ).tocsc()
 
 
-def gradient(env: Environment, field: NDArray[np.float64]) -> NDArray[np.float64]:
+def gradient(
+    env: FaceGeometryConsumer, field: NDArray[np.float64]
+) -> NDArray[np.float64]:
     """Compute the directional derivative of a scalar field along every edge.
 
     Parameters
@@ -161,7 +160,7 @@ def gradient(env: Environment, field: NDArray[np.float64]) -> NDArray[np.float64
 
 
 def divergence(
-    env: Environment, edge_field: NDArray[np.float64]
+    env: DivergenceConsumer, edge_field: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     """Compute net outward flux per cell volume.
 

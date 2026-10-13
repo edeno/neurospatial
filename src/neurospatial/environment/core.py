@@ -1145,16 +1145,11 @@ class _BaseEnvironment(
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        # Bridge the shared base to the operator's concrete Environment type.
-        from typing import cast
-
-        return compute_differential_operator(cast("Environment", self))
+        return compute_differential_operator(self)
 
     @versioned_cached_property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        from typing import cast
-
-        return _compute_divergence_operator(cast("Environment", self))
+        return _compute_divergence_operator(self)
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> _BaseEnvironment:
