@@ -50,10 +50,12 @@ if TYPE_CHECKING:
 
 
 class EnvironmentProtocol(Protocol):
-    """Protocol defining the interface that Environment provides to mixins.
+    """Interface that Cartesian and polar environments provide to mixins.
 
     Mixins annotate ``self`` as ``EnvironmentProtocol`` (or the ``SelfEnv``
     TypeVar) instead of ``Environment`` to avoid "erased type" errors in mypy.
+    ``tests/typing/environment_protocol.py`` checks both concrete types.
+    Read-only members are properties so cached descriptors match the protocol.
     """
 
     # Core attributes
@@ -70,14 +72,22 @@ class EnvironmentProtocol(Protocol):
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[tuple[float, KernelMode], NDArray[np.float64]]
+
     # Finite-volume geometry + growable truncated-eigenbasis caches for
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
-    _diffusion_geometry: DiffusionGeometry
-    _face_geometry: FaceGeometry
-    _diffusion_eigenbasis: DiffusionEigenbasisCache
+    @property
+    def _diffusion_geometry(self) -> DiffusionGeometry: ...
+
+    @property
+    def _face_geometry(self) -> FaceGeometry: ...
+
+    @property
+    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache: ...
     # Growable global eigenbasis holder for the MRF penalty-basis resolver
     # (versioned_cached_property; geometry-keyed, dropped on _state_version).
-    _mrf_eigenbasis: MRFEigenbasisCache
+    @property
+    def _mrf_eigenbasis(self) -> MRFEigenbasisCache: ...
+
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool
@@ -270,11 +280,6 @@ class EnvironmentProtocol(Protocol):
 
     @property
     def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-    # Layout-specific attributes and methods (may be None if not applicable)
-    linear_bin_centers_1d: NDArray[np.float64] | None
-    linear_bin_edges: NDArray[np.float64] | None
-    track_graph: nx.Graph | None
 
     # Linearization methods (1D environments)
     def to_linear(self, nd_position: NDArray[np.float64]) -> NDArray[np.float64]:

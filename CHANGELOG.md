@@ -106,6 +106,9 @@
 
 ### Fixed
 
+- Type checkers accept calls such as `env.smooth(field, bandwidth)` and
+  `polar_env.to_dict()` on `Environment` and `EgocentricPolarEnvironment`;
+  mypy previously reported "Invalid self argument".
 - Polar `boundary_bins` treats a circular angular axis as wrapping: bins beside
   the ±π seam are interior, so a full circular grid's boundary is its innermost
   and outermost rings.

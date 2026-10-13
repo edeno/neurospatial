@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import warnings
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -84,7 +84,6 @@ from neurospatial.ops.diffusion import (
 _RESOLUTION_MARGIN = 1e3
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import _BaseEnvironment
 
 __all__ = [
@@ -905,9 +904,7 @@ def _resolution_floor(env: _BaseEnvironment, bandwidth: float) -> float:
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * diffusion_apply_rtol(
-        cast("EnvironmentProtocol", env), bandwidth
-    )
+    return _RESOLUTION_MARGIN * diffusion_apply_rtol(env, bandwidth)
 
 
 def _resolved_density_mask(
@@ -943,7 +940,7 @@ def _resolved_density_mask(
     NDArray[np.bool_], shape (n_bins,)
         True where the KDE ratio is numerically meaningful.
     """
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     support = component_support_mask(labels, n_components, occupancy > 0)
     resolved = _above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
@@ -989,7 +986,7 @@ def _resolved_density_mask_jax(
     import jax
     import jax.numpy as jnp
 
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     labels_j = jnp.asarray(labels)
     has_occupancy = (
         jax.ops.segment_max(occupancy, labels_j, num_segments=n_components) > 0.0
@@ -1041,9 +1038,7 @@ def _diffusion_kde(
 
     # Smooth counts and occupancy in one matrix-free density-mode pass.
     stacked = np.column_stack([spike_counts, occupancy])  # (n_bins, 2)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="density")
-    )
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="density"))
     spike_density = smoothed[:, 0]
     occupancy_density = smoothed[:, 1]
 
@@ -1199,9 +1194,7 @@ def _binned_gate(
         stacked = np.column_stack([rate_filled, weights])  # (n_bins, 2)
     else:
         stacked = np.concatenate([rate_filled.T, weights.T], axis=1)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="average")
-    )
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="average"))
     if raw_rate.ndim == 1:
         rate_smoothed = smoothed[:, 0]
         weights_smoothed = smoothed[:, 1]
@@ -1210,7 +1203,7 @@ def _binned_gate(
         rate_smoothed = smoothed[:, :n_neurons].T
         weights_smoothed = smoothed[:, n_neurons:].T
 
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     support = component_support_mask(labels, n_components, valid)
     # Far from every valid bin both smoothed sums approach the apply's
     # truncation noise; leave those bins NaN rather than report noise/noise.
@@ -1240,9 +1233,7 @@ def _diffusion_kde_batch(
     # columns, spike_counts.T) plus the shared occupancy as one extra column, so
     # all neurons + occupancy diffuse in a single matrix-free density-mode pass.
     cols = np.column_stack([spike_counts.T, occupancy])  # (n_bins, n_neurons + 1)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(cols, bandwidth, mode="density")
-    )
+    smoothed = np.asarray(env.diffuse(cols, bandwidth, mode="density"))
     spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
     occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
@@ -1375,9 +1366,7 @@ def _smooth_rate_map_jax(
         # occupancy diffuse together in one density-mode pass, no (n, n) kernel.
         stacked = jnp.stack([spike_counts_j, occupancy_j], axis=1)  # (n_bins, 2)
         smoothed = jnp.asarray(
-            cast("EnvironmentProtocol", env).diffuse(
-                stacked, bandwidth, mode="density", backend="jax"
-            )
+            env.diffuse(stacked, bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, 0]
         occupancy_density = smoothed[:, 1]
@@ -1465,9 +1454,7 @@ def _smooth_rate_maps_batch_jax(
             [spike_counts_j.T, occupancy_j[:, None]], axis=1
         )  # (n_bins, n_neurons + 1)
         smoothed = jnp.asarray(
-            cast("EnvironmentProtocol", env).diffuse(
-                cols, bandwidth, mode="density", backend="jax"
-            )
+            env.diffuse(cols, bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, :n_neurons].T
         occupancy_density = smoothed[:, n_neurons]

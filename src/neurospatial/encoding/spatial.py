@@ -71,7 +71,6 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
@@ -1224,8 +1223,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding.border import border_score as bs_func
 
         firing_rate = _to_numpy(self.firing_rate)
-        # Cast to EnvironmentProtocol for type checker (Environment implements it)
-        env = cast("EnvironmentProtocol", self.env)
+        env = self.env
         return bs_func(
             env,
             firing_rate,
@@ -1306,8 +1304,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         field_mask = firing_rate >= threshold * peak_rate
         field_bins = np.where(field_mask)[0]
 
-        # Cast to EnvironmentProtocol for type checker (Environment implements it)
-        env = cast("EnvironmentProtocol", self.env)
+        env = self.env
         return compute_region_coverage(env, field_bins, regions=regions)
 
     def has_place_field(
@@ -2618,10 +2615,8 @@ def _compute_glm_spatial_rates(
     occupancy = np.asarray(occupancy, dtype=np.float64)  # (n_bins,)
     n_units, n_bins = spike_counts.shape
 
-    # Reduced-rank penalty basis from occupancy (live-bin order). Cast to the
-    # protocol for the ``self: SelfEnv`` bound (same pattern as ``env.diffuse`` in
-    # ``_smoothing.py``).
-    basis = cast("EnvironmentProtocol", env)._mrf_basis(occupancy, rank=rank)
+    # Reduced-rank penalty basis from occupancy (live-bin order).
+    basis = env._mrf_basis(occupancy, rank=rank)
     live_bins = np.asarray(basis.live_bins, dtype=np.intp)
 
     # Dead-component warning is owned here (not by ``fit_mrf_gam``): it needs env's

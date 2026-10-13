@@ -21,7 +21,7 @@ rate_map_coherence : Spatial coherence of a firing rate map.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -899,9 +899,7 @@ def field_shift_distance(
 
         # Compute geodesic distance using centroids (coordinates), not bin indices
         try:
-            geodesic_dist = cast("EnvironmentProtocol", env_1).distance_between(
-                centroid_1, centroid_2
-            )
+            geodesic_dist = env_1.distance_between(centroid_1, centroid_2)
             return float(geodesic_dist)
         except Exception as e:
             warnings.warn(

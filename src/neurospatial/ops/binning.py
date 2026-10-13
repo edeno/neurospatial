@@ -21,7 +21,6 @@ from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class TieBreakStrategy(Enum):
@@ -848,11 +847,7 @@ def resample_field(
         valid = (~outside_source) & np.isfinite(resampled)
         values = np.where(valid, resampled, 0.0)
         both = np.column_stack([values, valid.astype(np.float64)])
-        smoothed_both = np.asarray(
-            cast("EnvironmentProtocol", dst_env).diffuse(
-                both, bandwidth, mode="average"
-            )
-        )
+        smoothed_both = np.asarray(dst_env.diffuse(both, bandwidth, mode="average"))
         num = smoothed_both[:, 0]
         den = smoothed_both[:, 1]
 
@@ -863,9 +858,7 @@ def resample_field(
         # truncation-proof. An interior source-NaN bin in a supported component
         # is interpolated (distance-weighted); only a bin outside the source or
         # in a component with no valid bin at all is left NaN.
-        n_components, labels = diffusion_component_labels(
-            cast("EnvironmentProtocol", dst_env)
-        )
+        n_components, labels = diffusion_component_labels(dst_env)
         support = component_support_mask(labels, n_components, valid)
         den_safe = np.maximum(den, _DIFFUSE_DENOM_EPS)
         with np.errstate(divide="ignore", invalid="ignore"):

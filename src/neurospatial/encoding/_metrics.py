@@ -154,7 +154,6 @@ class BatchScoresResult(ResultMixin):
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
     "batch_border_scores",
@@ -875,7 +874,7 @@ def batch_border_scores(
 
         try:
             scores[i] = border_score(
-                cast("EnvironmentProtocol", env),
+                env,
                 firing_rate,
                 threshold=threshold,
                 min_area=min_area,
