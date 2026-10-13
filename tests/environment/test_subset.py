@@ -540,3 +540,56 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         mask[[0, 5, 10]] = True
         env_sub = env.subset(bins=mask)
         assert env_sub._layout_type_used == "MaskedGrid"
+
+
+class TestSubsetKeepsParentConnectivity:
+    """A grid subset keeps exactly the parent's edges among the selected bins."""
+
+    @pytest.mark.parametrize("connect_diagonal", [True, False])
+    def test_built_grid_subset_matches_a_fresh_mask_grid(self, connect_diagonal):
+        """For a factory-built grid, mask adjacency is the parent's graph."""
+        env = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 30, (2000, 2)),
+            bin_size=3.0,
+            connect_diagonal_neighbors=connect_diagonal,
+        )
+        sub = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+        fresh = Environment.from_grid_mask(
+            sub.active_mask,
+            grid_edges=sub.grid_edges,
+            connect_diagonal_neighbors=connect_diagonal,
+        )
+        assert list(sub.connectivity.edges(data=True)) == list(
+            fresh.connectivity.edges(data=True)
+        )
+
+    def test_wall_in_saved_graph_survives_subset_and_round_trip(self):
+        """Edges a saved graph omits are not restored from mask adjacency."""
+        from neurospatial.io import from_dict, to_dict
+
+        env = Environment.from_grid_mask(
+            np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0), np.arange(7.0))
+        )
+        centers = np.asarray(env.bin_centers)
+
+        def crosses_wall(u: int, v: int) -> bool:
+            (x0, y0), (x1, y1) = centers[u], centers[v]
+            return (x0 - 3.0) * (x1 - 3.0) < 0 and min(y0, y1) > 2.0
+
+        data = to_dict(env)
+        data["graph"]["links"] = [
+            link
+            for link in data["graph"]["links"]
+            if not crosses_wall(link["source"], link["target"])
+        ]
+        walled = from_dict(data)
+        assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())
+
+        sub = walled.subset(bins=np.ones(walled.n_bins, dtype=bool))
+        reloaded = from_dict(to_dict(sub))
+
+        for result in (sub, reloaded):
+            assert sorted(result.connectivity.edges()) == sorted(
+                walled.connectivity.edges()
+            )
+            np.testing.assert_allclose(result.distance_to([0]), walled.distance_to([0]))

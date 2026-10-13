@@ -116,6 +116,11 @@
 
 ### Fixed
 
+- `subset()` of a grid keeps the parent's edges among the selected bins instead
+  of reconnecting them by cell adjacency. A 4-connected grid read from NWB, or a
+  saved graph with removed edges, previously came back with edges it never had
+  (a 4-connected grid became 8-connected), changing geodesic distances and
+  smoothing.
 - `to_linear()` and `linear_to_nd()` on tracks read from NWB explain that the
   track graph is not stored and how to rebuild it, instead of requesting a bug
   report.

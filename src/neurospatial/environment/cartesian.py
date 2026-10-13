@@ -1008,8 +1008,11 @@ class CartesianCoordinates:
         components if the selection is not contiguous.
 
         Node attributes ('pos', 'source_grid_flat_index', 'original_grid_nd_index')
-        and edge attributes ('distance', 'vector', 'edge_id', 'angle_2d') are
-        preserved from the original graph.
+        describe the selected bins, and edge attributes ('distance', 'vector',
+        'angle_2d') are preserved from the original graph. Grid subsets number
+        'edge_id' from 0; other subsets keep the original ids. A grid subset
+        keeps the parent's edges even where they differ from plain cell
+        adjacency, such as a 4-connected grid read from NWB.
 
         See Also
         --------

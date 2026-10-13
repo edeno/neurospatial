@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
+    import networkx as nx
     import shapely
 
     from neurospatial.environment._protocols import RebinConsumer, SubsetConsumer
@@ -347,7 +348,16 @@ def _subset_mask(
 
 
 def _grid_subset(env: SubsetConsumer, mask: NDArray[np.bool_]) -> Environment:
-    """Build a serializable grid from selected active bins."""
+    """Build a serializable grid from selected active bins, keeping their edges.
+
+    The selected cells are rebuilt as a masked grid, so the subset saves and
+    loads like any grid. Its graph keeps exactly the parent's edges among the
+    selected bins, as saved graphs do on read-back: a parent whose graph is not
+    plain mask adjacency (a 4-connected grid read from NWB, a wall in a saved
+    graph) keeps that connectivity.
+    """
+    from neurospatial.environment.factories import _owned_copy
+
     # Round-trip safe path. env.active_mask is the original
     # grid-shape boolean mask; its True positions in row-major
     # order correspond 1:1 to active bin indices [0, n_bins).
@@ -364,13 +374,19 @@ def _grid_subset(env: SubsetConsumer, mask: NDArray[np.bool_]) -> Environment:
     parent_params = env._layout_params_used or {}
     connect_diagonal = bool(parent_params.get("connect_diagonal_neighbors", True))
 
-    env_cls = cast("type[Environment]", env.__class__)
-    sub_env = env_cls.from_grid_mask(
-        active_mask=new_active_mask,
-        grid_edges=env.grid_edges,
-        name="",
-        connect_diagonal_neighbors=connect_diagonal,
+    layout_params = _owned_copy(
+        {
+            "active_mask": new_active_mask,
+            "grid_edges": env.grid_edges,
+            "connect_diagonal_neighbors": connect_diagonal,
+        }
     )
+    env_cls = cast("type[Environment]", env.__class__)
+    layout = env_cls._create_layout("MaskedGrid", layout_params)
+    layout.connectivity = _restrict_edges(
+        env.connectivity, np.flatnonzero(mask), layout.connectivity
+    )
+    sub_env = env_cls("", layout, "MaskedGrid", layout_params)
     # Preserve metadata (regions are still dropped per the
     # documented contract).
     if env.units is not None:
@@ -378,6 +394,45 @@ def _grid_subset(env: SubsetConsumer, mask: NDArray[np.bool_]) -> Environment:
     if env.frame is not None:
         sub_env.frame = env.frame
     return sub_env
+
+
+def _restrict_edges(
+    parent: nx.Graph, selected: NDArray[np.intp], rebuilt: nx.Graph
+) -> nx.Graph:
+    """Join the rebuilt grid's nodes by exactly the parent's edges among them.
+
+    Parameters
+    ----------
+    parent : networkx.Graph
+        The parent environment's connectivity, keyed by its active-bin ids.
+    selected : NDArray[np.intp], shape (n_selected,)
+        Parent bin ids of the subset's bins, ascending; ``selected[i]`` is
+        subset bin ``i``.
+    rebuilt : networkx.Graph
+        The graph the masked-grid layout built for the selected cells, whose
+        node attributes index the shared grid.
+
+    Returns
+    -------
+    networkx.Graph
+        The rebuilt nodes, with the parent's edges and edge attributes. Edges
+        the rebuilt graph also has keep its order; any others follow, and
+        ``edge_id`` numbers them in that order.
+    """
+    import networkx as nx
+
+    new_id = {int(old): new for new, old in enumerate(selected)}
+    kept = {
+        frozenset((new_id[u], new_id[v])): data
+        for u, v, data in parent.subgraph(new_id).edges(data=True)
+    }
+    order = [(u, v) for u, v in rebuilt.edges() if frozenset((u, v)) in kept]
+    order += [(min(edge), max(edge)) for edge in kept if not rebuilt.has_edge(*edge)]
+    graph = nx.Graph()
+    graph.add_nodes_from(rebuilt.nodes(data=True))
+    for edge_id, (u, v) in enumerate(order):
+        graph.add_edge(u, v, **{**kept[frozenset((u, v))], "edge_id": edge_id})
+    return graph
 
 
 class _SubsetLayout:

@@ -15,6 +15,35 @@ import pytest
 pynwb = pytest.importorskip("pynwb")
 
 
+@pytest.mark.integration
+def test_subset_of_read_four_connected_grid_keeps_its_connectivity(empty_nwb, tmp_path):
+    """A 4-connected grid read from NWB stays 4-connected through subset."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    env = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 30, (2000, 2)),
+        bin_size=3.0,
+        connect_diagonal_neighbors=False,
+    )
+    write_environment(empty_nwb, env)
+    path = tmp_path / "grid4.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        restored = read_environment(io.read())
+
+    for mask in (
+        np.ones(env.n_bins, dtype=bool),
+        np.arange(env.n_bins) < env.n_bins // 2,
+    ):
+        expected, result = env.subset(bins=mask), restored.subset(bins=mask)
+        assert sorted(result.connectivity.edges()) == sorted(
+            expected.connectivity.edges()
+        )
+        np.testing.assert_array_equal(result.boundary_bins, expected.boundary_bins)
+
+
 @pytest.mark.parametrize("kind", ["samples", "mask", "pixels", "polygon"])
 @pytest.mark.integration
 def test_read_grid_preserves_linear_operations(empty_nwb, tmp_path, kind):
