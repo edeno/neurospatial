@@ -34,6 +34,8 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
+    from matplotlib.colors import Colormap
+
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
 else:
@@ -299,7 +301,7 @@ class EnvironmentVisualization:
         self: SelfEnv,
         field: NDArray[np.float64],
         ax: matplotlib.axes.Axes | None = None,
-        cmap: str = "viridis",
+        cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
         colorbar: bool = True,
@@ -328,7 +330,7 @@ class EnvironmentVisualization:
             decoded position density).
         ax : Optional[matplotlib.axes.Axes], optional
             Axes to plot on. If None, creates new figure and axes. Default: None.
-        cmap : str, default="viridis"
+        cmap : str or matplotlib.colors.Colormap, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis").
         vmin : Optional[float], optional
             Minimum value for colormap normalization. If None, uses
@@ -940,7 +942,7 @@ def _plot_grid_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -993,7 +995,7 @@ def _plot_hex_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -1047,7 +1049,7 @@ def _plot_trimesh_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -1127,7 +1129,7 @@ def _plot_scatter_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,

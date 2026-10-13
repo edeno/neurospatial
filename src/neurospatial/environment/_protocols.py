@@ -310,6 +310,7 @@ class CartesianEnvironmentProtocol(EnvironmentProtocol, Protocol):
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
+        epochs: Any = None,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,

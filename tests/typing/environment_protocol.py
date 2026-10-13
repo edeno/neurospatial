@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         TrajectoryBinningConsumer,
         TransitionsConsumer,
     )
+    from neurospatial.environment.core import _BaseEnvironment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
 
     def _environment(env: EnvironmentProtocol) -> None: ...
@@ -33,10 +34,13 @@ if TYPE_CHECKING:
     def _check(
         cartesian: Environment,
         polar: EgocentricPolarEnvironment,
+        base: _BaseEnvironment,
         field: NDArray[np.float64],
     ) -> None:
         _environment(cartesian)
         _environment(polar)
+        _environment(base)
+        assert_type(base.diffuse(field, 1.0), NDArray[np.float64])
         _cartesian: CartesianEnvironmentProtocol = cartesian
         _ = polar.bin_at  # type: ignore[attr-defined]
         assert_type(cartesian.smooth(field, 1.0), NDArray[np.float64])
@@ -44,6 +48,20 @@ if TYPE_CHECKING:
         assert_type(cartesian.diffuse(field, 1.0), NDArray[np.float64])
         assert_type(polar.to_dict(), dict[str, Any])
         assert_type(cartesian.neighbors(0), list[int])
+
+    def _check_signatures(
+        cartesian: Environment,
+        protocol: CartesianEnvironmentProtocol,
+        points: NDArray[np.float64],
+        times: NDArray[np.float64],
+    ) -> None:
+        # Fitted-state checks must not hide method signatures: each bad call
+        # below must stay an error, or its now-unused ignore fails this check.
+        cartesian.bin_at("not an array")  # type: ignore[arg-type]
+        cartesian.bin_at(points, nonexistent_keyword=True)  # type: ignore[call-arg]
+        cartesian.neighbors(0, 1, 2)  # type: ignore[call-arg]
+        cartesian.occupancy(times)  # type: ignore[call-arg]
+        assert_type(protocol.occupancy(times, points, epochs=None), NDArray[np.float64])
 
     def _check_trajectory(
         cartesian: Environment, polar: EgocentricPolarEnvironment

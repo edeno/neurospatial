@@ -116,6 +116,10 @@
 
 ### Fixed
 
+- Type checkers report wrong arguments to environment methods, such as
+  `env.bin_at("not an array")` or an unknown keyword; the fitted-state check
+  previously hid every decorated method's signature. `plot_field` accepts a
+  `matplotlib` `Colormap` as well as a colormap name.
 - `subset()` of a grid keeps the parent's edges among the selected bins instead
   of reconnecting them by cell adjacency. A 4-connected grid read from NWB, or a
   saved graph with removed edges, previously came back with edges it never had

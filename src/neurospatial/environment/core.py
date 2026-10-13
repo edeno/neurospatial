@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.environment._coordinates import CoordinateSystem
+    from neurospatial.environment._protocols import CartesianEnvironmentProtocol
     from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.ops._types import KernelMode
 
@@ -337,6 +338,12 @@ class _BaseEnvironment(
         """How this environment measures distance and names its axes."""
         raise NotImplementedError(
             f"{type(self).__name__} must define _coordinate_system."
+        )
+
+    def _require_cartesian(self, operation: str) -> CartesianEnvironmentProtocol:
+        """This environment typed as Cartesian, or raise naming ``operation``."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must define _require_cartesian."
         )
 
     # Internal state
