@@ -5,8 +5,9 @@ because ragged per-unit spike times genuinely do not fit a rectangular array;
 every other neurospatial surface stays array-first (or ``xarray`` for labeled
 grids). The container bundles the per-unit trains with their identity labels
 (``unit_ids``) and an optional per-unit metadata table (``unit_table``), giving
-users label access (``st[unit_id]``), iteration, and a
-metadata-driven :meth:`SpikeTrains.filter`.
+users positional access (``st[i]``), label selection
+(``st.sel(unit_id=...)``), iteration, and a metadata-driven
+:meth:`SpikeTrains.filter`.
 
 Interop role
 ------------
@@ -27,10 +28,9 @@ and its :meth:`~SpikeTrains.__iter__` yields the per-unit **train arrays** (not
 the ids). This keeps unit identity from being silently dropped and avoids the
 "garbage trains" footgun that would arise if iteration yielded the ids.
 
-Label access (``st[unit_id]``) and the adapter's iteration coexist because they
-use different dunders: the adapter reads ``.index`` and iterates via
-``__iter__`` (positional order), while ``__getitem__`` is user-facing **label**
-access keyed by unit id.
+The adapter reads ``.index`` and iterates via ``__iter__``; it never calls
+``__getitem__`` or ``sel``. ``st[i]`` is positional, like every other unit
+container in neurospatial, so ``st[i]`` and ``rates[i]`` name the same unit.
 """
 
 from __future__ import annotations
@@ -42,7 +42,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import align_unit_table, read_only_copy, resolve_unit_ids
+from neurospatial._results import (
+    UnitSelectionMixin,
+    align_unit_table,
+    read_only_copy,
+    resolve_unit_ids,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -51,7 +56,7 @@ __all__ = ["SpikeTrains"]
 
 
 @dataclass(frozen=True)
-class SpikeTrains:
+class SpikeTrains(UnitSelectionMixin):
     """Immutable container of ragged per-unit spike trains.
 
     Bundles per-unit spike-time arrays with their identity labels and optional
@@ -77,7 +82,7 @@ class SpikeTrains:
         labels when the container is passed to an encoder or decoder (an
         explicit ``unit_ids=`` there may name the units, and decoding pairs
         trains by position). Must be 1-D, length ``len(trains)``, and
-        **unique** (label access and downstream selection require uniqueness);
+        **unique** (:meth:`sel` and downstream selection require uniqueness);
         a length mismatch or duplicate labels raise :class:`ValueError`.
     unit_table : pandas.DataFrame or None, optional
         Per-unit metadata aligned to :attr:`unit_ids` (e.g. region, quality,
@@ -114,7 +119,9 @@ class SpikeTrains:
     ... )
     >>> len(st)
     2
-    >>> st[9]  # label access, by unit id (not position)
+    >>> st.sel(unit_id=9)  # by label
+    array([0.2, 0.3, 0.8])
+    >>> st[1]  # by position: the same unit
     array([0.2, 0.3, 0.8])
     """
 
@@ -200,40 +207,31 @@ class SpikeTrains:
         """
         return iter(self.trains)
 
-    def __getitem__(self, unit_id: Any) -> NDArray[np.float64]:
-        """Return a unit's train by **label** (unit id), not by position.
+    def __getitem__(self, idx: int) -> NDArray[np.float64]:
+        """Return the train of the unit at position ``idx``.
+
+        ``st[i]`` is the ``i``-th unit in stored order, matching iteration,
+        :attr:`trains` and the rows of every result computed from this
+        container. Select by label with :meth:`sel`.
 
         Parameters
         ----------
-        unit_id : Any
-            The identity label of the desired unit (an entry of
-            :attr:`unit_ids`).
+        idx : int
+            Unit position (0-based; negative positions count from the end).
 
         Returns
         -------
         ndarray
-            The 1-D ``float64`` spike-time array for that unit.
+            The unit's read-only 1-D ``float64`` spike-time array.
 
         Raises
         ------
-        KeyError
-            If ``unit_id`` is not present in :attr:`unit_ids`.
-
-        Notes
-        -----
-        This is user-facing label access (``st[7]`` selects the unit whose id
-        is ``7``). It is intentionally distinct from the adapter's iteration:
-        the adapter never calls ``__getitem__``, so label-vs-position access
-        does not affect interop.
+        IndexError
+            If ``idx`` is out of range.
+        TypeError
+            If ``idx`` is not an integer; select labels with :meth:`sel`.
         """
-        ids = np.asarray(self.unit_ids)
-        matches = np.flatnonzero(ids == unit_id)
-        if matches.size == 0:
-            raise KeyError(
-                f"unit_id {unit_id!r} not found in SpikeTrains "
-                f"(unit_ids={ids.tolist()})."
-            )
-        return self.trains[int(matches[0])]
+        return self.trains[self._unit_position(idx)]
 
     def filter(self, query: str) -> SpikeTrains:
         """Return a new :class:`SpikeTrains` keeping units matching ``query``.

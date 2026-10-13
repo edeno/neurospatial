@@ -48,7 +48,7 @@ def test_disk_roundtrip_preserves_computed_decode(
     assert restored.analysis_settings == rates.analysis_settings
     np.testing.assert_array_equal(restored.spatial_support, rates.spatial_support)
     reordered = SpikeTrains(
-        [spikes[label] for label in spikes.unit_ids[[2, 0, 1]]],
+        [spikes.sel(unit_id=label) for label in spikes.unit_ids[[2, 0, 1]]],
         unit_ids=spikes.unit_ids[[2, 0, 1]],
     )
     actual = BayesianDecoder.from_rates(restored, dt=0.1).predict(

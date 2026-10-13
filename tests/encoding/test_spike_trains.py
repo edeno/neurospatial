@@ -102,7 +102,7 @@ def test_mixed_type_unique_unit_ids_are_accepted(trains: list[np.ndarray]) -> No
     # mixed labels must simply be accepted.
     st = SpikeTrains(trains, unit_ids=np.array([1, "a", 2], dtype=object))
     np.testing.assert_array_equal(st.unit_ids, np.array([1, "a", 2], dtype=object))
-    np.testing.assert_array_equal(st["a"], trains[1])  # label access still works
+    np.testing.assert_array_equal(st.sel(unit_id="a"), trains[1])
 
 
 def test_mixed_type_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
@@ -113,27 +113,37 @@ def test_mixed_type_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Label access (by unit id, NOT position)
+# 2. Selection: [] by position, sel() by label
 # ---------------------------------------------------------------------------
 
 
-def test_getitem_is_label_access_not_position(trains: list[np.ndarray]) -> None:
-    # A permutation of ids proves label lookup: id 0 lives at position 1.
+def test_getitem_is_position_and_sel_is_label(trains: list[np.ndarray]) -> None:
+    # A permutation of ids separates the two: id 0 lives at position 1.
     st = SpikeTrains(trains, unit_ids=np.array([2, 0, 1]))
-    np.testing.assert_array_equal(st[0], trains[1])
-    np.testing.assert_array_equal(st[2], trains[0])
-    np.testing.assert_array_equal(st[1], trains[2])
+    for i, train in enumerate(trains):
+        np.testing.assert_array_equal(st[i], train)
+    np.testing.assert_array_equal(st.sel(unit_id=0), trains[1])
+    np.testing.assert_array_equal(st.sel(unit_id=2), trains[0])
+    np.testing.assert_array_equal(st[-1], trains[2])
 
 
-def test_getitem_string_labels(trains: list[np.ndarray]) -> None:
+def test_sel_string_labels(trains: list[np.ndarray]) -> None:
     st = SpikeTrains(trains, unit_ids=np.array(["a", "b", "c"]))
-    np.testing.assert_array_equal(st["b"], trains[1])
+    np.testing.assert_array_equal(st.sel(unit_id="b"), trains[1])
 
 
-def test_getitem_absent_id_raises_keyerror(trains: list[np.ndarray]) -> None:
+def test_sel_absent_id_raises_keyerror(trains: list[np.ndarray]) -> None:
     st = SpikeTrains(trains, unit_ids=np.array([10, 20, 30]))
-    with pytest.raises(KeyError, match="999"):
-        st[999]
+    with pytest.raises(KeyError, match=r"999.*10, 20, 30"):
+        st.sel(unit_id=999)
+
+
+def test_getitem_with_label_points_to_sel(trains: list[np.ndarray]) -> None:
+    st = SpikeTrains(trains, unit_ids=np.array(["a", "b", "c"]))
+    with pytest.raises(TypeError, match=r"sel\(unit_id='b'\)"):
+        st["b"]
+    with pytest.raises(IndexError, match=r"sel\(unit_id=30\)"):
+        SpikeTrains(trains, unit_ids=np.array([10, 20, 30]))[30]
 
 
 # ---------------------------------------------------------------------------

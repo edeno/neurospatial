@@ -26,9 +26,7 @@ def test_label_permutation_preserves_encoding_and_decoding(
     """Refitting permuted units and predicting in either order gives one result."""
     env, spikes, times, positions, coverage = analysis_invariant_recording
     order = np.asarray(order)
-    reordered = SpikeTrains(
-        [spikes[spikes.unit_ids[i]] for i in order], unit_ids=spikes.unit_ids[order]
-    )
+    reordered = SpikeTrains([spikes[i] for i in order], unit_ids=spikes.unit_ids[order])
     options = {**analysis_invariant_method, "spike_window": coverage}
     original = compute_spatial_rates(env, spikes, times, positions, **options)
     permuted = compute_spatial_rates(env, reordered, times, positions, **options)
@@ -65,7 +63,9 @@ def test_single_and_population_estimators_agree(
     options = {**analysis_invariant_method, "spike_window": coverage}
     batch = compute_spatial_rates(env, spikes, times, positions, **options)
     for index, label in enumerate(spikes.unit_ids):
-        single = compute_spatial_rate(env, spikes[label], times, positions, **options)
+        single = compute_spatial_rate(
+            env, spikes.sel(unit_id=label), times, positions, **options
+        )
         np.testing.assert_allclose(
             single.firing_rate, batch[index].firing_rate, atol=1e-10
         )

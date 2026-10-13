@@ -4,6 +4,12 @@
 
 ### Added
 
+- Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
+  population result (spatial, directional, view, object-vector and peri-event).
+  `[]` selects by position on all of them, so `spikes[i]` and `rates[i]` are
+  the same neuron. A label passed to `[]`, or a position out of range, raises
+  an error that names the `sel` call to use. **Breaking:** `SpikeTrains[...]`
+  used to look up a label; replace `st[unit_id]` with `st.sel(unit_id=unit_id)`.
 - Add `Environment.get_divergence_operator()`, the cached finite-volume
   divergence operator that `divergence(env, edge_field)` applies, alongside
   `get_differential_operator()`.

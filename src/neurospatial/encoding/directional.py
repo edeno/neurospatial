@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -1195,7 +1195,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class DirectionalRatesResult(SpatialResultMixin):
+class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -1380,7 +1380,8 @@ class DirectionalRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Neuron index (0-indexed).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -1406,6 +1407,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         >>> single.firing_rate.shape
         (60,)
         """
+        idx = self._unit_position(idx)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         counts = self.spike_counts
         return DirectionalRateResult(

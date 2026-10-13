@@ -64,10 +64,11 @@ class SpikeTrainsLike(Protocol):
 
     Captures the *interesting* third-party case — a real pynapple ``TsGroup``
     (a ``collections.UserDict``: iterating it yields **unit-id keys**, not
-    trains), or the future :class:`~neurospatial.encoding.SpikeTrains`
-    container. Both expose ``.index`` (the unit ids / keys) and support
+    trains). It exposes ``.index`` (the unit ids / keys) and supports
     ``obj[unit_id]`` returning a per-unit timestamp source with a ``.t``
-    attribute. The id-surfacing adapter
+    attribute. :class:`~neurospatial.encoding.SpikeTrains` exposes the same
+    ``.index`` but indexes by position and is read by iteration. The
+    id-surfacing adapter
     :func:`neurospatial.encoding.as_spike_trains_with_ids` extracts trains by
     **indexing each id** (``obj[uid].t``); for a ``TsGroup`` it must NOT iterate
     the object, because iterating a ``UserDict`` yields its keys, not its trains.

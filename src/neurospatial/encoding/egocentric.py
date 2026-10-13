@@ -51,7 +51,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -651,7 +651,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class ObjectVectorRatesResult(SpatialResultMixin):
+class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of object-vector rate computation for multiple neurons.
 
     This class wraps object-vector firing rate maps for a population of neurons
@@ -848,7 +848,8 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Index of the neuron (0-based).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -875,6 +876,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         >>> isinstance(single, ObjectVectorRateResult)
         True
         """
+        idx = self._unit_position(idx)
         return ObjectVectorRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,

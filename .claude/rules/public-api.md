@@ -67,3 +67,6 @@ Results keep no raw input arrays or recompute closures.
 - Population results carry `unit_ids` (default `np.arange(n)`), and batch
   `compute_*` functions accept keyword-only `unit_ids=`; a wrong length raises.
   Indexing or iterating a population result stamps each child's `unit_id`.
+- `[]` selects by position on every unit container, `SpikeTrains` included, and
+  `sel(unit_id=...)` selects by label. New population results get both from
+  `UnitSelectionMixin` and call `self._unit_position(idx)` in `__getitem__`.

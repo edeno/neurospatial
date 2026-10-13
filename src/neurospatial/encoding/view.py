@@ -85,7 +85,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -560,7 +560,7 @@ class ViewRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class ViewRatesResult(SpatialResultMixin):
+class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of view rate computation for multiple neurons.
 
     This class wraps view fields for a population of neurons with shared
@@ -744,7 +744,8 @@ class ViewRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Index of the neuron (0-based).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -769,6 +770,7 @@ class ViewRatesResult(SpatialResultMixin):
         >>> isinstance(single, ViewRateResult)
         True
         """
+        idx = self._unit_position(idx)
         return ViewRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,

@@ -54,7 +54,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin, label_at
+from neurospatial._results import ResultMixin, UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
@@ -1434,7 +1434,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
 
 @dataclass(frozen=True, repr=False)
-class SpatialRatesResult(SpatialResultMixin):
+class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of spatial rate computation for multiple neurons.
 
     This class wraps spatial firing rate maps for a population of neurons
@@ -1719,7 +1719,8 @@ class SpatialRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Neuron index.
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -1744,6 +1745,7 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> single.firing_rate.shape == (env.n_bins,)
         True
         """
+        idx = self._unit_position(idx)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         # Slice the per-unit GAM fields; shared / batch-scalar fields carry
         # through unchanged. All ``None`` for ratio results (the ``is not None``

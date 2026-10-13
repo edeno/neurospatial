@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, UnitSelectionMixin
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -214,7 +214,7 @@ class PeriEventResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class PopulationPeriEventResult(ResultMixin):
+class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
     """
     Result from population peri-event histogram analysis.
 
@@ -337,7 +337,8 @@ class PopulationPeriEventResult(ResultMixin):
         Parameters
         ----------
         idx : int
-            Unit index (0-based).
+            Unit position (0-based), the row of :attr:`histograms`. Select by
+            label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -364,6 +365,7 @@ class PopulationPeriEventResult(ResultMixin):
         >>> result[1].unit_id
         'b'
         """
+        idx = self._unit_position(idx)
         histograms = np.asarray(self.histograms)
         sem = np.asarray(self.sem)
         unit_id_value = np.asarray(self.unit_ids)[idx]

@@ -315,8 +315,10 @@ pynwb.
 **Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
 
 - `SpikeTrains`: Frozen ragged per-unit spike trains with `unit_ids` / optional
-  `unit_table`. Label access (`st[unit_id]`), iteration, `.filter(query)`; flows
-  directly into the batch `compute_*` / `decode_*` functions.
+  `unit_table`. Positional access (`st[i]`), label selection
+  (`st.sel(unit_id=...)`), iteration, `.filter(query)`; flows directly into
+  the batch `compute_*` / `decode_*` functions. Population results select units
+  the same way: `rates[i]` by position, `rates.sel(unit_id=...)` by label.
 
 **Epoch selection** ([neurospatial.behavior.epochs](neurospatial/behavior/epochs.md)):
 
