@@ -207,6 +207,34 @@ def _owned_copy(value: Any) -> Any:
     return value
 
 
+def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Per-dimension tolerance for matching saved to rebuilt bin centers.
+
+    Allows float32 storage rounding of that dimension's coordinates, but never
+    a quarter of the median gap between distinct centers along it, so a shift
+    by a bin is rejected however far the grid sits from the origin.
+
+    Parameters
+    ----------
+    centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Rebuilt bin centers.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_dims,)
+        Largest accepted absolute difference along each dimension.
+    """
+    tolerance = np.empty(centers.shape[1])
+    for dim in range(centers.shape[1]):
+        values = np.unique(centers[:, dim])
+        storage = 2.0 * np.finfo(np.float32).eps * np.abs(values).max(initial=0.0)
+        gaps = np.diff(values)
+        gaps = gaps[gaps > storage]  # closer values are rounding duplicates
+        spacing = float(np.median(gaps)) if gaps.size else np.inf
+        tolerance[dim] = min(storage, spacing / 4.0)
+    return tolerance
+
+
 class EnvironmentFactories:
     """Factory methods mixin for creating Environment instances.
 
@@ -1478,10 +1506,8 @@ class EnvironmentFactories:
         layout = cls._create_layout(kind, layout_params)
         rebuilt = np.asarray(layout.bin_centers)
         saved = np.asarray(bin_centers, dtype=np.float64)
-        # Tolerates float32 storage; a different grid is off by a fraction of a bin.
-        scale = max(1.0, float(np.abs(rebuilt).max(initial=0.0)))
-        if rebuilt.shape != saved.shape or not np.allclose(
-            rebuilt, saved, rtol=1e-6, atol=1e-6 * scale
+        if rebuilt.shape != saved.shape or np.any(
+            np.abs(rebuilt - saved) > _center_tolerance(rebuilt)
         ):
             raise ValueError(
                 _format_error(

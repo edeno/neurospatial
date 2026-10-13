@@ -296,6 +296,23 @@ def test_saved_bin_centers_must_match_the_rebuilt_layout():
     assert "\nFix:" in str(exc.value)
 
 
+@pytest.mark.parametrize("origin", [0.0, 1e6])
+def test_center_check_rejects_a_bin_shift_at_any_origin(origin):
+    """Tolerance follows bin spacing and storage precision, not the origin."""
+    centers = np.stack(np.meshgrid(np.arange(10.0), np.arange(10.0)), -1)
+    env = Environment.from_samples(origin + centers.reshape(-1, 2) + 0.5, bin_size=1.0)
+    stored = np.asarray(to_dict(env)["bin_centers"])
+
+    shifted = to_dict(env)
+    shifted["bin_centers"] = (stored + np.array([1.0, 0.0])).tolist()
+    with pytest.raises(ValueError, match="do not match"):
+        from_dict(shifted)
+
+    float32 = to_dict(env)
+    float32["bin_centers"] = stored.astype(np.float32).astype(float).tolist()
+    assert from_dict(float32).n_bins == env.n_bins
+
+
 def test_invalid_saved_graph_names_the_saved_data():
     """A malformed saved graph is reported against the data, not the library."""
     data = to_dict(_four_connected_grid())
