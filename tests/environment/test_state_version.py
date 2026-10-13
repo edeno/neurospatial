@@ -98,6 +98,23 @@ class TestPublishedGeometryIsReadOnly:
         with pytest.raises(nx.NetworkXError, match="Frozen"):
             env.connectivity.add_edge(0, 8)
 
+    def test_caller_arrays_stay_writable_and_independent(self) -> None:
+        """The environment freezes its own copies, not the caller's arrays."""
+        base = np.ones((3, 6), dtype=bool)
+        edges = (np.arange(4.0), np.arange(4.0))
+        env = Environment.from_grid_mask(base[:, :3], grid_edges=edges)
+        point = np.array([[0.5, 0.5]])
+        before = env.bin_at(point)
+
+        assert base.flags.writeable and edges[0].flags.writeable
+        base[0, 0] = False  # through the base of the view the caller passed
+        edges[0][:] += 100.0
+
+        np.testing.assert_array_equal(env.bin_at(point), before)
+        assert env.active_mask[0, 0]
+        assert env.layout_parameters["active_mask"][0, 0]
+        np.testing.assert_array_equal(env.grid_edges[0], np.arange(4.0))
+
     @pytest.mark.parametrize(
         "name",
         [

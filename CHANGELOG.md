@@ -47,6 +47,8 @@
   and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
   edits, so such edits used to return stale results silently. Build a new
   environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
+  Factories copy array inputs, so the caller's own arrays stay writable and
+  later edits to them do not reach the environment.
 - Layout setup synchronizes restored geometry and invalidates all environment
   caches. The polar layout builds physical distances and circular seams before
   environment initialization, and records its `circular_angle` build option.

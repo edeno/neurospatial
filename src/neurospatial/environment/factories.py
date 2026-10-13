@@ -196,6 +196,17 @@ def _assemble_maze_graph(
 _MAX_PLAUSIBLE_SPATIAL_DIMS = 8
 
 
+def _owned_copy(value: Any) -> Any:
+    """Copy arrays, also inside dicts, lists and tuples, so callers keep theirs."""
+    if isinstance(value, np.ndarray):
+        return value.copy()
+    if isinstance(value, dict):
+        return {key: _owned_copy(item) for key, item in value.items()}
+    if type(value) in (list, tuple):
+        return type(value)(_owned_copy(item) for item in value)
+    return value
+
+
 class EnvironmentFactories:
     """Factory methods mixin for creating Environment instances.
 
@@ -1402,6 +1413,10 @@ class EnvironmentFactories:
         from_graph : Create 1D linearized track environment.
 
         """
+        # The environment owns its inputs: it later publishes geometry read-only,
+        # and the saved layout parameters must not change if the caller edits
+        # their arrays (or the base of a view) afterwards.
+        layout_params = _owned_copy(layout_params)
         layout_instance = cls._create_layout(kind, layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
