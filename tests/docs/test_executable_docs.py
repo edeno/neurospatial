@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN_ALL = {
     "README.md": False,
     "docs/getting-started/quickstart.md": False,
-    "CLAUDE.md": True,
 }
 OPT_IN = (
     ".claude/QUICKSTART.md",

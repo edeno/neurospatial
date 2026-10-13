@@ -293,7 +293,7 @@ Report inconsistencies vs sibling functions and vs these conventions.`,
     key: 'ux-ergonomics',
     title: 'API / developer ergonomics for the neuroscientist user (this is API UX, NOT visual UI)',
     body: `- Discoverability: are the right entry points exported and easy to find? Sensible defaults so common cases need few args?
-- Error messages: actionable, naming the offending value and a fix hint (CLAUDE.md's rich "No active bins" error is the bar)?
+- Error messages: actionable, naming the offending value and a fix hint (the rich "No active bins" error from Environment.from_samples is the bar)?
 - Result objects: convenient accessors/metrics, or do they force manual array gymnastics?
 - Docstring Examples that copy-paste and run (imports present, runnable).
 - Naming clarity; units stated in the signature/docstring.
