@@ -305,7 +305,7 @@ Report inconsistencies vs sibling functions and vs these conventions.`,
     body: `- Docstring parameters, defaults, types, and return types match the real signature and code.
 - NumPy docstring format (Parameters / Returns / Examples sections present and well-formed).
 - Examples are importable and correct (function names, argument order, return shapes match the CURRENT API).
-- Claims in .claude/*.md (CLAUDE.md, QUICKSTART, API_REFERENCE) match the implemented behavior/signatures of the in-scope module.
+- Claims in CLAUDE.md, .claude/rules/*.md, docs/ and README match the implemented behavior/signatures of the in-scope module.
 - Stated units and conventions in docs match the code.
 - Stale references: renamed/removed functions, outdated defaults, wrong return descriptions.`,
   },
@@ -332,7 +332,7 @@ Resolve these module name(s) to actual files, one entry per module: ${modules.jo
 For each module, enumerate (use Glob/Grep — do not review anything yet):
 - source files: src/neurospatial/<module>/**/*.py (exclude __pycache__).
 - test files: tests covering it — Glob tests/**/*<module>*.py AND grep tests/ for imports of the module.
-- doc files: .claude/*.md (and docs/, README) that reference the module by name (Grep).
+- doc files: CLAUDE.md, .claude/rules/*.md, docs/ and README files that reference the module by name (Grep).
 
 Set exists=false for any module name that does not resolve to a directory under src/neurospatial/. Return repo-relative paths.`,
   { label: 'discover', phase: 'Discover', schema: MANIFEST_SCHEMA },

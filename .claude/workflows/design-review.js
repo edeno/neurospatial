@@ -215,7 +215,7 @@ const apiMap = await withRetry(() =>
   agent(
     `${PROJECT_CONTEXT}
 
-Map the PUBLIC API surface of neurospatial so design reviewers know what users actually touch. Read the top-level package __init__ (src/neurospatial/__init__.py) and each subpackage's __init__ exports, plus .claude/QUICKSTART.md and .claude/API_REFERENCE.md.
+Map the PUBLIC API surface of neurospatial so design reviewers know what users actually touch. Read the top-level package __init__ (src/neurospatial/__init__.py) and each subpackage's __init__ exports, plus tests/data/public_api.txt (every public name and signature) and docs/getting-started/quickstart.md.
 
 For each module, list the PUBLIC entry points (exported functions/classes a user calls) and the result classes it returns. Also list the "golden paths" the docs advertise (the canonical workflows). Keep it to the public surface — skip private helpers. Be reasonably complete but concise.`,
     { label: 'api-map', phase: 'Map', schema: API_MAP_SCHEMA },
@@ -254,7 +254,7 @@ You are a NEUROSCIENTIST using neurospatial for the first time, attempting this 
 TASK — ${j.title}:
 ${j.task}
 
-Actually trace it: read the real functions/signatures/docstrings (Read/Grep) and the QUICKSTART, and check ${REVIEWS_DIR}/ for known rough edges. Write the realistic code a competent user would write (in 'sketch'), and log every FRICTION point: missing function, confusing/dangerous argument order, unclear or implicit units, a required step that is hard to discover (e.g. you must compute frame_times / headings / occupancy thresholds yourself), excessive boilerplate, or a footgun where the easy call silently does the wrong thing. Rate overall feasibility. Note genuine WINS (things that were smooth) and any MISSING capabilities a user would expect for this task. Be concrete and fair — this is a design critique, not a bug hunt.`,
+Actually trace it: read the real functions/signatures/docstrings (Read/Grep) and docs/user-guide/, and check ${REVIEWS_DIR}/ for known rough edges. Write the realistic code a competent user would write (in 'sketch'), and log every FRICTION point: missing function, confusing/dangerous argument order, unclear or implicit units, a required step that is hard to discover (e.g. you must compute frame_times / headings / occupancy thresholds yourself), excessive boilerplate, or a footgun where the easy call silently does the wrong thing. Rate overall feasibility. Note genuine WINS (things that were smooth) and any MISSING capabilities a user would expect for this task. Be concrete and fair — this is a design critique, not a bug hunt.`,
         { label: `journey:${j.key}`, phase: 'Journeys', schema: JOURNEY_SCHEMA },
       ),
     ).catch((e) => ({ journey: j.title, feasible: 'blocked', friction_points: [], _error: String((e && e.message) || e) })),
@@ -294,7 +294,7 @@ You are evaluating the DESIGN of neurospatial along ONE axis for neuroscience us
 AXIS — ${a.title}:
 ${a.focus}
 
-Read what you need (public API, QUICKSTART/CLAUDE.md, and the existing per-module findings in ${REVIEWS_DIR}/ — reuse their api-consistency/ux/docs signal rather than re-deriving it). Assess THIS axis only. Give: a short summary judgement; concrete strengths (what's genuinely well-designed); weaknesses (severity-tagged, with where); and prioritized, concrete recommendations (actual API/design changes, not vague advice). Ground claims in specific functions/modules. Be fair: credit good design, and don't inflate severity.`,
+Read what you need (public API, docs/user-guide/, CLAUDE.md, and the existing per-module findings in ${REVIEWS_DIR}/ — reuse their api-consistency/ux/docs signal rather than re-deriving it). Assess THIS axis only. Give: a short summary judgement; concrete strengths (what's genuinely well-designed); weaknesses (severity-tagged, with where); and prioritized, concrete recommendations (actual API/design changes, not vague advice). Ground claims in specific functions/modules. Be fair: credit good design, and don't inflate severity.`,
         { label: `axis:${a.key}`, phase: 'Axes', schema: AXIS_SCHEMA },
       ),
     ).catch((e) => ({
