@@ -265,7 +265,7 @@ const surface = await withRetry(() =>
   agent(
     `${PROJECT_CONTEXT}
 
-Map the USER-FACING surface that a UX audit needs. Read src/neurospatial/__init__.py and each subpackage __init__, the result-class definitions, and grep for raise/warnings.warn. Also skim .claude/QUICKSTART.md and .claude/API_REFERENCE.md for the advertised golden paths (but verify against code).
+Map the USER-FACING surface that a UX audit needs. Read src/neurospatial/__init__.py and each subpackage __init__, the result-class definitions, and grep for raise/warnings.warn. Also skim docs/getting-started/quickstart.md and docs/user-guide/ for the advertised golden paths (but verify against code), and tests/data/public_api.txt for every public name and signature.
 
 Produce:
 - entry_points: per module, the PUBLIC functions/classes a user calls, and the result classes returned.

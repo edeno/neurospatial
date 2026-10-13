@@ -18,10 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN_ALL = {
     "README.md": False,
     "docs/getting-started/quickstart.md": False,
-    "CLAUDE.md": True,
 }
 OPT_IN = (
-    ".claude/QUICKSTART.md",
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",
     "docs/user-guide/interoperability.md",
@@ -86,121 +84,6 @@ trajectory = np.array([
 ])
 position_bins = env.bin_at(trajectory)
 times = np.arange(len(trajectory)) * 0.1  # 10 Hz tracking
-""",
-    "quickstart_vte_session": """import os
-os.environ["MPLBACKEND"] = "Agg"
-import numpy as np
-from shapely.geometry import box
-
-from neurospatial import Environment
-from neurospatial.behavior.segmentation import Trial
-
-# Animal runs back and forth along x through a central decision zone.
-seg = np.linspace(0.0, 100.0, 200)
-xs = np.concatenate([seg, seg[::-1]])
-ys = 50.0 + 2.0 * np.sin(np.linspace(0.0, 8 * np.pi, len(xs)))
-positions = np.column_stack([xs, ys])
-times = np.linspace(0.0, 40.0, len(positions))
-
-env = Environment.from_samples(positions, bin_size=4.0)
-env.regions.add("center", polygon=box(40.0, 30.0, 60.0, 70.0))
-
-trials = [
-    Trial(start_time=0.0, end_time=20.0, start_region="start",
-          end_region="goal", success=True),
-    Trial(start_time=20.0, end_time=40.0, start_region="goal",
-          end_region="start", success=True),
-]
-""",
-    "quickstart_ovc_classify_single": """import os
-os.environ["MPLBACKEND"] = "Agg"
-import numpy as np
-
-from neurospatial import Environment
-from neurospatial.ops.egocentric import heading_from_velocity
-
-t = np.linspace(0.0, 20.0, 400)
-positions = np.column_stack([
-    50.0 + 30.0 * np.cos(2 * np.pi * t / 20.0),
-    50.0 + 30.0 * np.sin(2 * np.pi * t / 20.0),
-])
-times = t
-env = Environment.from_samples(positions, bin_size=4.0)
-headings = heading_from_velocity(times, positions, min_speed=1.0)
-object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])
-spike_times = times[::7]
-""",
-    "quickstart_view_classify": """import os
-os.environ["MPLBACKEND"] = "Agg"
-import numpy as np
-
-from neurospatial import Environment
-from neurospatial.encoding import compute_view_rate, compute_view_rates
-from neurospatial.ops.egocentric import heading_from_velocity
-
-t = np.linspace(0.0, 20.0, 400)
-positions = np.column_stack([
-    50.0 + 30.0 * np.cos(2 * np.pi * t / 20.0),
-    50.0 + 30.0 * np.sin(2 * np.pi * t / 20.0),
-])
-times = t
-env = Environment.from_samples(positions, bin_size=4.0)
-headings = heading_from_velocity(times, positions, min_speed=1.0)
-single = compute_view_rate(
-    env, times[::7], times, positions, headings, view_distance=10.0
-)
-batch = compute_view_rates(
-    env, [times[::7], times[::9], times[::11]], times, positions,
-    headings, view_distance=10.0,
-)
-""",
-    "quickstart_circular_basis_metrics": """import os
-os.environ["MPLBACKEND"] = "Agg"
-import numpy as np
-
-rng = np.random.default_rng(0)
-n = 2000
-head_direction_angles = rng.uniform(-np.pi, np.pi, n)
-rate = 2.0 + 1.5 * np.cos(head_direction_angles - 0.7)
-spike_counts = rng.poisson(rate)
-""",
-    "quickstart_overlay_block": """import os
-os.environ["MPLBACKEND"] = "Agg"
-import numpy as np
-
-from neurospatial import Environment
-
-n = 30
-trajectory = np.column_stack([
-    np.linspace(0.0, 20.0, n),
-    5.0 + np.sin(np.linspace(0.0, 2.0 * np.pi, n)),
-])
-traj1 = trajectory
-traj2 = trajectory + np.array([1.0, 1.0])
-nose_traj = trajectory + np.array([0.5, 0.0])
-body_traj = trajectory
-tail_traj = trajectory - np.array([0.5, 0.0])
-
-positions = trajectory
-env = Environment.from_samples(positions, bin_size=2.0)
-fields = [np.zeros(env.n_bins) for _ in range(n)]
-frame_times = np.arange(n) / 30.0
-
-def _noop_animate_fields(self, fields, *, frame_times, overlays=None, **kwargs):
-    assert len(frame_times) == len(fields)
-    if overlays:
-        for ov in overlays:
-            ov.convert_to_data(
-                np.asarray(frame_times, dtype=float), len(fields), self
-            )
-    return kwargs.get("save_path")
-
-Environment.animate_fields = _noop_animate_fields
-""",
-    "quickstart_events_glm_regressors": """import numpy as np
-
-sample_times = np.linspace(0.0, 60.0, 600)
-reward_times = np.array([5.0, 12.0, 23.0, 41.0, 55.0])
 """,
     "workflows_decode_session_summary_streaming": """import os
 os.environ["MPLBACKEND"] = "Agg"
@@ -331,7 +214,7 @@ def _run_document(path: str, *, opt_in: bool, seeded: bool) -> int:
         if block.kind == "skip":
             assert block.arg, f"{location}: 'docs-test: skip' needs a reason"
             continue
-        if opt_in and block.kind != "run":
+        if opt_in and block.kind not in {"run", "raises"}:
             continue
         namespace = _fixture_namespace() if seeded else shared
         if setup := re.search(r"setup=(\w+)", block.arg):
@@ -415,6 +298,15 @@ def test_seeded_blocks_have_fresh_arrays_and_regions(example_document):
         "```python\nassert np.all(np.diff(times) > 0)\nassert 'temporary' not in env.regions\n```\n"
     )
     assert _run_document("example.md", opt_in=False, seeded=True) == 2
+
+
+def test_opted_in_documents_check_raises_markers(example_document):
+    example_document.write_text(
+        "```python\nunmarked()\n```\n"
+        "<!-- docs-test: raises ValueError -->\n```python\nx = 1\n```\n"
+    )
+    with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
+        _run_document("example.md", opt_in=True, seeded=True)
 
 
 def test_marker_setups_are_known_and_used():

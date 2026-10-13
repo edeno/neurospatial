@@ -377,7 +377,7 @@ For complete parameter descriptions and examples, see:
 
 - [`compute_spatial_rate()`](../api/neurospatial/encoding/spatial.md#neurospatial.encoding.spatial.compute_spatial_rate) - Place field computation
 - [`bin_spike_train()`](../api/neurospatial/encoding/_binning.md#neurospatial.encoding._binning.bin_spike_train) - Spike binning helper
-- [`Environment.occupancy()`](../api/neurospatial/environment/trajectory.md#neurospatial.environment.trajectory.EnvironmentTrajectory.occupancy) - Occupancy computation
+- [`Environment.occupancy()`](../api/neurospatial/environment/cartesian.md#neurospatial.environment.cartesian.CartesianCoordinates.occupancy) - Occupancy computation
 - [`Environment.smooth()`](../api/neurospatial/environment/fields.md#neurospatial.environment.fields.EnvironmentFields.smooth) - Spatial field smoothing
 
 ## Related Topics
