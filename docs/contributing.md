@@ -102,7 +102,9 @@ layout capability, defined in `neurospatial.layout._diffusion`:
   layout's connectivity graph with face measures (`A`) and edge distances
   (`distance`) on every edge, plus cell measures in active-bin order. Gradient
   and divergence index edge fields by `env.connectivity`, so the environment
-  rejects a graph whose edges differ from it.
+  rejects a graph whose edge order or orientation differs from it. Each
+  undirected edge defines the scalar, symmetric two-point conductance
+  `A / distance` used by the current numerical scheme.
 - `FaceGeometry.from_graph` validates those faces into read-only per-edge arrays
   in connectivity edge order. `DiffusionGeometry.from_faces` assembles the
   conductances `W = A / distance`; components come from positive conductances,
@@ -121,9 +123,20 @@ radius. A new layout or subclass does not need registration in the diffusion
 solver. These are internal interfaces, not additional scientist-facing factory
 requirements.
 
-Layouts read their own `connectivity` and `bin_centers`. Code that replaces the
-environment's graph after construction, such as the file and NWB readers, must
-assign the same graph to `env.layout`; `copy()` rebuilds from the layout too.
+`layout.engines._polar` also builds physical polar edge distances and circular
+seam edges before the environment is initialized. Its masked-grid build records
+`circular_angle` alongside the shared grid parameters.
+
+Layouts own `connectivity`, `bin_centers` and the grid geometry. The file and
+NWB readers rebuild the layout from its saved parameters, assign the saved
+geometry to that same layout (keys the data lacks keep the rebuilt values), and
+call `env._setup_from_layout()`. That method validates the graph before changing
+anything, synchronizes the environment's views, advances its state version and
+clears all analysis caches; `copy()` rebuilds from the layout too. Stored
+connectivity remains authoritative on read-back, including open angular axes and
+4-connected grids. Lookups a layout derives at build time are not rebuilt, so
+swapping in a different layout object or changing a layout's bins this way is
+not supported.
 
 `Environment._face_geometry` caches the validated faces once per state version;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence

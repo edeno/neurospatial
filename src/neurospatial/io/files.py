@@ -490,6 +490,7 @@ def from_file(path: PathLike) -> Environment:
 
     return _restore_environment(
         metadata,
+        source=str(json_path),
         bin_centers=bin_centers,
         grid_edges=grid_edges,
         active_mask=active_mask,
@@ -499,6 +500,7 @@ def from_file(path: PathLike) -> Environment:
 def _restore_environment(
     metadata: dict[str, Any],
     *,
+    source: str,
     bin_centers: NDArray[np.float64],
     grid_edges: tuple[NDArray[np.float64], ...] | None,
     active_mask: NDArray[np.bool_] | None,
@@ -512,6 +514,8 @@ def _restore_environment(
     ----------
     metadata : dict
         The ``to_file`` JSON metadata or the ``to_dict`` dictionary.
+    source : str
+        Where the data came from, named if its saved graph is invalid.
     bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
         Saved bin centers.
     grid_edges : tuple of NDArray[np.float64] or None
@@ -553,15 +557,23 @@ def _restore_environment(
         metadata["layout_type"], layout_params, name=metadata["name"]
     )
 
-    # Override attributes with saved values (handles cases where layout recreation
-    # differs). The layout gets the saved graph too: diffusion and finite-volume
-    # geometry, and copy(), read the layout, so it must match env.connectivity.
-    env.bin_centers = env.layout.bin_centers = bin_centers
-    env.connectivity = env.layout.connectivity = connectivity
-    env.dimension_ranges = dimension_ranges
-    env.grid_edges = grid_edges
-    env.grid_shape = grid_shape
-    env.active_mask = active_mask
+    # Restore the saved geometry on its owner, then refresh the environment's
+    # views and invalidate caches through the shared setup path. Optional keys
+    # restore only geometry the rebuilt layout owns: absent keys, and the
+    # point-based fallbacks the environment derives (e.g. hexagonal and mesh
+    # layouts have no grid edges), keep the rebuilt layout's values.
+    layout = env.layout
+    layout.bin_centers = bin_centers
+    layout.connectivity = connectivity
+    for name, value in (
+        ("dimension_ranges", dimension_ranges),
+        ("grid_edges", grid_edges),
+        ("grid_shape", grid_shape),
+        ("active_mask", active_mask),
+    ):
+        if value is not None and getattr(layout, name, None) is not None:
+            setattr(layout, name, value)
+    env._setup_from_layout(restored_from=source)
 
     if metadata.get("regions"):
         env.regions = Regions([Region.from_dict(r) for r in metadata["regions"]])
@@ -713,5 +725,9 @@ def from_dict(data: dict[str, Any]) -> Environment:
         active_mask = np.array(data["active_mask"], dtype=bool)
 
     return _restore_environment(
-        data, bin_centers=bin_centers, grid_edges=grid_edges, active_mask=active_mask
+        data,
+        source="the environment dictionary",
+        bin_centers=bin_centers,
+        grid_edges=grid_edges,
+        active_mask=active_mask,
     )

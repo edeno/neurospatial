@@ -18,6 +18,63 @@ def env() -> Environment:
 class TestStateVersionField:
     """Environment._state_version must increment on documented mutation paths."""
 
+    def test_restored_layout_graph_refreshes_views_and_all_caches(self) -> None:
+        """Restoring a saved graph onto the layout, as the readers do, refreshes
+        the environment's views and every cache."""
+        from scipy.spatial import cKDTree
+
+        grid = (np.ones((3, 3), dtype=bool), (np.arange(4.0),) * 2)
+        env = Environment.from_grid_mask(grid[0], grid_edges=grid[1])
+        expected = Environment.from_grid_mask(
+            grid[0], grid_edges=grid[1], connect_diagonal_neighbors=False
+        )
+        env.compute_kernel(1.0)
+        env.diffuse(np.ones(env.n_bins), 1.0)
+        env._mrf_basis(np.ones(env.n_bins), rank=3)
+        env.get_differential_operator()
+        env._kdtree_cache = cKDTree(env.bin_centers)
+        old_geometry = env._diffusion_geometry
+        old_diffusion_cache = env._diffusion_eigenbasis
+        old_mrf_cache = env._mrf_eigenbasis
+        version = env._state_version
+
+        env.layout.connectivity = (
+            expected.connectivity
+        )  # e.g. a saved 4-connected graph
+        env._setup_from_layout()
+
+        assert env._state_version == version + 1
+        assert env.connectivity is env.layout.connectivity
+        assert env.bin_centers is env.layout.bin_centers
+        assert env._kernel_cache == {}
+        assert env._kdtree_cache is None
+        assert env._diffusion_geometry is not old_geometry
+        assert env._diffusion_eigenbasis is not old_diffusion_cache
+        assert env._mrf_eigenbasis is not old_mrf_cache
+        np.testing.assert_allclose(
+            env.get_differential_operator().toarray(),
+            expected.get_differential_operator().toarray(),
+        )
+
+    def test_invalid_layout_graph_leaves_environment_unchanged(self) -> None:
+        """Validation runs before any environment state changes."""
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        env.compute_kernel(1.0)
+        connectivity, version = env.connectivity, env._state_version
+        broken = connectivity.copy()
+        for _, _, data in broken.edges(data=True):
+            del data["edge_id"]
+        env.layout.connectivity = broken
+
+        with pytest.raises(ValueError, match="layout engine bug"):
+            env._setup_from_layout()
+
+        assert env.connectivity is connectivity
+        assert env._state_version == version
+        assert env._kernel_cache
+
 
 class TestVersionedCachedProperty:
     """Decorator behavior: caches per (instance, _state_version)."""

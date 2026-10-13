@@ -39,6 +39,9 @@
 
 ### Changed
 
+- Layout setup synchronizes restored geometry and invalidates all environment
+  caches. The polar layout builds physical distances and circular seams before
+  environment initialization, and records its `circular_angle` build option.
 - Layout engines, including a polar layout with annular-sector cells, supply
   their own finite-volume cell faces. Dense kernels, spectral diffusion,
   smoothness bases, gradients and divergence all use that one capability, and
@@ -93,6 +96,8 @@
 
 ### Fixed
 
+- Refresh active-bin lookup indices when rebuilding a masked polar layout, so
+  angular seam edges and point lookup use the new mask.
 - Keep the saved connectivity of environments read with `from_file`,
   `from_dict` or `read_environment` on their layout. Gradients and divergence
   work on 4-connected grids read from NWB, and `copy()` of a read-back

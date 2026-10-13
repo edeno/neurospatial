@@ -202,18 +202,25 @@ def _four_connected_grid():
     )
 
 
-def _polar():
+def _polar(circular_angle=True):
     return Environment.from_polar_egocentric(
         distance_range=(0.0, 30.0),
         angle_range=(-np.pi, np.pi),
         distance_bin_size=5.0,
         angle_bin_size=np.pi / 6,
+        circular_angle=circular_angle,
     )
+
+
+def _open_polar():
+    return _polar(circular_angle=False)
 
 
 @pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 @pytest.mark.parametrize(
-    "make_env", [_four_connected_grid, _polar], ids=["grid4", "polar"]
+    "make_env",
+    [_four_connected_grid, _polar, _open_polar],
+    ids=["grid4", "polar", "open-polar"],
 )
 def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_path):
     """Read-back environments and their copies keep 4-connectivity and polar seams.
@@ -226,6 +233,10 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
     expected_divergence = divergence(original, gradient(original, field))
     restored = _round_trip(original, how, tmp_path)
     for env in (restored, restored.copy()):
+        assert env.connectivity is env.layout.connectivity
+        assert env.bin_centers is env.layout.bin_centers
+        assert env.grid_edges is env.layout.grid_edges
+        assert env.active_mask is env.layout.active_mask
         assert list(env.connectivity.edges()) == list(original.connectivity.edges())
         np.testing.assert_allclose(gradient(env, field), gradient(original, field))
         np.testing.assert_allclose(
@@ -234,6 +245,38 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
         np.testing.assert_allclose(
             env.compute_kernel(3.0), original.compute_kernel(3.0), atol=1e-12
         )
+
+
+def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
+    """Absent keys and point-based fallbacks never overwrite the layout's own."""
+    grid = _four_connected_grid()
+    data = to_dict(grid)
+    data.pop("grid_edges")
+    restored = from_dict(data)
+    np.testing.assert_array_equal(
+        restored.bin_at(grid.bin_centers), np.arange(grid.n_bins)
+    )
+
+    hexagonal = Environment.from_layout(
+        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+    )
+    restored = from_dict(to_dict(hexagonal))
+    assert restored.layout.grid_edges == hexagonal.layout.grid_edges
+    assert restored.copy().grid_edges == hexagonal.grid_edges
+    np.testing.assert_array_equal(
+        restored.bin_at(hexagonal.bin_centers), np.arange(hexagonal.n_bins)
+    )
+
+
+def test_invalid_saved_graph_names_the_saved_data():
+    """A malformed saved graph is reported against the data, not the library."""
+    data = to_dict(_four_connected_grid())
+    for link in data["graph"]["links"]:
+        link.pop("edge_id")
+    with pytest.raises(ValueError, match="environment dictionary is invalid") as exc:
+        from_dict(data)
+    assert "layout engine bug" not in str(exc.value)
+    assert "\nFix:" in str(exc.value)
 
 
 def test_finite_volume_geometry_refuses_a_layout_graph_out_of_sync():
@@ -271,6 +314,103 @@ def test_polar_from_layout_requires_the_masked_grid():
         EgocentricPolarEnvironment.from_layout(
             "RegularGrid", {"positions": np.zeros((4, 2)), "bin_size": 1.0}
         )
+
+
+@pytest.mark.parametrize("circular", [False, True])
+@pytest.mark.parametrize("diagonal", [False, True])
+def test_polar_layout_builds_physical_geometry(circular, diagonal):
+    """Edges, lengths, faces and areas match closed-form annular-sector geometry."""
+    from neurospatial.layout.engines._polar import _PolarGridLayout
+
+    n_r, n_t, dr, dt = 3, 4, 2.0, np.pi / 2
+    r_edges = 1.0 + dr * np.arange(n_r + 1)
+    t_edges = np.linspace(-np.pi, np.pi, n_t + 1)
+    layout = _PolarGridLayout()
+    layout.build(
+        active_mask=np.ones((n_r, n_t), dtype=bool),
+        grid_edges=(r_edges, t_edges),
+        circular_angle=circular,
+        connect_diagonal_neighbors=diagonal,
+    )
+    assert layout._build_params_used["circular_angle"] is circular
+
+    radial, angular = (n_r - 1) * n_t, n_r * (n_t - 1)
+    diagonals = 2 * (n_r - 1) * (n_t - 1) if diagonal else 0
+    seams = (n_r + (2 * (n_r - 1) if diagonal else 0)) if circular else 0
+    graph, volumes = layout.finite_volume_geometry()
+    assert graph.number_of_edges() == radial + angular + diagonals + seams
+
+    r, theta = layout.bin_centers.T
+    for u, v, data in graph.edges(data=True):
+        steps_r = round(abs(r[u] - r[v]) / dr)
+        steps_t = round(abs(theta[u] - theta[v]) / dt)
+        steps_t = min(steps_t, n_t - steps_t)  # a seam edge wraps to one step
+        r_mid = 0.5 * (r[u] + r[v])
+        face = {(1, 0): r_mid * dt, (0, 1): dr, (1, 1): 0.0}[(steps_r, steps_t)]
+        assert data["distance"] == pytest.approx(
+            np.hypot(steps_r * dr, steps_t * r_mid * dt)
+        )
+        assert data["A"] == pytest.approx(face)
+    sectors = 0.5 * np.diff(r_edges**2)[:, None] * np.diff(t_edges)[None, :]
+    np.testing.assert_allclose(volumes, sectors.ravel())
+
+
+def test_masked_polar_layout_preserves_active_bin_indices():
+    """Seams join active bins only, using their renumbered graph indices."""
+    from neurospatial.layout.engines._polar import _PolarGridLayout
+
+    mask = np.array([[True, False, True, True], [False, True, True, True]])
+    layout = _PolarGridLayout()
+    layout.build(
+        active_mask=mask,
+        grid_edges=(np.arange(3.0) * 2, np.linspace(-np.pi, np.pi, 5)),
+        circular_angle=True,
+        connect_diagonal_neighbors=True,
+    )
+    assert set(layout.connectivity.nodes()) == set(range(mask.sum()))
+    by_flat = {
+        data["source_grid_flat_index"]: node
+        for node, data in layout.connectivity.nodes(data=True)
+    }
+    assert layout.connectivity.has_edge(by_flat[0], by_flat[3])
+    assert layout.connectivity.has_edge(by_flat[0], by_flat[7])
+    assert len(layout.connectivity.nodes()) == mask.sum()
+    graph, volumes = layout.finite_volume_geometry()
+    assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
+
+
+def test_polar_rebuild_refreshes_active_bin_mapping():
+    """Reusing a layout with a new mask must rebuild seam and lookup indices."""
+    from neurospatial.layout.engines._polar import _PolarGridLayout
+
+    edges = (np.arange(3.0) * 2, np.linspace(-np.pi, np.pi, 5))
+    layout = _PolarGridLayout()
+    layout.build(active_mask=np.ones((2, 4), dtype=bool), grid_edges=edges)
+    mask = np.array([[True, False, True, True], [False, True, True, True]])
+    layout.build(active_mask=mask, grid_edges=edges)
+
+    expected = _PolarGridLayout()
+    expected.build(active_mask=mask, grid_edges=edges)
+    assert list(layout.connectivity.edges()) == list(expected.connectivity.edges())
+    np.testing.assert_array_equal(
+        layout.point_to_bin_index(layout.bin_centers), np.arange(mask.sum())
+    )
+    graph, volumes = layout.finite_volume_geometry()
+    assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
+
+
+@pytest.mark.parametrize("circular", [False, True])
+def test_legacy_polar_parameters_restore_saved_connectivity(circular):
+    """Old dictionaries without the polar build option keep their saved graph."""
+    original = _polar(circular_angle=circular)
+    data = to_dict(original)
+    data["layout_parameters"].pop("circular_angle")
+    restored = from_dict(data)
+    assert restored._angular_is_circular is circular
+    assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
+    np.testing.assert_allclose(
+        restored.compute_kernel(3.0), original.compute_kernel(3.0)
+    )
 
 
 # ---------------------------------------------------------------------------

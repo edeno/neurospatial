@@ -407,29 +407,25 @@ class TestAngularCircularDerivedFromGraph:
 
 
 class TestPolarStateVersionFreshness:
-    """Post-construction mutations must invalidate versioned caches.
+    """Polar geometry is complete before construction-time caches are populated."""
 
-    ``EgocentricPolarEnvironment.create`` fixes polar edge geometry and
-    (optionally) adds circular wrap edges *after* ``_setup_from_layout`` finalized
-    ``_state_version``. Without a final version bump, any
-    ``versioned_cached_property`` cached at the construction version would go
-    stale relative to the mutated connectivity graph.
-    """
+    def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
+        """Initial setup already sees physical distances and circular faces."""
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-    def test_construction_bumps_version_past_layout_setup(self):
-        """The polar factory bumps the version beyond a plain grid build.
+        setup = EgocentricPolarEnvironment._setup_from_layout
+        captured = []
 
-        A bare ``from_grid_mask`` env of the same geometry performs no
-        post-construction mutation, so its ``_state_version`` reflects only
-        ``_setup_from_layout``. The polar factory mutates after setup and must
-        bump again -- so its version must be strictly greater.
-        """
-        grid_mask = np.ones((1, 4), dtype=bool)
-        grid_edges = (np.linspace(0.0, 10.0, 2), np.linspace(-np.pi, np.pi, 5))
-        grid_env = Environment.from_grid_mask(
-            active_mask=grid_mask,
-            grid_edges=grid_edges,
-            connect_diagonal_neighbors=True,
+        def capture_setup(env):
+            setup(env)
+            assert env.connectivity.has_edge(0, 3)
+            assert env.connectivity.edges[0, 1]["distance"] == pytest.approx(
+                5.0 * np.pi / 2
+            )
+            captured.append(env._face_geometry)
+
+        monkeypatch.setattr(
+            EgocentricPolarEnvironment, "_setup_from_layout", capture_setup
         )
 
         polar_env = Environment.from_polar_egocentric(
@@ -440,7 +436,8 @@ class TestPolarStateVersionFreshness:
             circular_angle=True,
         )
 
-        assert polar_env._state_version > grid_env._state_version
+        assert len(captured) == 1
+        assert polar_env._face_geometry is captured[0]
 
     def test_differential_operator_reflects_circular_edges(self):
         """A versioned cached property sees the wrap edges, not a stale graph.

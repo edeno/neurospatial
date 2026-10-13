@@ -821,11 +821,12 @@ def _reconstruct_environment(
                 regions=regions,
             )
 
-            # Override connectivity with stored values (preserves edge weights and
-            # 4-connectivity). The layout gets it too: diffusion and finite-volume
-            # geometry, and copy(), read the layout's graph.
-            env.connectivity = env.layout.connectivity = connectivity
-            env.dimension_ranges = dimension_ranges
+            # Restore saved geometry on the layout (including physical polar
+            # distances and 4-connectivity), then refresh all environment state.
+            env.layout.bin_centers = bin_centers
+            env.layout.connectivity = connectivity
+            env.layout.dimension_ranges = dimension_ranges
+            env._setup_from_layout(restored_from="the NWB environment record")
 
             return env
 
@@ -852,7 +853,7 @@ def _reconstruct_environment(
     )
 
     # Setup the environment from the layout (uses self.layout internally)
-    env._setup_from_layout()
+    env._setup_from_layout(restored_from="the NWB environment record")
 
     return env
 

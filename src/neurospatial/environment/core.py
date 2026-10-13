@@ -847,47 +847,82 @@ class _BaseEnvironment(
 
         return "\n".join(lines)
 
-    def _setup_from_layout(self) -> None:
-        """Populate Environment attributes from its (built) LayoutEngine.
+    def _setup_from_layout(self, *, restored_from: str | None = None) -> None:
+        """Refresh Environment geometry and caches from its built LayoutEngine.
 
         This internal method is called after the `LayoutEngine` is associated
         with the Environment. It copies essential geometric and connectivity
         information from the layout to the Environment's attributes.
         It also applies fallbacks for certain grid-specific attributes if the
-        layout is point-based to ensure consistency.
+        layout is point-based to ensure consistency. Readers that restore saved
+        geometry onto the layout they rebuilt assign it to the layout first,
+        then call this method to synchronize the environment, advance its state
+        version and clear all analysis caches. Lookups a layout derives at build
+        time are not rebuilt, so swapping in a different layout or changing a
+        layout's bins is not supported.
+
+        Parameters
+        ----------
+        restored_from : str, optional
+            Where restored geometry came from (e.g. a file path). An invalid
+            graph is then reported as a problem with that saved data rather
+            than as a layout engine bug.
 
         Raises
         ------
         ValueError
             If the connectivity graph from the layout engine is invalid
-            (missing required node/edge attributes, wrong dimensions, etc.)
+            (missing required node/edge attributes, wrong dimensions, etc.).
+            The environment is left unchanged.
 
         """
-        self.bin_centers = self.layout.bin_centers
-        self.connectivity = getattr(self.layout, "connectivity", nx.Graph())
-        self.dimension_ranges = self.layout.dimension_ranges
+        bin_centers = self.layout.bin_centers
+        connectivity = getattr(self.layout, "connectivity", nx.Graph())
 
-        # Validate connectivity graph has required metadata
-        # This catches layout engine bugs early with clear error messages
+        # Validate the graph before touching any environment state, so a failure
+        # leaves the previous geometry, version and caches consistent.
         # Note: Calculate n_dims directly here since self.n_dims has @check_fitted
-        n_dims = self.bin_centers.shape[1] if self.bin_centers is not None else 0
+        n_dims = bin_centers.shape[1] if bin_centers is not None else 0
         try:
-            n_nodes = len(self.connectivity.nodes)
-            n_edges = len(self.connectivity.edges)
+            n_nodes = len(connectivity.nodes)
+            n_edges = len(connectivity.edges)
             log_graph_validation(n_nodes=n_nodes, n_edges=n_edges, n_dims=n_dims)
             validate_connectivity_graph(
-                self.connectivity,
+                connectivity,
                 n_dims=n_dims,
                 check_node_attrs=True,
                 check_edge_attrs=True,
             )
         except GraphValidationError as e:
+            if restored_from is not None:
+                # Validator messages assume a layout-built graph and blame the
+                # engine; keep only the defect for saved data.
+                defect = str(e).split("This is a layout engine bug")[0].strip()
+                raise ValueError(
+                    _format_error(
+                        f"The connectivity graph in {restored_from} is invalid: "
+                        f"{defect}",
+                        why=(
+                            "Why: a read-back environment uses its stored graph, "
+                            "whose nodes and edges must carry the attributes "
+                            "neurospatial writes."
+                        ),
+                        fix=(
+                            "re-save the environment from a factory-built "
+                            "Environment with to_file, to_dict or write_environment"
+                        ),
+                    )
+                ) from e
             raise ValueError(
                 f"Invalid connectivity graph from layout engine "
                 f"'{self.layout._layout_type_tag}': {e}\n\n"
                 f"This is a layout engine bug. Please report it at "
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
+
+        self.bin_centers = bin_centers
+        self.connectivity = connectivity
+        self.dimension_ranges = self.layout.dimension_ranges
 
         # Grid-specific attributes
         self.grid_edges = getattr(self.layout, "grid_edges", ())
@@ -909,6 +944,7 @@ class _BaseEnvironment(
         # versioned_cached_property values from this and other mixins)
         # treats this environment as a "freshly built" object.
         self._state_version += 1
+        self.clear_cache()
 
         # Log environment creation
         n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
@@ -1223,10 +1259,7 @@ class _BaseEnvironment(
             env_copy.units = self.units
             env_copy.frame = self.frame
 
-        # Always clear caches (regardless of deep/shallow)
-        # This ensures caches are rebuilt for the new environment object
-        env_copy._clear_explicit_caches()
-
+        # Construction (_setup_from_layout) already cleared every cache.
         return env_copy
 
     def _clear_explicit_caches(
@@ -1234,7 +1267,7 @@ class _BaseEnvironment(
     ) -> None:
         """Internal method to clear explicit caches (KDTree, kernels).
 
-        This is called by clear_cache() and copy().
+        This is called by clear_cache().
 
         Parameters
         ----------

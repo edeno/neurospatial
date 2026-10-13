@@ -184,5 +184,10 @@ class FiniteVolumeGeometryProvider(Protocol):
     """Layout capability behind diffusion, edge gradients and flux divergence."""
 
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Return a graph copy with face measures and distances, plus cell measures."""
+        """Return a graph copy with face measures and distances, plus cell measures.
+
+        Node labels and edge order and orientation match the layout's
+        connectivity. Each undirected edge defines the scalar, symmetric
+        two-point conductance ``A / distance`` used by the numerical operators.
+        """
         ...
