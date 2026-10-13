@@ -219,25 +219,16 @@ class TestNeighborReduceEquivalence:
 
     def test_isolated_node_returns_nan(self) -> None:
         """A bin with no neighbors yields NaN for sum/mean (vectorized path)."""
-        import networkx as nx
 
-        # Build a tiny env-like object with one isolated node via a real env,
-        # then drop edges from one node to make it isolated.
-        positions = np.array([[0, 0], [1, 0], [2, 0]], dtype=np.float64)
-        env = Environment.from_samples(positions, bin_size=1.0)
-        # Isolate node 0 by removing its edges on a copy of connectivity.
-        g = env.connectivity
-        isolated = next((n for n in g.nodes if g.degree(n) == 0), None)
-        if isolated is None:
-            # Force isolation of node 0.
-            edges = list(g.edges(0))
-            g.remove_edges_from(edges)
-            isolated = 0
+        # An inactive cell between bins 0 and 1 leaves bin 0 with no neighbors.
+        env = Environment.from_grid_mask(
+            np.array([True, False, True, True]), grid_edges=(np.arange(5.0),)
+        )
+        isolated = 0
+        assert env.connectivity.degree(isolated) == 0
         field = np.array([1.0, 2.0, 3.0], dtype=np.float64)
         result = neighbor_reduce(env, field, op="sum")
         assert np.isnan(result[isolated])
-        # Restore graph (it is module-scoped only if fixture; here it's local).
-        assert isinstance(g, nx.Graph)
 
 
 class TestEnvironmentIntegration:

@@ -93,6 +93,71 @@ uv run ruff format .
 uv run mypy src/neurospatial
 ```
 
+### Diffusion geometry providers
+
+Smoothing, diffusion, smoothness bases, gradients and divergence all use one
+layout capability, defined in `neurospatial.layout._diffusion`:
+
+- `FiniteVolumeGeometryProvider.finite_volume_geometry()` returns a copy of the
+  layout's connectivity graph with face measures (`A`) and edge distances
+  (`distance`) on every edge, plus cell measures in active-bin order. Gradient
+  and divergence index edge fields by `env.connectivity`, so the environment
+  rejects a graph whose edge order or orientation differs from it. Each
+  undirected edge defines the scalar, symmetric two-point conductance
+  `A / distance` used by the current numerical scheme.
+- `FaceGeometry.from_graph` validates those faces into read-only per-edge arrays
+  in connectivity edge order. `DiffusionGeometry.from_faces` assembles the
+  conductances `W = A / distance`; components come from positive conductances,
+  so zero-area (corner-touching) edges and isolated bins form separate
+  components.
+
+A layout has the capability only when it defines the method, so `isinstance`
+against the protocol is a truthful capability check. A layout that cannot
+supply geometry may define `_explain_missing_geometry(operation)` to tailor the
+error, as layouts read from non-grid NWB records do.
+
+Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
+Polar environments are built on `_PolarGridLayout`, a masked grid over
+`(distance, angle)` whose cell and face measures are the grid's scaled by
+radius. A new layout or subclass does not need registration in the diffusion
+solver. These are internal interfaces, not additional scientist-facing factory
+requirements.
+
+`layout.engines._polar` also builds physical polar edge distances and circular
+seam edges before the environment is initialized. Its masked-grid build records
+`circular_angle` alongside the shared grid parameters.
+
+Layouts own `connectivity`, `bin_centers` and the grid geometry, and an
+environment publishes them read-only: its geometry attributes are views of one
+frozen `_PublishedGeometry` that cannot be reassigned, the arrays reject
+writes, and the graph is frozen. `_setup_from_layout` swaps that object whole
+and advances `_state_version`, which keys every derived cache, in one step. Factories and readers share one construction path: the file and NWB
+readers call `_from_saved_layout`, which rebuilds the layout from its saved
+parameters (and with it every derived lookup), checks the saved bin centers
+against it, replaces the rebuilt graph with the saved one (authoritative for
+4-connected grids, open angular axes and physical polar distances), and
+constructs the environment once. `_setup_from_layout` validates the graph before
+changing anything, synchronizes the environment's views, advances its state
+version and clears all analysis caches; `copy()` rebuilds from the layout too.
+Swapping in a different layout object, or changing a layout's bins, and calling
+it again is not supported.
+
+`Environment._face_geometry` caches the validated faces once per state version;
+the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
+operators all derive from it. Consumers read it through
+`_require_face_geometry(operation)`, which names the analysis when the layout
+has no cell faces. The existing state-version and `clear_cache()` mechanisms
+own every cache lifetime.
+
+Numerical consumers declare their small environment requirements in
+`ops._protocols`, so Cartesian and polar environments satisfy them without
+casts to the entire mixin interface. `ops._types` describes the diffusion and
+MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
+libraries at runtime. The dense-operation warning threshold is
+`neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
+Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both concrete environment
+types against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
+
 ## Code Standards
 
 ### Python Style

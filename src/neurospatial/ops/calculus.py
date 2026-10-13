@@ -12,31 +12,29 @@ Import from ``neurospatial.ops`` or ``neurospatial.ops.calculus``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    import networkx as nx
-
-    from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.layout._diffusion import FaceGeometry
+    from neurospatial.ops._protocols import (
+        DivergenceConsumer,
+        FaceGeometryConsumer,
+        GradientConsumer,
+    )
 
 __all__ = ["compute_differential_operator", "divergence", "gradient"]
 
 
-def _fv_edges(env: Environment) -> tuple[nx.Graph, NDArray[np.float64]]:
-    """Resolve face measures, along-edge distances and cell volumes."""
-    from neurospatial.ops.diffusion import _finite_volume_geometry
-
-    return _finite_volume_geometry(
-        cast("EnvironmentProtocol", env), operation="gradient/divergence"
-    )
+def _faces(env: FaceGeometryConsumer) -> FaceGeometry:
+    """Cached face measures, along-edge distances and cell volumes."""
+    return env._require_face_geometry("gradient/divergence")
 
 
-def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
+def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
     """Build the inverse-distance oriented edge operator.
 
     For edge e = (i -> j), ``D[i, e] = -1/d_e`` and ``D[j, e] = 1/d_e``.
@@ -44,7 +42,7 @@ def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry. Edge distances
         use the same geometry as ``env.smooth``, including track junctions.
 
@@ -82,14 +80,12 @@ def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
     divergence : Compute the net outward flux per cell volume.
     Environment.get_differential_operator : Cached access to this matrix.
     """
-    graph, _ = _fv_edges(env)
-    edges = list(graph.edges(data="distance"))
-    n_bins, n_edges = env.n_bins, len(edges)
+    faces = _faces(env)
+    n_bins, n_edges = env.n_bins, faces.distance.size
     if n_edges == 0:
         return sparse.csc_matrix((n_bins, 0), dtype=np.float64)
-    src = np.fromiter((u for u, _, _ in edges), dtype=np.int64, count=n_edges)
-    dst = np.fromiter((v for _, v, _ in edges), dtype=np.int64, count=n_edges)
-    inv_d = 1.0 / np.fromiter((d for *_, d in edges), dtype=np.float64, count=n_edges)
+    src, dst = faces.edges[:, 0], faces.edges[:, 1]
+    inv_d = 1.0 / faces.distance
     cols = np.arange(n_edges)
     return sparse.csc_matrix(
         (
@@ -100,31 +96,22 @@ def compute_differential_operator(env: Environment) -> sparse.csc_matrix:
     )
 
 
-def _compute_divergence_operator(env: Environment) -> sparse.csc_matrix:
+def _compute_divergence_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
     """Build the negative volume-weighted adjoint of the gradient."""
-    graph, volumes = _fv_edges(env)
-    grad_t = env.get_differential_operator()
-    area = np.fromiter(
-        (a for *_, a in graph.edges(data="A")), dtype=np.float64, count=grad_t.shape[1]
-    )
-    length = np.fromiter(
-        (d for *_, d in graph.edges(data="distance")),
-        dtype=np.float64,
-        count=grad_t.shape[1],
-    )
+    faces = _faces(env)
     return (
-        -sparse.diags(1.0 / np.asarray(volumes, dtype=np.float64))
-        @ grad_t
-        @ sparse.diags(area * length)
+        -sparse.diags(1.0 / faces.volumes)
+        @ env.get_differential_operator()
+        @ sparse.diags(faces.A * faces.distance)
     ).tocsc()
 
 
-def gradient(env: Environment, field: NDArray[np.float64]) -> NDArray[np.float64]:
+def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.float64]:
     """Compute the directional derivative of a scalar field along every edge.
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry.
     field : NDArray[np.float64], shape (n_bins,)
         Scalar value at each bin center.
@@ -175,13 +162,13 @@ def gradient(env: Environment, field: NDArray[np.float64]) -> NDArray[np.float64
 
 
 def divergence(
-    env: Environment, edge_field: NDArray[np.float64]
+    env: DivergenceConsumer, edge_field: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     """Compute net outward flux per cell volume.
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
         Flux density along each oriented edge in ``env.connectivity.edges()``
@@ -231,5 +218,5 @@ def divergence(
             "Fix: pass a 1-D edge_field in env.connectivity.edges() order."
         )
     return np.asarray(
-        env._divergence_operator_cached @ edge_field, dtype=np.float64
+        env.get_divergence_operator() @ edge_field, dtype=np.float64
     ).ravel()

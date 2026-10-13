@@ -784,7 +784,6 @@ def _reconstruct_environment(
     from neurospatial import Environment
     from neurospatial.environment.core import _BaseEnvironment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
-    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
     env_cls: type[_BaseEnvironment] = (
         EgocentricPolarEnvironment if is_polar else Environment
@@ -810,30 +809,19 @@ def _reconstruct_environment(
             # Reshape active_mask from flat to N-D
             active_mask = active_mask_flat.reshape(tuple(grid_shape))
 
-            # Create MaskedGridLayout with exact grid structure
-            layout = MaskedGridLayout()
-            layout.build(
-                active_mask=active_mask,
-                grid_edges=grid_edges,
-                connect_diagonal_neighbors=True,  # Conservative default
-            )
-
-            # Create environment from layout (polar type when is_polar)
-            env = env_cls.from_layout(
-                kind="MaskedGrid",
-                layout_params={
-                    "active_mask": active_mask,
-                    "grid_edges": grid_edges,
-                },
+            # Rebuild the exact grid (polar type when is_polar), then use the
+            # stored graph (4-connectivity, physical polar distances and seams)
+            # and extents, since every grid is stored as a masked grid.
+            return env_cls._from_saved_layout(
+                "MaskedGrid",
+                {"active_mask": active_mask, "grid_edges": grid_edges},
                 name=env_name,
+                bin_centers=bin_centers,
+                connectivity=connectivity,
+                restored_from="the NWB environment record",
+                dimension_ranges=dimension_ranges,
                 regions=regions,
             )
-
-            # Override connectivity with stored values (preserves edge weights)
-            env.connectivity = connectivity
-            env.dimension_ranges = dimension_ranges
-
-            return env
 
     # Fallback: Create environment with KDTree-based layout for non-grid layouts
     # These layouts don't have grid structure, so we use a special reconstructed
@@ -858,7 +846,7 @@ def _reconstruct_environment(
     )
 
     # Setup the environment from the layout (uses self.layout internally)
-    env._setup_from_layout()
+    env._setup_from_layout(restored_from="the NWB environment record")
 
     return env
 
@@ -911,6 +899,30 @@ class _ReconstructedLayout:
         self.grid_edges = grid_edges
         self.grid_shape = grid_shape
         self.active_mask = None
+
+    def _explain_missing_geometry(self, operation: str) -> str:
+        """Explain why non-grid NWB records lack diffusion cell geometry.
+
+        This layout deliberately does not define ``finite_volume_geometry``, so
+        capability checks report it unsupported.
+        """
+        from neurospatial._exceptions import _format_error
+
+        original = self._build_params_used["original_layout_type"]
+        return _format_error(
+            f"{operation} needs finite-volume cell geometry, which is not "
+            f"available for this {original} environment read from NWB.",
+            why=(
+                "Why: read_environment restores bin centers, connectivity "
+                "and bin measures for non-grid layouts, but not the layout "
+                "engine that defines cell faces."
+            ),
+            fix=(
+                f"rebuild the environment with the factory and {original} "
+                f"layout parameters that created it, and run {operation} on that; "
+                "grid layouts read from NWB support it directly"
+            ),
+        )
 
     @property
     def is_linearized_track(self) -> bool:

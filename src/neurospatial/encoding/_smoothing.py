@@ -42,7 +42,7 @@ transient dense basis there, with the same large-matrix ``UserWarning`` as
 ``gaussian_kde`` still builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix
 (Euclidean, boundary-ignoring), costing O(n_bins²) memory and time; it is cached
 per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``) and reused across
-neurons, and warns above ``_LARGE_KERNEL_THRESHOLD`` bins. For very large
+neurons, and warns above ``LARGE_KERNEL_THRESHOLD`` bins. For very large
 environments prefer ``diffusion_kde`` (matrix-free and boundary-aware).
 
 References
@@ -62,18 +62,20 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial import _constants
+
 # Single shared high-bin warn threshold. Reuse the diffusion-kernel warn
 # threshold so both dense O(n_bins^2) smoothing paths (diffusion + gaussian)
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
     component_support_mask,
     diffusion_apply_rtol,
     diffusion_component_labels,
 )
-from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
 
 # A smoothed denominator is resolved when it exceeds this many times the
 # diffusion apply's noise floor (``diffusion_apply_rtol``) relative to the
@@ -184,7 +186,7 @@ def _get_gaussian_kernel(
     verify ``n_bins`` to defend against id reuse after GC.
 
     The weight matrix is dense ``(n_bins, n_bins)`` -- O(n_bins**2) memory --
-    so when ``n_bins`` exceeds ``_LARGE_KERNEL_THRESHOLD`` a loud memory
+    so when ``n_bins`` exceeds ``LARGE_KERNEL_THRESHOLD`` a loud memory
     ``UserWarning`` (with a GB estimate) is emitted and the matrix is built
     anyway. There is no hard limit. The warning fires once per kernel *build*
     (a cache hit returns before warning), mirroring the diffusion-kernel warning
@@ -214,7 +216,7 @@ def _get_gaussian_kernel(
     # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
     # its threshold. Placed after the cache-hit check so it fires once per
     # build, not per call.
-    if n_bins > _LARGE_KERNEL_THRESHOLD:
+    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
             f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
@@ -225,7 +227,7 @@ def _get_gaussian_kernel(
             f"method='diffusion_kde' (matrix-free, boundary-aware, "
             f"O(n * rank)) or increase bin_size (fewer bins).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     two_sigma_sq = 2.0 * bandwidth**2
@@ -383,7 +385,7 @@ def smooth_rate_map(
     eigenbasis is geometry-only, so it is built once per environment and reused
     across bandwidths, modes, and neurons. ``gaussian_kde`` still builds a dense
     ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²), warns above
-    ``_LARGE_KERNEL_THRESHOLD`` bins).
+    ``LARGE_KERNEL_THRESHOLD`` bins).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
     (default) -- it is boundary-aware and matrix-free, so it scales to large/fine
@@ -878,8 +880,6 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
     """
     if min_occupancy <= 0.0:
         return
-    from neurospatial.environment.trajectory import _external_stacklevel
-
     occupancy = np.asarray(occupancy, dtype=np.float64)
     occupied = occupancy > 0.0
     n_occupied = int(np.count_nonzero(occupied))

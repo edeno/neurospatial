@@ -30,8 +30,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import TimeSupport, resolve_time_windows, run_time_bounds
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment.trajectory import (
-    _external_stacklevel,
     interval_valid_mask,
     start_allocated_occupancy,
 )

@@ -80,3 +80,11 @@ BIN_CONTAINMENT_FACTOR = 0.7
 #: Maximum distance multiplier for nearest neighbor queries
 #: Used to detect when a point is outside all bins
 NEAREST_BIN_DISTANCE_THRESHOLD = 2.0
+
+# Dense-operation warnings
+# ------------------------
+
+#: Bin count above which dense O(n_bins**2) kernels and near-full-rank bases
+#: warn (with a GB estimate) and proceed. Shared by diffusion and Gaussian
+#: smoothing; it is a warning threshold, not a limit.
+LARGE_KERNEL_THRESHOLD = 3000

@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, NoReturn, TypeVar, overload
 
 import networkx as nx
 import numpy as np
@@ -62,6 +62,62 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import KernelMode
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _PublishedGeometry:
+    """The geometry an environment publishes, replaced whole and never edited.
+
+    ``_setup_from_layout`` builds a new instance (with read-only arrays and a
+    frozen graph) and advances ``_state_version``, which keys every derived
+    cache, in the same step.
+    """
+
+    bin_centers: NDArray[np.float64]
+    connectivity: nx.Graph
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    grid_edges: tuple[NDArray[np.float64], ...] | None
+    grid_shape: tuple[int, ...] | None
+    active_mask: NDArray[np.bool_] | None
+
+
+class _GeometryView(Generic[_T]):
+    """Read-only environment attribute backed by its published geometry."""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._name = name
+
+    @overload
+    def __get__(self, obj: None, objtype: type | None = None) -> _GeometryView[_T]: ...
+
+    @overload
+    def __get__(self, obj: _BaseEnvironment, objtype: type | None = None) -> _T: ...
+
+    def __get__(
+        self, obj: _BaseEnvironment | None, objtype: type | None = None
+    ) -> _GeometryView[_T] | _T:
+        if obj is None:
+            return self
+        value: _T = getattr(obj._geometry, self._name)
+        return value
+
+    def __set__(self, obj: object, value: object) -> NoReturn:
+        raise AttributeError(
+            _format_error(
+                f"Environment.{self._name} is read-only.",
+                why=(
+                    "Why: cached kernels, operators and lookups belong to the "
+                    "geometry the environment was built with, so replacing part "
+                    "of it would leave them stale."
+                ),
+                fix=(
+                    "build a new environment instead, e.g. with a factory, "
+                    "subset, rebin or apply_transform"
+                ),
+            )
+        )
 
 
 @dataclass
@@ -199,10 +255,12 @@ class _BaseEnvironment(
     bin_centers : NDArray[np.float64]
         Coordinates of the center of each *active* bin/node in the environment.
         Shape is (n_active_bins, n_dims). Populated by `_setup_from_layout`.
+        Read-only: build a new environment to change geometry.
     connectivity : nx.Graph
         A NetworkX graph where nodes are integers from `0` to `n_active_bins - 1`,
         directly corresponding to the rows of `bin_centers`. Edges represent
-        adjacency between bins. Populated by `_setup_from_layout`.
+        adjacency between bins. Populated by `_setup_from_layout` and frozen
+        (no node or edge can be added or removed).
     dimension_ranges : Optional[Sequence[Tuple[float, float]]]
         The effective min/max extent `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]`
         covered by the layout's geometry. Populated by `_setup_from_layout`.
@@ -258,14 +316,17 @@ class _BaseEnvironment(
     layout: LayoutEngine
 
     # --- Attributes populated from the layout instance ---
-    bin_centers: NDArray[np.float64] = field(init=False)
-    connectivity: nx.Graph = field(init=False)
-    dimension_ranges: Sequence[tuple[float, float]] | None = field(init=False)
+    # Read-only views of the published geometry (see _PublishedGeometry). Not
+    # annotated, so they are class-level descriptors rather than dataclass fields.
+    _geometry: _PublishedGeometry = field(init=False, repr=False)
+    bin_centers = _GeometryView[NDArray[np.float64]]()
+    connectivity = _GeometryView[nx.Graph]()
+    dimension_ranges = _GeometryView["Sequence[tuple[float, float]] | None"]()
 
     # Grid-specific context (populated if layout is grid-based)
-    grid_edges: tuple[NDArray[np.float64], ...] | None = field(init=False)
-    grid_shape: tuple[int, ...] | None = field(init=False)
-    active_mask: NDArray[np.bool_] | None = field(init=False)
+    grid_edges = _GeometryView["tuple[NDArray[np.float64], ...] | None"]()
+    grid_shape = _GeometryView["tuple[int, ...] | None"]()
+    active_mask = _GeometryView["NDArray[np.bool_] | None"]()
 
     # Region Management
     regions: Regions = field(init=False, repr=False)
@@ -316,6 +377,8 @@ class _BaseEnvironment(
         layout_type_used: str | None = None,
         layout_params_used: dict[str, Any] | None = None,
         regions: Regions | None = None,
+        *,
+        restored_from: str | None = None,
     ) -> None:
         """Initialize the Environment.
 
@@ -340,6 +403,9 @@ class _BaseEnvironment(
 
         regions : Regions or None, optional
             Initial named regions; an empty container is created when omitted.
+        restored_from : str, optional
+            Where a read-back environment's saved geometry came from; an invalid
+            saved graph is then reported against that data.
 
         """
         if layout is None:
@@ -368,15 +434,19 @@ class _BaseEnvironment(
         self._is_linearized_track_env = self.layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
-        self.bin_centers = np.empty((0, 0))  # Placeholder
-        self.connectivity = nx.Graph()
-        self.dimension_ranges = None
-        self.grid_edges = ()
-        self.grid_shape = None
-        self.active_mask = None
+        # Placeholder geometry until _setup_from_layout publishes the layout's
+        self._geometry = _PublishedGeometry(
+            bin_centers=np.empty((0, 0)),
+            connectivity=nx.Graph(),
+            dimension_ranges=None,
+            grid_edges=(),
+            grid_shape=None,
+            active_mask=None,
+        )
         self._is_fitted = False  # Will be set by _setup_from_layout
         if layout_type_used is not None:
-            self._setup_from_layout()  # Populate attributes from the built layout
+            # Populate attributes from the built layout
+            self._setup_from_layout(restored_from=restored_from)
         if regions is not None:
             if not isinstance(regions, Regions):
                 raise TypeError(
@@ -847,41 +917,73 @@ class _BaseEnvironment(
 
         return "\n".join(lines)
 
-    def _setup_from_layout(self) -> None:
-        """Populate Environment attributes from its (built) LayoutEngine.
+    def _setup_from_layout(self, *, restored_from: str | None = None) -> None:
+        """Refresh Environment geometry and caches from its built LayoutEngine.
 
         This internal method is called after the `LayoutEngine` is associated
         with the Environment. It copies essential geometric and connectivity
         information from the layout to the Environment's attributes.
         It also applies fallbacks for certain grid-specific attributes if the
-        layout is point-based to ensure consistency.
+        layout is point-based to ensure consistency. It also advances the state
+        version, clears all analysis caches and publishes the geometry
+        read-only. Readers restore a saved graph onto the rebuilt layout before
+        the environment is constructed (``_from_saved_layout``), so this runs
+        once per environment. Lookups a layout derives at build time are not
+        rebuilt, so swapping in a different layout or changing a layout's bins
+        and calling this again is not supported.
+
+        Parameters
+        ----------
+        restored_from : str, optional
+            Where restored geometry came from (e.g. a file path). An invalid
+            graph is then reported as a problem with that saved data rather
+            than as a layout engine bug.
 
         Raises
         ------
         ValueError
             If the connectivity graph from the layout engine is invalid
-            (missing required node/edge attributes, wrong dimensions, etc.)
+            (missing required node/edge attributes, wrong dimensions, etc.).
+            The environment is left unchanged.
 
         """
-        self.bin_centers = self.layout.bin_centers
-        self.connectivity = getattr(self.layout, "connectivity", nx.Graph())
-        self.dimension_ranges = self.layout.dimension_ranges
+        bin_centers = self.layout.bin_centers
+        connectivity = getattr(self.layout, "connectivity", nx.Graph())
 
-        # Validate connectivity graph has required metadata
-        # This catches layout engine bugs early with clear error messages
+        # Validate the graph before touching any environment state, so a failure
+        # leaves the previous geometry, version and caches consistent.
         # Note: Calculate n_dims directly here since self.n_dims has @check_fitted
-        n_dims = self.bin_centers.shape[1] if self.bin_centers is not None else 0
+        n_dims = bin_centers.shape[1] if bin_centers is not None else 0
         try:
-            n_nodes = len(self.connectivity.nodes)
-            n_edges = len(self.connectivity.edges)
+            n_nodes = len(connectivity.nodes)
+            n_edges = len(connectivity.edges)
             log_graph_validation(n_nodes=n_nodes, n_edges=n_edges, n_dims=n_dims)
             validate_connectivity_graph(
-                self.connectivity,
+                connectivity,
                 n_dims=n_dims,
                 check_node_attrs=True,
                 check_edge_attrs=True,
             )
         except GraphValidationError as e:
+            if restored_from is not None:
+                # Validator messages assume a layout-built graph and blame the
+                # engine; keep only the defect for saved data.
+                defect = str(e).split("This is a layout engine bug")[0].strip()
+                raise ValueError(
+                    _format_error(
+                        f"The connectivity graph in {restored_from} is invalid: "
+                        f"{defect}",
+                        why=(
+                            "Why: a read-back environment uses its stored graph, "
+                            "whose nodes and edges must carry the attributes "
+                            "neurospatial writes."
+                        ),
+                        fix=(
+                            "re-save the environment from a factory-built "
+                            "Environment with to_file, to_dict or write_environment"
+                        ),
+                    )
+                ) from e
             raise ValueError(
                 f"Invalid connectivity graph from layout engine "
                 f"'{self.layout._layout_type_tag}': {e}\n\n"
@@ -889,26 +991,44 @@ class _BaseEnvironment(
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
-        # Grid-specific attributes
-        self.grid_edges = getattr(self.layout, "grid_edges", ())
-        self.grid_shape = getattr(self.layout, "grid_shape", None)
-        self.active_mask = getattr(self.layout, "active_mask", None)
+        grid_edges = getattr(self.layout, "grid_edges", ())
+        grid_shape = getattr(self.layout, "grid_shape", None)
+        active_mask = getattr(self.layout, "active_mask", None)
 
         # If it's not a grid layout, grid_shape might be (n_active_bins,),
         # and active_mask might be 1D all True. This is fine.
         # Ensure they are at least None if not applicable from layout
-        if self.grid_shape is None and self.bin_centers is not None:
+        if grid_shape is None and bin_centers is not None:
             # Fallback for point-based
-            self.grid_shape = (self.bin_centers.shape[0],)
-        if self.active_mask is None and self.bin_centers is not None:
+            grid_shape = (bin_centers.shape[0],)
+        if active_mask is None and bin_centers is not None:
             # Fallback for point-based
-            self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
+            active_mask = np.ones(bin_centers.shape[0], dtype=bool)
+
+        # Published geometry is read-only and replaced whole: derived caches are
+        # invalidated only through _state_version (bumped below, in the same
+        # step), so an in-place edit would leave them stale. Change geometry by
+        # building a new environment (a factory, subset, rebin or
+        # apply_transform) instead.
+        for array in (bin_centers, active_mask, *(grid_edges or ())):
+            if isinstance(array, np.ndarray):
+                array.setflags(write=False)
+        nx.freeze(connectivity)
+        self._geometry = _PublishedGeometry(
+            bin_centers=bin_centers,
+            connectivity=connectivity,
+            dimension_ranges=self.layout.dimension_ranges,
+            grid_edges=grid_edges,
+            grid_shape=grid_shape,
+            active_mask=active_mask,
+        )
 
         self._is_fitted = True
         # Bump the state version so any downstream cache (including the
         # versioned_cached_property values from this and other mixins)
         # treats this environment as a "freshly built" object.
         self._state_version += 1
+        self.clear_cache()
 
         # Log environment creation
         n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
@@ -1107,18 +1227,53 @@ class _BaseEnvironment(
         """
         return self._differential_operator_cached
 
+    @check_fitted
+    def get_divergence_operator(self) -> sparse.csc_matrix:
+        """Return the cached finite-volume divergence operator.
+
+        The divergence operator maps a flux on each oriented edge (in
+        ``connectivity.edges()`` order) to the net outward flux per cell volume:
+        ``-M**-1 D diag(A * d)``, the negative volume-weighted adjoint of
+        :meth:`get_differential_operator`. ``divergence(env, edge_field)``
+        applies it.
+
+        Returns
+        -------
+        scipy.sparse.csc_matrix
+            Sparse operator of shape (n_bins, n_edges), cached until the
+            environment's geometry changes.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        NotImplementedError
+            If the layout has no finite-volume cell geometry.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_samples(
+        ...     np.array([[0.0], [1.0], [2.0]]), bin_size=1.0
+        ... )
+        >>> env.get_divergence_operator().shape
+        (3, 2)
+
+        See Also
+        --------
+        get_differential_operator : The edge gradient operator it is adjoint to.
+        neurospatial.ops.calculus.divergence : Apply it to an edge field.
+        """
+        return self._divergence_operator_cached
+
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        # Bridge the shared base to the operator's concrete Environment type.
-        from typing import cast
-
-        return compute_differential_operator(cast("Environment", self))
+        return compute_differential_operator(self)
 
     @versioned_cached_property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        from typing import cast
-
-        return _compute_divergence_operator(cast("Environment", self))
+        return _compute_divergence_operator(self)
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> _BaseEnvironment:
@@ -1151,12 +1306,14 @@ class _BaseEnvironment(
         - Regions are deep copied
         - Layout object is deep copied
 
-        Modifying the copy will not affect the original environment.
+        Adding regions to the copy does not affect the original.
 
         **Shallow copy (deep=False)**:
 
-        - Arrays and graph are shared with the original
-        - Modifying the copy will affect the original
+        - Arrays, graph and regions are shared with the original
+
+        In both cases the geometry arrays are read-only and the graph is
+        frozen, as on every environment.
 
         **Cache invalidation**:
 
@@ -1175,20 +1332,15 @@ class _BaseEnvironment(
         >>> env = Environment.from_samples(data, bin_size=1.0)
         >>> env.units = "cm"
         >>>
-        >>> # Deep copy (default)
+        >>> # Deep copy (default): separate, equal geometry
         >>> env_copy = env.copy()
-        >>> env_copy.bin_centers[0, 0] = 999.0
-        >>> bool(env.bin_centers[0, 0] != 999.0)  # Original unchanged
-        True
+        >>> bool(np.shares_memory(env_copy.bin_centers, env.bin_centers))
+        False
         >>>
-        >>> # Shallow copy
+        >>> # Shallow copy: the same geometry objects
         >>> env_shallow = env.copy(deep=False)
-        >>> original_value = env.bin_centers[0, 0]
-        >>> env_shallow.bin_centers[0, 0] = 888.0
-        >>> bool(env.bin_centers[0, 0] == 888.0)  # Original changed
+        >>> env_shallow.bin_centers is env.bin_centers
         True
-        >>> # Restore for other tests
-        >>> env.bin_centers[0, 0] = original_value
         """
         import copy as copy_module
 
@@ -1223,10 +1375,7 @@ class _BaseEnvironment(
             env_copy.units = self.units
             env_copy.frame = self.frame
 
-        # Always clear caches (regardless of deep/shallow)
-        # This ensures caches are rebuilt for the new environment object
-        env_copy._clear_explicit_caches()
-
+        # Construction (_setup_from_layout) already cleared every cache.
         return env_copy
 
     def _clear_explicit_caches(
@@ -1234,7 +1383,7 @@ class _BaseEnvironment(
     ) -> None:
         """Internal method to clear explicit caches (KDTree, kernels).
 
-        This is called by clear_cache() and copy().
+        This is called by clear_cache().
 
         Parameters
         ----------

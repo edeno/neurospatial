@@ -97,7 +97,7 @@ References
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -106,7 +106,7 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.ops._protocols import WaveletGeometryConsumer
 
 __all__ = [
     "chebyshev_filter_basis",
@@ -576,24 +576,20 @@ def geodesic_rbf_basis(
     return basis
 
 
-def _diffusion_generator(env: Environment) -> sparse.csr_matrix:
+def _diffusion_generator(env: WaveletGeometryConsumer) -> sparse.csr_matrix:
     """Finite-volume generator in bin-spacing² units, as used by env.smooth."""
     from scipy import sparse
     from scipy.spatial import cKDTree
 
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
-    from neurospatial.ops.diffusion import _assemble_W, _finite_volume_geometry
 
-    graph, volumes = _finite_volume_geometry(
-        cast("EnvironmentProtocol", env), operation="heat_kernel_wavelet_basis"
-    )
-    weights = _assemble_W(graph, env.n_bins)
-    degree = sparse.diags(np.asarray(weights.sum(axis=1)).ravel())
+    # Name this analysis, not "smoothing", if the layout has no cell faces.
+    env._require_face_geometry("heat_kernel_wavelet_basis")
+    geometry = env._diffusion_geometry
+    degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
     return (
-        spacing**2
-        * sparse.diags(1.0 / np.asarray(volumes, dtype=np.float64))
-        @ (degree - weights)
+        spacing**2 * sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)
     ).tocsr()
 
 

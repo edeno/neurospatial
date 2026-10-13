@@ -965,15 +965,7 @@ def test_dead_component_fits_live_bins(two_component_env, simulate_place_fields)
     """When a component is dead (never visited), the basis excludes its bins and
     the fit runs on live bins only, returning finite rates shaped to live_bins."""
     env = two_component_env
-    from neurospatial.ops.diffusion import (
-        _assemble_W,
-        _components_from_W,
-        _finite_volume_geometry,
-    )
-
-    graph, volumes = _finite_volume_geometry(env)
-    W = _assemble_W(graph, len(volumes))
-    _nc, labels = _components_from_W(W)
+    labels = env._diffusion_geometry.labels
     occ_full = np.zeros(env.n_bins)
     occ_full[labels == 0] = 3.0  # visit only component 0
     basis = env._mrf_basis(occ_full, rank=None)

@@ -39,9 +39,6 @@ from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_DENSE_FRACTION,
     _HEAT_KERNEL_RANK_TOL,
     _adaptive_symmetric_basis,
-    _assemble_W,
-    _components_from_W,
-    _finite_volume_geometry,
     _symmetric_conjugate,
     component_support_mask,
 )
@@ -98,10 +95,8 @@ def _dense_oracle(env, geom: str, case: dict) -> dict:
 
 
 def _geometry(env):
-    graph, volumes = _finite_volume_geometry(env)
-    volumes = np.asarray(volumes, dtype=np.float64)
-    W = _assemble_W(graph, len(volumes))
-    return W, volumes
+    geometry = env._diffusion_geometry
+    return geometry.W, geometry.volumes
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +214,7 @@ def test_null_mode_retained(geom):
     env, _ = _build_env(geom)
     W, volumes = _geometry(env)
     S = _symmetric_conjugate(W, volumes)
-    n_components, _labels = _components_from_W(W)
+    n_components = env._diffusion_geometry.n_components
     sigma = GEOMETRIES[geom][2]  # sigma_large (truncated)
     rank, *_ = _adaptive_symmetric_basis(
         S,
@@ -278,8 +273,7 @@ def test_no_leakage_truncated():
     """Point source in one component of a split grid: 0 mass crosses the wall
     under truncation (component-local eigenbasis modes)."""
     env, source_coord = build_grid_2d_split()
-    W, _volumes = _geometry(env)
-    n_components, labels = _components_from_W(W)
+    _W, _volumes, n_components, labels = env._diffusion_geometry
     assert n_components == 2, "split grid must have two disconnected halves"
     src = source_bin(env, source_coord)
     left = labels[src]
@@ -303,8 +297,7 @@ def test_denominator_support_no_spurious_nan():
     env, source_coord = _build_env("grid_2d")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    W, _volumes = _geometry(env)
-    n_components, labels = _components_from_W(W)
+    _W, _volumes, n_components, labels = env._diffusion_geometry
 
     # A partially-masked intensive rate (NaN block); one connected component here,
     # so with any valid bin, EVERY bin is supported -> no NaN at all.
@@ -346,8 +339,7 @@ def test_support_gate_nans_component_with_no_valid_input():
     from neurospatial.encoding._smoothing import _binned_gate
 
     env, _ = build_grid_2d_split()
-    W, _volumes = _geometry(env)
-    n_components, labels = _components_from_W(W)
+    _W, _volumes, n_components, labels = env._diffusion_geometry
     assert n_components == 2
     comp0 = labels == 0
     comp1 = labels == 1

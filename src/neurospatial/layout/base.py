@@ -87,6 +87,10 @@ class LayoutEngine(Protocol):
     space into a set of bins or elements and constructing a graph representation
     of their connectivity.
 
+    Diffusion, gradients and divergence need the optional
+    ``FiniteVolumeGeometryProvider`` capability (see ``layout._diffusion``);
+    point mapping and visualization do not.
+
     Attributes
     ----------
     bin_centers : NDArray[np.float64]

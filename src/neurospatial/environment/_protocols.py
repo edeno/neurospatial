@@ -25,7 +25,7 @@ See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -38,24 +38,15 @@ if TYPE_CHECKING:
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment.trajectory import BinSequenceWithRuns
+    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.layout.base import LayoutEngine
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.regions import Region, Regions
-
-
-class DiffusionGeometry(NamedTuple):
-    """Finite-volume geometry cached by ``_diffusion_geometry``.
-
-    Built once and dropped wholesale on any ``_state_version`` bump; shared by
-    ``diffuse``'s eigenbasis build and the smoothing consumers' W-component
-    support gates.
-    """
-
-    W: sparse.csr_matrix
-    volumes: NDArray[np.float64]
-    n_components: int
-    labels: NDArray[np.int_]
 
 
 class EnvironmentProtocol(Protocol):
@@ -68,9 +59,6 @@ class EnvironmentProtocol(Protocol):
     # Core attributes
     name: str
     layout: LayoutEngine
-    bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
-    dimension_ranges: tuple[tuple[float, float], ...]
     regions: Regions
     units: str | None
     frame: str | None
@@ -85,14 +73,19 @@ class EnvironmentProtocol(Protocol):
     # Finite-volume geometry + growable truncated-eigenbasis caches for
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
     _diffusion_geometry: DiffusionGeometry
-    _diffusion_eigenbasis: dict[str, Any]
+    _face_geometry: FaceGeometry
+    _diffusion_eigenbasis: DiffusionEigenbasisCache
     # Growable global eigenbasis holder for the MRF penalty-basis resolver
     # (versioned_cached_property; geometry-keyed, dropped on _state_version).
-    _mrf_eigenbasis: dict[str, Any]
+    _mrf_eigenbasis: MRFEigenbasisCache
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool
     _kdtree_cache: cKDTree | None
+
+    def _require_face_geometry(self, operation: str) -> FaceGeometry:
+        """Cached cell faces, or an error naming ``operation`` if unsupported."""
+        ...
 
     # Computed properties
     @property
@@ -127,6 +120,10 @@ class EnvironmentProtocol(Protocol):
 
     def get_differential_operator(self) -> sparse.csc_matrix:
         """Build (or fetch a cached) edge-oriented differential operator ``D``."""
+        ...
+
+    def get_divergence_operator(self) -> sparse.csc_matrix:
+        """Fetch the cached finite-volume divergence operator."""
         ...
 
     @property
@@ -255,10 +252,26 @@ class EnvironmentProtocol(Protocol):
         """Compute graph (shortest-path) distance between two points."""
         ...
 
+    # Published geometry: read-only views, replaced whole by _setup_from_layout.
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_] | None: ...
+
+    @property
+    def grid_shape(self) -> tuple[int, ...] | None: ...
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
+
     # Layout-specific attributes and methods (may be None if not applicable)
-    active_mask: NDArray[np.bool_] | None
-    grid_shape: tuple[int, ...] | None
-    grid_edges: tuple[NDArray[np.float64], ...] | None
     linear_bin_centers_1d: NDArray[np.float64] | None
     linear_bin_edges: NDArray[np.float64] | None
     track_graph: nx.Graph | None

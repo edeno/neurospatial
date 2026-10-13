@@ -11,7 +11,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, _constants
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 
@@ -296,13 +296,11 @@ class TestEnvironmentComputeKernel:
             env.compute_kernel(bandwidth=1.0, mode="bogus")
 
     def test_compute_kernel_high_bin_warns_and_returns(self, monkeypatch):
-        from neurospatial.ops import smoothing
-
         rng = np.random.default_rng(0)
         data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
         assert env.n_bins > 1
-        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
         with pytest.warns(UserWarning, match="GB"):
             kernel = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
         assert kernel.shape == (env.n_bins, env.n_bins)
@@ -323,7 +321,7 @@ class TestKernelHighBinWarning:
     def test_high_bin_warns_and_returns(self, monkeypatch):
         from neurospatial.ops import smoothing
 
-        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
+        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 5)
         graph = _line_graph(6)
         with pytest.warns(UserWarning) as record:
             kernel = smoothing.compute_diffusion_kernels(
@@ -338,7 +336,7 @@ class TestKernelHighBinWarning:
     def test_does_not_raise(self, monkeypatch):
         from neurospatial.ops import smoothing
 
-        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 2)
+        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 2)
         graph = _line_graph(8)
         with pytest.warns(UserWarning, match="GB"):
             kernel = smoothing.compute_diffusion_kernels(
@@ -351,7 +349,7 @@ class TestKernelHighBinWarning:
 
         from neurospatial.ops import smoothing
 
-        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
+        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 5)
         graph = _line_graph(5)  # 5 is NOT > 5
         with _warnings.catch_warnings(record=True) as w:
             _warnings.simplefilter("always")

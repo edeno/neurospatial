@@ -407,29 +407,25 @@ class TestAngularCircularDerivedFromGraph:
 
 
 class TestPolarStateVersionFreshness:
-    """Post-construction mutations must invalidate versioned caches.
+    """Polar geometry is complete before construction-time caches are populated."""
 
-    ``EgocentricPolarEnvironment.create`` fixes polar edge geometry and
-    (optionally) adds circular wrap edges *after* ``_setup_from_layout`` finalized
-    ``_state_version``. Without a final version bump, any
-    ``versioned_cached_property`` cached at the construction version would go
-    stale relative to the mutated connectivity graph.
-    """
+    def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
+        """Initial setup already sees physical distances and circular faces."""
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-    def test_construction_bumps_version_past_layout_setup(self):
-        """The polar factory bumps the version beyond a plain grid build.
+        setup = EgocentricPolarEnvironment._setup_from_layout
+        captured = []
 
-        A bare ``from_grid_mask`` env of the same geometry performs no
-        post-construction mutation, so its ``_state_version`` reflects only
-        ``_setup_from_layout``. The polar factory mutates after setup and must
-        bump again -- so its version must be strictly greater.
-        """
-        grid_mask = np.ones((1, 4), dtype=bool)
-        grid_edges = (np.linspace(0.0, 10.0, 2), np.linspace(-np.pi, np.pi, 5))
-        grid_env = Environment.from_grid_mask(
-            active_mask=grid_mask,
-            grid_edges=grid_edges,
-            connect_diagonal_neighbors=True,
+        def capture_setup(env, **kwargs):
+            setup(env, **kwargs)
+            assert env.connectivity.has_edge(0, 3)
+            assert env.connectivity.edges[0, 1]["distance"] == pytest.approx(
+                5.0 * np.pi / 2
+            )
+            captured.append(env._face_geometry)
+
+        monkeypatch.setattr(
+            EgocentricPolarEnvironment, "_setup_from_layout", capture_setup
         )
 
         polar_env = Environment.from_polar_egocentric(
@@ -440,7 +436,8 @@ class TestPolarStateVersionFreshness:
             circular_angle=True,
         )
 
-        assert polar_env._state_version > grid_env._state_version
+        assert len(captured) == 1
+        assert polar_env._face_geometry is captured[0]
 
     def test_differential_operator_reflects_circular_edges(self):
         """A versioned cached property sees the wrap edges, not a stale graph.
@@ -1210,3 +1207,133 @@ class TestPolarTypeAndGeometry:
         assert dist[32] == pytest.approx(40.0, rel=1e-9)
         # A pure angular hop from node 0 to node 1 equals the inner arc length.
         assert dist[1] == pytest.approx(5.0 * np.pi / 4, rel=1e-9)
+
+
+# Public members polar inherits unchanged from the shared base, each checked on
+# (distance, angle) bins. A new shared-base member fails the test below until it
+# is checked on a polar environment and listed here, or overridden in
+# EgocentricPolarEnvironment (raising if it assumes Cartesian coordinates).
+_POLAR_INHERITED_MEMBERS = {
+    "graph and diffusion operations on physical polar geometry": {
+        "bin_sizes",
+        "components",
+        "compute_kernel",
+        "diffuse",
+        "get_differential_operator",
+        "get_divergence_operator",
+        "neighbors",
+        "path_between",
+        "reachable_from",
+        "rings",
+        "smooth",
+        "transitions",
+    },
+    "read-only geometry views in (distance, angle) coordinates": {
+        "active_mask",
+        "bin_centers",
+        "connectivity",
+        "dimension_ranges",
+        "grid_edges",
+        "grid_shape",
+    },
+    "bin bookkeeping, metadata and diagnostics": {
+        "bin_center_of",
+        "clear_cache",
+        "copy",
+        "frame",
+        "get_bin_attributes",
+        "get_edge_attributes",
+        "info",
+        "is_linearized_track",
+        "layout_parameters",
+        "layout_type",
+        "linearization_properties",
+        "n_bins",
+        "n_dims",
+        "units",
+    },
+    "serialization, which restores the polar type": {
+        "from_dict",
+        "from_file",
+        "from_nwb",
+        "to_dict",
+        "to_file",
+        "to_nwb",
+    },
+    "constructors: only the masked grid builds; others refuse (tested below)": {
+        "from_graph",
+        "from_grid_mask",
+        "from_layout",
+        "from_pixel_mask",
+        "from_polygon",
+        "from_samples",
+        "linear_track",
+        "maze",
+        "open_field",
+    },
+    "regions, evaluated in (distance, angle) coordinates without angle wrap": {
+        "bins_in_region",
+        "region_mask",
+        "region_membership",
+    },
+    "plots on distance-by-angle axes": {
+        "animate_fields",
+        "plot",
+        "plot_1d",
+        "plot_field",
+    },
+}
+
+
+def test_every_inherited_member_is_classified_for_polar():
+    """A new shared-base member must be checked on polar bins before polar inherits it."""
+    from neurospatial.environment.core import _BaseEnvironment
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+    public = {name for name in dir(_BaseEnvironment) if not name.startswith("_")}
+    inherited = public - set(EgocentricPolarEnvironment.__dict__)
+    classified = set().union(*_POLAR_INHERITED_MEMBERS.values())
+    assert not inherited - classified, (
+        f"Check {sorted(inherited - classified)} on a polar (distance, angle) "
+        "environment, then list them in _POLAR_INHERITED_MEMBERS, or override "
+        "them in EgocentricPolarEnvironment (raising if they assume Cartesian "
+        "coordinates)."
+    )
+    assert not classified - inherited, (
+        f"Remove {sorted(classified - inherited)} from _POLAR_INHERITED_MEMBERS: "
+        "polar now overrides them or the base no longer defines them."
+    )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda cls: cls.from_samples(np.zeros((4, 2)), bin_size=1.0),
+        lambda cls: cls.open_field(np.zeros((4, 2)), bin_size=1.0),
+        lambda cls: cls.from_pixel_mask(np.ones((2, 2), dtype=bool), pixel_size=1.0),
+        lambda cls: cls.linear_track(endpoints=[[0.0, 0.0], [4.0, 0.0]], bin_size=1.0),
+    ],
+    ids=["from_samples", "open_field", "from_pixel_mask", "linear_track"],
+)
+def test_cartesian_factories_refuse_to_build_polar_environments(build):
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+    with pytest.raises(ValueError, match=r"'MaskedGrid'.*from_polar_egocentric"):
+        build(EgocentricPolarEnvironment)
+
+
+@pytest.mark.parametrize("circular", [True, False])
+def test_boundary_bins_respect_the_angular_seam(circular):
+    """A circular angle has no edge: only the inner and outer rings are boundary."""
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 3,
+        circular_angle=circular,
+    )
+    r, theta = env.bin_centers.T
+    edge = np.isclose(r, r.min()) | np.isclose(r, r.max())
+    if not circular:
+        edge |= np.isclose(theta, theta.min()) | np.isclose(theta, theta.max())
+    assert set(env.boundary_bins.tolist()) == set(np.flatnonzero(edge).tolist())

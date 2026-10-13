@@ -9,7 +9,7 @@ Submodules
 binning : Point-to-bin mapping, region masks
 distance : Distance fields, pairwise distances
 normalize : Field normalization, clamping
-diffusion : Finite-volume heat operator + per-geometry face measures
+diffusion : Finite-volume heat operator and its eigenbasis apply-path
 smoothing : Diffusion-kernel primitive, kernel application
 graph : Graph convolution, neighborhood reduction
 calculus : Spatial gradient, divergence

@@ -93,34 +93,25 @@ class TestCopyDeepVsShallow:
         env = sample_2d_grid
         env_copy = env.copy()  # No explicit deep parameter
 
-        # Modify copy's bin_centers array
-        env_copy.bin_centers[0, 0] = 999.0
-
-        # Original should be unchanged (deep copy)
-        assert env.bin_centers[0, 0] != 999.0
+        # A deep copy owns separate (equal) geometry arrays.
+        assert not np.shares_memory(env_copy.bin_centers, env.bin_centers)
+        np.testing.assert_array_equal(env_copy.bin_centers, env.bin_centers)
 
     def test_deep_copy_explicit(self, sample_2d_grid):
         """deep=True creates independent copy."""
         env = sample_2d_grid
         env_copy = env.copy(deep=True)
 
-        # Modify copy's bin_centers
-        env_copy.bin_centers[0, 0] = 999.0
-
-        # Original unchanged
-        assert env.bin_centers[0, 0] != 999.0
+        assert not np.shares_memory(env_copy.bin_centers, env.bin_centers)
+        np.testing.assert_array_equal(env_copy.bin_centers, env.bin_centers)
 
     def test_deep_copy_graph_independent(self, sample_2d_grid):
-        """Deep copy: modifying copy's graph doesn't affect original."""
+        """Deep copy: the copy owns a separate, equal graph."""
         env = sample_2d_grid
         env_copy = env.copy(deep=True)
 
-        # Add node to copy's graph (shouldn't affect original)
-        new_node = env_copy.connectivity.number_of_nodes()
-        env_copy.connectivity.add_node(new_node, pos=(999.0, 999.0))
-
-        # Original graph unchanged
-        assert new_node not in env.connectivity.nodes()
+        assert env_copy.connectivity is not env.connectivity
+        assert list(env_copy.connectivity.edges()) == list(env.connectivity.edges())
 
     def test_deep_copy_regions_independent(self, sample_2d_grid):
         """Deep copy: modifying copy's regions doesn't affect original."""
@@ -143,15 +134,7 @@ class TestCopyDeepVsShallow:
         env = sample_2d_grid
         env_copy = env.copy(deep=False)
 
-        # Modify copy's bin_centers array
-        original_value = env.bin_centers[0, 0]
-        env_copy.bin_centers[0, 0] = 999.0
-
-        # Original should be changed (shallow copy shares arrays)
-        assert env.bin_centers[0, 0] == 999.0
-
-        # Restore for other tests
-        env.bin_centers[0, 0] = original_value
+        assert env_copy.bin_centers is env.bin_centers
 
     def test_shallow_copy_shares_graph(self, sample_2d_grid):
         """Shallow copy: graph is shared."""

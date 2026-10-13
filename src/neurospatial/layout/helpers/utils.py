@@ -727,11 +727,13 @@ def _is_grid_boundary_node(
     graph: nx.Graph,
     grid_shape: tuple[int, ...],
     active_mask: NDArray[np.bool_],
+    periodic_axes: tuple[int, ...] = (),
 ) -> bool:
     """Check if a node is on the boundary using grid topology.
 
     A node is boundary if any orthogonal neighbor is out-of-bounds
-    or inactive.
+    or inactive. Along a periodic axis the neighbor index wraps, so the
+    first and last cells of that axis are neighbors.
 
     Parameters
     ----------
@@ -743,6 +745,8 @@ def _is_grid_boundary_node(
         Shape of the grid.
     active_mask : NDArray[np.bool_]
         Boolean mask indicating active bins.
+    periodic_axes : tuple of int, default=()
+        Grid axes that wrap around (e.g. a circular angle).
 
     Returns
     -------
@@ -767,6 +771,8 @@ def _is_grid_boundary_node(
         for offset_val in [-1, 1]:
             neighbor_nd_idx_list = list(original_nd_idx)
             neighbor_nd_idx_list[dim_idx] += offset_val
+            if dim_idx in periodic_axes:
+                neighbor_nd_idx_list[dim_idx] %= grid_shape[dim_idx]
             neighbor_nd_idx = tuple(neighbor_nd_idx_list)
 
             # Check if neighbor is out of bounds
@@ -784,6 +790,7 @@ def _find_grid_boundary_nodes(
     graph: nx.Graph,
     grid_shape: tuple[int, ...],
     active_mask: NDArray[np.bool_],
+    periodic_axes: tuple[int, ...] = (),
 ) -> list[int]:
     """Find boundary nodes using N-D grid topology.
 
@@ -795,6 +802,8 @@ def _find_grid_boundary_nodes(
         Shape of the grid.
     active_mask : NDArray[np.bool_]
         Boolean mask of active bins.
+    periodic_axes : tuple of int, default=()
+        Grid axes that wrap around (e.g. a circular angle).
 
     Returns
     -------
@@ -804,7 +813,9 @@ def _find_grid_boundary_nodes(
     """
     boundary_nodes = []
     for node_id in graph.nodes():
-        if _is_grid_boundary_node(node_id, graph, grid_shape, active_mask):
+        if _is_grid_boundary_node(
+            node_id, graph, grid_shape, active_mask, periodic_axes
+        ):
             boundary_nodes.append(node_id)
     return boundary_nodes
 
@@ -918,6 +929,7 @@ def find_boundary_nodes(
     grid_shape: tuple[int, ...] | None = None,
     active_mask: NDArray[np.bool_] | None = None,
     layout_kind: str | None = None,
+    periodic_axes: tuple[int, ...] = (),
 ) -> NDArray[np.int_]:
     """Identify boundary nodes in a connectivity graph G.
 
@@ -952,6 +964,9 @@ def find_boundary_nodes(
     layout_kind : str, optional
         A string identifier (e.g. "RegularGrid", "Hexagonal", "Graph").
         Used for special heuristics (e.g. hexagon degrees).
+    periodic_axes : tuple of int, default=()
+        Grid axes that wrap around, such as a circular angular axis; their
+        first and last cells are neighbors. Used only by the grid method.
 
 
     Returns
@@ -977,7 +992,9 @@ def find_boundary_nodes(
         # These assertions are safe because use_grid_method checks they're not None
         assert grid_shape is not None
         assert active_mask is not None
-        boundary_nodes = _find_grid_boundary_nodes(graph, grid_shape, active_mask)
+        boundary_nodes = _find_grid_boundary_nodes(
+            graph, grid_shape, active_mask, periodic_axes
+        )
     else:
         boundary_nodes = _find_degree_based_boundary_nodes(
             graph,

@@ -35,6 +35,7 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment.core import _BaseEnvironment
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -427,9 +428,6 @@ def from_file(path: PathLike) -> Environment:
     Use absolute paths or relative paths without '..' components.
 
     """
-    from neurospatial.environment import Environment
-    from neurospatial.regions import Region, Regions
-
     # Validate path for security
     path_obj = _validate_path_safety(path)
     json_path = path_obj.with_suffix(".json")
@@ -469,80 +467,79 @@ def from_file(path: PathLike) -> Environment:
     # Load arrays. allow_pickle=False is safe because to_file only stores plain
     # numeric arrays (bin_centers, active_mask, grid_edges_*); it also blocks
     # arbitrary-code execution from a tampered .npz. Use a context manager so
-    # the underlying file handle is closed promptly.
+    # the underlying file handle is closed promptly. The grid arrays follow from
+    # the saved layout parameters, so only bin_centers is read (and checked).
     with np.load(npz_path, allow_pickle=False) as arrays:
         # bin_centers: enforce float64 to match the in-memory from_dict path,
         # regardless of the dtype stored on disk.
         bin_centers = np.asarray(arrays["bin_centers"], dtype=np.float64)
 
-        # Reconstruct grid_edges from separate arrays
-        grid_edges = None
-        if "grid_shape" in metadata:
-            n_dims = metadata["n_dims"]
-            grid_edges_list = []
-            for i in range(n_dims):
-                key = f"grid_edges_{i}"
-                if key in arrays:
-                    grid_edges_list.append(arrays[key])
-            if grid_edges_list:
-                grid_edges = tuple(grid_edges_list)
+    return _restore_environment(
+        metadata, source=str(json_path), bin_centers=bin_centers
+    )
 
-        # Reconstruct active_mask (read out of the NpzFile before it closes)
-        active_mask = arrays.get("active_mask", None)
 
-    # Reconstruct graph
-    graph_data = metadata["graph"]
-    connectivity = nx.node_link_graph(graph_data, edges="links")
+def _restore_environment(
+    metadata: dict[str, Any],
+    *,
+    source: str,
+    bin_centers: NDArray[np.float64],
+) -> Environment:
+    """Rebuild an environment from saved metadata plus its saved bin centers.
 
-    # Reconstruct dimension_ranges
+    Shared by :func:`from_file` and :func:`from_dict`, which differ only in
+    where the arrays are stored (``.npz`` file vs. inline lists). The layout is
+    rebuilt from its saved parameters, the saved bin centers are checked against
+    it, and the saved graph replaces the rebuilt one before the environment is
+    constructed once.
+
+    Parameters
+    ----------
+    metadata : dict
+        The ``to_file`` JSON metadata or the ``to_dict`` dictionary.
+    source : str
+        Where the data came from, named if it is inconsistent or invalid.
+    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Saved bin centers.
+
+    Returns
+    -------
+    Environment
+        Reconstructed environment (``EgocentricPolarEnvironment`` for polar data).
+    """
+    from neurospatial.environment import Environment
+    from neurospatial.regions import Region, Regions
+
     dimension_ranges = None
     if "dimension_ranges" in metadata:
         dimension_ranges = [tuple(r) for r in metadata["dimension_ranges"]]
 
-    # Reconstruct grid_shape
-    grid_shape = None
-    if "grid_shape" in metadata:
-        grid_shape = tuple(metadata["grid_shape"])
+    # Convert lists back to numpy arrays, then decode the JSON-safe sentinels
+    # written by _jsonsafe_layout_parameters so the parameters match the original.
+    layout_params = _decode_layout_parameters(
+        _convert_lists_to_arrays(metadata["layout_parameters"])
+    )
 
-    # Create layout engine from parameters
-    # Note: We use from_layout() pattern to reconstruct
-    layout_type = metadata["layout_type"]
-    layout_params = metadata["layout_parameters"]
-
-    # Convert lists back to numpy arrays in layout parameters
-    layout_params = _convert_lists_to_arrays(layout_params)
-
-    # Decode any JSON-safe sentinels written by _jsonsafe_layout_parameters so
-    # round-tripped layout_parameters is equivalent to the original.
-    layout_params = _decode_layout_parameters(layout_params)
-
-    # Create environment from layout. Polar environments (coordinate_kind
-    # "polar") restore as the distinct EgocentricPolarEnvironment type; the
-    # saved connectivity (overridden below) already carries the corrected
-    # physical polar edge distances, so no geometry recomputation is needed.
+    # Polar environments (coordinate_kind "polar") restore as the distinct
+    # EgocentricPolarEnvironment type; the saved connectivity already carries
+    # the physical polar edge distances and seams.
+    env_cls: type[_BaseEnvironment] = Environment
     if metadata.get("coordinate_kind") == "polar":
         from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-        env = EgocentricPolarEnvironment.from_layout(
-            layout_type, layout_params, name=metadata["name"]
-        )
-    else:
-        env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
+        env_cls = EgocentricPolarEnvironment
+    env = env_cls._from_saved_layout(
+        metadata["layout_type"],
+        layout_params,
+        name=metadata["name"],
+        bin_centers=bin_centers,
+        connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
+        restored_from=source,
+        dimension_ranges=dimension_ranges,
+    )
 
-    # Override attributes with saved values (handles cases where layout recreation differs)
-    env.bin_centers = bin_centers
-    env.connectivity = connectivity
-    env.dimension_ranges = dimension_ranges
-    env.grid_edges = grid_edges
-    env.grid_shape = grid_shape
-    env.active_mask = active_mask
-
-    # Reconstruct regions
     if metadata.get("regions"):
-        regions_list = [Region.from_dict(r) for r in metadata["regions"]]
-        env.regions = Regions(regions_list)
-
-    # Restore units and frame if present
+        env.regions = Regions([Region.from_dict(r) for r in metadata["regions"]])
     if "units" in metadata:
         env.units = metadata["units"]
     if "frame" in metadata:
@@ -667,9 +664,6 @@ def from_dict(data: dict[str, Any]) -> Environment:
     from_file : Load from disk files
 
     """
-    from neurospatial.environment import Environment
-    from neurospatial.regions import Region, Regions
-
     # Check schema version
     schema_version = data.get("schema_version")
     if schema_version != _SCHEMA_VERSION:
@@ -680,73 +674,10 @@ def from_dict(data: dict[str, Any]) -> Environment:
             category=UserWarning,
         )
 
-    # Reconstruct arrays
+    # The grid arrays follow from the saved layout parameters, so only the bin
+    # centers are read (and checked against the rebuilt layout).
     bin_centers = np.array(data["bin_centers"], dtype=np.float64)
 
-    # Reconstruct graph
-    graph_data = data["graph"]
-    connectivity = nx.node_link_graph(graph_data, edges="links")
-
-    # Reconstruct dimension_ranges
-    dimension_ranges = None
-    if "dimension_ranges" in data:
-        dimension_ranges = [tuple(r) for r in data["dimension_ranges"]]
-
-    # Reconstruct grid_edges
-    grid_edges = None
-    if "grid_edges" in data:
-        grid_edges = tuple(np.array(e, dtype=np.float64) for e in data["grid_edges"])
-
-    # Reconstruct active_mask
-    active_mask = None
-    if "active_mask" in data:
-        active_mask = np.array(data["active_mask"], dtype=bool)
-
-    # Reconstruct grid_shape
-    grid_shape = None
-    if "grid_shape" in data:
-        grid_shape = tuple(data["grid_shape"])
-
-    # Create layout and environment
-    layout_type = data["layout_type"]
-    layout_params = data["layout_parameters"]
-
-    # Convert lists back to numpy arrays in layout parameters
-    layout_params = _convert_lists_to_arrays(layout_params)
-
-    # Decode any JSON-safe sentinels written by _jsonsafe_layout_parameters so
-    # round-tripped layout_parameters is equivalent to the original.
-    layout_params = _decode_layout_parameters(layout_params)
-
-    # Create environment. Polar environments restore as the distinct
-    # EgocentricPolarEnvironment type; the saved connectivity (overridden
-    # below) already carries the corrected physical polar edge distances.
-    if data.get("coordinate_kind") == "polar":
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
-
-        env = EgocentricPolarEnvironment.from_layout(
-            layout_type, layout_params, name=data["name"]
-        )
-    else:
-        env = Environment.from_layout(layout_type, layout_params, name=data["name"])
-
-    # Override attributes
-    env.bin_centers = bin_centers
-    env.connectivity = connectivity
-    env.dimension_ranges = dimension_ranges
-    env.grid_edges = grid_edges
-    env.grid_shape = grid_shape
-    env.active_mask = active_mask
-
-    # Reconstruct regions
-    if data.get("regions"):
-        regions_list = [Region.from_dict(r) for r in data["regions"]]
-        env.regions = Regions(regions_list)
-
-    # Restore units and frame if present
-    if "units" in data:
-        env.units = data["units"]
-    if "frame" in data:
-        env.frame = data["frame"]
-
-    return env
+    return _restore_environment(
+        data, source="the environment dictionary", bin_centers=bin_centers
+    )

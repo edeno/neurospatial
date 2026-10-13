@@ -80,6 +80,29 @@ settings.register_profile(
 _profile = os.environ.get("HYPOTHESIS_PROFILE", "dev")
 settings.load_profile(_profile)
 
+# =============================================================================
+# One BLAS/OpenMP thread per pytest-xdist worker
+# =============================================================================
+# Each worker would otherwise start one OpenBLAS thread per core, so ``-n auto``
+# runs about cores**2 threads and thrashes. Worker processes inherit these
+# variables from the controller before NumPy loads; a value set in the shell
+# still wins, and single-process runs keep their multithreaded BLAS.
+_THREAD_LIMIT_VARIABLES = (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Cap BLAS threads in xdist workers; xdist itself supplies the parallelism."""
+    if getattr(config.option, "numprocesses", None) and not hasattr(
+        config, "workerinput"
+    ):
+        for name in _THREAD_LIMIT_VARIABLES:
+            os.environ.setdefault(name, "1")
+
 
 @pytest.fixture(params=["grid", "masked", "hexagonal", "graph"])
 def analysis_invariant_env(request):

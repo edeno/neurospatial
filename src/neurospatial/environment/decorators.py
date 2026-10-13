@@ -104,16 +104,18 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     Limitations
     -----------
     Invalidation is **only** triggered by ``_state_version`` bumps. The
-    descriptor does **not** fingerprint the underlying state, so direct
-    in-place mutation of e.g. ``env.bin_centers`` or ``env.connectivity``
-    (writing into the array, calling ``add_node`` on the graph) is not
-    detected — versioned-cached values will keep returning the
-    pre-mutation result. Such mutation is unsupported in v0.4; if a
-    caller absolutely must reach in, they must call
-    ``env.clear_cache()`` to drop versioned caches before re-reading
-    derived attributes. A first-access fingerprint check was considered
-    and dropped: it would catch the first stale read but still miss
-    later mutations, so it would not actually deliver the invariant the
+    descriptor does **not** fingerprint the underlying state. To keep that
+    sound, ``_setup_from_layout`` is the only place geometry changes: it
+    swaps in a whole new ``_PublishedGeometry`` and bumps the version in the
+    same step. The environment's geometry attributes cannot be reassigned,
+    the ``bin_centers``, ``active_mask`` and ``grid_edges`` arrays reject
+    writes, and ``connectivity`` is frozen (``nx.freeze``), so adding or
+    removing nodes or edges raises. Edge and node attribute values remain writable
+    (networkx cannot freeze them), and editing them in place is unsupported:
+    versioned-cached values would keep returning the pre-edit result. Build a
+    new environment to change geometry. A first-access fingerprint check was
+    considered and dropped: it would catch the first stale read but still
+    miss later mutations, so it would not actually deliver the invariant the
     user wants.
 
     Cache layout

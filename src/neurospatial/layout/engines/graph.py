@@ -453,3 +453,54 @@ class GraphLayout(_KDTreeMixin):
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]
+
+    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
+        """Linear-track face measure: unit cross-section ``A = 1`` on every edge,
+        with junction (inter-segment) edge distances corrected to the true
+        along-track length.
+
+        An intra-segment edge already carries the correct along-track spacing (its
+        ``"distance"`` is the straight-line length along that segment). An
+        inter-segment edge currently carries the Euclidean CHORD between the two
+        junction bins, which understates the along-track distance around a bend and
+        oversmooths. Its ``"distance"`` is replaced by the along-track length
+        ``||bin_u - J|| + ||bin_v - J||`` through the shared junction node ``J`` (the
+        geodesic over the straight-segment substrate). A straight track has no
+        inter-segment edges, so this is a no-op there.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        g = self.connectivity.copy()
+        build_params = self._build_params_used
+        track_graph = build_params["graph_definition"]
+        track_edges = list(track_graph.edges())
+        node_pos = nx.get_node_attributes(track_graph, "pos")
+        centers = self.bin_centers
+
+        for u, v, data in g.edges(data=True):
+            seg_u = g.nodes[u].get("source_edge_id")
+            seg_v = g.nodes[v].get("source_edge_id")
+            data["A"] = 1.0
+            if seg_u is None or seg_v is None or seg_u == seg_v:
+                continue  # intra-segment edge: existing along-track distance is correct
+            junction = _shared_track_node(track_edges, int(seg_u), int(seg_v))
+            if junction is None:
+                continue  # no identifiable junction: leave the chord distance as-is
+            j_pos = np.asarray(node_pos[junction], dtype=float)
+            d = float(np.linalg.norm(centers[u] - j_pos)) + float(
+                np.linalg.norm(centers[v] - j_pos)
+            )
+            data["distance"] = d
+        return g, self.bin_sizes()
+
+
+def _shared_track_node(
+    track_edges: list[tuple[Any, Any]], seg_a: int, seg_b: int
+) -> Any | None:
+    """Track-graph node shared by two track segments, or None if not exactly one."""
+    if not (0 <= seg_a < len(track_edges) and 0 <= seg_b < len(track_edges)):
+        return None
+    shared = set(track_edges[seg_a]) & set(track_edges[seg_b])
+    if len(shared) != 1:
+        return None
+    return next(iter(shared))

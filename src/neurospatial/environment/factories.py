@@ -42,8 +42,8 @@ from neurospatial.layout.factories import _normalize_name as _normalize_layout_n
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
-    pass
     from neurospatial.environment.core import Environment
+    from neurospatial.layout.base import LayoutEngine
 
 try:
     import shapely.geometry as _shp
@@ -194,6 +194,51 @@ def _assemble_maze_graph(
 # columns than rows, signals a transposed `positions` array rather than a
 # genuine high-D environment (see `from_samples`).
 _MAX_PLAUSIBLE_SPATIAL_DIMS = 8
+
+
+def _owned_copy(value: Any) -> Any:
+    """Copy arrays, also inside dicts, lists and tuples, so callers keep theirs."""
+    if isinstance(value, np.ndarray):
+        return value.copy()
+    if isinstance(value, dict):
+        return {key: _owned_copy(item) for key, item in value.items()}
+    if type(value) in (list, tuple):
+        return type(value)(_owned_copy(item) for item in value)
+    return value
+
+
+def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Per-dimension tolerance for matching saved to rebuilt bin centers.
+
+    Allows float32 storage rounding of that dimension's coordinates, capped at
+    a quarter of the smallest meaningful gap between distinct centers along
+    it. Inactive stretches cannot inflate the cap and hide the separation of
+    nearby active bins. Where float32 cannot resolve the bins (coordinates far
+    from the origin relative to the bin width), the cap wins and such storage
+    is rejected.
+
+    Parameters
+    ----------
+    centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Rebuilt bin centers.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_dims,)
+        Largest accepted absolute difference along each dimension.
+    """
+    tolerance = np.empty(centers.shape[1])
+    for dim in range(centers.shape[1]):
+        values = np.unique(centers[:, dim])
+        magnitude = np.abs(values).max(initial=0.0)
+        storage = 2.0 * np.finfo(np.float32).eps * magnitude
+        gaps = np.diff(values)
+        # Only float64 rounding marks duplicates; the storage allowance must not
+        # hide real gaps, or the spacing cap would vanish far from the origin.
+        gaps = gaps[gaps > 64.0 * np.finfo(np.float64).eps * magnitude]
+        spacing = float(gaps.min()) if gaps.size else np.inf
+        tolerance[dim] = min(storage, spacing / 4.0)
+    return tolerance
 
 
 class EnvironmentFactories:
@@ -1402,11 +1447,119 @@ class EnvironmentFactories:
         from_graph : Create 1D linearized track environment.
 
         """
-        layout_instance = create_layout(kind=kind, **layout_params)
+        # The environment owns its inputs: it later publishes geometry read-only,
+        # and the saved layout parameters must not change if the caller edits
+        # their arrays (or the base of a view) afterwards.
+        layout_params = _owned_copy(layout_params)
+        layout_instance = cls._create_layout(kind, layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
         return env_cls(name, layout_instance, kind, layout_params, regions=regions)
+
+    @classmethod
+    def _from_saved_layout(
+        cls,
+        kind: LayoutType | str,
+        layout_params: dict[str, Any],
+        *,
+        name: str,
+        bin_centers: NDArray[np.float64],
+        connectivity: nx.Graph,
+        restored_from: str,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
+        regions: Regions | None = None,
+    ) -> Environment:
+        """Rebuild a saved environment through the factory path, built once.
+
+        The saved layout parameters rebuild the bins and every lookup derived
+        from them. The saved bin centers must match those bins. The saved graph
+        is authoritative for edges and their lengths (e.g. 4-connectivity or an
+        open polar axis), so it replaces the rebuilt graph, together with saved
+        extents, before the environment is constructed.
+
+        Parameters
+        ----------
+        kind : LayoutType or str
+            Saved layout type.
+        layout_params : dict
+            Saved layout build parameters.
+        name : str
+            Environment name.
+        bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+            Saved bin centers, checked against the rebuilt layout.
+        connectivity : networkx.Graph
+            Saved connectivity graph.
+        restored_from : str
+            Where the data came from, named in errors.
+        dimension_ranges : sequence of (float, float), optional
+            Saved extents, when the rebuilt layout type may differ from the
+            original (e.g. NWB stores every grid as a masked grid).
+        regions : Regions, optional
+            Regions to attach.
+
+        Returns
+        -------
+        Environment
+            The restored environment (the polar type when ``cls`` is polar).
+
+        Raises
+        ------
+        ValueError
+            If the saved bin centers do not match the rebuilt layout, or the
+            saved graph is invalid.
+        """
+        layout = cls._create_layout(kind, layout_params)
+        rebuilt = np.asarray(layout.bin_centers)
+        saved = np.asarray(bin_centers, dtype=np.float64)
+        if not np.all(np.isfinite(saved)):
+            raise ValueError(
+                _format_error(
+                    f"The bin centers in {restored_from} contain "
+                    f"{int(np.count_nonzero(~np.isfinite(saved)))} non-finite "
+                    "values.",
+                    why=(
+                        "Why: every saved bin center must be a finite "
+                        "coordinate, so the data is corrupted."
+                    ),
+                    fix="re-save the environment with this version of neurospatial",
+                )
+            )
+        if rebuilt.shape != saved.shape or np.any(
+            np.abs(rebuilt - saved) > _center_tolerance(rebuilt)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"The bin centers in {restored_from} do not match the "
+                    f"{kind} layout rebuilt from its saved parameters "
+                    f"({saved.shape[0]} saved vs {rebuilt.shape[0]} rebuilt bins).",
+                    why=(
+                        "Why: the saved layout parameters define the bins, so "
+                        "different centers mean the data was edited or written "
+                        "by an incompatible version."
+                    ),
+                    fix="re-save the environment with this version of neurospatial",
+                )
+            )
+        layout.connectivity = connectivity
+        if dimension_ranges is not None:
+            layout.dimension_ranges = dimension_ranges
+        env_cls = cast("type[Environment]", cls)
+        return env_cls(
+            name,
+            layout,
+            kind,
+            layout_params,
+            regions=regions,
+            restored_from=restored_from,
+        )
+
+    @classmethod
+    def _create_layout(
+        cls, kind: LayoutType | str, layout_params: dict[str, Any]
+    ) -> LayoutEngine:
+        """Build the layout engine ``from_layout`` wraps; subclasses may substitute."""
+        return create_layout(kind=kind, **layout_params)
 
     @classmethod
     def from_nwb(

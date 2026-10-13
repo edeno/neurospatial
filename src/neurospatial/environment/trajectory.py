@@ -24,12 +24,10 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
-import sys
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import networkx as nx
@@ -37,6 +35,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import as_intervals
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
@@ -290,19 +289,6 @@ def _warn_all_intervals_excluded(
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
-
-
-def _external_stacklevel() -> int:
-    """Stacklevel, counted from the caller, of the first frame outside the package."""
-    package_dir = Path(__file__).resolve().parent.parent
-    frame = sys._getframe(1)
-    level = 1
-    while frame.f_back is not None and Path(frame.f_code.co_filename).is_relative_to(
-        package_dir
-    ):
-        frame = frame.f_back
-        level += 1
-    return level
 
 
 def observed_runs(

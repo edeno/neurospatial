@@ -4,6 +4,9 @@
 
 ### Added
 
+- Add `Environment.get_divergence_operator()`, the cached finite-volume
+  divergence operator that `divergence(env, edge_field)` applies, alongside
+  `get_differential_operator()`.
 - Preserve spatial `analysis_settings` through population indexing, tables,
   xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
   speed and occupancy gates. Expose `spatial_support` on rate results and fitted
@@ -38,6 +41,25 @@
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed
+
+- **Behavior change:** an environment's geometry is read-only once built:
+  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
+  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
+  edits, so such edits used to return stale results silently. Build a new
+  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
+  Factories copy array inputs, so the caller's own arrays stay writable and
+  later edits to them do not reach the environment.
+- Layout setup synchronizes restored geometry and invalidates all environment
+  caches. The polar layout builds physical distances and circular seams before
+  environment initialization, and records its `circular_angle` build option.
+- Layout engines, including a polar layout with annular-sector cells, supply
+  their own finite-volume cell faces. Dense kernels, spectral diffusion,
+  smoothness bases, gradients and divergence all use that one capability, and
+  the diffusion consumers share one validated operator snapshot. Numerical
+  schemes are unchanged.
+- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
+  multigraphs, whose reciprocal or parallel edges were summed into doubled
+  conductances. Collapse them first with `nx.Graph(graph)`.
 
 - Extend rate-result `analysis_settings` and `spatial_support` to directional,
   view and object-vector analyses, preserving exact retained intervals and
@@ -84,6 +106,21 @@
 
 ### Fixed
 
+- Polar `boundary_bins` treats a circular angular axis as wrapping: bins beside
+  the ±π seam are interior, so a full circular grid's boundary is its innermost
+  and outermost rings.
+- `grid_cell_session` no longer permutes rows of its environment's
+  `bin_centers` while shuffling grid-cell phases; the returned environment's
+  centers matched neither its graph nor `bin_at`.
+- Refresh active-bin lookup indices when rebuilding a masked polar layout, so
+  angular seam edges and point lookup use the new mask.
+- Keep the saved connectivity of environments read with `from_file`,
+  `from_dict` or `read_environment` on their layout. Gradients and divergence
+  work on 4-connected grids read from NWB, and `copy()` of a read-back
+  environment keeps 4-connectivity and polar seam edges and arc lengths
+  instead of reverting to the rebuilt layout's graph.
+- Point dense-kernel and mesh-skew warnings at the scientist's call rather
+  than library code.
 - Correct spatial information and sparsity for missing data in NumPy and JAX,
   including per-neuron support normalization in population metrics. Observed
   zero activity remains distinct from missing rates.

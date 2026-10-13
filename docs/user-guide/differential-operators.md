@@ -471,5 +471,6 @@ plt.show()
 - `neurospatial.ops.gradient(env, field)` - Compute gradient (scalar → edge field)
 - `neurospatial.ops.divergence(env, edge_field)` - Compute divergence (edge → scalar field)
 - `env.get_differential_operator()` - Cached differential operator method
+- `env.get_divergence_operator()` - Cached divergence operator that `divergence` applies
 - `neurospatial.ops.distance_field(graph, sources)` - Multi-source geodesic distances
 - `env.smooth(field, bandwidth)` - Gaussian smoothing on graph

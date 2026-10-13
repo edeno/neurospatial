@@ -17,10 +17,7 @@ from neurospatial.ops import diffusion as diff
 from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
     MRFBasis,
-    _assemble_W,
-    _components_from_W,
     _ensure_global_modes,
-    _finite_volume_geometry,
     _null_mode_mask,
     _symmetric_conjugate,
     _symmetric_eigenbasis,
@@ -32,12 +29,8 @@ from neurospatial.ops.diffusion import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _geometry(env):
-    """(W, volumes, n_components, labels) from an env's finite-volume geometry."""
-    graph, volumes = _finite_volume_geometry(env)
-    volumes = np.asarray(volumes, dtype=np.float64)
-    W = _assemble_W(graph, len(volumes))
-    n_components, labels = _components_from_W(W)
-    return W, volumes, n_components, labels
+    """(W, volumes, n_components, labels): the env's cached diffusion geometry."""
+    return env._diffusion_geometry
 
 
 def _full_eigs(env):

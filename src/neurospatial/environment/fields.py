@@ -29,16 +29,60 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import (
-    DiffusionGeometry,
     EnvironmentProtocol,
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.layout._diffusion import (
+    DiffusionGeometry,
+    FaceGeometry,
+    FiniteVolumeGeometryProvider,
+)
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
     from neurospatial.ops.diffusion import MRFBasis
+
+
+def _missing_geometry_error(layout: object, operation: str) -> NotImplementedError:
+    """Explain which operation needs cell geometry that ``layout`` cannot supply.
+
+    Parameters
+    ----------
+    layout : object
+        The environment's layout engine, which lacks ``finite_volume_geometry``.
+    operation : str
+        Name of the analysis the scientist called, used to start the message.
+
+    Returns
+    -------
+    NotImplementedError
+        Error with What / Why / Fix sections, ready to raise.
+    """
+    from neurospatial._exceptions import _format_error
+
+    explain = getattr(layout, "_explain_missing_geometry", None)
+    if explain is not None:
+        return NotImplementedError(explain(operation))
+    return NotImplementedError(
+        _format_error(
+            f"{operation} needs finite-volume cell geometry, which layout "
+            f"{type(layout).__name__!r} does not provide.",
+            why=(
+                "Why: layouts built by Environment factories supply cell faces "
+                f"and measures; {type(layout).__name__!r} does not."
+            ),
+            fix=(
+                "build the environment with a factory method, e.g. "
+                "Environment.from_samples(positions, bin_size=...)"
+            ),
+        )
+    )
 
 
 class EnvironmentFields:
@@ -168,8 +212,8 @@ class EnvironmentFields:
         if cache and cache_key in self._kernel_cache:
             return self._kernel_cache[cache_key]
 
-        # Compute kernel. diffusion_kernel reads env.bin_sizes internally as the
-        # canonical cell-volume mass matrix M (used by every mode).
+        # Compute kernel from the cached diffusion geometry, whose cell measures
+        # (the layout's bin sizes) are the mass matrix M used by every mode.
         from typing import cast
 
         kernel = diffusion_kernel(
@@ -509,32 +553,63 @@ class EnvironmentFields:
         return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
 
     @versioned_cached_property
+    def _face_geometry(self: EnvironmentProtocol) -> FaceGeometry:
+        """Validated cell faces, built once per ``_state_version``.
+
+        Shared by the diffusion snapshot and the gradient and divergence
+        operators. Read it through :meth:`_require_face_geometry`, which names
+        the analysis when the layout has no cell faces.
+        """
+        layout = cast("FiniteVolumeGeometryProvider", self.layout)
+        graph, volumes = layout.finite_volume_geometry()
+        # Gradient and divergence index edge fields by env.connectivity's edge
+        # order, so the layout's graph must be that graph, edge for edge.
+        if graph.number_of_nodes() != self.n_bins or list(graph.edges()) != list(
+            self.connectivity.edges()
+        ):
+            raise ValueError(
+                f"{type(layout).__name__}.finite_volume_geometry() returned a graph "
+                f"with {graph.number_of_nodes()} bins and {graph.number_of_edges()} "
+                f"edges that does not match the environment's {self.n_bins} bins "
+                f"and {self.connectivity.number_of_edges()} connectivity edges in "
+                "order; the layout's graph is out of sync with env.connectivity."
+            )
+        return FaceGeometry.from_graph(graph, volumes)
+
+    def _require_face_geometry(
+        self: EnvironmentProtocol, operation: str
+    ) -> FaceGeometry:
+        """Cached cell faces, or an actionable error naming ``operation``.
+
+        Parameters
+        ----------
+        operation : str
+            Analysis named in the error when the layout has no cell faces.
+
+        Returns
+        -------
+        FaceGeometry
+            Validated faces and cell measures in connectivity edge order.
+        """
+        if not isinstance(self.layout, FiniteVolumeGeometryProvider):
+            raise _missing_geometry_error(self.layout, operation)
+        return self._face_geometry
+
+    @versioned_cached_property
     def _diffusion_geometry(
-        self,
+        self: EnvironmentProtocol,
     ) -> DiffusionGeometry:
-        """Cached finite-volume geometry ``(W, volumes, n_components, labels)``.
+        """Cached diffusion geometry ``(W, volumes, n_components, labels)``.
 
         Geometry-only, so it is built once and dropped wholesale on any
         ``_state_version`` bump (like every ``versioned_cached_property``). Shared
-        by :meth:`diffuse`'s eigenbasis build and the W-component support gates
-        the smoothing consumers use.
+        by dense kernels, :meth:`diffuse`, smoothness bases, and the
+        W-component support gates.
         """
-        from neurospatial.ops.diffusion import (
-            _assemble_W,
-            _components_from_W,
-            _finite_volume_geometry,
-        )
-
-        graph, volumes = _finite_volume_geometry(
-            cast("EnvironmentProtocol", self), operation="smoothing"
-        )
-        volumes = np.asarray(volumes, dtype=np.float64)
-        W = _assemble_W(graph, int(volumes.shape[0]))
-        n_components, labels = _components_from_W(W)
-        return DiffusionGeometry(W, volumes, n_components, labels)
+        return DiffusionGeometry.from_faces(self._require_face_geometry("smoothing"))
 
     @versioned_cached_property
-    def _diffusion_eigenbasis(self) -> dict[str, Any]:
+    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
         """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
 
         Returns a small mutable holder (the max-rank truncated basis, grown by
@@ -547,7 +622,7 @@ class EnvironmentFields:
         return {}
 
     @versioned_cached_property
-    def _mrf_eigenbasis(self) -> dict[str, Any]:
+    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
         A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``

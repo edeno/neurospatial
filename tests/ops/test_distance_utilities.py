@@ -15,6 +15,15 @@ from neurospatial import Environment
 # ============================================================================
 
 
+def _split_grid() -> Environment:
+    """Two 4x4 halves separated by an inactive column: two graph components."""
+    mask = np.ones((9, 4), dtype=bool)
+    mask[4, :] = False
+    return Environment.from_grid_mask(
+        mask, grid_edges=(np.arange(10.0), np.arange(5.0))
+    )
+
+
 class TestDistanceToBasic:
     """Test basic distance_to() functionality."""
 
@@ -115,23 +124,9 @@ class TestDistanceToMetrics:
 
         assert_allclose(distances, expected, rtol=1e-10)
 
-    def test_geodesic_on_disconnected_graph(self, sample_2d_grid):
+    def test_geodesic_on_disconnected_graph(self):
         """Geodesic distance on disconnected graph returns inf for unreachable bins."""
-        env = sample_2d_grid
-
-        # Create disconnection by removing edges that cross the middle vertical line
-        mid_x = (env.dimension_ranges[0][0] + env.dimension_ranges[0][1]) / 2
-        edges_to_remove = []
-        for u, v in list(env.connectivity.edges()):
-            pos_u = env.connectivity.nodes[u]["pos"]
-            pos_v = env.connectivity.nodes[v]["pos"]
-            # If edge crosses middle line (one side < mid_x, other >= mid_x)
-            if (pos_u[0] < mid_x and pos_v[0] >= mid_x) or (
-                pos_v[0] < mid_x and pos_u[0] >= mid_x
-            ):
-                edges_to_remove.append((u, v))
-
-        env.connectivity.remove_edges_from(edges_to_remove)
+        env = _split_grid()
 
         # Verify we created a disconnected graph
         comps = env.components()
@@ -413,22 +408,9 @@ class TestRingsEdgeCases:
         for k in range(1, 6):
             assert len(rings_result[k]) == 0  # Empty rings
 
-    def test_rings_disconnected_graph(self, sample_2d_grid):
+    def test_rings_disconnected_graph(self):
         """Rings on disconnected graph stop at component boundary."""
-        env = sample_2d_grid
-
-        # Create disconnection by removing edges crossing the middle vertical line
-        mid_x = (env.dimension_ranges[0][0] + env.dimension_ranges[0][1]) / 2
-        edges_to_remove = []
-        for u, v in list(env.connectivity.edges()):
-            pos_u = env.connectivity.nodes[u]["pos"]
-            pos_v = env.connectivity.nodes[v]["pos"]
-            if (pos_u[0] < mid_x and pos_v[0] >= mid_x) or (
-                pos_v[0] < mid_x and pos_u[0] >= mid_x
-            ):
-                edges_to_remove.append((u, v))
-
-        env.connectivity.remove_edges_from(edges_to_remove)
+        env = _split_grid()
 
         # Verify disconnection
         comps = env.components()
