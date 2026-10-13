@@ -31,6 +31,7 @@ delegates to :meth:`EgocentricPolarEnvironment.create`.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, cast
 
 import numpy as np
@@ -43,8 +44,9 @@ if TYPE_CHECKING:
     from neurospatial.layout.factories import LayoutType
 
 from neurospatial.environment.core import _BaseEnvironment
-from neurospatial.environment.decorators import versioned_cached_property
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.layout.engines._polar import _PolarGridLayout
+from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
 class EgocentricPolarEnvironment(_BaseEnvironment):
@@ -406,6 +408,29 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     ) -> NoReturn:
         """Unavailable on polar environments (Cartesian-grid operation)."""
         self._raise_cartesian_only("subset", reason="Cartesian-grid operation")
+
+    @cached_property
+    @check_fitted
+    def boundary_bins(self) -> NDArray[np.intp]:
+        """Bins on the edge of the active polar region.
+
+        A bin is on the boundary when a radial or angular neighbor is outside
+        the grid or inactive. A circular angular axis wraps, so bins beside the
+        ±π seam are interior; on a full, circular grid only the innermost and
+        outermost rings are boundary.
+
+        Returns
+        -------
+        NDArray[np.intp], shape (n_boundary_bins,)
+            Bin IDs on the boundary.
+        """
+        return find_boundary_nodes(
+            graph=self.connectivity,
+            grid_shape=self.grid_shape,
+            active_mask=self.active_mask,
+            layout_kind=self._layout_type_used,
+            periodic_axes=(1,) if self._angular_is_circular else (),
+        ).astype(np.intp, copy=False)
 
     @versioned_cached_property
     def _angular_is_circular(self) -> bool:

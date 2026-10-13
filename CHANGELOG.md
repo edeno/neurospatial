@@ -104,6 +104,9 @@
 
 ### Fixed
 
+- Polar `boundary_bins` treats a circular angular axis as wrapping: bins beside
+  the ±π seam are interior, so a full circular grid's boundary is its innermost
+  and outermost rings.
 - `grid_cell_session` no longer permutes rows of its environment's
   `bin_centers` while shuffling grid-cell phases; the returned environment's
   centers matched neither its graph nor `bin_at`.
