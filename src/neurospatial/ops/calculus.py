@@ -20,7 +20,11 @@ from scipy import sparse
 
 if TYPE_CHECKING:
     from neurospatial.layout._diffusion import FaceGeometry
-    from neurospatial.ops._protocols import DivergenceConsumer, FaceGeometryConsumer
+    from neurospatial.ops._protocols import (
+        DivergenceConsumer,
+        FaceGeometryConsumer,
+        GradientConsumer,
+    )
 
 __all__ = ["compute_differential_operator", "divergence", "gradient"]
 
@@ -38,7 +42,7 @@ def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matri
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry. Edge distances
         use the same geometry as ``env.smooth``, including track junctions.
 
@@ -102,14 +106,12 @@ def _compute_divergence_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix
     ).tocsc()
 
 
-def gradient(
-    env: FaceGeometryConsumer, field: NDArray[np.float64]
-) -> NDArray[np.float64]:
+def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.float64]:
     """Compute the directional derivative of a scalar field along every edge.
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry.
     field : NDArray[np.float64], shape (n_bins,)
         Scalar value at each bin center.
@@ -166,7 +168,7 @@ def divergence(
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
         Flux density along each oriented edge in ``env.connectivity.edges()``
@@ -216,5 +218,5 @@ def divergence(
             "Fix: pass a 1-D edge_field in env.connectivity.edges() order."
         )
     return np.asarray(
-        env._divergence_operator_cached @ edge_field, dtype=np.float64
+        env.get_divergence_operator() @ edge_field, dtype=np.float64
     ).ravel()

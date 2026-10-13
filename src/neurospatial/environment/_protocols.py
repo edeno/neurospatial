@@ -125,6 +125,10 @@ class EnvironmentProtocol(Protocol):
         """Build (or fetch a cached) edge-oriented differential operator ``D``."""
         ...
 
+    def get_divergence_operator(self) -> sparse.csc_matrix:
+        """Fetch the cached finite-volume divergence operator."""
+        ...
+
     @property
     def boundary_bins(self) -> NDArray[np.intp]:
         """Integer indices of bins at the environment boundary."""

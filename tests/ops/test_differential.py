@@ -61,6 +61,18 @@ def test_div_grad_equals_negative_diffusion_generator(fv_env):
     )
 
 
+def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
+    from neurospatial.ops.calculus import divergence
+
+    operator = fv_env.get_divergence_operator()
+    assert fv_env.get_divergence_operator() is operator
+    np.testing.assert_allclose(
+        operator.toarray(), _compute_divergence_operator(fv_env).toarray()
+    )
+    flux = np.random.default_rng(4).normal(size=fv_env.connectivity.number_of_edges())
+    np.testing.assert_allclose(divergence(fv_env, flux), operator @ flux)
+
+
 def test_divergence_is_negative_adjoint_of_gradient(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
 

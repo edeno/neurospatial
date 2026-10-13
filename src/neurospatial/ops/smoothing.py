@@ -140,7 +140,7 @@ def compute_diffusion_kernels(
 
     **There is no hard limit — high-bin kernels warn and proceed.** A
     ``UserWarning`` estimating the GB cost is issued when
-    ``n_bins > _LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
+    ``n_bins > LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
     regardless of size. The warning names ``n_bins``, the GB estimate, the
     dense O(n²) reason, and the mitigation (reduce bins by increasing
     ``bin_size``). It is the sole high-bin guard.

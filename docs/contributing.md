@@ -149,9 +149,9 @@ Numerical consumers declare their small environment requirements in
 `ops._protocols`, so Cartesian and polar environments satisfy them without
 casts to the entire mixin interface. `ops._types` describes the diffusion and
 MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
-libraries at runtime. The dense-operation warning threshold lives in
-`ops._constants`, shared by diffusion and Gaussian smoothing without an import
-back into the smoothing adapter. CI type-checks both concrete environment
+libraries at runtime. The dense-operation warning threshold is
+`neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
+Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both concrete environment
 types against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
 
 ## Code Standards

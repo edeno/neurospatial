@@ -4,6 +4,9 @@
 
 ### Added
 
+- Add `Environment.get_divergence_operator()`, the cached finite-volume
+  divergence operator that `divergence(env, edge_field)` applies, alongside
+  `get_differential_operator()`.
 - Preserve spatial `analysis_settings` through population indexing, tables,
   xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
   speed and occupancy gates. Expose `spatial_support` on rate results and fitted

@@ -32,12 +32,21 @@ class DiffusionAccuracyConsumer(Protocol):
 
 
 class FaceGeometryConsumer(Protocol):
-    """Cell faces and the cached gradient operator for finite-volume calculus."""
+    """Cell faces and the cached gradient operator, for building the operators."""
 
     @property
     def n_bins(self) -> int: ...
 
     def _require_face_geometry(self, operation: str) -> FaceGeometry: ...
+
+    def get_differential_operator(self) -> sparse.csc_matrix: ...
+
+
+class GradientConsumer(Protocol):
+    """Bin count and cached gradient operator for applying a scalar field."""
+
+    @property
+    def n_bins(self) -> int: ...
 
     def get_differential_operator(self) -> sparse.csc_matrix: ...
 
@@ -48,8 +57,7 @@ class DivergenceConsumer(Protocol):
     @property
     def connectivity(self) -> nx.Graph: ...
 
-    @property
-    def _divergence_operator_cached(self) -> sparse.csc_matrix: ...
+    def get_divergence_operator(self) -> sparse.csc_matrix: ...
 
 
 class WaveletGeometryConsumer(DiffusionGeometryConsumer, Protocol):

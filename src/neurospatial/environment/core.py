@@ -1143,6 +1143,46 @@ class _BaseEnvironment(
         """
         return self._differential_operator_cached
 
+    @check_fitted
+    def get_divergence_operator(self) -> sparse.csc_matrix:
+        """Return the cached finite-volume divergence operator.
+
+        The divergence operator maps a flux on each oriented edge (in
+        ``connectivity.edges()`` order) to the net outward flux per cell volume:
+        ``-M**-1 D diag(A * d)``, the negative volume-weighted adjoint of
+        :meth:`get_differential_operator`. ``divergence(env, edge_field)``
+        applies it.
+
+        Returns
+        -------
+        scipy.sparse.csc_matrix
+            Sparse operator of shape (n_bins, n_edges), cached until the
+            environment's geometry changes.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        NotImplementedError
+            If the layout has no finite-volume cell geometry.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_samples(
+        ...     np.array([[0.0], [1.0], [2.0]]), bin_size=1.0
+        ... )
+        >>> env.get_divergence_operator().shape
+        (3, 2)
+
+        See Also
+        --------
+        get_differential_operator : The edge gradient operator it is adjoint to.
+        neurospatial.ops.calculus.divergence : Apply it to an edge field.
+        """
+        return self._divergence_operator_cached
+
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
         return compute_differential_operator(self)

@@ -43,8 +43,8 @@ import scipy.sparse.csgraph
 import scipy.sparse.linalg
 from numpy.typing import NDArray
 
+from neurospatial import _constants
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.ops import _constants
 
 if TYPE_CHECKING:
     from neurospatial.ops._protocols import (
@@ -177,7 +177,7 @@ def _raw_heat_operator(
 
 def _warn_dense_kernel(n_bins: int) -> None:
     """Warn (never raise) before a dense ``(n_bins, n_bins)`` heat kernel is built."""
-    if n_bins > _constants._LARGE_KERNEL_THRESHOLD:
+    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
             f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
@@ -907,7 +907,7 @@ def _warn_large_dense_basis(n: int) -> None:
     """Warn (never raise) before a near-full-rank ``env.diffuse`` builds a dense
     ``(n, n)`` eigenvector basis -- the inherent cost of a light bandwidth on a
     large grid. Mirrors the dense ``compute_kernel`` GB-estimate warning."""
-    if n > _constants._LARGE_KERNEL_THRESHOLD:
+    if n > _constants.LARGE_KERNEL_THRESHOLD:
         estimated_gb = n * n * 8 / 1e9
         warnings.warn(
             f"env.diffuse resolved a near-full-rank basis for {n} bins (a light "
@@ -1104,7 +1104,7 @@ def diffusion_component_labels(
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         A fitted environment.
 
     Returns
@@ -1128,7 +1128,7 @@ def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         A fitted environment.
     sigma : float
         The bandwidth passed to ``env.diffuse``.
@@ -1199,7 +1199,7 @@ def diffusion_kernel(
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or EgocentricPolarEnvironment
         Fitted environment (any supported layout).
     sigma : float
         Physical smoothing standard deviation (finite, > 0).
