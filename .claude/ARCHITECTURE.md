@@ -72,20 +72,21 @@ Main user-facing class wrapping a `LayoutEngine`. Uses **mixin pattern** for org
 |--------------|----------------|
 | `core.py` | Dataclass definition, state, properties |
 | `factories.py` | Factory classmethods (`from_samples`, etc.) |
-| `queries.py` | Spatial queries (`bin_at`, `neighbors`, etc.) |
-| `trajectory.py` | Occupancy, bin sequences, transitions |
-| `transforms.py` | Rebin, subset operations |
-| `fields.py` | Kernel smoothing, interpolation |
-| `metrics.py` | Boundary bins, linearization |
+| `cartesian.py` | Cartesian coordinate methods and trajectory/transform entry points |
+| `queries.py` | Graph queries (`neighbors`, paths, distances) |
+| `trajectory.py` | Trajectory implementations and transitions |
+| `transforms.py` | Rebin/subset implementations (module functions) |
+| `fields.py` | Kernel smoothing and interpolation implementation |
+| `metrics.py` | Boundary bins and environment metrics |
 | `regions.py` | Region operations |
 | `serialization.py` | Save/load methods |
 | `visualization.py` | Plotting methods |
 
 **Mixin pattern constraints:**
 
-- **ONLY** `Environment` is a `@dataclass` - mixins MUST be plain classes
+- `_BaseEnvironment` is the `@dataclass` - mixins MUST be plain classes
 - Mixins use `TYPE_CHECKING` guards to avoid circular imports
-- All mixin methods annotate `self: "Environment"` for type checking
+- All mixin methods annotate `self` with the shared environment protocol
 
 **See [PATTERNS.md - Mixin Pattern](PATTERNS.md#mixin-pattern-for-environment) for details.**
 

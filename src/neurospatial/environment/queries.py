@@ -3,12 +3,10 @@
 This module provides the EnvironmentQueries mixin class containing methods
 for querying spatial properties of an environment:
 
-- bin_at: Map continuous points to discrete bin indices
-- contains: Check if points fall within any active bin
 - bin_center_of: Get center coordinates of bins by index
 - neighbors: Find neighboring bins for a given bin
 - bin_sizes: Get area/volume of each active bin (cached property)
-- distance_between: Calculate geodesic distance between two points
+- distance_to: Calculate distances from bins to targets
 - path_between: Find shortest path between two bins
 """
 
@@ -33,7 +31,7 @@ from neurospatial.environment.decorators import check_fitted
 
 
 def _resolve_point_or_index(
-    env: EnvironmentProtocol, point_or_index: int | ArrayLike
+    env: EnvironmentProtocol, point_or_index: int | ArrayLike, *, operation: str
 ) -> int:
     """Resolve a coordinate point OR a bin index to an active-bin index.
 
@@ -64,7 +62,11 @@ def _resolve_point_or_index(
                 fix=f"unwrap the bin_at result with env.neighbors(int(bin_idx[0])), or pass a complete coordinate point of shape ({env.n_dims},)",
             )
         )
-    resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
+    resolved = np.asarray(
+        env._require_cartesian(f"{operation} from a coordinate point").bin_at(
+            np.atleast_2d(point)
+        )
+    ).reshape(-1)
     if resolved.size != 1:
         raise ValueError(
             _format_error(
@@ -89,123 +91,12 @@ class EnvironmentQueries:
     """Mixin class providing spatial query methods for Environment.
 
     This class is NOT a dataclass. It provides methods that query spatial
-    properties of an Environment instance, such as mapping points to bins,
-    finding neighbors, and computing distances.
+    properties of an Environment instance, such as finding neighbors,
+    reading bin centers, and computing distances to targets.
 
     Methods in this class assume they are mixed into an Environment instance
     that provides: layout, bin_centers, connectivity, is_linearized_track attributes.
     """
-
-    @check_fitted
-    def bin_at(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map N-dimensional points to bins using geometric containment.
-
-        This method uses the layout-specific geometric logic to determine which
-        bin contains each point. This is different from nearest-neighbor mapping
-        and respects the actual geometry of the bins (grid cells, hexagons, etc.).
-
-        For nearest-neighbor mapping with caching and tie-breaking, see
-        `neurospatial.ops.map_points_to_bins()`.
-
-        Parameters
-        ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to map.
-
-        Returns
-        -------
-        NDArray[np.intp], shape (n_points,)
-            An array of active bin indices (0 to `n_active_bins - 1`).
-            A value of -1 indicates that the corresponding point did not map
-            to any active bin (e.g., it's outside the environment).
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If ``points_nd`` has a different dimensionality than the
-            environment (e.g. 3-D points for a 2-D environment).
-
-        See Also
-        --------
-        neurospatial.ops.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
-
-        Notes
-        -----
-        **Geometric Containment vs Nearest-Neighbor:**
-
-        - `bin_at()` (this method): Uses layout-specific geometric containment
-          to determine which bin actually contains the point. For grids, this
-          checks which grid cell the point falls into. For hexagons, which
-          hexagon contains it. This is exact but may be slower for large batches.
-
-        - `map_points_to_bins()`: Uses KDTree to find the bin whose center is
-          closest to the point. This is fast (O(log N)) with caching, supports
-          tie-breaking on boundaries, and allows distance thresholds. Best for
-          large batches, trajectory processing, and when approximate assignment
-          is acceptable.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
-        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> points = np.array([[2.0, 2.0], [15.0, 15.0]])
-        >>> indices = env.bin_at(points)
-        >>> indices.tolist()  # -1 denotes the point outside the environment
-        [4, -1]
-
-        """
-        # Normalize to the portable ``np.intp`` index dtype at the Environment
-        # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self.layout.point_to_bin_index(points_nd).astype(np.intp, copy=False)
-
-    @check_fitted
-    def contains(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.bool_]:
-        """Check if N-dimensional continuous points fall within any active bin.
-
-        Parameters
-        ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to check.
-
-        Returns
-        -------
-        NDArray[np.bool_], shape (n_points,)
-            A boolean array where `True` indicates the corresponding point
-            maps to an active bin, and `False` indicates it does not.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If ``points_nd`` has a different dimensionality than the
-            environment (e.g. 3-D points for a 2-D environment).
-
-        Notes
-        -----
-        This method is optimized to avoid redundant KDTree queries by reusing
-        the bin index computation from `bin_at()` and checking for the -1 sentinel.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
-        >>> mask = env.contains(points)
-        >>> print(mask)  # doctest: +SKIP
-        [ True False]  # First point in environment, second outside
-
-        """
-        # Optimized: compute indices once and check for -1 sentinel
-        # This avoids redundant KDTree queries compared to calling bin_at() separately
-        indices = self.layout.point_to_bin_index(points_nd)
-        return np.asarray(indices != -1, dtype=np.bool_)
 
     @check_fitted
     def bin_center_of(
@@ -297,7 +188,7 @@ class EnvironmentQueries:
         3
 
         """
-        bin_index = _resolve_point_or_index(self, bin_index)
+        bin_index = _resolve_point_or_index(self, bin_index, operation="neighbors()")
         return list(self.connectivity.neighbors(bin_index))
 
     # Note: Decorator order matters - @cached_property must be on top
@@ -346,80 +237,6 @@ class EnvironmentQueries:
 
         """
         return self.layout.bin_sizes()
-
-    @check_fitted
-    def distance_between(
-        self: SelfEnv,
-        point1: NDArray[np.float64],
-        point2: NDArray[np.float64],
-        edge_weight: str = "distance",
-    ) -> float:
-        """Calculate the geodesic distance between two points in the environment.
-
-        Points are first mapped to their nearest active bins using `self.bin_at()`.
-        The geodesic distance (distance along the shortest path through the space)
-        is then the shortest path length in the `connectivity` graph between these
-        bins, using the specified `edge_weight`.
-
-        Parameters
-        ----------
-        point1 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The first N-dimensional point.
-        point2 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The second N-dimensional point.
-        edge_weight : str, optional
-            The edge attribute to use as weight for path calculation,
-            by default "distance". If None, the graph is treated as unweighted.
-
-        Returns
-        -------
-        float
-            The geodesic distance. Returns `np.inf` if points do not map to
-            valid active bins, if bins are disconnected, or if the connectivity
-            graph is not available.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> p1 = np.array([1.0, 1.0])
-        >>> p2 = np.array([9.0, 9.0])
-        >>> dist = env.distance_between(p1, p2)
-        >>> print(dist > 0)
-        True
-
-        """
-        source_bin = self.bin_at(np.atleast_2d(point1))[0]
-        target_bin = self.bin_at(np.atleast_2d(point2))[0]
-
-        if source_bin == -1 or target_bin == -1:
-            # One or both points didn't map to a valid active bin. Returning
-            # np.inf silently can mask a coordinate-frame or units mistake, so
-            # warn when neither point lands in the environment.
-            if source_bin == -1 and target_bin == -1:
-                warnings.warn(
-                    "distance_between() returning np.inf: neither point mapped "
-                    "to an active bin (both bin_at() lookups returned -1). "
-                    "Check that the points are inside the environment and in "
-                    "the same coordinate frame/units as bin_centers.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-            return np.inf
-
-        try:
-            return float(
-                nx.shortest_path_length(
-                    self.connectivity,
-                    source=source_bin,
-                    target=target_bin,
-                    weight=edge_weight,
-                )
-            )
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return np.inf
 
     @check_fitted
     def path_between(
@@ -474,8 +291,12 @@ class EnvironmentQueries:
         """
         graph = self.connectivity
 
-        source_idx = _resolve_point_or_index(self, source_active_bin_idx)
-        target_idx = _resolve_point_or_index(self, target_active_bin_idx)
+        source_idx = _resolve_point_or_index(
+            self, source_active_bin_idx, operation="path_between()"
+        )
+        target_idx = _resolve_point_or_index(
+            self, target_active_bin_idx, operation="path_between()"
+        )
 
         if source_idx == target_idx:
             return [source_idx]
@@ -540,6 +361,9 @@ class EnvironmentQueries:
         ValueError
             If targets is empty, or if target bin indices are out of range,
             or if metric is invalid.
+        CartesianOnlyError
+            A NotImplementedError for metric="euclidean" on environments without
+            Cartesian bin centers, such as polar environments.
         KeyError
             If targets is a string (region name) that doesn't exist in self.regions.
         TypeError
@@ -646,6 +470,7 @@ class EnvironmentQueries:
 
         # Compute distances based on metric
         if metric == "euclidean":
+            self._require_cartesian("distance_to(metric='euclidean')")
             # Euclidean distance: straight-line distance to nearest target
             # Vectorized implementation using broadcasting for performance
             target_positions = self.bin_centers[target_array]  # (n_targets, n_dims)
@@ -759,7 +584,9 @@ class EnvironmentQueries:
 
         """
         # Resolve a bin index or a coordinate point to an active-bin index.
-        source_bin = _resolve_point_or_index(self, source_bin)
+        source_bin = _resolve_point_or_index(
+            self, source_bin, operation="reachable_from()"
+        )
 
         if radius is not None and radius < 0:
             raise ValueError(

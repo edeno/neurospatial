@@ -42,6 +42,16 @@
 
 ### Changed
 
+- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
+  on environments built with `from_polygon`, `from_grid_mask` and
+  `from_pixel_mask`, and on grid environments read from NWB. They previously
+  required a `RegularGrid` layout. Inactive cells behave as on masked
+  `from_samples` environments.
+- Polar environments no longer define the twelve Cartesian methods. Accessing
+  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
+  `AttributeError`, with the same message. `hasattr` reports them as absent and
+  type checkers flag the call. Refusals inside shared methods name the call
+  that was made.
 - **Behavior change:** an environment's geometry is read-only once built:
   its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
   and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
@@ -106,6 +116,23 @@
 
 ### Fixed
 
+- Type checkers report wrong arguments to environment methods, such as
+  `env.bin_at("not an array")` or an unknown keyword; the fitted-state check
+  previously hid every decorated method's signature. `plot_field` accepts a
+  `matplotlib` `Colormap` as well as a colormap name.
+- `subset()` of a grid keeps the parent's edges among the selected bins instead
+  of reconnecting them by cell adjacency. A 4-connected grid read from NWB, or a
+  saved graph with removed edges, previously came back with edges it never had
+  (a 4-connected grid became 8-connected), changing geodesic distances and
+  smoothing.
+- `to_linear()` and `linear_to_nd()` on tracks read from NWB explain that the
+  track graph is not stored and how to rebuild it, instead of requesting a bug
+  report.
+- The Euclidean `distance_to` refusal on polar environments no longer prints
+  `()()`.
+- Type checkers accept calls such as `env.smooth(field, bandwidth)` and
+  `polar_env.to_dict()` on `Environment` and `EgocentricPolarEnvironment`;
+  mypy previously reported "Invalid self argument".
 - Polar `boundary_bins` treats a circular angular axis as wrapping: bins beside
   the ±π seam are interior, so a full circular grid's boundary is its innermost
   and outermost rings.

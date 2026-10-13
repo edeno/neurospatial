@@ -206,6 +206,42 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
         self.second = second
 
 
+class CartesianOnlyError(AttributeError, NotImplementedError, NeurospatialError):
+    """Raised when an operation needs Cartesian bin centers the environment lacks.
+
+    An ``EgocentricPolarEnvironment`` stores ``(distance, angle)`` bins, so an
+    operation that reads bin centers as Cartesian ``(x, y[, z])`` coordinates
+    would return geometric nonsense. Inherits :class:`AttributeError`, so
+    ``hasattr(polar_env, "bin_at")`` is ``False``, and
+    :class:`NotImplementedError`, so existing handlers keep working.
+
+    Parameters
+    ----------
+    environment_type : str
+        Name of the environment class, e.g. ``"EgocentricPolarEnvironment"``.
+    operation : str
+        The refused call, e.g. ``"bin_at()"`` or
+        ``"distance_to(metric='euclidean')"``.
+    reason : str
+        ``"Cartesian-coordinate operation"`` or ``"Cartesian-grid operation"``.
+    explanation : str
+        Why the environment cannot run the operation and what to use instead.
+    """
+
+    # AttributeError defines __reduce__ and precedes NeurospatialError in the
+    # MRO; keep the base's rebuild-from-arguments pickling.
+    __reduce__ = NeurospatialError.__reduce__
+
+    def __init__(
+        self, environment_type: str, operation: str, *, reason: str, explanation: str
+    ) -> None:
+        super().__init__(
+            f"{environment_type}.{operation} is not available ({reason}): {explanation}"
+        )
+        self.environment_type = environment_type
+        self.operation = operation
+
+
 class LayoutNotBuiltError(RuntimeError, NeurospatialError):
     """Raised when a :class:`LayoutEngine` is accessed before ``build()``.
 

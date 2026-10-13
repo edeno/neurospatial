@@ -28,11 +28,14 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial import _constants
+from neurospatial._lru import lru_get, lru_put
 from neurospatial.environment._protocols import (
     EnvironmentProtocol,
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.layout._capabilities import require_rectilinear_grid
 from neurospatial.layout._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
@@ -41,6 +44,8 @@ from neurospatial.layout._diffusion import (
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._protocols import InterpolationConsumer
+    from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -83,6 +88,230 @@ def _missing_geometry_error(layout: object, operation: str) -> NotImplementedErr
             ),
         )
     )
+
+
+def _interpolate(
+    env: InterpolationConsumer,
+    field: NDArray[np.float64],
+    points: NDArray[np.float64],
+    *,
+    mode: Literal["nearest", "linear"] = "nearest",
+) -> NDArray[np.float64]:
+    """Interpolate a bin-valued field at continuous query points."""
+    # Input validation - field
+    field = np.asarray(field, dtype=np.float64)
+
+    # Check field dimensionality
+    if field.ndim != 1:
+        raise ValueError(
+            f"Field must be 1-D array (got {field.ndim}-D array). "
+            f"Expected shape (n_bins,) = ({env.n_bins},), got shape {field.shape}."
+        )
+
+    # Check field shape matches n_bins
+    if field.shape[0] != env.n_bins:
+        raise ValueError(
+            f"Field shape {field.shape} must match n_bins={env.n_bins}. "
+            f"Expected shape (n_bins,) = ({env.n_bins},), got ({field.shape[0]},)."
+        )
+
+    # Check for NaN/Inf values in field
+    if np.any(np.isnan(field)):
+        raise ValueError(
+            "Field contains NaN values. "
+            f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
+            "NaN values are not supported in interpolation operations."
+        )
+
+    if np.any(np.isinf(field)):
+        raise ValueError(
+            "Field contains infinite values. "
+            f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
+            "Infinite values are not supported in interpolation operations."
+        )
+
+    # Input validation - points
+    points = np.asarray(points, dtype=np.float64)
+
+    # Check points dimensionality
+    if points.ndim != 2:
+        raise ValueError(
+            f"Points must be 2-D array (got {points.ndim}-D array). "
+            f"Expected shape (n_points, n_dims), got shape {points.shape}."
+        )
+
+    # Check points dimension matches environment
+    n_dims = env.bin_centers.shape[1]
+    if points.shape[1] != n_dims:
+        raise ValueError(
+            f"Points dimension {points.shape[1]} must match environment "
+            f"dimension {n_dims}. Expected shape (n_points, {n_dims}), "
+            f"got shape {points.shape}."
+        )
+
+    # Check for NaN/Inf values in points
+    if np.any(~np.isfinite(points)):
+        n_invalid = np.sum(~np.isfinite(points))
+        raise ValueError(
+            f"Points array contains {n_invalid} non-finite value(s) (NaN or Inf). "
+            f"All point coordinates must be finite. Check your input data for "
+            f"missing values or infinities."
+        )
+
+    # Validate mode
+    valid_modes = {"nearest", "linear"}
+    if mode not in valid_modes:
+        raise ValueError(
+            f"mode must be one of {valid_modes} (got '{mode}'). "
+            "Use 'nearest' for nearest-neighbor interpolation or 'linear' "
+            "for bilinear/trilinear interpolation (grids only)."
+        )
+
+    # Handle empty points array
+    if points.shape[0] == 0:
+        return np.array([], dtype=np.float64)
+
+    # Dispatch based on mode
+    if mode == "nearest":
+        return _interpolate_nearest(env, field, points)
+    else:  # mode == "linear"
+        return _interpolate_linear(env.layout, field, points)
+
+
+def _interpolate_nearest(
+    env: InterpolationConsumer,
+    field: NDArray[np.float64],
+    points: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Nearest-neighbor interpolation using KDTree.
+
+    Parameters
+    ----------
+    field : NDArray[np.float64], shape (n_bins,)
+        Field values.
+    points : NDArray[np.float64], shape (n_points, n_dims)
+        Query points.
+
+    Returns
+    -------
+    values : NDArray[np.float64], shape (n_points,)
+        Interpolated values (NaN for points outside).
+
+    """
+    from typing import cast
+
+    from neurospatial.ops.binning import map_points_to_bins
+
+    # Map points to bins (-1 for outside points)
+    # With return_dist=False, we get just the indices (not a tuple)
+    bin_indices = cast(
+        "NDArray[np.int64]",
+        map_points_to_bins(
+            cast("Environment", env),
+            points,
+            tie_break="lowest_index",
+            return_dist=False,
+        ),
+    )
+
+    # Initialize result with NaN
+    result = np.full(points.shape[0], np.nan, dtype=np.float64)
+
+    # Fill in values for points inside environment
+    inside_mask = bin_indices >= 0
+    result[inside_mask] = field[bin_indices[inside_mask]]
+
+    return result
+
+
+def _interpolate_linear(
+    layout: LayoutEngine,
+    field: NDArray[np.float64],
+    points: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Linear interpolation using scipy RegularGridInterpolator.
+
+    Parameters
+    ----------
+    field : NDArray[np.float64], shape (n_bins,)
+        Field values.
+    points : NDArray[np.float64], shape (n_points, n_dims)
+        Query points.
+
+    Returns
+    -------
+    values : NDArray[np.float64], shape (n_points,)
+        Interpolated values (NaN for points outside).
+
+    Raises
+    ------
+    NotImplementedError
+        If layout has no rectangular grid cells.
+
+    Notes
+    -----
+    On a holed/masked grid (where ``n_bins < prod(grid_shape)``), inactive
+    cells are filled with NaN before interpolation. Query points over an
+    inactive cell therefore return NaN, consistent with the out-of-bounds
+    ``fill_value=np.nan`` behavior for points outside the grid entirely.
+
+    """
+    grid = require_rectilinear_grid(
+        layout,
+        "interpolate(mode='linear')",
+        fix="use mode='nearest', which works on every layout",
+    )
+
+    # Import scipy
+    try:
+        from scipy.interpolate import RegularGridInterpolator
+    except ImportError as e:
+        raise ImportError(
+            "Linear interpolation requires scipy. Install with: pip install scipy"
+        ) from e
+
+    grid_shape = grid.shape
+    grid_edges = grid.edges
+    n_dims = len(grid_shape)
+
+    # Scatter active-bin values into a full-grid array before reshaping.
+    # `field` is indexed by active-bin id (length n_bins); `grid_shape`
+    # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
+    # so a direct reshape would raise. Inactive cells are filled with NaN,
+    # which the RegularGridInterpolator (fill_value=np.nan) already treats
+    # as "no data" — query points over a hole interpolate to NaN.
+    n_full = int(np.prod(grid_shape))
+    active_mask = grid.active_mask
+    if field.shape[0] == n_full:
+        # Fully-active grid: field already covers every cell.
+        field_grid = field.reshape(grid_shape)
+    else:
+        full_field = np.full(n_full, np.nan, dtype=np.float64)
+        full_field[np.flatnonzero(active_mask.ravel())] = field
+        field_grid = full_field.reshape(grid_shape)
+
+    # Create grid points for each dimension (bin centers)
+    grid_points: list[NDArray[np.float64]] = []
+    for dim in range(n_dims):
+        edges = grid_edges[dim]
+        # Bin centers are midpoints between edges
+        centers = (edges[:-1] + edges[1:]) / 2
+        grid_points.append(centers)
+
+    # Create interpolator
+    # bounds_error=False, fill_value=np.nan → outside points return NaN
+    interpolator = RegularGridInterpolator(
+        grid_points,
+        field_grid,
+        method="linear",
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+
+    # Evaluate at query points
+    result: NDArray[np.float64] = interpolator(points)
+
+    return result
 
 
 class EnvironmentFields:
@@ -131,6 +360,8 @@ class EnvironmentFields:
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
             with the same (bandwidth, mode) will return the cached result.
+            The environment keeps the most recently used kernels (eight by
+            default); ``clear_cache(kernels=True)`` releases them.
 
         Returns
         -------
@@ -205,24 +436,28 @@ class EnvironmentFields:
         # Initialize cache if it doesn't exist
         # (for backward compatibility with environments deserialized from older versions)
         if not hasattr(self, "_kernel_cache"):
-            self._kernel_cache = {}
+            empty: dict[tuple[float, KernelMode], NDArray[np.float64]] = {}
+            self._kernel_cache = empty
 
         # Check cache first if enabled
         cache_key = (bandwidth, mode)
-        if cache and cache_key in self._kernel_cache:
-            return self._kernel_cache[cache_key]
+        if cache:
+            cached = lru_get(self._kernel_cache, cache_key)
+            if cached is not None:
+                return cached
 
         # Compute kernel from the cached diffusion geometry, whose cell measures
         # (the layout's bin sizes) are the mass matrix M used by every mode.
-        from typing import cast
-
-        kernel = diffusion_kernel(
-            cast("EnvironmentProtocol", self), bandwidth, mode=mode
-        )
+        kernel = diffusion_kernel(self, bandwidth, mode=mode)
 
         # Store in cache if enabled
         if cache:
-            self._kernel_cache[cache_key] = kernel
+            lru_put(
+                self._kernel_cache,
+                cache_key,
+                kernel,
+                limit=_constants.MAX_CACHED_KERNELS,
+            )
 
         return kernel
 
@@ -622,7 +857,18 @@ class EnvironmentFields:
         return {}
 
     @versioned_cached_property
-    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
+    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
+        """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
+
+        The smoothing adapter fills this holder with the most recently used
+        kernels (``_constants.MAX_CACHED_KERNELS``). It is emptied by
+        ``clear_cache(kernels=True)``, dropped on a state version bump, and
+        freed with the environment.
+        """
+        return {}
+
+    @versioned_cached_property
+    def _mrf_eigenbasis(self: EnvironmentProtocol) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
         A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``
@@ -635,7 +881,7 @@ class EnvironmentFields:
         a dense ``(n, n)`` basis (dense solves stay call-local). Distinct from
         :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
         """
-        n = cast("EnvironmentProtocol", self).n_bins
+        n = self.n_bins
         return {
             "Q": np.zeros((n, 0)),
             "Lam": np.zeros(0),
@@ -716,313 +962,3 @@ class EnvironmentFields:
         return select_live_basis(
             Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank
         )
-
-    def interpolate(
-        self: SelfEnv,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-        *,
-        mode: Literal["nearest", "linear"] = "nearest",
-    ) -> NDArray[np.float64]:
-        """Interpolate field values at arbitrary points.
-
-        Evaluates bin-valued fields at continuous query points using either
-        nearest-neighbor or linear interpolation. Nearest mode works on all
-        layout types; linear mode requires regular grid layouts.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values per bin. Must be a 1-D array with length equal to n_bins.
-            Must not contain NaN or Inf values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points in environment coordinates. Must be a 2-D array where
-            each row is a point with dimensionality matching the environment.
-        mode : {'nearest', 'linear'}, default='nearest'
-            Interpolation mode:
-
-            - 'nearest': Use value of nearest bin center (all layouts).
-              Points outside environment bounds return NaN.
-            - 'linear': Bilinear (2D) or trilinear (3D) interpolation for
-              regular grids. Only supported for RegularGridLayout.
-              Points outside grid bounds return NaN.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated field values. Points outside environment → NaN.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If field has wrong shape, wrong dimensionality, contains NaN/Inf,
-            points have wrong dimensionality, mode is invalid, or dimensions
-            don't match.
-        NotImplementedError
-            If mode='linear' is requested for non-grid layout.
-
-        See Also
-        --------
-        smooth : Apply diffusion kernel smoothing to fields.
-        occupancy : Compute occupancy with optional smoothing.
-
-        Notes
-        -----
-        **Nearest-neighbor mode**: Uses KDTree to find closest bin center.
-        Deterministic and works on all layout types. Points farther than a
-        reasonable threshold from any bin center are marked as outside (NaN).
-
-        **Linear mode**: Uses scipy.interpolate.RegularGridInterpolator for
-        smooth interpolation on rectangular grids. For linear functions
-        f(x,y) = ax + by + c, interpolation is exact up to numerical precision.
-
-        **Outside handling**: Points outside the environment bounds return NaN
-        in both modes. This prevents extrapolation errors.
-
-        Examples
-        --------
-        >>> # Nearest-neighbor interpolation (all layouts)
-        >>> field = np.random.rand(env.n_bins)  # doctest: +SKIP
-        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     field, query_points, mode="nearest"
-        ... )  # doctest: +SKIP
-
-        >>> # Linear interpolation (grids only)
-        >>> # For plane f(x,y) = 2x + 3y, interpolation is exact
-        >>> plane_field = (
-        ...     2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
-        ... )  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     plane_field, query_points, mode="linear"
-        ... )  # doctest: +SKIP
-
-        >>> # Evaluate rate map at trajectory positions
-        >>> rates_at_trajectory = env.interpolate(
-        ...     rate_map, positions, mode="linear"
-        ... )  # doctest: +SKIP
-
-        """
-        # Input validation - field
-        field = np.asarray(field, dtype=np.float64)
-
-        # Check field dimensionality
-        if field.ndim != 1:
-            raise ValueError(
-                f"Field must be 1-D array (got {field.ndim}-D array). "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got shape {field.shape}."
-            )
-
-        # Check field shape matches n_bins
-        if field.shape[0] != self.n_bins:
-            raise ValueError(
-                f"Field shape {field.shape} must match n_bins={self.n_bins}. "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got ({field.shape[0]},)."
-            )
-
-        # Check for NaN/Inf values in field
-        if np.any(np.isnan(field)):
-            raise ValueError(
-                "Field contains NaN values. "
-                f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
-                "NaN values are not supported in interpolation operations."
-            )
-
-        if np.any(np.isinf(field)):
-            raise ValueError(
-                "Field contains infinite values. "
-                f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
-                "Infinite values are not supported in interpolation operations."
-            )
-
-        # Input validation - points
-        points = np.asarray(points, dtype=np.float64)
-
-        # Check points dimensionality
-        if points.ndim != 2:
-            raise ValueError(
-                f"Points must be 2-D array (got {points.ndim}-D array). "
-                f"Expected shape (n_points, n_dims), got shape {points.shape}."
-            )
-
-        # Check points dimension matches environment
-        n_dims = self.bin_centers.shape[1]
-        if points.shape[1] != n_dims:
-            raise ValueError(
-                f"Points dimension {points.shape[1]} must match environment "
-                f"dimension {n_dims}. Expected shape (n_points, {n_dims}), "
-                f"got shape {points.shape}."
-            )
-
-        # Check for NaN/Inf values in points
-        if np.any(~np.isfinite(points)):
-            n_invalid = np.sum(~np.isfinite(points))
-            raise ValueError(
-                f"Points array contains {n_invalid} non-finite value(s) (NaN or Inf). "
-                f"All point coordinates must be finite. Check your input data for "
-                f"missing values or infinities."
-            )
-
-        # Validate mode
-        valid_modes = {"nearest", "linear"}
-        if mode not in valid_modes:
-            raise ValueError(
-                f"mode must be one of {valid_modes} (got '{mode}'). "
-                "Use 'nearest' for nearest-neighbor interpolation or 'linear' "
-                "for bilinear/trilinear interpolation (grids only)."
-            )
-
-        # Handle empty points array
-        if points.shape[0] == 0:
-            return np.array([], dtype=np.float64)
-
-        # Dispatch based on mode
-        if mode == "nearest":
-            return self._interpolate_nearest(field, points)
-        else:  # mode == "linear"
-            return self._interpolate_linear(field, points)
-
-    def _interpolate_nearest(
-        self: SelfEnv,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Nearest-neighbor interpolation using KDTree.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated values (NaN for points outside).
-
-        """
-        from typing import cast
-
-        from neurospatial.ops.binning import map_points_to_bins
-
-        # Map points to bins (-1 for outside points)
-        # With return_dist=False, we get just the indices (not a tuple)
-        bin_indices = cast(
-            "NDArray[np.int64]",
-            map_points_to_bins(
-                cast("Environment", self),
-                points,
-                tie_break="lowest_index",
-                return_dist=False,
-            ),
-        )
-
-        # Initialize result with NaN
-        result = np.full(points.shape[0], np.nan, dtype=np.float64)
-
-        # Fill in values for points inside environment
-        inside_mask = bin_indices >= 0
-        result[inside_mask] = field[bin_indices[inside_mask]]
-
-        return result
-
-    def _interpolate_linear(
-        self: SelfEnv,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Linear interpolation using scipy RegularGridInterpolator.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated values (NaN for points outside).
-
-        Raises
-        ------
-        NotImplementedError
-            If layout is not RegularGridLayout.
-
-        Notes
-        -----
-        On a holed/masked grid (where ``n_bins < prod(grid_shape)``), inactive
-        cells are filled with NaN before interpolation. Query points over an
-        inactive cell therefore return NaN, consistent with the out-of-bounds
-        ``fill_value=np.nan`` behavior for points outside the grid entirely.
-
-        """
-        # Check layout type - must be RegularGridLayout, not masked/polygon layouts
-        # Use _layout_type_tag to avoid mypy Protocol isinstance issues
-        if self.layout._layout_type_tag != "RegularGrid":
-            raise NotImplementedError(
-                f"Linear interpolation (mode='linear') is only supported for "
-                f"RegularGridLayout. Current layout type: {self.layout._layout_type_tag}. "
-                f"Use mode='nearest' for non-grid layouts, or create a regular grid "
-                f"environment with Environment.from_samples()."
-            )
-
-        # Import scipy
-        try:
-            from scipy.interpolate import RegularGridInterpolator
-        except ImportError as e:
-            raise ImportError(
-                "Linear interpolation requires scipy. Install with: pip install scipy"
-            ) from e
-
-        # Get grid properties (we know layout has these from the check above)
-        # Cast to Any to work around mypy Protocol limitation
-        from typing import cast
-
-        layout_any = cast("Any", self.layout)
-        grid_shape: tuple[int, ...] = layout_any.grid_shape
-        grid_edges: tuple[NDArray[np.float64], ...] = layout_any.grid_edges
-        n_dims = len(grid_shape)
-
-        # Scatter active-bin values into a full-grid array before reshaping.
-        # `field` is indexed by active-bin id (length n_bins); `grid_shape`
-        # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
-        # so a direct reshape would raise. Inactive cells are filled with NaN,
-        # which the RegularGridInterpolator (fill_value=np.nan) already treats
-        # as "no data" — query points over a hole interpolate to NaN.
-        n_full = int(np.prod(grid_shape))
-        active_mask = getattr(self.layout, "active_mask", None)
-        if active_mask is None or field.shape[0] == n_full:
-            # Fully-active grid: field already covers every cell.
-            field_grid = field.reshape(grid_shape)
-        else:
-            full_field = np.full(n_full, np.nan, dtype=np.float64)
-            full_field[np.flatnonzero(active_mask.ravel())] = field
-            field_grid = full_field.reshape(grid_shape)
-
-        # Create grid points for each dimension (bin centers)
-        grid_points: list[NDArray[np.float64]] = []
-        for dim in range(n_dims):
-            edges = grid_edges[dim]
-            # Bin centers are midpoints between edges
-            centers = (edges[:-1] + edges[1:]) / 2
-            grid_points.append(centers)
-
-        # Create interpolator
-        # bounds_error=False, fill_value=np.nan → outside points return NaN
-        interpolator = RegularGridInterpolator(
-            grid_points,
-            field_grid,
-            method="linear",
-            bounds_error=False,
-            fill_value=np.nan,
-        )
-
-        # Evaluate at query points
-        result: NDArray[np.float64] = interpolator(points)
-
-        return result

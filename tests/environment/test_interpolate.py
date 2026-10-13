@@ -133,17 +133,36 @@ class TestInterpolateLinearGridOnly:
 
     def test_linear_mode_requires_grid(self):
         """Linear mode should raise NotImplementedError for non-grid layouts."""
-        from shapely.geometry import box
-
-        # Polygon layout is not a RegularGridLayout
-        polygon = box(0, 0, 10, 10)
-        env = Environment.from_polygon(polygon, bin_size=1.0)
+        env = Environment.linear_track(
+            endpoints=((0.0, 0.0), (10.0, 0.0)), bin_size=1.0
+        )
 
         field = np.ones(env.n_bins)
         points = np.array([[5.0, 5.0]])
 
-        with pytest.raises(NotImplementedError, match=r"RegularGridLayout"):
+        with pytest.raises(
+            NotImplementedError, match=r"needs a grid of axis-aligned rectangular cells"
+        ):
             env.interpolate(field, points, mode="linear")
+
+
+def test_linear_interpolation_matches_masked_grid_twin(masked_grid_twins):
+    """The mask factory gives identical values, including holes and outside points."""
+    env, twin = masked_grid_twins
+    inactive = np.argwhere(~env.active_mask)[0]
+    hole = np.array(
+        [
+            (edges[index] + edges[index + 1]) / 2
+            for edges, index in zip(env.grid_edges, inactive, strict=True)
+        ]
+    )
+    points = np.vstack([env.bin_centers[::10], hole, env.bin_centers.max(axis=0) + 100])
+    field = np.arange(env.n_bins, dtype=float)
+    expected = env.interpolate(field, points, mode="linear")
+    np.testing.assert_array_equal(
+        twin.interpolate(field, points, mode="linear"), expected
+    )
+    assert np.isnan(expected[-2:]).all()
 
 
 class TestInterpolateValidation:
@@ -476,3 +495,15 @@ class TestInterpolateLinearHoledGrid:
         # The interpolated plane should match the analytic plane where defined.
         expected = 2.0 * query_points[:, 0] + 3.0 * query_points[:, 1]
         np.testing.assert_allclose(values[finite], expected[finite], rtol=1e-6)
+
+
+def test_linear_interpolation_on_polygon_preserves_inactive_cells():
+    """A polygon grid interpolates inside its arena and masks corner cells."""
+    from shapely.geometry import Point
+
+    env = Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0)
+    result = env.interpolate(
+        np.ones(env.n_bins), np.array([[15.0, 15.0], [1.0, 1.0]]), mode="linear"
+    )
+    assert result[0] == pytest.approx(1.0)
+    assert np.isnan(result[1])

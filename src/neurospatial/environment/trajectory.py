@@ -12,9 +12,10 @@ Key Features
 
 Notes
 -----
-This is a mixin class designed to be used with Environment. It should NOT
-be decorated with @dataclass. Only the main Environment class in core.py
-should be a dataclass.
+Module functions implement trajectory analysis. ``EnvironmentTrajectory``
+provides shared transition entry points; Cartesian trajectory entry points
+belong to ``CartesianCoordinates``. Mixins are plain classes, while
+``_BaseEnvironment`` in core.py is the dataclass.
 
 TYPE_CHECKING Pattern
 ---------------------
@@ -28,7 +29,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
@@ -38,12 +39,15 @@ from neurospatial._intervals import as_intervals
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear_grid
 
 if TYPE_CHECKING:
     import scipy.sparse
 
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import (
+        TrajectoryBinningConsumer,
+        TransitionsConsumer,
+    )
 
 
 # Numerical stability constants
@@ -93,7 +97,7 @@ class BinSequenceWithRuns:
 def interval_valid_mask(
     times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
-    env: EnvironmentProtocol | None = None,
+    env: TrajectoryBinningConsumer | None = None,
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -301,576 +305,906 @@ def observed_runs(
     return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
 
 
-class EnvironmentTrajectory:
-    """Trajectory analysis methods mixin.
+def _occupancy(
+    env: TrajectoryBinningConsumer,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    bandwidth: float | None = None,
+    time_allocation: Literal["start", "linear"] = "start",
+    return_seconds: bool = True,
+) -> NDArray[np.float64]:
+    """Compute occupancy from sampled positions."""
+    times, positions = validate_times_positions(
+        times, positions, call="Environment.occupancy"
+    )
+    if positions.ndim != 2:
+        raise ValueError(
+            f"positions must be 2-dimensional array (n_samples, n_dims), "
+            f"got shape {positions.shape}"
+        )
 
-    Provides methods for analyzing trajectories through environments.
+    # Validate positions dimensionality
+    if env.dimension_ranges is not None:
+        expected_dims = len(env.dimension_ranges)
+        if positions.shape[1] != expected_dims:
+            raise ValueError(
+                f"positions must have {expected_dims} dimensions to match environment. "
+                f"Got {positions.shape[1]} dimensions."
+            )
+
+    # Validate speed parameters
+    if min_speed is not None and speed is None:
+        raise ValueError(
+            "min_speed parameter requires speed array to be provided. "
+            "Pass speed=<array> along with min_speed=<threshold>."
+        )
+
+    if speed is not None:
+        speed = np.asarray(speed, dtype=np.float64)
+        if len(speed) != len(times):
+            raise ValueError(
+                f"speed and times must have same length. "
+                f"Got speed: {len(speed)}, times: {len(times)}"
+            )
+
+    # Validate time_allocation parameter
+    if time_allocation not in ("start", "linear"):
+        raise ValueError(
+            f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
+            "Use 'start' for simple allocation (all layouts) or 'linear' for "
+            "ray-grid intersection (grid layouts with rectangular cells only)."
+        )
+
+    # Validate the capability before returning for empty input.
+    if time_allocation == "linear":
+        grid = require_rectilinear_grid(
+            env.layout,
+            "occupancy(time_allocation='linear')",
+            fix="use time_allocation='start', which works on every layout",
+        )
+
+    # Handle empty arrays
+    if len(times) == 0:
+        return np.zeros(env.n_bins, dtype=np.float64)
+
+    # Handle single sample (no intervals to accumulate)
+    if len(times) == 1:
+        return np.zeros(env.n_bins, dtype=np.float64)
+
+    # Map positions to bin indices using the layout's geometric
+    # containment, which matches Environment.bin_sequence and returns
+    # -1 for samples outside the active mask. The earlier path
+    # used map_points_to_bins (KDTree nearest-neighbor with a
+    # heuristic 10x-typical-spacing threshold). That heuristic let
+    # samples a few centimeters outside the active mask silently
+    # bind to the nearest edge bin, so a tracking-error overshoot
+    # inflated occupancy at the boundary while bin_sequence
+    # correctly flagged the same sample as -1.
+    bin_indices = env.bin_at(positions)
+
+    # Compute time intervals
+    dt = np.diff(times)
+
+    # Build mask for valid intervals using the SHARED helper so that the
+    # occupancy denominator and the spike numerator drop the IDENTICAL set
+    # of intervals (max_gap ∪ low-speed ∪ out-of-bounds-start). See
+    # ``interval_valid_mask`` and ``encoding/_binning.py``.
+    valid_mask = interval_valid_mask(
+        times,
+        positions,
+        env,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        start_bin=bin_indices,
+        epochs=as_intervals(epochs, name="epochs"),
+    )
+
+    # Initialize occupancy array
+    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+
+    # Dispatch to appropriate time allocation method
+    if time_allocation == "start":
+        occupancy = start_allocated_occupancy(
+            bin_indices,
+            dt,
+            valid_mask,
+            env.n_bins,
+            return_seconds=return_seconds,
+        )
+
+    elif time_allocation == "linear":
+        # Linear allocation: split time across bins traversed by ray
+        occupancy = _allocate_time_linear(
+            env, grid, positions, dt, valid_mask, bin_indices, return_seconds
+        )
+
+    # Apply kernel smoothing if requested
+    if bandwidth is not None:
+        # Use mode='transition' for occupancy (counts), not 'density'
+        # This ensures mass conservation: kernel columns sum to 1
+        kernel = env.compute_kernel(bandwidth=bandwidth, mode="transition", cache=True)
+        occupancy = kernel @ occupancy
+
+    return occupancy
+
+
+def _bin_sequence(
+    env: TrajectoryBinningConsumer,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    dedup: bool,
+    outside_value: int | None,
+    gap_splits_runs: bool,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+) -> BinSequenceWithRuns:
+    """Shared implementation for ``bin_sequence`` and
+    ``bin_sequence_with_runs``: always computes both bins and runs;
+    the public methods choose which fields of the result to expose.
     """
-
-    @check_fitted
-    def occupancy(
-        self: SelfEnv,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        speed: NDArray[np.float64] | None = None,
-        min_speed: float | None = None,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-        bandwidth: float | None = None,
-        time_allocation: Literal["start", "linear"] = "start",
-        return_seconds: bool = True,
-    ) -> NDArray[np.float64]:
-        """Compute occupancy (time spent in each bin).
-
-        Accumulates time spent in each bin from continuous trajectory samples.
-        Supports optional speed filtering, gap handling, and kernel smoothing.
-
-        Parameters
-        ----------
-        times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Must be monotonically increasing.
-        positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
-        speed : NDArray[np.float64], shape (n_samples,), optional
-            Instantaneous speed at each sample. If provided with min_speed,
-            samples below threshold are excluded from occupancy calculation.
-        min_speed : float, optional
-            Minimum speed threshold in physical units per second. Requires
-            speed parameter. Samples with speed < min_speed are excluded.
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from occupancy and their spikes are not counted. ``None`` disables the
-            gap check.
-        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-            Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
-        bandwidth : float, optional
-            If provided, apply diffusion kernel smoothing with this bandwidth
-            (in physical units). Uses mode='transition' to preserve total mass.
-            Smoothing preserves total occupancy time.
-        time_allocation : {'start', 'linear'}, default='start'
-            Method for allocating time intervals across bins:
-
-            - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
-            - 'linear': Split Δt proportionally across bins traversed by
-              straight-line path (more accurate, RegularGridLayout only).
-        return_seconds : bool, default=True
-            If True, return time in seconds (time-weighted occupancy).
-            If False, return sample counts (unweighted, counts number of
-            intervals starting in each bin). Use True for rate calculations
-            (e.g., firing rates), False for presence/absence analyses.
-
-        Returns
-        -------
-        occupancy : NDArray[np.float64], shape (n_bins,)
-            If return_seconds=True: Time in seconds spent in each bin.
-            If return_seconds=False: Count of intervals starting in each bin.
-            The sum equals total valid time (when return_seconds=True) or
-            total number of intervals (when return_seconds=False), excluding
-            filtered periods and large gaps.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If times and positions have different lengths, if arrays are
-            inconsistent, or if min_speed is provided without speed.
-        ValueError
-            If positions have wrong number of dimensions.
-        ValueError
-            If time_allocation is not 'start' or 'linear'.
-        ValueError
-            If ``times`` contains non-finite values (NaN or Inf). The error
-            names ``times`` and the first offending index.
-        NotImplementedError
-            If time_allocation='linear' is used on non-RegularGridLayout.
-
-        See Also
-        --------
-        compute_kernel : Compute diffusion kernel for smoothing.
-        bin_at : Map single N-dimensional point to bin index.
-
-        Notes
-        -----
-        **Time allocation methods**:
-
-        - time_allocation='start' (default): Each time interval Δt is assigned
-          entirely to the bin at the starting position. Fast and works on all
-          layout types, but may underestimate occupancy in bins the animal
-          passed through.
-
-        - time_allocation='linear': Splits Δt proportionally across all bins
-          traversed by the straight-line path between consecutive samples.
-          More accurate for trajectories that cross multiple bins, but only
-          supported on RegularGridLayout. Requires ray-grid intersection
-          calculations.
-
-        **Mass conservation**: The sum of the returned occupancy array equals
-        the total valid time:
-
-        .. math::
-            \\sum_i \\text{occupancy}[i] = \\sum_{\\text{valid } k} (t_{k+1} - t_k)
-
-        where valid intervals satisfy:
-        - Δt ≤ max_gap (if max_gap is not None)
-        - speed[k] ≥ min_speed (if min_speed is not None)
-        - positions[k] is inside environment
-
-        For ``time_allocation='linear'`` on a masked grid (one with inactive
-        bins), any time the straight-line path spends crossing **inactive**
-        bins is dropped rather than reassigned, since the animal cannot occupy
-        a bin that does not exist. As a result the linear total may be slightly
-        below the ``time_allocation='start'`` total by exactly that
-        inactive-bin crossing time.
-
-        **Kernel smoothing**: When bandwidth is provided, smoothing
-        is applied after accumulation using mode='transition' normalization
-        (kernel columns sum to 1), which preserves the total occupancy mass.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> x, y = np.meshgrid(np.arange(0.0, 22.0, 2.0), np.arange(0.0, 22.0, 2.0))
-        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> times = np.array([0.0, 1.0, 2.0, 3.0])
-        >>> positions = np.array([[5.0, 5.0], [5.0, 5.0], [10.0, 10.0], [10.0, 10.0]])
-        >>> # These 1 Hz demonstration samples are intentionally continuous.
-        >>> occ = env.occupancy(times, positions, max_gap=None)
-        >>> float(occ.sum())
-        3.0
-        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])
-        >>> occ_filtered = env.occupancy(
-        ...     times,
-        ...     positions,
-        ...     speed=speeds,
-        ...     min_speed=2.0,
-        ...     bandwidth=3.0,
-        ...     max_gap=None,
-        ... )
-
-        """
-        times, positions = validate_times_positions(
-            times, positions, call="Environment.occupancy"
+    times, positions = validate_times_positions(
+        times, positions, call="Environment.bin_sequence"
+    )
+    if positions.ndim != 2:
+        raise ValueError(
+            f"positions must be a 2-dimensional array (n_samples, n_dims), "
+            f"got shape {positions.shape}"
         )
-        if positions.ndim != 2:
+
+    # Validate dimensions match environment
+    n_dims = env.n_dims
+    if positions.shape[1] != n_dims:
+        raise ValueError(
+            f"positions must have {n_dims} dimensions to match environment. "
+            f"Got positions.shape[1] = {positions.shape[1]}"
+        )
+
+    mask = interval_valid_mask(
+        times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
+    )
+    sample_valid = np.zeros(times.size, dtype=bool)
+    sample_valid[:-1] |= mask
+    sample_valid[1:] |= mask
+    invalid_before = np.r_[0, np.cumsum(~mask)]
+
+    empty_int64 = np.array([], dtype=np.int64)
+
+    # Handle empty input
+    if len(times) == 0:
+        return BinSequenceWithRuns(
+            bins=np.array([], dtype=np.int32),
+            run_starts=empty_int64,
+            run_lengths=empty_int64,
+        )
+
+    # Map positions to bin indices
+    # Use bin_at which returns -1 for points outside environment
+    bin_indices = env.bin_at(positions).astype(np.int32)  # Ensure int32 dtype
+
+    # Samples belong to a recording only if they touch a valid interval.
+    if outside_value is None:
+        sample_valid &= bin_indices != -1
+    original_indices = np.flatnonzero(sample_valid)
+    bin_indices = bin_indices[sample_valid]
+
+    # Apply deduplication if requested
+    deduplicated_bins: NDArray[np.int32]
+    deduplicated_indices: NDArray[np.int_]
+
+    # Recording breaks always split repeats. Outside-sample gaps retain
+    # the plain sequence's legacy dedup behavior, and split the run view.
+    if len(bin_indices) == 0:
+        change_points = np.zeros(0, dtype=bool)
+    else:
+        bin_change = np.concatenate([[True], bin_indices[1:] != bin_indices[:-1]])
+        if gap_splits_runs and outside_value is None and len(original_indices) > 1:
+            gap_change = np.concatenate(
+                [[False], (original_indices[1:] - original_indices[:-1]) > 1]
+            )
+        else:
+            gap_change = np.zeros(len(bin_indices), dtype=bool)
+        recording_change = np.r_[
+            False,
+            invalid_before[original_indices[1:]]
+            != invalid_before[original_indices[:-1]],
+        ]
+        change_points = bin_change | gap_change | recording_change
+
+    if dedup:
+        deduplicated_bins = bin_indices[change_points]
+        deduplicated_indices = original_indices[change_points]
+    else:
+        deduplicated_bins = bin_indices
+        deduplicated_indices = original_indices
+
+    if len(deduplicated_bins) == 0:
+        return BinSequenceWithRuns(
+            bins=deduplicated_bins,
+            run_starts=empty_int64,
+            run_lengths=empty_int64,
+        )
+
+    # For each run, find start and end indices in the *original* times
+    # array. ``change_positions`` indexes into the filtered
+    # ``original_indices`` array; the run starting at change_positions[i]
+    # ends just before change_positions[i+1], or at original_indices[-1]
+    # for the final run. With outside_value=None the gap-change above
+    # already inserted a run boundary at every drop, so the per-run
+    # extent from start to end (inclusive) covers only original-array
+    # indices that are actually in this run — outside samples do not
+    # leak into run_lengths anymore.
+    change_positions = np.where(change_points)[0]
+    if dedup:
+        run_starts = deduplicated_indices
+        run_ends_indexer = (
+            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+        )
+        run_ends = original_indices[run_ends_indexer]
+    else:
+        run_starts = original_indices[change_positions]
+        run_ends_indexer = (
+            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+        )
+        run_ends = original_indices[run_ends_indexer]
+
+    # Convert (start, end) to (start, length) for the public API. ``end``
+    # is inclusive, so length = end - start + 1 is always >= 1.
+    run_lengths = (run_ends - run_starts + 1).astype(np.int64)
+    return BinSequenceWithRuns(
+        bins=deduplicated_bins,
+        run_starts=np.asarray(run_starts, dtype=np.int64),
+        run_lengths=run_lengths,
+    )
+
+
+def _transitions(
+    env: TransitionsConsumer,
+    bins: NDArray[np.int32] | None = None,
+    *,
+    times: NDArray[np.float64] | None = None,
+    positions: NDArray[np.float64] | None = None,
+    # Empirical parameters
+    lag: int = 1,
+    allow_teleports: bool = False,
+    # Model-based parameters
+    method: Literal["diffusion", "random_walk"] | None = None,
+    bandwidth: float | None = None,
+    # Common parameters
+    normalize: bool = True,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+) -> scipy.sparse.csr_matrix:
+    """Compute empirical or model-based transition matrices."""
+    # Dispatch based on mode
+    if method is not None:
+        # MODEL-BASED MODE
+        # Validate that empirical inputs aren't provided
+        if bins is not None or times is not None or positions is not None:
             raise ValueError(
-                f"positions must be 2-dimensional array (n_samples, n_dims), "
-                f"got shape {positions.shape}"
+                "Cannot provide both 'method' (model-based) and empirical "
+                "inputs (bins/times/positions). Choose one mode."
             )
 
-        # Validate positions dimensionality
-        if self.dimension_ranges is not None:
-            expected_dims = len(self.dimension_ranges)
-            if positions.shape[1] != expected_dims:
+        # Validate that empirical parameters aren't silently ignored
+        if lag != 1:
+            raise ValueError(
+                f"Parameter 'lag' is only valid in empirical mode. "
+                f"Got lag={lag} with method='{method}'. "
+                f"Remove 'lag' parameter or set method=None for empirical mode."
+            )
+        if allow_teleports is not False:
+            raise ValueError(
+                f"Parameter 'allow_teleports' is only valid in empirical mode. "
+                f"Got allow_teleports={allow_teleports} with method='{method}'. "
+                f"Remove 'allow_teleports' parameter or set method=None for empirical mode."
+            )
+
+        # Validate bandwidth parameter usage
+        if method == "random_walk" and bandwidth is not None:
+            raise ValueError(
+                f"Parameter 'bandwidth' is only valid with method='diffusion'. "
+                f"Got bandwidth={bandwidth} with method='random_walk'. "
+                f"Remove 'bandwidth' parameter."
+            )
+
+        # Dispatch to model-based method
+        if method == "random_walk":
+            return _random_walk_transitions(env, normalize=normalize)
+        elif method == "diffusion":
+            if bandwidth is None:
                 raise ValueError(
-                    f"positions must have {expected_dims} dimensions to match environment. "
-                    f"Got {positions.shape[1]} dimensions."
+                    "method='diffusion' requires 'bandwidth' parameter. "
+                    "Provide bandwidth in physical units (sigma)."
                 )
-
-        # Validate speed parameters
-        if min_speed is not None and speed is None:
+            return _diffusion_transitions(env, bandwidth=bandwidth, normalize=normalize)
+        else:
             raise ValueError(
-                "min_speed parameter requires speed array to be provided. "
-                "Pass speed=<array> along with min_speed=<threshold>."
+                f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."
             )
-
-        if speed is not None:
-            speed = np.asarray(speed, dtype=np.float64)
-            if len(speed) != len(times):
-                raise ValueError(
-                    f"speed and times must have same length. "
-                    f"Got speed: {len(speed)}, times: {len(times)}"
-                )
-
-        # Validate time_allocation parameter
-        if time_allocation not in ("start", "linear"):
-            raise ValueError(
-                f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
-                "Use 'start' for simple allocation (all layouts) or 'linear' for "
-                "ray-grid intersection (RegularGridLayout only)."
-            )
-
-        # Check layout compatibility for linear allocation
-        # Use _layout_type_tag for robust type checking (Protocol-safe)
-        if (
-            time_allocation == "linear"
-            and self.layout._layout_type_tag != "RegularGrid"
-        ):
-            raise NotImplementedError(
-                "time_allocation='linear' is only supported for RegularGridLayout. "
-                f"Current layout type: {self.layout._layout_type_tag}. "
-                "Use time_allocation='start' for other layout types."
-            )
-
-        # Handle empty arrays
-        if len(times) == 0:
-            return np.zeros(self.n_bins, dtype=np.float64)
-
-        # Handle single sample (no intervals to accumulate)
-        if len(times) == 1:
-            return np.zeros(self.n_bins, dtype=np.float64)
-
-        # Map positions to bin indices using the layout's geometric
-        # containment, which matches Environment.bin_sequence and returns
-        # -1 for samples outside the active mask. The earlier path
-        # used map_points_to_bins (KDTree nearest-neighbor with a
-        # heuristic 10x-typical-spacing threshold). That heuristic let
-        # samples a few centimeters outside the active mask silently
-        # bind to the nearest edge bin, so a tracking-error overshoot
-        # inflated occupancy at the boundary while bin_sequence
-        # correctly flagged the same sample as -1.
-        bin_indices = self.bin_at(positions)
-
-        # Compute time intervals
-        dt = np.diff(times)
-
-        # Build mask for valid intervals using the SHARED helper so that the
-        # occupancy denominator and the spike numerator drop the IDENTICAL set
-        # of intervals (max_gap ∪ low-speed ∪ out-of-bounds-start). See
-        # ``interval_valid_mask`` and ``encoding/_binning.py``.
-        valid_mask = interval_valid_mask(
-            times,
-            positions,
-            self,
-            speed=speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            start_bin=bin_indices,
-            epochs=as_intervals(epochs, name="epochs"),
-        )
-
-        # Initialize occupancy array
-        occupancy = np.zeros(self.n_bins, dtype=np.float64)
-
-        # Dispatch to appropriate time allocation method
-        if time_allocation == "start":
-            occupancy = start_allocated_occupancy(
-                bin_indices,
-                dt,
-                valid_mask,
-                self.n_bins,
-                return_seconds=return_seconds,
-            )
-
-        elif time_allocation == "linear":
-            # Linear allocation: split time across bins traversed by ray
-            occupancy = self._allocate_time_linear(
-                positions, dt, valid_mask, bin_indices, return_seconds
-            )
-
-        # Apply kernel smoothing if requested
-        if bandwidth is not None:
-            # Use mode='transition' for occupancy (counts), not 'density'
-            # This ensures mass conservation: kernel columns sum to 1
-            kernel = self.compute_kernel(
-                bandwidth=bandwidth, mode="transition", cache=True
-            )
-            occupancy = kernel @ occupancy
-
-        return occupancy
-
-    def bin_sequence(
-        self: SelfEnv,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        dedup: bool = True,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> NDArray[np.int32]:
-        """Map trajectory to sequence of bin indices.
-
-        Converts a continuous trajectory (times and positions) into a discrete
-        sequence of bin indices, with optional deduplication of consecutive
-        repeats. To also obtain per-run start indices and lengths, call
-        :meth:`bin_sequence_with_runs` instead.
-
-        Parameters
-        ----------
-        times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
-        positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
-        dedup : bool, default=True
-            If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
-            If False, return a bin index for every retained sample.
-        outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds.
-            - If -1 (default), outside samples are marked with -1.
-            - If None, outside samples are dropped from the sequence entirely.
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from the analysis. ``None`` disables the gap check.
-        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-            Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
-
-        Returns
-        -------
-        bins : NDArray[np.int32], shape (n_sequences,)
-            Bin index at each retained time point (or deduplicated sequence).
-            Values are in range [0, n_bins-1] for valid bins, or -1 for
-            outside samples (when outside_value=-1).
-
-        Raises
-        ------
-        ValueError
-            If times and positions have different lengths, if positions
-            have wrong number of dimensions, or if timestamps are not
-            monotonically increasing (non-decreasing).
-
-        See Also
-        --------
-        bin_sequence_with_runs : Same mapping plus run-length boundaries.
-        occupancy : Compute time spent in each bin.
-        transitions : Build empirical transition matrix from trajectory.
-
-        Notes
-        -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
-
-        Samples that touch no valid interval are dropped, including singleton
-        inputs. Deduplication never merges samples across an invalid interval.
-        With dedup=False, one bin is returned per retained sample.
-
-        Timestamps must be monotonically increasing (non-decreasing).
-        Sort your data by time before calling this method if needed.
-
-        Examples
-        --------
-        >>> bins = env.bin_sequence(times, positions)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(times, positions, dedup=False)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(
-        ...     times, positions, outside_value=None
-        ... )  # doctest: +SKIP
-
-        """
-        result = EnvironmentTrajectory._bin_sequence(
-            self,
-            times,
-            positions,
-            dedup=dedup,
-            outside_value=outside_value,
-            gap_splits_runs=False,
-            max_gap=max_gap,
-            epochs=epochs,
-        )
-        return result.bins
-
-    def bin_sequence_with_runs(
-        self: SelfEnv,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> BinSequenceWithRuns:
-        """Map trajectory to bin sequence plus per-run boundaries.
-
-        Returns the run-length encoding of the trajectory so callers
-        can recover per-run durations from the original ``times`` array.
-        ``bins``, ``run_starts``, and ``run_lengths`` all share shape
-        ``(n_runs,)``: the per-run view is intrinsically deduplicated.
-        For per-sample bins use :meth:`bin_sequence` with ``dedup=False``.
-
-        Parameters
-        ----------
-        times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
-        positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
-        outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds (see
-            :meth:`bin_sequence`). With ``outside_value=None``, outside
-            gaps split runs even when consecutive in-env samples land
-            in the same bin (so ``run_lengths.sum()`` equals the
-            post-filter count of in-env samples).
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from the analysis. ``None`` disables the gap check.
-        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-            Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
-
-        Returns
-        -------
-        BinSequenceWithRuns
-            Frozen dataclass with ``bins``, ``run_starts``, and
-            ``run_lengths`` fields, all shape ``(n_runs,)``. See
-            :class:`BinSequenceWithRuns` for the precise contract.
-
-        See Also
-        --------
-        bin_sequence : Returns just the bin sequence (supports ``dedup``).
-
-        Notes
-        -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
-
-        Samples that touch no valid interval are dropped, including singleton
-        inputs. Invalid intervals split runs even if the bins match. Run
-        starts and lengths refer to the original input indices, so durations
-        computed from them exclude pauses.
-
-        Examples
-        --------
-        >>> result = env.bin_sequence_with_runs(times, positions)  # doctest: +SKIP
-        >>> # Duration of run i in seconds:
-        >>> # times[result.run_starts[i] + result.run_lengths[i] - 1]
-        >>> #   - times[result.run_starts[i]]
-        """
-        return EnvironmentTrajectory._bin_sequence(
-            self,
-            times,
-            positions,
-            dedup=True,
-            outside_value=outside_value,
-            gap_splits_runs=True,
+    else:
+        # EMPIRICAL MODE
+        return _empirical_transitions(
+            env,
+            bins=bins,
+            times=times,
+            positions=positions,
+            lag=lag,
+            normalize=normalize,
+            allow_teleports=allow_teleports,
             max_gap=max_gap,
             epochs=epochs,
         )
 
-    def _bin_sequence(
-        self: SelfEnv,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        dedup: bool,
-        outside_value: int | None,
-        gap_splits_runs: bool,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> BinSequenceWithRuns:
-        """Shared implementation for ``bin_sequence`` and
-        ``bin_sequence_with_runs``: always computes both bins and runs;
-        the public methods choose which fields of the result to expose.
-        """
-        times, positions = validate_times_positions(
-            times, positions, call="Environment.bin_sequence"
+
+def _empirical_transitions(
+    env: TransitionsConsumer,
+    bins: NDArray[np.int32] | None = None,
+    *,
+    times: NDArray[np.float64] | None = None,
+    positions: NDArray[np.float64] | None = None,
+    lag: int = 1,
+    normalize: bool = True,
+    allow_teleports: bool = False,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+) -> scipy.sparse.csr_matrix:
+    """Compute empirical transition matrix from observed trajectory data.
+
+    Internal helper for transitions() method. Counts observed transitions
+    between bins in a trajectory.
+
+    Parameters
+    ----------
+    bins : NDArray[np.int32], shape (n_samples,), optional
+        Precomputed bin sequence. If None, computed from times/positions.
+        Cannot be provided together with times/positions.
+        Must contain valid bin indices in range [0, n_bins). Outside values
+        (-1) are not allowed; use times/positions input to handle outside samples.
+    times : NDArray[np.float64], shape (n_samples,), optional
+        Timestamps in seconds. Required if bins is None.
+        Must be provided together with positions.
+    positions : NDArray[np.float64], shape (n_samples, n_dims), optional
+        Position coordinates matching environment dimensions.
+        Required if bins is None. Must be provided together with times.
+    lag : int, default=1
+        Temporal lag for transitions: count bins[t] → bins[t+lag].
+        Must be positive. lag=1 counts consecutive transitions,
+        lag=2 skips one bin, etc.
+    normalize : bool, default=True
+        If True, return row-stochastic matrix where each row sums to 1
+        (representing transition probabilities).
+        If False, return raw transition counts.
+    allow_teleports : bool, default=False
+        If False, only count transitions between graph-adjacent bins.
+        Non-adjacent transitions (e.g., from tracking errors) are excluded.
+        Self-transitions (staying in same bin) are always counted.
+        If True, count all transitions including non-local jumps.
+
+    Returns
+    -------
+    T : scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        Transition matrix where T[i,j] represents:
+        - If normalize=True: P(next_bin=j | current_bin=i)
+        - If normalize=False: count of i→j transitions
+
+        For normalized matrices, each row sums to 1.0 (rows with no
+        transitions sum to 0.0).
+
+    Raises
+    ------
+    ValueError
+        If neither bins nor times/positions are provided.
+        If both bins and times/positions are provided.
+        If only one of times or positions is provided.
+        If bins contains invalid indices outside [0, n_bins).
+        If lag is not positive.
+
+    See Also
+    --------
+    bin_sequence : Convert trajectory to bin indices.
+    occupancy : Compute time spent in each bin.
+
+    Notes
+    -----
+    When allow_teleports=False, the method filters out non-adjacent
+    transitions by checking the environment's connectivity graph. This
+    helps remove artifacts from tracking errors or data gaps.
+
+    Self-transitions (staying in the same bin) are always counted.
+
+    The sparse CSR format is memory-efficient for large environments
+    where most bin pairs have no observed transitions.
+
+    Examples
+    --------
+    >>> T = env.transitions(times=times, positions=positions)  # doctest: +SKIP
+    >>> T[10, :].toarray()  # doctest: +SKIP
+    >>> T_counts = env.transitions(  # doctest: +SKIP
+    ...     bins=bin_sequence,
+    ...     normalize=False,
+    ...     allow_teleports=False,  # doctest: +SKIP
+    ... )  # doctest: +SKIP
+    >>> T_2step = env.transitions(bins=bin_sequence, lag=2)  # doctest: +SKIP
+
+    """
+    import scipy.sparse
+
+    # Validation: Ensure exactly one input method is used
+    bins_provided = bins is not None
+    trajectory_provided = times is not None or positions is not None
+
+    if not bins_provided and not trajectory_provided:
+        raise ValueError("Must provide either 'bins' or both 'times' and 'positions'.")
+
+    if bins_provided and trajectory_provided:
+        raise ValueError(
+            "Cannot provide both 'bins' and 'times'/'positions'. "
+            "Use one input method only."
         )
-        if positions.ndim != 2:
+
+    # If times/positions provided, validate both are present
+    if trajectory_provided:
+        if times is None or positions is None:
             raise ValueError(
-                f"positions must be a 2-dimensional array (n_samples, n_dims), "
-                f"got shape {positions.shape}"
+                "Both times and positions must be provided together "
+                "when computing transitions from trajectory."
             )
 
-        # Validate dimensions match environment
-        n_dims = self.n_dims
-        if positions.shape[1] != n_dims:
-            raise ValueError(
-                f"positions must have {n_dims} dimensions to match environment. "
-                f"Got positions.shape[1] = {positions.shape[1]}"
-            )
-
+        # Compute bin sequence from trajectory
+        bins = env._require_cartesian(
+            "transitions() from times and positions"
+        ).bin_sequence(
+            times,
+            positions,
+            dedup=False,
+            outside_value=-1,
+            max_gap=None,
+            epochs=None,
+        )
         mask = interval_valid_mask(
             times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
         )
-        sample_valid = np.zeros(times.size, dtype=bool)
-        sample_valid[:-1] |= mask
-        sample_valid[1:] |= mask
-        invalid_before = np.r_[0, np.cumsum(~mask)]
 
-        empty_int64 = np.array([], dtype=np.int64)
-
-        # Handle empty input
-        if len(times) == 0:
-            return BinSequenceWithRuns(
-                bins=np.array([], dtype=np.int32),
-                run_starts=empty_int64,
-                run_lengths=empty_int64,
-            )
-
-        # Map positions to bin indices
-        # Use bin_at which returns -1 for points outside environment
-        bin_indices = self.bin_at(positions).astype(np.int32)  # Ensure int32 dtype
-
-        # Samples belong to a recording only if they touch a valid interval.
-        if outside_value is None:
-            sample_valid &= bin_indices != -1
-        original_indices = np.flatnonzero(sample_valid)
-        bin_indices = bin_indices[sample_valid]
-
-        # Apply deduplication if requested
-        deduplicated_bins: NDArray[np.int32]
-        deduplicated_indices: NDArray[np.int_]
-
-        # Recording breaks always split repeats. Outside-sample gaps retain
-        # the plain sequence's legacy dedup behavior, and split the run view.
-        if len(bin_indices) == 0:
-            change_points = np.zeros(0, dtype=bool)
-        else:
-            bin_change = np.concatenate([[True], bin_indices[1:] != bin_indices[:-1]])
-            if gap_splits_runs and outside_value is None and len(original_indices) > 1:
-                gap_change = np.concatenate(
-                    [[False], (original_indices[1:] - original_indices[:-1]) > 1]
-                )
-            else:
-                gap_change = np.zeros(len(bin_indices), dtype=bool)
-            recording_change = np.r_[
-                False,
-                invalid_before[original_indices[1:]]
-                != invalid_before[original_indices[:-1]],
-            ]
-            change_points = bin_change | gap_change | recording_change
-
-        if dedup:
-            deduplicated_bins = bin_indices[change_points]
-            deduplicated_indices = original_indices[change_points]
-        else:
-            deduplicated_bins = bin_indices
-            deduplicated_indices = original_indices
-
-        if len(deduplicated_bins) == 0:
-            return BinSequenceWithRuns(
-                bins=deduplicated_bins,
-                run_starts=empty_int64,
-                run_lengths=empty_int64,
-            )
-
-        # For each run, find start and end indices in the *original* times
-        # array. ``change_positions`` indexes into the filtered
-        # ``original_indices`` array; the run starting at change_positions[i]
-        # ends just before change_positions[i+1], or at original_indices[-1]
-        # for the final run. With outside_value=None the gap-change above
-        # already inserted a run boundary at every drop, so the per-run
-        # extent from start to end (inclusive) covers only original-array
-        # indices that are actually in this run — outside samples do not
-        # leak into run_lengths anymore.
-        change_positions = np.where(change_points)[0]
-        if dedup:
-            run_starts = deduplicated_indices
-            run_ends_indexer = (
-                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-            )
-            run_ends = original_indices[run_ends_indexer]
-        else:
-            run_starts = original_indices[change_positions]
-            run_ends_indexer = (
-                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-            )
-            run_ends = original_indices[run_ends_indexer]
-
-        # Convert (start, end) to (start, length) for the public API. ``end``
-        # is inclusive, so length = end - start + 1 is always >= 1.
-        run_lengths = (run_ends - run_starts + 1).astype(np.int64)
-        return BinSequenceWithRuns(
-            bins=deduplicated_bins,
-            run_starts=np.asarray(run_starts, dtype=np.int64),
-            run_lengths=run_lengths,
+    # Convert to numpy array and validate dtype
+    bins = np.asarray(bins)
+    if not np.issubdtype(bins.dtype, np.integer):
+        raise ValueError(
+            f"bins must be an integer array, got dtype {bins.dtype}. "
+            f"Ensure bin indices are integers before calling transitions()."
         )
+    bins = bins.astype(np.int32)
+
+    # Validate lag
+    if lag < 1:
+        raise ValueError(f"lag must be positive (got {lag}).")
+
+    # Handle empty or single-element sequences
+    if len(bins) == 0 or len(bins) <= lag:
+        # Return empty sparse matrix
+        return scipy.sparse.csr_matrix((env.n_bins, env.n_bins), dtype=float)
+
+    # Validate bin indices (must be in [0, n_bins))
+    # Note: -1 is used for outside values, which is invalid for transitions
+    if np.any(bins < 0) or np.any(bins >= env.n_bins):
+        invalid_mask = (bins < 0) | (bins >= env.n_bins)
+        invalid_indices = np.where(invalid_mask)[0]
+        invalid_values = bins[invalid_mask]
+        raise ValueError(
+            f"Invalid bin indices found outside range [0, {env.n_bins}). "
+            f"Found {len(invalid_indices)} invalid values at indices "
+            f"{invalid_indices[:5].tolist()}{'...' if len(invalid_indices) > 5 else ''}: "
+            f"{invalid_values[:5].tolist()}{'...' if len(invalid_values) > 5 else ''}. "
+            f"Note: -1 (outside) values are not allowed in transitions."
+        )
+
+    # Extract transition pairs with lag
+    source_bins = bins[:-lag]
+    target_bins = bins[lag:]
+    if trajectory_provided:
+        invalid_before = np.r_[0, np.cumsum(~mask)]
+        pair_ok = invalid_before[lag:] == invalid_before[:-lag]
+        source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
+
+    # Filter non-adjacent transitions if requested
+    if not allow_teleports:
+        # Build adjacency set from connectivity graph
+        adjacency_set = set()
+        for u, v in env.connectivity.edges():
+            adjacency_set.add((u, v))
+            adjacency_set.add((v, u))  # Undirected graph
+
+        # Also include env-transitions (always adjacent)
+        for node in env.connectivity.nodes():
+            adjacency_set.add((node, node))
+
+        # Filter transitions to only adjacent pairs
+        is_adjacent = np.array(
+            [
+                (src, tgt) in adjacency_set
+                for src, tgt in zip(source_bins, target_bins, strict=True)
+            ],
+            dtype=bool,
+        )
+
+        source_bins = source_bins[is_adjacent]
+        target_bins = target_bins[is_adjacent]
+
+    # Count transitions using sparse COO format
+    # Use np.ones to count occurrences
+    transition_counts = np.ones(len(source_bins), dtype=float)
+
+    # Build sparse matrix in COO format
+    transition_matrix = scipy.sparse.coo_matrix(
+        (transition_counts, (source_bins, target_bins)),
+        shape=(env.n_bins, env.n_bins),
+        dtype=float,
+    )
+
+    # Convert to CSR for efficient row operations
+    transition_matrix = transition_matrix.tocsr()
+
+    # Sum duplicate entries (multiple transitions between same bins)
+    transition_matrix.sum_duplicates()
+
+    # Normalize rows if requested
+    if normalize:
+        # Get row sums
+        row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
+
+        # Avoid division by zero: only normalize rows with transitions
+        nonzero_rows = row_sums > 0
+
+        # Create diagonal matrix for normalization
+        # Use reciprocal of row sums for nonzero rows, 0 otherwise
+        inv_row_sums = np.zeros(env.n_bins)
+        inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
+
+        # Normalize: T_normalized = diag(1/row_sums) @ T
+        normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
+        transition_matrix = normalizer @ transition_matrix
+
+    return transition_matrix
+
+
+def _random_walk_transitions(
+    env: TransitionsConsumer,
+    *,
+    normalize: bool = True,
+) -> scipy.sparse.csr_matrix:
+    """Compute uniform random walk transition matrix from graph structure.
+
+    Internal helper for transitions(method='random_walk'). Creates a
+    transition matrix where each bin transitions uniformly to its neighbors.
+    """
+    import scipy.sparse
+
+    # Get adjacency matrix from connectivity graph
+    adjacency = nx.adjacency_matrix(env.connectivity, nodelist=range(env.n_bins))
+
+    # Convert to float and ensure CSR format
+    transition_matrix = adjacency.astype(float).tocsr()
+
+    if normalize:
+        # Normalize rows: T[i,j] = 1/degree(i) if j is neighbor of i
+        row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
+
+        # Avoid division by zero for isolated nodes
+        nonzero_rows = row_sums > 0
+        inv_row_sums = np.zeros(env.n_bins)
+        inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
+
+        # Normalize
+        normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
+        transition_matrix = normalizer @ transition_matrix
+
+    return transition_matrix
+
+
+def _diffusion_transitions(
+    env: TransitionsConsumer,
+    bandwidth: float,
+    *,
+    normalize: bool = True,
+) -> scipy.sparse.csr_matrix:
+    """Compute diffusion-based transition matrix using heat kernel.
+
+    Internal helper for transitions(method='diffusion'). Uses the heat
+    kernel to model continuous-time diffusion on the graph.
+
+    Returns the **row-stochastic** heat operator ``H`` (``sum_j T[i, j] = 1``,
+    ``T[i, j] = P(next=j | current=i)``). ``compute_kernel(mode="transition")``
+    returns the mass-conserving smoothing kernel ``Hᵀ`` (column-stochastic),
+    so the row-stochastic transition matrix is its transpose. On a
+    non-uniform mass matrix ``M`` (polar, mesh) ``Hᵀ != H``, so this must
+    transpose rather than assume symmetry.
+    """
+    import scipy.sparse
+
+    if not normalize:
+        raise ValueError(
+            "method='diffusion' does not support normalize=False. "
+            "Heat kernel transitions are inherently normalized (row-stochastic). "
+            "Set normalize=True or use method='random_walk'."
+        )
+
+    # compute_kernel(mode="transition") is Hᵀ (column-stochastic); the
+    # row-stochastic transition matrix H is its transpose.
+    kernel = env.compute_kernel(bandwidth=bandwidth, mode="transition").T
+
+    # Convert to sparse if needed
+    if not scipy.sparse.issparse(kernel):
+        kernel = scipy.sparse.csr_matrix(kernel)
+
+    return kernel
+
+
+def _allocate_time_linear(
+    env: TrajectoryBinningConsumer,
+    grid: RectilinearGrid,
+    positions: NDArray[np.float64],
+    dt: NDArray[np.float64],
+    valid_mask: NDArray[np.bool_],
+    bin_indices: NDArray[np.intp],
+    return_seconds: bool,
+) -> NDArray[np.float64]:
+    """Allocate time intervals linearly across traversed bins (helper for occupancy).
+
+    This method implements ray-grid intersection to split each time interval
+    proportionally across all bins crossed by the straight-line path between
+    consecutive position samples.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Per-axis cell edges, full-grid shape and active mask.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position samples.
+    dt : NDArray[np.float64], shape (n_samples-1,)
+        Time intervals between consecutive samples.
+    valid_mask : NDArray[np.bool_], shape (n_samples-1,)
+        Boolean mask indicating which intervals are valid (pass filtering).
+    bin_indices : NDArray[np.intp], shape (n_samples,)
+        Bin indices for each position (-1 if outside environment).
+    return_seconds : bool
+        If True, return time in seconds. If False, return sample counts.
+
+    Returns
+    -------
+    occupancy : NDArray[np.float64], shape (n_bins,)
+        If return_seconds=True: Time in seconds allocated to each bin.
+        If return_seconds=False: Count allocated to each bin (proportional).
+
+    """
+    grid_edges = grid.edges
+    grid_shape = grid.shape
+
+    # Initialize occupancy array (indexed by ACTIVE-bin id, length env.n_bins)
+    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+
+    # The ray-intersection helpers below (_position_to_flat_index /
+    # _compute_ray_grid_intersections) return FULL-GRID row-major flat
+    # indices, but `occupancy` is indexed by active-bin id. On a masked
+    # grid (the common from_samples case) these differ, so we must
+    # translate every full-grid index to its active-bin id before
+    # accumulating. Build the inverse map once (same idiom as
+    # layout/helpers/regular_grid.py). For inactive bins the map holds -1.
+    active_mask_flat = grid.active_mask.ravel()
+    full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
+    active_indices = np.flatnonzero(active_mask_flat)
+    full_to_active[active_indices] = np.arange(active_indices.size, dtype=np.intp)
+
+    def _to_active(full_idx: int) -> int:
+        """Translate a full-grid flat index to active-bin id (-1 if inactive)."""
+        if 0 <= full_idx < full_to_active.size:
+            return int(full_to_active[full_idx])
+        return -1
+
+    # Process each valid interval
+    for i in np.where(valid_mask)[0]:
+        start_pos = positions[i]
+        end_pos = positions[i + 1]
+        interval_time = dt[i]
+
+        # Choose weight based on return_seconds parameter
+        weight = interval_time if return_seconds else 1.0
+
+        # Get starting and ending bin indices (already active-bin ids,
+        # from bin_at in occupancy()).
+        start_bin = bin_indices[i]
+        end_bin = bin_indices[i + 1]
+
+        # If both points are in same bin, simple allocation
+        if start_bin == end_bin and start_bin >= 0:
+            occupancy[start_bin] += weight
+            continue
+
+        # Compute ray-grid intersections. These return FULL-GRID indices.
+        bin_times = _compute_ray_grid_intersections(
+            start_pos, end_pos, grid_edges, grid_shape, interval_time
+        )
+
+        # Translate full-grid indices to active-bin ids and accumulate.
+        if return_seconds:
+            for full_idx, time_in_bin in bin_times:
+                active_idx = _to_active(full_idx)
+                if active_idx >= 0:
+                    occupancy[active_idx] += time_in_bin
+        else:
+            # Convert time proportions to count proportions (sum to 1.0).
+            # Mass that falls on inactive bins is dropped, matching the
+            # 'start' branch's behaviour of excluding outside/inactive
+            # samples, so the two allocation modes agree bin-for-bin.
+            total_allocated = sum(time for _, time in bin_times)
+            if total_allocated > 0:
+                for full_idx, time_in_bin in bin_times:
+                    active_idx = _to_active(full_idx)
+                    if active_idx >= 0:
+                        occupancy[active_idx] += (
+                            time_in_bin / total_allocated
+                        ) * weight
+
+    return occupancy
+
+
+def _compute_ray_grid_intersections(
+    start_pos: NDArray[np.float64],
+    end_pos: NDArray[np.float64],
+    grid_edges: Sequence[NDArray[np.float64]],
+    grid_shape: tuple[int, ...],
+    total_time: float,
+) -> list[tuple[int, float]]:
+    """Compute time spent in each bin along a ray (helper for linear allocation).
+
+    Uses DDA-like algorithm to traverse grid and compute intersection distances.
+
+    Parameters
+    ----------
+    start_pos : NDArray[np.float64], shape (n_dims,)
+        Starting position.
+    end_pos : NDArray[np.float64], shape (n_dims,)
+        Ending position.
+    grid_edges : list[NDArray[np.float64]]
+        Grid edges per dimension.
+    grid_shape : tuple[int, ...]
+        Grid shape.
+    total_time : float
+        Total time interval to split across bins.
+
+    Returns
+    -------
+    bin_times : list[tuple[int, float]]
+        List of (bin_index, time_in_bin) pairs.
+
+    Notes
+    -----
+    Numerical Stability: This method uses an epsilon threshold (EPSILON = 1e-12)
+    to prevent division by zero. Ray direction components smaller than EPSILON
+    are treated as zero (parallel to grid edges), avoiding numerical instabilities
+    when trajectories are aligned with grid axes or have very small movements
+    in certain dimensions.
+
+    """
+    n_dims = len(grid_shape)
+
+    # Compute ray direction and total distance
+    ray_dir = end_pos - start_pos
+    total_distance = np.linalg.norm(ray_dir)
+
+    # Handle zero-distance case (no movement)
+    if total_distance < EPSILON:
+        # No movement - allocate all time to starting bin
+        start_bin_idx = _position_to_flat_index(start_pos, grid_edges, grid_shape)
+        if start_bin_idx >= 0:
+            return [(start_bin_idx, total_time)]
+        return []
+
+    # Normalize ray direction
+    ray_dir = ray_dir / total_distance
+
+    # Find all grid crossings along each dimension
+    crossings: list[tuple[float, int, int]] = []  # (t, dim, grid_index)
+
+    for dim in range(n_dims):
+        # Skip dimensions where ray is parallel to grid edges
+        # This prevents division by zero in parametric intersection calculation
+        if abs(ray_dir[dim]) < EPSILON:
+            # Ray parallel to this dimension - no crossings
+            continue
+
+        edges = grid_edges[dim]
+        # Find which edges the ray crosses
+        for edge_idx, edge_pos in enumerate(edges):
+            # Parametric intersection: start + t * ray_dir = edge_pos
+            t = (edge_pos - start_pos[dim]) / ray_dir[dim]
+            if 0 < t < total_distance:  # Exclude endpoints
+                crossings.append((t, dim, edge_idx))
+
+    # Sort crossings by distance along ray
+    crossings.sort(key=itemgetter(0))
+
+    # Add start and end points
+    segments = [0.0] + [t for t, _, _ in crossings] + [total_distance]
+
+    # Compute bin index and time for each segment
+    bin_times: list[tuple[int, float]] = []
+    for seg_idx in range(len(segments) - 1):
+        # Midpoint of segment (to determine which bin we're in)
+        t_mid = (segments[seg_idx] + segments[seg_idx + 1]) / 2
+        mid_pos = start_pos + t_mid * ray_dir
+
+        # Get bin index at midpoint
+        bin_idx = _position_to_flat_index(mid_pos, grid_edges, grid_shape)
+
+        if bin_idx >= 0:
+            # Compute time in this segment
+            seg_distance = segments[seg_idx + 1] - segments[seg_idx]
+            seg_time = total_time * (seg_distance / total_distance)
+            bin_times.append((bin_idx, seg_time))
+
+    return bin_times
+
+
+def _position_to_flat_index(
+    pos: NDArray[np.float64],
+    grid_edges: Sequence[NDArray[np.float64]],
+    grid_shape: tuple[int, ...],
+) -> int:
+    """Convert N-D position to flat bin index (helper for ray intersection).
+
+    Parameters
+    ----------
+    pos : NDArray[np.float64], shape (n_dims,)
+        Position coordinates.
+    grid_edges : list[NDArray[np.float64]]
+        Grid edges per dimension.
+    grid_shape : tuple[int, ...]
+        Grid shape.
+
+    Returns
+    -------
+    flat_index : int
+        Flat bin index, or -1 if position is outside grid bounds.
+
+    """
+    n_dims = len(grid_shape)
+    nd_index = []
+
+    for dim in range(n_dims):
+        edges = grid_edges[dim]
+        coord = pos[dim]
+
+        # Find which bin this coordinate falls into
+        # bins are [edges[i], edges[i+1])
+        bin_idx = np.searchsorted(edges, coord, side="right") - 1
+
+        # Check bounds
+        if bin_idx < 0 or bin_idx >= grid_shape[dim]:
+            return -1  # Outside grid
+
+        nd_index.append(bin_idx)
+
+    # Convert N-D index to flat index (row-major order)
+    flat_idx = 0
+    stride = 1
+    for dim in reversed(range(n_dims)):
+        flat_idx += nd_index[dim] * stride
+        stride *= grid_shape[dim]
+
+    return flat_idx
+
+
+class EnvironmentTrajectory:
+    """Trajectory analysis methods mixin.
+
+    Methods are entry points for the module-function implementations above.
+    """
 
     def transitions(
         self: SelfEnv,
@@ -1007,635 +1341,16 @@ class EnvironmentTrajectory:
         >>> diff = (T_empirical - T_diffusion).toarray()  # doctest: +SKIP
 
         """
-        # Dispatch based on mode
-        if method is not None:
-            # MODEL-BASED MODE
-            # Validate that empirical inputs aren't provided
-            if bins is not None or times is not None or positions is not None:
-                raise ValueError(
-                    "Cannot provide both 'method' (model-based) and empirical "
-                    "inputs (bins/times/positions). Choose one mode."
-                )
-
-            # Validate that empirical parameters aren't silently ignored
-            if lag != 1:
-                raise ValueError(
-                    f"Parameter 'lag' is only valid in empirical mode. "
-                    f"Got lag={lag} with method='{method}'. "
-                    f"Remove 'lag' parameter or set method=None for empirical mode."
-                )
-            if allow_teleports is not False:
-                raise ValueError(
-                    f"Parameter 'allow_teleports' is only valid in empirical mode. "
-                    f"Got allow_teleports={allow_teleports} with method='{method}'. "
-                    f"Remove 'allow_teleports' parameter or set method=None for empirical mode."
-                )
-
-            # Validate bandwidth parameter usage
-            if method == "random_walk" and bandwidth is not None:
-                raise ValueError(
-                    f"Parameter 'bandwidth' is only valid with method='diffusion'. "
-                    f"Got bandwidth={bandwidth} with method='random_walk'. "
-                    f"Remove 'bandwidth' parameter."
-                )
-
-            # Dispatch to model-based method
-            if method == "random_walk":
-                return self._random_walk_transitions(normalize=normalize)
-            elif method == "diffusion":
-                if bandwidth is None:
-                    raise ValueError(
-                        "method='diffusion' requires 'bandwidth' parameter. "
-                        "Provide bandwidth in physical units (sigma)."
-                    )
-                return self._diffusion_transitions(
-                    bandwidth=bandwidth, normalize=normalize
-                )
-            else:
-                raise ValueError(
-                    f"Unknown method '{method}'. "
-                    f"Valid options: 'random_walk', 'diffusion'."
-                )
-        else:
-            # EMPIRICAL MODE
-            return self._empirical_transitions(
-                bins=bins,
-                times=times,
-                positions=positions,
-                lag=lag,
-                normalize=normalize,
-                allow_teleports=allow_teleports,
-                max_gap=max_gap,
-                epochs=epochs,
-            )
-
-    def _empirical_transitions(
-        self: SelfEnv,
-        bins: NDArray[np.int32] | None = None,
-        *,
-        times: NDArray[np.float64] | None = None,
-        positions: NDArray[np.float64] | None = None,
-        lag: int = 1,
-        normalize: bool = True,
-        allow_teleports: bool = False,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> scipy.sparse.csr_matrix:
-        """Compute empirical transition matrix from observed trajectory data.
-
-        Internal helper for transitions() method. Counts observed transitions
-        between bins in a trajectory.
-
-        Parameters
-        ----------
-        bins : NDArray[np.int32], shape (n_samples,), optional
-            Precomputed bin sequence. If None, computed from times/positions.
-            Cannot be provided together with times/positions.
-            Must contain valid bin indices in range [0, n_bins). Outside values
-            (-1) are not allowed; use times/positions input to handle outside samples.
-        times : NDArray[np.float64], shape (n_samples,), optional
-            Timestamps in seconds. Required if bins is None.
-            Must be provided together with positions.
-        positions : NDArray[np.float64], shape (n_samples, n_dims), optional
-            Position coordinates matching environment dimensions.
-            Required if bins is None. Must be provided together with times.
-        lag : int, default=1
-            Temporal lag for transitions: count bins[t] → bins[t+lag].
-            Must be positive. lag=1 counts consecutive transitions,
-            lag=2 skips one bin, etc.
-        normalize : bool, default=True
-            If True, return row-stochastic matrix where each row sums to 1
-            (representing transition probabilities).
-            If False, return raw transition counts.
-        allow_teleports : bool, default=False
-            If False, only count transitions between graph-adjacent bins.
-            Non-adjacent transitions (e.g., from tracking errors) are excluded.
-            Self-transitions (staying in same bin) are always counted.
-            If True, count all transitions including non-local jumps.
-
-        Returns
-        -------
-        T : scipy.sparse.csr_matrix, shape (n_bins, n_bins)
-            Transition matrix where T[i,j] represents:
-            - If normalize=True: P(next_bin=j | current_bin=i)
-            - If normalize=False: count of i→j transitions
-
-            For normalized matrices, each row sums to 1.0 (rows with no
-            transitions sum to 0.0).
-
-        Raises
-        ------
-        ValueError
-            If neither bins nor times/positions are provided.
-            If both bins and times/positions are provided.
-            If only one of times or positions is provided.
-            If bins contains invalid indices outside [0, n_bins).
-            If lag is not positive.
-
-        See Also
-        --------
-        bin_sequence : Convert trajectory to bin indices.
-        occupancy : Compute time spent in each bin.
-
-        Notes
-        -----
-        When allow_teleports=False, the method filters out non-adjacent
-        transitions by checking the environment's connectivity graph. This
-        helps remove artifacts from tracking errors or data gaps.
-
-        Self-transitions (staying in the same bin) are always counted.
-
-        The sparse CSR format is memory-efficient for large environments
-        where most bin pairs have no observed transitions.
-
-        Examples
-        --------
-        >>> T = env.transitions(times=times, positions=positions)  # doctest: +SKIP
-        >>> T[10, :].toarray()  # doctest: +SKIP
-        >>> T_counts = env.transitions(  # doctest: +SKIP
-        ...     bins=bin_sequence,
-        ...     normalize=False,
-        ...     allow_teleports=False,  # doctest: +SKIP
-        ... )  # doctest: +SKIP
-        >>> T_2step = env.transitions(bins=bin_sequence, lag=2)  # doctest: +SKIP
-
-        """
-        import scipy.sparse
-
-        # Validation: Ensure exactly one input method is used
-        bins_provided = bins is not None
-        trajectory_provided = times is not None or positions is not None
-
-        if not bins_provided and not trajectory_provided:
-            raise ValueError(
-                "Must provide either 'bins' or both 'times' and 'positions'."
-            )
-
-        if bins_provided and trajectory_provided:
-            raise ValueError(
-                "Cannot provide both 'bins' and 'times'/'positions'. "
-                "Use one input method only."
-            )
-
-        # If times/positions provided, validate both are present
-        if trajectory_provided:
-            if times is None or positions is None:
-                raise ValueError(
-                    "Both times and positions must be provided together "
-                    "when computing transitions from trajectory."
-                )
-
-            # Compute bin sequence from trajectory
-            bins = self.bin_sequence(
-                times,
-                positions,
-                dedup=False,
-                outside_value=-1,
-                max_gap=None,
-                epochs=None,
-            )
-            mask = interval_valid_mask(
-                times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
-            )
-
-        # Convert to numpy array and validate dtype
-        bins = np.asarray(bins)
-        if not np.issubdtype(bins.dtype, np.integer):
-            raise ValueError(
-                f"bins must be an integer array, got dtype {bins.dtype}. "
-                f"Ensure bin indices are integers before calling transitions()."
-            )
-        bins = bins.astype(np.int32)
-
-        # Validate lag
-        if lag < 1:
-            raise ValueError(f"lag must be positive (got {lag}).")
-
-        # Handle empty or single-element sequences
-        if len(bins) == 0 or len(bins) <= lag:
-            # Return empty sparse matrix
-            return scipy.sparse.csr_matrix((self.n_bins, self.n_bins), dtype=float)
-
-        # Validate bin indices (must be in [0, n_bins))
-        # Note: -1 is used for outside values, which is invalid for transitions
-        if np.any(bins < 0) or np.any(bins >= self.n_bins):
-            invalid_mask = (bins < 0) | (bins >= self.n_bins)
-            invalid_indices = np.where(invalid_mask)[0]
-            invalid_values = bins[invalid_mask]
-            raise ValueError(
-                f"Invalid bin indices found outside range [0, {self.n_bins}). "
-                f"Found {len(invalid_indices)} invalid values at indices "
-                f"{invalid_indices[:5].tolist()}{'...' if len(invalid_indices) > 5 else ''}: "
-                f"{invalid_values[:5].tolist()}{'...' if len(invalid_values) > 5 else ''}. "
-                f"Note: -1 (outside) values are not allowed in transitions."
-            )
-
-        # Extract transition pairs with lag
-        source_bins = bins[:-lag]
-        target_bins = bins[lag:]
-        if trajectory_provided:
-            invalid_before = np.r_[0, np.cumsum(~mask)]
-            pair_ok = invalid_before[lag:] == invalid_before[:-lag]
-            source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
-
-        # Filter non-adjacent transitions if requested
-        if not allow_teleports:
-            # Build adjacency set from connectivity graph
-            adjacency_set = set()
-            for u, v in self.connectivity.edges():
-                adjacency_set.add((u, v))
-                adjacency_set.add((v, u))  # Undirected graph
-
-            # Also include self-transitions (always adjacent)
-            for node in self.connectivity.nodes():
-                adjacency_set.add((node, node))
-
-            # Filter transitions to only adjacent pairs
-            is_adjacent = np.array(
-                [
-                    (src, tgt) in adjacency_set
-                    for src, tgt in zip(source_bins, target_bins, strict=True)
-                ],
-                dtype=bool,
-            )
-
-            source_bins = source_bins[is_adjacent]
-            target_bins = target_bins[is_adjacent]
-
-        # Count transitions using sparse COO format
-        # Use np.ones to count occurrences
-        transition_counts = np.ones(len(source_bins), dtype=float)
-
-        # Build sparse matrix in COO format
-        transition_matrix = scipy.sparse.coo_matrix(
-            (transition_counts, (source_bins, target_bins)),
-            shape=(self.n_bins, self.n_bins),
-            dtype=float,
+        return _transitions(
+            self,
+            bins,
+            times=times,
+            positions=positions,
+            lag=lag,
+            allow_teleports=allow_teleports,
+            method=method,
+            bandwidth=bandwidth,
+            normalize=normalize,
+            max_gap=max_gap,
+            epochs=epochs,
         )
-
-        # Convert to CSR for efficient row operations
-        transition_matrix = transition_matrix.tocsr()
-
-        # Sum duplicate entries (multiple transitions between same bins)
-        transition_matrix.sum_duplicates()
-
-        # Normalize rows if requested
-        if normalize:
-            # Get row sums
-            row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
-
-            # Avoid division by zero: only normalize rows with transitions
-            nonzero_rows = row_sums > 0
-
-            # Create diagonal matrix for normalization
-            # Use reciprocal of row sums for nonzero rows, 0 otherwise
-            inv_row_sums = np.zeros(self.n_bins)
-            inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
-
-            # Normalize: T_normalized = diag(1/row_sums) @ T
-            normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
-            transition_matrix = normalizer @ transition_matrix
-
-        return transition_matrix
-
-    def _random_walk_transitions(
-        self: SelfEnv,
-        *,
-        normalize: bool = True,
-    ) -> scipy.sparse.csr_matrix:
-        """Compute uniform random walk transition matrix from graph structure.
-
-        Internal helper for transitions(method='random_walk'). Creates a
-        transition matrix where each bin transitions uniformly to its neighbors.
-        """
-        import scipy.sparse
-
-        # Get adjacency matrix from connectivity graph
-        adjacency = nx.adjacency_matrix(self.connectivity, nodelist=range(self.n_bins))
-
-        # Convert to float and ensure CSR format
-        transition_matrix = adjacency.astype(float).tocsr()
-
-        if normalize:
-            # Normalize rows: T[i,j] = 1/degree(i) if j is neighbor of i
-            row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
-
-            # Avoid division by zero for isolated nodes
-            nonzero_rows = row_sums > 0
-            inv_row_sums = np.zeros(self.n_bins)
-            inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
-
-            # Normalize
-            normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
-            transition_matrix = normalizer @ transition_matrix
-
-        return transition_matrix
-
-    def _diffusion_transitions(
-        self: SelfEnv,
-        bandwidth: float,
-        *,
-        normalize: bool = True,
-    ) -> scipy.sparse.csr_matrix:
-        """Compute diffusion-based transition matrix using heat kernel.
-
-        Internal helper for transitions(method='diffusion'). Uses the heat
-        kernel to model continuous-time diffusion on the graph.
-
-        Returns the **row-stochastic** heat operator ``H`` (``sum_j T[i, j] = 1``,
-        ``T[i, j] = P(next=j | current=i)``). ``compute_kernel(mode="transition")``
-        returns the mass-conserving smoothing kernel ``Hᵀ`` (column-stochastic),
-        so the row-stochastic transition matrix is its transpose. On a
-        non-uniform mass matrix ``M`` (polar, mesh) ``Hᵀ != H``, so this must
-        transpose rather than assume symmetry.
-        """
-        import scipy.sparse
-
-        if not normalize:
-            raise ValueError(
-                "method='diffusion' does not support normalize=False. "
-                "Heat kernel transitions are inherently normalized (row-stochastic). "
-                "Set normalize=True or use method='random_walk'."
-            )
-
-        # compute_kernel(mode="transition") is Hᵀ (column-stochastic); the
-        # row-stochastic transition matrix H is its transpose.
-        kernel = self.compute_kernel(bandwidth=bandwidth, mode="transition").T
-
-        # Convert to sparse if needed
-        if not scipy.sparse.issparse(kernel):
-            kernel = scipy.sparse.csr_matrix(kernel)
-
-        return kernel
-
-    def _allocate_time_linear(
-        self: SelfEnv,
-        positions: NDArray[np.float64],
-        dt: NDArray[np.float64],
-        valid_mask: NDArray[np.bool_],
-        bin_indices: NDArray[np.intp],
-        return_seconds: bool,
-    ) -> NDArray[np.float64]:
-        """Allocate time intervals linearly across traversed bins (helper for occupancy).
-
-        This method implements ray-grid intersection to split each time interval
-        proportionally across all bins crossed by the straight-line path between
-        consecutive position samples.
-
-        Parameters
-        ----------
-        positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position samples.
-        dt : NDArray[np.float64], shape (n_samples-1,)
-            Time intervals between consecutive samples.
-        valid_mask : NDArray[np.bool_], shape (n_samples-1,)
-            Boolean mask indicating which intervals are valid (pass filtering).
-        bin_indices : NDArray[np.intp], shape (n_samples,)
-            Bin indices for each position (-1 if outside environment).
-        return_seconds : bool
-            If True, return time in seconds. If False, return sample counts.
-
-        Returns
-        -------
-        occupancy : NDArray[np.float64], shape (n_bins,)
-            If return_seconds=True: Time in seconds allocated to each bin.
-            If return_seconds=False: Count allocated to each bin (proportional).
-
-        """
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
-        # Ensure we have RegularGridLayout (already validated in occupancy())
-        layout = cast("RegularGridLayout", self.layout)
-
-        # Get grid structure
-        grid_edges = layout.grid_edges
-        grid_shape = layout.grid_shape
-
-        # Assert non-None for mypy (RegularGridLayout always has these)
-        assert grid_edges is not None, "RegularGridLayout must have grid_edges"
-        assert grid_shape is not None, "RegularGridLayout must have grid_shape"
-
-        # Initialize occupancy array (indexed by ACTIVE-bin id, length self.n_bins)
-        occupancy = np.zeros(self.n_bins, dtype=np.float64)
-
-        # The ray-intersection helpers below (_position_to_flat_index /
-        # _compute_ray_grid_intersections) return FULL-GRID row-major flat
-        # indices, but `occupancy` is indexed by active-bin id. On a masked
-        # grid (the common from_samples case) these differ, so we must
-        # translate every full-grid index to its active-bin id before
-        # accumulating. Build the inverse map once (same idiom as
-        # layout/helpers/regular_grid.py). For inactive bins the map holds -1.
-        active_mask = getattr(layout, "active_mask", None)
-        if active_mask is None:
-            # Fully-active grid: full-grid flat index == active-bin id.
-            full_to_active = None
-        else:
-            active_mask_flat = active_mask.ravel()
-            full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
-            active_indices = np.flatnonzero(active_mask_flat)
-            full_to_active[active_indices] = np.arange(
-                active_indices.size, dtype=np.intp
-            )
-
-        def _to_active(full_idx: int) -> int:
-            """Translate a full-grid flat index to active-bin id (-1 if inactive)."""
-            if full_to_active is None:
-                return full_idx
-            if 0 <= full_idx < full_to_active.size:
-                return int(full_to_active[full_idx])
-            return -1
-
-        # Process each valid interval
-        for i in np.where(valid_mask)[0]:
-            start_pos = positions[i]
-            end_pos = positions[i + 1]
-            interval_time = dt[i]
-
-            # Choose weight based on return_seconds parameter
-            weight = interval_time if return_seconds else 1.0
-
-            # Get starting and ending bin indices (already active-bin ids,
-            # from bin_at in occupancy()).
-            start_bin = bin_indices[i]
-            end_bin = bin_indices[i + 1]
-
-            # If both points are in same bin, simple allocation
-            if start_bin == end_bin and start_bin >= 0:
-                occupancy[start_bin] += weight
-                continue
-
-            # Compute ray-grid intersections. These return FULL-GRID indices.
-            bin_times = self._compute_ray_grid_intersections(
-                start_pos, end_pos, grid_edges, grid_shape, interval_time
-            )
-
-            # Translate full-grid indices to active-bin ids and accumulate.
-            if return_seconds:
-                for full_idx, time_in_bin in bin_times:
-                    active_idx = _to_active(full_idx)
-                    if active_idx >= 0:
-                        occupancy[active_idx] += time_in_bin
-            else:
-                # Convert time proportions to count proportions (sum to 1.0).
-                # Mass that falls on inactive bins is dropped, matching the
-                # 'start' branch's behaviour of excluding outside/inactive
-                # samples, so the two allocation modes agree bin-for-bin.
-                total_allocated = sum(time for _, time in bin_times)
-                if total_allocated > 0:
-                    for full_idx, time_in_bin in bin_times:
-                        active_idx = _to_active(full_idx)
-                        if active_idx >= 0:
-                            occupancy[active_idx] += (
-                                time_in_bin / total_allocated
-                            ) * weight
-
-        return occupancy
-
-    def _compute_ray_grid_intersections(
-        self: SelfEnv,
-        start_pos: NDArray[np.float64],
-        end_pos: NDArray[np.float64],
-        grid_edges: Sequence[NDArray[np.float64]],
-        grid_shape: tuple[int, ...],
-        total_time: float,
-    ) -> list[tuple[int, float]]:
-        """Compute time spent in each bin along a ray (helper for linear allocation).
-
-        Uses DDA-like algorithm to traverse grid and compute intersection distances.
-
-        Parameters
-        ----------
-        start_pos : NDArray[np.float64], shape (n_dims,)
-            Starting position.
-        end_pos : NDArray[np.float64], shape (n_dims,)
-            Ending position.
-        grid_edges : list[NDArray[np.float64]]
-            Grid edges per dimension.
-        grid_shape : tuple[int, ...]
-            Grid shape.
-        total_time : float
-            Total time interval to split across bins.
-
-        Returns
-        -------
-        bin_times : list[tuple[int, float]]
-            List of (bin_index, time_in_bin) pairs.
-
-        Notes
-        -----
-        Numerical Stability: This method uses an epsilon threshold (EPSILON = 1e-12)
-        to prevent division by zero. Ray direction components smaller than EPSILON
-        are treated as zero (parallel to grid edges), avoiding numerical instabilities
-        when trajectories are aligned with grid axes or have very small movements
-        in certain dimensions.
-
-        """
-        n_dims = len(grid_shape)
-
-        # Compute ray direction and total distance
-        ray_dir = end_pos - start_pos
-        total_distance = np.linalg.norm(ray_dir)
-
-        # Handle zero-distance case (no movement)
-        if total_distance < EPSILON:
-            # No movement - allocate all time to starting bin
-            start_bin_idx = self._position_to_flat_index(
-                start_pos, grid_edges, grid_shape
-            )
-            if start_bin_idx >= 0:
-                return [(start_bin_idx, total_time)]
-            return []
-
-        # Normalize ray direction
-        ray_dir = ray_dir / total_distance
-
-        # Find all grid crossings along each dimension
-        crossings: list[tuple[float, int, int]] = []  # (t, dim, grid_index)
-
-        for dim in range(n_dims):
-            # Skip dimensions where ray is parallel to grid edges
-            # This prevents division by zero in parametric intersection calculation
-            if abs(ray_dir[dim]) < EPSILON:
-                # Ray parallel to this dimension - no crossings
-                continue
-
-            edges = grid_edges[dim]
-            # Find which edges the ray crosses
-            for edge_idx, edge_pos in enumerate(edges):
-                # Parametric intersection: start + t * ray_dir = edge_pos
-                t = (edge_pos - start_pos[dim]) / ray_dir[dim]
-                if 0 < t < total_distance:  # Exclude endpoints
-                    crossings.append((t, dim, edge_idx))
-
-        # Sort crossings by distance along ray
-        crossings.sort(key=itemgetter(0))
-
-        # Add start and end points
-        segments = [0.0] + [t for t, _, _ in crossings] + [total_distance]
-
-        # Compute bin index and time for each segment
-        bin_times: list[tuple[int, float]] = []
-        for seg_idx in range(len(segments) - 1):
-            # Midpoint of segment (to determine which bin we're in)
-            t_mid = (segments[seg_idx] + segments[seg_idx + 1]) / 2
-            mid_pos = start_pos + t_mid * ray_dir
-
-            # Get bin index at midpoint
-            bin_idx = self._position_to_flat_index(mid_pos, grid_edges, grid_shape)
-
-            if bin_idx >= 0:
-                # Compute time in this segment
-                seg_distance = segments[seg_idx + 1] - segments[seg_idx]
-                seg_time = total_time * (seg_distance / total_distance)
-                bin_times.append((bin_idx, seg_time))
-
-        return bin_times
-
-    def _position_to_flat_index(
-        self: SelfEnv,
-        pos: NDArray[np.float64],
-        grid_edges: Sequence[NDArray[np.float64]],
-        grid_shape: tuple[int, ...],
-    ) -> int:
-        """Convert N-D position to flat bin index (helper for ray intersection).
-
-        Parameters
-        ----------
-        pos : NDArray[np.float64], shape (n_dims,)
-            Position coordinates.
-        grid_edges : list[NDArray[np.float64]]
-            Grid edges per dimension.
-        grid_shape : tuple[int, ...]
-            Grid shape.
-
-        Returns
-        -------
-        flat_index : int
-            Flat bin index, or -1 if position is outside grid bounds.
-
-        """
-        n_dims = len(grid_shape)
-        nd_index = []
-
-        for dim in range(n_dims):
-            edges = grid_edges[dim]
-            coord = pos[dim]
-
-            # Find which bin this coordinate falls into
-            # bins are [edges[i], edges[i+1])
-            bin_idx = np.searchsorted(edges, coord, side="right") - 1
-
-            # Check bounds
-            if bin_idx < 0 or bin_idx >= grid_shape[dim]:
-                return -1  # Outside grid
-
-            nd_index.append(bin_idx)
-
-        # Convert N-D index to flat index (row-major order)
-        flat_idx = 0
-        stride = 1
-        for dim in reversed(range(n_dims)):
-            flat_idx += nd_index[dim] * stride
-            stride *= grid_shape[dim]
-
-        return flat_idx

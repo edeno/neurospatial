@@ -34,6 +34,8 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
+    from matplotlib.colors import Colormap
+
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
 else:
@@ -299,7 +301,7 @@ class EnvironmentVisualization:
         self: SelfEnv,
         field: NDArray[np.float64],
         ax: matplotlib.axes.Axes | None = None,
-        cmap: str = "viridis",
+        cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
         colorbar: bool = True,
@@ -328,7 +330,7 @@ class EnvironmentVisualization:
             decoded position density).
         ax : Optional[matplotlib.axes.Axes], optional
             Axes to plot on. If None, creates new figure and axes. Default: None.
-        cmap : str, default="viridis"
+        cmap : str or matplotlib.colors.Colormap, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis").
         vmin : Optional[float], optional
             Minimum value for colormap normalization. If None, uses
@@ -524,14 +526,12 @@ class EnvironmentVisualization:
         # angular extent is fixed by bin_centers[:, 1] but its distance
         # extent is independent and physical).
         if not self.layout.is_linearized_track and self.n_dims != 1:
-            unit_label = f" ({self.units})" if self.units else ""
-            if getattr(self, "_POLAR", False):
-                ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
-                ax.set_ylabel("Angle (rad)", fontsize=12)
-            else:
+            system = self._coordinate_system
+            xlabel, ylabel = system.axis_labels(self.units)
+            if system.equal_aspect:
                 ax.set_aspect("equal")
-                ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
-                ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
+            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_ylabel(ylabel, fontsize=12)
 
             if self.dimension_ranges and len(self.dimension_ranges) >= 2:
                 ax.set_xlim(self.dimension_ranges[0])
@@ -942,7 +942,7 @@ def _plot_grid_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -995,7 +995,7 @@ def _plot_hex_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -1049,7 +1049,7 @@ def _plot_trimesh_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,
@@ -1129,7 +1129,7 @@ def _plot_scatter_field(
     env: SelfEnv,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     vmin: float,
     vmax: float,
     nan_color: str | None,

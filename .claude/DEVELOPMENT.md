@@ -316,7 +316,7 @@ git commit -m "message"
 **Guidelines:**
 
 1. **Prefer proper typing over suppressions** - Add type hints when possible
-2. **Mixin methods should be typed** - Use `self: "Environment"` annotation
+2. **Mixin methods should be typed** - Use the protocol-bound `SelfEnv` annotation; see [Mixin Pattern](PATTERNS.md#mixin-pattern-for-environment).
 3. **Avoid skipping mypy** - Let pre-commit run mypy normally
 
 **Run mypy manually:**

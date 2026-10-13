@@ -245,6 +245,12 @@ def test_incompatible_environment_site():
         lambda e: e.RegionNotFoundError("goal", available=["start"]),
         lambda e: e.BinIndexOutOfRangeError(99, n_bins=4),
         lambda e: e.IncompatibleEnvironmentError("dims differ", fix="match them."),
+        lambda e: e.CartesianOnlyError(
+            "EgocentricPolarEnvironment",
+            "bin_at()",
+            reason="Cartesian-coordinate operation",
+            explanation="x",
+        ),
         lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
         lambda e: e.EnvironmentNotFittedError("Environment", "bin_at"),
         lambda e: e.GraphValidationError("bad graph"),

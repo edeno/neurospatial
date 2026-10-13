@@ -305,8 +305,10 @@ class TestRebinValidation:
             pytest.skip(f"Grid shape {grid_shape} is divisible by 3")
 
         # Factor 3 doesn't divide evenly
-        with pytest.warns(UserWarning, match=r"not evenly divisible"):
+        with pytest.warns(UserWarning, match=r"not evenly divisible") as record:
             coarse = env.rebin(factor=3)
+
+        assert record[0].filename == __file__
 
         # Should truncate
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)

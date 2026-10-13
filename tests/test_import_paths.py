@@ -13,12 +13,13 @@ After the move from a monolithic ``environment.py`` to an
 
 
 def test_mixins_are_not_dataclasses():
-    """Only ``Environment`` itself is a dataclass; the mixins must be plain.
+    """The dataclass is ``_BaseEnvironment``; the mixins must be plain.
 
     Mixing dataclasses into another dataclass produces broken MRO and
     silently-wrong field inheritance. This is the architectural invariant
     that lets the mixin pattern work.
     """
+    from neurospatial.environment.cartesian import CartesianCoordinates
     from neurospatial.environment.factories import EnvironmentFactories
     from neurospatial.environment.fields import EnvironmentFields
     from neurospatial.environment.metrics import EnvironmentMetrics
@@ -26,7 +27,6 @@ def test_mixins_are_not_dataclasses():
     from neurospatial.environment.regions import EnvironmentRegions
     from neurospatial.environment.serialization import EnvironmentSerialization
     from neurospatial.environment.trajectory import EnvironmentTrajectory
-    from neurospatial.environment.transforms import EnvironmentTransforms
     from neurospatial.environment.visualization import EnvironmentVisualization
 
     mixins = [
@@ -38,7 +38,7 @@ def test_mixins_are_not_dataclasses():
         EnvironmentMetrics,
         EnvironmentFields,
         EnvironmentTrajectory,
-        EnvironmentTransforms,
+        CartesianCoordinates,
     ]
 
     for mixin in mixins:

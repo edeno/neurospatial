@@ -66,7 +66,7 @@ def occupancy(
     time_allocation : {'start', 'linear'}, default='start'
         Method for allocating time intervals:
         - 'start': Assign entire Δt to starting bin (fast, all layouts)
-        - 'linear': Split Δt across bins traversed (accurate, grids only)
+        - 'linear': Split Δt across bins traversed (accurate, grid layouts with rectangular cells: from_samples, from_grid_mask, from_pixel_mask, from_polygon)
 
     Returns
     -------

@@ -8,19 +8,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
+from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 from neurospatial._exceptions import (
     EnvironmentNotFittedError as EnvironmentNotFittedError,
 )
 
-if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
-
 T = TypeVar("T")
+P = ParamSpec("P")
 
 
-def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
+def check_fitted(method: Callable[P, T]) -> Callable[P, T]:
     """Decorator to ensure that an Environment method is called only after fitting.
 
     Parameters
@@ -69,11 +67,14 @@ def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
 
     """
 
+    # ParamSpec keeps the method's signature for type checkers, so a call with
+    # a wrong argument or keyword is still reported through the decorator.
     @wraps(method)
-    def _inner(self: Environment, *args, **kwargs) -> T:
+    def _inner(*args: P.args, **kwargs: P.kwargs) -> T:
+        self = args[0]
         if not getattr(self, "_is_fitted", False):
             raise EnvironmentNotFittedError(self.__class__.__name__, method.__name__)
-        return method(self, *args, **kwargs)
+        return method(*args, **kwargs)
 
     return _inner
 

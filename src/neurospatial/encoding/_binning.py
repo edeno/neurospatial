@@ -24,7 +24,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -38,7 +38,6 @@ from neurospatial.environment.trajectory import (
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
     "_emit_all_excluded_intervals_warning",
@@ -442,7 +441,7 @@ def _spatial_interval_mask(
     mask = interval_valid_mask(
         times,
         positions,
-        cast("EnvironmentProtocol", env),
+        env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,

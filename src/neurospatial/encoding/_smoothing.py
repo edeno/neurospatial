@@ -56,8 +56,7 @@ References
 from __future__ import annotations
 
 import warnings
-import weakref
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -69,6 +68,7 @@ from neurospatial import _constants
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
+from neurospatial._lru import lru_get, lru_put
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
@@ -84,27 +84,12 @@ from neurospatial.ops.diffusion import (
 _RESOLUTION_MARGIN = 1e3
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import _BaseEnvironment
 
 __all__ = [
     "smooth_rate_map",
     "smooth_rate_maps_batch",
 ]
-
-
-# Cache for the dense Gaussian-KDE kernel. Keyed by (id(env), bandwidth);
-# value is the (n_bins, n_bins) weight matrix, its bin-count, and a weakref
-# to the owning environment. The weakref is the real id-reuse guard: ``id()``
-# is only unique among *live* objects, so once an Environment is GC'd a freshly
-# built one can reuse its address. A different env reusing the id (or the same
-# id after GC) would otherwise return a stale kernel that does not match the new
-# env's geometry (e.g. a circular vs. open angular axis with identical n_bins).
-# Validating ``ref() is env`` on lookup turns any such reuse into a cache miss.
-_GAUSSIAN_KERNEL_CACHE: dict[
-    tuple[int, float], tuple[NDArray[np.float64], int, weakref.ref[Any]]
-] = {}
-_GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
 def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
@@ -151,16 +136,9 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
                 ]
             )
             if lengths.size == 0:
-                if getattr(env, "_POLAR", False):
-                    lengths = np.diff(env.grid_edges[0])
-                else:
-                    lengths = np.asarray(env.bin_sizes) ** (1.0 / env.n_dims)
+                lengths = env._coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
-    ranges = (
-        env.dimension_ranges[:1]
-        if getattr(env, "_POLAR", False)
-        else env.dimension_ranges
-    )
+    ranges = env._coordinate_system.length_ranges(env.dimension_ranges)
     extent = max(stop - start for start, stop in ranges)
     if extent > 0 and bandwidth >= extent:
         warnings.warn(
@@ -179,11 +157,10 @@ def _get_gaussian_kernel(
 ) -> NDArray[np.float64]:
     """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
 
-    The matrix is ``(n_bins, n_bins)`` and was previously rebuilt at every
-    call site via ``np.exp(-pairwise_dist_sq / (2*sigma^2))``. For
-    ``n_bins`` of a few thousand that materialization plus exp is
-    measurable; cache the result keyed on ``(id(env), bandwidth)`` and
-    verify ``n_bins`` to defend against id reuse after GC.
+    The matrix is ``(n_bins, n_bins)`` and is cached by bandwidth on the
+    environment, which keeps the most recently used kernels
+    (``_constants.MAX_CACHED_KERNELS``). ``clear_cache(kernels=True)`` releases
+    them, and they are freed with the environment.
 
     The weight matrix is dense ``(n_bins, n_bins)`` -- O(n_bins**2) memory --
     so when ``n_bins`` exceeds ``LARGE_KERNEL_THRESHOLD`` a loud memory
@@ -199,17 +176,12 @@ def _get_gaussian_kernel(
     bandwidth : float
         Gaussian ``sigma`` in environment units.
     """
-    key = (id(env), float(bandwidth))
-    cached = _GAUSSIAN_KERNEL_CACHE.get(key)
+    kernels = env._gaussian_kernels
+    cached = lru_get(kernels, float(bandwidth))
+    if cached is not None:
+        return cached
     bin_centers = env.bin_centers
     n_bins = bin_centers.shape[0]
-
-    # Require the cached weakref to still resolve to *this* exact env. A dead
-    # weakref (env GC'd) or one resolving to a different object (id reused by a
-    # new env) means the entry belongs to a now-gone environment -- treat as a
-    # miss and recompute rather than returning a geometrically wrong kernel.
-    if cached is not None and cached[1] == n_bins and cached[2]() is env:
-        return cached[0]
 
     # Warn (never raise) for large environments. The dense weight matrix
     # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
@@ -232,59 +204,13 @@ def _get_gaussian_kernel(
 
     two_sigma_sq = 2.0 * bandwidth**2
 
-    if getattr(env, "_POLAR", False):
-        # Egocentric polar env: bin_centers[:, 0] is distance (length units),
-        # bin_centers[:, 1] is angle (radians). A naive Euclidean norm on
-        # these columns collapses cm and radians into one scalar. Instead use
-        # the physical polar distance between bin centers:
-        #     d² = Δr² + (r̄ · Δθ)²
-        # with r̄ the mean radius of the two bins. ``bandwidth`` is then a
-        # single physical length (e.g. cm), consistent with the corrected
-        # connectivity edge geometry.
-        r = bin_centers[:, 0]
-        theta = bin_centers[:, 1]
-        d_r = r[:, None] - r[None, :]
-        r_mean = 0.5 * (r[:, None] + r[None, :])
-        d_theta_raw = theta[:, None] - theta[None, :]
-        # Wrap the angular difference into [-pi, pi] ONLY when the angular axis
-        # is circular, so bins straddling the -pi/+pi seam are treated as
-        # adjacent (Delta theta ~ 0) rather than ~2*pi apart. Without this wrap
-        # the seam gets a vanishing Gaussian weight, a hard artifact for a
-        # full-circle egocentric-polar gaussian_kde. When the angular axis is
-        # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
-        # and +pi are genuinely far apart, so wrapping would leak smoothing
-        # across a boundary the caller deliberately left open; use the raw
-        # angular difference instead. Circularity is derived from the
-        # connectivity graph (presence of seam edges), so it stays consistent
-        # with the graph and survives serialization. The diffusion_kde path is
-        # unaffected: it smooths over the environment graph directly.
-        if getattr(env, "_angular_is_circular", False):
-            d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
-        else:
-            d_theta = d_theta_raw
-        arc = r_mean * d_theta
-        dist_sq = d_r**2 + arc**2
-    else:
-        bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
-        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
+    dist_sq = env._coordinate_system.squared_distances(bin_centers)
     dist_sq = np.maximum(dist_sq, 0)
     kernel: NDArray[np.float64] = np.exp(-dist_sq / two_sigma_sq).astype(
         np.float64, copy=False
     )
 
-    try:
-        env_ref: weakref.ref[Any] = weakref.ref(env)
-    except TypeError:
-        # Not weakref-able (e.g. __slots__ without __weakref__): skip caching
-        # rather than risk an id-reuse collision we cannot detect. Correctness
-        # over the (optional) speed-up.
-        return kernel
-
-    if len(_GAUSSIAN_KERNEL_CACHE) >= _GAUSSIAN_KERNEL_CACHE_MAX:
-        # Evict an arbitrary oldest-ish entry. dict insertion order makes
-        # iter(...) return the oldest key first.
-        _GAUSSIAN_KERNEL_CACHE.pop(next(iter(_GAUSSIAN_KERNEL_CACHE)))
-    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins, env_ref)
+    lru_put(kernels, float(bandwidth), kernel, limit=_constants.MAX_CACHED_KERNELS)
     return kernel
 
 
@@ -905,9 +831,7 @@ def _resolution_floor(env: _BaseEnvironment, bandwidth: float) -> float:
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * diffusion_apply_rtol(
-        cast("EnvironmentProtocol", env), bandwidth
-    )
+    return _RESOLUTION_MARGIN * diffusion_apply_rtol(env, bandwidth)
 
 
 def _resolved_density_mask(
@@ -943,7 +867,7 @@ def _resolved_density_mask(
     NDArray[np.bool_], shape (n_bins,)
         True where the KDE ratio is numerically meaningful.
     """
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     support = component_support_mask(labels, n_components, occupancy > 0)
     resolved = _above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
@@ -989,7 +913,7 @@ def _resolved_density_mask_jax(
     import jax
     import jax.numpy as jnp
 
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     labels_j = jnp.asarray(labels)
     has_occupancy = (
         jax.ops.segment_max(occupancy, labels_j, num_segments=n_components) > 0.0
@@ -1041,9 +965,7 @@ def _diffusion_kde(
 
     # Smooth counts and occupancy in one matrix-free density-mode pass.
     stacked = np.column_stack([spike_counts, occupancy])  # (n_bins, 2)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="density")
-    )
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="density"))
     spike_density = smoothed[:, 0]
     occupancy_density = smoothed[:, 1]
 
@@ -1199,9 +1121,7 @@ def _binned_gate(
         stacked = np.column_stack([rate_filled, weights])  # (n_bins, 2)
     else:
         stacked = np.concatenate([rate_filled.T, weights.T], axis=1)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="average")
-    )
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="average"))
     if raw_rate.ndim == 1:
         rate_smoothed = smoothed[:, 0]
         weights_smoothed = smoothed[:, 1]
@@ -1210,7 +1130,7 @@ def _binned_gate(
         rate_smoothed = smoothed[:, :n_neurons].T
         weights_smoothed = smoothed[:, n_neurons:].T
 
-    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    n_components, labels = diffusion_component_labels(env)
     support = component_support_mask(labels, n_components, valid)
     # Far from every valid bin both smoothed sums approach the apply's
     # truncation noise; leave those bins NaN rather than report noise/noise.
@@ -1240,9 +1160,7 @@ def _diffusion_kde_batch(
     # columns, spike_counts.T) plus the shared occupancy as one extra column, so
     # all neurons + occupancy diffuse in a single matrix-free density-mode pass.
     cols = np.column_stack([spike_counts.T, occupancy])  # (n_bins, n_neurons + 1)
-    smoothed = np.asarray(
-        cast("EnvironmentProtocol", env).diffuse(cols, bandwidth, mode="density")
-    )
+    smoothed = np.asarray(env.diffuse(cols, bandwidth, mode="density"))
     spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
     occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
@@ -1375,9 +1293,7 @@ def _smooth_rate_map_jax(
         # occupancy diffuse together in one density-mode pass, no (n, n) kernel.
         stacked = jnp.stack([spike_counts_j, occupancy_j], axis=1)  # (n_bins, 2)
         smoothed = jnp.asarray(
-            cast("EnvironmentProtocol", env).diffuse(
-                stacked, bandwidth, mode="density", backend="jax"
-            )
+            env.diffuse(stacked, bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, 0]
         occupancy_density = smoothed[:, 1]
@@ -1465,9 +1381,7 @@ def _smooth_rate_maps_batch_jax(
             [spike_counts_j.T, occupancy_j[:, None]], axis=1
         )  # (n_bins, n_neurons + 1)
         smoothed = jnp.asarray(
-            cast("EnvironmentProtocol", env).diffuse(
-                cols, bandwidth, mode="density", backend="jax"
-            )
+            env.diffuse(cols, bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, :n_neurons].T
         occupancy_density = smoothed[:, n_neurons]

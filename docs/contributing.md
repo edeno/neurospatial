@@ -158,6 +158,73 @@ libraries at runtime. The dense-operation warning threshold is
 Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both concrete environment
 types against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
 
+### Environment architecture
+
+New operations are module functions with explicit inputs. When an operation
+needs an environment, declare a small consumer `Protocol` listing only the
+members it reads in `environment/_protocols.py`; numerical operators use
+`ops/_protocols.py`. An environment method is an optional scientist-facing
+entry point that delegates to the function in one call.
+
+When extracting an existing implementation, preserve the method's name,
+signature, decorators and docstring exactly. Put its implementation in a private
+`_<method>` function in the same module, with `env` first and the remaining
+parameters in their original order and keyword-only positions. Forward keyword
+arguments by keyword. Type `env` with the narrow consumer protocol; functions
+that read only the layout take `layout`, and functions that read no environment
+members take no `env` argument. Move private helpers into module functions in the
+same change and remove their declarations from the mixin host protocol.
+
+Move logic unchanged: rename `self` to `env`, replace helper-method calls with
+module-function calls, and split long bodies only at existing section comments.
+Fix discovered bugs separately. Moved warnings use
+`stacklevel=_external_stacklevel()` from `neurospatial._stacklevel` so the warning
+still points to the scientist's line. Keep implementation functions private and
+out of `__all__`; the public API snapshot stays unchanged. Preserve moved helper
+docstrings, and give new private functions a one-line NumPy summary plus a
+`Parameters` section when an argument's meaning is not clear from its name and
+type.
+
+Geometry uses the [published geometry and construction path](#diffusion-geometry-providers)
+described above: updates go through `_setup_from_layout`, and derived values
+use `versioned_cached_property` caches.
+
+An operation that interprets `bin_centers` as Cartesian `(x, y[, z])`
+coordinates belongs to `CartesianCoordinates`, composed by `Environment`.
+Polar environments do not inherit it. A shared method with a Cartesian mode
+calls `self._require_cartesian("<call>")`; a new coordinate system defines this
+guard to refuse unsupported calls and is covered by
+`test_every_inherited_member_is_classified_for_polar`. Shared code that
+measures distance, chooses length scales or names axes asks
+`env._coordinate_system`. A new coordinate system defines one
+`CoordinateSystem` class with those rules; analysis code does not test the
+persistence type tag `_POLAR`.
+
+Layout-specific operations check a capability protocol on the layout, as
+smoothing does with `FiniteVolumeGeometryProvider`. Linear interpolation and
+time allocation use `RectilinearGridProvider`; track coordinate conversions
+use `TrackLinearizationProvider`. A layout has the capability
+when it defines the method. Do not dispatch new behavior by comparing
+`_layout_type_tag` strings. Refusals name the operation and suggest a supported
+alternative. Only `rebin` still uses a layout tag: its documented activity rule marks
+every coarse cell active, so widening it to masked arenas would change
+scientific support.
+
+A mixin is a plain class for one domain; `_BaseEnvironment` is the dataclass.
+Mixins keep no state except `versioned_cached_property` caches and annotate
+`self` with a protocol checked against the concrete environment types. Mypy
+rejects a concrete mixin self type such as `self: "_BaseEnvironment"` because
+the erased self type is not a supertype of the mixin class.
+
+Check refactors with `scripts/environment_baseline.py`. Before changing code,
+run `uv run python scripts/environment_baseline.py record base.npz` on the
+branch's base commit. After changing code, record `new.npz` the same way, then
+run `uv run python scripts/environment_baseline.py compare base.npz new.npz`.
+Outputs, refusals, signatures and docstrings must match exactly, or the pull
+request must list and verify every intended difference. Also run the suite,
+doctests, executable documentation, public API snapshot, Ruff and the source
+and static-contract mypy checks.
+
 ## Code Standards
 
 ### Python Style

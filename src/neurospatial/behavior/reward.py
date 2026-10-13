@@ -15,14 +15,13 @@ Or via behavior package:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 from neurospatial.ops.binning import regions_to_mask
 from neurospatial.ops.distance import distance_field
@@ -199,7 +198,7 @@ def region_reward_field(
         # field is non-negative, so floor it (the dense clipped kernel did this
         # implicitly). Positivity is the consumer's job for the linear smoother.
         smoothed = np.maximum(
-            np.asarray(cast("EnvironmentProtocol", env).smooth(indicator, bandwidth)),
+            np.asarray(env.smooth(indicator, bandwidth)),
             0.0,
         )
 

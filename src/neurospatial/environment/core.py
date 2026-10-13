@@ -1,19 +1,19 @@
 """Core Environment class with mixin inheritance.
 
-This module defines the main Environment dataclass that assembles all
-functionality from specialized mixin classes:
+This module defines the shared _BaseEnvironment dataclass and the Cartesian
+Environment type, assembling specialized domain mixins:
 
 - EnvironmentFactories: Factory methods (from_samples, from_graph, etc.)
-- EnvironmentQueries: Spatial queries (bin_at, contains, neighbors, etc.)
+- EnvironmentQueries: Graph queries (neighbors, paths and distances)
 - EnvironmentSerialization: Save/load methods (to_file, from_file, etc.)
 - EnvironmentRegions: Region operations (bins_in_region, region_mask)
 - EnvironmentVisualization: Plotting methods (plot, plot_1d)
-- EnvironmentMetrics: Environment metrics (boundary_bins, bin_attributes, to_linear, etc.)
-- EnvironmentFields: Spatial field operations (compute_kernel, smooth, interpolate)
-- EnvironmentTrajectory: Trajectory analysis (occupancy, bin_sequence, transitions)
-- EnvironmentTransforms: Transform operations (rebin, subset)
+- EnvironmentMetrics: Environment metrics (boundary_bins and bin attributes)
+- EnvironmentFields: Spatial field operations (compute_kernel, smooth, diffuse)
+- EnvironmentTrajectory: Transition matrices
+- CartesianCoordinates: Cartesian coordinate and trajectory/transform entry points
 
-The Environment class is the ONLY dataclass in the hierarchy - all mixins
+The _BaseEnvironment class is the dataclass in the hierarchy - all mixins
 are plain classes. This design prevents dataclass field inheritance conflicts
 while maintaining clean code organization.
 """
@@ -34,6 +34,7 @@ from scipy import sparse
 
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created, log_graph_validation
+from neurospatial.environment.cartesian import CartesianCoordinates
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.fields import EnvironmentFields
@@ -42,7 +43,6 @@ from neurospatial.environment.queries import EnvironmentQueries
 from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
 from neurospatial.environment.trajectory import EnvironmentTrajectory
-from neurospatial.environment.transforms import EnvironmentTransforms
 from neurospatial.environment.visualization import EnvironmentVisualization
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.validation import (
@@ -58,6 +58,8 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
+    from neurospatial.environment._coordinates import CoordinateSystem
+    from neurospatial.environment._protocols import CartesianEnvironmentProtocol
     from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.ops._types import KernelMode
 
@@ -130,7 +132,6 @@ class _BaseEnvironment(
     EnvironmentMetrics,
     EnvironmentFields,
     EnvironmentTrajectory,
-    EnvironmentTransforms,
 ):
     """Shared implementation behind Environment and EgocentricPolarEnvironment.
 
@@ -143,19 +144,12 @@ class _BaseEnvironment(
       egocentric polar ``(distance, angle)`` environments built via
       :meth:`Environment.from_polar_egocentric`.
 
-    ``EgocentricPolarEnvironment`` is a *sibling* of ``Environment`` (both
-    subclass this base), not a subclass of ``Environment``. Every inherited
-    method that consumes Cartesian ``(x, y[, z])`` coordinates or operates on
-    a Cartesian grid is overridden on the polar type to raise
-    ``NotImplementedError`` (rather than silently misinterpret
-    ``(distance, angle)`` pairs): the Cartesian-coordinate methods (``bin_at``,
-    ``contains``, ``distance_between``, Euclidean ``distance_to``,
-    ``apply_transform``, ``interpolate``, ``occupancy``, ``bin_sequence``,
-    ``bin_sequence_with_runs``) and the Cartesian-grid methods (``to_linear``,
-    ``linear_to_nd``, ``rebin``, ``subset``).
-
-    Note: This class satisfies the EnvironmentProtocol interface through
-    its mixin inheritance and dataclass fields.
+    ``EgocentricPolarEnvironment`` and ``Environment`` are sibling types.
+    Cartesian methods belong to ``CartesianCoordinates``, composed only by
+    ``Environment``. Polar environments refuse those names through one table,
+    and shared methods guard their Cartesian modes with ``_require_cartesian``.
+    Both concrete types satisfy ``EnvironmentProtocol``; the Cartesian type
+    also satisfies ``CartesianEnvironmentProtocol``.
 
     The original ``Environment`` docstring (kept on the concrete subclass):
 
@@ -335,15 +329,22 @@ class _BaseEnvironment(
     units: str | None = field(init=False, default=None)
     frame: str | None = field(init=False, default=None)
 
-    # Coordinate-system marker. ``False`` for Cartesian environments
-    # (``Environment``), ``True`` for egocentric polar environments
-    # (``EgocentricPolarEnvironment``) whose ``bin_centers[:, 0]`` is
-    # *distance* and ``bin_centers[:, 1]`` is *angle in radians*. This is a
-    # per-class constant (not a runtime-mutable field) so the type itself —
-    # not a flag — carries the geometry. Mixin methods that adapt their
-    # presentation to polar geometry (e.g. ``plot_field`` axis labels) read
-    # this via ``getattr(self, "_POLAR", False)``.
+    # Persistence type tag: io readers use it to restore the concrete class.
+    # Analysis and plotting ask _coordinate_system for coordinate semantics.
     _POLAR: ClassVar[bool] = False
+
+    @property
+    def _coordinate_system(self) -> CoordinateSystem:
+        """How this environment measures distance and names its axes."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must define _coordinate_system."
+        )
+
+    def _require_cartesian(self, operation: str) -> CartesianEnvironmentProtocol:
+        """This environment typed as Cartesian, or raise naming ``operation``."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must define _require_cartesian."
+        )
 
     # Internal state
     _is_linearized_track_env: bool = field(init=False)
@@ -1390,12 +1391,13 @@ class _BaseEnvironment(
         kdtree : bool, default=True
             Whether to clear the KDTree cache.
         kernels : bool, default=True
-            Whether to clear the kernel cache.
+            Whether to clear the cached smoothing kernels.
         """
         if kdtree:
             self._kdtree_cache = None
         if kernels:
             self._kernel_cache = {}
+            self._gaussian_kernels.clear()
 
     @check_fitted
     def clear_cache(
@@ -1415,7 +1417,9 @@ class _BaseEnvironment(
         kdtree : bool, default=True
             Whether to clear the KDTree cache used by map_points_to_bins().
         kernels : bool, default=True
-            Whether to clear the kernel cache used by smooth() and occupancy().
+            Whether to clear the cached smoothing kernels: diffusion kernels
+            used by compute_kernel(), smooth() and occupancy(), and the
+            Gaussian-KDE kernels of rate-map smoothing.
         cached_properties : bool, default=True
             Whether to clear all @cached_property values.
 
@@ -1423,7 +1427,9 @@ class _BaseEnvironment(
         ------------------------------
         **Explicit caches** (kdtree, kernels):
             - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
-            - Kernel cache (_kernel_cache): Used by smooth() and occupancy()
+            - Kernel caches (_kernel_cache, _gaussian_kernels): diffusion
+              kernels used by smooth() and occupancy(), and Gaussian-KDE
+              kernels; each keeps its most recently used kernels
 
         **Cached properties** (cached_properties):
             - differential_operator: Graph differential operator matrix
@@ -1506,14 +1512,14 @@ class _BaseEnvironment(
                         self.__dict__.pop(f"{value_key}__version", None)
 
 
-class Environment(_BaseEnvironment):
+class Environment(CartesianCoordinates, _BaseEnvironment):
     """A discretized Cartesian environment with connectivity.
 
     ``Environment`` is the central user-facing spatial type. Its
-    ``bin_centers`` hold Cartesian ``(x, y[, z])`` coordinates, so all
-    geometric methods (``bin_at``, ``contains``, ``distance_between``,
-    Euclidean ``distance_to``, ``apply_transform``) interpret inputs as
-    Cartesian points.
+    ``bin_centers`` hold Cartesian ``(x, y[, z])`` coordinates. Geometric
+    methods in ``CartesianCoordinates`` (``bin_at``, ``contains``,
+    ``distance_between``, ``apply_transform``) interpret inputs as Cartesian
+    points. The shared ``distance_to`` method guards its Euclidean mode.
 
     Instances are created via the factory classmethods inherited from
     :class:`~neurospatial.environment.factories.EnvironmentFactories`
