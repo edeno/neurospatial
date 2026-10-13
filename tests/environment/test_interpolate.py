@@ -6,6 +6,29 @@ import pytest
 from neurospatial import Environment
 
 
+@pytest.mark.parametrize("n_dims", [1, 2, 3])
+def test_linear_interpolation_recovers_centers_next_to_holes(n_dims: int) -> None:
+    """Zero-weight missing neighbors cannot erase a known active-bin value."""
+    mask = np.ones((3,) * n_dims, dtype=bool)
+    mask[(1,) * n_dims] = False
+    env = Environment.from_grid_mask(mask, (np.arange(4.0),) * n_dims)
+    field = np.arange(env.n_bins, dtype=float) + 1.0
+    actual = env.interpolate(field, env.bin_centers, mode="linear")
+    np.testing.assert_allclose(actual, field)
+
+
+def test_linear_interpolation_ignores_only_zero_weight_holes() -> None:
+    """An active grid line interpolates; missing positive-weight corners stay NaN."""
+    mask = np.ones((3, 3), dtype=bool)
+    mask[1, 1] = False
+    env = Environment.from_grid_mask(mask, (np.arange(4.0),) * 2)
+    field = 2.0 * env.bin_centers[:, 0] + 3.0 * env.bin_centers[:, 1]
+    points = np.array([[0.5, 1.0], [1.0, 0.5], [1.0, 1.0], [1.5, 1.5], [-1, 1]])
+    actual = env.interpolate(field, points, mode="linear")
+    np.testing.assert_allclose(actual[:2], [4.0, 3.5])
+    assert np.isnan(actual[2:]).all()
+
+
 class TestInterpolateBasic:
     """Basic interpolation functionality tests."""
 

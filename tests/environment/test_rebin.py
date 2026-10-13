@@ -1,9 +1,55 @@
 """Tests for Environment.rebin() - grid coarsening operations."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from neurospatial import Environment
+
+
+@pytest.mark.parametrize("diagonal", [False, True])
+@pytest.mark.parametrize("factor", [1, 2, (2, 1)])
+def test_rebinned_environment_round_trips(
+    tmp_path: Path, diagonal: bool, factor: int | tuple[int, ...]
+) -> None:
+    """A saved coarse grid restores its cells, queries, graph and smoothing."""
+    env = Environment.from_layout(
+        "RegularGrid",
+        {
+            "bin_size": 1.0,
+            "dimension_ranges": [(0, 4), (0, 4)],
+            "connect_diagonal_neighbors": diagonal,
+        },
+    ).rebin(factor)
+    path = tmp_path / "coarse"
+    env.to_file(path)
+    for restored in (Environment.from_file(path), Environment.from_dict(env.to_dict())):
+        np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+        np.testing.assert_array_equal(restored.bin_sizes, env.bin_sizes)
+        np.testing.assert_array_equal(
+            restored.bin_at(env.bin_centers), np.arange(env.n_bins)
+        )
+        assert set(restored.connectivity.edges()) == set(env.connectivity.edges())
+        field = np.arange(env.n_bins, dtype=float)
+        np.testing.assert_allclose(restored.smooth(field, 1.0), env.smooth(field, 1.0))
+
+
+@pytest.mark.parametrize("diagonal", [False, True])
+@pytest.mark.parametrize("shape", [(2, 2), (2, 2, 2), (3, 3)])
+def test_rebin_identity_keeps_small_grid_edges(
+    shape: tuple[int, ...], diagonal: bool
+) -> None:
+    """Rebinning a full grid by one preserves edges even without interior nodes."""
+    env = Environment.from_layout(
+        "RegularGrid",
+        {
+            "bin_size": 1.0,
+            "dimension_ranges": [(0, side) for side in shape],
+            "connect_diagonal_neighbors": diagonal,
+        },
+    )
+    assert set(env.rebin(1).connectivity.edges()) == set(env.connectivity.edges())
 
 
 class TestRebinBasic:

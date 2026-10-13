@@ -314,8 +314,8 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     def _angular_is_circular(self) -> bool:
         """Whether the angular axis wraps circularly across the ±π seam.
 
-        Derived from the connectivity graph rather than stored as a flag so
-        it is always consistent with the actual edges and survives every
+        Derived from the connectivity graph when there are at least three
+        angular bins, so it is consistent with the actual edges and survives every
         serialization path (``to_file``/``from_file``, NWB round-trip,
         :meth:`copy`) that persists the connectivity graph. When
         :meth:`create` is called with ``circular_angle=True`` (and there is
@@ -323,6 +323,11 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         last angle bins of each distance ring; with ``circular_angle=False``
         no such edges are added, leaving an *open* angular axis whose bins at
         ``-π`` and ``+π`` are genuinely far apart.
+
+        With one or two angular bins, open and circular axes have identical
+        simple graphs. Use the layout's saved ``circular_angle`` option in
+        that case. Legacy NWB records without this option retain the previous
+        open-axis interpretation for these indistinguishable graphs.
 
         A seam edge is detected as an edge between two bins on the same
         distance ring whose absolute angular separation is markedly larger
@@ -336,9 +341,11 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         Returns
         -------
         bool
-            True if the angular axis is circular (seam edges present), False
-            for an open angular axis.
+            True if the angular axis is circular, False for an open axis.
         """
+        if self.grid_shape is not None and self.grid_shape[1] <= 2:
+            return bool(self.layout._build_params_used.get("circular_angle", False))
+
         connectivity = self.connectivity
         if connectivity.number_of_edges() == 0:
             return False

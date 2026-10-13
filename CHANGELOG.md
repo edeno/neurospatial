@@ -116,6 +116,13 @@
 
 ### Fixed
 
+- Rebinned environments load from files and dictionaries again, and rebinning
+  preserves diagonal connectivity on small and sparse grids.
+- Linear interpolation retains known values at active-bin centers and grid
+  lines next to holes; missing corners with positive weight still produce NaN.
+- Circular polar grids with one or two angular bins correctly exclude interior
+  radial rings from their boundary. The circular flag also survives NWB saves;
+  older NWB records without the flag retain their previous open-axis behavior.
 - Type checkers report wrong arguments to environment methods, such as
   `env.bin_at("not an array")` or an unknown keyword; the fitted-state check
   previously hid every decorated method's signature. `plot_field` accepts a
