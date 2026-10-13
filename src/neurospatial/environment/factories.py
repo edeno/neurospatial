@@ -212,7 +212,9 @@ def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
 
     Allows float32 storage rounding of that dimension's coordinates, but never
     a quarter of the median gap between distinct centers along it, so a shift
-    by a bin is rejected however far the grid sits from the origin.
+    by a bin is rejected however far the grid sits from the origin. Where
+    float32 cannot resolve the bins (coordinates far from the origin relative
+    to the bin width), the cap wins and such storage is rejected.
 
     Parameters
     ----------
@@ -227,9 +229,12 @@ def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
     tolerance = np.empty(centers.shape[1])
     for dim in range(centers.shape[1]):
         values = np.unique(centers[:, dim])
-        storage = 2.0 * np.finfo(np.float32).eps * np.abs(values).max(initial=0.0)
+        magnitude = np.abs(values).max(initial=0.0)
+        storage = 2.0 * np.finfo(np.float32).eps * magnitude
         gaps = np.diff(values)
-        gaps = gaps[gaps > storage]  # closer values are rounding duplicates
+        # Only float64 rounding marks duplicates; the storage allowance must not
+        # hide real gaps, or the spacing cap would vanish far from the origin.
+        gaps = gaps[gaps > 64.0 * np.finfo(np.float64).eps * magnitude]
         spacing = float(np.median(gaps)) if gaps.size else np.inf
         tolerance[dim] = min(storage, spacing / 4.0)
     return tolerance
