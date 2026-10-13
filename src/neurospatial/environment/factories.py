@@ -210,11 +210,12 @@ def _owned_copy(value: Any) -> Any:
 def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
     """Per-dimension tolerance for matching saved to rebuilt bin centers.
 
-    Allows float32 storage rounding of that dimension's coordinates, but never
-    a quarter of the median gap between distinct centers along it, so a shift
-    by a bin is rejected however far the grid sits from the origin. Where
-    float32 cannot resolve the bins (coordinates far from the origin relative
-    to the bin width), the cap wins and such storage is rejected.
+    Allows float32 storage rounding of that dimension's coordinates, capped at
+    a quarter of the smallest meaningful gap between distinct centers along
+    it. Inactive stretches cannot inflate the cap and hide the separation of
+    nearby active bins. Where float32 cannot resolve the bins (coordinates far
+    from the origin relative to the bin width), the cap wins and such storage
+    is rejected.
 
     Parameters
     ----------
@@ -235,7 +236,7 @@ def _center_tolerance(centers: NDArray[np.float64]) -> NDArray[np.float64]:
         # Only float64 rounding marks duplicates; the storage allowance must not
         # hide real gaps, or the spacing cap would vanish far from the origin.
         gaps = gaps[gaps > 64.0 * np.finfo(np.float64).eps * magnitude]
-        spacing = float(np.median(gaps)) if gaps.size else np.inf
+        spacing = float(gaps.min()) if gaps.size else np.inf
         tolerance[dim] = min(storage, spacing / 4.0)
     return tolerance
 

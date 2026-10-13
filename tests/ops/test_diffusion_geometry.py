@@ -323,6 +323,31 @@ def test_center_check_rejects_a_bin_shift_at_any_origin(origin, float32_resolves
             from_dict(float32)
 
 
+@pytest.mark.parametrize(
+    ("active_bins", "neighbor_pair"),
+    [((0, 1, 10, 20), (0, 1)), ((0, 9, 10, 20), (1, 2))],
+)
+def test_center_check_rejects_neighbor_substitution_in_sparse_mask(
+    active_bins: tuple[int, ...], neighbor_pair: tuple[int, int]
+) -> None:
+    """Inactive stretches must not hide the separation of nearby active bins."""
+    mask = np.zeros(21, dtype=bool)
+    mask[list(active_bins)] = True
+    env = Environment.from_grid_mask(mask, grid_edges=(1e6 + 0.1 * np.arange(22.0),))
+    data = to_dict(env)
+    restored = from_dict(data)
+    np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+
+    rounded = to_dict(env)
+    rounded["bin_centers"] = env.bin_centers.astype(np.float32).astype(float).tolist()
+    np.testing.assert_array_equal(from_dict(rounded).bin_centers, env.bin_centers)
+
+    source, neighbor = neighbor_pair
+    data["bin_centers"][source] = data["bin_centers"][neighbor].copy()
+    with pytest.raises(ValueError, match="do not match"):
+        from_dict(data)
+
+
 def test_non_finite_saved_centers_are_rejected():
     data = to_dict(_four_connected_grid())
     data["bin_centers"][0][0] = float("nan")
