@@ -127,16 +127,18 @@ requirements.
 seam edges before the environment is initialized. Its masked-grid build records
 `circular_angle` alongside the shared grid parameters.
 
-Layouts own `connectivity`, `bin_centers` and the grid geometry. The file and
-NWB readers rebuild the layout from its saved parameters, assign the saved
-geometry to that same layout (keys the data lacks keep the rebuilt values), and
-call `env._setup_from_layout()`. That method validates the graph before changing
-anything, synchronizes the environment's views, advances its state version and
-clears all analysis caches; `copy()` rebuilds from the layout too. Stored
-connectivity remains authoritative on read-back, including open angular axes and
-4-connected grids. Lookups a layout derives at build time are not rebuilt, so
-swapping in a different layout object or changing a layout's bins this way is
-not supported.
+Layouts own `connectivity`, `bin_centers` and the grid geometry, and an
+environment publishes them read-only (arrays reject writes, the graph is
+frozen). Factories and readers share one construction path: the file and NWB
+readers call `_from_saved_layout`, which rebuilds the layout from its saved
+parameters (and with it every derived lookup), checks the saved bin centers
+against it, replaces the rebuilt graph with the saved one (authoritative for
+4-connected grids, open angular axes and physical polar distances), and
+constructs the environment once. `_setup_from_layout` validates the graph before
+changing anything, synchronizes the environment's views, advances its state
+version and clears all analysis caches; `copy()` rebuilds from the layout too.
+Swapping in a different layout object, or changing a layout's bins, and calling
+it again is not supported.
 
 `Environment._face_geometry` caches the validated faces once per state version;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence

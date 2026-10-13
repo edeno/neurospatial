@@ -416,8 +416,8 @@ class TestPolarStateVersionFreshness:
         setup = EgocentricPolarEnvironment._setup_from_layout
         captured = []
 
-        def capture_setup(env):
-            setup(env)
+        def capture_setup(env, **kwargs):
+            setup(env, **kwargs)
             assert env.connectivity.has_edge(0, 3)
             assert env.connectivity.edges[0, 1]["distance"] == pytest.approx(
                 5.0 * np.pi / 2

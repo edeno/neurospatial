@@ -809,26 +809,19 @@ def _reconstruct_environment(
             # Reshape active_mask from flat to N-D
             active_mask = active_mask_flat.reshape(tuple(grid_shape))
 
-            # Rebuild the exact grid (polar type when is_polar). Its default
-            # 8-connected graph is replaced by the stored connectivity below.
-            env = env_cls.from_layout(
-                kind="MaskedGrid",
-                layout_params={
-                    "active_mask": active_mask,
-                    "grid_edges": grid_edges,
-                },
+            # Rebuild the exact grid (polar type when is_polar), then use the
+            # stored graph (4-connectivity, physical polar distances and seams)
+            # and extents, since every grid is stored as a masked grid.
+            return env_cls._from_saved_layout(
+                "MaskedGrid",
+                {"active_mask": active_mask, "grid_edges": grid_edges},
                 name=env_name,
+                bin_centers=bin_centers,
+                connectivity=connectivity,
+                restored_from="the NWB environment record",
+                dimension_ranges=dimension_ranges,
                 regions=regions,
             )
-
-            # Restore saved geometry on the layout (including physical polar
-            # distances and 4-connectivity), then refresh all environment state.
-            env.layout.bin_centers = bin_centers
-            env.layout.connectivity = connectivity
-            env.layout.dimension_ranges = dimension_ranges
-            env._setup_from_layout(restored_from="the NWB environment record")
-
-            return env
 
     # Fallback: Create environment with KDTree-based layout for non-grid layouts
     # These layouts don't have grid structure, so we use a special reconstructed

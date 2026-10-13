@@ -318,6 +318,8 @@ class _BaseEnvironment(
         layout_type_used: str | None = None,
         layout_params_used: dict[str, Any] | None = None,
         regions: Regions | None = None,
+        *,
+        restored_from: str | None = None,
     ) -> None:
         """Initialize the Environment.
 
@@ -342,6 +344,9 @@ class _BaseEnvironment(
 
         regions : Regions or None, optional
             Initial named regions; an empty container is created when omitted.
+        restored_from : str, optional
+            Where a read-back environment's saved geometry came from; an invalid
+            saved graph is then reported against that data.
 
         """
         if layout is None:
@@ -378,7 +383,8 @@ class _BaseEnvironment(
         self.active_mask = None
         self._is_fitted = False  # Will be set by _setup_from_layout
         if layout_type_used is not None:
-            self._setup_from_layout()  # Populate attributes from the built layout
+            # Populate attributes from the built layout
+            self._setup_from_layout(restored_from=restored_from)
         if regions is not None:
             if not isinstance(regions, Regions):
                 raise TypeError(
@@ -856,12 +862,13 @@ class _BaseEnvironment(
         with the Environment. It copies essential geometric and connectivity
         information from the layout to the Environment's attributes.
         It also applies fallbacks for certain grid-specific attributes if the
-        layout is point-based to ensure consistency. Readers that restore saved
-        geometry onto the layout they rebuilt assign it to the layout first,
-        then call this method to synchronize the environment, advance its state
-        version and clear all analysis caches. Lookups a layout derives at build
-        time are not rebuilt, so swapping in a different layout or changing a
-        layout's bins is not supported.
+        layout is point-based to ensure consistency. It also advances the state
+        version, clears all analysis caches and publishes the geometry
+        read-only. Readers restore a saved graph onto the rebuilt layout before
+        the environment is constructed (``_from_saved_layout``), so this runs
+        once per environment. Lookups a layout derives at build time are not
+        rebuilt, so swapping in a different layout or changing a layout's bins
+        and calling this again is not supported.
 
         Parameters
         ----------

@@ -1409,6 +1409,92 @@ class EnvironmentFactories:
         return env_cls(name, layout_instance, kind, layout_params, regions=regions)
 
     @classmethod
+    def _from_saved_layout(
+        cls,
+        kind: LayoutType | str,
+        layout_params: dict[str, Any],
+        *,
+        name: str,
+        bin_centers: NDArray[np.float64],
+        connectivity: nx.Graph,
+        restored_from: str,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
+        regions: Regions | None = None,
+    ) -> Environment:
+        """Rebuild a saved environment through the factory path, built once.
+
+        The saved layout parameters rebuild the bins and every lookup derived
+        from them. The saved bin centers must match those bins. The saved graph
+        is authoritative for edges and their lengths (e.g. 4-connectivity or an
+        open polar axis), so it replaces the rebuilt graph, together with saved
+        extents, before the environment is constructed.
+
+        Parameters
+        ----------
+        kind : LayoutType or str
+            Saved layout type.
+        layout_params : dict
+            Saved layout build parameters.
+        name : str
+            Environment name.
+        bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+            Saved bin centers, checked against the rebuilt layout.
+        connectivity : networkx.Graph
+            Saved connectivity graph.
+        restored_from : str
+            Where the data came from, named in errors.
+        dimension_ranges : sequence of (float, float), optional
+            Saved extents, when the rebuilt layout type may differ from the
+            original (e.g. NWB stores every grid as a masked grid).
+        regions : Regions, optional
+            Regions to attach.
+
+        Returns
+        -------
+        Environment
+            The restored environment (the polar type when ``cls`` is polar).
+
+        Raises
+        ------
+        ValueError
+            If the saved bin centers do not match the rebuilt layout, or the
+            saved graph is invalid.
+        """
+        layout = cls._create_layout(kind, layout_params)
+        rebuilt = np.asarray(layout.bin_centers)
+        saved = np.asarray(bin_centers, dtype=np.float64)
+        # Tolerates float32 storage; a different grid is off by a fraction of a bin.
+        scale = max(1.0, float(np.abs(rebuilt).max(initial=0.0)))
+        if rebuilt.shape != saved.shape or not np.allclose(
+            rebuilt, saved, rtol=1e-6, atol=1e-6 * scale
+        ):
+            raise ValueError(
+                _format_error(
+                    f"The bin centers in {restored_from} do not match the "
+                    f"{kind} layout rebuilt from its saved parameters "
+                    f"({saved.shape[0]} saved vs {rebuilt.shape[0]} rebuilt bins).",
+                    why=(
+                        "Why: the saved layout parameters define the bins, so "
+                        "different centers mean the data was edited or written "
+                        "by an incompatible version."
+                    ),
+                    fix="re-save the environment with this version of neurospatial",
+                )
+            )
+        layout.connectivity = connectivity
+        if dimension_ranges is not None:
+            layout.dimension_ranges = dimension_ranges
+        env_cls = cast("type[Environment]", cls)
+        return env_cls(
+            name,
+            layout,
+            kind,
+            layout_params,
+            regions=regions,
+            restored_from=restored_from,
+        )
+
+    @classmethod
     def _create_layout(
         cls, kind: LayoutType | str, layout_params: dict[str, Any]
     ) -> LayoutEngine:

@@ -467,33 +467,15 @@ def from_file(path: PathLike) -> Environment:
     # Load arrays. allow_pickle=False is safe because to_file only stores plain
     # numeric arrays (bin_centers, active_mask, grid_edges_*); it also blocks
     # arbitrary-code execution from a tampered .npz. Use a context manager so
-    # the underlying file handle is closed promptly.
+    # the underlying file handle is closed promptly. The grid arrays follow from
+    # the saved layout parameters, so only bin_centers is read (and checked).
     with np.load(npz_path, allow_pickle=False) as arrays:
         # bin_centers: enforce float64 to match the in-memory from_dict path,
         # regardless of the dtype stored on disk.
         bin_centers = np.asarray(arrays["bin_centers"], dtype=np.float64)
 
-        # Reconstruct grid_edges from separate arrays
-        grid_edges = None
-        if "grid_shape" in metadata:
-            n_dims = metadata["n_dims"]
-            grid_edges_list = []
-            for i in range(n_dims):
-                key = f"grid_edges_{i}"
-                if key in arrays:
-                    grid_edges_list.append(arrays[key])
-            if grid_edges_list:
-                grid_edges = tuple(grid_edges_list)
-
-        # Reconstruct active_mask (read out of the NpzFile before it closes)
-        active_mask = arrays.get("active_mask", None)
-
     return _restore_environment(
-        metadata,
-        source=str(json_path),
-        bin_centers=bin_centers,
-        grid_edges=grid_edges,
-        active_mask=active_mask,
+        metadata, source=str(json_path), bin_centers=bin_centers
     )
 
 
@@ -502,26 +484,23 @@ def _restore_environment(
     *,
     source: str,
     bin_centers: NDArray[np.float64],
-    grid_edges: tuple[NDArray[np.float64], ...] | None,
-    active_mask: NDArray[np.bool_] | None,
 ) -> Environment:
-    """Rebuild an environment from saved metadata plus its saved arrays.
+    """Rebuild an environment from saved metadata plus its saved bin centers.
 
     Shared by :func:`from_file` and :func:`from_dict`, which differ only in
-    where the arrays are stored (``.npz`` file vs. inline lists).
+    where the arrays are stored (``.npz`` file vs. inline lists). The layout is
+    rebuilt from its saved parameters, the saved bin centers are checked against
+    it, and the saved graph replaces the rebuilt one before the environment is
+    constructed once.
 
     Parameters
     ----------
     metadata : dict
         The ``to_file`` JSON metadata or the ``to_dict`` dictionary.
     source : str
-        Where the data came from, named if its saved graph is invalid.
+        Where the data came from, named if it is inconsistent or invalid.
     bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
         Saved bin centers.
-    grid_edges : tuple of NDArray[np.float64] or None
-        Saved per-axis grid edges, if any.
-    active_mask : NDArray[np.bool_] or None
-        Saved active-bin mask, if any.
 
     Returns
     -------
@@ -531,13 +510,9 @@ def _restore_environment(
     from neurospatial.environment import Environment
     from neurospatial.regions import Region, Regions
 
-    connectivity = nx.node_link_graph(metadata["graph"], edges="links")
     dimension_ranges = None
     if "dimension_ranges" in metadata:
         dimension_ranges = [tuple(r) for r in metadata["dimension_ranges"]]
-    grid_shape = None
-    if "grid_shape" in metadata:
-        grid_shape = tuple(metadata["grid_shape"])
 
     # Convert lists back to numpy arrays, then decode the JSON-safe sentinels
     # written by _jsonsafe_layout_parameters so the parameters match the original.
@@ -546,34 +521,22 @@ def _restore_environment(
     )
 
     # Polar environments (coordinate_kind "polar") restore as the distinct
-    # EgocentricPolarEnvironment type; the saved connectivity (assigned below)
-    # already carries the corrected physical polar edge distances.
+    # EgocentricPolarEnvironment type; the saved connectivity already carries
+    # the physical polar edge distances and seams.
     env_cls: type[_BaseEnvironment] = Environment
     if metadata.get("coordinate_kind") == "polar":
         from neurospatial.environment.polar import EgocentricPolarEnvironment
 
         env_cls = EgocentricPolarEnvironment
-    env = env_cls.from_layout(
-        metadata["layout_type"], layout_params, name=metadata["name"]
+    env = env_cls._from_saved_layout(
+        metadata["layout_type"],
+        layout_params,
+        name=metadata["name"],
+        bin_centers=bin_centers,
+        connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
+        restored_from=source,
+        dimension_ranges=dimension_ranges,
     )
-
-    # Restore the saved geometry on its owner, then refresh the environment's
-    # views and invalidate caches through the shared setup path. Optional keys
-    # restore only geometry the rebuilt layout owns: absent keys, and the
-    # point-based fallbacks the environment derives (e.g. hexagonal and mesh
-    # layouts have no grid edges), keep the rebuilt layout's values.
-    layout = env.layout
-    layout.bin_centers = bin_centers
-    layout.connectivity = connectivity
-    for name, value in (
-        ("dimension_ranges", dimension_ranges),
-        ("grid_edges", grid_edges),
-        ("grid_shape", grid_shape),
-        ("active_mask", active_mask),
-    ):
-        if value is not None and getattr(layout, name, None) is not None:
-            setattr(layout, name, value)
-    env._setup_from_layout(restored_from=source)
 
     if metadata.get("regions"):
         env.regions = Regions([Region.from_dict(r) for r in metadata["regions"]])
@@ -711,23 +674,10 @@ def from_dict(data: dict[str, Any]) -> Environment:
             category=UserWarning,
         )
 
-    # Reconstruct arrays
+    # The grid arrays follow from the saved layout parameters, so only the bin
+    # centers are read (and checked against the rebuilt layout).
     bin_centers = np.array(data["bin_centers"], dtype=np.float64)
 
-    # Reconstruct grid_edges
-    grid_edges = None
-    if "grid_edges" in data:
-        grid_edges = tuple(np.array(e, dtype=np.float64) for e in data["grid_edges"])
-
-    # Reconstruct active_mask
-    active_mask = None
-    if "active_mask" in data:
-        active_mask = np.array(data["active_mask"], dtype=bool)
-
     return _restore_environment(
-        data,
-        source="the environment dictionary",
-        bin_centers=bin_centers,
-        grid_edges=grid_edges,
-        active_mask=active_mask,
+        data, source="the environment dictionary", bin_centers=bin_centers
     )

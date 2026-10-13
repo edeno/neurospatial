@@ -247,7 +247,7 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
 
 
 def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
-    """Absent keys and point-based fallbacks never overwrite the layout's own."""
+    """Readers take grid arrays from the rebuilt layout, not the saved data."""
     grid = _four_connected_grid()
     data = to_dict(grid)
     data.pop("grid_edges")
@@ -265,6 +265,35 @@ def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
     np.testing.assert_array_equal(
         restored.bin_at(hexagonal.bin_centers), np.arange(hexagonal.n_bins)
     )
+
+
+@pytest.mark.parametrize("how", ["dict", "file", "nwb"])
+def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
+    """Readers rebuild, restore the saved graph, then set the environment up once."""
+    from neurospatial.environment.core import _BaseEnvironment
+
+    original = _four_connected_grid()
+    setup = _BaseEnvironment._setup_from_layout
+    calls = []
+
+    def counting_setup(env, **kwargs):
+        calls.append(kwargs.get("restored_from"))
+        setup(env, **kwargs)
+
+    monkeypatch.setattr(_BaseEnvironment, "_setup_from_layout", counting_setup)
+    restored = _round_trip(original, how, tmp_path)
+    assert len(calls) == 1 and calls[0] is not None
+    assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
+
+
+def test_saved_bin_centers_must_match_the_rebuilt_layout():
+    data = to_dict(_four_connected_grid())
+    data["bin_centers"][0][0] += 1.0
+    with pytest.raises(
+        ValueError, match="bin centers in the environment dictionary do not match"
+    ) as exc:
+        from_dict(data)
+    assert "\nFix:" in str(exc.value)
 
 
 def test_invalid_saved_graph_names_the_saved_data():
