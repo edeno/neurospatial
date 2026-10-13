@@ -42,6 +42,11 @@
 
 ### Changed
 
+- Polar environments no longer define the twelve Cartesian methods. Accessing
+  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
+  `AttributeError`, with the same message. `hasattr` reports them as absent and
+  type checkers flag the call. Refusals inside shared methods name the call
+  that was made.
 - **Behavior change:** an environment's geometry is read-only once built:
   its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
   and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
@@ -106,6 +111,8 @@
 
 ### Fixed
 
+- The Euclidean `distance_to` refusal on polar environments no longer prints
+  `()()`.
 - Type checkers accept calls such as `env.smooth(field, bandwidth)` and
   `polar_env.to_dict()` on `Environment` and `EgocentricPolarEnvironment`;
   mypy previously reported "Invalid self argument".

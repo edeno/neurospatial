@@ -1,4 +1,4 @@
-"""Verify the EnvironmentProtocol stubs agree with the real Environment methods."""
+"""Verify shared and Cartesian protocol stubs agree with Environment methods."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ import inspect
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.environment._protocols import EnvironmentProtocol
+from neurospatial.environment._protocols import (
+    CartesianEnvironmentProtocol,
+    EnvironmentProtocol,
+)
 
 
 def _make_env() -> Environment:
@@ -36,7 +39,7 @@ def test_protocol_stub_matches_impl():
     assert proto_animate["speed"].default == real_animate["speed"].default == 1.0
 
     # --- occupancy ---
-    proto_occ = inspect.signature(EnvironmentProtocol.occupancy).parameters
+    proto_occ = inspect.signature(CartesianEnvironmentProtocol.occupancy).parameters
     real_occ = inspect.signature(env.occupancy).parameters
     assert proto_occ["max_gap"].default == 0.5
     assert proto_occ["max_gap"].default == real_occ["max_gap"].default

@@ -8,6 +8,11 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._exceptions import CartesianOnlyError
+from neurospatial.environment.cartesian import (
+    CARTESIAN_GRID_OPERATIONS,
+    CARTESIAN_OPERATIONS,
+)
 
 
 class TestFromPolarEgocentricBasic:
@@ -898,6 +903,82 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         """repr must identify the concrete polar type, not 'Environment'."""
         assert "EgocentricPolarEnvironment" in repr(polar_env)
 
+    @pytest.mark.parametrize("mode", ["deepcopy", "pickle"])
+    def test_copy_and_pickle_preserve_polar_refusals(self, polar_env, mode):
+        import copy
+        import pickle
+
+        restored = (
+            copy.deepcopy(polar_env)
+            if mode == "deepcopy"
+            else pickle.loads(pickle.dumps(polar_env))
+        )
+        assert type(restored) is type(polar_env)
+        np.testing.assert_array_equal(restored.bin_centers, polar_env.bin_centers)
+        assert not hasattr(restored, "bin_at")
+        with pytest.raises(CartesianOnlyError):
+            _ = restored.bin_at
+
+    def test_unknown_attribute_preserves_standard_attribute_error(self, polar_env):
+        with pytest.raises(AttributeError) as caught:
+            _ = polar_env.bin_att
+        assert type(caught.value) is AttributeError
+        assert caught.value.name == "bin_att"
+        assert caught.value.obj is polar_env
+
+    @pytest.mark.parametrize("name", sorted(CARTESIAN_OPERATIONS))
+    def test_refuses_each_cartesian_operation(self, polar_env, name):
+        assert not hasattr(polar_env, name)
+        with pytest.raises(CartesianOnlyError) as caught:
+            getattr(polar_env, name)
+        message = str(caught.value)
+        assert message.startswith(
+            f"EgocentricPolarEnvironment.{name}() is not available"
+        )
+        reason = (
+            "Cartesian-grid operation"
+            if name in CARTESIAN_GRID_OPERATIONS
+            else "Cartesian-coordinate operation"
+        )
+        assert f"({reason})" in message
+        assert isinstance(caught.value, NotImplementedError)
+
+    @pytest.mark.parametrize(
+        "call, operation",
+        [
+            (
+                lambda env: env.neighbors(np.array([5.0, 0.0])),
+                "neighbors() from a coordinate point",
+            ),
+            (
+                lambda env: env.bins_in_region("p"),
+                "bins_in_region() for a point region",
+            ),
+            (lambda env: env.region_mask("p"), "region_mask() for a point region"),
+            (
+                lambda env: env.transitions(
+                    times=np.array([0.0, 0.1]),
+                    positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
+                ),
+                "transitions() from times and positions",
+            ),
+            (
+                lambda env: env.distance_to([0], metric="euclidean"),
+                "distance_to(metric='euclidean')",
+            ),
+        ],
+    )
+    def test_refuses_cartesian_modes_of_shared_methods(
+        self, polar_env, call, operation
+    ):
+        polar_env.regions.add("p", point=(25.0, 0.0))
+        with pytest.raises(CartesianOnlyError) as caught:
+            call(polar_env)
+        assert str(caught.value).startswith(
+            f"EgocentricPolarEnvironment.{operation} is not available"
+        )
+        assert "()()" not in str(caught.value)
+
 
 class TestPolarSerializationRoundTrip:
     """The polar type must survive copy and to_file/from_file round-trips."""
@@ -1211,14 +1292,15 @@ class TestPolarTypeAndGeometry:
 
 # Public members polar inherits unchanged from the shared base, each checked on
 # (distance, angle) bins. A new shared-base member fails the test below until it
-# is checked on a polar environment and listed here, or overridden in
-# EgocentricPolarEnvironment (raising if it assumes Cartesian coordinates).
+# is checked on a polar environment and listed here, or moved to
+# CartesianCoordinates if it reads bin centers as Cartesian coordinates.
 _POLAR_INHERITED_MEMBERS = {
     "graph and diffusion operations on physical polar geometry": {
         "bin_sizes",
         "components",
         "compute_kernel",
         "diffuse",
+        "distance_to",
         "get_differential_operator",
         "get_divergence_operator",
         "neighbors",
@@ -1295,9 +1377,9 @@ def test_every_inherited_member_is_classified_for_polar():
     classified = set().union(*_POLAR_INHERITED_MEMBERS.values())
     assert not inherited - classified, (
         f"Check {sorted(inherited - classified)} on a polar (distance, angle) "
-        "environment, then list them in _POLAR_INHERITED_MEMBERS, or override "
-        "them in EgocentricPolarEnvironment (raising if they assume Cartesian "
-        "coordinates)."
+        "environment, then list them in _POLAR_INHERITED_MEMBERS, or move "
+        "them to CartesianCoordinates if they read bin centers as Cartesian "
+        "coordinates."
     )
     assert not classified - inherited, (
         f"Remove {sorted(classified - inherited)} from _POLAR_INHERITED_MEMBERS: "
@@ -1337,3 +1419,29 @@ def test_boundary_bins_respect_the_angular_seam(circular):
     if not circular:
         edge |= np.isclose(theta, theta.min()) | np.isclose(theta, theta.max())
     assert set(env.boundary_bins.tolist()) == set(np.flatnonzero(edge).tolist())
+
+
+def test_cartesian_operations_are_the_capability_methods():
+    """Every Cartesian method belongs to the capability and is absent from the base."""
+    from neurospatial.environment.cartesian import (
+        CARTESIAN_GRID_OPERATIONS,
+        CARTESIAN_OPERATIONS,
+    )
+    from neurospatial.environment.core import _BaseEnvironment
+
+    assert {
+        "apply_transform",
+        "bin_at",
+        "bin_sequence",
+        "bin_sequence_with_runs",
+        "contains",
+        "distance_between",
+        "interpolate",
+        "linear_to_nd",
+        "occupancy",
+        "rebin",
+        "subset",
+        "to_linear",
+    } == CARTESIAN_OPERATIONS
+    assert CARTESIAN_GRID_OPERATIONS <= CARTESIAN_OPERATIONS
+    assert not CARTESIAN_OPERATIONS & set(dir(_BaseEnvironment))

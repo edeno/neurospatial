@@ -127,7 +127,9 @@ class EnvironmentRegions:
                     f"Region point dimension {point_nd.shape[1]} "
                     f"does not match environment dimension {self.n_dims}.",
                 )
-            bin_idx = self.bin_at(point_nd)
+            bin_idx = self._require_cartesian(
+                "bins_in_region() for a point region"
+            ).bin_at(point_nd)
             return np.asarray(bin_idx[bin_idx != -1], dtype=np.intp)
 
         if region.kind == "polygon":
@@ -498,7 +500,9 @@ class EnvironmentRegions:
         polygon_regions = _Regions()
         for region in resolved:
             if region.kind == "point":
-                bin_idx = self.bin_at(np.asarray(region.data).reshape(1, -1))
+                bin_idx = self._require_cartesian(
+                    "region_mask() for a point region"
+                ).bin_at(np.asarray(region.data).reshape(1, -1))
                 if bin_idx[0] != -1:
                     mask[bin_idx[0]] = True
             else:

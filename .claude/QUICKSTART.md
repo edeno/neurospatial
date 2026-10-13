@@ -438,7 +438,8 @@ env = Environment.from_polar_egocentric(
 #   env.neighbors(...), env.path_between(...), env.reachable_from(...),
 #   env.distance_to(targets, metric="geodesic"), env.smooth(...)
 #
-# The Cartesian-only methods are UNAVAILABLE (they raise NotImplementedError)
+# Cartesian-only methods are absent. Access raises CartesianOnlyError,
+# both a NotImplementedError and an AttributeError; shared Cartesian modes refuse too.
 # because (distance, angle) pairs are not (x, y):
 #   env.bin_at(...), env.contains(...), env.distance_between(...),
 #   env.distance_to(..., metric="euclidean"), env.apply_transform(...)

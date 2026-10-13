@@ -31,6 +31,13 @@ Enforced by layout engines:
 
 The `Environment` class uses **mixin inheritance** to organize 6,000+ lines of functionality.
 
+`Environment` composes `CartesianCoordinates` with the shared
+`_BaseEnvironment`. Polar environments inherit the shared base and refuse
+Cartesian operations through one table of the capability's methods. Shared
+methods use `_require_cartesian` for their Cartesian modes. Both concrete types
+are checked against the shared protocol; `Environment` is also checked against
+`CartesianEnvironmentProtocol`.
+
 ### Key Constraints
 
 - **`_BaseEnvironment` is the `@dataclass`** - All mixins MUST be plain classes

@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 
 class EnvironmentProtocol(Protocol):
-    """Interface that Cartesian and polar environments provide to mixins.
+    """Shared interface that Cartesian and polar environments provide to mixins.
 
     Mixins annotate ``self`` as ``EnvironmentProtocol`` (or the ``SelfEnv``
     TypeVar) instead of ``Environment`` to avoid "erased type" errors in mypy.
@@ -95,6 +95,10 @@ class EnvironmentProtocol(Protocol):
 
     def _require_face_geometry(self, operation: str) -> FaceGeometry:
         """Cached cell faces, or an error naming ``operation`` if unsupported."""
+        ...
+
+    def _require_cartesian(self, operation: str) -> CartesianEnvironmentProtocol:
+        """This environment typed as Cartesian, or raise naming ``operation``."""
         ...
 
     # Computed properties
@@ -142,34 +146,6 @@ class EnvironmentProtocol(Protocol):
         ...
 
     # Methods that mixins call
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Find bin indices for given points (-1 for points outside)."""
-        ...
-
-    def bin_sequence(
-        self,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        dedup: bool = True,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> NDArray[np.int32]:
-        """Convert a trajectory to a sequence of bin indices."""
-        ...
-
-    def bin_sequence_with_runs(
-        self,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> BinSequenceWithRuns:
-        """Convert a trajectory to a bin sequence plus per-run boundaries."""
-        ...
 
     def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
         """Get integer bin indices within a named region."""
@@ -238,30 +214,6 @@ class EnvironmentProtocol(Protocol):
         """Reduced-rank MRF penalty basis for the penalized-Poisson GAM."""
         ...
 
-    def occupancy(
-        self,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        speed: NDArray[np.float64] | None = None,
-        min_speed: float | None = None,
-        max_gap: float | None = 0.5,
-        bandwidth: float | None = None,
-        time_allocation: Literal["start", "linear"] = "start",
-        return_seconds: bool = True,
-    ) -> NDArray[np.float64]:
-        """Compute spatial occupancy (time per bin) from position data."""
-        ...
-
-    def distance_between(
-        self,
-        point1: NDArray[np.float64],
-        point2: NDArray[np.float64],
-        edge_weight: str = "distance",
-    ) -> float:
-        """Compute graph (shortest-path) distance between two points."""
-        ...
-
     # Published geometry: read-only views, replaced whole by _setup_from_layout.
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...
@@ -280,15 +232,6 @@ class EnvironmentProtocol(Protocol):
 
     @property
     def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-    # Linearization methods (1D environments)
-    def to_linear(self, nd_position: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Convert N-D positions to 1D linear positions (1D environments only)."""
-        ...
-
-    def linear_to_nd(self, linear_position: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Convert 1D linear positions to N-D coordinates (1D environments only)."""
-        ...
 
     # Visualization and animation methods
     def animate_fields(
@@ -325,6 +268,71 @@ class EnvironmentProtocol(Protocol):
         ...
 
 
+class CartesianEnvironmentProtocol(EnvironmentProtocol, Protocol):
+    """Shared environment interface plus Cartesian coordinate operations."""
+
+    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Find bin indices for given points (-1 for points outside)."""
+        ...
+
+    def bin_sequence(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool = True,
+        outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
+    ) -> NDArray[np.int32]:
+        """Convert a trajectory to a sequence of bin indices."""
+        ...
+
+    def bin_sequence_with_runs(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
+    ) -> BinSequenceWithRuns:
+        """Convert a trajectory to a bin sequence plus per-run boundaries."""
+        ...
+
+    def occupancy(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        speed: NDArray[np.float64] | None = None,
+        min_speed: float | None = None,
+        max_gap: float | None = 0.5,
+        bandwidth: float | None = None,
+        time_allocation: Literal["start", "linear"] = "start",
+        return_seconds: bool = True,
+    ) -> NDArray[np.float64]:
+        """Compute spatial occupancy (time per bin) from position data."""
+        ...
+
+    def distance_between(
+        self,
+        point1: NDArray[np.float64],
+        point2: NDArray[np.float64],
+        edge_weight: str = "distance",
+    ) -> float:
+        """Compute graph (shortest-path) distance between two points."""
+        ...
+
+    def to_linear(self, nd_position: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Convert N-D positions to 1D linear positions (1D environments only)."""
+        ...
+
+    def linear_to_nd(self, linear_position: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Convert 1D linear positions to N-D coordinates (1D environments only)."""
+        ...
+
+
 class TrajectoryBinningConsumer(Protocol):
     """Point lookup, bin counts and layout for binning a trajectory."""
 
@@ -348,7 +356,7 @@ class TrajectoryBinningConsumer(Protocol):
 
 
 class TransitionsConsumer(Protocol):
-    """Graph, bin count, kernel and trajectory binning for transition matrices."""
+    """Graph, kernel and access to Cartesian trajectory binning for transitions."""
 
     @property
     def n_bins(self) -> int: ...
@@ -360,16 +368,9 @@ class TransitionsConsumer(Protocol):
         self, bandwidth: float, *, mode: KernelMode = "density", cache: bool = True
     ) -> NDArray[np.float64]: ...
 
-    def bin_sequence(
-        self,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        dedup: bool = True,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> NDArray[np.int32]: ...
+    def _require_cartesian(self, operation: str) -> CartesianEnvironmentProtocol:
+        """This environment typed as Cartesian, or raise naming ``operation``."""
+        ...
 
 
 class RebinConsumer(Protocol):
@@ -447,3 +448,5 @@ class InterpolationConsumer(Protocol):
 # Lets mixins access Protocol attributes while still accepting concrete
 # Environment instances without "Invalid self argument" errors.
 SelfEnv = TypeVar("SelfEnv", bound=EnvironmentProtocol)
+
+SelfCartesianEnv = TypeVar("SelfCartesianEnv", bound=CartesianEnvironmentProtocol)

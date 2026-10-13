@@ -2,13 +2,13 @@
 
 This module provides methods for extracting metrics and properties from
 spatial environments, including boundary detection, attribute extraction,
-and coordinate transformations for 1D linearized environments.
+and metadata for 1D linearized environments.
 
 Key Features
 ------------
 - Boundary bin detection for identifying edge bins
 - Attribute extraction to DataFrames for analysis
-- Linearization support for 1D environments (GraphLayout)
+- Linearization metadata for 1D environments (GraphLayout)
 - Cached properties for efficient repeated access
 
 Notes
@@ -51,7 +51,7 @@ This class is not used directly. Instead, it's mixed into Environment:
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -69,7 +69,6 @@ class EnvironmentMetrics:
     from spatial environments:
     - Boundary detection
     - Attribute extraction to DataFrames
-    - Linearization (for 1D environments)
     - Linearization properties
 
     All methods assume the Environment is fitted (has been initialized
@@ -333,174 +332,3 @@ class EnvironmentMetrics:
             # Keep original vector column for backward compatibility
 
         return df
-
-    @check_fitted
-    def to_linear(
-        self: SelfEnv,
-        nd_position: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """
-        Convert N-D positions to 1D linear coordinates.
-
-        For 1D linearized environments (created with `from_graph()`), this
-        converts N-D positions (e.g., 2D x,y coordinates) to their corresponding
-        1D linear coordinates along the linearized track.
-
-        Parameters
-        ----------
-        nd_position : NDArray[np.floating], shape (n_samples, n_dims)
-            N-D position array in the original coordinate space.
-            For 2D environments, shape is (n_samples, 2).
-
-        Returns
-        -------
-        NDArray[np.floating], shape (n_samples,)
-            1D linear coordinates corresponding to the input positions.
-
-        Raises
-        ------
-        AttributeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
-
-        Notes
-        -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
-        - For N-D environments, use `bin_at()` to map positions to bins instead
-        - Linear coordinates start at 0 and increase monotonically along the track
-
-        See Also
-        --------
-        linear_to_nd : Convert 1D linear coordinates back to N-D positions
-        Environment.from_graph : Create 1D linearized environment
-        is_linearized_track : Check if environment supports linearization
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> import networkx as nx
-        >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 2D position to 1D linear coordinate
-        >>> position_2d = np.array(
-        ...     [[5.0, 0.0]]
-        ... )  # Halfway along track  # doctest: +SKIP
-        >>> position_1d = env.to_linear(position_2d)  # doctest: +SKIP
-        >>> print(f"Linear position: {position_1d[0]:.1f}")  # doctest: +SKIP
-        Linear position: 5.0
-
-        """
-        if not self._is_linearized_track_env:
-            msg = (
-                "to_linear() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_at() to map positions to bins for N-D environments."
-            )
-            raise AttributeError(msg)
-
-        # Delegate to layout's linearization method
-        if not hasattr(self.layout, "to_linear"):
-            msg = (
-                "Layout does not support linearization. "
-                "This should not happen for GraphLayout - please report this bug."
-            )
-            raise AttributeError(msg)
-
-        # Cast to Any to work around Protocol limitation (GraphLayout has this method)
-        return cast(
-            "NDArray[np.float64]", cast("Any", self.layout).to_linear(nd_position)
-        )
-
-    @check_fitted
-    def linear_to_nd(
-        self: SelfEnv,
-        linear_position: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """
-        Convert 1D linear coordinates to N-D positions.
-
-        For 1D linearized environments (created with `from_graph()`), this
-        converts 1D linear coordinates back to the original N-D coordinate
-        space (e.g., 2D x,y coordinates).
-
-        Parameters
-        ----------
-        linear_position : NDArray[np.floating], shape (n_samples,)
-            1D linear coordinate array.
-
-        Returns
-        -------
-        NDArray[np.floating], shape (n_samples, n_dims)
-            N-D positions corresponding to the input linear coordinates.
-            For 2D environments, shape is (n_samples, 2).
-
-        Raises
-        ------
-        AttributeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
-
-        Notes
-        -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
-        - Inverse operation of `to_linear()`
-        - Useful for plotting 1D data in the original 2D space
-
-        See Also
-        --------
-        to_linear : Convert N-D positions to 1D linear coordinates
-        Environment.from_graph : Create 1D linearized environment
-        is_linearized_track : Check if environment supports linearization
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> import networkx as nx
-        >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 1D linear coordinate to 2D position
-        >>> linear_pos = np.array([5.0])  # Halfway along track  # doctest: +SKIP
-        >>> position_2d = env.linear_to_nd(linear_pos)  # doctest: +SKIP
-        >>> print(f"2D position: {position_2d[0]}")  # doctest: +SKIP
-        2D position: [5. 0.]
-
-        """
-        if not self._is_linearized_track_env:
-            msg = (
-                "linear_to_nd() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_center_of() to get bin centers for N-D environments."
-            )
-            raise AttributeError(msg)
-
-        # Delegate to layout's linearization method
-        if not hasattr(self.layout, "linear_to_nd"):
-            msg = (
-                "Layout does not support linearization. "
-                "This should not happen for GraphLayout - please report this bug."
-            )
-            raise AttributeError(msg)
-
-        # Cast to Any to work around Protocol limitation (GraphLayout has this method)
-        return cast(
-            "NDArray[np.float64]",
-            cast("Any", self.layout).linear_to_nd(linear_position),
-        )

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.environment._protocols import (
+        CartesianEnvironmentProtocol,
         EnvironmentProtocol,
         InterpolationConsumer,
         RebinConsumer,
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
         TrajectoryBinningConsumer,
         TransitionsConsumer,
     )
-    from neurospatial.environment.core import _BaseEnvironment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
 
     def _environment(env: EnvironmentProtocol) -> None: ...
@@ -27,12 +27,12 @@ if TYPE_CHECKING:
     def _check(
         cartesian: Environment,
         polar: EgocentricPolarEnvironment,
-        base: _BaseEnvironment,
         field: NDArray[np.float64],
     ) -> None:
         _environment(cartesian)
         _environment(polar)
-        _environment(base)
+        _cartesian: CartesianEnvironmentProtocol = cartesian
+        _ = polar.bin_at  # type: ignore[attr-defined]
         assert_type(cartesian.smooth(field, 1.0), NDArray[np.float64])
         assert_type(polar.smooth(field, 1.0), NDArray[np.float64])
         assert_type(cartesian.diffuse(field, 1.0), NDArray[np.float64])

@@ -491,8 +491,9 @@ egocentric = compute_egocentric_rate(
 distance and `bin_centers[:, 1]` is angle in radians, and its connectivity
 edges carry physically correct polar lengths (arc `r·Δθ`, radial `Δr`,
 diagonal `sqrt(Δr² + (r·Δθ)²)`). Cartesian-only methods (`bin_at`, `contains`,
-`distance_between`, `distance_to(metric="euclidean")`, `apply_transform`) raise
-`NotImplementedError`; use graph operations (`neighbors`, `path_between`,
+`distance_between`, `apply_transform`) are absent; accessing one raises
+`CartesianOnlyError`, a `NotImplementedError` and an `AttributeError`. Shared
+Cartesian modes, including `distance_to(metric="euclidean")`, also refuse. Use graph operations (`neighbors`, `path_between`,
 `reachable_from`, `distance_to(metric="geodesic")`, `smooth`) instead.
 
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)

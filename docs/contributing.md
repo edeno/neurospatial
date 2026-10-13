@@ -190,9 +190,10 @@ described above: updates go through `_setup_from_layout`, and derived values
 use `versioned_cached_property` caches.
 
 An operation that interprets `bin_centers` as Cartesian `(x, y[, z])`
-coordinates must not run on a polar environment. Currently
-`EgocentricPolarEnvironment` overrides each such method to refuse it; new
-methods must be classified by
+coordinates belongs to `CartesianCoordinates`, composed by `Environment`.
+Polar environments do not inherit it. A shared method with a Cartesian mode
+calls `self._require_cartesian("<call>")`; a new coordinate system defines this
+guard to refuse unsupported calls and is covered by
 `test_every_inherited_member_is_classified_for_polar`. Shared coordinate math
 (distances, length scales and axis labels) should ask a per-type coordinate
 system. Gaussian smoothing and `plot_field` still test `_POLAR` and are being
