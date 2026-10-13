@@ -15,7 +15,7 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -502,19 +502,21 @@ class TestTimerContextManager:
         with _loaded_benchmark_module() as module:
             yield module
 
-    def test_timer_measures_elapsed_time(self, benchmark_module):
-        """Timer should measure elapsed time correctly."""
+    def test_timer_measures_elapsed_time(self, benchmark_module, monkeypatch):
+        """Timer reports the perf_counter difference across the block."""
         if not hasattr(benchmark_module, "timer"):
             pytest.skip("timer not found")
 
-        import time
+        # A fake clock keeps the test independent of OS sleep precision.
+        clock = iter([10.0, 10.25])
+        monkeypatch.setattr(
+            benchmark_module, "time", SimpleNamespace(perf_counter=lambda: next(clock))
+        )
 
         with benchmark_module.timer() as t:
-            time.sleep(0.01)  # Sleep 10ms
+            pass
 
-        # Should measure at least 10ms (with some tolerance)
-        assert t["elapsed"] >= 0.009  # 9ms tolerance
-        assert t["elapsed"] < 0.1  # Should be well under 100ms
+        assert t["elapsed"] == pytest.approx(0.25)
 
 
 class TestScriptIntegration:
