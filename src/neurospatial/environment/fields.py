@@ -868,7 +868,7 @@ class EnvironmentFields:
         return {}
 
     @versioned_cached_property
-    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
+    def _mrf_eigenbasis(self: EnvironmentProtocol) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
         A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``
@@ -881,7 +881,7 @@ class EnvironmentFields:
         a dense ``(n, n)`` basis (dense solves stay call-local). Distinct from
         :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
         """
-        n = cast("EnvironmentProtocol", self).n_bins
+        n = self.n_bins
         return {
             "Q": np.zeros((n, 0)),
             "Lam": np.zeros(0),
