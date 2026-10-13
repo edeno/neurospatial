@@ -85,3 +85,15 @@ def full_grid_env():
     rng = np.random.default_rng(3)
     pts = rng.uniform(0.0, 20.0, size=(4000, 2))
     return Environment.from_samples(pts, bin_size=2.0, bin_count_threshold=1)
+
+
+@pytest.fixture
+def masked_grid_twins() -> tuple[Environment, Environment]:
+    """Identical rectangular geometry from sample and mask factories."""
+    positions = np.random.default_rng(0).uniform(0, 30, (300, 2))
+    env = Environment.from_samples(positions, bin_size=3.0)
+    assert env.active_mask is not None
+    assert env.grid_edges is not None
+    assert env.n_bins < env.active_mask.size
+    twin = Environment.from_grid_mask(env.active_mask, grid_edges=env.grid_edges)
+    return env, twin

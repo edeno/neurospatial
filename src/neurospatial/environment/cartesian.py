@@ -15,6 +15,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.environment._protocols import SelfCartesianEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.fields import _interpolate
@@ -28,6 +29,10 @@ from neurospatial.environment.transforms import (
     _grid_subset,
     _rebin,
     _subset_mask,
+)
+from neurospatial.layout._capabilities import (
+    RectilinearGridProvider,
+    TrackLinearizationProvider,
 )
 
 if TYPE_CHECKING:
@@ -310,18 +315,16 @@ class CartesianCoordinates:
             )
             raise AttributeError(msg)
 
-        # Delegate to layout's linearization method
-        if not hasattr(self.layout, "to_linear"):
-            msg = (
-                "Layout does not support linearization. "
-                "This should not happen for GraphLayout - please report this bug."
+        if not isinstance(self.layout, TrackLinearizationProvider):
+            raise AttributeError(
+                _format_error(
+                    "to_linear() needs the track graph that defines the linearization, and "
+                    f"this environment's {self.layout._layout_type_tag} layout does not keep it.",
+                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
+                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
+                )
             )
-            raise AttributeError(msg)
-
-        # Cast to Any to work around Protocol limitation (GraphLayout has this method)
-        return cast(
-            "NDArray[np.float64]", cast("Any", self.layout).to_linear(nd_position)
-        )
+        return self.layout.to_linear(nd_position)
 
     @check_fitted
     def linear_to_nd(
@@ -394,19 +397,16 @@ class CartesianCoordinates:
             )
             raise AttributeError(msg)
 
-        # Delegate to layout's linearization method
-        if not hasattr(self.layout, "linear_to_nd"):
-            msg = (
-                "Layout does not support linearization. "
-                "This should not happen for GraphLayout - please report this bug."
+        if not isinstance(self.layout, TrackLinearizationProvider):
+            raise AttributeError(
+                _format_error(
+                    "linear_to_nd() needs the track graph that defines the linearization, and "
+                    f"this environment's {self.layout._layout_type_tag} layout does not keep it.",
+                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
+                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
+                )
             )
-            raise AttributeError(msg)
-
-        # Cast to Any to work around Protocol limitation (GraphLayout has this method)
-        return cast(
-            "NDArray[np.float64]",
-            cast("Any", self.layout).linear_to_nd(linear_position),
-        )
+        return self.layout.linear_to_nd(linear_position)
 
     @check_fitted
     def occupancy(
@@ -457,7 +457,7 @@ class CartesianCoordinates:
 
             - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
             - 'linear': Split Δt proportionally across bins traversed by
-              straight-line path (more accurate, RegularGridLayout only).
+              straight-line path (grid layouts with rectangular cells).
         return_seconds : bool, default=True
             If True, return time in seconds (time-weighted occupancy).
             If False, return sample counts (unweighted, counts number of
@@ -488,7 +488,7 @@ class CartesianCoordinates:
             If ``times`` contains non-finite values (NaN or Inf). The error
             names ``times`` and the first offending index.
         NotImplementedError
-            If time_allocation='linear' is used on non-RegularGridLayout.
+            If time_allocation='linear' is used without rectangular grid cells.
 
         See Also
         --------
@@ -507,7 +507,7 @@ class CartesianCoordinates:
         - time_allocation='linear': Splits Δt proportionally across all bins
           traversed by the straight-line path between consecutive samples.
           More accurate for trajectories that cross multiple bins, but only
-          supported on RegularGridLayout. Requires ray-grid intersection
+          supported on layouts with rectangular grid cells. Requires ray-grid intersection
           calculations.
 
         **Mass conservation**: The sum of the returned occupancy array equals
@@ -520,6 +520,10 @@ class CartesianCoordinates:
         - Δt ≤ max_gap (if max_gap is not None)
         - speed[k] ≥ min_speed (if min_speed is not None)
         - positions[k] is inside environment
+
+        Linear allocation works on grids built with ``from_samples``,
+        ``from_grid_mask``, ``from_pixel_mask``, ``from_polygon``, and grids
+        read from NWB. Inactive cells receive no time.
 
         For ``time_allocation='linear'`` on a masked grid (one with inactive
         bins), any time the straight-line path spends crossing **inactive**
@@ -748,7 +752,7 @@ class CartesianCoordinates:
 
         Evaluates bin-valued fields at continuous query points using either
         nearest-neighbor or linear interpolation. Nearest mode works on all
-        layout types; linear mode requires regular grid layouts.
+        layout types; linear mode requires grid layouts with rectangular cells.
 
         Parameters
         ----------
@@ -764,7 +768,9 @@ class CartesianCoordinates:
             - 'nearest': Use value of nearest bin center (all layouts).
               Points outside environment bounds return NaN.
             - 'linear': Bilinear (2D) or trilinear (3D) interpolation for
-              regular grids. Only supported for RegularGridLayout.
+              grids with rectangular cells: ``from_samples``, ``from_grid_mask``,
+              ``from_pixel_mask``, ``from_polygon``, and grids read from NWB.
+              Inactive cells return NaN.
               Points outside grid bounds return NaN.
 
         Returns
@@ -1023,39 +1029,11 @@ class CartesianCoordinates:
         mask = _subset_mask(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
         )
-        # --- Grid-env fast path: build via Environment.from_grid_mask ----------
-        #
-        # Previously the subset path produced an inline `SubsetLayout` whose
-        # _layout_type_tag was the unregistered string "subset", which
-        # broke `to_file` / `from_file` (silent persistence loss --
-        # users could subset(), save, restart, and lose the env).
-        #
-        # For 2-D / N-D grid envs (RegularGrid, MaskedGrid, ImageMask,
-        # Hexagonal, ShapelyPolygon), we have a `grid_shape` +
-        # `grid_edges` + `active_mask` triple that fully describes the
-        # spatial discretization. Filter the existing active mask down
-        # to the selected bins and rebuild via `from_grid_mask` -- the
-        # resulting env uses the canonical "MaskedGrid" layout,
-        # round-trips through `to_file` / `from_file`, and shares the
-        # existing layout serializer.
-        #
-        # Graph envs (1-D linearized tracks) ALSO populate `grid_shape`
-        # / `grid_edges` / `active_mask`, but they are 1-D objects
-        # embedded in a 2-D world (bin_centers shape (n_bins, 2)). If we
-        # routed them through `from_grid_mask` we'd build a MaskedGrid whose
-        # bin_centers are flat 1-D linearized positions, dropping the
-        # 2-D embedding. Detect them via `self.is_linearized_track` and fall through
-        # to the inline `SubsetLayout` path below; that path is still
-        # not serializable, but is preserved so existing graph-env
-        # subset call sites don't silently corrupt the dimensionality.
-        # Graph subset will get its own registered layout type later.
-        is_grid_env = (
-            not self.is_linearized_track
-            and self.active_mask is not None
-            and self.grid_shape is not None
-            and self.grid_edges is not None
-            and len(self.grid_edges) > 0
-        )
+        # Rectangular-grid layouts rebuild selected cells with from_grid_mask
+        # so subsets round-trip through the registered mask layout. Hexagonal,
+        # mesh, track, reconstructed and graph-subset layouts lack the method
+        # and keep the graph fallback, preserving their coordinate embedding.
+        is_grid_env = isinstance(self.layout, RectilinearGridProvider)
         return _grid_subset(self, mask) if is_grid_env else _graph_subset(self, mask)
 
     @check_fitted

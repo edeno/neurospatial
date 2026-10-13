@@ -33,6 +33,7 @@ from neurospatial.environment._protocols import (
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.layout._capabilities import require_rectilinear_grid
 from neurospatial.layout._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
@@ -243,7 +244,7 @@ def _interpolate_linear(
     Raises
     ------
     NotImplementedError
-        If layout is not RegularGridLayout.
+        If layout has no rectangular grid cells.
 
     Notes
     -----
@@ -253,15 +254,11 @@ def _interpolate_linear(
     ``fill_value=np.nan`` behavior for points outside the grid entirely.
 
     """
-    # Check layout type - must be RegularGridLayout, not masked/polygon layouts
-    # Use _layout_type_tag to avoid mypy Protocol isinstance issues
-    if layout._layout_type_tag != "RegularGrid":
-        raise NotImplementedError(
-            f"Linear interpolation (mode='linear') is only supported for "
-            f"RegularGridLayout. Current layout type: {layout._layout_type_tag}. "
-            f"Use mode='nearest' for non-grid layouts, or create a regular grid "
-            f"environment with Environment.from_samples()."
-        )
+    grid = require_rectilinear_grid(
+        layout,
+        "interpolate(mode='linear')",
+        fix="use mode='nearest', which works on every layout",
+    )
 
     # Import scipy
     try:
@@ -271,13 +268,8 @@ def _interpolate_linear(
             "Linear interpolation requires scipy. Install with: pip install scipy"
         ) from e
 
-    # Get grid properties (we know layout has these from the check above)
-    # Cast to Any to work around mypy Protocol limitation
-    from typing import cast
-
-    layout_any = cast("Any", layout)
-    grid_shape: tuple[int, ...] = layout_any.grid_shape
-    grid_edges: tuple[NDArray[np.float64], ...] = layout_any.grid_edges
+    grid_shape = grid.shape
+    grid_edges = grid.edges
     n_dims = len(grid_shape)
 
     # Scatter active-bin values into a full-grid array before reshaping.
@@ -287,8 +279,8 @@ def _interpolate_linear(
     # which the RegularGridInterpolator (fill_value=np.nan) already treats
     # as "no data" — query points over a hole interpolate to NaN.
     n_full = int(np.prod(grid_shape))
-    active_mask = getattr(layout, "active_mask", None)
-    if active_mask is None or field.shape[0] == n_full:
+    active_mask = grid.active_mask
+    if field.shape[0] == n_full:
         # Fully-active grid: field already covers every cell.
         field_grid = field.reshape(grid_shape)
     else:

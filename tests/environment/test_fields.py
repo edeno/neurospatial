@@ -507,7 +507,9 @@ class TestInterpolate:
         field = rng.random(graph_env.n_bins)
         query_points = graph_env.bin_centers[:2]
 
-        with pytest.raises(NotImplementedError, match=r"Linear interpolation.*only"):
+        with pytest.raises(
+            NotImplementedError, match=r"needs a grid of axis-aligned rectangular cells"
+        ):
             graph_env.interpolate(field, query_points, mode="linear")
 
 

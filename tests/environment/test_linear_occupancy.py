@@ -172,9 +172,9 @@ class TestLinearOccupancyMassConservation:
 
 
 class TestLinearOccupancyLayoutCompatibility:
-    """Test that linear allocation only works on RegularGridLayout."""
+    """Test linear allocation on layouts with rectangular cells."""
 
-    def test_linear_allocation_requires_regular_grid(self):
+    def test_linear_allocation_requires_rectangular_cells(self):
         """Test that linear allocation raises error on non-grid layouts."""
         # Create graph layout (1D track)
         from track_linearization import make_track_graph
@@ -195,27 +195,44 @@ class TestLinearOccupancyLayoutCompatibility:
         # Should raise NotImplementedError
         with pytest.raises(
             NotImplementedError,
-            match=r"time_allocation='linear' is only supported.*RegularGridLayout",
+            match=r"needs a grid of axis-aligned rectangular cells",
         ):
             env.occupancy(times, positions, time_allocation="linear")
 
     def test_linear_allocation_on_polygon_layout(self):
-        """Test that linear allocation raises error on polygon-bounded layout."""
-        from shapely.geometry import box
+        """An inside path on a polygon grid conserves its elapsed time."""
+        from shapely.geometry import Point
 
-        # Create polygon layout
-        polygon = box(0, 0, 9, 9)
-        env = Environment.from_polygon(polygon, bin_size=1.0)
+        env = Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0)
+        times = np.array([0.0, 0.1, 0.2])
+        positions = np.array([[10.0, 15.0], [15.0, 15.0], [20.0, 15.0]])
+        occupancy = env.occupancy(times, positions, time_allocation="linear")
+        assert occupancy.sum() == pytest.approx(times[-1] - times[0])
 
-        times = np.array([0.0, 1.0])
-        trajectory = np.array([[0.5, 0.5], [1.5, 1.5]])
 
-        # Should raise NotImplementedError (polygon layout is not RegularGridLayout)
-        with pytest.raises(
-            NotImplementedError,
-            match=r"time_allocation='linear'.*RegularGridLayout",
-        ):
-            env.occupancy(times, trajectory, time_allocation="linear")
+def test_linear_occupancy_skips_time_in_inactive_cells():
+    """A crossing assigns time only to active cells along its straight path."""
+    env = Environment.from_grid_mask(
+        np.array([[True], [False], [True]]),
+        grid_edges=(np.arange(4.0), np.arange(2.0)),
+    )
+    occupancy = env.occupancy(
+        np.array([0.0, 0.3]),
+        np.array([[0.5, 0.5], [2.5, 0.5]]),
+        time_allocation="linear",
+    )
+    np.testing.assert_allclose(occupancy, [0.075, 0.075], rtol=0, atol=1e-14)
+
+
+def test_linear_occupancy_matches_masked_grid_twin(masked_grid_twins):
+    """Time allocated across identical masks is independent of the factory."""
+    env, twin = masked_grid_twins
+    times = np.arange(10) * 0.1
+    positions = env.bin_centers[np.linspace(0, env.n_bins - 1, 10, dtype=int)]
+    expected = env.occupancy(times, positions, time_allocation="linear")
+    np.testing.assert_array_equal(
+        twin.occupancy(times, positions, time_allocation="linear"), expected
+    )
 
 
 class TestLinearOccupancyValidation:

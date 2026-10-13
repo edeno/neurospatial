@@ -590,14 +590,14 @@ class TestLinearTimeAllocation:
     """Tests for linear time allocation (time_allocation='linear').
 
     Tests the linear allocation mode that splits time intervals across
-    bins traversed by ray-grid intersection. Requires RegularGridLayout.
+    bins traversed by ray-grid intersection. Requires rectangular grid cells.
     """
 
-    def test_linear_allocation_requires_regular_grid(self, simple_graph_env):
-        """Test that linear allocation requires RegularGridLayout.
+    def test_linear_allocation_requires_rectangular_cells(self, simple_graph_env):
+        """Test that linear allocation requires rectangular grid cells.
 
         Tests that time_allocation='linear' raises NotImplementedError
-        for non-RegularGrid layouts.
+        for layouts without rectangular cells.
         """
         times = np.array([0.0, 1.0, 2.0])
         # Create positions - graph_env expects 2D coordinates
@@ -605,7 +605,7 @@ class TestLinearTimeAllocation:
         positions = np.array([[0.0, 0.0], [0.5, 0.0], [1.0, 0.0]])
 
         with pytest.raises(
-            NotImplementedError, match="only supported for RegularGridLayout"
+            NotImplementedError, match="needs a grid of axis-aligned rectangular cells"
         ):
             simple_graph_env.occupancy(times, positions, time_allocation="linear")
 
@@ -647,7 +647,7 @@ class TestLinearTimeAllocation:
         This tests the full ray-grid intersection algorithm.
         """
         # Create a simple RegularGrid environment (not MaskedGrid)
-        # Linear allocation requires RegularGridLayout
+        # Linear allocation uses the grid cell geometry
         env = Environment.from_samples(
             positions=np.array([[0.0, 0.0], [10.0, 10.0]]),
             bin_size=2.0,
@@ -770,7 +770,7 @@ class TestRayGridIntersection:
         This test verifies the function executes without error.
         """
         # Create a simple RegularGrid environment (not MaskedGrid)
-        # Linear allocation requires RegularGridLayout
+        # Linear allocation uses the grid cell geometry
         env = Environment.from_samples(
             positions=np.array([[0.0, 0.0], [10.0, 10.0]]),
             bin_size=2.0,

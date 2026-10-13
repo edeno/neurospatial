@@ -42,6 +42,11 @@
 
 ### Changed
 
+- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
+  on environments built with `from_polygon`, `from_grid_mask` and
+  `from_pixel_mask`, and on grid environments read from NWB. They previously
+  required a `RegularGrid` layout. Inactive cells behave as on masked
+  `from_samples` environments.
 - Polar environments no longer define the twelve Cartesian methods. Accessing
   one raises `CartesianOnlyError`, both a `NotImplementedError` and an
   `AttributeError`, with the same message. `hasattr` reports them as absent and
@@ -111,6 +116,9 @@
 
 ### Fixed
 
+- `to_linear()` and `linear_to_nd()` on tracks read from NWB explain that the
+  track graph is not stored and how to rebuild it, instead of requesting a bug
+  report.
 - The Euclidean `distance_to` refusal on polar environments no longer prints
   `()()`.
 - Type checkers accept calls such as `env.smooth(field, bandwidth)` and

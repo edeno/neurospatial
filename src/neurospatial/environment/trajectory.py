@@ -29,7 +29,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
@@ -39,6 +39,7 @@ from neurospatial._intervals import as_intervals
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
+from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear_grid
 
 if TYPE_CHECKING:
     import scipy.sparse
@@ -356,16 +357,15 @@ def _occupancy(
         raise ValueError(
             f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
             "Use 'start' for simple allocation (all layouts) or 'linear' for "
-            "ray-grid intersection (RegularGridLayout only)."
+            "ray-grid intersection (grid layouts with rectangular cells only)."
         )
 
-    # Check layout compatibility for linear allocation
-    # Use _layout_type_tag for robust type checking (Protocol-safe)
-    if time_allocation == "linear" and env.layout._layout_type_tag != "RegularGrid":
-        raise NotImplementedError(
-            "time_allocation='linear' is only supported for RegularGridLayout. "
-            f"Current layout type: {env.layout._layout_type_tag}. "
-            "Use time_allocation='start' for other layout types."
+    # Validate the capability before returning for empty input.
+    if time_allocation == "linear":
+        grid = require_rectilinear_grid(
+            env.layout,
+            "occupancy(time_allocation='linear')",
+            fix="use time_allocation='start', which works on every layout",
         )
 
     # Handle empty arrays
@@ -421,7 +421,7 @@ def _occupancy(
     elif time_allocation == "linear":
         # Linear allocation: split time across bins traversed by ray
         occupancy = _allocate_time_linear(
-            env, positions, dt, valid_mask, bin_indices, return_seconds
+            env, grid, positions, dt, valid_mask, bin_indices, return_seconds
         )
 
     # Apply kernel smoothing if requested
@@ -947,6 +947,7 @@ def _diffusion_transitions(
 
 def _allocate_time_linear(
     env: TrajectoryBinningConsumer,
+    grid: RectilinearGrid,
     positions: NDArray[np.float64],
     dt: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
@@ -961,6 +962,8 @@ def _allocate_time_linear(
 
     Parameters
     ----------
+    grid : RectilinearGrid
+        Per-axis cell edges, full-grid shape and active mask.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position samples.
     dt : NDArray[np.float64], shape (n_samples-1,)
@@ -979,18 +982,8 @@ def _allocate_time_linear(
         If return_seconds=False: Count allocated to each bin (proportional).
 
     """
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
-    # Ensure we have RegularGridLayout (already validated in occupancy())
-    layout = cast("RegularGridLayout", env.layout)
-
-    # Get grid structure
-    grid_edges = layout.grid_edges
-    grid_shape = layout.grid_shape
-
-    # Assert non-None for mypy (RegularGridLayout always has these)
-    assert grid_edges is not None, "RegularGridLayout must have grid_edges"
-    assert grid_shape is not None, "RegularGridLayout must have grid_shape"
+    grid_edges = grid.edges
+    grid_shape = grid.shape
 
     # Initialize occupancy array (indexed by ACTIVE-bin id, length env.n_bins)
     occupancy = np.zeros(env.n_bins, dtype=np.float64)
@@ -1002,20 +995,13 @@ def _allocate_time_linear(
     # translate every full-grid index to its active-bin id before
     # accumulating. Build the inverse map once (same idiom as
     # layout/helpers/regular_grid.py). For inactive bins the map holds -1.
-    active_mask = getattr(layout, "active_mask", None)
-    if active_mask is None:
-        # Fully-active grid: full-grid flat index == active-bin id.
-        full_to_active = None
-    else:
-        active_mask_flat = active_mask.ravel()
-        full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
-        active_indices = np.flatnonzero(active_mask_flat)
-        full_to_active[active_indices] = np.arange(active_indices.size, dtype=np.intp)
+    active_mask_flat = grid.active_mask.ravel()
+    full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
+    active_indices = np.flatnonzero(active_mask_flat)
+    full_to_active[active_indices] = np.arange(active_indices.size, dtype=np.intp)
 
     def _to_active(full_idx: int) -> int:
         """Translate a full-grid flat index to active-bin id (-1 if inactive)."""
-        if full_to_active is None:
-            return full_idx
         if 0 <= full_idx < full_to_active.size:
             return int(full_to_active[full_idx])
         return -1

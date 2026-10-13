@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout.helpers.regular_grid import (
     _points_to_regular_grid_bin_ind,
 )
@@ -481,6 +482,16 @@ class _GridMixin:
         """
         assert self.grid_edges is not None
         return np.array([float(np.diff(edges)[0]) for edges in self.grid_edges])
+
+    def rectilinear_grid(self) -> RectilinearGrid:
+        """Axis-aligned cells of this grid: per-axis edges, shape and active mask."""
+        if (
+            self.grid_edges is None
+            or self.grid_shape is None
+            or self.active_mask is None
+        ):
+            raise LayoutNotBuiltError(type(self).__name__, "rectilinear_grid")
+        return RectilinearGrid(self.grid_edges, self.grid_shape, self.active_mask)
 
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
         """Cartesian face measure: product of the OTHER axes' widths for an

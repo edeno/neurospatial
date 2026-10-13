@@ -200,12 +200,14 @@ system. Gaussian smoothing and `plot_field` still test `_POLAR` and are being
 moved to that interface.
 
 Layout-specific operations check a capability protocol on the layout, as
-smoothing does with `FiniteVolumeGeometryProvider`: a layout has the capability
+smoothing does with `FiniteVolumeGeometryProvider`. Linear interpolation and
+time allocation use `RectilinearGridProvider`; track coordinate conversions
+use `TrackLinearizationProvider`. A layout has the capability
 when it defines the method. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Existing `rebin`, linear interpolation, linear time allocation and
-`subset` dispatch still use tags or attribute checks; these are being moved to
-capabilities.
+alternative. Only `rebin` still uses a layout tag: its documented activity rule marks
+every coarse cell active, so widening it to masked arenas would change
+scientific support.
 
 A mixin is a plain class for one domain; `_BaseEnvironment` is the dataclass.
 Mixins keep no state except `versioned_cached_property` caches and annotate

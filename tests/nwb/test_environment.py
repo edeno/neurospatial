@@ -15,6 +15,68 @@ import pytest
 pynwb = pytest.importorskip("pynwb")
 
 
+@pytest.mark.parametrize("kind", ["samples", "mask", "pixels", "polygon"])
+@pytest.mark.integration
+def test_read_grid_preserves_linear_operations(empty_nwb, tmp_path, kind):
+    """Persisted grid geometry gives exactly the same interpolation and time."""
+    from shapely.geometry import Point
+
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    mask = np.ones((5, 5), dtype=bool)
+    mask[2, 2] = False
+    if kind == "samples":
+        env = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 30, (300, 2)), bin_size=3.0
+        )
+    elif kind == "mask":
+        env = Environment.from_grid_mask(
+            mask, grid_edges=(np.arange(6.0), np.arange(6.0))
+        )
+    elif kind == "pixels":
+        env = Environment.from_pixel_mask(mask, pixel_size=1.0)
+    else:
+        env = Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0)
+    write_environment(empty_nwb, env)
+    path = tmp_path / "grid.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        restored = read_environment(io.read())
+    field = np.sin(np.arange(env.n_bins))
+    points = np.vstack([env.bin_centers[::5], env.bin_centers.max(axis=0) + 100])
+    np.testing.assert_array_equal(
+        restored.interpolate(field, points, mode="linear"),
+        env.interpolate(field, points, mode="linear"),
+    )
+    times = np.arange(10) * 0.1
+    positions = env.bin_centers[np.linspace(0, env.n_bins - 1, 10, dtype=int)]
+    np.testing.assert_array_equal(
+        restored.occupancy(times, positions, time_allocation="linear"),
+        env.occupancy(times, positions, time_allocation="linear"),
+    )
+
+
+@pytest.mark.integration
+def test_read_track_explains_missing_linearization_graph(empty_nwb):
+    """Both conversions name the missing topology and how to rebuild it."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    env = Environment.linear_track(endpoints=((0.0, 0.0), (10.0, 0.0)), bin_size=1.0)
+    write_environment(empty_nwb, env)
+    restored = read_environment(empty_nwb)
+    for call in [
+        lambda: restored.to_linear(np.array([[5.0, 0.0]])),
+        lambda: restored.linear_to_nd(np.array([5.0])),
+    ]:
+        with pytest.raises(AttributeError, match="needs the track graph") as caught:
+            call()
+        assert "Environment.from_graph" in str(caught.value)
+        assert "please report" not in str(caught.value)
+
+
 class TestEnvironmentFromPosition:
     """Tests for environment_from_position() function."""
 
