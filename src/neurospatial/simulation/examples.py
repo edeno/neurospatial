@@ -985,7 +985,8 @@ def grid_cell_session(
     # Sample phase offsets uniformly from environment
     rng = np.random.default_rng(seed)
     step = max(1, env.n_bins // n_grid_cells)
-    phase_centers = env.bin_centers[::step][:n_grid_cells]
+    # Copy: shuffling a view would permute the environment's own bin centers.
+    phase_centers = env.bin_centers[::step][:n_grid_cells].copy()
 
     # Shuffle to randomize phase distribution
     rng.shuffle(phase_centers)

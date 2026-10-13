@@ -76,6 +76,29 @@ class TestStateVersionField:
         assert env._kernel_cache
 
 
+class TestPublishedGeometryIsReadOnly:
+    """Versioned caches cannot see in-place edits, so geometry refuses them."""
+
+    def test_arrays_are_read_only_and_graph_is_frozen(self) -> None:
+        import networkx as nx
+
+        env = Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        )
+        for env_or_copy in (env, env.copy()):
+            for array in (
+                env_or_copy.bin_centers,
+                env_or_copy.active_mask,
+                *env_or_copy.grid_edges,
+            ):
+                assert not array.flags.writeable
+            assert nx.is_frozen(env_or_copy.connectivity)
+        with pytest.raises(ValueError, match="read-only"):
+            env.bin_centers[0, 0] = 99.0
+        with pytest.raises(nx.NetworkXError, match="Frozen"):
+            env.connectivity.add_edge(0, 8)
+
+
 class TestVersionedCachedProperty:
     """Decorator behavior: caches per (instance, _state_version)."""
 

@@ -42,6 +42,11 @@
 
 ### Changed
 
+- **Behavior change:** an environment's geometry is read-only once built:
+  `bin_centers`, `active_mask` and `grid_edges` reject writes and
+  `connectivity` is frozen. Cached kernels and operators cannot see in-place
+  edits, so such edits used to return stale results silently. Build a new
+  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
 - Layout setup synchronizes restored geometry and invalidates all environment
   caches. The polar layout builds physical distances and circular seams before
   environment initialization, and records its `circular_angle` build option.
@@ -99,6 +104,9 @@
 
 ### Fixed
 
+- `grid_cell_session` no longer permutes rows of its environment's
+  `bin_centers` while shuffling grid-cell phases; the returned environment's
+  centers matched neither its graph nor `bin_at`.
 - Refresh active-bin lookup indices when rebuilding a masked polar layout, so
   angular seam edges and point lookup use the new mask.
 - Keep the saved connectivity of environments read with `from_file`,

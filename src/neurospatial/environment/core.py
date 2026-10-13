@@ -199,10 +199,12 @@ class _BaseEnvironment(
     bin_centers : NDArray[np.float64]
         Coordinates of the center of each *active* bin/node in the environment.
         Shape is (n_active_bins, n_dims). Populated by `_setup_from_layout`.
+        Read-only: build a new environment to change geometry.
     connectivity : nx.Graph
         A NetworkX graph where nodes are integers from `0` to `n_active_bins - 1`,
         directly corresponding to the rows of `bin_centers`. Edges represent
-        adjacency between bins. Populated by `_setup_from_layout`.
+        adjacency between bins. Populated by `_setup_from_layout` and frozen
+        (no node or edge can be added or removed).
     dimension_ranges : Optional[Sequence[Tuple[float, float]]]
         The effective min/max extent `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]`
         covered by the layout's geometry. Populated by `_setup_from_layout`.
@@ -939,6 +941,15 @@ class _BaseEnvironment(
             # Fallback for point-based
             self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
 
+        # Published geometry is read-only: derived caches are invalidated only
+        # through _state_version, so an in-place edit would leave them stale.
+        # Change geometry by building a new environment (a factory, subset,
+        # rebin or apply_transform) instead.
+        for array in (self.bin_centers, self.active_mask, *(self.grid_edges or ())):
+            if isinstance(array, np.ndarray):
+                array.setflags(write=False)
+        nx.freeze(self.connectivity)
+
         self._is_fitted = True
         # Bump the state version so any downstream cache (including the
         # versioned_cached_property values from this and other mixins)
@@ -1222,12 +1233,14 @@ class _BaseEnvironment(
         - Regions are deep copied
         - Layout object is deep copied
 
-        Modifying the copy will not affect the original environment.
+        Adding regions to the copy does not affect the original.
 
         **Shallow copy (deep=False)**:
 
-        - Arrays and graph are shared with the original
-        - Modifying the copy will affect the original
+        - Arrays, graph and regions are shared with the original
+
+        In both cases the geometry arrays are read-only and the graph is
+        frozen, as on every environment.
 
         **Cache invalidation**:
 
@@ -1246,20 +1259,15 @@ class _BaseEnvironment(
         >>> env = Environment.from_samples(data, bin_size=1.0)
         >>> env.units = "cm"
         >>>
-        >>> # Deep copy (default)
+        >>> # Deep copy (default): separate, equal geometry
         >>> env_copy = env.copy()
-        >>> env_copy.bin_centers[0, 0] = 999.0
-        >>> bool(env.bin_centers[0, 0] != 999.0)  # Original unchanged
-        True
+        >>> bool(np.shares_memory(env_copy.bin_centers, env.bin_centers))
+        False
         >>>
-        >>> # Shallow copy
+        >>> # Shallow copy: the same geometry objects
         >>> env_shallow = env.copy(deep=False)
-        >>> original_value = env.bin_centers[0, 0]
-        >>> env_shallow.bin_centers[0, 0] = 888.0
-        >>> bool(env.bin_centers[0, 0] == 888.0)  # Original changed
+        >>> env_shallow.bin_centers is env.bin_centers
         True
-        >>> # Restore for other tests
-        >>> env.bin_centers[0, 0] = original_value
         """
         import copy as copy_module
 
