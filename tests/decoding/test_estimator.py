@@ -351,6 +351,17 @@ class TestUnfitted:
         with pytest.raises(RuntimeError, match="not fitted"):
             BayesianDecoder(env).score(spikes, times, positions)
 
+    def test_discarded_fit_error_shows_reassignment(self, sim) -> None:
+        # fit() returns a new decoder, so a bare `decoder.fit(...)` leaves
+        # `decoder` unfitted. Repeating ".fit(...)" would not help; the error
+        # must show how to keep the fitted result.
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5)
+        decoder.fit(spikes, times, positions)
+        with pytest.raises(RuntimeError, match=r"decoder = decoder\.fit\(") as exc:
+            decoder.predict(spikes, times)
+        assert "returns a new" in str(exc.value)
+
 
 # ---------------------------------------------------------------------------
 # 6. Immutability

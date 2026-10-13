@@ -415,8 +415,12 @@ warn_on_drop
         """
         if self.encoding_models is None:
             raise RuntimeError(
-                "BayesianDecoder is not fitted; call "
-                "`.fit(spike_times, times, positions)` first."
+                "BayesianDecoder is not fitted.\n"
+                "Why: fit() returns a new fitted decoder and leaves the original "
+                "unchanged, so calling decoder.fit(...) without keeping the result "
+                "does not fit decoder.\n"
+                "Fix: decoder = decoder.fit(spike_times, times, positions), or "
+                "decoder = BayesianDecoder.from_rates(rates) for precomputed rate maps."
             )
         return self.encoding_models
 

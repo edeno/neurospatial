@@ -129,6 +129,10 @@
   copies of its rate maps, labels and training support, so editing
   `rates.firing_rates` after `BayesianDecoder.from_rates(rates)` no longer
   changes its predictions. Arrays stay read-only after pickling and deep copies.
+- Predicting with an unfitted `BayesianDecoder` now explains that `fit()`
+  returns a new decoder and shows the fix,
+  `decoder = decoder.fit(spike_times, times, positions)`. The old message told
+  users who had already called `fit()` to call it again.
 - Rebinned environments load from files and dictionaries again, and rebinning
   preserves diagonal connectivity on small and sparse grids.
 - Linear interpolation retains known values at active-bin centers and grid
