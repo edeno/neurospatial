@@ -331,7 +331,7 @@ def _run_document(path: str, *, opt_in: bool, seeded: bool) -> int:
         if block.kind == "skip":
             assert block.arg, f"{location}: 'docs-test: skip' needs a reason"
             continue
-        if opt_in and block.kind != "run":
+        if opt_in and block.kind not in {"run", "raises"}:
             continue
         namespace = _fixture_namespace() if seeded else shared
         if setup := re.search(r"setup=(\w+)", block.arg):
@@ -415,6 +415,15 @@ def test_seeded_blocks_have_fresh_arrays_and_regions(example_document):
         "```python\nassert np.all(np.diff(times) > 0)\nassert 'temporary' not in env.regions\n```\n"
     )
     assert _run_document("example.md", opt_in=False, seeded=True) == 2
+
+
+def test_opted_in_documents_check_raises_markers(example_document):
+    example_document.write_text(
+        "```python\nunmarked()\n```\n"
+        "<!-- docs-test: raises ValueError -->\n```python\nx = 1\n```\n"
+    )
+    with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
+        _run_document("example.md", opt_in=True, seeded=True)
 
 
 def test_marker_setups_are_known_and_used():
