@@ -4,7 +4,7 @@
 
 **Goal**: Transform Environment from a "God Object" (~70 methods via mixins) to a "Data Container" (~25 methods/properties) following Rhodes-Hettinger design principles.
 
-**Status**: Pending (execute after [encoding refactor plan](../encoding-refactor/PLAN.md) completion)
+**Status**: Superseded on 2026-10-13 by [environment-representation/PLAN.md](../environment-representation/PLAN.md). Do not execute this plan.
 **Breaking Change**: Yes - Clean break, no deprecation period (no current users)
 **Target Version**: v1.0.0 or v2.0.0
 
