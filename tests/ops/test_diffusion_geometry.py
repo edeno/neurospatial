@@ -323,6 +323,14 @@ def test_center_check_rejects_a_bin_shift_at_any_origin(origin, float32_resolves
             from_dict(float32)
 
 
+def test_non_finite_saved_centers_are_rejected():
+    data = to_dict(_four_connected_grid())
+    data["bin_centers"][0][0] = float("nan")
+    with pytest.raises(ValueError, match="contain 1 non-finite values") as exc:
+        from_dict(data)
+    assert "\nFix:" in str(exc.value)
+
+
 def test_invalid_saved_graph_names_the_saved_data():
     """A malformed saved graph is reported against the data, not the library."""
     data = to_dict(_four_connected_grid())

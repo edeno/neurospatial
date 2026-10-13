@@ -1511,6 +1511,19 @@ class EnvironmentFactories:
         layout = cls._create_layout(kind, layout_params)
         rebuilt = np.asarray(layout.bin_centers)
         saved = np.asarray(bin_centers, dtype=np.float64)
+        if not np.all(np.isfinite(saved)):
+            raise ValueError(
+                _format_error(
+                    f"The bin centers in {restored_from} contain "
+                    f"{int(np.count_nonzero(~np.isfinite(saved)))} non-finite "
+                    "values.",
+                    why=(
+                        "Why: every saved bin center must be a finite "
+                        "coordinate, so the data is corrupted."
+                    ),
+                    fix="re-save the environment with this version of neurospatial",
+                )
+            )
         if rebuilt.shape != saved.shape or np.any(
             np.abs(rebuilt - saved) > _center_tolerance(rebuilt)
         ):
