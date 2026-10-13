@@ -3,8 +3,8 @@
 **Committed**: 2025-10-31
 
 > **Superseded for current API vocabulary.** This historical scratchpad predates
-> the v0.6 naming contract. Use the "v0.6 API Naming Contract" section of
-> `CLAUDE.md` for current terms such as
+> the v0.6 naming contract. Use the API contract in
+> `.claude/rules/public-api.md` for current terms such as
 > `unit_id`, `summary_table()`, `classify()`, `label_cell_types()`, and
 > `peak_location()`.
 

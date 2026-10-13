@@ -5,8 +5,8 @@
 > **Superseded for current API vocabulary.** This historical plan predates the
 > v0.6 naming contract. Do not treat names such as `neuron_id`,
 > `to_dataframe(neuron_ids=...)`, `detect_hd_cells`, `detect_view_cells`, or
-> `peak_view_x` / `peak_view_y` as current guidance. Use the
-> "v0.6 API Naming Contract" section of `CLAUDE.md` for the active API contract.
+> `peak_view_x` / `peak_view_y` as current guidance. Use the active API
+> contract in `.claude/rules/public-api.md`.
 
 ## Overview
 

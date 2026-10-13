@@ -18,7 +18,7 @@ Date labels are the first Git commit date for the original artifact, based on `g
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
-| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Complete historical plan. Superseded for current API vocabulary by the "v0.6 API Naming Contract" section of `CLAUDE.md`; do not copy its old `neuron_id`, `detect_*`, or view-specific peak names into new work. |
+| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Complete historical plan. Superseded for current API vocabulary by the API contract in `.claude/rules/public-api.md`; do not copy its old `neuron_id`, `detect_*`, or view-specific peak names into new work. |
 | 2025-12-06 | Environment refactor | [environment-refactor/PLAN.md](environment-refactor/PLAN.md) | — | Superseded by [environment-representation/PLAN.md](environment-representation/PLAN.md). Do not execute: its frozen ~25-method `Environment`, methods moved to `ops/`, and layout-parameter persistence contradict the current design. |
 
 ## Planning Backlog
