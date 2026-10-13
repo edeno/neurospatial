@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import (
         EnvironmentProtocol,
+        InterpolationConsumer,
         RebinConsumer,
         SubsetConsumer,
         TrajectoryBinningConsumer,
@@ -48,3 +49,6 @@ if TYPE_CHECKING:
     def _check_transforms(cartesian: Environment) -> None:
         _rebin: RebinConsumer = cartesian
         _subset: SubsetConsumer = cartesian
+
+    def _check_interpolation(cartesian: Environment) -> None:
+        _interpolation: InterpolationConsumer = cartesian

@@ -290,23 +290,6 @@ class EnvironmentProtocol(Protocol):
         """Convert 1D linear positions to N-D coordinates (1D environments only)."""
         ...
 
-    # Private methods that mixins call (field interpolation)
-    def _interpolate_nearest(
-        self,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Interpolate field values using nearest-neighbor."""
-        ...
-
-    def _interpolate_linear(
-        self,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Interpolate field values using linear interpolation."""
-        ...
-
     # Visualization and animation methods
     def animate_fields(
         self,
@@ -443,6 +426,21 @@ class SubsetConsumer(Protocol):
 
     @property
     def _layout_params_used(self) -> dict[str, Any]: ...
+
+
+class InterpolationConsumer(Protocol):
+    """Bin geometry and cached point lookup for interpolating a scalar field."""
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def layout(self) -> LayoutEngine: ...
+
+    _kdtree_cache: cKDTree | None
 
 
 # TypeVar bound to EnvironmentProtocol for use in mixin ``self`` annotations.
