@@ -33,9 +33,9 @@ The `Environment` class uses **mixin inheritance** to organize 6,000+ lines of f
 
 ### Key Constraints
 
-- **ONLY `Environment` is a `@dataclass`** - All mixins MUST be plain classes
+- **`_BaseEnvironment` is the `@dataclass`** - All mixins MUST be plain classes
 - Mixins use `TYPE_CHECKING` guards to avoid circular imports
-- All mixin methods annotate `self: "Environment"` for type checking
+- All mixin methods annotate `self: SelfEnv`, bound to `EnvironmentProtocol`
 - Public API unchanged: `from neurospatial import Environment` still works
 
 ### Example Mixin
@@ -47,7 +47,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import SelfEnv
 
 class EnvironmentMixin:
     """Mixin providing methods for Environment class.
@@ -56,8 +56,8 @@ class EnvironmentMixin:
     and will have access to all Environment attributes.
     """
 
-    def method_name(self: "Environment", param: int) -> NDArray[np.float64]:
-        """Use string annotation 'Environment' for self parameter."""
+    def method_name(self: SelfEnv, param: int) -> NDArray[np.float64]:
+        """Use the protocol-bound SelfEnv for the self parameter."""
         # Mypy understands self has Environment attributes
         return self.bin_centers  # ✓ No error
 ```
@@ -100,22 +100,22 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import SelfEnv
 
 class EnvironmentMixin:
     """Mixin providing methods for Environment class."""
 
-    def method_name(self: "Environment", param: int) -> NDArray[np.float64]:
-        """Use string annotation 'Environment' for self parameter."""
+    def method_name(self: SelfEnv, param: int) -> NDArray[np.float64]:
+        """Use the protocol-bound SelfEnv for the self parameter."""
         return self.bin_centers  # ✓ Mypy understands self has Environment attributes
 ```
 
 ### Common Mypy Issues and Fixes
 
-- **Missing attribute errors**: Ensure `self: "Environment"` annotation is present
+- **Missing attribute errors**: Ensure `self: SelfEnv` annotation is present
 - **Type mismatches**: Ensure return types match exactly between mixin and Environment
 - **Cache type annotations**: Use precise Literal types for cache keys
-- **Import TYPE_CHECKING**: Always use `if TYPE_CHECKING:` guard for Environment import
+- **Import TYPE_CHECKING**: Always use `if TYPE_CHECKING:` guard for protocol imports
 
 ### Using Protocol for Mixin Type Safety
 
@@ -149,7 +149,7 @@ class EnvironmentFields:
         return self.compute_kernel(...) @ field
 ```
 
-**Why this works:** Mypy checks that `Environment` satisfies `EnvironmentProtocol` at usage sites. Mixins can safely access Protocol-defined attributes without "erased type" errors.
+**Why this works:** Mypy checks protocol conformance at usage sites. The protocol must match both concrete environment classes, including read-only descriptors; static contracts must check this interface. Mixins can access protocol-defined attributes without "erased type" errors. See [Environment architecture](../docs/contributing.md#environment-architecture) for consumer protocols and extraction rules.
 
 **Run mypy manually:**
 
@@ -280,6 +280,8 @@ Answer questions about that environment or perform local transforms:
 
 - **Examples**: `env.bin_at()`, `env.neighbors()`, `env.distance_between()`, `env.rebin()`
 - **Use when**: Working with a single environment's structure and properties
+
+An environment method is a scientist-facing entry point; its implementation lives in a private module function with explicit inputs and a narrow consumer protocol. Preserve the method's signature and docstring when extracting it.
 
 ### Free Functions
 

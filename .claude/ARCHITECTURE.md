@@ -83,9 +83,9 @@ Main user-facing class wrapping a `LayoutEngine`. Uses **mixin pattern** for org
 
 **Mixin pattern constraints:**
 
-- **ONLY** `Environment` is a `@dataclass` - mixins MUST be plain classes
+- `_BaseEnvironment` is the `@dataclass` - mixins MUST be plain classes
 - Mixins use `TYPE_CHECKING` guards to avoid circular imports
-- All mixin methods annotate `self: "Environment"` for type checking
+- All mixin methods annotate `self` with the shared environment protocol
 
 **See [PATTERNS.md - Mixin Pattern](PATTERNS.md#mixin-pattern-for-environment) for details.**
 
