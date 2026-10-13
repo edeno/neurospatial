@@ -32,8 +32,9 @@ tracks can call `to_linear`.
 ## Tasks
 
 - **Record the baseline** on the base commit, as in phase 1. Also write one
-  `Environment-v1` file and one `"1.0"` NWB record to `/tmp`, for the error test
-  later.
+  `Environment-v1` file and one NWB record (today's writer emits schema `"1.1"`)
+  for the refusal tests. Make a `"1.0"` record by copying the 1.1 record and
+  setting its `schema_version` attribute to `"1.0"`.
 - **Add `KnownFaces` and `MissingFaces`** to `layout/_binning.py`.
 - **Create `src/neurospatial/layout/_codecs.py`** following the codec contract.
   - Write codecs for `SpatialBins`, `FaceGeometry` (as `KnownFaces`),
@@ -46,9 +47,15 @@ tracks can call `to_linear`.
     codec. Encoding them raises the unregistered-kind `ValueError`, which names
     the layout's class.
 - **Create `src/neurospatial/layout/_binning_layout.py`** with `BinningLayout`
-  as specified. It satisfies the `LayoutEngine` protocol structurally; add a
-  check to `tests/typing/`. `binning_from_layout` returns `layout.binning()`
-  when the layout defines it.
+  as specified:
+  - `grid_edges`, `grid_shape` and `active_mask` are derived from the binning;
+  - `plot_linear_layout` delegates to `plot_track_linear`;
+  - the constructor runs the six
+    [consistency checks](shared-contracts.md#binninglayout-facade).
+
+  It satisfies the `LayoutEngine` protocol structurally; add a check to
+  `tests/typing/`. `binning_from_layout` returns `layout.binning()` when the
+  layout defines it.
 - **Rewrite files and dicts** (`io/files.py`) to the
   [v2 format](designs.md#file-format):
   - Add `"layout_category"` (`env.layout_type`) and `"binning"` to the metadata.
@@ -61,8 +68,10 @@ tracks can call `to_linear`.
 - **Rewrite NWB** (`io/nwb/_environment.py`) to the same payload:
   - Store the meta as one JSON string attribute and the arrays as datasets.
   - Store the node-link graph JSON in place of the bare edge list and weights.
-  - Bump the record schema to `"2.0"`. A `"1.0"` record raises `ValueError`
-    with What / Why / Fix.
+  - Bump the record schema to `"2.0"`. Records with schema `"1.0"` or `"1.1"`
+    raise `ValueError` with What / Why / Fix. Today's writer emits `"1.1"` and
+    the reader accepts both (`io/nwb/_environment.py:85-86`); replace
+    `_READABLE_SCHEMA_VERSIONS` with `{"2.0"}`.
   - Delete `_reconstruct_environment`'s two branches, `_ReconstructedLayout`
     (`:854-995`) and `_reconstruct_graph` (`:997`). Reading builds a
     `BinningLayout`.
@@ -93,14 +102,29 @@ tracks can call `to_linear`.
     - **Fixed:** `boundary_bins` and `to_linear` after NWB read-back.
   - Update `.claude/ADVANCED.md` (NWB section) if it describes the stored
     fields.
-- **Compare the baseline.** The expected differences are:
-  - NWB read-back probes for `boundary_bins` and track `to_linear`, which
-    errored before and now match the original environment;
-  - any probe that records `type(env.layout).__name__` for read-back
+- **Compare the baseline.** Every differing probe must equal the **original**
+  environment's output, not the base commit's read-back. The expected
+  differences:
+  - **NWB read-back of the hexagonal, mesh and track types**, which today use
+    `_ReconstructedLayout`, with no faces, nearest-center lookup and no track
+    graph. Now these work, equal to the original:
+    - smoothing in all modes, `compute_kernel` and `diffuse`;
+    - `get_differential_operator` and `get_divergence_operator`, plus gradient
+      and divergence;
+    - geometric lookup: `bin_at` and `contains`;
+    - `to_linear` and `linear_to_nd`;
+    - `plot()` and `plot_field()` labels.
+  - **NWB read-back `boundary_bins`** for the grid, polygon, mask, pixel-mask
+    and polar types, which crashed before and now equals the original.
+  - **Any probe that records the layout's class name** for read-back
     environments.
+  - **Signatures and docstrings** of every public `Environment` and
+    `EgocentricPolarEnvironment` member whose docstring this phase edits
+    (`to_file`, `from_file`, `to_dict`, `from_dict`, `to_nwb`, `from_nwb`). The
+    baseline script records them.
 
-  List every differing probe in the PR and verify each one against the
-  original environment's output.
+  List every differing probe in the PR, with the original-environment
+  comparison that verifies it. Any other difference is a bug.
 
 ## Deliberately not in this phase
 
@@ -130,7 +154,10 @@ tracks can call `to_linear`.
 | `test_nwb_read_back_track_to_linear` | `to_linear` after NWB read-back equals the original's on 500 seeded points |
 | `test_loaded_environment_plots_like_original` (slow) | Artists from `plot()` and `plot_field()` on a loaded environment equal the original's (same record as phase 2b) |
 | `test_loaded_environment_smooths_like_original` (parametrized) | `smooth(field, 5.0, mode=m)` is identical for all three modes |
-| `test_old_versions_refused` | The v1 file and the 1.0 NWB record raise `ValueError` whose message names the version and the fix |
+| `test_old_versions_refused` (parametrized: v1 file, NWB `"1.0"`, NWB `"1.1"`) | Each raises `ValueError` whose message names the version and the fix |
+| `test_facade_rejects_inconsistent_data` (parametrized) | Building `BinningLayout` raises `ValueError` naming the mismatch for each case: a moved node `"pos"`; a changed edge `"distance"`; edges in a different order; a reversed edge; face volumes that differ from the sizes; a rectilinear active count different from `n_bins`; a locator that doesn't map each center to its own bin |
+| `test_loaded_track_plot_1d` | `plot_1d()` on a track loaded from a file and from NWB gives the same artists as the original, with no warning |
+| `test_loaded_environment_renders_by_component` (parametrized) | `plot_field` on a loaded environment uses the same artist classes as the original (`QuadMesh`, `PatchCollection`, `PolyCollection`, or `FillBetweenPolyCollection` plus `Line2D`) |
 | `test_copy_of_loaded_environment` | `loaded.copy()` equals `loaded` on bins, locator results and smoothing |
 | `test_derived_environment_save_refused_until_supported` | `to_file` on a translated environment raises the unregistered-kind error (replaced in phase 4) |
 | baseline compare (manual) | only the listed differences |
@@ -141,8 +168,8 @@ tracks can call `to_linear`.
 - Reuse `built_environment`.
 - NWB tests use the existing helpers in `tests/nwb/_nwb_helpers.py` and need
   the NWB extra.
-- Commit the v1 file and the 1.0 record from the first task as small fixtures
-  under `tests/io_tests/data/` and `tests/nwb/data/`.
+- Commit the v1 file and the 1.0 and 1.1 records from the first task as small
+  fixtures under `tests/io_tests/data/` and `tests/nwb/data/`.
 
 ## Review
 

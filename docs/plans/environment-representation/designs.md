@@ -67,7 +67,7 @@ stay the same.
 | --- | --- | --- |
 | `RectilinearLocator(edges, shape, active_mask, flat_to_active)` | `layout/mixins.py:272-311`, which calls `_points_to_regular_grid_bin_ind` in `layout/helpers/regular_grid.py` | `flat_to_active` is `_GridMixin.active_mask_inverse_map` (`mixins.py:251`). Used by the regular, masked, image-mask, polygon and polar grids. |
 | `HexLocator(offset_x, offset_y, radius, centers_shape, flat_to_active)` | `layout/engines/hexagonal.py:296-346`, which calls `_points_to_hex_bin_ind` | Keep the "not fully initialized" `RuntimeWarning` branch as a layout-level guard. A built locator always has its data. |
-| `MeshLocator(points, simplices, simplex_to_active)` | `layout/engines/triangular_mesh.py:192-263` | The memo is `scipy.spatial.Delaunay(points)`. Check `np.array_equal(memo.simplices, simplices)` when the memo is built; if they differ, raise `ValueError`. |
+| `MeshLocator(points, simplices, simplex_to_active, boundary)` | `layout/engines/triangular_mesh.py:192-263` | `boundary` is the stored `_boundary_polygon_stored`, a shapely `Polygon` or `None`. After the simplex lookup, today's code (`triangular_mesh.py:249-260`) sets any point outside it to -1 using `shapely.contains_xy`; keep that rule unchanged. Without it, a point inside a hole of the polygon maps to a bin. The memo is `scipy.spatial.Delaunay(points)`. Check `np.array_equal(memo.simplices, simplices)` when the memo is built; if they differ, raise `ValueError`. |
 | `NearestBinLocator(centers, max_distance=None)` | `layout/mixins.py:134-228` | Keep the dimension-mismatch `ValueError` text and the non-finite-row handling. The memo is `scipy.spatial.cKDTree(centers)`. `max_distance=None` gives today's behavior: no limit. |
 
 Cache the locator on the layout at the end of `build()`, as `self._locator`.
@@ -88,6 +88,8 @@ those become fields. The graph is a deep copy passed through `nx.freeze`.
 - every grid edge coordinate, for points exactly on a boundary;
 - the hexagon vertices;
 - the triangle vertices and edge midpoints;
+- for the mesh, points inside each hole of the boundary polygon and in each
+  concave notch of the outer boundary (the mesh fixture must have both);
 - rows containing NaN and inf;
 - a single row;
 - an empty `(0, n_dims)` array;
@@ -116,9 +118,39 @@ identical.
 5. otherwise, a scatter of the bin centers, the same as `_SubsetLayout.plot`
    (`environment/transforms.py:565-593`)
 
-`plot_field`'s hexagon and mesh branches (`environment/visualization.py:483-501`
-and `:1007-1075`) read `env._binning.shapes` instead of `env.layout.hex_radius_`
-and `env.layout._full_delaunay_tri`.
+**`plot_field` dispatches through components, not tags.** Today it chooses a
+renderer by comparing `self.layout._layout_type_tag` with fixed names
+(`environment/visualization.py:456-512`). A derived tag such as
+`"MaskedGrid_transformed"` or `"subset"` then falls through to the scatter
+renderer, even when grid or shape data was kept. Replace the comparison with the
+following checks, in order:
+
+1. `n_dims == 1` and not a track → line plot (unchanged)
+2. `rectilinear is not None` → `_plot_grid_field`, reading edges, shape and mask
+   from `env._binning.rectilinear`
+3. `shapes` is `HexagonShapes` → `_plot_hex_field`, reading `env._binning.shapes`
+4. `shapes` is `TriangleShapes` → `_plot_trimesh_field`, reading `env._binning.shapes`
+5. `linearization is not None` → `_plot_1d_field`
+6. otherwise → `_plot_scatter_field`
+
+For every built environment this picks today's renderer:
+- Grids, masks, polygons, image masks and polar grids all carry a rectilinear
+  grid. Polar layouts are tagged `"MaskedGrid"` today and render with
+  `QuadMesh`.
+- 3D grids keep today's "pcolormesh requires 2D grids" error inside
+  `_plot_grid_field`.
+
+The reads of `env.layout.hex_radius_`, `env.layout._full_delaunay_tri` and
+`env.layout.grid_*` in these renderers (`visualization.py:941-1179`) move to the
+binning.
+
+**`plot_1d` reads the linearization.** `plot_1d` calls
+`self.layout.plot_linear_layout` when the layout has it
+(`visualization.py:280-294`), and warns and returns `None` otherwise. Change it
+to call `plot_track_linear` with `env._binning.linearization` and the bin data.
+Keep the warning for a track without a linearization. `BinningLayout` also
+defines `plot_linear_layout`, which delegates to `plot_track_linear` for any
+direct caller.
 
 ## File format
 
@@ -138,9 +170,6 @@ layout = BinningLayout(
     binning,
     connectivity=graph,
     dimension_ranges=meta["dimension_ranges"],
-    grid_edges=grid_edges,
-    grid_shape=grid_shape,
-    active_mask=active_mask,
     layout_type_tag=meta["layout_type"],
     layout_type=meta["layout_category"],
     build_params=layout_parameters,
@@ -149,6 +178,22 @@ layout = BinningLayout(
 env = env_cls(meta["name"], layout, meta["layout_type"], layout_parameters,
               regions=regions, restored_from=source)
 ```
+
+**One authority for duplicated data.** The binning is authoritative. The
+facade derives `grid_edges`, `grid_shape` and `active_mask` from it, so these
+aren't stored or passed separately:
+
+| Binning has | `grid_edges` | `grid_shape` | `active_mask` |
+| --- | --- | --- | --- |
+| `rectilinear` | `rectilinear.edges` | `rectilinear.shape` | `rectilinear.active_mask` |
+| `linearization` (a track) | the linear bin edges, as a 1-tuple | `(n_linear_bins,)` | the linear active mask |
+| neither | `()` | `(n_bins,)` | all True (the fallback at `core.py:1002-1007`) |
+
+The connectivity graph still carries node and edge attributes that the binning
+doesn't hold (`source_grid_flat_index`, `original_grid_nd_index`, `vector`,
+`edge_id`, `angle_2d`). The facade constructor runs the
+[consistency checks](shared-contracts.md#binninglayout-facade) before the
+environment publishes anything.
 
 **Faces at save time.** `binning.faces.build()` is called when faces are
 available and saved as `KnownFaces`. Otherwise `MissingFaces(reason)` is saved.
@@ -163,9 +208,11 @@ loaded environment refuses with the same explanation.
 - `TrackLinearization` is encoded, which fixes `to_linear` on NWB read-back.
 - The record schema becomes `"2.0"`.
 
-**Older formats.** `Environment-v1` files and `"1.0"` NWB records raise
-`ValueError`. The message names the version and the fix: recreate the
-environment with a factory and save it again. There are no users to migrate.
+**Older formats.** `Environment-v1` files raise `ValueError`, and so do NWB
+records with schema `"1.0"` or `"1.1"`. Today's writer emits `"1.1"`, and the
+reader accepts both (`io/nwb/_environment.py:85-86`). The message names the
+version and the fix: recreate the environment with a factory and save it again.
+There are no users to migrate.
 
 ## Derivation algorithms
 
@@ -193,7 +240,17 @@ def subset_binning(b: Binning, keep: NDArray[np.bool_]) -> Binning:
   The arrays are read-only. Otherwise the child keeps the parent's faces source.
 - **Locator:** `RectilinearLocator.subset(keep)` returns a new locator whose
   mask has the dropped cells set to False. Every other locator becomes
-  `SubsetLocator(parent_locator, child_of)`.
+  `SubsetLocator(parent_locator, child_of)`. Its `locate` must mask `-1` before
+  indexing, because `child_of[-1]` reads the last parent bin:
+
+  ```python
+  def locate(self, points):
+      parent = self.base.locate(points)
+      out = np.full(parent.shape, -1, dtype=np.intp)
+      inside = parent >= 0
+      out[inside] = self.parent_to_child[parent[inside]]
+      return out
+  ```
 - **Rectilinear:** the mask is updated in the same way. Shapes are selected
   (`HexagonShapes` centers, `TriangleShapes` triangles). The outline is
   dropped. The linearization is kept.
@@ -212,14 +269,33 @@ The transform is `x ↦ A x + t`. `m` is `measure_dim`, `n` is `n_dims`, and
 | centers | `c + t` | `T(c)` | `T(c)` | `T(c)` |
 | `pair_distances` | `‖T(c_u) − T(c_v)‖`, the same as `ops/transforms.py:1491-1498` | same | same | same |
 | `sizes` | same | `× s**m` | `× abs(det A)` (needs `m == n`) | `× abs(det A)` when `m == n`; tracks refused |
-| faces `A` | same | `× s**(m-1)` | for a face between bins that differ along axis `k`: `× abs(det A) / abs(a_k)`; requires `rectilinear` | `MissingFaces` |
+| faces `A` | same | `× s**(m-1)` | for a face between bins that differ along axis `k`: `× abs(det A) / abs(a_k)`; requires the **parent** to have `rectilinear`, so negative `a_k` still keeps faces | `MissingFaces` |
 | faces `distance` | same | `× s` | `× abs(a_k)` | — |
 | faces `volumes` | same | `× s**m` | `× abs(det A)` | — |
-| rectilinear | edges `+ t_k` | kept only if `Q` is diagonal (axis reflections): edges `a_k e + t_k`, reversed and mask flipped where `a_k < 0` | same as the similarity case | dropped |
-| locator | exact (`RectilinearLocator` with shifted edges) or `TransformedLocator` | `TransformedLocator`, or exact when the rectilinear grid is kept | exact when the rectilinear grid is kept | `TransformedLocator` |
-| shapes | shifted | hexagons: `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; triangles: points mapped | dropped (hexagons stop being regular) | dropped |
+| rectilinear | edges `+ t_k` | kept only if `A` is diagonal with **all entries positive**: edges `a_k e + t_k`, same order, same mask | kept only if every `a_k > 0`: same rule | dropped |
+| locator | `RectilinearLocator` with shifted edges, or `TransformedLocator` | exact when the rectilinear grid is kept, `TransformedLocator` otherwise | same | `TransformedLocator` |
+| shapes | shifted | hexagons only for a proper similarity (`det A > 0`): `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; hexagons dropped for reflections; triangles: points mapped | hexagons dropped (they stop being regular); triangles: points mapped | hexagons dropped; triangles: points mapped |
 | outline | `shapely.affinity.affine_transform` | same | same | same |
 | linearization | node positions mapped | node positions mapped; edge spacing `× s` | refused for tracks | refused for tracks |
+
+**Reflections stay off the fast path.** A negative scale factor would make the
+grid fast path reverse the edges and flip the mask. That renumbers the bins:
+on a 2×2 grid, lookup returns IDs `[2, 3, 0, 1]` where it should return
+`[0, 1, 2, 3]`, while the center rows keep their order. Even with remapped IDs,
+a reflection reverses each half-open interval, so a point on a boundary changes
+owner. So any `a_k < 0` uses `TransformedLocator`, which undoes the transform
+and keeps the parent's ownership exactly, and the child gets no rectilinear
+component. Linear interpolation then refuses on reflected grids, as it does
+today for every transformed environment. Faces are unaffected, because a
+reflection is an isometry. Keeping a rectilinear grid in its own frame, so that
+reflections and rotations keep the fast path, is roadmap stage E.
+
+**Boundary ownership on the fast path.** Mapped edges are computed as
+`a_k * e + t_k`, the same operation that maps a parent point `p` on edge `e`.
+So `child.locate(T(p)) == parent.locate(p)` holds exactly, even on edges.
+`TransformedLocator` inverts the map, so a point within rounding error of a
+mapped edge can change owner. Invariance tests for wrapped locators therefore
+use interior points, and the fast path also gets exact-edge tests.
 
 **Why axis-aligned scaling keeps grid faces but not hexagon faces.** Scaling
 by `diag(2, 1)` turns a 45° interface, whose center link was perpendicular to

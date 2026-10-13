@@ -101,7 +101,10 @@ reason. This fixes four problems:
   probes:
   - smoothing, gradients and plots now succeed for transformed environments;
   - grid edges are translated;
-  - hexagonal, mesh and track subset sizes, smoothing and point lookup change.
+  - hexagonal, mesh and track subset sizes, smoothing and point lookup change;
+  - transformed grid `plot_field` now renders with `QuadMesh` instead of scatter;
+  - the signatures and docstrings of `subset` and `apply_transform`, which this
+    phase rewrites and the baseline script records.
 
   List every differing probe in the PR and verify each one against the
   invariant tests below.
@@ -125,8 +128,12 @@ reason. This fixes four problems:
 | --- | --- |
 | `test_subset_keeps_sizes_and_faces` (parametrized over the ten types) | `child.bin_sizes == parent.bin_sizes[keep]`; the child's faces equal the parent's restricted to kept pairs; the hexagonal median size stays 21.65, not 5.0 |
 | `test_grid_subset_equals_mask_build` (parametrized: 8- and 4-connected) | A rectilinear subset smooths, interpolates and builds kernels identically to `Environment.from_grid_mask` with the same mask, edges and connectivity, as today's `_grid_subset` path does |
-| `test_subset_lookup` (parametrized) | `child.bin_at(p) == child_of[parent.bin_at(p)]` on the parity probes; points in dropped bins return -1 |
+| `test_subset_lookup` (parametrized) | With `parent = parent_env.bin_at(p)`, `expected = np.where(parent >= 0, child_of[np.maximum(parent, 0)], -1)` and `child.bin_at(p) == expected` on the parity probes. Points outside the parent and points in dropped bins both return -1 |
+| `test_subset_locator_outside_points` | A point outside the parent (`parent.bin_at(p) == -1`) returns -1 from the child. Never the bin that `child_of[-1]` would give: the fixture keeps the parent's last bin so that bug would show |
 | `test_translation_preserves_everything` (parametrized over Cartesian types) | Smoothing in all three modes, the gradient operator, `bin_at(p + t) == bin_at(p)`, `to_linear` (tracks) and plot artists shifted by `t` all match the parent; `grid_edges[k] == parent.grid_edges[k] + t_k` |
+| `test_derived_plot_field_keeps_renderer` (parametrized: translated, uniformly scaled and positively axis-scaled grids; translated hexagonal and mesh; grid subset) | `plot_field` keeps the parent's artist class (`QuadMesh`, `PatchCollection` or `PolyCollection`) and doesn't fall back to scatter (`PathCollection`) |
+| `test_reflection_keeps_bin_identity` (2×2 grid and the 8-connected fixture, `diag(-1, 1)` and `diag(1, -1)`) | `child.bin_at(T(c)) == arange(n_bins)` for the parent's centers `c`. The child has no rectilinear component, and `interpolate(mode="linear")` refuses. Points on the parent's cell boundaries keep their parent owner: `child.bin_at(T(p)) == parent.bin_at(p)` |
+| `test_positive_axis_scaling_fast_path_boundaries` | Under `diag(2, 0.5)` plus a translation, points exactly on the mapped edges (`a_k * e + t_k`) locate to the same bins as the parent's points on `e` |
 | `test_similarity_scales_smoothing` (Hypothesis: random rotation, scale `s` in [0.25, 4], translation) | For the grid, hexagonal, mesh and track types, to `rtol=1e-10`: `T(env).smooth(f, s*σ, mode=m)` equals `env.smooth(f, σ, mode=m)` for `m` in {`"average"`, `"transition"`}, and equals `env.smooth(f, σ, mode="density") / s**measure_dim` for density, because density divides by bin size. Also `T(env).bin_at(T(p)) == env.bin_at(p)` |
 | `test_axis_scaling_grid_equals_scaled_build` | `diag(2, 0.5)` on a grid smooths identically to `from_grid_mask` with scaled edges (`rtol=1e-12`) |
 | `test_axis_scaling_hexagonal_refuses_smoothing` | `smooth` raises `NotImplementedError` whose message names axis-aligned scaling and the lost right angle; `bin_at` still works |

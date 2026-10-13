@@ -14,7 +14,7 @@ this phase a binning no longer needs its layout to find bins or linearize. Phase
 - `src/neurospatial/layout/helpers/regular_grid.py` — `_points_to_regular_grid_bin_ind` (used, not moved).
 - [src/neurospatial/layout/engines/hexagonal.py:296-346](../../../src/neurospatial/layout/engines/hexagonal.py#L296-L346) — hexagonal lookup and its warning branch.
 - `src/neurospatial/layout/helpers/hexagonal.py` — `_points_to_hex_bin_ind` (used, not moved).
-- [src/neurospatial/layout/engines/triangular_mesh.py:192-263](../../../src/neurospatial/layout/engines/triangular_mesh.py#L192-L263) — mesh lookup through `Delaunay.find_simplex`; `_full_delaunay_tri` is set at line 145.
+- [src/neurospatial/layout/engines/triangular_mesh.py:192-263](../../../src/neurospatial/layout/engines/triangular_mesh.py#L192-L263) — mesh lookup through `Delaunay.find_simplex`, followed by the boundary-polygon containment rule at lines 249-260. `_full_delaunay_tri` is set at line 145.
 - [src/neurospatial/layout/engines/graph.py:328-425](../../../src/neurospatial/layout/engines/graph.py#L328-L425) — `to_linear` and `linear_to_nd`.
 - [src/neurospatial/layout/engines/_polar.py](../../../src/neurospatial/layout/engines/_polar.py) — the polar grid is a `MaskedGridLayout`, so it gets `RectilinearLocator` through the mixin.
 - `src/neurospatial/layout/_binning.py` — created in phase 1: `binning_from_layout` and its `_locator_of` and `_linearization_of` helpers.
@@ -38,7 +38,10 @@ this phase a binning no longer needs its layout to find bins or linearize. Phase
   - The KD-tree and Delaunay memos are private fields created lazily with
     `object.__setattr__`, and excluded from `repr`.
   - `MeshLocator` checks the rebuilt simplices against the stored ones when its
-    memo is built.
+    memo is built. It also stores the boundary polygon
+    (`_boundary_polygon_stored`) and applies the containment rule at
+    `triangular_mesh.py:249-260` unchanged, so points in holes or concave
+    notches stay at -1.
 - **Make each layout call its locator:**
   - `_GridMixin`, `HexagonalLayout` and `TriangularMeshLayout` build their
     locator at the end of `build()` and store it as `self._locator`.
@@ -94,6 +97,7 @@ this phase a binning no longer needs its layout to find bins or linearize. Phase
 | `test_locator_non_finite_rows` (parametrized) | Rows with NaN or inf return -1 and finite rows in the same call are still located |
 | `test_locator_bin_centers_map_to_themselves` (parametrized) | `locate(env.bin_centers) == arange(n_bins)` for grid, hexagonal, mesh and polar environments |
 | `test_rectilinear_locator_matches_brute_force` (Hypothesis, `@pytest.mark.hypothesis`) | For random sorted edges in 1–3D, random masks and random points, the result equals a brute-force "which cell's half-open box contains the point" search |
+| `test_mesh_locator_respects_boundary` | On a mesh built from a polygon with a hole and a concave notch, points inside the hole and inside the notch return -1, matching the recorded base-commit output. Points just inside the boundary return their triangle |
 | `test_mesh_locator_rejects_changed_triangulation` | Building the memo from points whose Delaunay simplices differ from the stored ones raises `ValueError` |
 | `test_locators_are_identity_hashed_and_read_only` | Locators can be dict keys, and their arrays reject writes |
 | `test_track_linearization_matches_previous` | `to_linear` and `linear_to_nd` equal the base commit's outputs on 2,000 seeded points along and near a branching track |
@@ -108,6 +112,9 @@ this phase a binning no longer needs its layout to find bins or linearize. Phase
   on the base commit. The script is not committed: describe the command in the
   PR.
 - The track uses the branching track from the fixture.
+- Add a mesh case to `built_environment`: `from_polygon` with
+  `layout="TriangularMesh"`, on a polygon with one interior hole and one
+  concave notch. Record its parity outputs with the others.
 
 ## Review
 

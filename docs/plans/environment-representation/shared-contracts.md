@@ -160,9 +160,9 @@ everything it needs as arrays plus scalars, except a rebuildable memo (see the
 | `LayoutLocator(layout)` | phase 1 | delegates to `layout.point_to_bin_index(points).astype(np.intp, copy=False)` | today's direct calls (`environment/cartesian.py:131`, `:177`) |
 | `RectilinearLocator` | phase 2a | edges for each axis, grid shape, active mask, flat-to-active map | `_GridMixin.point_to_bin_index` (`layout/mixins.py:272`) |
 | `HexLocator` | phase 2a | grid offsets x and y, hexagon radius, centers shape, flat-to-active map | `HexagonalLayout.point_to_bin_index` (`layout/engines/hexagonal.py:296`) |
-| `MeshLocator` | phase 2a | Delaunay points, simplices, simplex-to-active map; Delaunay rebuilt as a memo | `TriangularMeshLayout.point_to_bin_index` (`layout/engines/triangular_mesh.py:192`) |
+| `MeshLocator` | phase 2a | Delaunay points, simplices, simplex-to-active map, and the boundary polygon (or `None`), applied with today's containment rule; Delaunay rebuilt as a memo | `TriangularMeshLayout.point_to_bin_index` (`layout/engines/triangular_mesh.py:192`) |
 | `NearestBinLocator` | phase 2a | centers, optional `max_distance`; KD-tree is a memo | `_KDTreeMixin.point_to_bin_index` (`layout/mixins.py:134`) |
-| `SubsetLocator(base, parent_to_child)` | phase 4 | base locator; `(n_parent_bins,)` map, -1 for dropped bins | the subset KD-tree in `environment/transforms.py:493-531` |
+| `SubsetLocator(base, parent_to_child)` | phase 4 | base locator; `(n_parent_bins,)` map, -1 for dropped bins. `locate` masks the base's -1 results **before** indexing the map ([designs.md#subset](designs.md#subset)) | the subset KD-tree in `environment/transforms.py:493-531` |
 | `TransformedLocator(base, inverse)` | phase 4 | base locator; inverse `AffineND` | `TransformedLayout.point_to_bin_index` (`ops/transforms.py:1566-1574`) |
 
 A locator may define `subset(keep) -> Locator` or `transformed(t) -> Locator`
@@ -246,9 +246,6 @@ class BinningLayout:
         *,
         connectivity: nx.Graph,                 # with the required node and edge attributes
         dimension_ranges: Sequence[tuple[float, float]] | None,
-        grid_edges: tuple[NDArray[np.float64], ...],
-        grid_shape: tuple[int, ...] | None,
-        active_mask: NDArray[np.bool_] | None,
         layout_type_tag: str,                   # e.g. "RegularGrid", "subset", "Hexagonal_transformed"
         layout_type: str,                       # the category: "grid", "mask", "hexagonal", ...
         build_params: dict[str, Any],           # descriptive record; never re-run
@@ -260,7 +257,32 @@ class BinningLayout:
     def point_to_bin_index(self, points): ...   # self._binning.locator.locate(points)
     def bin_sizes(self): ...                    # self._binning.bins.sizes
     def plot(self, ax=None, **kwargs): ...      # chosen by component; see designs.md#plotting-from-binning-data
+    def plot_linear_layout(self, ax=None, **kwargs): ...  # tracks only: plot_track_linear
+    # grid_edges, grid_shape, active_mask: read-only properties derived from the
+    # binning (designs.md#file-format, "One authority for duplicated data")
 ```
+
+**Consistency checks.** The constructor raises `ValueError`, naming the first
+mismatch, unless all of these hold. They run before `_setup_from_layout`
+publishes anything. `validate_connectivity_graph` checks only structure, and
+would accept changed positions or distances.
+
+1. The graph has nodes `0..n_bins-1`, and node `i`'s `"pos"` equals
+   `bins.centers[i]` exactly.
+2. `list(connectivity.edges())` equals `bins.pairs` in order and orientation.
+3. Each edge's `"distance"` equals `bins.pair_distances` exactly.
+4. When `faces` is `KnownFaces`: `faces.edges == bins.pairs` and
+   `faces.volumes == bins.sizes`.
+5. Component sizes agree with the bins:
+   - `rectilinear.active_mask.sum() == n_bins`;
+   - `HexagonShapes.centers == bins.centers`;
+   - `TriangleShapes.triangles.shape[0] == n_bins`;
+   - the active bins of the linearization number `n_bins`.
+6. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
+   locate to its own bin. This is one lookup of `n_bins` points.
+
+Derivations (phase 4) build the graph's `"pos"` and `"distance"` from the
+derived bins, so these checks hold by construction.
 
 The facade defines **none** of the capability methods: `finite_volume_geometry`,
 `rectilinear_grid`, `to_linear`. Environment code reads capabilities from the
@@ -305,9 +327,14 @@ Guaranteed-preservation classes:
 | Transform class | Test on the linear part `A` (n×n) | Faces kept? | Rectilinear kept? |
 | --- | --- | --- | --- |
 | translation | `A == I` exactly | yes, unchanged | yes, edges shifted |
-| similarity | `A @ A.T == s**2 I` (rtol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal |
-| axis-aligned scaling | `A` diagonal, unequal entries | only when `rectilinear` is present (every face is axis-aligned) | yes, edges scaled |
+| similarity | `A @ A.T == s**2 I` (rtol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal with every entry positive |
+| axis-aligned scaling | `A` diagonal, unequal entries | only when the **parent** has `rectilinear` (every face is axis-aligned) | only if every entry is positive; edges scaled |
 | any other invertible `A` | — | no: `MissingFaces` naming the transform | no |
+
+**Reflections (any negative diagonal entry, or `det A < 0`)** never take the
+rectilinear fast path. Reversing edges would renumber the bins and move
+boundary ownership. The child uses `TransformedLocator`, has no rectilinear
+component, and keeps faces by the rules above.
 
 Track binnings (`measure_dim < n_dims`) accept translation and similarity only.
 Any other class raises `ValueError`, because the new bin lengths would depend on

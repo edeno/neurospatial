@@ -14,7 +14,9 @@ its original layout object. Outputs don't change.
 - [src/neurospatial/layout/engines/hexagonal.py:197-295](../../../src/neurospatial/layout/engines/hexagonal.py#L197-L295) — the hexagon plot, which reads `hex_radius_` and `hex_orientation_`.
 - [src/neurospatial/layout/engines/triangular_mesh.py:276-434](../../../src/neurospatial/layout/engines/triangular_mesh.py#L276-L434) — the mesh plot, which reads `_full_delaunay_tri`, `_active_original_simplex_indices` and `_boundary_polygon_stored`.
 - [src/neurospatial/layout/engines/graph.py:178-327](../../../src/neurospatial/layout/engines/graph.py#L178-L327) — the track plot and `plot_linear_layout`.
-- [src/neurospatial/environment/visualization.py:470-505](../../../src/neurospatial/environment/visualization.py#L470-L505) and [:1000-1080](../../../src/neurospatial/environment/visualization.py#L1000-L1080) — `plot_field`'s hexagon and mesh branches, which read private layout attributes.
+- [src/neurospatial/environment/visualization.py:456-512](../../../src/neurospatial/environment/visualization.py#L456-L512) — `plot_field`'s renderer dispatch, which compares the layout tag with fixed names and reads private layout attributes.
+- [src/neurospatial/environment/visualization.py:941-1179](../../../src/neurospatial/environment/visualization.py#L941-L1179) — the grid, hexagon, mesh, 1D and scatter renderers.
+- [src/neurospatial/environment/visualization.py:280-294](../../../src/neurospatial/environment/visualization.py#L280-L294) — `plot_1d`, which calls `layout.plot_linear_layout` when it exists.
 
 **Contracts referenced:**
 
@@ -49,13 +51,19 @@ its original layout object. Outputs don't change.
   functions unchanged. Each layout's `plot` and `plot_linear_layout` becomes a
   single call to its function. The matplotlib import stays lazy, inside the
   functions.
-- **Point `plot_field` at the binning:**
-  - Change `visualization.py:483-501` and `:1007-1075` to read
-    `env._binning.shapes` (`HexagonShapes` or `TriangleShapes`).
-  - Change the "missing attributes" errors to name the missing component in
-    scientific terms, keeping each error's type.
-  - Remove the reads of `hex_radius_`, `hex_orientation_` and
-    `_full_delaunay_tri` from `environment/visualization.py`.
+- **Dispatch `plot_field` through components.** Replace the tag comparison at
+  `visualization.py:456-512` with the
+  [component dispatch](designs.md#plotting-from-binning-data).
+  - The renderers (`visualization.py:941-1179`) read grid data from
+    `env._binning.rectilinear` and shapes from `env._binning.shapes`.
+  - The "missing attributes" `RuntimeError`s become checks for missing
+    components, worded in scientific terms, keeping the error type.
+  - Remove every read of `hex_radius_`, `hex_orientation_`,
+    `_full_delaunay_tri`, `_active_original_simplex_indices` and `layout.grid_*`
+    from `environment/visualization.py`'s `plot_field` path.
+- **Route `plot_1d` through the linearization.** At `visualization.py:280-294`,
+  call `plot_track_linear` with `env._binning.linearization`. Keep today's
+  warning when a track has no linearization.
 - **Tests:** new `tests/layout/test_components.py` and
   `tests/environment/test_plot_from_binning.py`.
 - **Compare the baseline** (zero differences). On the same machine, compare
@@ -79,6 +87,8 @@ its original layout object. Outputs don't change.
 | `test_triangle_shapes_cover_active_bins` | `shapes.triangles.shape == (n_bins, 3)`; triangle centroids equal `env.bin_centers` |
 | `test_outline_matches_polygon` | For `from_polygon`, the `Outline` geometry `.equals()` the input polygon |
 | `test_plot_artists_unchanged` (parametrized over the ten types; `@pytest.mark.slow`) | Class names, path vertices, face colors and z-order of every artist from `env.plot()` and `plot_field()` equal the committed base-commit record |
+| `test_plot_field_renderer_by_component` (parametrized over the ten types) | The renderer's artist class is unchanged from today: `QuadMesh` for the grid, polygon, mask, pixel-mask and polar types; `PatchCollection` for the hexagonal type; `PolyCollection` for the mesh; `FillBetweenPolyCollection` plus `Line2D` for the track. This holds even when `_layout_type_tag` is monkeypatched to an unknown string, which proves the dispatch ignores tags |
+| `test_plot_1d_uses_linearization` | `plot_1d()` on the track returns axes with the same artists as before, and emits no warning |
 | `test_plot_field_reads_binning_shapes` | `plot_field` on a hexagonal environment draws `n_bins` hexagon patches with the radius from `env._binning.shapes` |
 | baseline compare (manual) | zero differences |
 | full suite, doctests, `tests/docs`, API snapshot, ruff, mypy | all pass |
