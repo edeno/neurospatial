@@ -418,8 +418,9 @@ def test_default_center_error_threshold(simple_2d_env):
 def test_detected_center_ignores_unresolved_bins():
     """The detected peak is taken over finite bins only.
 
-    The track extends far beyond the visited stretch, so the smoothed rate is
-    NaN there; a plain argmax would pick the first NaN bin as the peak.
+    The track extends far beyond the visited stretch. An unsmoothed binned
+    rate keeps the unvisited bins NaN and its peak at the generating bin;
+    a plain argmax would pick the first NaN bin as the peak.
     """
     from neurospatial import Environment
 
@@ -444,7 +445,14 @@ def test_detected_center_ignores_unresolved_bins():
         },
     )
 
-    result = validate_simulation(session)
+    from neurospatial.encoding import compute_spatial_rate
+
+    field = compute_spatial_rate(
+        env, spike_times, times, positions, method="binned", bandwidth=0.0
+    ).firing_rate
+    assert np.isnan(field).any()
+    assert np.isnan(field[np.argmax(field)])
+    result = validate_simulation(session, method="binned", bandwidth=0.0)
     assert result["center_errors"][0] == 0.0
 
 
