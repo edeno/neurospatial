@@ -524,14 +524,12 @@ class EnvironmentVisualization:
         # angular extent is fixed by bin_centers[:, 1] but its distance
         # extent is independent and physical).
         if not self.layout.is_linearized_track and self.n_dims != 1:
-            unit_label = f" ({self.units})" if self.units else ""
-            if getattr(self, "_POLAR", False):
-                ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
-                ax.set_ylabel("Angle (rad)", fontsize=12)
-            else:
+            system = self._coordinate_system
+            xlabel, ylabel = system.axis_labels(self.units)
+            if system.equal_aspect:
                 ax.set_aspect("equal")
-                ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
-                ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
+            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_ylabel(ylabel, fontsize=12)
 
             if self.dimension_ranges and len(self.dimension_ranges) >= 2:
                 ax.set_xlim(self.dimension_ranges[0])

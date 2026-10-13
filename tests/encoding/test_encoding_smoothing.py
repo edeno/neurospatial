@@ -1176,45 +1176,40 @@ class TestPolarGaussianKernelSeam:
         # It behaves like a truly-far pair (also ~no weight at this bandwidth).
         assert seam_w == pytest.approx(far_w, abs=1e-6)
 
-    def test_kernel_cache_rejects_id_reuse(self) -> None:
-        """A recycled ``id(env)`` must never return another env's cached kernel.
-
-        ``id()`` is unique only among *live* objects, so once an env is GC'd a
-        freshly built one can land at the same address. The kernel cache keys on
-        ``(id(env), bandwidth)`` and previously validated only ``n_bins``; two
-        polar envs that differ only in ``circular_angle`` share ``n_bins``, so a
-        circular env's wrapped kernel could be served for an open-axis env at the
-        reused id (the non-deterministic macos-3.13 CI failure: seam weight came
-        back ~0.29 instead of ~0). The weakref identity guard turns any such
-        reuse into a cache miss. Forge the collision deterministically by seeding
-        the cache under the open env's key with the circular kernel and a weakref
-        pointing at a *different* env.
-        """
-        from neurospatial.encoding import _smoothing
-
+    def test_kernel_caches_are_owned_by_their_environments(self) -> None:
+        """Circular and open environments keep separate kernels and seam weights."""
         env_circular = self._polar_env(circular_angle=True)
         env_open = self._polar_env(circular_angle=False)
         bandwidth = 5.0
         circular_kernel = _get_gaussian_kernel(env_circular, bandwidth)
-
-        # Poison: open env's (id, bandwidth) key -> circular kernel + a weakref
-        # to a foreign env. The guard must see ref() is not env_open and recompute.
-        _smoothing._GAUSSIAN_KERNEL_CACHE[(id(env_open), bandwidth)] = (
-            circular_kernel,
-            np.asarray(env_open.bin_centers).shape[0],
-            weakref.ref(env_circular),
-        )
-
-        result = _get_gaussian_kernel(env_open, bandwidth)
+        open_kernel = _get_gaussian_kernel(env_open, bandwidth)
+        assert circular_kernel is not open_kernel
+        assert env_circular._gaussian_kernels[bandwidth] is circular_kernel
+        assert env_open._gaussian_kernels[bandwidth] is open_kernel
         seam_a, seam_b, *_ = self._ring_indices(env_open)
-        # Recomputed open-axis kernel: seam is NOT wrapped (tiny weight), not the
-        # leaked circular value the poisoned entry would have returned.
-        assert result[seam_a, seam_b] < 1e-3
+        assert circular_kernel[seam_a, seam_b] > 1e-3
+        assert open_kernel[seam_a, seam_b] < 1e-3
+        assert _get_gaussian_kernel(env_circular, bandwidth) is circular_kernel
+        assert _get_gaussian_kernel(env_open, bandwidth) is open_kernel
 
 
 # =============================================================================
 # Test high-bin memory WARNING for the dense Gaussian-KDE kernel
 # =============================================================================
+
+
+def test_gaussian_kernel_is_released_with_environment() -> None:
+    """A cached dense matrix is freed when its environment is collected."""
+    import gc
+
+    env = Environment.from_samples(
+        np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]]),
+        bin_size=1.0,
+    )
+    kernel_ref = weakref.ref(_get_gaussian_kernel(env, bandwidth=1.0))
+    del env
+    gc.collect()
+    assert kernel_ref() is None
 
 
 class TestGaussianKernelMemoryWarning:

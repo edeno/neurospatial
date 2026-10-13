@@ -849,6 +849,15 @@ class EnvironmentFields:
         return {}
 
     @versioned_cached_property
+    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
+        """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
+
+        The smoothing adapter fills this holder. It is dropped on a state
+        version bump or ``clear_cache()``, and freed with the environment.
+        """
+        return {}
+
+    @versioned_cached_property
     def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 

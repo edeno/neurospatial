@@ -25,7 +25,7 @@ See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
+    from neurospatial.environment._coordinates import CoordinateSystem
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.layout.base import LayoutEngine
@@ -64,11 +65,12 @@ class EnvironmentProtocol(Protocol):
     regions: Regions
     units: str | None
     frame: str | None
-    # Per-class marker: ``False`` for Cartesian environments, ``True`` for
-    # egocentric polar environments (EgocentricPolarEnvironment). Mixins that
-    # adapt presentation to polar geometry (e.g. plot_field axis labels) read
-    # this; it is a class constant, not a runtime-mutable flag.
-    _POLAR: ClassVar[bool]
+
+    @property
+    def _coordinate_system(self) -> CoordinateSystem: ...
+
+    @property
+    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]: ...
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[tuple[float, KernelMode], NDArray[np.float64]]
@@ -442,6 +444,19 @@ class InterpolationConsumer(Protocol):
     def layout(self) -> LayoutEngine: ...
 
     _kdtree_cache: cKDTree | None
+
+
+class CellLengthConsumer(Protocol):
+    """Cell measures, dimension count and radial edges for length-scale defaults."""
+
+    @property
+    def bin_sizes(self) -> NDArray[np.float64]: ...
+
+    @property
+    def n_dims(self) -> int: ...
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
 
 
 # TypeVar bound to EnvironmentProtocol for use in mixin ``self`` annotations.

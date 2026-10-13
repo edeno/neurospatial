@@ -194,10 +194,11 @@ coordinates belongs to `CartesianCoordinates`, composed by `Environment`.
 Polar environments do not inherit it. A shared method with a Cartesian mode
 calls `self._require_cartesian("<call>")`; a new coordinate system defines this
 guard to refuse unsupported calls and is covered by
-`test_every_inherited_member_is_classified_for_polar`. Shared coordinate math
-(distances, length scales and axis labels) should ask a per-type coordinate
-system. Gaussian smoothing and `plot_field` still test `_POLAR` and are being
-moved to that interface.
+`test_every_inherited_member_is_classified_for_polar`. Shared code that
+measures distance, chooses length scales or names axes asks
+`env._coordinate_system`. A new coordinate system defines one
+`CoordinateSystem` class with those rules; analysis code does not test the
+persistence type tag `_POLAR`.
 
 Layout-specific operations check a capability protocol on the layout, as
 smoothing does with `FiniteVolumeGeometryProvider`. Linear interpolation and

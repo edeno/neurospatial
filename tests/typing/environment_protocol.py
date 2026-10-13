@@ -11,8 +11,14 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import (
+        CartesianSystem,
+        CoordinateSystem,
+        EgocentricPolarSystem,
+    )
     from neurospatial.environment._protocols import (
         CartesianEnvironmentProtocol,
+        CellLengthConsumer,
         EnvironmentProtocol,
         InterpolationConsumer,
         RebinConsumer,
@@ -52,3 +58,15 @@ if TYPE_CHECKING:
 
     def _check_interpolation(cartesian: Environment) -> None:
         _interpolation: InterpolationConsumer = cartesian
+
+    def _check_coordinates(
+        cartesian: Environment, polar: EgocentricPolarEnvironment
+    ) -> None:
+        _cartesian_lengths: CellLengthConsumer = cartesian
+        _polar_lengths: CellLengthConsumer = polar
+        _cartesian_system: CoordinateSystem = CartesianSystem()
+        _polar_system: CoordinateSystem = EgocentricPolarSystem(circular=True)
+        assert_type(cartesian._coordinate_system, CartesianSystem)
+        assert_type(polar._coordinate_system, EgocentricPolarSystem)
+        assert_type(cartesian._gaussian_kernels, dict[float, NDArray[np.float64]])
+        assert_type(polar._gaussian_kernels, dict[float, NDArray[np.float64]])

@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.environment._coordinates import CartesianSystem
 from neurospatial.environment._protocols import SelfCartesianEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.fields import _interpolate
@@ -42,12 +43,20 @@ if TYPE_CHECKING:
     from neurospatial.ops.transforms import Affine2D, AffineND
 
 
+_CARTESIAN = CartesianSystem()
+
+
 class CartesianCoordinates:
     """Entry points for environments whose bin centers are Cartesian coordinates.
 
     The host interface is ``CartesianEnvironmentProtocol``. Trajectory,
     transform and interpolation implementations live in module functions.
     """
+
+    @property
+    def _coordinate_system(self) -> CartesianSystem:
+        """Cartesian distance and axis semantics shared by these environments."""
+        return _CARTESIAN
 
     def _require_cartesian(self: SelfCartesianEnv, operation: str) -> SelfCartesianEnv:
         """Return this environment: its bin centers are Cartesian."""

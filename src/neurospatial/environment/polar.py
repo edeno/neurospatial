@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from neurospatial.layout.factories import LayoutType
 
 from neurospatial._exceptions import CartesianOnlyError
+from neurospatial.environment._coordinates import EgocentricPolarSystem
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
@@ -111,6 +112,11 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     Environment.from_polar_egocentric : Public factory for this type.
     neurospatial.ops.egocentric : Allocentric↔egocentric array transforms.
     """
+
+    @property
+    def _coordinate_system(self) -> EgocentricPolarSystem:
+        """Polar distance and axis semantics, with the graph's circularity."""
+        return EgocentricPolarSystem(circular=self._angular_is_circular)
 
     def _require_cartesian(self, operation: str) -> NoReturn:
         """Refuse ``operation``: polar bin centers are ``(distance, angle)``."""

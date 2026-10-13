@@ -58,6 +58,7 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
+    from neurospatial.environment._coordinates import CoordinateSystem
     from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.ops._types import KernelMode
 
@@ -327,15 +328,16 @@ class _BaseEnvironment(
     units: str | None = field(init=False, default=None)
     frame: str | None = field(init=False, default=None)
 
-    # Coordinate-system marker. ``False`` for Cartesian environments
-    # (``Environment``), ``True`` for egocentric polar environments
-    # (``EgocentricPolarEnvironment``) whose ``bin_centers[:, 0]`` is
-    # *distance* and ``bin_centers[:, 1]`` is *angle in radians*. This is a
-    # per-class constant (not a runtime-mutable field) so the type itself —
-    # not a flag — carries the geometry. Mixin methods that adapt their
-    # presentation to polar geometry (e.g. ``plot_field`` axis labels) read
-    # this via ``getattr(self, "_POLAR", False)``.
+    # Persistence type tag: io readers use it to restore the concrete class.
+    # Analysis and plotting ask _coordinate_system for coordinate semantics.
     _POLAR: ClassVar[bool] = False
+
+    @property
+    def _coordinate_system(self) -> CoordinateSystem:
+        """How this environment measures distance and names its axes."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must define _coordinate_system."
+        )
 
     # Internal state
     _is_linearized_track_env: bool = field(init=False)

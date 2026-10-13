@@ -1063,8 +1063,8 @@ class TestPolarBoundaryGuardsExtended:
 
         An affine transform on (distance, angle) bin centers is not
         geometrically meaningful. The free-function path guards against a
-        polar env being passed directly (the method override on
-        EgocentricPolarEnvironment raises before reaching it).
+        polar env being passed directly (accessing its absent Cartesian
+        method raises before reaching the free function).
         """
         from neurospatial.ops.transforms import (
             apply_transform_to_environment,
@@ -1072,8 +1072,14 @@ class TestPolarBoundaryGuardsExtended:
         )
 
         T = translate(1.0, 1.0)
-        with pytest.raises(ValueError, match=r"polar"):
+        with pytest.raises(ValueError, match=r"polar") as caught:
             apply_transform_to_environment(polar_env, T)
+        assert str(caught.value) == (
+            "apply_transform requires a Cartesian environment but got an "
+            "egocentric polar environment (an affine transform on "
+            "(distance, angle) pairs is not geometrically meaningful). For "
+            "polar envs, work in the egocentric coordinate space directly."
+        )
 
     def test_apply_transform_method_refuses_polar_env(self, polar_env):
         """The apply_transform method on a polar env raises NotImplementedError."""
