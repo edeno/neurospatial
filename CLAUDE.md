@@ -124,8 +124,7 @@ sister spatial classifiers (`is_object_vector_cell`,
 
 These are the durable, cross-domain naming rules established in v0.6. Every
 result class and every new domain MUST follow them so the surface stays
-learnable — a name has **one** meaning everywhere. (Full rationale in
-`.claude/docs/plans/ux-v0.6/api-contract.md`.)
+learnable — a name has **one** meaning everywhere.
 
 ### Terminal verbs (identical name + semantics on every result class)
 

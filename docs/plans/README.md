@@ -17,7 +17,7 @@ Date labels are the first Git commit date for the original artifact, based on `g
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
-| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Complete historical plan. Superseded for current API vocabulary by the v0.6 API contract in `.claude/docs/plans/ux-v0.6/api-contract.md`; do not copy its old `neuron_id`, `detect_*`, or view-specific peak names into new work. |
+| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Complete historical plan. Superseded for current API vocabulary by the "v0.6 API Naming Contract" section of `CLAUDE.md`; do not copy its old `neuron_id`, `detect_*`, or view-specific peak names into new work. |
 
 ## Planning Backlog
 

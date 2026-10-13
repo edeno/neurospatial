@@ -3,8 +3,8 @@
 **Committed**: 2025-12-05
 
 > **Superseded for current API vocabulary.** This historical task list predates
-> the v0.6 naming contract. Use
-> `.claude/docs/plans/ux-v0.6/api-contract.md` for current terms such as
+> the v0.6 naming contract. Use the "v0.6 API Naming Contract" section of
+> `CLAUDE.md` for current terms such as
 > `unit_id`, `summary_table()`, `classify()`, `label_cell_types()`, and
 > `peak_location()`.
 
