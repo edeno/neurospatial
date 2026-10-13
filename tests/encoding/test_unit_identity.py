@@ -113,6 +113,27 @@ def test_getitem_is_position_and_sel_is_label(name, trajectory, spike_trains):
             assert container.sel(unit_id=label).unit_id == label
 
 
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+@pytest.mark.parametrize("name", CONTAINERS)
+def test_copied_container_keeps_labels_read_only(name, how, trajectory, spike_trains):
+    """A pickled or deep-copied container cannot be edited into duplicate labels.
+
+    Duplicate labels would make sel(unit_id=) silently return the first match.
+    """
+    import copy
+    import pickle
+
+    container = _container(name, trajectory, spike_trains, [7, 8, 9])
+    copied = (
+        pickle.loads(pickle.dumps(container))
+        if how == "pickle"
+        else copy.deepcopy(container)
+    )
+    np.testing.assert_array_equal(copied.unit_ids, [7, 8, 9])
+    with pytest.raises(ValueError, match="read-only"):
+        copied.unit_ids[0] = 8
+
+
 @pytest.mark.parametrize("name", CONTAINERS)
 def test_selection_errors_name_the_other_accessor(name, trajectory, spike_trains):
     container = _container(name, trajectory, spike_trains, STR_IDS)

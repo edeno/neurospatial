@@ -103,8 +103,15 @@ class UnitSelectionMixin:
     results) so ``[]`` has one meaning everywhere: ``x[i]`` is the ``i``-th
     unit in stored order, the same row as every per-unit array and as
     iteration. Labels are selected explicitly with ``x.sel(unit_id=label)``,
-    as in ``x.to_xarray().sel(unit_id=label)``.
+    as in ``x.to_xarray().sel(unit_id=label)``. ``unit_ids`` stays read-only,
+    including after pickling or copying, so it cannot be edited into the
+    duplicate labels that would make ``sel`` return the first match.
     """
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping ``unit_ids`` read-only."""
+        self.__dict__.update(state)
+        state["unit_ids"].flags.writeable = False
 
     def sel(self: _UnitContainer[_Unit_co], *, unit_id: Any) -> _Unit_co:
         """Return the unit whose label is ``unit_id``.

@@ -163,10 +163,9 @@ class SpikeTrains(UnitSelectionMixin):
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        self.__dict__.update(state)
+        super().__setstate__(state)
         for train in self.trains:
             train.flags.writeable = False
-        np.asarray(self.unit_ids).flags.writeable = False
 
     @property
     def index(self) -> NDArray[Any]:
