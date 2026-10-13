@@ -20,6 +20,7 @@ track or a masked open field, not just a rectangular grid.
 
 from __future__ import annotations
 
+import copy
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -127,9 +128,10 @@ class BayesianDecoder:
 warn_on_drop
         The configuration passed at construction (immutable).
     encoding_models : NDArray[np.float64] or None
-        The fitted encoding models, or ``None`` when unfitted.
+        The fitted encoding models (a read-only copy), or ``None`` when
+        unfitted.
     unit_ids : NDArray or None
-        Per-model identity labels, or ``None`` when unfitted.
+        Per-model identity labels (read-only), or ``None`` when unfitted.
     is_fitted : bool
         Read-only property: ``True`` once :meth:`fit` has populated the
         encoding models, ``False`` otherwise.
@@ -216,8 +218,10 @@ warn_on_drop
         """Validate config domain and (if injected) fitted-state coupling.
 
         Runs at construction and again on every :func:`~dataclasses.replace`
-        (so :meth:`fit`'s returned decoder is validated too). The dataclass is
-        frozen, so this only raises -- it never assigns fields. Reuses the core
+        (so :meth:`fit`'s returned decoder is validated too). Fitted state is
+        stored as read-only copies, so editing the arrays a decoder was built
+        from (for example ``rates.firing_rates`` after :meth:`from_rates`)
+        cannot change its predictions. Reuses the core
         :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
         cannot drift from the decode entry points, and the encoder's
         :func:`~neurospatial.encoding._smoothing.validate_spatial_method_params`
@@ -225,6 +229,7 @@ warn_on_drop
         errors mirror ``compute_spatial_rate`` exactly (one validator, no
         duplicate allow-set).
         """
+        from neurospatial._results import read_only_copy, resolve_unit_ids
         from neurospatial.decoding._binning import validate_dt
         from neurospatial.encoding._smoothing import validate_spatial_method_params
 
@@ -259,7 +264,7 @@ warn_on_drop
                     "Build fitted decoders via `.fit(...)` (which populates "
                     "unit_ids), or pass a matching `unit_ids` array."
                 )
-            models = np.asarray(self.encoding_models)
+            models = read_only_copy(self.encoding_models)
             if models.ndim != 2:
                 raise ValueError(
                     f"encoding_models must be 2-D (n_units, n_bins), got "
@@ -274,12 +279,33 @@ warn_on_drop
             # One distinct label per encoding model: label pairing in predict
             # relies on it. Runs for constructor labels and, via replace, for
             # the labels fit captures.
-            from neurospatial._results import resolve_unit_ids
-
-            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder")
+            unit_ids = resolve_unit_ids(
+                self.unit_ids, models.shape[0], context="BayesianDecoder"
+            )
             from neurospatial.decoding._support import supported_prior
 
             supported_prior(None, self.spatial_support, self.env.n_bins, 0)
+            object.__setattr__(self, "encoding_models", models)
+            object.__setattr__(self, "unit_ids", unit_ids)
+            if self.spatial_support is not None:
+                object.__setattr__(
+                    self, "spatial_support", read_only_copy(self.spatial_support)
+                )
+        if self.spike_window is not None:
+            object.__setattr__(
+                self, "spike_window", read_only_copy(self.spike_window, np.float64)
+            )
+        object.__setattr__(
+            self, "analysis_settings", copy.deepcopy(self.analysis_settings)
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the fitted arrays read-only."""
+        self.__dict__.update(state)
+        for name in ("encoding_models", "unit_ids", "spatial_support", "spike_window"):
+            value = getattr(self, name)
+            if isinstance(value, np.ndarray):
+                value.flags.writeable = False
 
     @property
     def is_fitted(self) -> bool:

@@ -218,6 +218,38 @@ def test_list_input_still_accepted(trains: list[np.ndarray]) -> None:
     assert len(st) == len(trains)
 
 
+def test_container_is_isolated_from_caller_arrays(trains: list[np.ndarray]) -> None:
+    # Editing the arrays passed in must not change the container: shared
+    # labels could be edited into duplicates, bypassing the uniqueness check.
+    ids = np.array([7, 9, 11])
+    st = SpikeTrains(trains, unit_ids=ids)
+    expected = [t.copy() for t in trains]
+    ids[0] = 9
+    trains[0][0] = -1.0
+    np.testing.assert_array_equal(st.unit_ids, [7, 9, 11])
+    np.testing.assert_array_equal(st.trains[0], expected[0])
+
+
+def test_stored_arrays_are_read_only(trains: list[np.ndarray]) -> None:
+    st = SpikeTrains(trains, unit_ids=np.array([7, 9, 11]))
+    with pytest.raises(ValueError, match="read-only"):
+        st.trains[0][0] = -1.0
+    with pytest.raises(ValueError, match="read-only"):
+        st.unit_ids[0] = 9
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_copied_container_stays_read_only(trains: list[np.ndarray], how: str) -> None:
+    import copy
+    import pickle
+
+    st = SpikeTrains(trains, unit_ids=np.array([7, 9, 11]))
+    st2 = pickle.loads(pickle.dumps(st)) if how == "pickle" else copy.deepcopy(st)
+    np.testing.assert_array_equal(st2.unit_ids, st.unit_ids)
+    assert all(train.flags.writeable is False for train in st2.trains)
+    assert st2.unit_ids.flags.writeable is False
+
+
 # ---------------------------------------------------------------------------
 # 6. Duck-typing as SpikeTrainsLike (the footgun guard)
 # ---------------------------------------------------------------------------

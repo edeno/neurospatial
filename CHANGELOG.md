@@ -116,6 +116,13 @@
 
 ### Fixed
 
+- Editing arrays after handing them to neurospatial no longer changes stored
+  state. `SpikeTrains` keeps read-only copies of its trains and labels, so
+  editing the caller's labels can no longer create duplicate unit IDs. Every
+  result's `unit_ids` is a read-only copy. A `BayesianDecoder` keeps read-only
+  copies of its rate maps, labels and training support, so editing
+  `rates.firing_rates` after `BayesianDecoder.from_rates(rates)` no longer
+  changes its predictions. Arrays stay read-only after pickling and deep copies.
 - Rebinned environments load from files and dictionaries again, and rebinning
   preserves diagonal connectivity on small and sparse grids.
 - Linear interpolation retains known values at active-bin centers and grid

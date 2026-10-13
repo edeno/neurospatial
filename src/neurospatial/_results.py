@@ -49,6 +49,13 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
+def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
+    """Return a read-only copy that no caller-held view can alias."""
+    owned = np.array(array, dtype=dtype, copy=True)
+    owned.flags.writeable = False
+    return owned
+
+
 def as_label_array(labels: Any) -> NDArray[Any]:
     """Convert unit labels to an array without changing any label's type.
 
@@ -83,10 +90,11 @@ def resolve_unit_ids(
 ) -> NDArray[Any]:
     """Resolve and validate per-unit identity labels.
 
-    Returns an ``ndarray`` of unit identity labels: ``unit_ids`` when given,
-    else the labels the spike input carries (``input_ids``), else
+    Returns a read-only ``ndarray`` of unit identity labels: ``unit_ids`` when
+    given, else the labels the spike input carries (``input_ids``), else
     ``np.arange(n_units)``. Validates that there is exactly one label per unit
-    and that no label repeats.
+    and that no label repeats. The array is a copy, so editing the caller's
+    labels afterwards cannot relabel or duplicate a unit.
 
     Parameters
     ----------
@@ -104,7 +112,7 @@ def resolve_unit_ids(
     Returns
     -------
     ndarray
-        Resolved labels as a 1D array of length ``n_units``.
+        Resolved labels as a read-only 1D array of length ``n_units``.
 
     Raises
     ------
@@ -128,9 +136,9 @@ def resolve_unit_ids(
     from_input = unit_ids is None and input_ids is not None
     unit_ids = unit_ids if unit_ids is not None else input_ids
     if unit_ids is None:
-        return np.arange(n_units)
+        return read_only_copy(np.arange(n_units))
 
-    resolved = as_label_array(unit_ids)
+    resolved = read_only_copy(as_label_array(unit_ids))
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
         raise ValueError(

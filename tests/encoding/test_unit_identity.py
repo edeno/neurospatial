@@ -81,6 +81,18 @@ def test_unit_ids_round_trip(name, trajectory, spike_trains):
 
 
 @pytest.mark.parametrize("name", ALL)
+def test_unit_ids_are_isolated_from_caller_array(name, trajectory, spike_trains):
+    """Editing the caller's labels after the call cannot relabel a unit."""
+    env, times, positions, headings = trajectory
+    ids = np.array([10, 20, 30])
+    result = _compute(name, env, times, positions, headings, spike_trains, unit_ids=ids)
+    ids[0] = 20  # would duplicate label 20 if the result shared this array
+    np.testing.assert_array_equal(result.unit_ids, [10, 20, 30])
+    with pytest.raises(ValueError, match="read-only"):
+        result.unit_ids[0] = 20
+
+
+@pytest.mark.parametrize("name", ALL)
 def test_unit_ids_default_arange(name, trajectory, spike_trains):
     """Omitting unit_ids defaults to np.arange(n_units)."""
     env, times, positions, headings = trajectory

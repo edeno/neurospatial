@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import align_unit_table, resolve_unit_ids
+from neurospatial._results import align_unit_table, read_only_copy, resolve_unit_ids
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -67,9 +67,10 @@ class SpikeTrains:
     ----------
     trains : sequence of ndarray
         Ragged per-unit spike times, one 1-D array per unit (a ``list`` is the
-        ergonomic input). Each element is coerced to a 1-D ``float64`` array at
-        construction and the result is stored as an immutable ``tuple``; a
-        non-1-D element raises :class:`ValueError`.
+        ergonomic input). Each element is copied to a read-only 1-D ``float64``
+        array at construction, so later edits to the arrays you passed in do
+        not reach the container; a non-1-D element raises
+        :class:`ValueError`.
     unit_ids : ndarray or sequence, optional
         Identity label for each unit, one per train. Defaults to
         ``np.arange(len(trains))``; such generated labels do not count as
@@ -89,11 +90,11 @@ class SpikeTrains:
     Attributes
     ----------
     trains : tuple of ndarray
-        The per-unit ``float64`` spike-time arrays, stored as an immutable
-        ``tuple`` so in-place mutation raises. Build a new
+        The per-unit ``float64`` spike-time arrays. Both the ``tuple`` and its
+        arrays are read-only, so in-place mutation raises. Build a new
         :class:`SpikeTrains` to change the trains.
     unit_ids : ndarray
-        Resolved identity labels, one per train.
+        Resolved identity labels, one per train (read-only).
     unit_table : pandas.DataFrame or None
         The per-unit metadata table, or ``None``.
 
@@ -128,7 +129,7 @@ class SpikeTrains:
         """Coerce trains, resolve/validate unit ids, and validate the table."""
         coerced: list[NDArray[np.float64]] = []
         for i, train in enumerate(self.trains):
-            arr = np.asarray(train, dtype=np.float64)
+            arr = read_only_copy(train, np.float64)
             if arr.ndim != 1:
                 raise ValueError(
                     f"Each spike train must be 1-D, but train {i} has shape "
@@ -152,6 +153,13 @@ class SpikeTrains:
             "unit_table",
             align_unit_table(self.unit_table, self.unit_ids, context="SpikeTrains"),
         )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        for train in self.trains:
+            train.flags.writeable = False
+        np.asarray(self.unit_ids).flags.writeable = False
 
     @property
     def index(self) -> NDArray[Any]:

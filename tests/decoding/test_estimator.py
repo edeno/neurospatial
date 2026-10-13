@@ -381,6 +381,44 @@ class TestImmutability:
         with pytest.raises(dataclasses.FrozenInstanceError):
             dec.dt = 0.1  # type: ignore[misc]
 
+    def test_from_rates_decoder_isolated_from_rate_result(self, sim) -> None:
+        # A fitted decoder is a snapshot: editing the rates it was built from
+        # must not change its posterior or its recorded training settings.
+        from neurospatial.encoding import compute_spatial_rates
+
+        env, spikes, times, positions = sim
+        rates = compute_spatial_rates(env, spikes, times, positions, fill_value=0.0)
+        decoder = BayesianDecoder.from_rates(rates, dt=0.5)
+        before = decoder.predict(spikes, times).posterior.copy()
+        np.asarray(rates.firing_rates)[:] = 1.0
+        rates.analysis_settings["method"] = "edited"
+        assert_array_equal(decoder.predict(spikes, times).posterior, before)
+        assert decoder.analysis_settings["method"] == "diffusion_kde"
+
+    def test_fitted_state_is_read_only(self, sim) -> None:
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        for name in ("encoding_models", "unit_ids", "spatial_support"):
+            assert getattr(fitted, name).flags.writeable is False, name
+        with pytest.raises(ValueError, match="read-only"):
+            fitted.encoding_models[0, 0] = 0.0
+
+    @pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+    def test_copied_decoder_stays_read_only(self, sim, how) -> None:
+        import copy
+        import pickle
+
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        copied = (
+            pickle.loads(pickle.dumps(fitted))
+            if how == "pickle"
+            else copy.deepcopy(fitted)
+        )
+        assert_array_equal(copied.encoding_models, fitted.encoding_models)
+        for name in ("encoding_models", "unit_ids", "spatial_support"):
+            assert getattr(copied, name).flags.writeable is False, name
+
 
 # ---------------------------------------------------------------------------
 # 7. SpikeTrainsLike input
