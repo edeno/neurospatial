@@ -11,7 +11,11 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import (
+        EnvironmentProtocol,
+        TrajectoryBinningConsumer,
+        TransitionsConsumer,
+    )
     from neurospatial.environment.core import _BaseEnvironment
     from neurospatial.environment.polar import EgocentricPolarEnvironment
 
@@ -31,3 +35,10 @@ if TYPE_CHECKING:
         assert_type(cartesian.diffuse(field, 1.0), NDArray[np.float64])
         assert_type(polar.to_dict(), dict[str, Any])
         assert_type(cartesian.neighbors(0), list[int])
+
+    def _check_trajectory(
+        cartesian: Environment, polar: EgocentricPolarEnvironment
+    ) -> None:
+        _binning: TrajectoryBinningConsumer = cartesian
+        _cartesian_transitions: TransitionsConsumer = cartesian
+        _polar_transitions: TransitionsConsumer = polar

@@ -11,7 +11,7 @@ signatures avoids the docstring drift that duplication invites.
 
 Index-dtype convention: point/region *index* arrays (``bin_at``,
 ``bins_in_region``, ``boundary_bins``, ``point_to_bin_index``,
-``_allocate_time_linear``) are ``np.intp`` -- pointer-sized (64-bit on every
+``trajectory._allocate_time_linear``) are ``np.intp`` -- pointer-sized (64-bit on every
 platform, including Windows where ``np.int_`` is 32-bit) and the dtype NumPy
 fancy-indexing returns. Trajectory *sequence* arrays (``bin_sequence``,
 ``BinSequenceWithRuns.bins``) stay compact ``np.int32`` on purpose, and the
@@ -290,70 +290,6 @@ class EnvironmentProtocol(Protocol):
         """Convert 1D linear positions to N-D coordinates (1D environments only)."""
         ...
 
-    # Private methods that mixins call (trajectory analysis)
-    def _allocate_time_linear(
-        self,
-        positions: NDArray[np.float64],
-        dt: NDArray[np.float64],
-        valid_mask: NDArray[np.bool_],
-        bin_indices: NDArray[np.intp],
-        return_seconds: bool,
-    ) -> NDArray[np.float64]:
-        """Allocate time linearly across trajectory segments."""
-        ...
-
-    def _empirical_transitions(
-        self,
-        bins: NDArray[np.int32] | None = None,
-        *,
-        times: NDArray[np.float64] | None = None,
-        positions: NDArray[np.float64] | None = None,
-        lag: int = 1,
-        normalize: bool = True,
-        allow_teleports: bool = False,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> sparse.csr_matrix:
-        """Compute empirical transition matrix from trajectory data."""
-        ...
-
-    def _random_walk_transitions(
-        self,
-        *,
-        normalize: bool = True,
-    ) -> sparse.csr_matrix:
-        """Compute random walk transition matrix from connectivity."""
-        ...
-
-    def _diffusion_transitions(
-        self,
-        bandwidth: float,
-        *,
-        normalize: bool = True,
-    ) -> sparse.csr_matrix:
-        """Compute diffusion-based transition matrix."""
-        ...
-
-    def _compute_ray_grid_intersections(
-        self,
-        start_pos: NDArray[np.float64],
-        end_pos: NDArray[np.float64],
-        grid_edges: Sequence[NDArray[np.float64]],
-        grid_shape: tuple[int, ...],
-        total_time: float,
-    ) -> list[tuple[int, float]]:
-        """Compute grid cell intersections along a ray."""
-        ...
-
-    def _position_to_flat_index(
-        self,
-        pos: NDArray[np.float64],
-        grid_edges: Sequence[NDArray[np.float64]],
-        grid_shape: tuple[int, ...],
-    ) -> int:
-        """Convert a position to a flat grid index."""
-        ...
-
     # Private methods that mixins call (field interpolation)
     def _interpolate_nearest(
         self,
@@ -404,6 +340,53 @@ class EnvironmentProtocol(Protocol):
     ) -> Any:
         """Animate spatial fields over time (backend-specific return value)."""
         ...
+
+
+class TrajectoryBinningConsumer(Protocol):
+    """Point lookup, bin counts and layout for binning a trajectory."""
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def n_dims(self) -> int: ...
+
+    @property
+    def layout(self) -> LayoutEngine: ...
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
+
+    def compute_kernel(
+        self, bandwidth: float, *, mode: KernelMode = "density", cache: bool = True
+    ) -> NDArray[np.float64]: ...
+
+
+class TransitionsConsumer(Protocol):
+    """Graph, bin count, kernel and trajectory binning for transition matrices."""
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+    def compute_kernel(
+        self, bandwidth: float, *, mode: KernelMode = "density", cache: bool = True
+    ) -> NDArray[np.float64]: ...
+
+    def bin_sequence(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool = True,
+        outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
+    ) -> NDArray[np.int32]: ...
 
 
 # TypeVar bound to EnvironmentProtocol for use in mixin ``self`` annotations.
