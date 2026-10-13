@@ -43,8 +43,8 @@
 ### Changed
 
 - **Behavior change:** an environment's geometry is read-only once built:
-  `bin_centers`, `active_mask` and `grid_edges` reject writes and
-  `connectivity` is frozen. Cached kernels and operators cannot see in-place
+  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
+  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
   edits, so such edits used to return stale results silently. Build a new
   environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
 - Layout setup synchronizes restored geometry and invalidates all environment

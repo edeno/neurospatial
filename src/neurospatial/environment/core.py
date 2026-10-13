@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, NoReturn, TypeVar, overload
 
 import networkx as nx
 import numpy as np
@@ -62,6 +62,62 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import KernelMode
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _PublishedGeometry:
+    """The geometry an environment publishes, replaced whole and never edited.
+
+    ``_setup_from_layout`` builds a new instance (with read-only arrays and a
+    frozen graph) and advances ``_state_version``, which keys every derived
+    cache, in the same step.
+    """
+
+    bin_centers: NDArray[np.float64]
+    connectivity: nx.Graph
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    grid_edges: tuple[NDArray[np.float64], ...] | None
+    grid_shape: tuple[int, ...] | None
+    active_mask: NDArray[np.bool_] | None
+
+
+class _GeometryView(Generic[_T]):
+    """Read-only environment attribute backed by its published geometry."""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._name = name
+
+    @overload
+    def __get__(self, obj: None, objtype: type | None = None) -> _GeometryView[_T]: ...
+
+    @overload
+    def __get__(self, obj: _BaseEnvironment, objtype: type | None = None) -> _T: ...
+
+    def __get__(
+        self, obj: _BaseEnvironment | None, objtype: type | None = None
+    ) -> _GeometryView[_T] | _T:
+        if obj is None:
+            return self
+        value: _T = getattr(obj._geometry, self._name)
+        return value
+
+    def __set__(self, obj: object, value: object) -> NoReturn:
+        raise AttributeError(
+            _format_error(
+                f"Environment.{self._name} is read-only.",
+                why=(
+                    "Why: cached kernels, operators and lookups belong to the "
+                    "geometry the environment was built with, so replacing part "
+                    "of it would leave them stale."
+                ),
+                fix=(
+                    "build a new environment instead, e.g. with a factory, "
+                    "subset, rebin or apply_transform"
+                ),
+            )
+        )
 
 
 @dataclass
@@ -260,14 +316,17 @@ class _BaseEnvironment(
     layout: LayoutEngine
 
     # --- Attributes populated from the layout instance ---
-    bin_centers: NDArray[np.float64] = field(init=False)
-    connectivity: nx.Graph = field(init=False)
-    dimension_ranges: Sequence[tuple[float, float]] | None = field(init=False)
+    # Read-only views of the published geometry (see _PublishedGeometry). Not
+    # annotated, so they are class-level descriptors rather than dataclass fields.
+    _geometry: _PublishedGeometry = field(init=False, repr=False)
+    bin_centers = _GeometryView[NDArray[np.float64]]()
+    connectivity = _GeometryView[nx.Graph]()
+    dimension_ranges = _GeometryView["Sequence[tuple[float, float]] | None"]()
 
     # Grid-specific context (populated if layout is grid-based)
-    grid_edges: tuple[NDArray[np.float64], ...] | None = field(init=False)
-    grid_shape: tuple[int, ...] | None = field(init=False)
-    active_mask: NDArray[np.bool_] | None = field(init=False)
+    grid_edges = _GeometryView["tuple[NDArray[np.float64], ...] | None"]()
+    grid_shape = _GeometryView["tuple[int, ...] | None"]()
+    active_mask = _GeometryView["NDArray[np.bool_] | None"]()
 
     # Region Management
     regions: Regions = field(init=False, repr=False)
@@ -375,12 +434,15 @@ class _BaseEnvironment(
         self._is_linearized_track_env = self.layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
-        self.bin_centers = np.empty((0, 0))  # Placeholder
-        self.connectivity = nx.Graph()
-        self.dimension_ranges = None
-        self.grid_edges = ()
-        self.grid_shape = None
-        self.active_mask = None
+        # Placeholder geometry until _setup_from_layout publishes the layout's
+        self._geometry = _PublishedGeometry(
+            bin_centers=np.empty((0, 0)),
+            connectivity=nx.Graph(),
+            dimension_ranges=None,
+            grid_edges=(),
+            grid_shape=None,
+            active_mask=None,
+        )
         self._is_fitted = False  # Will be set by _setup_from_layout
         if layout_type_used is not None:
             # Populate attributes from the built layout
@@ -929,33 +991,37 @@ class _BaseEnvironment(
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
-        self.bin_centers = bin_centers
-        self.connectivity = connectivity
-        self.dimension_ranges = self.layout.dimension_ranges
-
-        # Grid-specific attributes
-        self.grid_edges = getattr(self.layout, "grid_edges", ())
-        self.grid_shape = getattr(self.layout, "grid_shape", None)
-        self.active_mask = getattr(self.layout, "active_mask", None)
+        grid_edges = getattr(self.layout, "grid_edges", ())
+        grid_shape = getattr(self.layout, "grid_shape", None)
+        active_mask = getattr(self.layout, "active_mask", None)
 
         # If it's not a grid layout, grid_shape might be (n_active_bins,),
         # and active_mask might be 1D all True. This is fine.
         # Ensure they are at least None if not applicable from layout
-        if self.grid_shape is None and self.bin_centers is not None:
+        if grid_shape is None and bin_centers is not None:
             # Fallback for point-based
-            self.grid_shape = (self.bin_centers.shape[0],)
-        if self.active_mask is None and self.bin_centers is not None:
+            grid_shape = (bin_centers.shape[0],)
+        if active_mask is None and bin_centers is not None:
             # Fallback for point-based
-            self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
+            active_mask = np.ones(bin_centers.shape[0], dtype=bool)
 
-        # Published geometry is read-only: derived caches are invalidated only
-        # through _state_version, so an in-place edit would leave them stale.
-        # Change geometry by building a new environment (a factory, subset,
-        # rebin or apply_transform) instead.
-        for array in (self.bin_centers, self.active_mask, *(self.grid_edges or ())):
+        # Published geometry is read-only and replaced whole: derived caches are
+        # invalidated only through _state_version (bumped below, in the same
+        # step), so an in-place edit would leave them stale. Change geometry by
+        # building a new environment (a factory, subset, rebin or
+        # apply_transform) instead.
+        for array in (bin_centers, active_mask, *(grid_edges or ())):
             if isinstance(array, np.ndarray):
                 array.setflags(write=False)
-        nx.freeze(self.connectivity)
+        nx.freeze(connectivity)
+        self._geometry = _PublishedGeometry(
+            bin_centers=bin_centers,
+            connectivity=connectivity,
+            dimension_ranges=self.layout.dimension_ranges,
+            grid_edges=grid_edges,
+            grid_shape=grid_shape,
+            active_mask=active_mask,
+        )
 
         self._is_fitted = True
         # Bump the state version so any downstream cache (including the

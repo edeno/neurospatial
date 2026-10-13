@@ -128,8 +128,10 @@ seam edges before the environment is initialized. Its masked-grid build records
 `circular_angle` alongside the shared grid parameters.
 
 Layouts own `connectivity`, `bin_centers` and the grid geometry, and an
-environment publishes them read-only (arrays reject writes, the graph is
-frozen). Factories and readers share one construction path: the file and NWB
+environment publishes them read-only: its geometry attributes are views of one
+frozen `_PublishedGeometry` that cannot be reassigned, the arrays reject
+writes, and the graph is frozen. `_setup_from_layout` swaps that object whole
+and advances `_state_version`, which keys every derived cache, in one step. Factories and readers share one construction path: the file and NWB
 readers call `_from_saved_layout`, which rebuilds the layout from its saved
 parameters (and with it every derived lookup), checks the saved bin centers
 against it, replaces the rebuilt graph with the saved one (authoritative for

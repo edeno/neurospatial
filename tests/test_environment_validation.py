@@ -91,8 +91,13 @@ class TestValidateEnvironment:
 
     def test_validates_bin_centers_consistency(self, valid_env):
         """Test that bin_centers/graph consistency is checked."""
-        # Corrupt bin_centers by changing shape
-        valid_env.bin_centers = valid_env.bin_centers[:10]
+        # Simulate corrupted geometry (unreachable through the public API,
+        # which publishes geometry read-only).
+        import dataclasses
+
+        valid_env._geometry = dataclasses.replace(
+            valid_env._geometry, bin_centers=valid_env.bin_centers[:10]
+        )
 
         with pytest.raises(ValueError, match="inconsistent"):
             validate_environment(valid_env)

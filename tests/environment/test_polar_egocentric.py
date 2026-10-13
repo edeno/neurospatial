@@ -1228,6 +1228,14 @@ _POLAR_INHERITED_MEMBERS = {
         "smooth",
         "transitions",
     },
+    "read-only geometry views in (distance, angle) coordinates": {
+        "active_mask",
+        "bin_centers",
+        "connectivity",
+        "dimension_ranges",
+        "grid_edges",
+        "grid_shape",
+    },
     "bin bookkeeping, metadata and diagnostics": {
         "bin_center_of",
         "clear_cache",

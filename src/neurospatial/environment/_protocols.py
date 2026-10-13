@@ -59,9 +59,6 @@ class EnvironmentProtocol(Protocol):
     # Core attributes
     name: str
     layout: LayoutEngine
-    bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
-    dimension_ranges: tuple[tuple[float, float], ...]
     regions: Regions
     units: str | None
     frame: str | None
@@ -255,10 +252,26 @@ class EnvironmentProtocol(Protocol):
         """Compute graph (shortest-path) distance between two points."""
         ...
 
+    # Published geometry: read-only views, replaced whole by _setup_from_layout.
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_] | None: ...
+
+    @property
+    def grid_shape(self) -> tuple[int, ...] | None: ...
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
+
     # Layout-specific attributes and methods (may be None if not applicable)
-    active_mask: NDArray[np.bool_] | None
-    grid_shape: tuple[int, ...] | None
-    grid_edges: tuple[NDArray[np.float64], ...] | None
     linear_bin_centers_1d: NDArray[np.float64] | None
     linear_bin_edges: NDArray[np.float64] | None
     track_graph: nx.Graph | None

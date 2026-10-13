@@ -105,10 +105,12 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     -----------
     Invalidation is **only** triggered by ``_state_version`` bumps. The
     descriptor does **not** fingerprint the underlying state. To keep that
-    sound, ``_setup_from_layout`` publishes geometry read-only: the
-    ``bin_centers``, ``active_mask`` and ``grid_edges`` arrays reject writes
-    and ``connectivity`` is frozen (``nx.freeze``), so adding or removing
-    nodes or edges raises. Edge and node attribute values remain writable
+    sound, ``_setup_from_layout`` is the only place geometry changes: it
+    swaps in a whole new ``_PublishedGeometry`` and bumps the version in the
+    same step. The environment's geometry attributes cannot be reassigned,
+    the ``bin_centers``, ``active_mask`` and ``grid_edges`` arrays reject
+    writes, and ``connectivity`` is frozen (``nx.freeze``), so adding or
+    removing nodes or edges raises. Edge and node attribute values remain writable
     (networkx cannot freeze them), and editing them in place is unsupported:
     versioned-cached values would keep returning the pre-edit result. Build a
     new environment to change geometry. A first-access fingerprint check was

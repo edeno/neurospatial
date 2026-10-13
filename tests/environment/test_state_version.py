@@ -98,6 +98,26 @@ class TestPublishedGeometryIsReadOnly:
         with pytest.raises(nx.NetworkXError, match="Frozen"):
             env.connectivity.add_edge(0, 8)
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "bin_centers",
+            "connectivity",
+            "dimension_ranges",
+            "grid_edges",
+            "grid_shape",
+            "active_mask",
+        ],
+    )
+    def test_geometry_attributes_cannot_be_reassigned(self, name) -> None:
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        before = getattr(env, name)
+        with pytest.raises(AttributeError, match=f"Environment.{name} is read-only"):
+            setattr(env, name, None)
+        assert getattr(env, name) is before
+
 
 class TestVersionedCachedProperty:
     """Decorator behavior: caches per (instance, _state_version)."""

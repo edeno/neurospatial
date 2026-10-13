@@ -119,18 +119,12 @@ def test_extract_connected_component_scipy_disconnected_regions():
 
 def test_extract_connected_component_scipy_rejects_non_grid():
     """Test scipy path raises error for non-grid environments."""
-    # Create environment without grid_shape (e.g., from polygon or custom layout)
-    # For this test, we'll manually create an environment that's missing grid_shape
+    # Environments always carry grid metadata (non-grid layouts get a 1-D
+    # fallback), so check the guard on a stand-in that lacks it.
+    from types import SimpleNamespace
 
-    # This is a simplified test - in practice, we'd use GraphLayout or other non-grid
-    rng = np.random.default_rng(42)
-    positions = rng.random((100, 2)) * 50
-    env = Environment.from_samples(positions, bin_size=5.0)
-
-    # Manually remove grid_shape to simulate non-grid environment
-    env.grid_shape = None
-
-    mask = np.ones(env.n_bins, dtype=bool)
+    env = SimpleNamespace(grid_shape=None, active_mask=None)
+    mask = np.ones(4, dtype=bool)
     seed_idx = 0
 
     from neurospatial.encoding.spatial import _extract_connected_component_scipy
@@ -302,15 +296,16 @@ def test_detect_place_fields_grid_vs_nongrid_equivalence():
     # Detect fields (uses scipy path for grid)
     fields_scipy = detect_place_fields(env_grid, firing_rate)
 
-    # Temporarily disable scipy path to test graph path
-    # (This is a bit of a hack - in practice, both paths should give same result)
-    env_no_grid = Environment.from_samples(positions, bin_size=5.0)
-    original_grid_shape = env_no_grid.grid_shape
-    env_no_grid.grid_shape = None  # Force graph path
+    # Route the same environment through the graph flood fill instead.
+    from neurospatial.encoding import spatial
 
-    fields_graph = detect_place_fields(env_no_grid, firing_rate)
-
-    env_no_grid.grid_shape = original_grid_shape  # Restore
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            spatial,
+            "_extract_connected_component",
+            spatial._extract_connected_component_graph,
+        )
+        fields_graph = detect_place_fields(env_grid, firing_rate)
 
     # Both should detect same number of fields
     assert len(fields_scipy) == len(fields_graph)
