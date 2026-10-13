@@ -74,15 +74,13 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     This type is a sibling of :class:`Environment`. Cartesian methods are
     absent: accessing one raises ``CartesianOnlyError``, both a
     ``NotImplementedError`` and an ``AttributeError``, so ``hasattr`` reports
-    them as absent and type checkers flag calls. Shared methods refuse their
-    Cartesian modes to preserve the meaning of ``(distance, angle)`` pairs:
+    them as absent and type checkers flag calls.
 
     *Cartesian-coordinate methods* (would read ``(distance, angle)`` as
     ``(x, y)``):
 
     - ``bin_at``, ``contains`` — geometric containment in ``(x, y)``.
-    - ``distance_between``, ``distance_to(metric="euclidean")`` —
-      straight-line distance on ``(x, y)``.
+    - ``distance_between`` — straight-line distance on ``(x, y)``.
     - ``apply_transform`` — affine transforms on ``(x, y)``.
     - ``interpolate`` — evaluates fields at Cartesian query points.
     - ``occupancy``, ``bin_sequence``, ``bin_sequence_with_runs``
@@ -94,6 +92,12 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     - ``to_linear``, ``linear_to_nd`` — 1D track linearization.
     - ``rebin``, ``subset`` — grid coarsening / sub-selection
       (and would return a Cartesian :class:`Environment`).
+
+    Shared methods keep working but refuse their Cartesian modes with the same
+    error: ``distance_to(metric="euclidean")``, a coordinate point passed to
+    ``neighbors``, ``path_between`` or ``reachable_from``, point regions in
+    ``bins_in_region`` and ``region_mask``, and ``transitions`` computed from
+    times and positions.
 
     Use connectivity-graph operations instead — :meth:`neighbors`,
     :meth:`path_between`, :meth:`reachable_from`, :meth:`smooth`, and

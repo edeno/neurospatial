@@ -381,7 +381,12 @@ def _grid_subset(env: SubsetConsumer, mask: NDArray[np.bool_]) -> Environment:
 
 
 class _SubsetLayout:
-    """Minimal layout for subset environment."""
+    """Minimal layout for subsets of environments without a rectangular grid.
+
+    Graph (track), hexagonal, triangular-mesh and NWB-reconstructed
+    environments, and subsets of subsets, are subset onto this layout; grids of
+    rectangular cells are rebuilt with ``from_grid_mask`` instead.
+    """
 
     def __init__(
         self,
@@ -446,13 +451,12 @@ class _SubsetLayout:
         tightening would spuriously reject points near sparse
         regions of the subset graph.
 
-        Note: 2-D / N-D grid envs took the ``from_grid_mask`` fast
-        path above and never reach this layout. SubsetLayout is
-        retained specifically for graph (1-D linearized) envs,
-        where the 2-D embedding of a 1-D track means
-        ``from_grid_mask`` would silently drop the embedding. A
-        registered serializable graph-subset layout is tracked
-        separately.
+        Note: grids of rectangular cells take the ``from_grid_mask``
+        path and never reach this layout. It serves the layouts that
+        path cannot rebuild: graph (1-D linearized) envs, whose 2-D
+        embedding ``from_grid_mask`` would silently drop, and
+        hexagonal and mesh envs, whose cells are not rectangular. A
+        registered serializable subset layout is tracked separately.
         """
         pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
         self._ensure_kdtree()
@@ -463,7 +467,7 @@ class _SubsetLayout:
         # behave like Cartesian envs do for clearly out-of-env
         # samples. The threshold itself is precomputed once in
         # _ensure_kdtree. We deliberately keep it loose
-        # (10x) here because SubsetLayout has no notion of an
+        # (10x) here because _SubsetLayout has no notion of an
         # active mask -- only a graph -- and tightening would
         # spuriously reject points near sparse regions.
         indices = indices.astype(np.intp)
@@ -476,11 +480,10 @@ class _SubsetLayout:
         Approximate per-bin sizes from connectivity edge lengths.
 
         Each bin's size is estimated as the mean ``distance`` of its
-        incident edges. ``SubsetLayout`` is only used for subsets of
-        graph (1-D linearized) environments -- 2-D / N-D grid subsets
-        take the ``from_grid_mask`` fast path and never reach here --
-        so this mean-edge-length estimate has the right *dimension*
-        (length, not area or volume) for the only space it serves.
+        incident edges. For graph (1-D linearized) subsets this has the
+        right *dimension*: a length. Hexagonal and mesh subsets also use
+        this layout, and for them the estimate is a length, not the cell
+        area the parent environment reports.
 
         The value remains an approximation: it is the mean spacing to
         neighboring bins, not the exact extent of the bin, and it falls
