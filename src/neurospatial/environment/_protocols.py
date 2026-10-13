@@ -389,6 +389,62 @@ class TransitionsConsumer(Protocol):
     ) -> NDArray[np.int32]: ...
 
 
+class RebinConsumer(Protocol):
+    """Layout, connectivity and metadata for coarsening a regular grid."""
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+    @property
+    def layout(self) -> LayoutEngine: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def frame(self) -> str | None: ...
+
+    @property
+    def units(self) -> str | None: ...
+
+
+class SubsetConsumer(Protocol):
+    """Published geometry, regions and metadata for selecting spatial bins."""
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_] | None: ...
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
+
+    @property
+    def grid_shape(self) -> tuple[int, ...] | None: ...
+
+    @property
+    def is_linearized_track(self) -> bool: ...
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def regions(self) -> Regions: ...
+
+    @property
+    def frame(self) -> str | None: ...
+
+    @property
+    def units(self) -> str | None: ...
+
+    @property
+    def _layout_params_used(self) -> dict[str, Any]: ...
+
+
 # TypeVar bound to EnvironmentProtocol for use in mixin ``self`` annotations.
 # Lets mixins access Protocol attributes while still accepting concrete
 # Environment instances without "Invalid self argument" errors.
