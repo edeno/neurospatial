@@ -1312,6 +1312,23 @@ class TestCacheManagement:
         """Provide a fresh copy of simple_graph_env for cache testing."""
         return simple_graph_env.copy()
 
+    def test_kernel_cache_keeps_most_recently_used_kernels(
+        self, cache_test_env, monkeypatch
+    ):
+        """The diffusion-kernel cache drops the least recently used kernel."""
+        from neurospatial import _constants
+
+        monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
+        first = cache_test_env.compute_kernel(1.0, mode="density")
+        cache_test_env.compute_kernel(2.0, mode="density")
+        assert cache_test_env.compute_kernel(1.0, mode="density") is first
+        cache_test_env.compute_kernel(3.0, mode="density")
+
+        assert list(cache_test_env._kernel_cache) == [
+            (1.0, "density"),
+            (3.0, "density"),
+        ]
+
     def test_clear_cache_clears_kdtree(self, cache_test_env):
         """Test that clear_cache() clears the KDTree cache."""
         from neurospatial.ops.binning import map_points_to_bins

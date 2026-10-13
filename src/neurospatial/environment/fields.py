@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial import _constants
+from neurospatial._lru import lru_get, lru_put
 from neurospatial.environment._protocols import (
     EnvironmentProtocol,
     SelfEnv,
@@ -358,6 +360,8 @@ class EnvironmentFields:
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
             with the same (bandwidth, mode) will return the cached result.
+            The environment keeps the most recently used kernels (eight by
+            default); ``clear_cache(kernels=True)`` releases them.
 
         Returns
         -------
@@ -432,24 +436,28 @@ class EnvironmentFields:
         # Initialize cache if it doesn't exist
         # (for backward compatibility with environments deserialized from older versions)
         if not hasattr(self, "_kernel_cache"):
-            self._kernel_cache = {}
+            empty: dict[tuple[float, KernelMode], NDArray[np.float64]] = {}
+            self._kernel_cache = empty
 
         # Check cache first if enabled
         cache_key = (bandwidth, mode)
-        if cache and cache_key in self._kernel_cache:
-            return self._kernel_cache[cache_key]
+        if cache:
+            cached = lru_get(self._kernel_cache, cache_key)
+            if cached is not None:
+                return cached
 
         # Compute kernel from the cached diffusion geometry, whose cell measures
         # (the layout's bin sizes) are the mass matrix M used by every mode.
-        from typing import cast
-
-        kernel = diffusion_kernel(
-            cast("EnvironmentProtocol", self), bandwidth, mode=mode
-        )
+        kernel = diffusion_kernel(self, bandwidth, mode=mode)
 
         # Store in cache if enabled
         if cache:
-            self._kernel_cache[cache_key] = kernel
+            lru_put(
+                self._kernel_cache,
+                cache_key,
+                kernel,
+                limit=_constants.MAX_CACHED_KERNELS,
+            )
 
         return kernel
 
@@ -852,8 +860,10 @@ class EnvironmentFields:
     def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
         """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
 
-        The smoothing adapter fills this holder. It is dropped on a state
-        version bump or ``clear_cache()``, and freed with the environment.
+        The smoothing adapter fills this holder with the most recently used
+        kernels (``_constants.MAX_CACHED_KERNELS``). It is emptied by
+        ``clear_cache(kernels=True)``, dropped on a state version bump, and
+        freed with the environment.
         """
         return {}
 

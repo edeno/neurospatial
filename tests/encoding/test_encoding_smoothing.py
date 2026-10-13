@@ -1212,6 +1212,31 @@ def test_gaussian_kernel_is_released_with_environment() -> None:
     assert kernel_ref() is None
 
 
+def test_gaussian_kernel_cache_keeps_most_recently_used_kernels(
+    simple_env: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bandwidth sweep keeps only the most recently used dense kernels."""
+    monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
+    first = _get_gaussian_kernel(simple_env, bandwidth=1.0)
+    _get_gaussian_kernel(simple_env, bandwidth=2.0)
+    assert _get_gaussian_kernel(simple_env, bandwidth=1.0) is first
+    _get_gaussian_kernel(simple_env, bandwidth=3.0)
+
+    assert list(simple_env._gaussian_kernels) == [1.0, 3.0]
+
+
+def test_clearing_kernels_releases_gaussian_kernels(simple_env: Environment) -> None:
+    """clear_cache(kernels=True) frees Gaussian kernels without clearing properties."""
+    kernel = _get_gaussian_kernel(simple_env, bandwidth=2.0)
+
+    simple_env.clear_cache(kernels=True, cached_properties=False)
+
+    assert simple_env._gaussian_kernels == {}
+    rebuilt = _get_gaussian_kernel(simple_env, bandwidth=2.0)
+    assert rebuilt is not kernel
+    np.testing.assert_array_equal(rebuilt, kernel)
+
+
 class TestGaussianKernelMemoryWarning:
     """The dense gaussian-KDE kernel WARNS (never raises) above a bin threshold.
 

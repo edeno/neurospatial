@@ -68,6 +68,7 @@ from neurospatial import _constants
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
+from neurospatial._lru import lru_get, lru_put
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
@@ -157,8 +158,9 @@ def _get_gaussian_kernel(
     """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
 
     The matrix is ``(n_bins, n_bins)`` and is cached by bandwidth on the
-    environment. Its holder is invalidated with the environment's geometry
-    caches and freed with the environment.
+    environment, which keeps the most recently used kernels
+    (``_constants.MAX_CACHED_KERNELS``). ``clear_cache(kernels=True)`` releases
+    them, and they are freed with the environment.
 
     The weight matrix is dense ``(n_bins, n_bins)`` -- O(n_bins**2) memory --
     so when ``n_bins`` exceeds ``LARGE_KERNEL_THRESHOLD`` a loud memory
@@ -175,7 +177,7 @@ def _get_gaussian_kernel(
         Gaussian ``sigma`` in environment units.
     """
     kernels = env._gaussian_kernels
-    cached = kernels.get(float(bandwidth))
+    cached = lru_get(kernels, float(bandwidth))
     if cached is not None:
         return cached
     bin_centers = env.bin_centers
@@ -208,7 +210,7 @@ def _get_gaussian_kernel(
         np.float64, copy=False
     )
 
-    kernels[float(bandwidth)] = kernel
+    lru_put(kernels, float(bandwidth), kernel, limit=_constants.MAX_CACHED_KERNELS)
     return kernel
 
 

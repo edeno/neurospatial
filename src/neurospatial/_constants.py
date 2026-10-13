@@ -88,3 +88,9 @@ NEAREST_BIN_DISTANCE_THRESHOLD = 2.0
 #: warn (with a GB estimate) and proceed. Shared by diffusion and Gaussian
 #: smoothing; it is a warning threshold, not a limit.
 LARGE_KERNEL_THRESHOLD = 3000
+
+#: Dense smoothing kernels one environment keeps per cache; the least recently
+#: used is dropped first. Each is an (n_bins, n_bins) float64 matrix, so without
+#: a bound a bandwidth sweep would hold one per bandwidth for the environment's
+#: lifetime.
+MAX_CACHED_KERNELS = 8

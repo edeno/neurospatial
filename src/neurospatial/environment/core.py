@@ -1384,12 +1384,13 @@ class _BaseEnvironment(
         kdtree : bool, default=True
             Whether to clear the KDTree cache.
         kernels : bool, default=True
-            Whether to clear the kernel cache.
+            Whether to clear the cached smoothing kernels.
         """
         if kdtree:
             self._kdtree_cache = None
         if kernels:
             self._kernel_cache = {}
+            self._gaussian_kernels.clear()
 
     @check_fitted
     def clear_cache(
@@ -1409,7 +1410,9 @@ class _BaseEnvironment(
         kdtree : bool, default=True
             Whether to clear the KDTree cache used by map_points_to_bins().
         kernels : bool, default=True
-            Whether to clear the kernel cache used by smooth() and occupancy().
+            Whether to clear the cached smoothing kernels: diffusion kernels
+            used by compute_kernel(), smooth() and occupancy(), and the
+            Gaussian-KDE kernels of rate-map smoothing.
         cached_properties : bool, default=True
             Whether to clear all @cached_property values.
 
@@ -1417,7 +1420,9 @@ class _BaseEnvironment(
         ------------------------------
         **Explicit caches** (kdtree, kernels):
             - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
-            - Kernel cache (_kernel_cache): Used by smooth() and occupancy()
+            - Kernel caches (_kernel_cache, _gaussian_kernels): diffusion
+              kernels used by smooth() and occupancy(), and Gaussian-KDE
+              kernels; each keeps its most recently used kernels
 
         **Cached properties** (cached_properties):
             - differential_operator: Graph differential operator matrix
