@@ -14,7 +14,7 @@ space; an allocentric bearing is measured against compass directions
 (east is the standard zero in neurospatial). Contrast with
 [*egocentric*](#egocentric). See
 [`ops.egocentric.allocentric_to_egocentric`](api/index.md) and
-[`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### Bayesian decoding
 
@@ -30,7 +30,7 @@ The required inputs are a *rate map* per cell (the "encoding model"
 — what each cell fires across space, built from a training segment
 of the recording) and the spike counts during the segment you want
 to decode. See [`decode_position`](api/index.md) and
-[`20_bayesian_decoding`](examples/20_bayesian_decoding.ipynb).
+[`06_position_decoding`](examples/06_position_decoding.ipynb).
 
 ### Bin
 
@@ -56,8 +56,8 @@ its current heading: `0 = ahead`, `π/2 = left`, `-π/2 = right`. Used
 to describe how the animal perceives nearby objects regardless of
 which compass direction it's currently facing. See
 [`compute_egocentric_rate`](api/index.md),
-[`22_spatial_view_cells`](examples/22_spatial_view_cells.ipynb), and
-[`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes), and
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### Field
 
@@ -74,7 +74,7 @@ track graph (a linear graph embedded in 2D, like a T-maze or W-track).
 The 1D coordinate respects topological adjacency on the track even
 when bins are far apart in 2D space. See
 [`Environment.to_linear`](api/index.md) and
-[`05_track_linearization`](examples/05_track_linearization.ipynb).
+[`03_trajectories_and_behavior`](examples/03_trajectories_and_behavior.ipynb).
 
 ### Object-vector cell (OVC)
 
@@ -83,7 +83,7 @@ A neuron tuned to distance and allocentric direction relative to an object
 0 = East and +pi/2 = North. Add pi and wrap to obtain the reverse,
 object-to-animal vector. See [`compute_object_vector_rate`](api/index.md),
 [`is_object_vector_cell`](api/index.md), and
-[`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### Egocentric object-vector (bearing) cell
 
@@ -109,7 +109,7 @@ spatial firing-rate map of a place cell typically has one or a few
 compact *place fields*. See
 [`compute_spatial_rate`](api/index.md),
 [`detect_place_fields`](api/index.md), and
-[`11_place_field_analysis`](examples/11_place_field_analysis.ipynb).
+[`02_spatial_rate_maps`](examples/02_spatial_rate_maps.ipynb).
 
 ### Place field
 
@@ -145,7 +145,7 @@ Anything indexed by spike times rather than time bins. A
 location at the moment each spike fired; a *spike-triggered
 event-aligned histogram* (PSTH) does the analogous slicing around
 event times. See [`peri_event_histogram`](api/index.md) and
-[`26_peri_event_psth`](examples/26_peri_event_psth.ipynb).
+[`07_peri_event_analysis`](examples/07_peri_event_analysis.ipynb).
 
 ### Tuning curve
 
@@ -154,7 +154,7 @@ position — head direction, speed, time-from-event. Computed by
 binning the variable, counting spikes per bin, and dividing by
 occupancy. Direction tuning is the most common case. See
 [`compute_directional_rate`](api/index.md) and
-[`25_head_direction_tuning`](examples/25_head_direction_tuning.ipynb).
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### View field
 
@@ -164,4 +164,4 @@ gaze-direction trajectories and a view model (fixed-distance,
 ray-cast, or boundary-intersection). See
 [`compute_view_rate`](api/index.md),
 [`is_spatial_view_cell`](api/index.md), and
-[`22_spatial_view_cells`](examples/22_spatial_view_cells.ipynb).
+[specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).

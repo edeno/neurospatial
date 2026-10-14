@@ -392,7 +392,7 @@ inspecting the binned spike counts — use the manual three-call path
 (`compute_spatial_rates` → `bin_spikes_in_time` → `decode_position`). That
 walk-through, plus trajectory analysis and a time-order shuffle test on a
 synthetic sequence, is covered in
-[example 20](../examples/20_bayesian_decoding.ipynb).
+[the decoding tutorial](../examples/06_position_decoding.ipynb).
 
 ### Reusing rate maps on a recording with gaps
 
@@ -647,7 +647,7 @@ Analyzing maze experiments with branching structures.
 
 **Steps**: Define track graph → Create 1D environment → Map positions → Analyze
 
-See the complete example in [examples/05_track_linearization.ipynb](../examples/05_track_linearization.ipynb).
+See the complete example in [examples/03_trajectories_and_behavior.ipynb](../examples/03_trajectories_and_behavior.ipynb).
 
 ### Direction-specific fields on a graph track
 

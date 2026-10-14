@@ -17,6 +17,20 @@ SOURCES = sorted(EXAMPLES.glob("[0-9][0-9]_*.py"))
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 
 
+def test_core_collection_follows_nine_user_workflows():
+    assert [source.stem for source in SOURCES] == [
+        "01_getting_started",
+        "02_spatial_rate_maps",
+        "03_trajectories_and_behavior",
+        "04_real_data_analysis",
+        "05_simulation_and_validation",
+        "06_position_decoding",
+        "07_peri_event_analysis",
+        "08_visualization",
+        "09_nwb_io",
+    ]
+
+
 def _markdown(path: Path) -> str:
     return "\n\n".join(
         cell.source

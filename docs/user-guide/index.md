@@ -13,7 +13,7 @@ public APIs and explains the assumptions needed to interpret the output.
 | Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
 | Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Disjoint training/test windows and training spatial support |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
-| Measure responses around events | [Peri-event example](../examples/26_peri_event_psth.ipynb) | Full event-window coverage and the retained event cohort |
+| Measure responses around events | [Peri-event example](../examples/07_peri_event_analysis.ipynb) | Full event-window coverage and the retained event cohort |
 | Save results I can interpret later | [Analysis settings and exports](interoperability.md#analysis-settings-and-exports) | Units, identity, analysis windows and estimator settings |
 
 ## Contents

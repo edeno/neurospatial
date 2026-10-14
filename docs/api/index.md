@@ -295,7 +295,7 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 
 **See Also:**
 
-- [Simulation Workflows Tutorial](../examples/15_simulation_workflows.ipynb): Comprehensive examples and quick start guide
+- [Simulation Workflows Tutorial](../examples/05_simulation_and_validation.ipynb): Comprehensive examples and quick start guide
 
 ### Interoperability and data holders
 

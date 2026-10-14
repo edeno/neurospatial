@@ -1,13 +1,12 @@
 # Example Data
 
-The public J16 recording used by the real-data examples is downloaded on demand.
+The public J16 recording used by the real-data tutorial is downloaded on demand.
 Data files are not committed to this repository; this README and
 `load_bandit_data.py` are tracked.
 
 ## Downloading the J16 bandit dataset
 
-Examples [19: real-data place fields](../examples/19_real_data_bandit_task.ipynb)
-and [23: path progression](../examples/23_path_progression.ipynb) use the
+[Tutorial 04: real-data analysis](../examples/04_real_data_analysis.ipynb) uses the
 recording from rat J16, July 10, 2021, run epoch `02_r1`, on a spatial-bandit
 maze task.
 
@@ -26,8 +25,8 @@ before fetching the published copy. To choose another directory:
 uv run python data/load_bandit_data.py --data-path /path/to/recordings
 ```
 
-The notebooks fetch and verify the file when run, so their first run needs an
-internet connection. Download it in advance to run them offline. Browsing the
+The tutorial fetches and verifies the file when run, so its first run needs an
+internet connection. Download it in advance to run offline. Browsing the
 rendered documentation does not download data.
 
 | Published input | Value |

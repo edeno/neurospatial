@@ -253,11 +253,11 @@ A field or fixed information cutoff can also flag untuned low-count units.
 For a calibrated verdict under a circular-shift null, call
 `is_place_cell(env, spike_times, times, positions_t, criterion="shuffle", rng=0)`
 with the raw arrays (about 1000 map recomputes by default).
-See [example 11](https://github.com/edeno/neurospatial/blob/main/examples/11_place_field_analysis.ipynb)
+See [the spatial rate-map tutorial](https://github.com/edeno/neurospatial/blob/main/examples/02_spatial_rate_maps.ipynb)
 for the full tutorial.
 
 To start with a real recording, run
-[example 19](examples/19_real_data_bandit_task.ipynb): it downloads and verifies
+[the real-data tutorial](examples/04_real_data_analysis.ipynb): it downloads and verifies
 the 75 MB [J16 Zenodo dataset](https://doi.org/10.5281/zenodo.23020757), then
 analyzes its 203 hippocampal spike trains.
 To download ahead of time, run `uv run python data/load_bandit_data.py` from the
@@ -272,7 +272,7 @@ and population rate maps, use
 `decode_position(env, spike_counts, encoding_models, dt)`. Pauses in tracking
 are never decoded: time bins are formed only within recorded stretches, and
 `epochs=`/`spike_window=` restrict them further. See
-[example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
+[the position-decoding tutorial](https://github.com/edeno/neurospatial/blob/main/examples/06_position_decoding.ipynb)
 for the full Bayesian decoding tutorial.
 
 ### Recording gaps and time windows
@@ -537,13 +537,11 @@ print(f"Detected peak: {result.peak_location()}")
 
 ### Learn More
 
-See the comprehensive tutorial: **[Simulation Workflows Notebook](examples/15_simulation_workflows.ipynb)** for complete examples including:
-
-- Quick start with pre-configured sessions
-- Low-level API for custom workflows
-- All cell types (place, boundary, grid)
-- Validation and visualization
-- Performance tips and customization
+Follow the **[Simulation and Validation tutorial](examples/05_simulation_and_validation.ipynb)**
+to generate labeled spike trains, recover known fields, and interpret per-unit
+recovery outcomes and missing metrics. The
+[API reference](https://edeno.github.io/neurospatial/api/) covers additional
+simulation models and customization.
 
 ## Animation
 
@@ -630,7 +628,7 @@ env.animate_fields(
 ### Learn More
 
 - **[Animation User Guide](https://edeno.github.io/neurospatial/user-guide/animation/)**: Complete documentation with troubleshooting
-- **[Animation Examples Notebook](examples/16_field_animation.ipynb)**: Working examples for all backends
+- **[Visualization tutorial](examples/08_visualization.ipynb)**: Static previews, HTML overlays, calibrated video, and opt-in viewers and exports
 - Common use cases: place field dynamics, theta sequences, remapping, population activity
 
 ## Documentation
@@ -665,7 +663,7 @@ src/neurospatial/
 └── composite.py    # Multi-environment composition
 
 tests/                 # More than 9,000 automated tests across the package
-examples/              # 27 task-oriented, paired Python/Jupyter tutorials
+examples/              # 9 task-oriented, paired Python/Jupyter tutorials
 docs/                  # User guides, API reference, examples, and contributor docs
 ```
 

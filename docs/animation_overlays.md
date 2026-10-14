@@ -53,8 +53,8 @@ The overlay system enables rich behavioral visualizations by combining spatial f
 
 **Related resources:**
 
-- [Example Notebook](examples/17_animation_with_overlays.ipynb) - Hands-on tutorial with 7 comprehensive examples
-- [Field Animation Guide](examples/16_field_animation.ipynb) - Core animation features without overlays
+- [Example Notebook](examples/08_visualization.ipynb) - Hands-on tutorial with 7 comprehensive examples
+- [Field Animation Guide](examples/08_visualization.ipynb) - Core animation features without overlays
 
 ## Overlay Types
 
@@ -1092,5 +1092,5 @@ def animate_fields(
 
 ## See Also
 
-- [Field Animation](examples/16_field_animation.ipynb) - Core animation features
-- [Regions](examples/04_regions_of_interest.ipynb) - Defining spatial zones
+- [Field Animation](examples/08_visualization.ipynb) - Core animation features
+- [Regions](examples/01_getting_started.ipynb) - Defining spatial zones

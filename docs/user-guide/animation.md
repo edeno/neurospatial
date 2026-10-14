@@ -782,7 +782,7 @@ jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
 ## Examples
 
-See [`examples/16_field_animation.ipynb`](../examples/16_field_animation.ipynb) for complete working examples:
+See [`examples/08_visualization.ipynb`](../examples/08_visualization.ipynb) for complete working examples:
 
 - **Example 1**: Interactive Napari viewer with circular arena
 - **Example 2**: Video export with place field remapping

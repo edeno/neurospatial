@@ -257,5 +257,5 @@ env = Environment.from_pixel_mask(image_mask, pixel_size=2.5)
 ## See Also
 
 - [Environments Guide](environments.md): Using different factory methods
-- [Examples](../examples/02_layout_engines.ipynb): Visual comparisons
+- [Examples](../examples/01_getting_started.ipynb): Visual comparisons
 - [API Reference](../api/neurospatial/layout/index.md)

@@ -186,33 +186,15 @@ nav:
       - Video Annotation: user-guide/video-annotation.md
   - Examples:
       - examples/index.md
-      - Introduction & Basics: examples/01_introduction_basics.ipynb
-      - Layout Engines: examples/02_layout_engines.ipynb
-      - Morphological Operations: examples/03_morphological_operations.ipynb
-      - Regions of Interest: examples/04_regions_of_interest.ipynb
-      - Track Linearization: examples/05_track_linearization.ipynb
-      - Composite Environments: examples/06_composite_environments.ipynb
-      - Advanced Operations: examples/07_advanced_operations.ipynb
-      - Spike & Field Basics: examples/08_spike_field_basics.ipynb
-      - Differential Operators: examples/09_differential_operators.ipynb
-      - Signal Processing Primitives: examples/10_signal_processing_primitives.ipynb
-      - Place Field Analysis: examples/11_place_field_analysis.ipynb
-      - Boundary Cell Analysis: examples/12_boundary_cell_analysis.ipynb
-      - Trajectory Analysis: examples/13_trajectory_analysis.ipynb
-      - Behavioral Segmentation: examples/14_behavioral_segmentation.ipynb
-      - Simulation Workflows: examples/15_simulation_workflows.ipynb
-      - Field Animation: examples/16_field_animation.ipynb
-      - Animation with Overlays: examples/17_animation_with_overlays.ipynb
-      - Video Overlay: examples/18_video_overlay.ipynb
-      - Real Data Bandit Task: examples/19_real_data_bandit_task.ipynb
-      - Bayesian Decoding: examples/20_bayesian_decoding.ipynb
-      - Directional Place Fields: examples/21_directional_place_fields.ipynb
-      - Spatial View Cells: examples/22_spatial_view_cells.ipynb
-      - Path Progression: examples/23_path_progression.ipynb
-      - Object-Vector Cells: examples/24_object_vector_cells.ipynb
-      - Head-Direction Tuning: examples/25_head_direction_tuning.ipynb
-      - Peri-Event PSTH: examples/26_peri_event_psth.ipynb
-      - Loading from NWB: examples/27_loading_from_nwb.ipynb
+      - Getting Started: examples/01_getting_started.ipynb
+      - Spatial Rate Maps: examples/02_spatial_rate_maps.ipynb
+      - Trajectories and Behavior: examples/03_trajectories_and_behavior.ipynb
+      - Real-Data Analysis: examples/04_real_data_analysis.ipynb
+      - Simulation and Validation: examples/05_simulation_and_validation.ipynb
+      - Position Decoding: examples/06_position_decoding.ipynb
+      - Peri-Event Analysis: examples/07_peri_event_analysis.ipynb
+      - Visualization: examples/08_visualization.ipynb
+      - NWB Input and Output: examples/09_nwb_io.ipynb
   - Advanced:
       - Architecture & Internals: advanced/architecture.md
       - Errors: errors.md

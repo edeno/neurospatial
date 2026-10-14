@@ -14,10 +14,10 @@ from neurospatial.decoding import DecodingResult
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = [
-    "examples/20_bayesian_decoding.py",
-    "examples/20_bayesian_decoding.ipynb",
-    "docs/examples/20_bayesian_decoding.py",
-    "docs/examples/20_bayesian_decoding.ipynb",
+    "examples/06_position_decoding.py",
+    "examples/06_position_decoding.ipynb",
+    "docs/examples/06_position_decoding.py",
+    "docs/examples/06_position_decoding.ipynb",
 ]
 
 
@@ -53,7 +53,7 @@ def _posterior_cell(path, actual_name):
 
 
 @pytest.mark.parametrize("path", EXAMPLES)
-@pytest.mark.parametrize("actual_name", ["actual_track", "actual_positions"])
+@pytest.mark.parametrize("actual_name", ["actual_positions"])
 @pytest.mark.parametrize("gapped", [False, True], ids=["continuous", "gapped"])
 def test_tutorial_actual_overlay_matches_perfect_posterior(path, actual_name, gapped):
     env = Environment.from_samples(

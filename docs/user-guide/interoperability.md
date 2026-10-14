@@ -456,7 +456,7 @@ with NWBHDF5IO("session.nwb", "r") as io:
 - **[Complete Workflows](workflows.md)**: End-to-end encode / decode examples
 - **[Spatial Analysis](spatial-analysis.md)**: Occupancy, fields, and trajectory operations
 - **[API Reference](../api/index.md)**: NWB holders, `SpikeTrains`, `BayesianDecoder`, and the interop adapters
-- **[Loading from NWB notebook](../examples/27_loading_from_nwb.ipynb)**: A worked NWB read example
+- **[Loading from NWB notebook](../examples/09_nwb_io.ipynb)**: A worked NWB read example
 
 ## Next Steps
 

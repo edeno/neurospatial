@@ -1,586 +1,219 @@
 # Signal Processing Primitives
 
-This guide covers the spatial signal processing primitives for graph-based operations, enabling custom filtering, local aggregation, and advanced spatial analyses on irregular environments.
+Use graph operations to describe a spatial field's neighborhood or build a custom filter. For standard firing-rate estimation, start with [`compute_spatial_rate()`](spike-field-primitives.md): it handles spike counts, occupancy, and observation support together.
 
-## Overview
+| Operation | Use | Scope |
+|---|---|---|
+| `env.smooth(field, bandwidth, mode="average")` | Smooth an intensive field, such as Hz | Finite-volume heat diffusion |
+| `neighbor_reduce(env, field, op="mean")` | Aggregate immediate graph neighbors | One graph step |
+| `graph_convolve(env, field, kernel, normalize=True)` | Apply custom distance weights | Graph shortest-path distances |
 
-Neurospatial provides two fundamental primitives for spatial signal processing:
+Import the last two functions from `neurospatial.ops.graph`. Graph connectivity represents permitted movement; an unvisited bin inferred from tracking is not evidence of a physical wall. Define known geometry before interpreting a boundary-aware filter.
 
-- **`neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)`** - Aggregate field values over spatial neighborhoods
-- **`convolve(field, kernel, env, *, normalize=True)`** - Apply custom convolution kernels to spatial fields
+## A working field with observation support
 
-These primitives operate on **graph connectivity**, making them suitable for irregular spatial structures, mazes, and track-based environments where Euclidean operations don't apply.
+This small synthetic recording is sufficient to run the recipes below in order. Coordinates are centimeters, timestamps are seconds, and rates are Hz. The known arena includes unvisited bins.
 
-## Why These Primitives Matter
-
-Signal processing primitives provide flexible tools for custom spatial analyses that go beyond standard Gaussian smoothing:
-
-### Neuroscience Applications
-
-1. **Spatial Coherence** - Measure correlation between firing rate and neighbor average (Muller & Kubie 1989)
-2. **Edge Detection** - Apply Mexican hat (DoG) filters to detect place field boundaries
-3. **Occupancy Thresholding** - Use box filters to smooth binary occupancy masks
-4. **Local Statistics** - Compute variability, extrema, or consistency across neighborhoods
-5. **Custom Smoothing** - Design problem-specific kernels (e.g., directional smoothing for head direction cells)
-
-### Comparison with `env.smooth()`
-
-| Feature | `env.smooth()` | `neighbor_reduce()` | `convolve()` |
-|---------|---------------|---------------------|--------------|
-| **Purpose** | Gaussian smoothing | Local aggregation | Custom kernels |
-| **Kernel** | Fixed (Gaussian) | Implicit (neighbors) | Arbitrary |
-| **Operations** | Weighted average | sum/mean/max/min/std | Weighted sum |
-| **Weights** | Distance-based | Optional | Distance or custom |
-| **Speed** | Fast (precomputed) | Fast (sparse) | Slower (flexible) |
-| **When to use** | Standard smoothing | Simple statistics | Complex filters |
-
-## neighbor_reduce: Local Aggregation
-
-The `neighbor_reduce()` function applies reduction operations (sum, mean, max, min, std) to the values of neighboring bins in the spatial graph.
-
-### Basic Usage
-
-```python
-from neurospatial import Environment
-from neurospatial.primitives import neighbor_reduce
-import numpy as np
-
-# Create environment
-env = Environment.from_samples(trajectory_data, bin_size=2.5)
-
-# Compute firing rate field
-firing_rate = env.occupancy(spike_times, spike_positions)
-
-# Compute neighbor mean (local spatial average)
-neighbor_mean = neighbor_reduce(firing_rate, env, op='mean')
-
-# Compute local variability
-neighbor_std = neighbor_reduce(firing_rate, env, op='std')
-```
-
-### Available Operations
-
-The `op` parameter supports five aggregation operations:
-
-```python
-# Sum: Total of neighbor values
-total = neighbor_reduce(field, env, op='sum')
-
-# Mean: Average of neighbors (default)
-average = neighbor_reduce(field, env, op='mean')
-
-# Max: Maximum neighbor value
-maximum = neighbor_reduce(field, env, op='max')
-
-# Min: Minimum neighbor value
-minimum = neighbor_reduce(field, env, op='min')
-
-# Std: Standard deviation of neighbors
-variability = neighbor_reduce(field, env, op='std')
-```
-
-### Including Self in Neighborhood
-
-By default, `neighbor_reduce()` excludes the bin itself from the neighborhood. Use `include_self=True` to include it:
-
-```python
-# Exclude self (default): average of neighbors only
-neighbor_only = neighbor_reduce(field, env, op='mean', include_self=False)
-
-# Include self: average of self + neighbors
-with_self = neighbor_reduce(field, env, op='mean', include_self=True)
-```
-
-### Weighted Aggregation
-
-For `sum` and `mean` operations, you can provide custom weights:
-
-```python
-# Distance-based weights (closer neighbors weighted more)
-distances_to_goal = env.distance_to([goal_bin])
-weights = np.exp(-distances_to_goal / scale)
-
-# Weighted mean (emphasizes neighbors closer to goal)
-weighted_mean = neighbor_reduce(field, env, op='mean', weights=weights)
-```
-
-### Spatial Coherence Example
-
-Compute spatial coherence, a measure of how well firing rate predicts neighbor firing rate (Muller & Kubie 1989):
-
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.primitives import neighbor_reduce
 from neurospatial.encoding import compute_spatial_rate
-
-# Create firing rate field
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
-
-# Compute neighbor average
-neighbor_avg = neighbor_reduce(firing_rate, env, op='mean', include_self=False)
-
-# Spatial coherence: correlation between firing rate and neighbor average
-valid_mask = ~np.isnan(firing_rate) & ~np.isnan(neighbor_avg)
-coherence = np.corrcoef(
-    firing_rate[valid_mask],
-    neighbor_avg[valid_mask]
-)[0, 1]
-
-print(f"Spatial coherence: {coherence:.3f}")
-# High coherence (> 0.6): smooth place field
-# Low coherence (< 0.3): fragmented or noisy field
-```
-
-### Edge Cases
-
-**Isolated nodes**: Bins with no neighbors return `NaN`:
-
-```python
-result = neighbor_reduce(field, env, op='mean')
-# result[isolated_bin] == np.nan
-```
-
-**Boundary bins**: Correctly handle fewer neighbors at environment boundaries:
-
-```python
-# Corner bins have 3 neighbors (8-connected grid)
-# Edge bins have 5 neighbors
-# Center bins have 8 neighbors
-# Each bin's result uses only its actual neighbors
-```
-
-## convolve: Custom Filtering
-
-The `convolve()` function applies custom spatial convolution using either a callable kernel function (distance → weight) or a precomputed kernel matrix.
-
-### Basic Usage with Callable Kernels
-
-```python
-from neurospatial import Environment
-from neurospatial.primitives import convolve
-import numpy as np
-
-# Create environment
-env = Environment.from_samples(trajectory_data, bin_size=2.5)
-
-# Define custom kernel (distance → weight)
-def gaussian_kernel(distances):
-    bandwidth = 5.0  # cm
-    return np.exp(-(distances**2) / (2 * bandwidth**2))
-
-# Apply convolution
-smoothed = convolve(field, gaussian_kernel, env, normalize=True)
-```
-
-### Kernel Types
-
-**Box kernel**: Uniform weights within distance threshold
-
-```python
-def box_kernel(distances):
-    """Uniform weight within radius, zero outside."""
-    radius = 10.0  # cm
-    return np.where(distances <= radius, 1.0, 0.0)
-
-# Box filter smoothing (uniform local average)
-result = convolve(field, box_kernel, env, normalize=True)
-```
-
-**Mexican hat (DoG)**: Difference of Gaussians for edge detection
-
-```python
-def mexican_hat(distances):
-    """Edge detection kernel (center-surround)."""
-    sigma_center = 5.0   # cm (narrow positive peak)
-    sigma_surround = 15.0  # cm (wide negative surround)
-
-    center = np.exp(-(distances**2) / (2 * sigma_center**2))
-    surround = np.exp(-(distances**2) / (2 * sigma_surround**2))
-
-    return center - surround
-
-# Edge detection (DON'T normalize - breaks edge detection)
-edges = convolve(field, mexican_hat, env, normalize=False)
-
-# Positive values: local maxima (place field centers)
-# Negative values: local minima (place field boundaries)
-```
-
-**Custom distance functions**: Any distance-based weighting
-
-```python
-def power_law_kernel(distances):
-    """Power-law decay (slower than Gaussian)."""
-    scale = 10.0
-    power = 1.5
-    return scale / (1 + distances)**power
-
-result = convolve(field, power_law_kernel, env, normalize=True)
-```
-
-### Precomputed Kernel Matrix
-
-For repeated operations or complex kernels, precompute the kernel matrix:
-
-```python
-import numpy as np
-
-# Compute kernel matrix (n_bins × n_bins)
-kernel_matrix = np.zeros((env.n_bins, env.n_bins))
-
-for i in range(env.n_bins):
-    for j in range(env.n_bins):
-        # Compute distance from bin i to bin j
-        if i == j:
-            kernel_matrix[i, j] = 1.0  # Self weight
-        else:
-            dist = env.distance_between(env.bin_centers[i], env.bin_centers[j])
-            kernel_matrix[i, j] = np.exp(-(dist**2) / (2 * bandwidth**2))
-
-# Apply precomputed kernel (fast for repeated use)
-smoothed = convolve(field, kernel_matrix, env, normalize=True)
-```
-
-### Normalization
-
-**Normalized convolution** (`normalize=True`, default): Weights sum to 1 per bin
-
-- Preserves constant fields (if input is constant, output is constant)
-- Appropriate for smoothing operations
-- Handles NaN by renormalizing over valid neighbors
-
-```python
-# Normalized: preserves field scale
-smoothed = convolve(field, gaussian_kernel, env, normalize=True)
-
-# For constant field, output equals input
-constant_field = np.ones(env.n_bins) * 5.0
-result = convolve(constant_field, gaussian_kernel, env, normalize=True)
-assert np.allclose(result, 5.0)  # Preserved
-```
-
-**Unnormalized convolution** (`normalize=False`): Use raw kernel weights
-
-- Required for edge detection kernels (Mexican hat, LoG)
-- Sum of kernel may not be 1 (e.g., Mexican hat sums to ~0)
-- Output scale depends on kernel amplitude
-
-```python
-# Unnormalized: preserves kernel structure
-edges = convolve(field, mexican_hat, env, normalize=False)
-
-# Mexican hat kernel sums to ~0 (center-surround cancellation)
-# Normalization would destroy the edge detection property
-```
-
-### NaN Handling
-
-`convolve()` handles NaN values gracefully by excluding them from convolution:
-
-```python
-# Field with NaN (unvisited bins)
-field_with_nan = firing_rate.copy()
-field_with_nan[unvisited_bins] = np.nan
-
-# NaN values are skipped in convolution
-# Weights are renormalized over valid neighbors
-smoothed = convolve(field_with_nan, gaussian_kernel, env, normalize=True)
-
-# NaN doesn't propagate to neighbors
-# Each bin uses only non-NaN neighbor values
-```
-
-**Important**: Bins surrounded entirely by NaN will remain NaN:
-
-```python
-# Isolated valid bin surrounded by NaN
-field = np.full(env.n_bins, np.nan)
-field[center_bin] = 1.0
-
-result = convolve(field, gaussian_kernel, env, normalize=True)
-# result[center_bin] will be valid (self-convolution)
-# Neighbors may be NaN (no valid neighbors to smooth with)
-```
-
-## Practical Examples
-
-### Example 1: Occupancy Thresholding with Box Filter
-
-Smooth binary occupancy to reduce noise from single-visit bins:
-
-```python
-from neurospatial import Environment
-from neurospatial.primitives import convolve
-import numpy as np
-
-# Compute binary occupancy (visited vs unvisited)
-occupancy = env.occupancy(times, positions)
-binary_occupancy = (occupancy > 0).astype(float)
-
-# Box filter: smooth over 10cm radius
-def box_kernel(distances):
-    return np.where(distances <= 10.0, 1.0, 0.0)
-
-# Smooth binary occupancy
-smoothed_occupancy = convolve(binary_occupancy, box_kernel, env, normalize=True)
-
-# Threshold: keep bins with >50% neighbors visited
-reliable_visited = smoothed_occupancy > 0.5
-```
-
-### Example 2: Place Field Boundary Detection
-
-Use Mexican hat filter to detect place field boundaries:
-
-```python
-from neurospatial import Environment
-from neurospatial.primitives import convolve
-from neurospatial.encoding import compute_spatial_rate
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Compute smoothed firing rate
-firing_rate = compute_spatial_rate(
+from neurospatial.ops.graph import neighbor_reduce
+from neurospatial.simulation import generate_poisson_spikes
+
+edges = np.arange(0.0, 100.0 + 10.0, 10.0)
+env = Environment.from_grid_mask(
+    active_mask=np.ones((10, 10), dtype=bool),
+    grid_edges=(edges, edges),
+)
+env.units = "cm"
+times = np.arange(2400, dtype=float) / 20.0
+positions = 50.0 + 35.0 * np.column_stack(
+    [np.sin(times / 4.0), np.cos(times / 7.0)]
+)
+instantaneous_rate = 0.2 + 12.0 * np.exp(
+    -np.sum((positions - [65.0, 35.0]) ** 2, axis=1) / (2 * 12.0**2)
+)
+spike_times = generate_poisson_spikes(instantaneous_rate, times, seed=707)
+result = compute_spatial_rate(
     env, spike_times, times, positions,
-    method="gaussian_kde",
-    bandwidth=5.0,
-).firing_rate
-
-# Mexican hat for edge detection
-def mexican_hat(distances):
-    sigma_center = 5.0
-    sigma_surround = 15.0
-    center = np.exp(-(distances**2) / (2 * sigma_center**2))
-    surround = np.exp(-(distances**2) / (2 * sigma_surround**2))
-    return center - surround
-
-# Detect edges (DO NOT normalize)
-edges = convolve(firing_rate, mexican_hat, env, normalize=False)
-
-# Visualize
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-# Original field
-axes[0].scatter(env.bin_centers[:, 0], env.bin_centers[:, 1], c=firing_rate, cmap='hot')
-axes[0].set_title('Firing Rate')
-
-# Edges (positive = local maxima)
-axes[1].scatter(env.bin_centers[:, 0], env.bin_centers[:, 1], c=edges, cmap='RdBu_r')
-axes[1].set_title('Edges (Mexican Hat)')
-
-# Detect place field centers (positive peaks)
-field_centers = edges > np.percentile(edges, 95)
-axes[2].scatter(env.bin_centers[:, 0], env.bin_centers[:, 1], c=field_centers, cmap='gray')
-axes[2].set_title('Detected Field Centers')
-
-plt.tight_layout()
-plt.show()
+    bandwidth=5.0, min_occupancy=0.1, max_gap=0.1,
+)
+field = np.where(result.spatial_support, result.firing_rate, np.nan)
+neighbor_mean = neighbor_reduce(env, field, op="mean")
+assert field.shape == neighbor_mean.shape == (env.n_bins,)
 ```
 
-### Example 3: Spatial Coherence Analysis
+`neighbor_reduce` propagates a missing neighbor's NaN. It does not silently interpret it as zero or ignore it. A field of zero Hz at an observed bin and a missing rate estimate carry different information. Keep the original support mask when producing derived summaries.
 
-Compute spatial coherence as a measure of place field quality:
+## Local aggregation and weights
 
+The five operations are `sum`, `mean`, `max`, `min`, and `std`. By default they exclude the bin itself; `include_self=True` includes it. Empty neighborhoods return NaN. Boundary nodes use their actual neighbors, whose number depends on the chosen connectivity.
+
+The following analytic field has no missing observations, so every graph neighbor can contribute:
+
+<!-- docs-test: run -->
 ```python
-from neurospatial import Environment
-from neurospatial.primitives import neighbor_reduce
-from neurospatial.encoding import compute_spatial_rate
 import numpy as np
+from neurospatial.ops.graph import neighbor_reduce
 
-# Compute firing rate
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
-
-# Compute neighbor average (exclude self)
-neighbor_avg = neighbor_reduce(firing_rate, env, op='mean', include_self=False)
-
-# Spatial coherence: Pearson correlation
-valid = ~np.isnan(firing_rate) & ~np.isnan(neighbor_avg)
-correlation = np.corrcoef(firing_rate[valid], neighbor_avg[valid])[0, 1]
-
-print(f"Spatial coherence: {correlation:.3f}")
-
-# Interpretation (Muller & Kubie 1989):
-# > 0.6: High coherence (good place field)
-# 0.3-0.6: Moderate coherence
-# < 0.3: Low coherence (noisy or fragmented field)
+field = np.sin(env.bin_centers[:, 0] / 10.0)
+local_mean = neighbor_reduce(env, field, op="mean")
+local_std = neighbor_reduce(env, field, op="std")
+local_max = neighbor_reduce(env, field, op="max", include_self=True)
+assert local_mean.shape == local_std.shape == local_max.shape == (env.n_bins,)
 ```
 
-### Example 4: Local Field Variability
+Only `sum` and `mean` accept per-source-bin `weights`. To average observed rates while excluding missing source bins, supply an explicit zero weight for missing sources and a finite placeholder for their values. The placeholder does not create observation support:
 
-Measure local consistency of firing rates:
-
+<!-- docs-test: run -->
 ```python
-from neurospatial.primitives import neighbor_reduce
+import numpy as np
 from neurospatial.encoding import compute_spatial_rate
+from neurospatial.ops.graph import neighbor_reduce
 
-# Compute firing rate
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
-
-# Local variability (standard deviation of neighbors)
-local_std = neighbor_reduce(firing_rate, env, op='std', include_self=False)
-
-# Normalize by local mean
-local_mean = neighbor_reduce(firing_rate, env, op='mean', include_self=False)
-coefficient_of_variation = local_std / (local_mean + 1e-6)
-
-# High CV: variable firing (place field edge)
-# Low CV: consistent firing (place field center or background)
+result = compute_spatial_rate(
+    env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
+)
+observed = result.spatial_support & np.isfinite(result.firing_rate)
+values = np.where(observed, result.firing_rate, 0.0)
+weights = np.where(observed, result.occupancy, 0.0)
+local_mean = neighbor_reduce(env, values, op="mean", weights=weights)
+local_mean[~observed] = np.nan
 ```
 
-## When to Use Which Tool
+These weights give more influence to neighbors with greater dwell time. Using `observed.astype(float)` instead gives equal weight to observed neighbor bins. Neither operation replaces estimating a rate from jointly smoothed counts and time.
 
-### Use `env.smooth()` when:
-- You need standard Gaussian smoothing
-- Performance is critical (precomputed kernels)
-- You want automatic bandwidth selection
-- You're following standard neuroscience practices
+### Descriptive spatial coherence
 
-### Use `neighbor_reduce()` when:
-- You need simple aggregation (sum, max, min, std)
-- You want unweighted or custom-weighted averages
-- You need local statistics (variability, extrema)
-- You're computing spatial coherence
+Correlate each observed bin's rate with its observed-neighbor average. Restrict both sides of the correlation to valid support and check that they vary:
 
-### Use `convolve()` when:
-- You need custom kernel shapes (box, Mexican hat)
-- You're doing edge detection or feature extraction
-- You need control over normalization
-- You want problem-specific filtering (directional, anisotropic)
-
-## Mathematical Background
-
-### Convolution on Graphs
-
-Classical convolution in Euclidean space:
-
-$$(f * g)(x) = \int f(y) \, g(x - y) \, dy$$
-
-Graph convolution replaces integration with summation over graph nodes:
-
-$$(f * g)_i = \sum_j g_{ij} \, f_j$$
-
-where $g_{ij}$ is the kernel weight from node $j$ to node $i$.
-
-### Normalized Convolution
-
-Normalized convolution ensures constant fields remain constant:
-
-$$(f * g)_i = \frac{\sum_j g_{ij} \, f_j}{\sum_j g_{ij}}$$
-
-This is equivalent to normalizing kernel weights to sum to 1 per bin.
-
-### Relationship to Differential Operators
-
-Convolution can implement discrete derivatives:
-
-- **Gradient magnitude**: Mexican hat (center-surround) approximates Laplacian operator
-- **Smoothness**: Gaussian convolution approximates heat diffusion
-- **Edge detection**: DoG kernel approximates Laplacian of Gaussian (LoG)
-
-For exact differential operators, see [Differential Operators](differential-operators.md).
-
-## Performance Notes
-
-### neighbor_reduce()
-
-- **Time complexity**: O(n_bins × avg_degree)
-- **Space complexity**: O(n_bins)
-- **Optimization**: Uses NetworkX neighbor iteration (sparse graph)
-- **Typical performance**: ~3 µs per bin for 8-connected grids
-
-### convolve()
-
-**Callable kernels**:
-- **Time complexity**: O(n_bins²) for distance computation
-- **Space complexity**: O(n_bins²) for kernel matrix
-- **Optimization**: Precompute kernel matrix for repeated use
-
-**Precomputed kernels**:
-- **Time complexity**: O(n_bins²) for matrix multiplication
-- **Space complexity**: O(n_bins²) for kernel storage
-- **Optimization**: Use sparse matrices if kernel is sparse
-
-**Comparison with `env.smooth()`**:
-- `env.smooth()`: ~50x faster (precomputed kernels + caching)
-- `convolve()`: More flexible but slower
-- For repeated Gaussian smoothing, use `env.smooth()`
-
-## Advanced Topics
-
-### Directional Smoothing
-
-Create anisotropic kernels for directional place fields (e.g., head direction cells):
-
+<!-- docs-test: run -->
 ```python
-def directional_kernel(distances, angles, preferred_direction):
-    """Smooth more along preferred direction."""
-    distance_weight = np.exp(-(distances**2) / (2 * bandwidth**2))
+import numpy as np
+from neurospatial.encoding import compute_spatial_rate
+from neurospatial.ops.graph import neighbor_reduce
 
-    # Angular difference from preferred direction
-    angular_diff = np.abs(angles - preferred_direction)
-    angular_diff = np.minimum(angular_diff, 2*np.pi - angular_diff)
-
-    # Angular weight (wider tolerance)
-    angular_weight = np.exp(-(angular_diff**2) / (2 * (np.pi/4)**2))
-
-    return distance_weight * angular_weight
-
-# Apply directional smoothing
-# Note: Requires computing angles between bins (use env.connectivity edge attributes)
+result = compute_spatial_rate(
+    env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
+)
+observed = result.spatial_support & np.isfinite(result.firing_rate)
+values = np.where(observed, result.firing_rate, 0.0)
+neighbor_mean = neighbor_reduce(
+    env, values, op="mean", weights=observed.astype(float)
+)
+valid = observed & np.isfinite(neighbor_mean)
+coherence = np.nan
+if valid.sum() >= 3:
+    x, y = values[valid], neighbor_mean[valid]
+    if np.ptp(x) > 0 and np.ptp(y) > 0:
+        coherence = float(np.corrcoef(x, y)[0, 1])
+print(f"Descriptive coherence: {coherence:.3f}")
 ```
 
-### Multi-Scale Analysis
+Coherence depends on binning, support, smoothing, and neighborhood definition. Smoothing a map before measuring coherence can raise it by construction. There is no universal coherence cutoff that establishes a place cell; use a stated analysis and validation procedure.
 
-Apply convolution at multiple scales to detect features of different sizes:
+## Custom graph-distance filtering
 
+`graph_convolve(env, field, kernel)` accepts either a callable applied to the full pairwise graph-distance matrix or a precomputed `(n_bins, n_bins)` weight matrix. Entry `[i, j]` weights source bin `j` at destination bin `i`.
+
+For positive kernels, `normalize=True` divides each destination's weights by the total over non-NaN source values. It preserves a constant field wherever a source contributes. A finite prediction at an unobserved destination does not extend measured support.
+
+<!-- docs-test: run -->
 ```python
-# Multi-scale Gaussian kernels
-scales = [5.0, 10.0, 20.0]  # cm
+import numpy as np
+from neurospatial.ops.graph import graph_convolve
 
-results = []
-for scale in scales:
-    def kernel(distances):
-        return np.exp(-(distances**2) / (2 * scale**2))
+field = np.sin(env.bin_centers[:, 0] / 10.0)
+field[0] = np.nan
 
-    smoothed = convolve(field, kernel, env, normalize=True)
-    results.append(smoothed)
+def box_kernel(distances):
+    return (distances <= 10.0).astype(float)  # Radius in cm
 
-# Detect features by comparing scales
-# Large features: similar across scales
-# Small features: strong at small scales, weak at large scales
+local_average = graph_convolve(env, field, box_kernel, normalize=True)
+constant = graph_convolve(env, np.full(env.n_bins, 5.0), box_kernel)
+assert np.allclose(constant, 5.0)
 ```
 
-### Kernel Design Principles
+Other positive distance profiles, such as Gaussian or power-law weights, use the same call. A one-observation field can predict values wherever its kernel reaches; destinations with no contributing source remain NaN under normalized convolution. A compact box kernel and an unbounded Gaussian therefore have different support behavior.
 
-**For smoothing** (use `normalize=True`):
-- Positive weights (all kernel values ≥ 0)
-- Weights sum to 1 (or close to 1)
-- Monotonically decreasing with distance
-- Examples: Gaussian, box, power-law
+### Balanced center-surround contrast
 
-**For edge detection** (use `normalize=False`):
-- Mixed signs (positive center, negative surround)
-- Kernel sums to ~0 (no DC response)
-- Zero-crossing at feature scale
-- Examples: Mexican hat, LoG, Laplacian
+Subtract a broad local average from a narrow average. Normalize the two averages separately over observed source bins. This removes constant fields even near boundaries and missing observations. Subtracting two equal-height Gaussians directly would give zero weight at distance zero and negative weights elsewhere.
 
-## See Also
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import compute_spatial_rate
+from neurospatial.ops.graph import graph_convolve
 
-- [Differential Operators](differential-operators.md) - Gradient, divergence, Laplacian
-- [Spike Field Primitives](spike-field-primitives.md) - Converting spikes to fields
-- [Neuroscience Metrics](neuroscience-metrics.md) - Standard spatial metrics
+result = compute_spatial_rate(
+    env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
+)
+observed = result.spatial_support & np.isfinite(result.firing_rate)
+field = np.where(observed, result.firing_rate, np.nan)
 
-## References
+def narrow(distances):
+    return np.exp(-(distances**2) / (2 * 5.0**2))
 
-1. **Muller & Kubie (1989)**. The firing of hippocampal place cells predicts the future position of freely moving rats. *Journal of Neuroscience*, 9(12), 4101-4110.
-   - Original spatial coherence metric
+def broad(distances):
+    return np.exp(-(distances**2) / (2 * 15.0**2))
 
-2. **Shuman et al. (2013)**. The emerging field of signal processing on graphs. *IEEE Signal Processing Magazine*, 30(3), 83-98.
-   - Mathematical foundation for graph signal processing
+contrast = graph_convolve(env, field, narrow) - graph_convolve(env, field, broad)
+contrast[~observed] = np.nan
+constant = np.where(observed, 5.0, np.nan)
+constant_contrast = (
+    graph_convolve(env, constant, narrow) - graph_convolve(env, constant, broad)
+)
+assert np.allclose(constant_contrast[observed], 0.0, atol=1e-12)
+```
 
-3. **Marr & Hildreth (1980)**. Theory of edge detection. *Proceedings of the Royal Society B*, 207(1167), 187-217.
-   - Laplacian of Gaussian (LoG) for edge detection
+Positive contrast indicates greater narrow-scale than broad-scale activity; negative contrast indicates the reverse. It is not a field boundary, a field center, or a significance test by itself. Thresholding the top 5% will select bins even for an unsuitable map.
 
-4. **Diehl et al. (2017)**. Grid and nongrid cells in medial entorhinal cortex represent spatial location and environmental features with complementary coding schemes. *Neuron*, 94(1), 83-92.
-   - Applications of spatial filtering in grid cell analysis
+Use `normalize=False` only when your supplied weights already have the intended scale or signed balance. A signed center-surround matrix should have zero row sums to remove constants; re-normalizing it by its signed sum destroys that property. Missing source values also require explicit treatment when designing such a matrix.
+
+### Reusing a precomputed matrix
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.ops.distance import geodesic_distance_matrix
+from neurospatial.ops.graph import graph_convolve
+
+distances = geodesic_distance_matrix(env.connectivity, env.n_bins, weight="distance")
+kernel_matrix = np.exp(-(distances**2) / (2 * 5.0**2))
+field = np.sin(env.bin_centers[:, 0] / 10.0)
+filtered = graph_convolve(env, field, kernel_matrix)
+assert filtered.shape == (env.n_bins,)
+```
+
+A callable distance kernel also builds dense distance and weight matrices. Both approaches require quadratic memory in the number of bins. For repeated standard diffusion smoothing, prefer the cached matrix-free `env.smooth()` path. `mode="average"` preserves intensive constants; `mode="density"` and `mode="transition"` have different density and mass interpretations. See [spatial analysis](spatial-analysis.md).
+
+## Mathematical interpretation
+
+Graph filtering is a weighted sum over source bins:
+
+$$
+y_i = \sum_j K_{ij} f_j.
+$$
+
+For a positive normalized kernel and observed source set $O$:
+
+$$
+y_i = \frac{\sum_{j \in O} K_{ij} f_j}{\sum_{j \in O} K_{ij}}.
+$$
+
+This is a bin-weighted average. On irregular layouts with unequal cell areas, it is not automatically an area-weighted continuum convolution. The finite-volume diffusion used by `env.smooth()` accounts for the published cell geometry.
+
+For multi-scale analysis, repeat a filter with explicit physical scales and compare the supported results. For anisotropic filters, construct a weight matrix with a declared orientation convention and retain the permitted graph connections. A distance-only callable cannot encode heading dependence on its own.
+
+Graph derivatives have physical length, face, and volume factors. A difference of Gaussian averages is a scale-dependent contrast operator, not the gradient magnitude. Use the [differential-operator guide](differential-operators.md) for `gradient`, `divergence`, and finite-volume Laplacians.
+
+## Performance and interpretation
+
+- Neighborhood sums and means use sparse adjacency operations; nonlinear reductions operate over the actual local neighbors.
+- Dense graph convolution is flexible but becomes expensive as the number of bins grows. Avoid unsupported fixed speedup claims when choosing an implementation.
+- A smooth, coherent, or high-contrast map is a description of the supplied field. Keep occupancy, recording gaps, and the original support available for validation.
+
+See [neuroscience metrics](neuroscience-metrics.md) for spatial metrics and [spike-field primitives](spike-field-primitives.md) for rate estimation. For the graph signal-processing framework, see Shuman et al. (2013), *The emerging field of signal processing on graphs*, IEEE Signal Processing Magazine 30(3), 83–98.

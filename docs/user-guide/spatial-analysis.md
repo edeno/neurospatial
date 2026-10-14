@@ -1496,13 +1496,13 @@ When reporting analyses, include:
 
 - **[Environments Guide](environments.md)**: Core environment concepts and creation
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
-- **[Spike Field Basics](../examples/08_spike_field_basics.ipynb)**: Practical demonstrations
+- **[Spike Field Basics](../examples/02_spatial_rate_maps.ipynb)**: Practical demonstrations
 - **[API Reference](../api/index.md)**: Complete API documentation
 
 ---
 
 ## Next Steps
 
-- **Try it yourself**: Run the [Spike Field Basics notebook](../examples/08_spike_field_basics.ipynb)
+- **Try it yourself**: Run the [Spike Field Basics notebook](../examples/02_spatial_rate_maps.ipynb)
 - **Explore**: See how operations combine in [workflows guide](workflows.md)
 - **Deep dive**: Check [API reference](../api/index.md) for all parameters and details

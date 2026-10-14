@@ -27,6 +27,8 @@ OPT_IN = (
     "docs/user-guide/trajectory-and-behavioral-analysis.md",
     "docs/user-guide/video-annotation.md",
     "docs/user-guide/workflows.md",
+    "docs/user-guide/neuroscience-metrics.md",
+    "docs/user-guide/signal-processing-primitives.md",
     "docs/migration/v0.6.md",
 )
 SETUPS = {

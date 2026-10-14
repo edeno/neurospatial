@@ -21,26 +21,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: foundations
-            notebooks: examples/0[1-7]_*.ipynb
+          - group: core
+            notebooks: examples/0[1-3]_*.ipynb examples/0[5-7]_*.ipynb
             extras: ''
-          - group: operators
-            notebooks: examples/09_*.ipynb examples/10_*.ipynb
-            extras: ''
-          - group: encoding
-            notebooks: examples/08_*.ipynb examples/11_*.ipynb examples/12_*.ipynb examples/21_*.ipynb examples/22_*.ipynb examples/24_*.ipynb examples/25_*.ipynb
-            extras: ''
-          - group: behavior
-            notebooks: examples/13_*.ipynb examples/14_*.ipynb examples/15_*.ipynb
+          - group: real-data
+            notebooks: examples/04_*.ipynb
             extras: ''
           - group: visualization
-            notebooks: examples/16_*.ipynb examples/17_*.ipynb examples/18_*.ipynb
+            notebooks: examples/08_*.ipynb
             extras: --extra video
-          - group: real-data
-            notebooks: examples/19_*.ipynb examples/23_*.ipynb
-            extras: ''
-          - group: decoding-events-io
-            notebooks: examples/20_*.ipynb examples/26_*.ipynb examples/27_*.ipynb
+          - group: nwb
+            notebooks: examples/09_*.ipynb
             extras: --extra nwb
     steps:
       - uses: actions/checkout@v4

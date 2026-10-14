@@ -73,7 +73,7 @@ for pattern in patterns:
 # whose source no longer exists in examples/ (e.g. a deleted or renamed
 # example). The prune scan is restricted to the numbered-example naming
 # convention the sync actually produces (``NN_*.ipynb`` / ``NN_*.py``, e.g.
-# ``23_path_progression.ipynb``), so hand-maintained docs-only files -- such as
+# ``03_trajectories_and_behavior.ipynb``), so hand-maintained docs-only files -- such as
 # index.md, a local conftest.py, or any non-numbered helper -- are never
 # candidates for deletion.
 prune_patterns = ("[0-9][0-9]_*.ipynb", "[0-9][0-9]_*.py")

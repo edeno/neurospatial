@@ -15,10 +15,9 @@
 
 - Download and cache the real J16 bandit recording from
   Zenodo (10.5281/zenodo.23020757), verifying its
-  pinned SHA-256 before loading numeric NPZ arrays without pickle. Examples 19
-  and 23 fetch this archive explicitly and reuse it offline; data instructions
-  include the source, license and citation. The optional napari viewer in
-  example 19 now requires an explicit opt-in.
+  pinned SHA-256 before loading numeric NPZ arrays without pickle. The real-data
+  tutorial fetches this archive explicitly and reuses it offline; data
+  instructions include the source, license and citation.
 
 - Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
   population result (spatial, directional, view, object-vector and peri-event).
@@ -73,6 +72,12 @@
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed
+
+- Consolidate the 27 feature-oriented notebooks into nine standalone task
+  tutorials covering environments, rate maps, behavior, real data, simulation,
+  held-out decoding, events, visualization and NWB. Combine the J16 neural and
+  maze analyses, add executable specialized recipes in the user guide, and
+  update catalog, links, mirrored outputs and full-collection CI.
 
 - **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
   units and level of a rate map. Pass `mode="density"` explicitly to retain

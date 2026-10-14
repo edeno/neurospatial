@@ -401,6 +401,206 @@ plt.title(f"Boundary field (score = {score:.2f})")
 plt.show()
 ```
 
+## Specialized tuning recipes
+
+Choose the coordinate system for the scientific question before computing a
+score. The recipes below use one unit's `spike_times` in seconds, aligned
+`times` and `positions`, and an independently defined `env`. Spatial examples
+assume coordinates in cm. Headings are measured head direction in radians,
+with zero pointing east and positive angles counterclockwise. A heading
+derived from velocity measures movement direction; it does not provide a
+measurement of where the head or eyes point.
+
+| Question | Rate-map domain | Main API |
+| --- | --- | --- |
+| Does spatial tuning depend on travel direction? | Animal position, separately per condition | `compute_directional_place_fields` |
+| Is firing associated with head direction? | Circular world-frame heading | `compute_directional_rate` |
+| Is spatial firing hexagonally periodic? | 2D spatial autocorrelation | `spatial_autocorrelation`, `grid_score` |
+| Is firing associated with a vector to an object? | Object distance and allocentric or egocentric bearing | `compute_object_vector_rate`, `compute_egocentric_rate` |
+| Is firing associated with a viewed location? | Projected gaze location in the arena | `compute_view_rate` |
+
+Keep the same analysis epochs and known spike-recording window across related
+maps. Each snippet assumes spikes were recorded throughout the tracked span;
+replace its `spike_window` with the actual electrophysiology recording
+intervals. The default `max_gap=0.5` excludes longer sampling intervals. NaNs
+and gaps remain missing observations, and each domain has its own support.
+
+### Spatial maps conditioned on movement direction
+
+On a track aligned with the x axis, label rightward and leftward travel using
+a predeclared movement criterion. For a task with known trial directions, use
+those sample-aligned labels instead. The reserved label `"other"` excludes
+pauses from both occupancy and spikes.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import compute_directional_place_fields
+
+velocity_x = np.gradient(positions[:, 0], times)
+direction_labels = np.full(len(times), "other", dtype=object)
+direction_labels[velocity_x > 2.0] = "rightward"   # cm/s
+direction_labels[velocity_x < -2.0] = "leftward"
+directional = compute_directional_place_fields(
+    env, spike_times, times, positions, direction_labels,
+    bandwidth=5.0, min_occupancy=0.5,
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+ax = directional.plot()  # Horizontal axis is spatial-bin index
+ax.set_ylabel("Rate (Hz)")
+```
+
+These are spatial maps conditioned on travel direction, rather than angular
+head-direction tuning curves. Compare rates only where both conditions have
+adequate occupancy. Different paths, speeds or trial outcomes can explain a
+map difference; the helper does not perform a condition-comparison test.
+For gapped tracking, derive velocity within each observed run rather than
+across a dropout.
+
+### Head-direction tuning
+
+Directional encoding operates on the angular domain and takes no environment.
+Use angular units consistently for headings, bin width and bandwidth.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import compute_directional_rate
+
+hd = compute_directional_rate(
+    spike_times, times, headings,
+    bin_size=np.deg2rad(6.0), bandwidth=np.deg2rad(10.0),
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+hd.plot()
+print("Rate-weighted mean vector length:", hd.mean_vector_length())
+```
+
+Inspect angular occupancy as well as rates. Mean vector length describes the
+estimated tuning curve. A fixed cutoff is a screen, and a Rayleigh statistic
+on spike angles can reflect uneven heading dwell time. A circular-shift test
+on the raw recording is available when its stationarity assumptions fit the
+experiment:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import is_head_direction_cell
+
+hd_shift_verdict = is_head_direction_cell(
+    spike_times, times, headings,
+    criterion="shuffle", n_shuffles=199, min_shift=5.0, rng=2026,
+    bin_size=np.deg2rad(6.0), bandwidth=np.deg2rad(10.0),
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+```
+
+The selected analyzed span must be long enough for the minimum shift. Report
+the null, estimator, seed and number of shuffles; a small p-value establishes
+association against that null rather than independence from position or speed.
+
+### Grid periodicity on a regular 2D arena
+
+Use a regular 2D grid for the FFT autocorrelation. Preserve missing support;
+filling unvisited locations with zero changes the map being analyzed.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding import compute_spatial_rate, grid_score, spatial_autocorrelation
+
+spatial = compute_spatial_rate(
+    env, spike_times, times, positions,
+    bandwidth=5.0, min_occupancy=0.5,
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+autocorrelation = spatial_autocorrelation(env, spatial.firing_rate)
+score = grid_score(autocorrelation)
+print("Hexagonal rotational-symmetry score:", score)
+```
+
+The autocorrelation uses circular FFT boundaries and centers observed values;
+its missing-bin treatment does not remove sampling bias. Inspect the rate map,
+autocorrelogram and occupancy together. The annulus and binning affect the
+score, which may be unavailable for small or constant maps. A conventional
+score cutoff is not a calibrated significance test. For an irregular graph,
+`spatial_autocorrelation_radial` and `periodicity_score` from
+`neurospatial.encoding.grid` describe radial periodicity; a radial profile
+does not establish sixfold symmetry.
+
+### Allocentric and egocentric object vectors
+
+`object_positions` has shape `(n_objects, 2)` and shares the animal position's
+coordinate system. Both APIs use the nearest object. Allocentric bearing
+measures the vector **from animal to object** in world coordinates;
+egocentric bearing measures that vector relative to the animal's heading
+(zero is straight ahead).
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding import compute_egocentric_rate, compute_object_vector_rate
+
+polar_settings = {
+    "distance_range": (0.0, 50.0),
+    "n_distance_bins": 10,
+    "n_direction_bins": 12,
+    "method": "binned",
+    "min_occupancy": 0.5,
+    "epochs": (float(times[0]), float(times[-1])),
+    "spike_window": (float(times[0]), float(times[-1])),
+}
+allocentric = compute_object_vector_rate(
+    env, spike_times, times, positions, object_positions,
+    **polar_settings,
+)
+egocentric = compute_egocentric_rate(
+    env, spike_times, times, positions, headings, object_positions,
+    **polar_settings,
+)
+print(allocentric.direction_frame, egocentric.direction_frame)
+allocentric.plot()
+egocentric.plot()
+```
+
+Compare support in the two polar domains before comparing their information
+scores. Polar bin area grows with distance, and occupancy corrects dwell time;
+do not smooth a finished rate map as if it contained counts. A place field near
+one stationary object can yield a localized object-vector map. Stable vector
+tuning after object relocation, diverse heading coverage and appropriate
+controls are needed to distinguish those explanations.
+
+### Viewed-location maps
+
+A view map indexes projected gaze locations rather than the animal's position.
+The fixed-distance model below projects 15 cm along measured heading; it is a
+geometric assumption, not a measurement of eye gaze.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding import compute_view_rate
+
+view = compute_view_rate(
+    env, spike_times, times, positions, headings,
+    gaze_model="fixed_distance", view_distance=15.0,
+    bandwidth=5.0, min_occupancy=0.5,
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+view.plot(vmin=0)
+print("View information (bits/spike):", view.view_spatial_information())
+```
+
+`gaze_model="ray_cast"` or `"boundary"` projects toward a boundary instead.
+Projected locations outside the environment lack support. View and position
+maps generally have different occupancy and correlated predictors, so a larger
+view-information score alone does not demonstrate a spatial view cell. Match
+the scientific interpretation to the head/eye measurements and gaze model.
+The plural `compute_*_rates` APIs share preprocessing across a population and
+preserve supplied unit labels.
+
 ## References and Cross-References
 
 ### Scientific References

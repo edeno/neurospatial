@@ -164,7 +164,7 @@ Without it, spikes are assumed recorded whenever position was;
 
 - **[Core Concepts](core-concepts.md)** — bins, connectivity graphs, layout
   engines, and 1D linearized tracks, in depth.
-- **[Place Field Analysis example](../examples/11_place_field_analysis.ipynb)** —
+- **[Place Field Analysis example](../examples/02_spatial_rate_maps.ipynb)** —
   the same workflow on a fuller dataset, with a whole population of cells.
 - **[User Guide](../user-guide/index.md)** — decoding, trajectory and behavioral
   analysis, egocentric frames, animation, and more.
