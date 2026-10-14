@@ -115,7 +115,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.segmentation import _positive_dt
 
 if TYPE_CHECKING:
@@ -159,7 +159,7 @@ __all__ = [  # noqa: RUF022
 
 
 @dataclass(frozen=True, repr=False)
-class PathEfficiencyResult(ResultMixin):
+class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency metrics for a trajectory segment.
 
     Attributes
@@ -199,6 +199,10 @@ class PathEfficiencyResult(ResultMixin):
     start_position: NDArray[np.float64]
     goal_position: NDArray[np.float64]
     metric: str
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of the start and goal positions."""
+        self._own_arrays()
 
     def is_efficient(self, threshold: float = 0.8) -> bool:
         """Return True if path efficiency exceeds threshold.
@@ -242,7 +246,7 @@ class PathEfficiencyResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class SubgoalEfficiencyResult(ResultMixin):
+class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency with subgoal decomposition.
 
     Use subgoal decomposition when:
@@ -273,6 +277,10 @@ class SubgoalEfficiencyResult(ResultMixin):
     weighted_efficiency: float
     subgoal_positions: NDArray[np.float64]
 
+    def __post_init__(self) -> None:
+        """Own a read-only copy of the subgoal positions."""
+        self._own_arrays()
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar subgoal-efficiency metrics.
 
@@ -299,7 +307,7 @@ class SubgoalEfficiencyResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class GoalDirectedMetrics(ResultMixin):
+class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     """Goal-directed navigation metrics for a trajectory.
 
     Attributes
@@ -336,6 +344,10 @@ class GoalDirectedMetrics(ResultMixin):
     goal_distance_at_end: float
     goal_position: NDArray[np.float64]
     metric: str
+
+    def __post_init__(self) -> None:
+        """Own a read-only copy of the goal position."""
+        self._own_arrays()
 
     def is_goal_directed(self, threshold: float = 0.3) -> bool:
         """Return True if goal bias exceeds threshold.

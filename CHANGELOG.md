@@ -112,6 +112,11 @@
   preserve real-data transition endpoints/gaps, and make desktop viewers and
   long video exports opt-in. Refresh worked outputs and align prerequisite links.
 
+- Directional place fields, decode summaries, batch scores, behavior metrics
+  and run bins, assembly results and trajectory-fit results now own read-only
+  copies of their array fields, including after pickle/deepcopy. Directional
+  mappings also prevent replacing entries. **Behavior change:** copy arrays
+  before editing values. Decode-summary xarray exports remain editable copies.
 - Rate and peri-event results store read-only copies of their arrays. This
   covers spatial, directional, view and object-vector results (single-unit
   and population) and both peri-event results. Editing an array a result was

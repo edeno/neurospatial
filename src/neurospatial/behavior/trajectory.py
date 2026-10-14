@@ -24,14 +24,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 
 @dataclass(frozen=True, repr=False)
-class MSDResult(ResultMixin):
+class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     """Mean square displacement curve returned by ``mean_square_displacement``.
 
     Attributes
@@ -47,6 +47,10 @@ class MSDResult(ResultMixin):
 
     lags: NDArray[np.float64]
     msd: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of lags and displacement values."""
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

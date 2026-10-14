@@ -101,7 +101,9 @@ class TestDirectionalPlaceFieldsDataclass:
             labels=labels,
         )
 
-        assert result.firing_rates == fields
+        assert tuple(result.firing_rates) == tuple(fields)
+        for label, rate in fields.items():
+            np.testing.assert_array_equal(result.firing_rates[label], rate)
         assert result.labels == labels
 
     def test_dataclass_is_frozen(self) -> None:

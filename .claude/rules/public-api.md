@@ -45,6 +45,10 @@ Results keep no raw input arrays or recompute closures. Rate and peri-event
 results inherit `ReadOnlyArraysMixin` and call `self._own_arrays()` last in
 `__post_init__`, so their arrays are read-only copies; exports
 (`to_dataframe`, `to_xarray`) hand out writable copies.
+Decode summaries, batch scores, behavior arrays, assembly results and
+trajectory-fit arrays use this ownership contract too. Directional place fields
+own the arrays in their mappings and prevent replacing entries. Pickle and
+deepcopy preserve read-only state.
 Results own `analysis_settings` and return independent dictionaries, including
 nested recording windows, so inspecting or editing exported settings cannot
 change training support or recorded analysis choices.

@@ -81,6 +81,7 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
 from neurospatial.environment.trajectory import observed_runs
 
@@ -237,7 +238,7 @@ class Crossing:
 
 
 @dataclass(frozen=True)
-class Run:
+class Run(ReadOnlyArraysMixin):
     """Run between regions.
 
     Attributes
@@ -256,6 +257,10 @@ class Run:
     end_time: float
     bins: NDArray[np.int64]
     success: bool
+
+    def __post_init__(self) -> None:
+        """Own a read-only copy of the run's bin sequence."""
+        self._own_arrays()
 
 
 # =============================================================================
