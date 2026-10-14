@@ -163,6 +163,10 @@
 
 ### Fixed
 
+- Clarify that `detect_goal_directed_runs` evaluates one candidate per observed
+  sample run, and that success means sufficient directed progress rather than
+  arrival. Point completed-traversal analyses to `detect_runs_between_regions`.
+
 - Landmark video calibration now includes the raw-pixel Y-axis flip in the
   returned transform, so landmarks and unseen video points map to the intended
   physical coordinates for rigid, similarity and affine fits.

@@ -2472,7 +2472,8 @@ def detect_goal_directed_runs(
         - start_time: Run start time (seconds)
         - end_time: Run end time (seconds)
         - bins: Sequence of bin indices during run
-        - success: Always True for detected runs (reached goal region)
+        - success: True when the directedness and net-progress criteria are met;
+          this does not require reaching the goal region
 
     Raises
     ------
@@ -2492,8 +2493,11 @@ def detect_goal_directed_runs(
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
     is analyzed as a separate recording; no segment spans a pause.
 
-    Each recording supplies one candidate. Its success flag retains the
-    existing meaning of significant progress toward the goal.
+    Each recording supplies one candidate spanning its complete observed
+    sample run; this function does not split repeated approaches into separate
+    bouts. ``success=True`` means the directedness and net-progress thresholds
+    were met, even when the last sample is still outside the goal. To segment
+    completed source-to-goal traversals, use ``detect_runs_between_regions``.
 
     **Directedness score** measures path efficiency:
 
