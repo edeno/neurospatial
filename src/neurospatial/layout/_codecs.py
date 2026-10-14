@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any
 
 import networkx as nx
@@ -33,6 +34,7 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
 
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
@@ -577,6 +579,48 @@ def _decode_nearest_locator(
 def _encode_binning(obj: Binning, prefix: str) -> Payload:
     meta: dict[str, Any] = {"kind": obj.kind}
     arrays: dict[str, NDArray[Any]] = {}
+    cells: list[PolygonCells] = []
+    mappings: list[ClipMapping] = []
+
+    def reference(value: PolygonCells | ClipMapping) -> dict[str, int]:
+        snapshots: list[Any] = cells if isinstance(value, PolygonCells) else mappings
+        index = next(
+            (i for i, snapshot in enumerate(snapshots) if snapshot is value),
+            len(snapshots),
+        )
+        if index == len(snapshots):
+            snapshots.append(value)
+        key = (
+            "polygon_cells_ref"
+            if isinstance(value, PolygonCells)
+            else "clip_mapping_ref"
+        )
+        return {key: index}
+
+    # Current components precede historical locator frames in snapshot order.
+    if isinstance(obj.shapes, PolygonCells):
+        reference(obj.shapes)
+    if obj.clip_mapping is not None:
+        reference(obj.clip_mapping)
+
+    def locator_payload(locator: object, path: str) -> Payload:
+        if not isinstance(locator, (ClippedLocator, SubsetLocator, TransformedLocator)):
+            return encode(locator, path)
+        base, nested = locator_payload(locator.base, f"{path}/base")
+        local: dict[str, Any] = {
+            "codec": type(locator).__name__,
+            "codec_version": 1,
+            "base": base,
+        }
+        if isinstance(locator, ClippedLocator):
+            local["cells_ref"] = reference(locator.cells)["polygon_cells_ref"]
+            local["mapping_ref"] = reference(locator.mapping)["clip_mapping_ref"]
+        elif isinstance(locator, SubsetLocator):
+            nested.update(_arrays(path, parent_to_child=locator.parent_to_child))
+        else:
+            nested.update(_arrays(path, inverse=locator.inverse))
+        return local, nested
+
     # Lookup is encoded first so unsupported layout-backed persistence fails
     # with its actionable error before any optional layout work is requested.
     for name in (
@@ -587,6 +631,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "linearization",
         "shapes",
         "outline",
+        "clip_mapping",
     ):
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
@@ -597,10 +642,105 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
             )
         if part is None:
             meta[name] = None
+        elif isinstance(part, (PolygonCells, ClipMapping)):
+            meta[name] = reference(part)
+        elif name == "locator":
+            meta[name], nested = locator_payload(part, f"{prefix}/{name}")
+            arrays.update(nested)
         else:
             meta[name], nested = encode(part, f"{prefix}/{name}")
             arrays.update(nested)
+    if cells or mappings:
+        meta["snapshots"] = {"polygon_cells": [], "clip_mappings": []}
+        for name, snapshots in (("polygon_cells", cells), ("clip_mappings", mappings)):
+            for index, snapshot in enumerate(snapshots):
+                encoded, nested = encode(snapshot, f"{prefix}/snapshots/{name}/{index}")
+                meta["snapshots"][name].append(encoded)
+                arrays.update(nested)
     return meta, arrays
+
+
+def _nonnegative_integer(value: Any, name: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be a nonnegative integer.")
+    return int(value)
+
+
+def _encode_polygon_cells(obj: PolygonCells, prefix: str) -> Payload:
+    pieces = [shapely.to_wkb(polygon) for polygon in obj.polygons]
+    offsets = np.array(
+        [0, *np.cumsum([len(piece) for piece in pieces], dtype=np.intp)], dtype=np.intp
+    )
+    data = np.frombuffer(b"".join(pieces), dtype=np.uint8).copy()
+    return {"n_cells": len(pieces)}, _arrays(prefix, wkb=data, offsets=offsets)
+
+
+def _decode_polygon_cells(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> PolygonCells:
+    count = _nonnegative_integer(meta["n_cells"], "n_cells")
+    data = np.asarray(arrays[f"{prefix}/wkb"])
+    if data.ndim != 1 or data.dtype != np.uint8:
+        raise ValueError("wkb must be a one-dimensional uint8 array.")
+    offsets = _array(arrays, prefix, "offsets", np.intp)
+    if (
+        offsets.shape != (count + 1,)
+        or offsets[0] != 0
+        or offsets[-1] != len(data)
+        or np.any(np.diff(offsets) <= 0)
+    ):
+        raise ValueError("offsets must partition wkb into n_cells nonempty records.")
+    polygons = []
+    for index, (start, end) in enumerate(pairwise(offsets)):
+        try:
+            polygon = shapely.from_wkb(data[start:end].tobytes())
+        except shapely.errors.GEOSException as exc:
+            raise ValueError(f"wkb cell {index} is malformed: {exc}") from exc
+        if not isinstance(polygon, Polygon):
+            raise ValueError(f"wkb cell {index} must contain one connected Polygon.")
+        polygons.append(polygon)
+    return PolygonCells(tuple(polygons))
+
+
+def _encode_clip_mapping(obj: ClipMapping, prefix: str) -> Payload:
+    return {"n_parent_bins": obj.n_parent_bins}, _arrays(
+        prefix, parent_bin_indices=obj.parent_bin_indices
+    )
+
+
+def _decode_clip_mapping(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> ClipMapping:
+    return ClipMapping(
+        _array(arrays, prefix, "parent_bin_indices", np.intp),
+        _nonnegative_integer(meta["n_parent_bins"], "n_parent_bins"),
+    )
+
+
+def _encode_clipped_locator(obj: ClippedLocator, prefix: str) -> Payload:
+    meta: dict[str, Any] = {}
+    arrays: dict[str, NDArray[Any]] = {}
+    for name in ("base", "cells", "mapping"):
+        meta[name], nested = encode(getattr(obj, name), f"{prefix}/{name}")
+        arrays.update(nested)
+    return meta, arrays
+
+
+def _decode_clipped_locator(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> ClippedLocator:
+    base = decode(meta["base"], arrays, f"{prefix}/base")
+    cells = decode(meta["cells"], arrays, f"{prefix}/cells")
+    mapping = decode(meta["mapping"], arrays, f"{prefix}/mapping")
+    if (
+        not isinstance(base, _LOCATOR_TYPES)
+        or not isinstance(cells, PolygonCells)
+        or not isinstance(mapping, ClipMapping)
+    ):
+        raise ValueError(
+            "clipped locator needs a base locator, polygon cells and clip mapping."
+        )
+    return ClippedLocator(base, cells, mapping)
 
 
 def _encode_subset_locator(obj: SubsetLocator, prefix: str) -> Payload:
@@ -637,18 +777,106 @@ def _decode_binning(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> Binning:
     parts: dict[str, Any] = {}
+    cells: list[PolygonCells] = []
+    mappings: list[ClipMapping] = []
+    tables = meta.get("snapshots")
+    if tables is not None:
+        if not isinstance(tables, dict):
+            raise ValueError("snapshots must contain typed snapshot tables.")
+        for name, expected_kind in (
+            ("polygon_cells", PolygonCells),
+            ("clip_mappings", ClipMapping),
+        ):
+            entries = tables[name]
+            if not isinstance(entries, list):
+                raise ValueError(f"{name} snapshots must be a list.")
+            for index, entry in enumerate(entries):
+                snapshot = decode(entry, arrays, f"{prefix}/snapshots/{name}/{index}")
+                if not isinstance(snapshot, expected_kind):
+                    raise ValueError(f"{name} snapshot has the wrong geometry kind.")
+                if isinstance(snapshot, PolygonCells):
+                    cells.append(snapshot)
+                else:
+                    assert isinstance(snapshot, ClipMapping)
+                    mappings.append(snapshot)
+
+    def referenced(value: Any, key: str) -> PolygonCells | ClipMapping:
+        if not isinstance(value, dict) or set(value) != {key}:
+            raise ValueError(f"{key} must be a typed snapshot reference.")
+        index = _nonnegative_integer(value[key], f"{key} snapshot reference")
+        snapshots: Sequence[PolygonCells | ClipMapping] = (
+            cells if key == "polygon_cells_ref" else mappings
+        )
+        if index >= len(snapshots):
+            raise ValueError(f"{key} snapshot reference is out of range.")
+        return snapshots[index]
+
+    def locator_value(value: Any, path: str) -> Any:
+        if not isinstance(value, dict):
+            raise ValueError("locator must contain geometry metadata.")
+        kind = value.get("codec")
+        if kind not in {"ClippedLocator", "SubsetLocator", "TransformedLocator"}:
+            part = decode(value, arrays, path)
+            if not isinstance(part, _LOCATOR_TYPES):
+                raise ValueError("locator must contain a point-lookup codec.")
+            return part
+        if type(value.get("codec_version")) is not int or value["codec_version"] != 1:
+            raise ValueError("locator codec_version must be 1.")
+        base = locator_value(value["base"], f"{path}/base")
+        if kind == "ClippedLocator":
+            if "cells_ref" not in value or "mapping_ref" not in value:
+                raise ValueError(
+                    "clipped locators in a binning need typed snapshot references."
+                )
+            cell_snapshot = referenced(
+                {"polygon_cells_ref": value["cells_ref"]}, "polygon_cells_ref"
+            )
+            map_snapshot = referenced(
+                {"clip_mapping_ref": value["mapping_ref"]}, "clip_mapping_ref"
+            )
+            assert isinstance(cell_snapshot, PolygonCells) and isinstance(
+                map_snapshot, ClipMapping
+            )
+            return ClippedLocator(base, cell_snapshot, map_snapshot)
+        if kind == "SubsetLocator":
+            return SubsetLocator(base, _array(arrays, path, "parent_to_child", np.intp))
+        return TransformedLocator(base, _array(arrays, path, "inverse", np.float64))
+
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
         "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
         "rectilinear": RectilinearGrid,
         "linearization": TrackLinearization,
-        "shapes": (HexagonShapes, TriangleShapes),
+        "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
+        "clip_mapping": ClipMapping,
     }
+    part: object | None
     for name, kind in expected.items():
-        value = meta[name]
-        part = decode(value, arrays, f"{prefix}/{name}") if value is not None else None
+        value = meta.get(name) if name == "clip_mapping" else meta[name]
+        if value is None:
+            part = None
+        elif (
+            name == "shapes"
+            and isinstance(value, dict)
+            and "polygon_cells_ref" in value
+        ):
+            part = referenced(value, "polygon_cells_ref")
+        elif (
+            name == "clip_mapping"
+            and isinstance(value, dict)
+            and "clip_mapping_ref" in value
+        ):
+            part = referenced(value, "clip_mapping_ref")
+        elif name == "locator":
+            part = locator_value(value, f"{prefix}/{name}")
+        else:
+            part = decode(value, arrays, f"{prefix}/{name}")
+            if isinstance(part, (PolygonCells, ClipMapping)):
+                raise ValueError(
+                    "polygon components in a binning need typed snapshot references."
+                )
         if part is None and name in {"bins", "locator", "faces"}:
             raise ValueError(f"{name} is required for a binning.")
         if part is not None and not isinstance(part, kind):
@@ -666,6 +894,7 @@ _LOCATOR_TYPES = (
     NearestBinLocator,
     SubsetLocator,
     TransformedLocator,
+    ClippedLocator,
 )
 
 
@@ -680,6 +909,11 @@ _CODECS: dict[str, Codec] = {
         TriangleShapes, _encode_triangle_shapes, _decode_triangle_shapes
     ),
     "Outline": Codec(Outline, _encode_outline, _decode_outline),
+    "PolygonCells": Codec(PolygonCells, _encode_polygon_cells, _decode_polygon_cells),
+    "ClipMapping": Codec(ClipMapping, _encode_clip_mapping, _decode_clip_mapping),
+    "ClippedLocator": Codec(
+        ClippedLocator, _encode_clipped_locator, _decode_clipped_locator
+    ),
     "RectilinearLocator": Codec(
         RectilinearLocator, _encode_rectilinear_locator, _decode_rectilinear_locator
     ),

@@ -162,6 +162,12 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     Binning
         Owned child geometry. Points in dropped bins are outside the child.
     """
+    from neurospatial.layout._polygon import (
+        ClipMapping,
+        PolygonCells,
+        subset_polygon_cells,
+    )
+
     keep = np.asarray(keep)
     if (
         keep.dtype.kind != "b"
@@ -211,6 +217,8 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         shapes = HexagonShapes(bins.centers, shapes.radius, shapes.orientation)
     elif isinstance(shapes, TriangleShapes):
         shapes = TriangleShapes(shapes.points, shapes.triangles[parent_ids])
+    elif isinstance(shapes, PolygonCells):
+        shapes = subset_polygon_cells(shapes, keep)
     track = binning.linearization
     if track is not None:
         if isinstance(track, TrackLinearization):
@@ -243,6 +251,14 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         linearization=track,
         shapes=shapes,
         outline=None,
+        clip_mapping=(
+            ClipMapping(
+                binning.clip_mapping.parent_bin_indices[keep],
+                binning.clip_mapping.n_parent_bins,
+            )
+            if binning.clip_mapping is not None
+            else None
+        ),
     )
 
 
@@ -346,6 +362,8 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
 
 
 def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
+    from neurospatial.layout._polygon import PolygonCells, transform_polygon_cells
+
     parent = binning.bins
     matrix = _matrix(transform, parent.n_dims)
     linear = matrix[:-1, :-1]
@@ -466,6 +484,8 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         )
     elif isinstance(shapes, TriangleShapes):
         shapes = TriangleShapes(_mapped(shapes.points, matrix), shapes.triangles)
+    elif isinstance(shapes, PolygonCells):
+        shapes = transform_polygon_cells(shapes, matrix)
     outline = binning.outline
     if outline is not None:
         if parent.n_dims != 2:
@@ -511,4 +531,5 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         linearization=track,
         shapes=shapes,
         outline=outline,
+        clip_mapping=binning.clip_mapping,
     )
