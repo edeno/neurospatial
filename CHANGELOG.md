@@ -10,6 +10,16 @@
   the same neuron. A label passed to `[]`, or a position out of range, raises
   an error that names the `sel` call to use. **Breaking:** `SpikeTrains[...]`
   used to look up a label; replace `st[unit_id]` with `st.sel(unit_id=unit_id)`.
+- Build a fitted decoder from hand-built rate maps, such as a simulation's
+  ground truth, with `BayesianDecoder.from_models(env, encoding_models,
+  unit_ids=..., spatial_support=..., dt=...)`. Without `unit_ids`, spike trains
+  pair with models by position. **Breaking:** the `BayesianDecoder` constructor
+  now takes configuration only. `encoding_models`, `unit_ids`,
+  `spatial_support`, `spike_window` and `analysis_settings` are read-only
+  attributes, set by `fit`, `from_rates` or `from_models`; replace
+  `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
+  `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
+  `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
 - Add `Environment.get_divergence_operator()`, the cached finite-volume
   divergence operator that `divergence(env, edge_field)` applies, alongside
   `get_differential_operator()`.

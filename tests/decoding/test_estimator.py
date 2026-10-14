@@ -492,10 +492,10 @@ def test_linearized_track_smoke() -> None:
 
 
 def _fitted_minimal(env: Environment | None = None) -> BayesianDecoder:
-    """A fitted decoder built by directly injecting valid fitted state."""
+    """A fitted decoder built from hand-made models."""
     env = env if env is not None else _small_env()
     models = np.ones((2, env.n_bins))
-    return BayesianDecoder(env, encoding_models=models, unit_ids=np.arange(2))
+    return BayesianDecoder.from_models(env, models, unit_ids=np.arange(2))
 
 
 def _result_with_nan_rows(
@@ -615,19 +615,19 @@ class TestConstructionValidation:
         env = _small_env()
         bad = np.zeros((3, env.n_bins + 1))  # wrong bin axis
         with pytest.raises(ValueError, match="bins"):
-            BayesianDecoder(env, encoding_models=bad, unit_ids=np.array([0, 1, 2]))
+            BayesianDecoder.from_models(env, bad, unit_ids=np.array([0, 1, 2]))
 
-    def test_encoding_models_without_unit_ids_raises(self):
+    def test_encoding_models_without_unit_ids_pair_by_position(self):
         env = _small_env()
-        models = np.ones((2, env.n_bins))
-        with pytest.raises(ValueError, match="unit_ids"):
-            BayesianDecoder(env, encoding_models=models)
+        decoder = BayesianDecoder.from_models(env, np.ones((2, env.n_bins)))
+        assert_array_equal(decoder.unit_ids, [0, 1])
+        assert decoder._unit_ids_generated is True
 
     def test_encoding_models_unit_count_mismatch_raises(self):
         env = _small_env()
         models = np.ones((2, env.n_bins))
         with pytest.raises(ValueError, match="unit"):
-            BayesianDecoder(env, encoding_models=models, unit_ids=np.array([0, 1, 2]))
+            BayesianDecoder.from_models(env, models, unit_ids=np.array([0, 1, 2]))
 
     def test_unfitted_construct_ok(self):
         env = _small_env()
@@ -639,6 +639,55 @@ class TestConstructionValidation:
         fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
         assert fit.encoding_models is not None
         assert fit.encoding_models.shape[1] == env.n_bins
+
+    def test_constructor_takes_configuration_only(self):
+        # Fitted state comes from fit, from_rates or from_models; the
+        # constructor shows only the settings a scientist chooses.
+        params = list(inspect.signature(BayesianDecoder).parameters)
+        assert [name for name in params if not name.startswith("_")] == [
+            "env",
+            "dt",
+            "bandwidth",
+            "method",
+            "min_occupancy",
+            "penalty",
+            "rank",
+            "max_gap",
+            "dtype",
+            "warn_on_drop",
+        ]
+        assert [name for name in params if name.startswith("_")] == ["_fit"]
+
+    def test_replace_keeps_fitted_models(self, sim):
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        coarser = dataclasses.replace(fitted, dt=1.0)
+        assert coarser.dt == 1.0
+        assert coarser.encoding_models is fitted.encoding_models
+        assert coarser.predict(spikes, times).posterior.shape[1] == env.n_bins
+
+    def test_from_models_keeps_a_read_only_copy(self):
+        env = _small_env()
+        models = np.ones((2, env.n_bins))
+        decoder = BayesianDecoder.from_models(env, models)
+        models[:] = 0.0
+        assert_array_equal(decoder.encoding_models, 1.0)
+        assert decoder.encoding_models.flags.writeable is False
+
+    def test_from_models_reproduces_fitted_decoder(self, sim):
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        rebuilt = BayesianDecoder.from_models(
+            env,
+            fitted.encoding_models,
+            unit_ids=fitted.unit_ids,
+            spatial_support=fitted.spatial_support,
+            dt=0.5,
+        )
+        assert_array_equal(
+            rebuilt.predict(spikes, times).posterior,
+            fitted.predict(spikes, times).posterior,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -776,8 +825,8 @@ class TestUnitAlignment:
             atol=1e-12,
         )
 
-        decoder = BayesianDecoder(
-            env, dt=0.5, encoding_models=fitted.encoding_models, unit_ids=[10, 20]
+        decoder = BayesianDecoder.from_models(
+            env, fitted.encoding_models, unit_ids=[10, 20], dt=0.5
         )
         assert decoder._unit_ids_generated is False
         assert dataclasses.replace(decoder, dt=0.05)._unit_ids_generated is False
@@ -806,8 +855,8 @@ class TestUnitAlignment:
         env, spikes, times, positions = sim
         fitted = BayesianDecoder(env, dt=0.5).fit(spikes[:2], times, positions)
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
-            BayesianDecoder(
-                env, dt=0.5, encoding_models=fitted.encoding_models, unit_ids=[10, 10]
+            BayesianDecoder.from_models(
+                env, fitted.encoding_models, unit_ids=[10, 10], dt=0.5
             )
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
             BayesianDecoder(env, dt=0.5).fit(

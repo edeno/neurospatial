@@ -337,6 +337,10 @@ pynwb.
   `SpatialRatesResult`, preserving unit identity and training spike-window
   provenance. Prediction takes spikes and array timestamps; supplied labels
   align by identity, generated labels pair by position.
+- `BayesianDecoder.from_models(env, encoding_models, unit_ids=..., spatial_support=..., dt=...)`:
+  Fitted decoder from hand-built `(n_units, n_bins)` rate maps, such as a
+  simulation's ground truth. The constructor takes configuration only; fitted
+  decoders come from `fit`, `from_rates` or `from_models`.
 - `fit(spike_times, times, positions, unit_ids=...)` requires tracking positions;
   explicit labels must match a labelled spike group's values and order.
   `decode_session` also requires positions and computes its own encoding maps.
