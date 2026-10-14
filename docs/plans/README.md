@@ -23,6 +23,10 @@ Date labels are the first Git commit date for the original artifact, based on `g
 
 ## Planning Backlog
 
+- [Encoder setup consolidation](encoder-setup/PLAN.md) — draft 2026-10-14;
+  preserves the eight entry points while sharing private setup. Implementation
+  has not started.
+
 | Document committed | Area | Document | Notes |
 | --- | --- | --- | --- |
 | 2025-11-23 | LLM integration | [llm-integration/PLAN.md](llm-integration/PLAN.md) | Tooling and agent-facing integration plan. |
