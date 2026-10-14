@@ -30,6 +30,8 @@ from neurospatial.layout._locators import (
     MeshLocator,
     NearestBinLocator,
     RectilinearLocator,
+    SubsetLocator,
+    TransformedLocator,
 )
 
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
@@ -601,13 +603,43 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
     return meta, arrays
 
 
+def _encode_subset_locator(obj: SubsetLocator, prefix: str) -> Payload:
+    base, arrays = encode(obj.base, f"{prefix}/base")
+    arrays.update(_arrays(prefix, parent_to_child=obj.parent_to_child))
+    return {"base": base}, arrays
+
+
+def _decode_subset_locator(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> SubsetLocator:
+    base = decode(meta["base"], arrays, f"{prefix}/base")
+    if not isinstance(base, _LOCATOR_TYPES):
+        raise ValueError("base must contain a point-lookup codec.")
+    return SubsetLocator(base, _array(arrays, prefix, "parent_to_child", np.intp))
+
+
+def _encode_transformed_locator(obj: TransformedLocator, prefix: str) -> Payload:
+    base, arrays = encode(obj.base, f"{prefix}/base")
+    arrays.update(_arrays(prefix, inverse=obj.inverse))
+    return {"base": base}, arrays
+
+
+def _decode_transformed_locator(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> TransformedLocator:
+    base = decode(meta["base"], arrays, f"{prefix}/base")
+    if not isinstance(base, _LOCATOR_TYPES):
+        raise ValueError("base must contain a point-lookup codec.")
+    return TransformedLocator(base, _array(arrays, prefix, "inverse", np.float64))
+
+
 def _decode_binning(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> Binning:
     parts: dict[str, Any] = {}
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
-        "locator": (RectilinearLocator, HexLocator, MeshLocator, NearestBinLocator),
+        "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
         "rectilinear": RectilinearGrid,
         "linearization": TrackLinearization,
@@ -625,6 +657,16 @@ def _decode_binning(
     if not isinstance(meta["kind"], str):
         raise ValueError("kind must be a descriptive string.")
     return Binning(kind=meta["kind"], **parts)
+
+
+_LOCATOR_TYPES = (
+    RectilinearLocator,
+    HexLocator,
+    MeshLocator,
+    NearestBinLocator,
+    SubsetLocator,
+    TransformedLocator,
+)
 
 
 _CODECS: dict[str, Codec] = {
@@ -645,6 +687,12 @@ _CODECS: dict[str, Codec] = {
     "MeshLocator": Codec(MeshLocator, _encode_mesh_locator, _decode_mesh_locator),
     "NearestBinLocator": Codec(
         NearestBinLocator, _encode_nearest_locator, _decode_nearest_locator
+    ),
+    "SubsetLocator": Codec(
+        SubsetLocator, _encode_subset_locator, _decode_subset_locator
+    ),
+    "TransformedLocator": Codec(
+        TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
     ),
     "Binning": Codec(Binning, _encode_binning, _decode_binning),
 }

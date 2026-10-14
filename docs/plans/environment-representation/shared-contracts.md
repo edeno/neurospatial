@@ -163,7 +163,7 @@ everything it needs as arrays plus scalars, except a rebuildable memo (see the
 | `MeshLocator` | phase 2a | Delaunay points, simplices, simplex-to-active map, and the boundary polygon (or `None`), applied with today's containment rule; Delaunay rebuilt as a memo | `TriangularMeshLayout.point_to_bin_index` (`layout/engines/triangular_mesh.py:192`) |
 | `NearestBinLocator` | phase 2a | centers, optional `max_distance`; KD-tree is a memo | `_KDTreeMixin.point_to_bin_index` (`layout/mixins.py:134`) |
 | `SubsetLocator(base, parent_to_child)` | phase 4 | base locator; `(n_parent_bins,)` map, -1 for dropped bins. `locate` masks the base's -1 results **before** indexing the map ([designs.md#subset](designs.md#subset)) | the subset KD-tree in `environment/transforms.py:493-531` |
-| `TransformedLocator(base, inverse)` | phase 4 | base locator; inverse `AffineND` | `TransformedLayout.point_to_bin_index` (`ops/transforms.py:1566-1574`) |
+| `TransformedLocator(base, inverse)` | phase 4 | base locator; owned inverse homogeneous matrix `(n_dims+1, n_dims+1)` | `TransformedLayout.point_to_bin_index` (`ops/transforms.py:1566-1574`) |
 
 A locator may define `subset(keep) -> Locator` or `transformed(t) -> Locator`
 for an exact, faster version, such as a `RectilinearLocator` with a new mask or
@@ -334,7 +334,7 @@ Guaranteed-preservation classes:
 | Transform class | Test on the linear part `A` (n×n) | Faces kept? | Rectilinear kept? |
 | --- | --- | --- | --- |
 | translation | `A == I` exactly | yes, unchanged | yes, edges shifted |
-| similarity | `A @ A.T == s**2 I` (rtol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal with every entry positive |
+| similarity | `(A/s) @ (A/s).T == I` (rtol and atol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal with every entry positive |
 | axis-aligned scaling | `A` diagonal, unequal entries | only when the **parent** has `rectilinear` (every face is axis-aligned) | only if every entry is positive; edges scaled |
 | any other invertible `A` | — | no: `MissingFaces` naming the transform | no |
 
@@ -346,6 +346,11 @@ component, and keeps faces by the rules above.
 Track binnings (`measure_dim < n_dims`) accept translation and similarity only.
 Any other class raises `ValueError`, because the new bin lengths would depend on
 each bin's direction.
+
+The normalized Gram check allows floating-point off-diagonal roundoff in a
+rotation. A zero absolute tolerance would reject ordinary rotations despite
+their unit diagonal. Normalization keeps the bound relative to scale, so a tiny
+anisotropic transform does not pass because of its absolute magnitude.
 
 `subset_binning` always keeps faces among the kept bins when the parent has
 them. Clipping bins to a region is **not** a subset; it's roadmap stage A.

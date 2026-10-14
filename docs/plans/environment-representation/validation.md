@@ -158,6 +158,8 @@ examples, now repaired (all four NWB flagship examples pass). The serial full
 NWB run passes 564 tests, with nine deselected. Full-source and typing-contract
 mypy passes 227 files; Ruff and formatting pass. The prior 595 doctests pass,
 and the two restored executable NWB examples are checked separately.
+The final documentation/API run passes all 180 tests, including executable
+Markdown examples; the separate flagship/API slice passes all 54 tests.
 
 Baseline comparison against `baseline-after-plots.npz` changes 232 NPZ entries,
 representing 142 logical probes. Exactly 130 changed NWB scientific/refusal
@@ -183,3 +185,65 @@ The 12 API probes are
 The artifact directory retains `baseline-save-diff-inventory.json`, with every
 logical probe and its exact native comparison key, and the unabridged
 `baseline-save-differences.txt`. No unexpected differences remain.
+
+## Derived binning data
+
+An isolated archive of `63046c64` reproduced incorrect hexagonal subset measures
+and the translated-grid smoothing refusal before changing derivation. Subsets
+now restrict the parent's ordered pairs, exact measures, shared faces, shapes
+and track mask; dropped-bin and parent-outside points remain outside. Transforms
+retain supported components, update grid edges and use inverse lookup whenever
+the exact positive-diagonal grid path cannot preserve bin identity.
+
+The normalized similarity check permits ordinary rotation roundoff while
+rejecting scale-relative anisotropy. Derived geometry comparisons propagate
+componentwise inverse-recovery error, including cross-axis translation
+cancellation and output ULPs. Bounds are capped at one quarter of the closest
+relevant cell/active-center gap or measure; shared stored arrays remain exact.
+Six regressions first showed an altered area accepted under extreme diagonal
+scaling, then passed after replacing a normwise condition bound with
+componentwise error propagation. Valid extreme scalings still round-trip.
+
+Independent review also reproduced clipped single-cell plots and rejected
+custom non-track layouts that previously supported in-memory derivation. The
+repairs use grid/shape extents for drawing and retain delegated custom lookup,
+with recursive checks against its original geometry. Custom lookup still
+requires a codec for persistence. The drawing regression covers single and
+outer retained cells for grid, hexagonal and mesh plots and field plots.
+
+The complete new public/custom/locator/derivation slice passes 396 tests with
+numerical RuntimeWarnings treated as errors. Another 96 tests cover original
+artist snapshots, slow loaded plots and updated existing expectations. The
+final serial NWB directory run passes 564 tests (nine deselected); a separate
+serial selection passes all 233 NWB-marked cases, including derived transports.
+All 597 doctests pass (132 skipped). Ruff passes repository-wide, with 733
+files already formatted; full source and typing mypy passes 228 files. The
+public API snapshot is unchanged, and CI now includes the facade typing probe.
+The final broad CPU rerun passes 10,320 tests (25 skipped), excluding GUI
+directories, NWB-marked cases run serially, slow cases covered by focused runs,
+and the unchanged starting-commit protected-graph mutation failure. Eight
+obsolete expectations found in the first run were corrected: transformed
+identity grids retain faces, and subsets use a facade with retained grid data.
+
+The final review also reproduced a regression for custom track providers. A
+private in-memory adapter now preserves their subset, translation, similarity
+and nested conversion behavior, including providers that publish no grid
+metadata. Supplied valid edges/masks are owned and retained; otherwise the
+adapter exposes no invented linear edges. Eight compatibility cases check fresh,
+deepcopied and pickled objects, off-track projections, absolute linear
+coordinates, physical lengths and readonly arrays. Custom providers still
+require a registered codec to save; stored native track validation is unchanged.
+Final independent review approved after a fresh 56-test compatibility/wrapper
+run and verification of the original custom-track reproducer; no findings remain.
+
+The 4,046-probe comparison with `baseline-after-save.npz` has exactly 26
+differences: `api/Environment.subset` and `api/Environment.apply_transform`
+docstrings, plus `<fixture><variant>/apply_transform` for fixtures `grid8`,
+`hex` and `mesh`, across variants `""`, `|copy`, `|dict`, `|dict|copy`, `|file`,
+`|file|copy`, `|nwb`, `|nwb|copy`. Those 24 numeric probes keep all centers
+exactly unchanged. Only navigation-distance rounding differs, by at most
+8.881784197001252e-16, from vectorized versus scalar norm arithmetic. Every
+entry agrees with absolute tolerance 1e-12 and zero relative tolerance.
+The artifact directory retains the complete `baseline-derive-diff-inventory.json`
+and `baseline-derive-differences.txt`. New geometry/capability behavior beyond
+the baseline's flattened environment outputs is covered by the invariant tests.

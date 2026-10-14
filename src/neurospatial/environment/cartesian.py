@@ -26,8 +26,6 @@ from neurospatial.environment.trajectory import (
     _occupancy,
 )
 from neurospatial.environment.transforms import (
-    _graph_subset,
-    _grid_subset,
     _rebin,
     _subset_mask,
 )
@@ -968,7 +966,9 @@ class CartesianCoordinates:
         Extracts a subgraph from the environment containing only the selected
         bins. Node indices are renumbered to be contiguous [0, n'-1]. This
         operation drops all regions; users can re-add regions to the subset
-        environment if needed.
+        environment if needed. Bin sizes, retained faces, cell shapes and track
+        coordinates are preserved. Points in discarded bins are outside the
+        subset and map to ``-1``.
 
         Parameters
         ----------
@@ -1012,6 +1012,11 @@ class CartesianCoordinates:
         keeps the parent's edges even where they differ from plain cell
         adjacency, such as a 4-connected grid read from NWB.
 
+        Subsetting selects whole bins without clipping their geometry. The child
+        keeps smoothing, plotting, interpolation and serialization wherever its
+        retained components support them. Track linear coordinates remain
+        absolute in the original track; dropped bins leave gaps in its mask.
+
         See Also
         --------
         rebin : Coarsen grid resolution (grid-only).
@@ -1039,12 +1044,62 @@ class CartesianCoordinates:
         mask = _subset_mask(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
         )
-        # Rectangular-grid layouts rebuild selected cells with from_grid_mask
-        # so subsets round-trip through the registered mask layout. Hexagonal,
-        # mesh, track, reconstructed and graph-subset layouts lack the method
-        # and keep the graph fallback, preserving their coordinate embedding.
-        is_grid_env = self._binning.rectilinear is not None
-        return _grid_subset(self, mask) if is_grid_env else _graph_subset(self, mask)
+        from neurospatial.layout._binning_layout import BinningLayout
+        from neurospatial.layout._components import HexagonShapes, TriangleShapes
+        from neurospatial.layout._derive import subset_binning
+
+        binning = subset_binning(self._binning, mask)
+        selected = np.flatnonzero(mask)
+        child_of = {int(old): new for new, old in enumerate(selected)}
+        graph = nx.Graph()
+        graph.graph.update(self.connectivity.graph)
+        # Retain the parent's node iteration order as well as edge order and
+        # orientation; edge fields index that order even on loaded graphs.
+        for old, data in self.connectivity.nodes(data=True):
+            if old in child_of:
+                graph.add_node(child_of[old], **data)
+        for index, (u, v) in enumerate(binning.bins.pairs):
+            old_u, old_v = selected[u], selected[v]
+            data = dict(self.connectivity.edges[old_u, old_v])
+            if binning.rectilinear is not None:
+                data["edge_id"] = index
+            graph.add_edge(int(u), int(v), **data)
+        params = {"source": "subset", "original_n_bins": self.n_bins}
+        tag = "MaskedGrid" if binning.rectilinear is not None else "subset"
+        if binning.rectilinear is not None:
+            ranges = [
+                (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
+            ]
+        else:
+            shapes = binning.shapes
+            vertices = binning.bins.centers
+            if isinstance(shapes, HexagonShapes):
+                angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
+                offsets = shapes.radius * np.column_stack(
+                    (np.cos(angles), np.sin(angles))
+                )
+                vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
+            elif isinstance(shapes, TriangleShapes):
+                vertices = shapes.points[shapes.triangles].reshape(-1, 2)
+            ranges = []
+            for axis in vertices.T:
+                low, high = float(axis.min()), float(axis.max())
+                margin = 0.05 * (high - low) if shapes is not None else 0.0
+                ranges.append((low - margin, high + margin))
+        layout = BinningLayout(
+            binning,
+            connectivity=graph,
+            dimension_ranges=ranges,
+            layout_type_tag=tag,
+            layout_type="mask" if binning.rectilinear is not None else "subset",
+            build_params=params,
+            is_linearized_track=self.is_linearized_track,
+        )
+        env_cls = cast("type[Environment]", self.__class__)
+        result = env_cls("", layout, tag, params)
+        result.units = self.units
+        result.frame = self.frame
+        return result
 
     @check_fitted
     def apply_transform(
@@ -1059,6 +1114,14 @@ class CartesianCoordinates:
         using an affine transformation. Supports both 2D (Affine2D) and N-D
         (AffineND) transforms. The transformation must match the environment's
         dimensionality.
+
+        Translation and similarity transforms retain finite-volume smoothing
+        and differential operators. Positive diagonal scaling also retains grid
+        faces and rectilinear interpolation, with updated edges. Reflections
+        preserve bin identity through inverse lookup and drop rectilinear
+        interpolation. General affine maps keep containment and scale cell
+        measures; smoothing refuses when the map loses the right angles needed
+        by finite-volume faces. Tracks accept translation and similarity only.
 
         Parameters
         ----------
@@ -1095,7 +1158,9 @@ class CartesianCoordinates:
             `Environment.from_samples()`).
         ValueError
             If transform dimensionality doesn't match environment dimensionality,
-            or the transform is not invertible.
+            the transform is not invertible, or a track receives a non-similarity
+            transform. Rebuild such a track from transformed nodes with
+            ``Environment.from_graph``.
 
         See Also
         --------

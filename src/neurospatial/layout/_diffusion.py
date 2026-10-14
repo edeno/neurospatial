@@ -10,8 +10,8 @@ diffusion consumer shares.
 
 A layout has the capability only if it defines the method, so ``isinstance``
 against ``FiniteVolumeGeometryProvider`` answers "can this layout supply it?".
-A layout that cannot may define ``_explain_missing_geometry(operation) -> str``
-to say why in the error the environment raises.
+Published binnings retain this capability as a faces source. Unavailable stored
+geometry uses ``MissingFaces`` with the reason an operation cannot proceed.
 """
 
 from __future__ import annotations

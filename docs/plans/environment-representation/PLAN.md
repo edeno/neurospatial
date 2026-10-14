@@ -2,7 +2,7 @@
 
 **Committed**: 2026-10-13
 
-**Status:** In progress on `feature/environment-representation`.
+**Status:** Complete on `feature/environment-representation`.
 
 | Phase | Status |
 | --- | --- |
@@ -10,7 +10,7 @@
 | 2a — Data locators | Complete |
 | 2b — Shapes and plots | Complete |
 | 3 — Save binnings | Complete |
-| 4 — Derived environments | Pending |
+| 4 — Derived environments | Complete |
 
 Validation evidence: [validation.md](validation.md).
 

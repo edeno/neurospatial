@@ -262,6 +262,9 @@ def subset_binning(b: Binning, keep: NDArray[np.bool_]) -> Binning:
   bins, preserving their original full-grid IDs.
 - **The legacy facade fields** use the updated rectilinear grid when there is
   one, and the point-based fallback otherwise (`core.py:1002-1007`).
+  Drawing limits use full grid edge bounds or retained shape extents, so a
+  single selected cell remains fully visible. Center extents are the fallback
+  when no cell drawing component is retained.
 - **Tags:** the facade tag is `"MaskedGrid"` when a rectilinear grid is kept and
   `"subset"` otherwise, matching today's tags.
 
@@ -280,7 +283,7 @@ The transform is `x ↦ A x + t`. `m` is `measure_dim`, `n` is `n_dims`, and
 | faces `volumes` | same | `× s**m` | `× abs(det A)` | — |
 | rectilinear | edges `+ t_k` | kept only if `A` is diagonal with **all entries positive**: edges `a_k e + t_k`, same order, same mask | kept only if every `a_k > 0`: same rule | dropped |
 | locator | `RectilinearLocator` with shifted edges, or `TransformedLocator` | exact when the rectilinear grid is kept, `TransformedLocator` otherwise | same | `TransformedLocator` |
-| shapes | shifted | hexagons only for a proper similarity (`det A > 0`): `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; hexagons dropped for reflections; triangles: points mapped | hexagons dropped (they stop being regular); triangles: points mapped | hexagons dropped; triangles: points mapped |
+| shapes | shifted | hexagons only for a proper similarity (`det A > 0`): `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; hexagons dropped for reflections; triangles: points mapped | dropped | dropped |
 | outline | `shapely.affinity.affine_transform` | same | same | same |
 | linearization | node positions mapped | node positions mapped; edge spacing `× s` | refused for tracks | refused for tracks |
 
@@ -312,9 +315,14 @@ transform class.
 
 **Classification tolerances.** "Translation" requires `A == I` exactly.
 "Diagonal" requires every off-diagonal entry to be exactly 0. "Similarity" is
-`np.allclose(A @ A.T, s**2 * np.eye(n), rtol=1e-12, atol=0)` with
+`np.allclose((A/s) @ (A/s).T, np.eye(n), rtol=1e-12, atol=1e-12)` with
 `s = abs(det A) ** (1/n)`.
+The normalized absolute tolerance permits ordinary rotation roundoff in the
+off-diagonal entries without allowing small-magnitude anisotropy. Shape
+retention follows the explicit scope boundary: non-similarities use the
+center-scatter fallback, including triangles.
 
 **Regions** are transformed by the existing code (`ops/transforms.py:1622-1661`).
-Units and frame are copied. The facade tag is `f"{parent_tag}_transformed"`,
+Units are copied; frame keeps the existing `"_transformed"` suffix behavior.
+The facade tag is `f"{parent_tag}_transformed"`,
 matching today's tag (`ops/transforms.py:1552`).

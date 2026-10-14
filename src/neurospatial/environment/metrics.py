@@ -59,7 +59,12 @@ from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
-from neurospatial.layout._locators import HexLocator
+from neurospatial.layout._locators import (
+    HexLocator,
+    RectilinearLocator,
+    SubsetLocator,
+    TransformedLocator,
+)
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -121,11 +126,29 @@ class EnvironmentMetrics:
         """
         grid_shape, active_mask = self.grid_shape, self.active_mask
         locator = self._binning.locator
+        selections = []
+        while isinstance(locator, (SubsetLocator, TransformedLocator)):
+            if isinstance(locator, SubsetLocator):
+                selections.append(locator.parent_to_child)
+            locator = locator.base
         if isinstance(locator, HexLocator):
-            # The public facade uses point-based fallback grid fields; the
-            # hexagonal locator retains its actual lattice support.
             grid_shape = locator.centers_shape
-            active_mask = (locator.flat_to_active >= 0).reshape(grid_shape)
+            mapping = locator.flat_to_active.copy()
+        elif isinstance(locator, RectilinearLocator):
+            grid_shape = locator.shape
+            mask = locator.active_mask
+            mask = np.ones(grid_shape, dtype=bool) if mask is None else mask
+            mapping = np.full(mask.size, -1, dtype=np.intp)
+            mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
+        else:
+            mapping = None
+        if mapping is not None:
+            # Cell adjacency survives coordinate transforms. Compose subset
+            # maps before deriving support, without indexing the -1 sentinel.
+            for selection in reversed(selections):
+                inside = mapping >= 0
+                mapping[inside] = selection[mapping[inside]]
+            active_mask = (mapping >= 0).reshape(grid_shape)
         return find_boundary_nodes(
             graph=self.connectivity,
             grid_shape=grid_shape,

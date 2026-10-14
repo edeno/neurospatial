@@ -160,6 +160,7 @@ def test_rejects_nonuniform_at_large_offset(offsets):
 def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
     """Rounded but uniform grids far from the origin still build and subset."""
     from neurospatial import Environment
+    from neurospatial.layout._capabilities import RectilinearGrid
 
     rng = np.random.default_rng(0)
     positions = offset + rng.uniform(0, 45 * bin_size, (20_000, 2))
@@ -169,7 +170,20 @@ def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
 
     sub = env.subset(bins=keep)
 
-    assert isinstance(sub.layout, MaskedGridLayout)
+    parent_grid = env._binning.rectilinear
+    grid = sub._binning.rectilinear
+    assert isinstance(parent_grid, RectilinearGrid)
+    assert isinstance(grid, RectilinearGrid)
+    for actual, expected in zip(grid.edges, parent_grid.edges, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+    expected_mask = parent_grid.active_mask.copy()
+    expected_mask.ravel()[np.flatnonzero(expected_mask)] = keep
+    np.testing.assert_array_equal(grid.active_mask, expected_mask)
+    np.testing.assert_array_equal(sub.bin_centers, env.bin_centers[keep])
+    np.testing.assert_array_equal(sub.bin_sizes, env.bin_sizes[keep])
+    np.testing.assert_array_equal(
+        sub.bin_at(env.bin_centers[keep]), np.arange(keep.sum())
+    )
     assert sub.n_bins == keep.sum()
 
 

@@ -147,6 +147,16 @@ those components. Descriptive build parameters are retained for inspection.
 analysis caches through the normal constructor. Changing a layout's bins and
 calling it again is not supported.
 
+`subset` and `apply_transform` derive a binning through `layout/_derive.py` and
+publish it through the same facade. Subsets select whole bins and restrict
+ordered faces, locators and components. Translations and similarities preserve
+finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
+Other affine maps retain inverse lookup and cell measures, with a `MissingFaces`
+reason where right angles are lost; tracks refuse non-similarities. New
+derivations follow these rules and never rebuild through a factory.
+Custom layout lookup and track conversions retain their delegated in-memory
+behavior through private adapters; saving them still requires a supported codec.
+
 Files and dictionaries use `Environment-v2`; NWB environment records use `2.0`.
 Older records are refused with instructions to recreate and re-save the
 environment. Pure codecs in `layout/_codecs.py` store typed arrays and JSON

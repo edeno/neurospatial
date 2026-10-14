@@ -90,6 +90,11 @@
 
 ### Changed
 
+- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
+  Non-uniform scaling of hexagonal or mesh environments and general affine maps
+  disable finite-volume smoothing with an explanation. Tracks refuse
+  non-similarity transforms; rebuild them from transformed graph nodes instead.
+
 - Environment files and dictionaries now use `Environment-v2`; NWB environment
   records use schema `2.0`. They store the complete binning and restore it
   without rebuilding layouts. Older versions are refused: recreate the
@@ -214,6 +219,12 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- Subsets retain exact bin measures, selected finite-volume faces, cell shapes
+  and absolute track coordinates. Derived environments can be saved and loaded.
+- Translations and similarities retain smoothing, differential operators and
+  drawing components; positive diagonal grid scaling also keeps rectilinear
+  interpolation and updates the grid edges.
 
 - NWB environment read-back retains geometric lookup, smoothing, boundaries,
   plotting and track linearization, with the original graph attributes.

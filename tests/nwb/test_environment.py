@@ -53,10 +53,10 @@ def test_polar_circularity_survives_nwb_round_trip(
 
 @pytest.mark.parametrize("kind", ["translation", "rotation", "shear_and_scaling"])
 @pytest.mark.integration
-def test_transformed_grid_nwb_save_refuses_layout_backed_lookup(empty_nwb, kind):
-    """Unsupported wrapper lookup fails clearly before writing partial records."""
+def test_transformed_grid_nwb_round_trip_preserves_binning(empty_nwb, kind):
+    """Derived data geometry can be restored without a layout wrapper."""
     from neurospatial import Environment
-    from neurospatial.io.nwb import write_environment
+    from neurospatial.io.nwb import read_environment, write_environment
     from neurospatial.ops.transforms import Affine2D
 
     mask = np.ones((3, 3), dtype=bool)
@@ -74,10 +74,19 @@ def test_transformed_grid_nwb_save_refuses_layout_backed_lookup(empty_nwb, kind)
         "shear_and_scaling": [[2, 1, 10], [0, 3, 20], [0, 0, 1]],
     }
     aligned = env.apply_transform(Affine2D(np.array(matrices[kind], dtype=float)))
-    with pytest.raises(ValueError, match="TransformedLayout") as caught:
-        write_environment(empty_nwb, aligned)
-    assert "Fix:" in str(caught.value)
-    assert "spatial_environment" not in empty_nwb.scratch
+    write_environment(empty_nwb, aligned)
+    restored = read_environment(empty_nwb)
+    np.testing.assert_array_equal(restored.bin_centers, aligned.bin_centers)
+    np.testing.assert_array_equal(restored.bin_sizes, aligned.bin_sizes)
+    np.testing.assert_array_equal(
+        restored.bin_at(aligned.bin_centers), np.arange(aligned.n_bins)
+    )
+    assert list(restored.connectivity.edges) == list(aligned.connectivity.edges)
+    assert restored.frame == aligned.frame
+    assert restored.units == aligned.units
+    assert (restored._binning.rectilinear is None) == (
+        aligned._binning.rectilinear is None
+    )
 
 
 @pytest.mark.parametrize("scale", [3.0, 1e-5], ids=["ordinary_scale", "small_scale"])
@@ -85,7 +94,7 @@ def test_restored_track_transforms_keep_segment_lengths(
     empty_nwb,
     scale,
 ):
-    """Stored track directions support both similarity and anisotropic scaling."""
+    """Stored tracks keep similarity lengths and refuse non-similarity maps."""
     from neurospatial import Environment
     from neurospatial.io.nwb import read_environment, write_environment
     from neurospatial.ops.transforms import scale_2d
@@ -95,10 +104,8 @@ def test_restored_track_transforms_keep_segment_lengths(
     restored = read_environment(empty_nwb)
     scaled = restored.apply_transform(scale_2d(scale))
     np.testing.assert_allclose(scaled.bin_sizes, scale * env.bin_sizes)
-    actual = restored.apply_transform(scale_2d(scale, 2 * scale))
-    expected = env.apply_transform(scale_2d(scale, 2 * scale))
-    np.testing.assert_array_equal(actual.bin_centers, expected.bin_centers)
-    np.testing.assert_array_equal(actual.bin_sizes, expected.bin_sizes)
+    with pytest.raises(ValueError, match=r"Environment\.from_graph"):
+        restored.apply_transform(scale_2d(scale, 2 * scale))
 
 
 @pytest.mark.integration

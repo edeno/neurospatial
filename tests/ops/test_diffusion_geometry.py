@@ -587,16 +587,20 @@ def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env)
         ),
     ],
 )
-def test_unsupported_layout_errors_name_the_operation_and_a_factory(call, operation):
-    env = _four_connected_grid().apply_transform(Affine2D(np.eye(3)))
+def test_unsupported_transform_errors_name_the_operation_and_recovery(call, operation):
+    env = _four_connected_grid().apply_transform(
+        Affine2D(np.array([[1.0, 0.25, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    )
     with pytest.raises(NotImplementedError) as exc:
         call(env)
     message = str(exc.value)
     assert message.startswith(f"{operation} needs ")
-    assert "'TransformedLayout'" in message
+    assert "shear" in message.lower() or "affine" in message.lower()
+    assert "right angle" in message
     assert "\nWhy:" in message
     assert "\nFix:" in message
-    assert "Environment.from_samples" in message
+    assert "original environment" in message
+    assert "rebuild" in message
     assert "implement" not in message
 
 

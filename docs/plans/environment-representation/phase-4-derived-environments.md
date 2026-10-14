@@ -61,8 +61,10 @@ reason. This fixes four problems:
   - Compute the mask with `_subset_mask` and call `subset_binning`.
   - Build the facade's legacy fields: the renumbered connectivity from the
     existing code (`transforms.py:599-632`); the grid fields from the kept
-    `rectilinear`, or the point-based fallback; and the extent from the kept
-    centers.
+    `rectilinear`, or the point-based fallback. Drawing limits encompass full
+    retained cells: grid edge bounds for rectilinear subsets, active shape
+    bounds for hexagons/triangles, and kept centers as the fallback. Center-only
+    bounds clip outer cell geometry and collapse a one-cell grid's limits.
   - Construct the environment, and copy the units and frame.
   - Regions are still dropped, as documented.
   - Delete `_grid_subset` (`:350-396`), `_SubsetLayout` (`:438-593`) and

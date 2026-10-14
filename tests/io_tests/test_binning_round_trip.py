@@ -252,18 +252,6 @@ def test_conflicting_descriptive_centers_refused(simple_saved_grid, tmp_path):
         from_file(path)
 
 
-def test_derived_environment_save_refused_until_supported(simple_saved_grid, tmp_path):
-    from neurospatial.ops.transforms import Affine2D
-
-    translated = simple_saved_grid.apply_transform(
-        Affine2D(np.array([[1.0, 0.0, 10.0], [0.0, 1.0, 20.0], [0.0, 0.0, 1.0]]))
-    )
-    with pytest.raises(ValueError) as caught:
-        translated.to_file(tmp_path / "translated")
-    assert "TransformedLayout" in str(caught.value)
-    assert "Fix:" in str(caught.value)
-
-
 @pytest.mark.parametrize("transport", ["file", "dict"])
 def test_missing_faces_reason_survives_public_round_trip(
     simple_saved_grid, tmp_path, transport

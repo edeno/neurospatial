@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import shapely
@@ -14,6 +14,31 @@ from shapely.geometry import Polygon
 
 from neurospatial.layout.helpers.hexagonal import _points_to_hex_bin_ind
 from neurospatial.layout.helpers.regular_grid import _points_to_regular_grid_bin_ind
+
+if TYPE_CHECKING:
+    from neurospatial.layout._binning import Locator
+
+
+class AffineMatrix(Protocol):
+    """Structural homogeneous affine matrix, without an ops dependency."""
+
+    @property
+    def A(self) -> NDArray[np.float64]: ...  # noqa: N802
+
+
+def _check_homogeneous(matrix: NDArray[np.float64]) -> None:
+    if (
+        matrix.ndim != 2
+        or matrix.shape[0] < 2
+        or matrix.shape[0] != matrix.shape[1]
+        or not np.all(np.isfinite(matrix))
+        or not np.array_equal(matrix[-1], np.r_[np.zeros(len(matrix) - 1), 1.0])
+    ):
+        raise ValueError(
+            "inverse/affine matrix must be finite, square and homogeneous."
+        )
+    if np.linalg.slogdet(matrix[:-1, :-1])[0] == 0:
+        raise ValueError("inverse/affine matrix must be invertible.")
 
 
 def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
@@ -98,6 +123,97 @@ class RectilinearLocator(_LocatorState):
             active_mask=self.active_mask,
             inverse_map=self.flat_to_active,
         ).astype(np.intp, copy=False)
+
+    def subset(self, keep: NDArray[np.bool_]) -> RectilinearLocator:
+        """Keep whole active cells in their original row-major order."""
+        mask = (
+            np.ones(self.shape, dtype=bool)
+            if self.active_mask is None
+            else self.active_mask.copy()
+        )
+        keep = np.asarray(keep)
+        active = np.flatnonzero(mask)
+        if keep.dtype.kind != "b" or keep.shape != (len(active),):
+            raise ValueError(f"keep must be a boolean array of shape ({len(active)},).")
+        mask.ravel()[active] = keep
+        mapping = np.full(mask.size, -1, dtype=np.intp)
+        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
+        return RectilinearLocator(self.edges, self.shape, mask, mapping)
+
+    def transformed(self, transform: AffineMatrix) -> RectilinearLocator | None:
+        """Map positive diagonal scales and translations without changing owners."""
+        matrix = np.asarray(transform.A, dtype=np.float64)
+        _check_homogeneous(matrix)
+        if matrix.shape != (len(self.edges) + 1, len(self.edges) + 1):
+            raise ValueError("affine matrix dimensionality must match grid edges.")
+        linear = matrix[:-1, :-1]
+        diagonal = np.diag(linear)
+        if not np.array_equal(linear, np.diag(diagonal)) or np.any(diagonal <= 0):
+            return None
+        edges = tuple(
+            diagonal[axis] * edge + matrix[axis, -1]
+            for axis, edge in enumerate(self.edges)
+        )
+        return RectilinearLocator(
+            edges, self.shape, self.active_mask, self.flat_to_active
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class SubsetLocator(_LocatorState):
+    """Map parent bins to child bins, keeping dropped and outside points outside."""
+
+    base: Locator
+    parent_to_child: NDArray[np.intp]
+
+    def __post_init__(self) -> None:
+        raw = np.asarray(self.parent_to_child)
+        if raw.ndim != 1 or raw.dtype.kind not in "iu" or np.any(raw < -1):
+            raise ValueError(
+                "parent_to_child must be one-dimensional integer indices >= -1."
+            )
+        selected = raw[raw >= 0]
+        if not np.array_equal(np.sort(selected), np.arange(len(selected))):
+            raise ValueError(
+                "parent_to_child must number child bins exactly once from zero."
+            )
+        object.__setattr__(self, "parent_to_child", _owned_array(raw, np.intp))
+
+    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Return child indices after checking the parent's outside sentinel."""
+        parent = self.base.locate(points)
+        out = np.full(parent.shape, -1, dtype=np.intp)
+        inside = parent >= 0
+        out[inside] = self.parent_to_child[parent[inside]]
+        return out
+
+
+@dataclass(frozen=True, eq=False)
+class TransformedLocator(_LocatorState):
+    """Find bins by applying an owned inverse homogeneous affine matrix."""
+
+    base: Locator
+    inverse: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        matrix = _owned_array(self.inverse, np.float64)
+        _check_homogeneous(matrix)
+        object.__setattr__(self, "inverse", matrix)
+
+    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Undo the affine map before using the parent's boundary ownership."""
+        query = np.atleast_2d(np.asarray(points, dtype=np.float64))
+        n_dims = len(self.inverse) - 1
+        if query.ndim != 2 or query.shape[1] != n_dims:
+            raise ValueError(
+                f"Expected points of shape (M, {n_dims}), got {query.shape}."
+            )
+        original = np.full(query.shape, np.nan, dtype=np.float64)
+        finite = np.all(np.isfinite(query), axis=1)
+        original[finite] = (
+            query[finite] @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
+        )
+        return self.base.locate(original)
 
 
 @dataclass(frozen=True, eq=False)

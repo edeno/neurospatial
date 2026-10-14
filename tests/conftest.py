@@ -1155,9 +1155,10 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
 
     env = built_environment
 
-    def restore_after(corrupt):
+    def restore_after(corrupt, *, environment=None):
+        target = env if environment is None else environment
         if request.param == "dict":
-            metadata = to_dict(env)
+            metadata = to_dict(target)
             arrays = {
                 name: np.asarray(value, dtype=metadata["array_specs"][name]["dtype"])
                 .reshape(metadata["array_specs"][name]["shape"])
@@ -1171,7 +1172,7 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
             return from_dict(metadata)
         if request.param == "file":
             path = tmp_path / "corrupt_environment"
-            to_file(env, path)
+            to_file(target, path)
             metadata = json.loads(path.with_suffix(".json").read_text())
             with np.load(path.with_suffix(".npz")) as stored:
                 arrays = {name: stored[name].copy() for name in stored}
@@ -1188,7 +1189,7 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
             "corrupt-geometry",
             datetime(2020, 1, 1, tzinfo=timezone.utc),
         )
-        write_environment(nwbfile, env)
+        write_environment(nwbfile, target)
         record = nwbfile.scratch["spatial_environment"]
         metadata = json.loads(record.description)
         arrays = {
@@ -1202,3 +1203,34 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
         return read_environment(nwbfile)
 
     return restore_after
+
+
+@pytest.fixture(params=["file", "dict", pytest.param("nwb", marks=pytest.mark.nwb)])
+def round_trip_environment(request, tmp_path):
+    """Save and restore a caller-supplied environment through one public format."""
+    from neurospatial.io import from_dict, from_file, to_dict, to_file
+
+    def round_trip(env):
+        if request.param == "dict":
+            return from_dict(json.loads(json.dumps(to_dict(env))))
+        if request.param == "file":
+            path = tmp_path / "derived_environment"
+            to_file(env, path)
+            return from_file(path)
+
+        pynwb = pytest.importorskip("pynwb")
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        nwbfile = pynwb.NWBFile(
+            "Derived geometry round trip",
+            "derived-environment",
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        write_environment(nwbfile, env)
+        path = tmp_path / "derived_environment.nwb"
+        with pynwb.NWBHDF5IO(str(path), "w") as io:
+            io.write(nwbfile)
+        with pynwb.NWBHDF5IO(str(path), "r") as io:
+            return read_environment(io.read())
+
+    return round_trip
