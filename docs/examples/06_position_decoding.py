@@ -131,7 +131,8 @@ print(f"Posterior shape: {result.posterior.shape} (test time bins, spatial bins)
 # zero-filling turns them into observed zero-rate locations. The posterior has
 # zero mass there. Good error on a small subset can hide missing coverage, so
 # report the support and the fraction of test bins with a finite posterior.
-# Here truth is linearly interpolated only onto returned decoding timestamps.
+# The physical-coordinate audit below uses this example's continuous tracking;
+# the official plotting and error APIs handle gaps in experimental inputs.
 
 # %%
 actual_positions = np.column_stack(
@@ -142,7 +143,7 @@ truth_supported = np.zeros(result.n_time_bins, dtype=bool)
 inside = actual_bins >= 0
 truth_supported[inside] = decoder.spatial_support[actual_bins[inside]]
 decodable = np.any(np.isfinite(result.posterior), axis=1)
-errors = result.error_against(times, positions)
+errors = result.error_against(times, positions, max_gap=decoder.max_gap)
 print(f"Training support: {decoder.spatial_support.sum()} / {env.n_bins} spatial bins")
 print(f"Test truth inside training support: {truth_supported.mean():.1%}")
 print(f"Finite posterior rows: {decodable.sum()} / {result.n_time_bins}")
@@ -172,37 +173,31 @@ plt.show()
 # %% [markdown]
 # ## Align a posterior overlay in spatial-bin coordinates
 #
-# `result.plot` uses spatial-bin indices on its vertical axis. Convert actual
-# positions with `env.bin_at` before overlaying them. Its horizontal axis uses
-# seconds for continuous recordings and bin indices when gaps are present.
-# Reuse the MAP line's coordinates to follow that display convention.
+# `result.plot` accepts actual positions in physical coordinates with their
+# original timestamps. It aligns tracking within observed runs, converts to
+# spatial-bin coordinates, and matches the image's time-axis convention.
+# No actual-position line is drawn across a dropout or outside tracked time.
 
 # %%
-# Plot posterior rows and actual positions using matching bin coordinates.
-# This cell needs only result, actual_positions, env, plt, np and COLORS.
+# Plot posterior rows and actual positions through the public overlay API.
 fig, ax = plt.subplots(figsize=(12, 4))
-result.plot(ax=ax, show_map=True, colorbar=True)
-plot_times = np.asarray(ax.lines[0].get_xdata())
-actual_position_bins = env.bin_at(actual_positions)
-ax.plot(
-    plot_times,
-    np.where(actual_position_bins >= 0, actual_position_bins, np.nan),
-    color=COLORS["cyan"],
-    lw=1.5,
-    ls="--",
-    label="Actual spatial bin",
+result.plot(
+    ax=ax,
+    show_map=True,
+    colorbar=True,
+    true_times=times,
+    true_positions=positions,
+    max_gap=decoder.max_gap,
 )
 n_show = min(300, result.n_time_bins)
-if n_show > 1:
-    ax.set_xlim(plot_times[0], plot_times[n_show - 1])
 ax.set_title("Held-out posterior: MAP (white), actual (cyan)")
 ax.legend(loc="upper right")
 fig.tight_layout()
 plt.show()
 
 # %% [markdown]
-# For a gapped recording, align ground truth separately within each observed
-# run; do not interpolate positions across a tracking dropout. `predict` forms
+# For a gapped recording, the overlay and `error_against` share the same
+# `max_gap` rule for ground truth and leave unobserved times missing. `predict` forms
 # bins within observed runs and the requested windows, so no decoding bin spans
 # a gap. Physical position and error remain in cm, regardless of the heatmap's
 # bin-index axis. On a branching maze, use geodesic errors to respect barriers;

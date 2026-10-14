@@ -4,10 +4,12 @@ import ast
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.path import Path as MplPath
 
 from neurospatial import Environment
 from neurospatial.decoding import DecodingResult
@@ -21,7 +23,7 @@ EXAMPLES = [
 ]
 
 
-def _posterior_cell(path, actual_name):
+def _posterior_cell(path):
     source = (ROOT / path).read_text(encoding="utf-8")
     if path.endswith(".ipynb"):
         cells = [
@@ -35,27 +37,23 @@ def _posterior_cell(path, actual_name):
         cells = re.split(r"^# %%[^\n]*$", source, flags=re.MULTILINE)
     for cell_source in cells:
         tree = ast.parse(cell_source)
-        uses_actual = any(
-            isinstance(node, ast.Name) and node.id == actual_name
-            for node in ast.walk(tree)
-        )
         plots_result = any(
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id == "result"
             and node.func.attr == "plot"
+            and any(keyword.arg == "true_positions" for keyword in node.keywords)
             for node in ast.walk(tree)
         )
-        if uses_actual and plots_result:
+        if plots_result:
             return cell_source
-    raise AssertionError(f"No posterior overlay cell for {actual_name} in {path}")
+    raise AssertionError(f"No posterior ground-truth overlay cell in {path}")
 
 
 @pytest.mark.parametrize("path", EXAMPLES)
-@pytest.mark.parametrize("actual_name", ["actual_positions"])
 @pytest.mark.parametrize("gapped", [False, True], ids=["continuous", "gapped"])
-def test_tutorial_actual_overlay_matches_perfect_posterior(path, actual_name, gapped):
+def test_tutorial_actual_overlay_matches_perfect_posterior(path, gapped):
     env = Environment.from_samples(
         np.linspace(0, 100, 21)[:, None], bin_size=5.0, units="cm"
     )
@@ -74,20 +72,31 @@ def test_tutorial_actual_overlay_matches_perfect_posterior(path, actual_name, ga
         "plt": plt,
         "env": env,
         "result": result,
-        actual_name: actual,
+        "times": times,
+        "positions": actual,
+        "decoder": SimpleNamespace(max_gap=0.5),
         "time_bin_centers": times,
         "dt": 0.1,
         "COLORS": {"cyan": "cyan"},
     }
     try:
-        exec(compile(_posterior_cell(path, actual_name), path, "exec"), namespace)
+        exec(compile(_posterior_cell(path), path, "exec"), namespace)
         ax = namespace["ax"]
-        overlay = ax.lines[-1]
         expected_x = np.arange(len(times)) if gapped else times
-        np.testing.assert_array_equal(overlay.get_ydata(), expected_bins)
-        np.testing.assert_array_equal(overlay.get_xdata(), expected_x)
-        np.testing.assert_array_equal(ax.lines[0].get_ydata(), expected_bins)
-        np.testing.assert_array_equal(ax.lines[0].get_xdata(), expected_x)
+        map_line = next(line for line in ax.lines if line.get_label() == "MAP")
+        overlay = next(
+            line for line in ax.lines if "actual" in line.get_label().lower()
+        )
+        for line in (map_line, overlay):
+            finite = np.isfinite(line.get_ydata())
+            np.testing.assert_array_equal(line.get_ydata()[finite], expected_bins)
+            np.testing.assert_allclose(line.get_xdata()[finite], expected_x)
+            # Both curves visibly stop at a recording break, even when the
+            # heatmap compresses the clock into consecutive display columns.
+            starts = sum(
+                code == MplPath.MOVETO for _, code in line.get_path().iter_segments()
+            )
+            assert starts == (2 if gapped else 1)
         assert "bin" in ax.get_ylabel().lower()
         assert ax.get_xlim()[0] <= expected_x[0]
         assert ax.get_xlim()[1] >= expected_x[-1]

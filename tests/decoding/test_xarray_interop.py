@@ -381,7 +381,9 @@ class TestErrorAgainst:
         true_times = np.array([0.0, 1.0])
         true_positions = np.array([[0.0], [10.0]], dtype=np.float64)
 
-        errors = result.error_against(true_times, true_positions, metric="geodesic")
+        errors = result.error_against(
+            true_times, true_positions, metric="geodesic", max_gap=None
+        )
 
         assert errors.shape == (n_time,)
         assert np.all(np.isfinite(errors))

@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.path import Path as MplPath
 
 pynwb = pytest.importorskip("pynwb")
 pytestmark = pytest.mark.nwb
@@ -84,11 +85,28 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
         assert np.all(inside)
         assert np.any(result.times < 10) and np.any(result.times >= 20)
         np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0)
-        actual_line = namespace["actual_line"]
-        map_line = namespace["ax"].lines[0]
+        ax = namespace["ax"]
+        actual_line = next(
+            line for line in ax.lines if line.get_label() == "Actual position"
+        )
+        map_line = next(line for line in ax.lines if line.get_label() == "MAP")
         np.testing.assert_array_equal(actual_line.get_xdata(), map_line.get_xdata())
+        actual = np.column_stack(
+            [
+                np.interp(result.times, expected_times, expected_positions[:, dim])
+                for dim in range(expected_positions.shape[1])
+            ]
+        )
+        finite = np.isfinite(actual_line.get_ydata())
         np.testing.assert_array_equal(
-            actual_line.get_ydata(), namespace["env"].bin_at(namespace["actual"])
+            actual_line.get_ydata()[finite], namespace["env"].bin_at(actual)
+        )
+        assert (
+            sum(
+                code == MplPath.MOVETO
+                for _, code in actual_line.get_path().iter_segments()
+            )
+            == 2
         )
     finally:
         plt.close("all")

@@ -306,8 +306,9 @@ under the chosen model; it is not a calibrated confidence level.
 
 `DecodingResult.plot(show_map=True)` uses **spatial-bin indices** on its y-axis.
 Actual positions and `result.map_position` carry physical coordinates, such as
-centimeters. Convert actual positions with `env.bin_at` for a posterior overlay;
-keep their physical coordinates for error metrics and position-versus-time plots.
+centimeters. Pass `true_times` and `true_positions` to overlay the actual track;
+the plot aligns timestamps and converts coordinates internally. Keep physical
+coordinates for error metrics and position-versus-time plots.
 
 On a uniform continuous decoder clock, image columns center on the returned
 timestamps: image edges extend half a bin past the first and last center.
@@ -316,10 +317,12 @@ display width centered on that timestamp. Explicit `extent=` overrides these
 edges. Posterior values, MAP positions and timestamps are unchanged.
 
 On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
-gaps it uses time-bin indices and marks the breaks with dashed lines. Reusing
-the MAP line's x coordinates keeps the actual overlay on the same axis in both
-cases. Supply actual positions aligned to the returned decoder rows; do not
-create or interpolate observations inside a tracking pause.
+gaps it uses time-bin indices and marks the breaks with dashed lines. The MAP
+and actual overlays follow the same display coordinates and break at gaps.
+Plotting and `error_against` share gap-aware truth alignment: `max_gap` is in
+seconds, missing positions break observation runs, and truth is unavailable
+outside observed intervals. Neither interpolation across dropouts nor endpoint
+extrapolation creates observations.
 
 This exact four-row posterior uses 5 cm bins. It represents perfect decoding
 for both clocks below, so the actual and MAP overlays must coincide. The
@@ -347,14 +350,13 @@ clocks = {
 fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
 for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
     result = DecodingResult(posterior, env, decoder_times)
-    result.plot(ax=ax, show_map=True, colorbar=True)
-    map_line = ax.lines[0]  # The MAP line precedes recording-gap markers.
-    plot_times = map_line.get_xdata()
-    actual_line = ax.plot(plot_times, actual_bins, "c--", label="Actual spatial bin")[0]
-    expected_x = decoder_times if name == "Continuous" else np.arange(len(actual))
-    np.testing.assert_array_equal(actual_line.get_xdata(), expected_x)
-    np.testing.assert_array_equal(actual_line.get_ydata(), map_line.get_ydata())
-    np.testing.assert_array_equal(actual_line.get_ydata(), [4, 16, 8, 12])
+    result.plot(
+        ax=ax, show_map=True, colorbar=True,
+        true_times=decoder_times, true_positions=actual, max_gap=0.5,
+    )
+    np.testing.assert_allclose(
+        result.error_against(decoder_times, actual, max_gap=0.5), 0.0
+    )
     assert median_decoding_error(result.map_position, actual) == 0.0
     ax.set_title(name)
     ax.legend()

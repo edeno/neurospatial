@@ -27,7 +27,10 @@ def test_plot_marks_recording_gaps(continuous_recording, kind):
         assert ax.get_xlabel().startswith("Time bin")
         assert len(dashed) == 1
         np.testing.assert_array_equal(dashed[0].get_xdata(), [3998.5, 3998.5])
-        np.testing.assert_array_equal(ax.lines[0].get_xdata(), np.arange(len(times)))
+        np.testing.assert_array_equal(
+            ax.lines[0].get_xdata(),
+            np.insert(np.arange(len(times), dtype=float), 3999, np.nan),
+        )
     else:
         assert ax.get_xlabel() == "Time (s)"
         assert not dashed

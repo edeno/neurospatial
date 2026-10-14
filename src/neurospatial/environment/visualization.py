@@ -320,7 +320,8 @@ class EnvironmentVisualization:
         - **2D grid layouts**: Uses ``pcolormesh`` for crisp rectangular bins
         - **Hexagonal**: Colored hexagon patches via ``PatchCollection``
         - **Triangular mesh**: Colored triangle faces via ``tripcolor``
-        - **1D tracks**: Line plot with filled area
+        - **1D tracks**: Line plot over physical linearized coordinates, with
+          breaks at missing values and artificial gaps between track segments
         - **Other**: Scatter plot with markers sized in display points; override
           their area with ``s=`` (in points squared, as in Matplotlib).
 
@@ -1103,23 +1104,23 @@ def _plot_1d_field(
     ylabel: str,
     **kwargs: Any,
 ) -> Any:
-    """Plot field on 1D layout using line plot."""
-    # Filter NaN values
-    valid_mask = ~np.isnan(field)
-    valid_bins = np.where(valid_mask)[0]
-    valid_values = field[valid_mask]
+    """Plot a track field in physical display coordinates without bridging gaps."""
+    edges = env.grid_edges
+    active_mask = env.active_mask
+    if edges is None or active_mask is None:
+        raise RuntimeError("Track field plotting requires grid_edges and active_mask.")
+    x_positions = (edges[0][:-1] + edges[0][1:]) / 2
+    values = np.full(x_positions.shape, np.nan, dtype=np.float64)
+    values[active_mask.ravel()] = field
 
-    if len(valid_bins) == 0:
-        return None
+    # Keep NaNs in the line and fill: dropping them invents interpolation over
+    # unobserved bins and the layout's artificial inter-segment display gaps.
+    kwargs.setdefault("linewidth", 2)
+    (line,) = ax.plot(x_positions, values, **kwargs)
+    ax.fill_between(x_positions, 0, values, alpha=0.3, color=line.get_color())
 
-    # Use bin indices as x-axis
-    x_positions = valid_bins
-
-    # Plot
-    (line,) = ax.plot(x_positions, valid_values, linewidth=2, **kwargs)
-    ax.fill_between(x_positions, 0, valid_values, alpha=0.3, color=line.get_color())
-
-    ax.set_xlabel("Bin Index", fontsize=12)
+    unit_label = f" ({env.units})" if env.units else ""
+    ax.set_xlabel(f"Linearized track coordinate{unit_label}", fontsize=12)
     ax.set_ylabel(ylabel if ylabel else "Field Value", fontsize=12)
     ax.set_title("1D Field Plot", fontsize=14)
 

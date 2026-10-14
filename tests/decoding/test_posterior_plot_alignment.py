@@ -47,7 +47,7 @@ def test_gapped_clock_keeps_centered_bin_indices_and_markers(plot_env):
     ax = result.plot(show_map=True)
     extent = ax.images[0].get_extent()
     assert extent[:2] == [-0.5, 3.5]
-    np.testing.assert_array_equal(ax.lines[0].get_xdata(), np.arange(4))
+    np.testing.assert_array_equal(ax.lines[0].get_xdata(), [0, 1, np.nan, 2, 3])
     np.testing.assert_array_equal(ax.lines[1].get_xdata(), [1.5, 1.5])
     assert "recording gaps" in ax.get_xlabel()
     plt.close(ax.figure)

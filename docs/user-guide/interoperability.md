@@ -389,21 +389,19 @@ result = decoder.predict(
 )
 print(result.summary())
 
-# result.times contains only observed-run bins; do not make a clock across gaps.
-actual = np.column_stack([
-    np.interp(result.times, pos.times, pos.positions[:, dim])
-    for dim in range(env.n_dims)
-])
-ax = result.plot(show_map=True, colorbar=True)
-plot_times = ax.lines[0].get_xdata()  # Seconds on continuous clocks, indices across gaps.
-actual_line = ax.plot(plot_times, env.bin_at(actual), "c--", label="Actual spatial bin")[0]
+# Align the original tracking and preserve gaps through the plotting API.
+ax = result.plot(
+    show_map=True, colorbar=True,
+    true_times=pos.times, true_positions=pos.positions, max_gap=decoder.max_gap,
+)
 ax.legend()
 plt.show()
 ```
 
 The posterior plot's y-axis is spatial-bin indices; physical positions belong
-in separate position plots or accuracy metrics. The actual overlay shares the
-MAP line's x coordinates, including the index axis used across gaps. See the
+in separate position plots or accuracy metrics. The actual overlay follows the
+same display coordinates as the posterior and MAP line, with breaks across
+missing tracking and recording gaps. See the
 [decoder plotting recipe](workflows.md#overlaying-actual-position-on-a-posterior)
 for the continuous/gapped-clock comparison. If an environment was already
 persisted in the file, use `read_environment(file)` inside the `with` block

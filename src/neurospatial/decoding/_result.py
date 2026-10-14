@@ -35,6 +35,96 @@ def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
     return np.flatnonzero(d > 1.5 * np.min(d))
 
 
+def _align_true_positions(
+    times: NDArray[np.float64],
+    true_times: NDArray[np.float64],
+    true_positions: NDArray[np.float64],
+    *,
+    n_dims: int,
+    max_gap: float | None,
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Interpolate ground truth only between finite, continuously observed samples.
+
+    Parameters
+    ----------
+    times : ndarray
+        Query timestamps on the decoder clock, in seconds.
+    true_times, true_positions : ndarray
+        Strictly increasing source times and sample-aligned world coordinates.
+        NaN coordinates mark missing observations; Inf coordinates are invalid.
+    n_dims : int
+        Required number of coordinate columns.
+    max_gap : float or None
+        Largest source interval in seconds over which interpolation is allowed.
+        Exact finite source samples remain observed even beside a gap.
+
+    Returns
+    -------
+    aligned, run_ids : ndarray
+        Coordinates at query times and their observed-run identifiers. Missing
+        query positions have NaN coordinates and run identifier -1.
+    """
+    from neurospatial._validation import validate_finite
+
+    times = validate_finite(times, name="times")
+    true_times = validate_finite(true_times, name="true_times")
+    true_positions = np.asarray(true_positions, dtype=np.float64)
+    if times.ndim != 1 or np.any(np.diff(times) <= 0):
+        raise ValueError(
+            "times must be a strictly increasing 1D array of decode times."
+        )
+    if true_times.ndim != 1 or not true_times.size:
+        raise ValueError("true_times must be a nonempty 1D array of timestamps.")
+    if np.any(np.diff(true_times) <= 0):
+        raise ValueError(
+            "true_times must be strictly increasing (no duplicates). "
+            "Sort true_times and reorder true_positions together before alignment."
+        )
+    if true_positions.shape != (true_times.size, n_dims):
+        raise ValueError(
+            f"true_positions must have shape ({true_times.size}, {n_dims}) "
+            f"to match true_times and the environment, got {true_positions.shape}."
+        )
+    if np.any(np.isinf(true_positions)):
+        raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
+    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
+        raise ValueError("max_gap must be a finite positive number of seconds or None.")
+
+    aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
+    finite = np.all(np.isfinite(true_positions), axis=1)
+    continuous = finite[:-1] & finite[1:]
+    if max_gap is not None:
+        continuous &= np.diff(true_times) <= max_gap
+    source_runs = np.cumsum(np.r_[False, ~continuous], dtype=np.intp)
+    run_ids = np.full(times.size, -1, dtype=np.intp)
+    right = np.searchsorted(true_times, times, side="left")
+    clipped = np.minimum(right, true_times.size - 1)
+    exact = (right < true_times.size) & (true_times[clipped] == times)
+    exact &= finite[clipped]
+    aligned[exact] = true_positions[clipped[exact]]
+    run_ids[exact] = source_runs[clipped[exact]]
+
+    # Bracketing on the original sample clock keeps a NaN sample or a long
+    # interval from disappearing when finite observations are selected.
+    between = (right > 0) & (right < true_times.size) & ~exact
+    query = np.flatnonzero(between)
+    upper = right[query]
+    lower = upper - 1
+    widths = true_times[upper] - true_times[lower]
+    observed = finite[lower] & finite[upper]
+    if max_gap is not None:
+        observed &= widths <= max_gap
+    query, lower, upper, widths = (
+        values[observed] for values in (query, lower, upper, widths)
+    )
+    fraction = (times[query] - true_times[lower]) / widths
+    aligned[query] = true_positions[lower] + fraction[:, None] * (
+        true_positions[upper] - true_positions[lower]
+    )
+    run_ids[query] = source_runs[lower]
+    return aligned, run_ids
+
+
 @dataclass(frozen=True, repr=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
@@ -348,6 +438,9 @@ class DecodingResult(ResultMixin):
         self,
         ax: Axes | None = None,
         *,
+        true_times: NDArray[np.float64] | None = None,
+        true_positions: NDArray[np.float64] | None = None,
+        max_gap: float | None = 0.5,
         colorbar: bool = False,
         show_map: bool = False,
         cmap: str = "viridis",
@@ -362,6 +455,17 @@ class DecodingResult(ResultMixin):
         ----------
         ax : matplotlib.axes.Axes | None, optional
             Axes to plot on. If None, creates new figure and axes.
+        true_times : ndarray, shape (n_samples,), optional
+            Ground-truth timestamps in seconds, on this result's clock.
+            Supply together with ``true_positions`` to overlay actual position.
+        true_positions : ndarray, shape (n_samples, n_dims), optional
+            Sample-aligned actual positions in the environment's coordinates
+            and units. Converted to spatial-bin coordinates internally after
+            alignment to this result's times. NaN marks missing tracking.
+        max_gap : float or None, default=0.5
+            Maximum ground-truth sampling interval, in seconds, over which to
+            interpolate. Missing tracking, longer gaps and times outside the
+            tracked span remain missing. ``None`` disables only the gap limit.
         colorbar : bool, default=False
             If True, add a colorbar showing probability scale.
         show_map : bool, default=False
@@ -425,7 +529,13 @@ class DecodingResult(ResultMixin):
         An explicit ``extent=`` overrides these default edges.
 
         The MAP trajectory (``show_map=True``) shows the bin with highest
-        posterior probability at each time step as a white line.
+        posterior probability at each time step as a white line. Actual
+        positions are shown in cyan when ``true_times`` and ``true_positions``
+        are supplied; a result without decode times cannot align this overlay.
+        Both lines break at recording gaps and undecodable posterior rows.
+        Custom ``extent`` and ``origin`` values apply to both image and lines.
+        Interpolation is in world coordinates within observed tracking runs;
+        sample densely enough to resolve track junctions and circular wraps.
 
         See Also
         --------
@@ -434,13 +544,37 @@ class DecodingResult(ResultMixin):
         """
         import matplotlib.pyplot as plt
 
+        if (true_times is None) != (true_positions is None):
+            raise ValueError(
+                "Supply true_times and true_positions together for an overlay."
+            )
+        aligned = None
+        true_runs = None
+        if true_times is not None and true_positions is not None:
+            if self.times is None:
+                raise ValueError(
+                    "A true-position overlay requires decode times. "
+                    "Provide times when constructing DecodingResult."
+                )
+            aligned, true_runs = _align_true_positions(
+                self.times,
+                true_times,
+                true_positions,
+                n_dims=self.env.n_dims,
+                max_gap=max_gap,
+            )
+
         if ax is None:
             _, ax = plt.subplots()
 
         # Compute extent for proper axis labeling
         # extent = [left, right, bottom, top]
         breaks = _recording_breaks(self.times)
-        if self.times is not None and breaks.size == 0:
+        uniform_clock = self.times is not None and (
+            self.times.size < 3
+            or np.allclose(np.diff(self.times), np.diff(self.times)[0])
+        )
+        if self.times is not None and breaks.size == 0 and uniform_clock:
             # Use actual time values
             t_min = float(self.times[0])
             t_max = float(self.times[-1])
@@ -462,9 +596,12 @@ class DecodingResult(ResultMixin):
                 -0.5,
                 self.posterior.shape[1] - 0.5,
             ]
-            x_label = (
-                "Time bin (dashed lines: recording gaps)" if breaks.size else "Time bin"
-            )
+            if breaks.size:
+                x_label = "Time bin (dashed lines: recording gaps)"
+            elif self.times is not None and not uniform_clock:
+                x_label = "Time bin (nonuniform time spacing)"
+            else:
+                x_label = "Time bin"
 
         # Build imshow kwargs
         im_kwargs: dict[str, Any] = {
@@ -483,18 +620,43 @@ class DecodingResult(ResultMixin):
         if colorbar:
             plt.colorbar(im, ax=ax, label="Probability")
 
-        # Add MAP trajectory overlay if requested
-        if show_map:
-            # Get time coordinates for plotting
-            if self.times is not None and breaks.size == 0:
-                x_coords: NDArray[np.float64] = self.times
-            else:
-                x_coords = np.arange(self.n_time_bins, dtype=np.float64)
+        # Derive display centers from the image, including custom extents and
+        # reversed origin. These are display coordinates, never modifications
+        # to the stored posterior, times or world-coordinate positions.
+        left, right, bottom, top = im.get_extent()
+        width = (right - left) / self.n_time_bins
+        if (
+            "extent" not in kwargs
+            and self.times is not None
+            and uniform_clock
+            and not breaks.size
+        ):
+            x_coords = np.asarray(self.times, dtype=np.float64)
+        else:
+            x_coords = np.asarray(
+                left + (np.arange(self.n_time_bins) + 0.5) * width, dtype=np.float64
+            )
+        row_step = (top - bottom) / self.env.n_bins
+        if im.origin == "upper":
+            row_start, row_step = top, -row_step
+        else:
+            row_start = bottom
 
-            # Plot MAP estimate as a line
+        def display_rows(indices: NDArray[np.float64]) -> NDArray[np.float64]:
+            return row_start + (indices + 0.5) * row_step
+
+        # Inserting NaNs retains every observed sample while preventing any
+        # line segment from connecting recordings separated by a pause.
+        def broken(values: NDArray[np.float64]) -> NDArray[np.float64]:
+            return np.insert(values, breaks + 1, np.nan)
+
+        decodable = np.any(np.isfinite(self.posterior), axis=1)
+        if show_map:
+            map_bins = np.asarray(self.map_estimate, dtype=np.float64)
+            map_bins[~decodable] = np.nan
             ax.plot(
-                x_coords,
-                self.map_estimate,
+                broken(x_coords),
+                broken(display_rows(map_bins)),
                 color="white",
                 linewidth=1.5,
                 linestyle="-",
@@ -502,8 +664,35 @@ class DecodingResult(ResultMixin):
                 label="MAP",
             )
 
+        if aligned is not None:
+            true_bins = np.full(self.n_time_bins, np.nan)
+            observed = np.all(np.isfinite(aligned), axis=1) & decodable
+            if np.any(observed):
+                indices = self.env.bin_at(aligned[observed])
+                true_bins[observed] = np.where(indices >= 0, indices, np.nan)
+            # Even if there are no decode rows inside a tracking dropout,
+            # successive truth samples from distinct observed runs cannot be
+            # joined by a line. This also handles a two-row decode clock.
+            assert true_runs is not None
+            true_breaks = np.flatnonzero(
+                (true_runs[:-1] >= 0)
+                & (true_runs[1:] >= 0)
+                & (true_runs[:-1] != true_runs[1:])
+            )
+            true_breaks = np.union1d(breaks, true_breaks) + 1
+            ax.plot(
+                np.insert(x_coords, true_breaks, np.nan),
+                np.insert(display_rows(true_bins), true_breaks, np.nan),
+                color="cyan",
+                linewidth=1.5,
+                linestyle="--",
+                label="Actual position",
+            )
+
         for boundary in breaks:
-            ax.axvline(boundary + 0.5, linestyle="--", color="black", alpha=0.6)
+            ax.axvline(
+                left + (boundary + 1) * width, linestyle="--", color="black", alpha=0.6
+            )
 
         ax.set_xlabel(x_label)
         ax.set_ylabel("Spatial bin")
@@ -753,6 +942,7 @@ class DecodingResult(ResultMixin):
         true_positions: NDArray[np.float64],
         *,
         metric: Literal["euclidean", "geodesic"] = "euclidean",
+        max_gap: float | None = 0.5,
     ) -> NDArray[np.float64]:
         """Per-time-bin decode error against externally sampled ground truth.
 
@@ -773,6 +963,10 @@ class DecodingResult(ResultMixin):
             Distance metric passed through to
             :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
             uses this result's :attr:`env` for graph distances.
+        max_gap : float or None, default=0.5
+            Largest ground-truth sampling interval (seconds) over which to
+            interpolate. Longer gaps, NaN tracking and times outside the tracked
+            span produce NaN errors. ``None`` disables only the gap limit.
 
         Returns
         -------
@@ -791,17 +985,15 @@ class DecodingResult(ResultMixin):
             increasing (duplicates are rejected because :func:`numpy.interp`
             resolves duplicate x-values arbitrarily), if ``true_positions``
             does not have shape ``(len(true_times), n_dims)``, or if :attr:`times`,
-            ``true_times``, or ``true_positions`` contain any NaN or Inf value
-            (which would otherwise yield silent NaN errors through
-            :func:`numpy.interp`).
+            ``true_times`` contain NaN or Inf, if ``true_positions`` contains
+            Inf, or if ``max_gap`` is not finite and positive (or None).
 
         Notes
         -----
-        Alignment uses linear interpolation of each ground-truth coordinate
-        onto the decode times via :func:`numpy.interp`. Decode times outside
-        the span of ``true_times`` are clamped to the nearest endpoint (the
-        ``numpy.interp`` default), so do not extrapolate beyond the tracked
-        interval. The decoded position is the MAP estimate
+        Alignment interpolates each ground-truth coordinate only between finite
+        samples separated by at most ``max_gap``. It does not interpolate over
+        missing tracking or extrapolate outside the tracked span. Exact finite
+        source samples remain available even beside a gap. The decoded position is the MAP estimate
         (:attr:`map_position`); the aligned ground truth is compared against it
         with :func:`neurospatial.decoding.metrics.decoding_error`.
 
@@ -823,7 +1015,7 @@ class DecodingResult(ResultMixin):
         >>> result = DecodingResult(posterior=posterior, env=env, times=decode_times)
         >>> true_times = np.array([0.0, 1.0])
         >>> true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
-        >>> errors = result.error_against(true_times, true_positions)
+        >>> errors = result.error_against(true_times, true_positions, max_gap=None)
         >>> errors.shape
         (5,)
 
@@ -832,7 +1024,6 @@ class DecodingResult(ResultMixin):
         neurospatial.decoding.metrics.decoding_error : Underlying error core.
         map_position : Decoded MAP position compared against ground truth.
         """
-        from neurospatial._validation import validate_finite
         from neurospatial.decoding.metrics import decoding_error
 
         if self.times is None:
@@ -843,40 +1034,13 @@ class DecodingResult(ResultMixin):
                 "to the ground-truth track."
             )
 
-        # Reject non-finite values up front. A NaN/Inf in any of these arrays
-        # would otherwise propagate silently through np.interp and yield NaN
-        # errors that look like (but are not) decode failures.
-        validate_finite(self.times, name="times")
-        true_times = validate_finite(true_times, name="true_times")
-        true_positions = validate_finite(true_positions, name="true_positions")
-
-        if true_times.ndim != 1:
-            raise ValueError(f"true_times must be 1D, got shape {true_times.shape}")
-        if np.any(np.diff(true_times) <= 0):
-            raise ValueError(
-                "true_times must be strictly increasing (no duplicates); "
-                "error_against() aligns ground truth onto decode times with "
-                "linear interpolation, which silently produces wrong results "
-                "for unsorted or duplicated true_times (np.interp resolves "
-                "duplicate x-values arbitrarily). Deduplicate and sort "
-                "true_times (and reorder true_positions to match) before "
-                "calling."
-            )
-        n_dims = self.env.n_dims
-        if true_positions.shape != (true_times.shape[0], n_dims):
-            raise ValueError(
-                f"true_positions must have shape ({true_times.shape[0]}, "
-                f"{n_dims}) to match true_times and the environment "
-                f"dimensionality, got {true_positions.shape}"
-            )
-
-        # Align ground truth onto decode times by interpolating each
-        # coordinate independently. np.interp clamps out-of-range times to
-        # the nearest endpoint.
-        decode_times = np.asarray(self.times, dtype=np.float64)
-        aligned = np.empty((decode_times.shape[0], n_dims), dtype=np.float64)
-        for d in range(n_dims):
-            aligned[:, d] = np.interp(decode_times, true_times, true_positions[:, d])
+        aligned, _ = _align_true_positions(
+            self.times,
+            true_times,
+            true_positions,
+            n_dims=self.env.n_dims,
+            max_gap=max_gap,
+        )
 
         errors = decoding_error(
             self.map_position,

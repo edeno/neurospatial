@@ -884,7 +884,8 @@ warn_on_drop
         the per-time-bin errors to a single scalar. **Lower is better.**
 
         Undecodable decode time bins -- those whose posterior row is entirely
-        non-finite -- are stamped ``nan`` by ``error_against`` and are
+        non-finite -- and bins without observed ground truth are stamped
+        ``nan`` by ``error_against`` and are
         **excluded** from the reduction. Because ``nanmedian`` / ``nanmean``
         silently ignore them, a decoder that decodes only part of the session
         could otherwise report a misleadingly good score; this method therefore
@@ -906,6 +907,8 @@ warn_on_drop
             ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         positions : NDArray[np.float64], shape (n_frames, n_dims)
             Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
+            NaN marks missing tracking. Ground-truth alignment respects this
+            decoder's ``max_gap`` and never extrapolates outside tracking.
         metric : {"median_error", "mean_error"}, default="median_error"
             Reduction over the per-time-bin errors. ``"median_error"`` ->
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
@@ -986,6 +989,7 @@ warn_on_drop
             times_arr,
             positions_arr,
             metric=cast("Literal['euclidean', 'geodesic']", distance),
+            max_gap=self.max_gap,
         )
 
         # Guard against silently reducing over dropped bins. error_against stamps
@@ -997,7 +1001,8 @@ warn_on_drop
         if n == 0 or n_bad == n:
             raise ValueError(
                 "score() could not decode any time bin: every decode time bin's "
-                "posterior was entirely non-finite (undecodable), so there is no "
+                "posterior was entirely non-finite (undecodable), or no observed "
+                "ground truth was available, so there is no "
                 "error to reduce. Likely causes: a degenerate/empty encoding "
                 "model built from too few training samples, or a spikes/times "
                 "unit mismatch (e.g. spike_times in milliseconds while times is "
@@ -1006,7 +1011,8 @@ warn_on_drop
             )
         if n_bad > 0:
             warnings.warn(
-                f"{n_bad}/{n} decode time bins were undecodable and excluded "
+                f"{n_bad}/{n} decode time bins were undecodable or lacked observed "
+                f"ground truth and were excluded "
                 f"from the score.",
                 UserWarning,
                 stacklevel=2,

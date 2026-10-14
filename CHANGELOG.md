@@ -4,6 +4,11 @@
 
 ### Added
 
+- Plot actual positions directly on decoded posteriors with
+  `DecodingResult.plot(true_times=..., true_positions=..., max_gap=...)`.
+  Ground-truth alignment is shared with `error_against`, preserving tracking
+  gaps and missing observations without manual coordinate conversions.
+
 - Peri-event results expose read-only `event_indices` identifying retained
   events in the original input. Indexing a population preserves this cohort,
   so rasters, PSTHs and event tables can share exposure filtering without
@@ -176,6 +181,13 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- Plot graph fields against physical linearized coordinates, preserving
+  unsupported bins and inserted display gaps in both lines and shaded areas.
+- **Behavior change:** `DecodingResult.error_against` now returns NaN for truth
+  outside observed runs instead of clamping to endpoints or interpolating
+  across dropouts. Plot overlays use the same `max_gap` rule; decoder scoring
+  forwards the fitted decoder's gap configuration.
 
 - Match tutorial raster spikes to the PSTH's half-open window, register video
   preview pixel centers with the full affine transform, and label maze endpoint
