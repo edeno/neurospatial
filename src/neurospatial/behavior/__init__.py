@@ -15,6 +15,7 @@ navigation : Path efficiency, goal-directed metrics, path progress
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
+visits : Observed region visits and entry-to-entry transitions
 """
 
 from neurospatial.behavior.decisions import (
@@ -87,6 +88,12 @@ from neurospatial.behavior.trajectory import (
     compute_trajectory_curvature,
     compute_turn_angles,
     mean_square_displacement,
+)
+from neurospatial.behavior.visits import (
+    RegionTransition,
+    RegionVisit,
+    detect_region_visits,
+    region_transitions,
 )
 from neurospatial.behavior.vte import (
     VTESessionResult,
@@ -167,6 +174,11 @@ __all__ = [  # noqa: RUF022
     "segment_by_velocity",
     "segment_trials",
     "trajectory_similarity",
+    # visits module
+    "RegionTransition",
+    "RegionVisit",
+    "detect_region_visits",
+    "region_transitions",
     # reward module
     "goal_reward_field",
     "region_reward_field",

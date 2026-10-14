@@ -1,6 +1,6 @@
 # Trajectory Metrics & Behavioral Segmentation
 
-This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory` and `neurospatial.behavior.segmentation` modules.
+This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory`, `neurospatial.behavior.segmentation`, and `neurospatial.behavior.visits` modules.
 
 Import trajectory operations from `neurospatial.behavior.trajectory`.
 Missing or outside positions produce `NaN` geodesic steps. Check observation
@@ -33,6 +33,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Mean Square Displacement](#mean-square-displacement)
 2. [Region-Based Segmentation](#region-based-segmentation)
    - [Detecting Region Crossings](#detecting-region-crossings)
+   - [Observed Region Visits and Transitions](#observed-region-visits-and-transitions)
    - [Detecting Runs Between Regions](#detecting-runs-between-regions)
    - [Velocity-Based Segmentation](#velocity-based-segmentation)
 3. [Lap Detection](#lap-detection)
@@ -268,6 +269,78 @@ for crossing in crossings:
 - **Visit frequency**: Count entries to region
 - **Approach behavior**: Timing of region approaches
 - **Task performance**: Correct vs incorrect entries
+
+---
+
+### Observed Region Visits and Transitions
+
+Use `detect_region_visits` when you want an observation-based event table across
+several regions, without assigning task trials, rewards, or behavioral success.
+It retains visits that start inside a region or end before an exit is observed,
+with `entry_observed` and `exit_observed` flags identifying those censored bounds.
+The selected regions must have disjoint bin-center memberships; overlaps raise
+an error instead of choosing a region by its order in the argument.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+import pandas as pd
+from shapely.geometry import box
+from neurospatial import Environment
+from neurospatial.behavior import detect_region_visits, region_transitions
+
+# A known corridor: A, travel, travel, B, travel, C.
+env = Environment.from_grid_mask(
+    active_mask=np.ones((6, 1), dtype=bool),
+    grid_edges=(np.arange(7, dtype=float), np.array([0.0, 1.0])),
+)
+env.units = "cm"
+for name, left in [("A", 0), ("B", 3), ("C", 5)]:
+    env.regions.add(name, polygon=box(left, 0, left + 1, 1))
+
+position_bins = np.array([0, 1, 0, 1, 3, 4, 5])
+times = np.arange(len(position_bins), dtype=float) / 10.0
+visits = detect_region_visits(
+    position_bins, times, env, region_names=["A", "B", "C"], max_gap=0.5
+)
+transitions = region_transitions(visits)
+visit_table = pd.DataFrame(visits)
+transition_table = pd.DataFrame(transitions)
+print(visit_table[["region_name", "duration", "entry_observed", "exit_observed"]])
+print(transition_table[["source_region", "target_region", "duration"]])
+assert not visits[0].entry_observed  # Starting inside is not an observed entry.
+assert [(t.source_region, t.target_region) for t in transitions] == [
+    ("A", "B"), ("B", "C")
+]
+```
+
+`RegionVisit` and `RegionTransition` are immutable scalar records. Their visit
+and run identifiers are local to this detection call, while their sample
+indices refer to the original arrays. A visit's `[start_index:stop_index]`
+slice contains its inside-region samples. A transition's `start_index` and
+`end_index` are entry samples: include both when plotting its path with
+`position_bins[start_index:end_index + 1]`.
+
+`region_transitions` pairs consecutive visits in the same observed run when both
+entries were observed and the names differ. For `A, A, B`, only the last
+`A -> B` is retained; the visits themselves remain separate. Build transitions
+before filtering visits, since omitted visit identifiers are not bridged.
+Entry-to-entry `duration` includes source dwell time. Use
+`detect_runs_between_regions` below for source-exit to target-entry intervals.
+
+Invalid bins (`-1` or outside the environment's bin range), recording gaps, and
+excluded epochs break observation continuity; they do not fabricate exits or
+entries. Valid bins outside all selected regions are observed travel. Singleton
+observations are retained as zero-duration, doubly censored visits. Empty event
+lists remain empty; check for an empty list before grouping a DataFrame made
+from it.
+
+Epochs are half-open `[start, stop)` for events: entry exactly at `stop` is
+excluded. A fully observed sampling interval ending at that boundary can still
+contribute dwell time, with a censored visit end. Visit duration uses complete
+sampling intervals and never extrapolates across a gap or fractional epoch
+boundary. Shared entry timestamps can terminate one transition and start the
+next; use half-open intervals when turning transitions into analysis epochs.
 
 ---
 

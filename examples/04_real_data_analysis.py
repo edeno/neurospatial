@@ -39,9 +39,7 @@
 
 # %%
 import importlib.util
-import itertools
 import sys
-from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -50,7 +48,11 @@ import pandas as pd
 from matplotlib.patches import Circle
 
 from neurospatial import Environment
-from neurospatial.behavior import detect_region_crossings, path_progress
+from neurospatial.behavior import (
+    detect_region_visits,
+    path_progress,
+    region_transitions,
+)
 from neurospatial.encoding import compute_spatial_rates
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -195,30 +197,16 @@ example_units = summary.nlargest(3, "spike_count").index.to_numpy()
 print(summary.loc[example_units].round(3).to_string())
 
 # %%
-# Reinsert inactive display bins so lines do not bridge separate track segments.
-edges = env.grid_edges[0]
-linear_centers = (edges[:-1] + edges[1:]) / 2
-active = env.active_mask.ravel()
-np.testing.assert_allclose(linear_centers[active], env.to_linear(env.bin_centers))
-
-
-def in_display_bins(values):
-    """Keep artificial track-display gaps and missing support visibly missing."""
-    expanded = np.full(linear_centers.shape, np.nan)
-    expanded[active] = values
-    return expanded
-
-
+# The standard renderer keeps track-display gaps and missing support separate.
 fig, axes = plt.subplots(4, 1, figsize=(11, 9), sharex=True, constrained_layout=True)
-axes[0].plot(linear_centers, in_display_bins(rates.occupancy), color="tab:blue")
+env.plot_field(rates.occupancy, ax=axes[0], colorbar_label="Occupancy (s)")
 axes[0].axhline(0.5, color="black", linestyle="--", label="Support threshold")
 axes[0].set(ylabel="Occupancy (s)", title="Observed exposure and example rate maps")
 axes[0].legend()
 for ax, unit_id in zip(axes[1:], example_units, strict=True):
-    rate = rates.sel(unit_id=unit_id)
-    ax.plot(linear_centers, in_display_bins(rate.firing_rate), color="tab:orange")
+    rates.sel(unit_id=unit_id).plot(ax=ax, color="tab:orange")
     ax.set(ylabel="Rate (Hz)", title=f"Archive unit {unit_id}", ylim=(0, None))
-axes[-1].set(xlabel="Linearized track coordinate (cm)", xlim=(edges[0], edges[-1]))
+axes[-1].set(xlabel="Linearized track coordinate (cm)")
 plt.show()
 
 # %% [markdown]
@@ -229,42 +217,27 @@ plt.show()
 # consecutive entries into different endpoints within one observed run. The
 # interval includes dwell time after the first entry; it is not a task trial or
 # a measured departure-to-arrival time. Changing the proxy radius changes events.
+# Visits at recording boundaries are retained with censoring flags. A visit
+# without an observed entry cannot start an entry-to-entry transition. No pair
+# crosses a tracking gap or invalid bin, and repeated visits to the same well
+# remain separate; the last entry supplies the next transition's start.
 
 # %%
 position_bins = env.bin_at(positions)
-valid = (position_bins >= 0) & np.isfinite(positions).all(axis=1)
-breaks = np.diff(times) > max_gap
-starts = np.flatnonzero(valid & np.r_[True, ~valid[:-1] | breaks])
-stops = np.flatnonzero(valid & np.r_[~valid[1:] | breaks, True]) + 1
-visits = []
-for run_id, (start, stop) in enumerate(zip(starts, stops, strict=True)):
-    for name in well_names:
-        for crossing in detect_region_crossings(
-            position_bins[start:stop],
-            times[start:stop],
-            env,
-            region_name=name,
-            direction="entry",
-            max_gap=max_gap,
-        ):
-            visits.append((int(np.searchsorted(times, crossing.time)), name, run_id))
-visits.sort()
-transitions = [
-    (first, second)
-    for first, second in itertools.pairwise(visits)
-    if first[1] != second[1] and first[2] == second[2]
-]
+visits = detect_region_visits(
+    position_bins, times, env, region_names=well_names, max_gap=max_gap
+)
+transitions = region_transitions(visits)
 if not transitions:
     raise ValueError(
         "No between-endpoint transitions; inspect the tracking and regions."
     )
-counts = Counter((first[1], second[1]) for first, second in transitions)
-transition_table = pd.DataFrame(
-    [(start, destination, count) for (start, destination), count in counts.items()],
-    columns=["start", "next_endpoint", "count"],
-).sort_values("count", ascending=False)
-print(f"{len(visits)} entries; {len(transitions)} between-endpoint transitions")
-print(transition_table.to_string(index=False))
+visit_table = pd.DataFrame(visits)
+transition_table = pd.DataFrame(transitions)
+counts = transition_table.groupby(["source_region", "target_region"]).size()
+print(f"{len(visits)} visits; {visit_table.entry_observed.sum()} observed entries")
+print(f"{len(transitions)} between-endpoint transitions")
+print(counts.sort_values(ascending=False).rename("count").to_string())
 
 # %% [markdown]
 # ## 5. Inspect normalized displacement along the graph
@@ -277,23 +250,20 @@ print(transition_table.to_string(index=False))
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 5))
-for first, second in transitions[:3]:
-    first_index, start_name, _ = first
-    last_index, destination_name, _ = second
-    selected = np.arange(first_index, last_index + 1)
-    assert np.all(valid[selected]) and np.all(np.diff(times[selected]) <= max_gap)
+for transition in transitions[:3]:
+    selected = np.arange(transition.start_index, transition.end_index + 1)
     progress = path_progress(
         position_bins[selected],
         env,
-        start_bins=np.full(selected.size, position_bins[first_index]),
-        goal_bins=np.full(selected.size, position_bins[last_index]),
+        start_bins=np.full(selected.size, position_bins[transition.start_index]),
+        goal_bins=np.full(selected.size, position_bins[transition.end_index]),
         metric="geodesic",
     )
     np.testing.assert_allclose(progress[[0, -1]], [0.0, 1.0])
     ax.plot(
-        times[selected] - times[first_index],
+        times[selected] - transition.start_time,
         progress,
-        label=f"{start_name} to {destination_name}",
+        label=f"{transition.source_region} to {transition.target_region}",
     )
 ax.set(
     xlabel="Time from first entry (s)", ylabel="Normalized displacement", ylim=(0, 1.05)

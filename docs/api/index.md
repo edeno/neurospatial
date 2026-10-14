@@ -165,6 +165,8 @@ Behavioral analysis built on trajectory + environment.
   graph turn sequences
 - `behavior.segmentation`: Laps, trials, region crossings,
   velocity-based segmentation
+- `detect_region_visits()`, `region_transitions()`: Observed visits and
+  entry-to-entry transitions with original sample indices and gap censoring
 - `behavior.decisions` / `behavior.vte`: Decision-point analysis,
   vicarious trial-and-error
 - `behavior.reward`: Reward-field construction
