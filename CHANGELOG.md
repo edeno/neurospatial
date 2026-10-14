@@ -141,6 +141,9 @@
 
 ### Fixed
 
+- Windows CI installs FFmpeg with a pinned setup action instead of the
+  unreliable Chocolatey package feed. Every test platform verifies that FFmpeg
+  and FFprobe are available before running the tests.
 - The linear-track validation example records enough repeated traversals and
   spikes for stable field recovery with continuous Poisson event times.
   Documentation CI uses each job's declared Python version instead of running
