@@ -86,10 +86,22 @@ def validate_simulation(
             Euclidean distance between detected and true centers (in env units).
         - 'correlations': NDArray[np.float64], shape (n_cells,)
             Pearson correlation between detected and true rate maps.
+        - 'unit_ids': NDArray[np.int64], shape (n_cells,)
+            Unit labels aligned with the metric arrays, in requested order.
+        - 'spike_counts': NDArray[np.int64], shape (n_cells,)
+            Number of simulated spikes for each selected unit.
+        - 'unit_status': tuple[str, ...]
+            Per-unit outcome: 'passed', 'failed', or 'not_evaluable'. A unit is
+            evaluable only when both metrics are finite.
+        - 'skip_reasons': tuple[str | None, ...]
+            Reason an outcome is not evaluable, or None for evaluated units.
+        - 'n_selected', 'n_evaluated': int
+            Number of selected units and number with both metrics finite.
         - 'summary': str
             Human-readable summary of validation results.
         - 'passed': bool
-            True if all cells meet the specified thresholds.
+            True only for a nonempty selection in which every selected unit
+            has both metrics finite and meets both specified thresholds.
         - 'plots': Figure | None
             Matplotlib figure with diagnostic plots (only if show_plots=True).
 
@@ -175,7 +187,13 @@ def validate_simulation(
     - Center error: 2 × bin spacing (median distance between neighbouring bin
       centres, or the median bin length on a track; equals ``bin_size`` on a
       regular grid) - accounts for discretization error
-    - Correlation: 0.5 - reasonable lower bound for noisy place fields
+    - Correlation: 0.5
+
+    These thresholds are heuristic recovery criteria, not calibrated confidence
+    bounds. Missing metrics remain NaN and prevent an overall pass; a partial
+    report is not evidence that every selected unit was recovered. Inspect
+    ``unit_status``, ``skip_reasons``, and ``spike_counts`` to distinguish failed
+    recovery from units that could not be evaluated.
 
     **Method Selection**:
 
@@ -205,9 +223,14 @@ def validate_simulation(
     if min_correlation is None:
         min_correlation = 0.5  # Reasonable threshold for noisy place fields
 
-    # Initialize result arrays
-    center_errors = np.zeros(len(cell_indices))
-    correlations = np.zeros(len(cell_indices))
+    # Keep unavailable metrics missing, with diagnostics aligned to unit labels.
+    selected_unit_ids = session.unit_ids[cell_indices].copy()
+    spike_counts = np.array(
+        [len(spike_times[index]) for index in cell_indices], dtype=np.int64
+    )
+    center_errors = np.full(len(cell_indices), np.nan)
+    correlations = np.full(len(cell_indices), np.nan)
+    skip_reasons: list[str | None] = [None] * len(cell_indices)
 
     # Validate each cell
     for i, cell_idx in enumerate(cell_indices):
@@ -215,8 +238,7 @@ def validate_simulation(
 
         # Skip cells with no spikes (cannot compute place field)
         if len(train) == 0:
-            center_errors[i] = np.nan
-            correlations[i] = np.nan
+            skip_reasons[i] = "no_spikes"
             continue
 
         # Compute detected place field
@@ -235,10 +257,11 @@ def validate_simulation(
         # Find detected center (peak of rate map). Bins the smoothing cannot
         # resolve are NaN; with no finite bin there is no peak to compare.
         if not np.any(np.isfinite(detected_field)):
-            center_errors[i] = np.nan
-            correlations[i] = np.nan
+            skip_reasons[i] = "no_finite_rate_bins"
             continue
-        peak_bin = int(np.nanargmax(detected_field))
+        peak_bin = int(
+            np.argmax(np.where(np.isfinite(detected_field), detected_field, -np.inf))
+        )
         detected_center = env.bin_centers[peak_bin]
 
         # Get ground truth center
@@ -262,6 +285,9 @@ def validate_simulation(
         # Compute center error (Euclidean distance)
         center_error = float(np.linalg.norm(detected_center - true_center))
         center_errors[i] = center_error
+        if not np.isfinite(center_error):
+            skip_reasons[i] = "nonfinite_center_error"
+            continue
 
         # Compute true firing rate at each bin
         # Use same model type to compute true field
@@ -297,33 +323,44 @@ def validate_simulation(
                 UserWarning,
                 stacklevel=2,
             )
-            correlations[i] = np.nan
+            skip_reasons[i] = "unsupported_ground_truth"
             continue
 
         # Compute correlation between detected and true fields
-        # Remove NaN values before correlation
-        valid_mask = ~np.isnan(detected_field) & ~np.isnan(true_field)
-        if np.sum(valid_mask) > 2:  # Need at least 3 points for correlation
+        # Correlation needs at least three jointly finite, nonconstant bins.
+        valid_mask = np.isfinite(detected_field) & np.isfinite(true_field)
+        if np.sum(valid_mask) < 3:
+            skip_reasons[i] = "insufficient_finite_bins"
+        elif (
+            np.ptp(detected_field[valid_mask]) == 0
+            or np.ptp(true_field[valid_mask]) == 0
+        ):
+            skip_reasons[i] = "constant_rate_map"
+        else:
             corr, _ = pearsonr(
                 detected_field[valid_mask],
                 true_field[valid_mask],
             )
             correlations[i] = corr
-        else:
-            correlations[i] = np.nan
+            if not np.isfinite(corr):
+                skip_reasons[i] = "undefined_correlation"
 
-    # Compute summary statistics (ignoring NaNs)
-    valid_errors = center_errors[~np.isnan(center_errors)]
-    valid_corrs = correlations[~np.isnan(correlations)]
+    # Histograms summarize available metrics; pass/fail requires full coverage.
+    finite_errors = np.isfinite(center_errors)
+    finite_corrs = np.isfinite(correlations)
+    evaluated = finite_errors & finite_corrs
+    valid_errors = center_errors[finite_errors]
+    valid_corrs = correlations[finite_corrs]
+    n_selected = len(cell_indices)
+    n_evaluated = int(np.count_nonzero(evaluated))
 
     # Check if any cells could be validated
-    if len(valid_errors) == 0:
-        # No cells could be validated (all empty spike trains)
+    if n_evaluated == 0:
         import warnings
 
         warnings.warn(
-            f"No cells could be validated ({len(cell_indices)} cells checked). "
-            "All cells have empty spike trains. Try increasing simulation duration.",
+            f"No cells could be fully validated ({n_selected} selected). "
+            "Inspect skip_reasons and spike_counts for unavailable metrics.",
             UserWarning,
             stacklevel=2,
         )
@@ -335,22 +372,29 @@ def validate_simulation(
     std_corr = float(np.std(valid_corrs)) if len(valid_corrs) > 0 else np.nan
     min_corr = float(np.min(valid_corrs)) if len(valid_corrs) > 0 else np.nan
 
-    # Determine pass/fail
-    # If no cells could be validated, fail validation
-    if len(valid_errors) == 0:
-        errors_pass = False
-        corrs_pass = False
-        passed = False
-    else:
-        errors_pass = bool(np.all(valid_errors <= max_center_error))
-        corrs_pass = bool(np.all(valid_corrs >= min_correlation))
-        passed = bool(errors_pass and corrs_pass)
+    # An empty or incomplete metric array cannot satisfy a recovery criterion.
+    errors_pass = bool(
+        n_selected and np.all(finite_errors & (center_errors <= max_center_error))
+    )
+    corrs_pass = bool(
+        n_selected and np.all(finite_corrs & (correlations >= min_correlation))
+    )
+    passed = bool(errors_pass and corrs_pass)
+    meets_thresholds = (center_errors <= max_center_error) & (
+        correlations >= min_correlation
+    )
+    unit_status = tuple(
+        "not_evaluable" if not complete else "passed" if meets else "failed"
+        for complete, meets in zip(evaluated, meets_thresholds, strict=True)
+    )
 
     # Generate summary string
     units = env.units if env.units else "units"
     summary = f"""Validation Results:
 ===================
-Cells validated: {len(cell_indices)} (of {n_cells} total)
+Cells selected: {n_selected} (of {n_cells} total)
+Cells fully evaluated: {n_evaluated}
+Cells not evaluable: {n_selected - n_evaluated}
 
 Center Errors ({units}):
   Mean: {mean_error:.2f} ± {std_error:.2f}
@@ -371,6 +415,12 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
     results = {
         "center_errors": center_errors,
         "correlations": correlations,
+        "unit_ids": selected_unit_ids,
+        "spike_counts": spike_counts,
+        "unit_status": unit_status,
+        "skip_reasons": tuple(skip_reasons),
+        "n_selected": n_selected,
+        "n_evaluated": n_evaluated,
         "summary": summary,
         "passed": passed,
     }
@@ -401,7 +451,7 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
 
         # Plot 3: Error vs Correlation scatter
         ax = axes[1, 0]
-        ax.scatter(valid_errors, valid_corrs, alpha=0.6)
+        ax.scatter(center_errors[evaluated], correlations[evaluated], alpha=0.6)
         ax.axhline(min_correlation, color="r", linestyle="--", alpha=0.5)
         ax.axvline(max_center_error, color="r", linestyle="--", alpha=0.5)
         ax.set_xlabel(f"Center Error ({units})")

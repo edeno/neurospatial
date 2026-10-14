@@ -172,6 +172,11 @@
 
 ### Fixed
 
+- Simulation recovery validation requires finite center-error and correlation
+  metrics for every selected unit before passing. Return aligned unit labels,
+  spike counts, per-unit outcomes and skip reasons; report evaluable counts
+  accurately and plot only jointly finite metric pairs.
+
 - Explain the generalized border score's untuned baseline: a uniform map can
   have a strongly positive score. Add analytic flat, boundary-only and central
   controls, and require geometry-specific interpretation of score thresholds.
