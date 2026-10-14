@@ -16,6 +16,13 @@ stages, listed in the roadmap in [overview.md](overview.md#roadmap-after-phase-4
 
 ## Reading order
 
+The [continuous behavior and neural analysis plan](../continuous-behavior/PLAN.md)
+uses this refactor as its spatial foundation. Its
+[environment follow-on workstream](../continuous-behavior/phase-2-environment-contracts.md)
+records scientific bin identity, correspondences, movement/face semantics, and
+feature/state alignment after the relevant prerequisites. Those additions have
+separate implementation slices; the five phases here retain their existing scope.
+
 When working with an agent, **load only the part you need**:
 
 1. **Working on a specific phase?** Open the matching phase file. Each one is
