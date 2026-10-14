@@ -9,7 +9,6 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import shapely.vectorized
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as MplPolygon
 from numpy.typing import NDArray
@@ -18,6 +17,7 @@ from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.layout._locators import MeshLocator
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -56,6 +56,7 @@ class TriangularMeshLayout:
         NDArray[np.int_] | None
     )  # Store original indices of active ones
     _boundary_polygon_stored: Polygon | None  # Store the actual polygon object
+    _locator: MeshLocator | None = None
 
     def __init__(self) -> None:
         self.bin_centers = np.empty((0, 2), dtype=float)
@@ -70,6 +71,7 @@ class TriangularMeshLayout:
         self._original_simplex_to_active_idx_map = None
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
+        self._locator = None
 
     @property
     def layout_type(self) -> str:
@@ -188,13 +190,48 @@ class TriangularMeshLayout:
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
         self.active_mask[active_original_indices] = True
         # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
+        self._build_locator()
+
+    def _build_locator(self) -> None:
+        """Snapshot triangulation, active-bin mapping and the boundary."""
+        if (
+            self._full_delaunay_tri is None
+            or self._original_simplex_to_active_idx_map is None
+        ):
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "_full_delaunay_tri",
+                        "_original_simplex_to_active_idx_map",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
+        simplex_to_active = np.full(
+            len(self._full_delaunay_tri.simplices), -1, dtype=np.intp
+        )
+        for original, active in self._original_simplex_to_active_idx_map.items():
+            simplex_to_active[original] = active
+        self._locator = MeshLocator(
+            self._full_delaunay_tri.points,
+            self._full_delaunay_tri.simplices,
+            simplex_to_active,
+            self._boundary_polygon_stored,
+        )
+
+    def locator(self) -> MeshLocator:
+        """Return the owned locator, rebuilding it for older saved layouts."""
+        if self._locator is None:
+            self._build_locator()
+        assert self._locator is not None
+        return self._locator
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map each 2D point to an active triangle index, or -1 if outside.
 
-        Uses Delaunay.find_simplex() → original-simplex index → active-triangle index via
-        a fast lookup array. Then enforces that the point itself must lie inside (or on)
-        the boundary polygon.
+        Query points must lie inside the boundary polygon.
 
         Parameters
         ----------
@@ -223,43 +260,7 @@ class TriangularMeshLayout:
                 ),
             )
 
-        pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
-        if pts2d.ndim != 2 or pts2d.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
-
-        # 1) Find which Delaunay simplex each point falls into (-1 if outside hull)
-        orig_simplices = self._full_delaunay_tri.find_simplex(pts2d)
-
-        # 2) Build a 1D lookup array once, mapping original simplex idx -> active idx
-        n_total = self._full_delaunay_tri.simplices.shape[0]
-        orig2active_arr = np.full(n_total, -1, dtype=int)
-        for orig_idx, active_idx in self._original_simplex_to_active_idx_map.items():
-            orig2active_arr[orig_idx] = active_idx
-
-        # 3) Initialize result array to -1
-        active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=int)
-
-        # 4) Wherever orig_simplices != -1, do a vectorized assignment
-        valid_mask = orig_simplices != -1
-        if np.any(valid_mask):
-            found_orig = orig_simplices[valid_mask]
-            active_triangle_idxs[valid_mask] = orig2active_arr[found_orig]
-
-            # 5) Now ensure each point is itself inside (or on) the boundary
-            if self._boundary_polygon_stored is not None:
-                xcoords = pts2d[valid_mask, 0]
-                ycoords = pts2d[valid_mask, 1]
-                on_or_inside = shapely.contains_xy(
-                    self._boundary_polygon_stored,
-                    xcoords,
-                    ycoords,
-                )
-                idxs = np.flatnonzero(valid_mask)
-                for local_i, keep in enumerate(on_or_inside):
-                    if not keep:
-                        active_triangle_idxs[idxs[local_i]] = -1
-
-        return active_triangle_idxs.astype(np.intp, copy=False)
+        return self.locator().locate(points)
 
     @property
     def is_linearized_track(self) -> bool:

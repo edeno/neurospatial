@@ -90,6 +90,9 @@
 
 ### Changed
 
+- Point lookup consistently rejects incorrect coordinate widths, including
+  hexagonal inputs with extra columns and empty or non-finite grid queries.
+
 - `Environment.bin_sizes` now returns an owned, read-only array, like
   `bin_centers`.
 

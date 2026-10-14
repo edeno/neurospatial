@@ -23,7 +23,11 @@ exception outcomes. Construction medians on the starting and exact reviewed tree
 The final hexagonal construction median exceeds the 10% target (+12.1%);
 the first seven-run capture measured +8.3%. The new work snapshots owned
 arrays and validates ordered neighbor pairs. The exact final measurements above
-are retained rather than hiding this exception.
+are retained rather than hiding this exception. An isolated seven-run median
+for `binning_from_layout` on that existing hexagonal layout is 0.041723 s,
+about 64% of the observed 0.065496 s construction increase. Profiling attributes
+most added work to ordered edge enumeration and array materialization; validation
+itself is smaller. Residual allocator/run variation was not separated.
 
 The grid and hexagonal timings use the same seeded 200,000 uniform points
 in a 150 cm square. The grid uses explicit bounds, `bin_size=0.5` and
@@ -59,3 +63,41 @@ old geometry caches.
   rectilinear edges.
 - Track subsets retain the track graph and absolute linear coordinates while
   restricting their active linear mask to the selected bins.
+
+## Data-backed lookup
+
+Before moving lookup implementations, the parity generator recorded 277 arrays
+(576,998 bytes) at `bef7abea` into `tests/layout/data/locator_parity.npz`.
+It covers eleven deterministic environments, including a triangular mesh with a
+hole and concave notch; boundary, non-finite, empty and wrong-width queries;
+and 2,000-point branching/gapped track linearization probes. Generator command:
+`uv run --no-sync python /private/tmp/neurospatial_capture_locator_parity.py`
+with the cache environment variables documented above. The temporary script is
+retained outside the repository.
+
+Seven-run lookup medians before implementation, one million seeded queries:
+grid 0.147921 s; track 0.406283 s. Inputs and hashes are retained with the
+construction artifacts.
+
+The lookup phase preserves all 4,046 behavior probes. Recorded parity also
+verifies the approved coordinate-width exceptions explicitly. The broad
+non-GUI suite passed 10,059 tests (25 skipped); the GUI directories and the
+confirmed starting-commit graph-mutation failure were excluded. All 597
+doctests passed (132 skipped), the 337-test focused slice passed with numerical
+RuntimeWarnings promoted to errors, and full-source/typing-contract mypy plus
+Ruff passed. Independent review also verified actual starting-commit pickles
+for all eleven environments through loading, deepcopy and re-pickling.
+
+The track component protects stored graph attributes as well as topology.
+Per-segment spacing is stored immutably and converted back to the external
+linearization library's required list format only at the call boundary.
+
+Lookup medians on the exact saved queries, seven runs, one million points:
+
+| Environment | Before (s) | After (s) | Observed change |
+| --- | ---: | ---: | ---: |
+| Grid, 90,000 bins | 0.147921 | 0.140566 | -5.0% |
+| Track, 2,000 bins | 0.406283 | 0.401981 | -1.1% |
+
+Both satisfy the 10% limit. Query and output hashes are identical; these timing
+observations do not establish a general performance improvement.

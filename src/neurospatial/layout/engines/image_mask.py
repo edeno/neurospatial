@@ -180,3 +180,4 @@ class ImageMaskLayout(_GridMixin):
 
         # Validate connectivity graph has required attributes
         validate_connectivity_graph(self.connectivity, n_dims=2)
+        self._build_locator()

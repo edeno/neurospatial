@@ -6,8 +6,10 @@ while exposing their capabilities together with the published bin arrays.
 
 from __future__ import annotations
 
+import copy
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Any, NoReturn, Protocol, cast
 
 import networkx as nx
 import numpy as np
@@ -309,6 +311,112 @@ class LayoutFaces:
         return _missing_geometry_error(self.layout, operation)
 
 
+class _ReadOnlyTrackAttributes(dict[str, Any]):
+    """Protect stored track geometry while supporting pickle and editable copies."""
+
+    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise TypeError("Stored track graph attributes are read-only.")
+
+    __setitem__ = _refuse_edit
+    __delitem__ = _refuse_edit
+    clear = _refuse_edit
+    pop = _refuse_edit
+    popitem = _refuse_edit
+    setdefault = _refuse_edit
+    update = _refuse_edit
+    __ior__ = _refuse_edit
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return type(self), (dict(self),)
+
+
+@dataclass(frozen=True, eq=False)
+class TrackLinearization:
+    """Owned track geometry and its absolute linear coordinate system.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        Original track graph with node positions and enumerated edge IDs.
+    edge_order : sequence of pairs
+        Track segments in linear coordinate order.
+    edge_spacing : float or sequence of float
+        Gaps between successive segments.
+    grid_edges : tuple of ndarray
+        Full linear bin edges, including gaps.
+    active_mask : ndarray of bool, shape (n_linear_bins,)
+        Active linear cells in their original coordinate order.
+    """
+
+    graph: nx.Graph
+    edge_order: Sequence[tuple[Any, Any]]
+    edge_spacing: float | Sequence[float]
+    grid_edges: tuple[NDArray[np.float64], ...]
+    active_mask: NDArray[np.bool_]
+
+    def __post_init__(self) -> None:
+        graph = copy.deepcopy(self.graph)
+        for node, attrs in graph.nodes(data=True):
+            graph._node[node] = _ReadOnlyTrackAttributes(
+                attrs, pos=tuple(float(value) for value in attrs["pos"])
+            )
+        for u, v, attrs in graph.edges(data=True):
+            frozen = _ReadOnlyTrackAttributes(attrs)
+            graph._adj[u][v] = graph._adj[v][u] = frozen
+        graph.graph = _ReadOnlyTrackAttributes(graph.graph)
+        object.__setattr__(self, "graph", nx.freeze(graph))
+        object.__setattr__(self, "edge_order", tuple(tuple(e) for e in self.edge_order))
+        spacing = self.edge_spacing
+        object.__setattr__(
+            self,
+            "edge_spacing",
+            float(spacing)
+            if isinstance(spacing, (int, float))
+            else tuple(float(x) for x in spacing),
+        )
+        edges = tuple(np.array(e, dtype=np.float64, copy=True) for e in self.grid_edges)
+        mask = np.array(self.active_mask, dtype=bool, copy=True)
+        for array in (*edges, mask):
+            array.setflags(write=False)
+        object.__setattr__(self, "grid_edges", edges)
+        object.__setattr__(self, "active_mask", mask)
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore array protection without storing derived lookup memos."""
+        for edge in state["grid_edges"]:
+            edge.setflags(write=False)
+        state["active_mask"].setflags(write=False)
+        for name, value in state.items():
+            object.__setattr__(self, name, value)
+
+    def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Map ``(n_points, n_dims)`` coordinates onto the track."""
+        from track_linearization import get_linearized_position
+
+        result = get_linearized_position(
+            data_points,
+            self.graph,
+            list(self.edge_order),
+            self.edge_spacing
+            if isinstance(self.edge_spacing, (int, float))
+            else list(self.edge_spacing),
+        ).linear_position.to_numpy()
+        return np.asarray(result, dtype=np.float64)
+
+    def linear_to_nd(
+        self, linear_coordinates: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Map ``(n_points,)`` absolute linear positions into track coordinates."""
+        from neurospatial.layout.helpers.graph import _project_1d_to_2d
+
+        return _project_1d_to_2d(
+            linear_coordinates,
+            self.graph,
+            list(self.edge_order),
+            self.edge_spacing,
+        )
+
+
 @dataclass(frozen=True, eq=False)
 class Binning:
     """Published bins, point lookup, faces and optional structural components."""
@@ -352,14 +460,26 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
     return Binning(
         kind=getattr(layout, "_layout_type_tag", type(layout).__name__),
         bins=bins,
-        locator=LayoutLocator(layout),
+        locator=_locator_of(layout),
         faces=LayoutFaces(layout, connectivity),
         rectilinear=(
             layout.rectilinear_grid()
             if isinstance(layout, RectilinearGridProvider)
             else None
         ),
-        linearization=(
-            layout if isinstance(layout, TrackLinearizationProvider) else None
-        ),
+        linearization=_linearization_of(layout),
     )
+
+
+def _locator_of(layout: LayoutEngine) -> Locator:
+    """Use owned lookup data when a layout supplies it."""
+    factory = getattr(layout, "locator", None)
+    return cast("Locator", factory()) if factory is not None else LayoutLocator(layout)
+
+
+def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None:
+    """Use owned track coordinates, retaining compatibility with custom layouts."""
+    factory = getattr(layout, "linearization", None)
+    if factory is not None:
+        return cast("TrackLinearizationProvider", factory())
+    return layout if isinstance(layout, TrackLinearizationProvider) else None

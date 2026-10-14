@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-from track_linearization import get_linearized_position as _get_linearized_position
 from track_linearization import plot_graph_as_1D
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._binning import TrackLinearization
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -57,6 +57,7 @@ class GraphLayout(_KDTreeMixin):
         self.grid_shape = None
         self.active_mask = None
         self.linear_bin_centers_ = None
+        self._linearization: TrackLinearization | None = None
 
     @property
     def layout_type(self) -> str:
@@ -162,6 +163,9 @@ class GraphLayout(_KDTreeMixin):
 
         # --- Build KDTree ---
         self._build_kdtree(points_for_tree=self.bin_centers)
+        self._linearization = TrackLinearization(
+            track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask
+        )
 
     @property
     def is_linearized_track(self) -> bool:
@@ -342,13 +346,7 @@ class GraphLayout(_KDTreeMixin):
             far from the track.
 
         """
-        result = _get_linearized_position(
-            data_points,
-            self._build_params_used["graph_definition"],
-            self._build_params_used["edge_order"],
-            self._build_params_used["edge_spacing"],
-        ).linear_position.to_numpy()
-        return np.asarray(result, dtype=np.float64)
+        return self.linearization().to_linear(data_points)
 
     def linear_to_nd(
         self,
@@ -367,12 +365,23 @@ class GraphLayout(_KDTreeMixin):
             N-D coordinates corresponding to the input linear positions.
 
         """
-        return _project_1d_to_2d(
-            linear_coordinates,
-            self._build_params_used["graph_definition"],
-            self._build_params_used["edge_order"],
-            self._build_params_used["edge_spacing"],
-        )
+        return self.linearization().linear_to_nd(linear_coordinates)
+
+    def linearization(self) -> TrackLinearization:
+        """Return owned track geometry, restoring caches for older saved layouts."""
+        linearization = getattr(self, "_linearization", None)
+        if linearization is None:
+            if self.grid_edges is None or self.active_mask is None:
+                raise LayoutNotBuiltError(type(self).__name__, "grid_edges")
+            linearization = TrackLinearization(
+                self._build_params_used["graph_definition"],
+                self._build_params_used["edge_order"],
+                self._build_params_used["edge_spacing"],
+                self.grid_edges,
+                self.active_mask,
+            )
+            self._linearization = linearization
+        return linearization
 
     def linear_point_to_bin_ind(
         self,

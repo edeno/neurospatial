@@ -1002,6 +1002,7 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
         "mesh",
         "polar",
         "polar_open",
+        "mesh_boundary",
     ],
 )
 def built_environment(request) -> Environment | EgocentricPolarEnvironment:
@@ -1044,6 +1045,14 @@ def built_environment(request) -> Environment | EgocentricPolarEnvironment:
                 "boundary_polygon": Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
                 "point_spacing": 4.0,
             },
+        )
+    if kind == "mesh_boundary":
+        boundary = Polygon(
+            [(0, 0), (12, 0), (12, 12), (8, 12), (8, 8), (4, 8), (4, 12), (0, 12)],
+            [[(4, 3), (6, 3), (6, 5), (4, 5)]],
+        )
+        return Environment.from_layout(
+            "TriangularMesh", {"boundary_polygon": boundary, "point_spacing": 1.5}
         )
     if kind == "polar":
         return Environment.from_polar_egocentric(

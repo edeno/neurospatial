@@ -7,7 +7,7 @@
 | Phase | Status |
 | --- | --- |
 | 1 — Binning snapshot | Complete |
-| 2a — Data locators | Pending |
+| 2a — Data locators | Complete |
 | 2b — Shapes and plots | Pending |
 | 3 — Save binnings | Pending |
 | 4 — Derived environments | Pending |

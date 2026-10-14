@@ -114,8 +114,7 @@ coordinate widths, as required by the locator contract (approved by the user).
   on the base commit. The script is not committed: describe the command in the
   PR.
 - The track uses the branching track from the fixture.
-- Add a mesh case to `built_environment`: `from_polygon` with
-  `layout="TriangularMesh"`, on a polygon with one interior hole and one
+- Add a mesh case to `built_environment`: `from_layout("TriangularMesh", ...)` on a polygon with one interior hole and one
   concave notch. Record its parity outputs with the others.
 
 ## Review
