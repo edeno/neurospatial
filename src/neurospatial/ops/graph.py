@@ -371,15 +371,31 @@ def graph_convolve(
     >>> print(f"Max value: {result.max():.3f}")  # doctest: +SKIP
     Max value: 0.111
 
-    **Mexican hat for edge detection**:
+    **Balanced center-surround contrast**:
+
+    Normalize the narrow and broad Gaussian averages separately on this finite
+    graph. Their difference removes a constant field, including at boundaries;
+    unit-height Gaussians alone would give zero at the center and only negative
+    weights elsewhere. With missing observations, normalize each average over
+    the observed source bins instead.
 
     >>> def mexican_hat(distances):
     ...     sigma1, sigma2 = 0.5, 1.5
     ...     g1 = np.exp(-(distances**2) / (2 * sigma1**2))
     ...     g2 = np.exp(-(distances**2) / (2 * sigma2**2))
-    ...     return g1 - g2
+    ...     return g1 / g1.sum(axis=-1, keepdims=True) - g2 / g2.sum(
+    ...         axis=-1, keepdims=True
+    ...     )
     >>> result = graph_convolve(env, field, mexican_hat, normalize=False)
-    >>> # Center positive, surrounding negative (edge enhancement)
+    >>> bool(result[4] > 0)  # An impulse has positive center contrast.
+    True
+    >>> bool(np.any(result < 0))  # Surrounding bins have negative contrast.
+    True
+    >>> constant = graph_convolve(
+    ...     env, np.ones(env.n_bins), mexican_hat, normalize=False
+    ... )
+    >>> np.allclose(constant, 0.0, atol=1e-12)
+    True
 
     See Also
     --------

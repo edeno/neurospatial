@@ -163,6 +163,9 @@
 
 ### Fixed
 
+- Use a normalized center-surround contrast in the graph-convolution example,
+  with a positive center and no response to a constant input.
+
 - Render transformed-layout field markers in display units, honor scatter size
   overrides and retain the requested missing-support color without changing
   shared colormaps.
