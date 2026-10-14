@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 10-15 minutes
 #
-# **Prerequisites**: [01_introduction_basics.ipynb](../01_introduction_basics/)
+# **Prerequisites**: [01_introduction_basics.ipynb](01_introduction_basics.ipynb)
 #
 # ## Learning Objectives
 #
@@ -29,8 +29,8 @@
 # - Compute turn angles to analyze direction changes in movement trajectories
 # - Calculate step lengths to quantify distance traveled between positions
 # - Estimate home range using quantile-based methods
-# - Compute mean square displacement (MSD) to classify diffusion patterns
-# - Interpret MSD slopes to distinguish Brownian, super-diffusive, and sub-diffusive motion
+# - Compute mean square displacement (MSD) over an explicit lag range
+# - Relate descriptive MSD slopes to candidate models while checking confinement and stationarity
 # - Apply trajectory metrics to behavioral characterization and quality control
 #
 # ## References
@@ -41,6 +41,9 @@
 # - **Ecology metrics**: Signer et al. (2019). Animal movement tools (amt). *Journal of Statistical Software*.
 
 # %%
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -55,12 +58,21 @@ from neurospatial.behavior.trajectory import (
 # Set random seed for reproducibility
 np.random.seed(42)
 
+_here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+from _style import apply_style
+
+apply_style(figsize=(12, 8))
+
 # %% [markdown]
 # ## Part 1: Generate Synthetic Trajectory
 #
-# We'll create a realistic foraging trajectory with:
-# - Random exploration phase (first 50%)
-# - Directed movement to goal (last 50%)
+# We construct a toy trajectory with known movement phases:
+# - Random exploration phase (first 60%)
+# - Smooth directed movement (last 40%, intentionally slower)
 
 # %%
 # Generate realistic foraging trajectory in 2D arena
@@ -109,9 +121,12 @@ for i in range(directed_samples):
 
     # Interpolate toward goal with noise
     target = current_pos + progress * (goal - current_pos)
+    # Smooth lateral deviations avoid injecting independent tracking jitter.
     noise = (
-        np.random.randn(2) * 2.0 * (1 - progress * 0.7)
-    )  # Reduce noise as we approach
+        1.5
+        * np.sin(np.pi * progress)
+        * np.array([np.sin(4 * np.pi * progress), np.sin(6 * np.pi * progress)])
+    )
     positions[idx] = target + noise
 
     # Keep within bounds
@@ -212,7 +227,7 @@ plt.show()
 #   - ±180°: Reversal
 #
 # **Use cases**:
-# - Identify search strategies (e.g., Lévy walks)
+# - Describe turning as one component of a broader movement-model analysis
 # - Detect behavioral state changes (exploration vs exploitation)
 # - Quantify path tortuosity
 
@@ -372,12 +387,12 @@ axes[0].legend(fontsize=12)
 axes[0].grid(True, alpha=0.3)
 
 # Time series (split by phase)
-time_indices = np.arange(len(turn_angles))
-explore_mask = time_indices < exploration_samples
-directed_mask = time_indices >= exploration_samples
+turn_times = times[1:-1]  # each turn belongs to the middle of three samples
+explore_mask = turn_times < times[exploration_samples]
+directed_mask = ~explore_mask
 
 axes[1].plot(
-    time_indices[explore_mask],
+    turn_times[explore_mask],
     np.degrees(turn_angles[explore_mask]),
     "o",
     color="steelblue",
@@ -386,7 +401,7 @@ axes[1].plot(
     label="Exploration",
 )
 axes[1].plot(
-    time_indices[directed_mask],
+    turn_times[directed_mask],
     np.degrees(turn_angles[directed_mask]),
     "o",
     color="orange",
@@ -395,7 +410,7 @@ axes[1].plot(
     label="Goal-directed",
 )
 axes[1].axhline(0, color="red", linestyle="--", linewidth=2)
-axes[1].set_xlabel("Time step", fontsize=14, fontweight="bold")
+axes[1].set_xlabel("Time (s)", fontsize=14, fontweight="bold")
 axes[1].set_ylabel("Turn angle (degrees)", fontsize=14, fontweight="bold")
 axes[1].set_title("Turn Angles Over Time", fontsize=16, fontweight="bold")
 axes[1].legend(fontsize=12)
@@ -404,33 +419,35 @@ axes[1].grid(True, alpha=0.3)
 plt.show()
 
 # %% [markdown]
-# **Observation**: Goal-directed phase shows smaller turn angles (straighter paths) compared to exploration phase.
+# Compare the two phases: the smooth path was constructed to have small turns.
+# Turn angles alone do not establish a behavioral strategy or detect Lévy walks.
 
 # %% [markdown]
 # ## Part 3: Compute Step Lengths
 #
 # **Step lengths** measure the distance traveled between consecutive positions.
 #
-# - **Units**: Graph geodesic distance (bin-to-bin on connectivity graph)
+# - **Units**: cm here; choose Euclidean or graph geodesic distance explicitly
 # - **Interpretation**:
 #   - Short steps: Fine-scale exploration or slow movement
 #   - Long steps: Ballistic movement or relocation
 #
 # **Use cases**:
-# - Identify movement modes (Brownian vs Lévy flights)
+# - Describe step-size distributions for movement-model comparisons
 # - Detect behavioral transitions
 # - Compute travel distance and speed
 
 # %%
-# Compute step lengths using geodesic (graph) distances
-# This respects the environment topology rather than using straight-line distance
-step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
+# In this open arena, measure displacements between the continuous positions.
+# Graph geodesics are useful for barriers, but binning adds spatial quantization.
+step_lengths = compute_step_lengths(positions, metric="euclidean")
 
 # Note: geodesic distances may be infinite for disconnected bins
 finite_step_lengths = step_lengths[np.isfinite(step_lengths)]
 
-# Compute cumulative distance (use finite values)
-cumulative_distance = np.concatenate([[0], np.cumsum(finite_step_lengths)])
+# Keep the original time axis; never delete invalid steps and reconnect gaps.
+assert np.isfinite(step_lengths).all()  # this simulation has complete tracking
+cumulative_distance = np.r_[0.0, np.cumsum(step_lengths)]
 
 print(f"Computed {len(step_lengths)} step lengths")
 print(
@@ -469,24 +486,23 @@ axes[0].legend(fontsize=12)
 axes[0].grid(True, alpha=0.3)
 
 # Cumulative distance
-time_steps = np.arange(len(cumulative_distance))
-explore_time = time_steps < exploration_samples
+explore_time = times < times[exploration_samples]
 
 axes[1].plot(
-    time_steps[explore_time],
+    times[explore_time],
     cumulative_distance[explore_time],
     color="steelblue",
     linewidth=3,
     label="Exploration phase",
 )
 axes[1].plot(
-    time_steps[~explore_time],
+    times[~explore_time],
     cumulative_distance[~explore_time],
     color="orange",
     linewidth=3,
     label="Goal-directed phase",
 )
-axes[1].set_xlabel("Time step", fontsize=14, fontweight="bold")
+axes[1].set_xlabel("Time (s)", fontsize=14, fontweight="bold")
 axes[1].set_ylabel("Cumulative distance (cm)", fontsize=14, fontweight="bold")
 axes[1].set_title("Distance Traveled Over Time", fontsize=16, fontweight="bold")
 axes[1].legend(fontsize=12)
@@ -495,19 +511,25 @@ axes[1].grid(True, alpha=0.3)
 plt.show()
 
 # %% [markdown]
-# **Observation**: Goal-directed phase shows steeper cumulative distance (faster movement toward goal).
+# The directed segment is smoother but slower in this construction. Distance
+# and speed describe movement; they do not establish goal-directed intention.
+# With real tracking gaps, analyze each observed run separately rather than
+# joining positions across missing time.
 
 # %% [markdown]
 # ## Part 4: Compute Home Range
 #
-# **Home range** is the area where an animal spends a given percentage of its time.
+# Here, **home range** means the bins accounting for a chosen fraction of
+# samples. This implementation counts samples equally, so it approximates time
+# occupancy only with uniform sampling, as in this simulation. It returns bin
+# indices, not an area in cm² or an animal's ecological home-range boundary.
 #
 # - **Standard percentiles**:
 #   - 50%: Core area (intensive use)
 #   - 95%: Full home range (typical ecology standard)
 #   - 100%: Total area visited
 #
-# - **Computation**: Based on occupancy (time spent in each bin)
+# - **Computation**: Rank visited bins by sample counts; retain the target fraction
 #
 # **Use cases**:
 # - Territory size estimation
@@ -604,7 +626,8 @@ for ax, mask, title, _percentile in zip(
 plt.show()
 
 # %% [markdown]
-# **Observation**: Core area (50%) concentrates around exploration region. Full home range (95%) includes path to goal.
+# Compare the retained bins with the trajectory. The selected fraction concerns
+# samples, not the same fraction of physical arena area.
 
 # %% [markdown]
 # ## Part 5: Mean Square Displacement (MSD)
@@ -627,15 +650,19 @@ plt.show()
 # - Identify directed vs random search
 
 # %%
-# Compute MSD for different time lags using geodesic distances
+# Analyze the known random-walk phase alone; mixing movement phases can make
+# a single power-law exponent misleading. Use physical Euclidean displacement.
 _msd = mean_square_displacement(
-    times, positions, metric="geodesic", env=env, max_tau=30.0
+    times[:exploration_samples],
+    positions[:exploration_samples],
+    metric="euclidean",
+    max_tau=10.0,
 )
 tau_values, msd_values = _msd.lags, _msd.msd
 
 # Fit power law: MSD ~ tau^alpha
 # Use log-log fit: log(MSD) = alpha * log(tau) + const
-valid_idx = (tau_values > 0) & (msd_values > 0)
+valid_idx = (tau_values >= 0.5) & (tau_values <= 5.0) & (msd_values > 0)
 log_tau = np.log(tau_values[valid_idx])
 log_msd = np.log(msd_values[valid_idx])
 
@@ -644,15 +671,10 @@ alpha, log_const = np.polyfit(log_tau, log_msd, 1)
 msd_fit = np.exp(log_const) * tau_values[valid_idx] ** alpha
 
 print(f"MSD exponent α = {alpha:.2f}")  # noqa: RUF001  # α is scientific notation
-print("\nDiffusion classification:")
-if alpha < 0.9:
-    print("  → Subdiffusion (confined movement)")
-elif alpha < 1.1:
-    print("  → Normal diffusion (random walk)")
-elif alpha < 1.9:
-    print("  → Superdiffusion (directed movement)")
-else:
-    print("  → Ballistic motion (constant velocity)")
+print("Descriptive log-log slope for the exploration phase, fitted over 0.5-5 s.")
+print(
+    "Confinement, fit range and finite sampling affect this slope; it is not a strategy verdict."
+)
 
 # %% [markdown]
 # Visualize MSD curve with power law fit:
@@ -699,7 +721,9 @@ axes[1].grid(True, alpha=0.3, which="both")
 plt.show()
 
 # %% [markdown]
-# **Observation**: MSD exponent α > 1 indicates superdiffusion (consistent with goal-directed movement in second phase).
+# Interpret the slope over the stated lag range. Overlapping lag pairs are
+# correlated, and finite arenas can flatten MSD at long lags. The fit is a
+# descriptive demonstration, not a formal diffusion-model test.
 
 # %% [markdown]
 # ## Summary
@@ -707,15 +731,15 @@ plt.show()
 # This notebook demonstrated four key trajectory metrics:
 #
 # 1. **Turn angles** - Quantified directional changes (straighter in goal-directed phase)
-# 2. **Step lengths** - Measured movement distances (faster in goal-directed phase)
+# 2. **Step lengths** - Measured displacements on the original time axis
 # 3. **Home range** - Identified core areas (50%, 95%, 100% occupancy)
-# 4. **Mean square displacement** - Classified diffusion type (superdiffusion, α > 1)
+# 4. **Mean square displacement** - Described lag dependence within one known movement phase
 #
 # ### Key Takeaways
 #
 # - **Turn angles and step lengths** reveal local movement properties
 # - **Home range** characterizes spatial coverage and territory
-# - **MSD exponent** classifies overall movement strategy (random vs directed)
+# - **MSD exponent** depends on lag range, confinement and movement stationarity
 #
 # ### Next Steps
 #
@@ -723,4 +747,4 @@ plt.show()
 # - **Trajectory similarity**: Compare paths between sessions
 # - **Integration with neural activity**: Correlate movement with place cell firing
 #
-# See `examples/15_behavioral_segmentation.ipynb` for advanced trajectory analysis workflows.
+# See [14: behavioral segmentation](14_behavioral_segmentation.ipynb) for advanced trajectory analysis workflows.

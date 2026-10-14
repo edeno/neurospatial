@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Morphological Operations: Handling Sparse and Patchy Data
 #
+# **Estimated time**: 20-30 minutes
+#
+# **Prerequisites**: [01: basics](01_introduction_basics.ipynb), [02: layouts](02_layout_engines.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -23,10 +27,9 @@
 # - Understand why sparse data creates problems for spatial analysis
 # - Use morphological operations (dilate, fill_holes, close_gaps) to improve connectivity
 # - Control active bin inference with `bin_count_threshold`
-# - Diagnose and fix common issues with real-world position tracking data
+# - Distinguish accessible geometry from observed spatial support
 # - Make informed decisions about when to use morphological operations
 #
-# **Estimated time: 20-30 minutes**
 
 # %% [markdown]
 # ## The Problem: Real Data is Messy
@@ -40,7 +43,9 @@
 #
 # These issues can fragment your environment into disconnected regions, making spatial analysis difficult or impossible.
 #
-# **This notebook shows you how to handle these challenges!**
+# This notebook changes the spatial mask; it does not clean tracking artifacts,
+# restore missing timestamps, or create observations. Fill only areas known to
+# be accessible. Never bridge a real wall or fill a genuine obstacle.
 
 # %% [markdown]
 # ## Setup
@@ -119,12 +124,12 @@ def create_sparse_trajectory(n_samples=3000, seed=42):
         position[t] = position[t - 1] + step
         position[t] = np.clip(position[t], 5, 95)
 
-    # Add some tracking failures (NaN regions that get filtered out)
+    # Omit a few samples to make this spatial point cloud sparser.
     tracking_failures = np.random.choice(
         n_samples, size=int(n_samples * 0.05), replace=False
     )
 
-    # Remove tracked failures
+    # This function returns geometry samples, not a timestamped trajectory.
     position = np.delete(position, tracking_failures, axis=0)
 
     return position
@@ -163,36 +168,37 @@ plt.show()
 print("\nNotice: Animal spends most time near walls, rarely visits center")
 
 # %% [markdown]
-# ## Problem 1: Fragmented Environment
+# ## Problem 1: Incomplete Sampled Geometry
 #
 # What happens when we create an environment from this sparse data using default settings?
 
 # %%
 # Create environment with default settings
 env_default = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, name="Default_Sparse"
+    positions=sparse_data, bin_size=5.0, name="Default_Sparse", units="cm"
 )
 
 print(env_default.info())
 
 # %%
-# Visualize the fragmented environment
+# Visualize the sample-inferred mask
 fig, ax = plt.subplots(figsize=(10, 10))
 env_default.plot(ax=ax, show_connectivity=True)
-ax.set_title(f"Default Environment (Fragmented)\n{env_default.n_bins} active bins")
+ax.set_title(f"Sample-Inferred Mask\n{env_default.n_bins} active bins")
 ax.set_aspect("equal")
 plt.tight_layout()
 plt.show()
 
-print("\nProblem: Environment is fragmented!")
-print("- Center bins are missing (animal rarely visited)")
-print("- Cannot compute paths through the center")
-print("- Spatial analysis will be limited to edges only")
+print("\nThe active mask contains only sampled bins.")
+print(
+    "Unvisited areas may be accessible or may contain obstacles; tracking alone cannot decide."
+)
 
 # %% [markdown]
 # ### Checking Connectivity
 #
-# Let's verify that the environment is indeed disconnected:
+# Check connectivity rather than assuming sparse sampling disconnects the graph.
+# This seeded example remains connected, despite holes in its active mask.
 
 # %%
 import networkx as nx
@@ -231,6 +237,7 @@ env_dilated = Environment.from_samples(
     bin_size=5.0,
     dilate=True,  # Enable dilation
     name="Dilated",
+    units="cm",
 )
 
 print(env_dilated.info())
@@ -267,6 +274,7 @@ env_filled = Environment.from_samples(
     bin_size=5.0,
     fill_holes=True,  # Enable hole filling
     name="Filled",
+    units="cm",
 )
 
 print(env_filled.info())
@@ -286,6 +294,7 @@ env_closed = Environment.from_samples(
     bin_size=5.0,
     close_gaps=True,  # Enable closing
     name="Closed",
+    units="cm",
 )
 
 print(env_closed.info())
@@ -307,6 +316,7 @@ env_combined = Environment.from_samples(
     fill_holes=True,
     close_gaps=True,
     name="Combined",
+    units="cm",
 )
 
 print(env_combined.info())
@@ -341,14 +351,17 @@ plt.show()
 #
 # By default, a bin needs at least 1 sample to be considered active. You can adjust this threshold to:
 #
-# - **Lower threshold (< 1)**: Include bins with sparse sampling
-# - **Higher threshold (> 1)**: Require more samples for robust estimates
+# - **Threshold 0**: Include bins with at least one sample
+# - **Threshold 4**: Include bins with at least five samples
+#
+# Regular-grid counts must be strictly greater than this parameter. Sample
+# counts depend on tracking frequency; use occupancy in seconds for support.
 #
 # **Note**: `bin_count_threshold` is applied BEFORE morphological operations.
 
 # %%
 # Compare different thresholds
-thresholds = [1, 5, 10]
+thresholds = [0, 4, 9]
 env_thresholds = {}
 
 for thresh in thresholds:
@@ -357,6 +370,7 @@ for thresh in thresholds:
         bin_size=5.0,
         bin_count_threshold=thresh,
         name=f"Threshold_{thresh}",
+        units="cm",
     )
     env_thresholds[thresh] = env
     print(f"Threshold = {thresh}: {env.n_bins} active bins")
@@ -378,9 +392,11 @@ print("Use this to focus on well-sampled regions only")
 
 
 # %% [markdown]
-# ## Practical Example: Fixing a Real Analysis Pipeline
+# ## Practical Example: Geometry Does Not Restore Missing Firing Rates
 #
-# Let's simulate a complete analysis workflow where sparse data causes problems, then fix it.
+# Use independent 50 ms observations at the retained positions to illustrate
+# occupancy normalization. These counts are a toy example, not a continuous
+# spike recording reconstructed across the omitted tracking samples.
 
 
 # %%
@@ -424,7 +440,8 @@ print(f"Mean firing rate: {spikes.mean() / 0.05:.2f} Hz")
 # %% [markdown]
 # ### Problem: Computing Spatial Firing Rate Map
 #
-# With the fragmented default environment, we can't compute rates for center bins:
+# Rates are defined only where observation time is positive. Observed silence
+# is a valid zero rate; unsampled space has no empirical rate.
 
 # %%
 # Map spikes to bins
@@ -443,32 +460,33 @@ occupancy_per_bin = (
 )  # 50 ms per sample
 
 # Compute firing rate (spikes / seconds)
-# Add small epsilon to avoid division by zero
+# Leave unobserved bins NaN; zero spikes with positive occupancy remain zero.
 firing_rate_map = np.divide(
     spike_counts_per_bin,
     occupancy_per_bin,
     where=occupancy_per_bin > 0,
-    out=np.zeros_like(spike_counts_per_bin, dtype=float),
+    out=np.full_like(spike_counts_per_bin, np.nan, dtype=float),
 )
 
 print(
-    f"Bins with valid firing rates: {np.sum(firing_rate_map > 0)} / {env_default.n_bins}"
+    f"Bins with valid firing rates: {np.sum(np.isfinite(firing_rate_map))} / {env_default.n_bins}"
 )
 print(f"Peak firing rate: {firing_rate_map.max():.2f} Hz")
-print("\nProblem: Center bins have no data (firing rate = 0)")
+print("\nUnvisited space has no measured firing rate; it is not observed silence.")
 
 # %%
 # Visualize problematic firing rate map
 fig, ax = plt.subplots(figsize=(10, 10))
 
 # Only plot bins with data
-active_bins = firing_rate_map > 0
+active_bins = np.isfinite(firing_rate_map)
 scatter = ax.scatter(
     env_default.bin_centers[active_bins, 0],
     env_default.bin_centers[active_bins, 1],
     c=firing_rate_map[active_bins],
     s=300,
     cmap="hot",
+    vmin=0,
     marker="s",
     edgecolors="black",
     linewidth=0.5,
@@ -487,7 +505,7 @@ ax.plot(
 
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("Firing Rate Map (Fragmented Environment)\nMissing center bins!")
+ax.set_title("Observed Rates on the Sample-Inferred Mask")
 ax.set_aspect("equal")
 ax.legend()
 plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
@@ -495,14 +513,20 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### Solution: Use Morphological Operations
+# ### Expand the Geometry While Preserving Missing Support
 #
-# Now let's fix this by creating a properly connected environment:
+# Suppose independent arena knowledge permits the added bins. Dilation and
+# hole filling change the geometry, but keep their empirical rates missing.
 
 # %%
 # Create fixed environment
 env_fixed = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, dilate=True, fill_holes=True, name="Fixed"
+    positions=sparse_data,
+    bin_size=5.0,
+    dilate=True,
+    fill_holes=True,
+    name="Fixed",
+    units="cm",
 )
 
 print(f"Fixed environment: {env_fixed.n_bins} bins")
@@ -526,11 +550,11 @@ firing_rate_map_fixed = np.divide(
     spike_counts_per_bin_fixed,
     occupancy_per_bin_fixed,
     where=occupancy_per_bin_fixed > 0,
-    out=np.zeros_like(spike_counts_per_bin_fixed, dtype=float),
+    out=np.full_like(spike_counts_per_bin_fixed, np.nan, dtype=float),
 )
 
 print(
-    f"\nBins with valid firing rates: {np.sum(firing_rate_map_fixed > 0)} / {env_fixed.n_bins}"
+    f"\nBins with valid firing rates: {np.sum(np.isfinite(firing_rate_map_fixed))} / {env_fixed.n_bins}"
 )
 
 # %%
@@ -538,7 +562,7 @@ print(
 fig, axes = plt.subplots(1, 2, figsize=(18, 8))
 
 # Before
-active_bins = firing_rate_map > 0
+active_bins = np.isfinite(firing_rate_map)
 scatter1 = axes[0].scatter(
     env_default.bin_centers[active_bins, 0],
     env_default.bin_centers[active_bins, 1],
@@ -546,7 +570,7 @@ scatter1 = axes[0].scatter(
     s=300,
     cmap="hot",
     vmin=0,
-    vmax=firing_rate_map.max(),
+    vmax=np.nanmax(firing_rate_map),
     marker="s",
     edgecolors="black",
     linewidth=0.5,
@@ -559,13 +583,21 @@ axes[0].plot(
     markeredgecolor="blue",
     markeredgewidth=2,
 )
-axes[0].set_title("Before: Fragmented")
+axes[0].set_title("Before: Sample-Inferred Geometry")
 axes[0].set_aspect("equal")
 axes[0].set_xlabel("X position (cm)")
 axes[0].set_ylabel("Y position (cm)")
 
-# After
-active_bins_fixed = firing_rate_map_fixed > 0
+# After: gray bins have geometry but no observations.
+axes[1].scatter(
+    env_fixed.bin_centers[:, 0],
+    env_fixed.bin_centers[:, 1],
+    c="lightgray",
+    s=300,
+    marker="s",
+    label="No observations",
+)
+active_bins_fixed = np.isfinite(firing_rate_map_fixed)
 scatter2 = axes[1].scatter(
     env_fixed.bin_centers[active_bins_fixed, 0],
     env_fixed.bin_centers[active_bins_fixed, 1],
@@ -573,7 +605,7 @@ scatter2 = axes[1].scatter(
     s=300,
     cmap="hot",
     vmin=0,
-    vmax=firing_rate_map.max(),
+    vmax=np.nanmax(firing_rate_map),
     marker="s",
     edgecolors="black",
     linewidth=0.5,
@@ -587,7 +619,7 @@ axes[1].plot(
     markeredgewidth=2,
     label="True place field center",
 )
-axes[1].set_title("After: Connected with morphological ops")
+axes[1].set_title("After: Added Geometry, Same Observed Rates")
 axes[1].set_aspect("equal")
 axes[1].set_xlabel("X position (cm)")
 axes[1].set_ylabel("Y position (cm)")
@@ -597,7 +629,14 @@ plt.colorbar(scatter2, ax=axes[1], label="Firing Rate (Hz)")
 plt.tight_layout()
 plt.show()
 
-print("\nFixed! Now we can see the complete place field")
+added_unobserved = occupancy_per_bin_fixed == 0
+assert np.all(np.isnan(firing_rate_map_fixed[added_unobserved]))
+matched_bins = env_fixed.bin_at(env_default.bin_centers)
+np.testing.assert_allclose(firing_rate_map, firing_rate_map_fixed[matched_bins])
+print(
+    f"\nAdded {added_unobserved.sum()} bins without observations; their rates remain NaN."
+)
+print("Morphology changes geometry, not the evidence for a complete field.")
 
 # %% [markdown]
 # ## When to Use Each Operation
@@ -614,9 +653,9 @@ print("\nFixed! Now we can see the complete place field")
 # **General recommendation:**
 # 1. Start without morphological operations
 # 2. Check if environment is connected (use `networkx.is_connected()`)
-# 3. If fragmented, try `dilate=True` first
-# 4. If still fragmented, add `fill_holes=True`
-# 5. Only use higher `bin_count_threshold` if you need very robust estimates
+# 3. Compare any missing connections against known accessible arena geometry
+# 4. Use a polygon/mask for real boundaries; apply morphology only when justified
+# 5. Keep observation support separate from the expanded geometry
 
 # %% [markdown]
 # ## Common Pitfalls
@@ -628,7 +667,7 @@ print("\nFixed! Now we can see the complete place field")
 # %%
 # Multiple rounds of dilation
 env_over_dilated = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, dilate=True, name="OverDilated"
+    positions=sparse_data, bin_size=5.0, dilate=True, name="OverDilated", units="cm"
 )
 
 # Apply dilation multiple times manually (not recommended!)
@@ -651,7 +690,8 @@ print("Morphological operations should be used conservatively.")
 # %% [markdown]
 # ### Pitfall 3: Forgetting to check connectivity
 #
-# Always verify your environment is connected before computing spatial paths or distances:
+# Check connected components before interpreting paths. Disconnected spaces
+# can be correct; paths between different components are unavailable.
 
 
 # %%
@@ -691,14 +731,15 @@ check_environment_quality(env_fixed)
 # - Can't compute occupancy-normalized rates for these bins
 # - May artificially smooth spatial patterns
 #
-# **Best practice**: Use morphological operations to establish connectivity, but mark these bins in your analysis and interpret carefully.
+# **Best practice**: Justify geometry against the arena and retain an explicit
+# occupancy/support mask. Smoothing into added space is a prediction, not an observation.
 
 # %% [markdown]
 # ## Key Takeaways
 #
 # 1. **Real data is sparse** - Animals don't sample uniformly, tracking can fail
-# 2. **Fragmentation breaks analyses** - Disconnected environments can't compute paths or distances
-# 3. **Morphological operations fix connectivity**:
+# 2. **Connectivity is an assumption** - Paths exist only within components
+# 3. **Morphological operations change geometry**:
 #    - `dilate=True` - Expand active regions
 #    - `fill_holes=True` - Fill enclosed gaps
 #    - `close_gaps=True` - Connect nearby fragments
@@ -709,7 +750,7 @@ check_environment_quality(env_fixed)
 #
 # ## Next Steps
 #
-# In the next notebook ([04_regions_of_interest.ipynb](../04_regions_of_interest/)), you'll learn:
+# In the next notebook ([04_regions_of_interest.ipynb](04_regions_of_interest.ipynb)), you'll learn:
 # - How to define named regions (goal locations, reward zones)
 # - Point vs polygon regions
 # - Querying spatial relationships
@@ -719,5 +760,5 @@ check_environment_quality(env_fixed)
 #
 # 1. Create extremely sparse data (remove 90% of samples) and find the minimal morphological operations needed
 # 2. Compare firing rate maps with and without morphological operations
-# 3. Find the optimal `bin_count_threshold` that gives you a connected environment
+# 3. Compare how thresholds change observed support and connected components
 # 4. Create a diagnostic function that recommends which operations to use

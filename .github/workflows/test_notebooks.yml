@@ -1,4 +1,4 @@
-name: Notebook regen smoke
+name: Notebook collection
 
 on:
   push:
@@ -10,36 +10,63 @@ on:
       - main
       - feat/researcher-first
 
-# Runs two representative notebooks end-to-end to catch silent regressions
-# in the example surface that ``test_doc_snippets`` (which only exercises
-# hand-curated snippets) wouldn't see. The choices are intentional:
-# - 11_place_field_analysis exercises ``Environment.from_samples`` →
-#   ``compute_spatial_rate`` → ``detect_place_fields`` → the metrics suite,
-#   the most commonly-failing axis in practice.
-# - 20_bayesian_decoding exercises the decode golden path
-#   (``decode_session``) plus the manual ``compute_spatial_rates`` →
-#   ``bin_spikes_in_time`` → ``decode_position`` path, so the decode
-#   tutorial can't silently drift.
+# Execute every tutorial in a fresh kernel. Optional desktop viewers and long
+# video exports remain opt-in inside the notebooks; the synthetic video and NWB
+# tutorials receive their required extras in the corresponding matrix groups.
 jobs:
-  re-execute-notebooks:
+  execute-notebooks:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: foundations
+            notebooks: examples/0[1-7]_*.ipynb
+            extras: ''
+          - group: operators
+            notebooks: examples/09_*.ipynb examples/10_*.ipynb
+            extras: ''
+          - group: encoding
+            notebooks: examples/08_*.ipynb examples/11_*.ipynb examples/12_*.ipynb examples/21_*.ipynb examples/22_*.ipynb examples/24_*.ipynb examples/25_*.ipynb
+            extras: ''
+          - group: behavior
+            notebooks: examples/13_*.ipynb examples/14_*.ipynb examples/15_*.ipynb
+            extras: ''
+          - group: visualization
+            notebooks: examples/16_*.ipynb examples/17_*.ipynb examples/18_*.ipynb
+            extras: --extra video
+          - group: real-data
+            notebooks: examples/19_*.ipynb examples/23_*.ipynb
+            extras: ''
+          - group: decoding-events-io
+            notebooks: examples/20_*.ipynb examples/26_*.ipynb examples/27_*.ipynb
+            extras: --extra nwb
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
-        with:
-          version: latest
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra notebooks
+        run: uv sync --extra dev --extra notebooks ${{ matrix.extras }}
 
-      - name: Re-execute 11_place_field_analysis.ipynb
+      - name: Check notebook sources, catalog and links
+        run: uv run pytest tests/docs/test_notebook_collection.py -n 0
+
+      - name: Cache the pinned public recording
+        if: matrix.group == 'real-data'
+        uses: actions/cache@v4
+        with:
+          path: data/j1620210710_02_r1_figure04_inputs.npz
+          key: j16-60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3
+
+      - name: Execute ${{ matrix.group }} notebooks
         env:
           MPLBACKEND: Agg
         run: |
@@ -48,15 +75,4 @@ jobs:
             --execute \
             --inplace \
             --ExecutePreprocessor.timeout=600 \
-            examples/11_place_field_analysis.ipynb
-
-      - name: Re-execute 20_bayesian_decoding.ipynb
-        env:
-          MPLBACKEND: Agg
-        run: |
-          uv run jupyter nbconvert \
-            --to notebook \
-            --execute \
-            --inplace \
-            --ExecutePreprocessor.timeout=600 \
-            examples/20_bayesian_decoding.ipynb
+            ${{ matrix.notebooks }}

@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Regions of Interest: Defining and Managing Spatial Regions
 #
+# **Estimated time**: 20-25 minutes
+#
+# **Prerequisites**: [01: basics](01_introduction_basics.ipynb), [02: layouts](02_layout_engines.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -23,11 +27,10 @@
 # - Define named regions of interest (ROIs) as points or polygons
 # - Add, remove, and update regions in an environment
 # - Query spatial relationships (bins in regions, distances to regions)
-# - Use regions for behavioral analysis (time in zone, entries/exits)
+# - Use regions to summarize time in zone and distances
 # - Save and load region definitions with JSON serialization
 # - Visualize regions overlaid on environments
 #
-# **Estimated time: 20-25 minutes**
 
 # %% [markdown]
 # ## Why Regions of Interest?
@@ -91,7 +94,7 @@ maze_boundary = maze_center.buffer(maze_radius)
 # Generate position data - animal searching for platform
 n_samples = 2000
 
-# Start from random edge locations (simulating starting positions)
+# Choose one random initial edge location; this is one toy biased trajectory.
 start_angles = np.random.choice([0, 90, 180, 270], size=n_samples)
 angles = np.deg2rad(start_angles + np.random.randn(n_samples) * 10)
 
@@ -130,6 +133,7 @@ print(f"Arena: {maze_radius * 2:.0f} cm diameter circular water maze")
 # %%
 # Create environment
 env = Environment.from_polygon(polygon=maze_boundary, bin_size=6.0, name="WaterMaze")
+env.units = "cm"
 
 print(env.info())
 
@@ -360,13 +364,7 @@ plt.show()
 # Get bins in target quadrant
 target_quadrant = env.regions["quadrant_SW"]
 
-# Find which bins are in this region
-bins_in_target = []
-for bin_idx in range(env.n_bins):
-    bin_center = env.bin_centers[bin_idx]
-    point = Point(bin_center[0], bin_center[1])
-    if target_quadrant.data.contains(point):
-        bins_in_target.append(bin_idx)
+bins_in_target = env.bins_in_region("quadrant_SW")
 
 print(f"Bins in target quadrant (SW): {len(bins_in_target)} / {env.n_bins} total")
 print(f"Percentage: {len(bins_in_target) / env.n_bins * 100:.1f}%")
@@ -379,37 +377,29 @@ print(f"Percentage: {len(bins_in_target) / env.n_bins * 100:.1f}%")
 # %%
 # Compute time in each quadrant
 dt = 0.05  # 50 ms per sample
+sample_times = np.arange(len(position_data)) * dt
+occupancy_seconds = env.occupancy(sample_times, position_data)
 
 quadrant_names = ["quadrant_NW", "quadrant_NE", "quadrant_SW", "quadrant_SE"]
 time_in_zone = {}
 
 for quad_name in quadrant_names:
-    quad_polygon = env.regions[quad_name].data
-
-    # Check which samples are in this quadrant
-    samples_in_quad = 0
-    for pos in position_data:
-        point = Point(pos[0], pos[1])
-        if quad_polygon.contains(point):
-            samples_in_quad += 1
-
-    time_in_zone[quad_name] = samples_in_quad * dt
-    print(
-        f"{quad_name}: {time_in_zone[quad_name]:.1f} seconds ({samples_in_quad} samples)"
-    )
+    bins = env.bins_in_region(quad_name)
+    time_in_zone[quad_name] = occupancy_seconds[bins].sum()
+    print(f"{quad_name}: {time_in_zone[quad_name]:.1f} observed seconds")
 
 total_time = sum(time_in_zone.values())
 print(f"\nTotal time: {total_time:.1f} seconds")
 
-# Check if animal learned
+# Quantify the planted preference; this simulation does not test memory.
 target_time = time_in_zone["quadrant_SW"]
 target_percentage = target_time / total_time * 100
 print(f"\nTime in target quadrant: {target_percentage:.1f}%")
-print("Chance level: 25%")
-if target_percentage > 35:
-    print("Result: Animal shows spatial memory!")
-else:
-    print("Result: No clear preference yet")
+print("Equal-area reference: 25% (not a statistical null or significance threshold)")
+print(
+    "The simulator was biased toward this quadrant; no learning or memory is inferred."
+)
+np.testing.assert_allclose(total_time, occupancy_seconds.sum())
 
 # %%
 # Visualize time in zone
@@ -423,7 +413,11 @@ bars = ax.bar(quadrant_labels, times, color=colors, edgecolor="black", linewidth
 
 # Add chance level line
 ax.axhline(
-    total_time / 4, color="red", linestyle="--", linewidth=2, label="Chance (25%)"
+    total_time / 4,
+    color="red",
+    linestyle="--",
+    linewidth=2,
+    label="Equal-area reference (25%)",
 )
 
 ax.set_ylabel("Time (seconds)")
@@ -493,7 +487,7 @@ ax.scatter(
 
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("Distance to Platform from Each Bin")
+ax.set_title("Euclidean Distance to Platform from Each Bin")
 ax.set_aspect("equal")
 ax.legend()
 plt.colorbar(scatter, ax=ax, label="Distance (cm)")
@@ -565,6 +559,7 @@ Path(temp_path).unlink()
 
 env.regions.update_region("platform", point=np.array([50, 50]))
 print("Updated platform location successfully using update_region()")
+print("The previously buffered platform_zone remains at its original location.")
 
 # %% [markdown]
 # ### Pitfall 2: Trying to overwrite existing regions
@@ -574,6 +569,10 @@ print("Updated platform location successfully using update_region()")
 # Correct approach: use update_region()
 env.regions.update_region("platform", point=np.array([50, 50]))
 print("Updated region successfully using update_region()")
+
+# Derived regions are independent definitions: remove and recreate when needed.
+env.regions.remove("platform_zone")
+env.regions.buffer("platform", distance=10.0, new_name="platform_zone")
 
 # %% [markdown]
 # ## Key Takeaways
@@ -588,7 +587,7 @@ print("Updated region successfully using update_region()")
 #
 # ## Next Steps
 #
-# In the next notebook ([05_track_linearization.ipynb](../05_track_linearization/)), you'll learn:
+# In the next notebook ([05_track_linearization.ipynb](05_track_linearization.ipynb)), you'll learn:
 # - 1D linearized tracks with GraphLayout
 # - Converting between N-D and linear coordinates
 # - Plus maze analysis example

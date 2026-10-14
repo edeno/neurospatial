@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 30-35 minutes
 #
-# **Prerequisites**: [08_spike_field_basics.ipynb](../08_spike_field_basics/)
+# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
 #
 # ## Learning Objectives
 #
@@ -30,7 +30,7 @@
 # - Compute single-cell spatial information metrics (Skaggs information, sparsity)
 # - Calculate field properties including size, centroid, and peak location
 # - Visualize place fields overlaid on spatial environments
-# - Analyze spatial alternation tasks on T-maze environments
+# - Compare planted spatial tuning in an open field and a T-maze
 # - Measure place field shift between sessions using Euclidean and geodesic distances
 # - Understand when to use Euclidean vs geodesic distance for shift measurement
 # - Use simulation tools to validate place field detection algorithms
@@ -62,9 +62,6 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
-
-# Set random seed for reproducibility
-np.random.seed(42)
 
 # %% [markdown]
 # ## Part 1: Generate Synthetic Data
@@ -112,7 +109,7 @@ positions, times = simulate_trajectory_ou(
     speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # Natural exploration smoothness
-    boundary_mode="reflect",  # Wrap at boundaries (avoids edge artifacts)
+    boundary_mode="reflect",  # Reflect at boundaries
     seed=42,
     speed_units="cm",
 )
@@ -157,7 +154,7 @@ spike_times = generate_poisson_spikes(
     firing_rate_at_position,
     times,
     refractory_period=0.002,  # 2ms refractory period
-    seed=42,
+    seed=11112,
 )
 
 print(f"Generated {len(spike_times)} spikes")
@@ -329,16 +326,16 @@ for i, field_bins in enumerate(place_fields):
 # **Skaggs Spatial Information** (Skaggs et al., 1993)
 # - Measures how much information (in bits) the firing rate conveys about position
 # - Typical range: 0-3+ bits/spike
-# - Higher values = better place cell
+# - Higher values indicate greater observed spatial selectivity; sparse sampling can inflate them
 #
 # **Sparsity** (Skaggs et al., 1996)
 # - Measures how focally a cell fires in space
-# - Range: [0, 1], where 0 = fires everywhere, 1 = fires in single location
+# - Range: [0, 1]; low values indicate concentrated firing and 1 indicates uniform firing
 # - Typical place cells: 0.1-0.5
 
 # %%
 # Compute occupancy for metrics
-occupancy = env.occupancy(times, positions, return_seconds=True)
+occupancy = result.occupancy
 
 # Skaggs spatial information (bits/spike)
 spatial_info = spatial_information(firing_rate, occupancy, base=2.0)
@@ -350,12 +347,8 @@ print("\nSpatial Coding Metrics:")
 print(f"  Skaggs Information: {spatial_info:.3f} bits/spike")
 print(f"  Sparsity: {sparsity_score:.3f}")
 print("\nInterpretation:")
-print(
-    f"  - Spatial information > 1.0: Strong spatial coding (this cell: {'YES' if spatial_info > 1.0 else 'NO'})"
-)
-print(
-    f"  - Sparsity > 0.2: Focal firing (this cell: {'YES' if sparsity_score > 0.2 else 'NO'})"
-)
+print("  Information is descriptive; a fixed cutoff does not establish a place cell.")
+print("  Lower sparsity indicates firing concentrated in fewer locations.")
 
 # %% [markdown]
 # ## Part 6: Field Stability
@@ -363,7 +356,8 @@ print(
 # Assess whether the place field is stable across time by splitting the session in half
 # and computing the correlation between firing rate maps.
 #
-# High correlation (> 0.7) indicates a stable place field.
+# Correlation describes agreement over jointly observed bins. Its sampling
+# variability depends on coverage and spike count; 0.7 is not a universal test.
 
 # %%
 # Split session in half
@@ -402,9 +396,7 @@ print("\nField Stability:")
 print(f"  Pearson correlation: {stability_pearson:.3f}")
 print(f"  Spearman correlation: {stability_spearman:.3f}")
 print("\nInterpretation:")
-print(
-    f"  - Correlation > 0.7: Stable field (this cell: {'YES' if stability_pearson > 0.7 else 'NO'})"
-)
+print("  This is descriptive split-half agreement, not a significance test.")
 
 # Visualize both halves
 fig, axes = plt.subplots(1, 3, figsize=(18, 5), constrained_layout=True)
@@ -491,7 +483,7 @@ def analyze_place_cell(env, spike_times, times, positions):
         )
 
     # Step 4: Compute spatial metrics
-    occupancy = env.occupancy(times, positions, return_seconds=True)
+    occupancy = result.occupancy
     spatial_info = spatial_information(firing_rate, occupancy, base=2.0)
     sparsity_score = sparsity(firing_rate, occupancy)
 
@@ -542,7 +534,7 @@ print(f"Spatial Information: {results['spatial_information']:.3f} bits/spike")
 print(f"Sparsity: {results['sparsity']:.3f}")
 print(f"Stability: {results['stability']:.3f}")
 print(
-    f"\nClassification: {'PLACE CELL' if results['spatial_information'] > 1.0 and results['n_fields'] > 0 else 'NOT A PLACE CELL'}"
+    "\nThese metrics and segmented regions are descriptive; no cell-type test was run."
 )
 
 # %% [markdown]
@@ -550,7 +542,9 @@ print(
 #
 # ## Part 8: Place Remapping in Different Environments
 #
-# **Place remapping** occurs when place cells change their firing patterns between different environments or contexts. This demonstrates how neurospatial handles irregular environments like T-mazes and how to quantify remapping.
+# **Place remapping** concerns changed tuning across environments or contexts.
+# Here we explicitly plant different model centers to demonstrate two geometries.
+# This single-cell example does not infer population-wide global remapping.
 #
 # ### Types of Remapping:
 #
@@ -778,13 +772,13 @@ axes[1].legend(fontsize=11)
 plt.show()
 
 print("\n" + "=" * 60)
-print("REMAPPING DETECTED")
+print("PLANTED CHANGE IN SPATIAL TUNING")
 print("=" * 60)
 print(f"Open field center: {field_center}")
 print(f"T-maze center:     {tmaze_field_center}")
 print(f"Distance moved:    {np.linalg.norm(field_center - tmaze_field_center):.1f} cm")
-print("\nThis demonstrates GLOBAL REMAPPING - the place field")
-print("completely reorganized in the new environment!")
+print("\nThe simulation explicitly changes the preferred location between geometries.")
+print("A single changed model does not establish population-wide global remapping.")
 
 # %% [markdown]
 # ### Quantify Remapping with Spatial Correlation
@@ -796,7 +790,10 @@ print("completely reorganized in the new environment!")
 # 2. Interpolate firing rates to common positions
 # 3. Compute correlation
 #
-# **Note**: For very different geometries (like open field vs T-maze), spatial correlation is less meaningful. Population vector correlation (across multiple cells) is more appropriate.
+# Coordinates must represent the same physical reference frame. Here nearest-bin
+# matching is an illustrative comparison over the geometric overlap, not a
+# validated registration or a statistical test for remapping. Population analyses
+# also require matched units and an explicit correspondence between locations.
 
 
 # %%
@@ -848,9 +845,8 @@ print("\nSpatial Correlation (Remapping Metric):")
 print(f"  Correlation: {spatial_corr:.3f}")
 print(f"  Overlapping bins: {n_overlap}")
 print("\nInterpretation:")
-print("  > 0.7: Same place field (stable)")
-print("  0.3-0.7: Partial remapping")
-print("  < 0.3: Complete remapping (this cell)")
+print("  Correlation describes similarity over the matched overlap only.")
+print("  Its magnitude alone does not distinguish global, rate or partial remapping.")
 
 # %% [markdown]
 # ---
@@ -1043,7 +1039,7 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
     print(f"Measured shift:      {shift_distance:.2f} cm")
     print(f"Ground truth shift:  {ground_truth_shift:.2f} cm")
     print(f"Measurement error:   {error:.2f} cm")
-    print(f"Accuracy:            {(1 - error / ground_truth_shift) * 100:.1f}%")
+    print("This single simulated comparison is not a general accuracy benchmark.")
 
 # %%
 # Visualize the shift
@@ -1271,7 +1267,9 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
     print(f"  Euclidean distance: {shift_euclidean:.1f} cm (straight line)")
     print(f"  Geodesic distance: {shift_geodesic:.1f} cm (actual path through maze)")
     print(f"  Geodesic is {shift_geodesic - shift_euclidean:.1f} cm longer!")
-    print("\n  For mazes and complex environments, always use geodesic distance!")
+    print(
+        "\n  Use geodesic distance when the scientific question concerns travel along the maze."
+    )
 
 # %%
 # Visualize both measurements
@@ -1356,7 +1354,9 @@ print("=" * 60)
 print("For T-mazes, plus-mazes, or any environment with barriers:")
 print("  - Euclidean distance measures straight-line distance (ignores walls)")
 print("  - Geodesic distance measures actual path distance (respects maze structure)")
-print("\nAlways use geodesic distance for complex environments!")
+print(
+    "\nChoose graph distance for travel-constrained questions; use Euclidean distance for displacement."
+)
 
 # %% [markdown]
 # ### When to Use Euclidean vs Geodesic Distance

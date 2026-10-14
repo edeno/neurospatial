@@ -36,7 +36,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 
 # %% [markdown]
 # ## Setup
@@ -68,7 +68,7 @@ apply_style(figsize=(12, 8))
 #
 # We construct a 600-second session with rewards delivered roughly every
 # 20 seconds. The neuron fires at baseline ~2 Hz, with a transient
-# response of ~30 Hz peaking ~150 ms after each reward.
+# response peaking near 32 Hz (2 Hz baseline + 30 Hz bump) peaking ~150 ms after each reward.
 
 # %%
 rng = np.random.default_rng(42)
@@ -93,7 +93,8 @@ for r_t in reward_times:
     dt_to_event = times - (r_t + 0.15)
     firing_rate += peak_rate * np.exp(-0.5 * (dt_to_event / response_sigma) ** 2)
 
-# Inhomogeneous Poisson sampling
+# Bernoulli approximation to an inhomogeneous Poisson process (1 ms bins).
+# The maximum event probability is about 0.032; keep dt small for this approximation.
 spike_mask = rng.random(len(times)) < firing_rate * dt
 spike_times = times[spike_mask]
 print(
@@ -117,6 +118,7 @@ result = peri_event_histogram(
     reward_times,
     window=window,
     bin_size=bin_size,
+    spike_window=(0.0, duration),  # recorded exposure, not inferred from spikes
 )
 
 print(f"PSTH: {result.n_events} events x {len(result.bin_centers)} bins")
@@ -133,7 +135,14 @@ print(f"Baseline (window start): {result.firing_rate[:5].mean():.2f} Hz")
 # relative to each event - the natural shape for a raster plot.
 
 # %%
-aligned = align_spikes_to_events(spike_times, reward_times, window=window)
+# This simulation places every event well inside recording support. On real
+# data construct the same full-window cohort for the raster/PSTH.
+# Here recording support is one complete [0, duration) interval.
+keep_events = (reward_times + window[0] >= 0.0) & (reward_times + window[1] <= duration)
+retained_events = reward_times[keep_events]
+aligned = align_spikes_to_events(spike_times, retained_events, window=window)
+assert len(aligned) == result.n_events
+print(f"Dropped events with incomplete exposure: {result.n_events_dropped}")
 print(f"Aligned: {len(aligned)} trials")
 print(f"Trial 0: {len(aligned[0])} spikes")
 print(f"Trial 5: {len(aligned[5])} spikes")
@@ -262,7 +271,7 @@ ax.plot(
     linewidth=2,
     alpha=0.7,
 )
-for r_t in reward_times[:3]:
+for r_t in reward_times[reward_times <= 30.0]:
     ax.axvline(r_t, color="tab:red", linewidth=1.0, linestyle="--", alpha=0.5)
 ax.axhline(0.0, color="gray", linewidth=0.5)
 ax.set_xlabel("Time (s)")
@@ -275,8 +284,11 @@ plt.show()
 
 # %% [markdown]
 # The clipped regressor saturates outside ±2 s of any reward, which is
-# usually what you want in a GLM - the response is event-locked and
-# you don't want far-from-event samples to dominate the design matrix.
+# one possible feature choice, not a fitted response model. Nearest-event time
+# jumps at midpoints between events, and includes future events before onset.
+# Use time since the last event for a causal predictor, and use held-out data
+# to choose a basis and clipping window. This scalar alone need not describe
+# the transient firing-rate shape.
 
 # %% [markdown]
 # ## Summary
@@ -288,7 +300,9 @@ plt.show()
 #   events, then average across trials
 # - Combining a raster (per-trial detail) with a PSTH (trial average)
 #   is the canonical event-locked summary plot
-# - SEM across trials is the natural uncertainty band for a PSTH
+# - SEM describes variability across retained events under independence assumptions;
+#   correlated or overlapping trials need an appropriate resampling design.
+# - Full-window recording support prevents absent exposure from becoming silence.
 # - For GLMs, a continuous time-to-event regressor (optionally clipped)
 #   captures event-locked structure without binning
 #
@@ -308,4 +322,4 @@ plt.show()
 #   units
 # - Combine event regressors with spatial regressors in a GLM
 #   (see ``encoding`` and ``ops.basis`` for spatial basis functions)
-# - For lap-aligned PSTHs, see [14_behavioral_segmentation.ipynb](../14_behavioral_segmentation/)
+# - For lap-aligned PSTHs, see [14_behavioral_segmentation.ipynb](14_behavioral_segmentation.ipynb)

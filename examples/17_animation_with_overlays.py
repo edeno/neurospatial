@@ -28,7 +28,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [16_field_animation.ipynb](../16_field_animation/)
+# **Prerequisites**: [16_field_animation.ipynb](16_field_animation.ipynb)
 #
 # ## Learning Objectives
 #
@@ -56,10 +56,17 @@
 # ```
 #
 # **Note**: HTML backend supports position and region overlays only (no pose or head direction).
-
+#
+# The default run creates static previews and temporary demo artifacts. Desktop
+# viewers and expensive final exports require an explicit opt-in below, even
+# when their packages are installed. Re-run cells after changing a flag.
+#
 # %%
+import sys
+import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import Point
 
@@ -72,11 +79,24 @@ from neurospatial.animation import (
 )
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 
+RUN_NAPARI = False
+RUN_VIDEO_EXPORT = False
+RUN_WIDGET = False  # optional notebook controls, also disabled for batch execution
+
 # Set random seed for reproducibility
 np.random.seed(42)
 
+_here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+from _style import apply_style
+
+apply_style(figsize=(12, 8))
+
 # Output directory
-output_dir = Path.cwd()
+output_dir = Path(tempfile.mkdtemp(prefix="neurospatial-example-17-"))
 print(f"Output directory: {output_dir}")
 
 # %% [markdown]
@@ -121,7 +141,8 @@ theta = t + np.random.randn(n_frames) * 0.1  # Angle with noise
 trajectory = np.column_stack([50 + r * np.cos(theta), 50 + r * np.sin(theta)])
 
 # Head direction (tangent to spiral)
-head_angles = theta + np.pi / 2  # Perpendicular to radius
+velocity = np.gradient(trajectory, axis=0)
+head_angles = np.arctan2(velocity[:, 1], velocity[:, 0])  # direction of sampled motion
 
 print(f"Trajectory: {n_frames} frames")
 print(f"  Position range: [{trajectory.min():.1f}, {trajectory.max():.1f}] cm")
@@ -167,9 +188,9 @@ print(f"Skeleton: {skeleton.n_edges} edges")
 print("  Node colors and edge styling defined in Skeleton object")
 
 # %%
-print("\nSimulating place field that tracks with animal...")
+print("\nSimulating synthetic moving activity bump...")
 
-# Place field centered on animal position at each frame
+# Synthetic activity centered on position (a.u.), not an estimated place-cell field
 fields = []
 for i in range(n_frames):
     # Find bin closest to animal position
@@ -196,6 +217,27 @@ frame_times = np.arange(n_frames) / 10.0  # seconds
 print(f"Frame times: {frame_times[0]:.2f}s to {frame_times[-1]:.2f}s (10 Hz)")
 
 # %% [markdown]
+# Static snapshots make the synthetic field/trajectory/pose relationship visible
+# without a GUI. Angles are radians in Cartesian coordinates (0=east, +π/2=north).
+# The moving bump is a visualization fixture in arbitrary units, not an encoding model.
+
+# %%
+fig, axes = plt.subplots(1, 3, figsize=(13, 4), constrained_layout=True)
+for ax, index in zip(axes, [0, n_frames // 2, n_frames - 1], strict=True):
+    env.plot_field(
+        fields[index],
+        ax=ax,
+        vmin=0,
+        vmax=float(fields.max()),
+        colorbar_label="Synthetic activity (a.u.)",
+    )
+    ax.plot(trajectory[: index + 1, 0], trajectory[: index + 1, 1], "r-", lw=1)
+    pose = np.array([pose_data[name][index] for name in ["tail", "body", "nose"]])
+    ax.plot(pose[:, 0], pose[:, 1], "wo-", markeredgecolor="black", lw=2)
+    ax.set_title(f"t={frame_times[index]:.1f} s")
+plt.show()
+
+# %% [markdown]
 # ## Example 1: Position Overlay with Trail
 #
 # Overlay the animal's trajectory on the animated field with a decaying trail showing recent positions.
@@ -209,6 +251,7 @@ print(f"Frame times: {frame_times[0]:.2f}s to {frame_times[-1]:.2f}s (10 Hz)")
 # Create position overlay with trail
 position_overlay = PositionOverlay(
     positions=trajectory,
+    times=frame_times,
     color="red",
     size=12.0,
     trail_length=10,  # Show last 10 frames as trail
@@ -219,28 +262,31 @@ print(f"  Trajectory: {trajectory.shape[0]} frames")
 print("  Trail length: 10 frames (decaying alpha)")
 print("  Color: red, Size: 12.0")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
-    viewer = env.animate_fields(
-        fields,
-        overlays=[position_overlay],
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Position Overlay with Trail",
-    )
+        print("\nLaunching Napari viewer...")
+        viewer = env.animate_fields(
+            fields,
+            overlays=[position_overlay],
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Position Overlay with Trail",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Watch the red trail follow the animal")
+        print("✓ Napari viewer opened")
+        print("  Watch the red trail follow the animal")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 2: Pose Tracking with Skeleton
@@ -258,6 +304,7 @@ except ImportError:
 # Note: Skeleton styling (edge_color, edge_width) comes from the Skeleton object
 bodypart_overlay = BodypartOverlay(
     data=pose_data,
+    times=frame_times,
     skeleton=skeleton,  # Skeleton object with nodes, edges, and styling
     colors={"nose": "yellow", "body": "red", "tail": "blue"},
 )
@@ -270,28 +317,31 @@ print(
 )
 print("  Node colors: nose=yellow, body=red, tail=blue")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
-    viewer = env.animate_fields(
-        fields,
-        overlays=[bodypart_overlay],
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Pose Tracking with Skeleton",
-    )
+        print("\nLaunching Napari viewer...")
+        viewer = env.animate_fields(
+            fields,
+            overlays=[bodypart_overlay],
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Pose Tracking with Skeleton",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Watch the skeleton follow the animal pose")
+        print("✓ Napari viewer opened")
+        print("  Watch the skeleton follow the animal pose")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 3: Head Direction Visualization
@@ -307,6 +357,7 @@ except ImportError:
 # Create head direction overlay (angles in radians)
 head_direction_overlay = HeadDirectionOverlay(
     headings=head_angles,
+    times=frame_times,
     color="yellow",
     length=15.0,  # Arrow length in cm
 )
@@ -315,30 +366,33 @@ print("Example 3: Head Direction Visualization")
 print(f"  Head angles: {head_angles.shape[0]} frames")
 print("  Arrow color: yellow, Length: 15.0 cm")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
+        print("\nLaunching Napari viewer...")
 
-    # Combine position + head direction overlays
-    viewer = env.animate_fields(
-        fields,
-        overlays=[position_overlay, head_direction_overlay],
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Position + Head Direction",
-    )
+        # Combine position + head direction overlays
+        viewer = env.animate_fields(
+            fields,
+            overlays=[position_overlay, head_direction_overlay],
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Position + Head Direction",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Watch the yellow arrow show heading direction")
+        print("✓ Napari viewer opened")
+        print("  Watch the yellow arrow show heading direction")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 4: Multi-Animal Tracking
@@ -354,9 +408,9 @@ except ImportError:
 print("Example 4: Multi-Animal Tracking")
 print("\nSimulating second animal...")
 
-# Second animal with offset trajectory
-trajectory_2 = trajectory + np.array([10, -10])  # Offset spatially
-trajectory_2 = np.clip(trajectory_2, 5, 95)  # Keep in bounds
+# A mirrored synthetic trajectory stays inside the same circular arena.
+# A rectangular clip would not guarantee circular-arena membership.
+trajectory_2 = np.column_stack([100.0 - trajectory[:, 0], trajectory[:, 1]])
 
 # Create overlays for both animals
 animal1_overlay = PositionOverlay(
@@ -368,30 +422,33 @@ animal2_overlay = PositionOverlay(
 )
 
 print("  Animal 1: red")
-print("  Animal 2: blue (offset trajectory)")
+print("  Animal 2: blue (mirrored trajectory)")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
-    viewer = env.animate_fields(
-        fields,
-        overlays=[animal1_overlay, animal2_overlay],  # Multiple overlays
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Multi-Animal Tracking",
-    )
+        print("\nLaunching Napari viewer...")
+        viewer = env.animate_fields(
+            fields,
+            overlays=[animal1_overlay, animal2_overlay],  # Multiple overlays
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Multi-Animal Tracking",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Watch both animals explore simultaneously")
+        print("✓ Napari viewer opened")
+        print("  Watch both animals explore simultaneously")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 5: Regions Overlay with Spatial Fields
@@ -409,30 +466,33 @@ print("Example 5: Regions Overlay")
 print(f"  Showing region: {list(env.regions.keys())}")
 print("  Region alpha: 0.3 (30% transparent)")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
-    viewer = env.animate_fields(
-        fields,
-        overlays=[position_overlay],
-        show_regions=True,  # Show all regions
-        region_alpha=0.3,  # 30% transparent
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Position + Reward Region",
-    )
+        print("\nLaunching Napari viewer...")
+        viewer = env.animate_fields(
+            fields,
+            overlays=[position_overlay],
+            show_regions=True,  # Show all regions
+            region_alpha=0.3,  # 30% transparent
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Position + Reward Region",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Watch the animal approach the reward region")
+        print("✓ Napari viewer opened")
+        print("  Watch the animal approach the reward region")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 6: Mixed-Rate Temporal Alignment
@@ -442,8 +502,8 @@ except ImportError:
 # **Key features**:
 # - Overlay `times` parameter specifies timestamps for each frame
 # - `frame_times` parameter specifies field frame timestamps
-# - Linear interpolation automatically aligns overlay to field frames
-# - Works even when overlay and fields have different sampling rates
+# - Interpolation resamples known timestamps; it does not synchronize separate clocks
+# - Use a shared clock; split observation gaps before interpolation
 #
 # **Example**: Position tracked at 120 Hz, fields computed at 10 Hz
 
@@ -457,7 +517,7 @@ fps_high = 120  # Hz
 n_samples_high = int(duration * fps_high)  # 600 samples
 
 # Generate high-frequency trajectory
-t_high = np.linspace(0, duration, n_samples_high)
+t_high = np.arange(n_samples_high) / fps_high
 theta_high = t_high * 2 * np.pi + np.random.randn(n_samples_high) * 0.05
 r_high = 20 + 15 * np.sin(t_high * 3)
 
@@ -471,13 +531,13 @@ print(f"  Position tracking: {n_samples_high} samples at {fps_high} Hz")
 # Low-frequency fields (10 Hz)
 fps_low = 10  # Hz
 n_frames_low = int(duration * fps_low)  # 50 frames
-frame_times = np.linspace(0, duration, n_frames_low)
+mixed_frame_times = np.arange(n_frames_low) / fps_low
 
 print(f"  Field computation: {n_frames_low} frames at {fps_low} Hz")
 
 # Compute fields at low frequency
 fields_low_freq = []
-for t in frame_times:
+for t in mixed_frame_times:
     # Find closest high-freq position
     idx = np.argmin(np.abs(timestamps_high - t))
     pos = trajectory_high_freq[idx : idx + 1]
@@ -503,28 +563,31 @@ position_overlay_timed = PositionOverlay(
 print("\n✓ Overlay will be interpolated to match field frame times")
 print("  (Linear interpolation: 120 Hz → 10 Hz)")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("\nLaunching Napari viewer...")
-    viewer = env.animate_fields(
-        fields_low_freq,
-        overlays=[position_overlay_timed],
-        frame_times=frame_times,  # Explicit field timestamps
-        backend="napari",
-        speed=1.0,
-        title="Mixed-Rate Alignment (120 Hz → 10 Hz)",
-    )
+        print("\nLaunching Napari viewer...")
+        viewer = env.animate_fields(
+            fields_low_freq,
+            overlays=[position_overlay_timed],
+            frame_times=mixed_frame_times,  # independent from the original example clock
+            backend="napari",
+            speed=1.0,
+            title="Mixed-Rate Alignment (120 Hz → 10 Hz)",
+        )
 
-    print("✓ Napari viewer opened")
-    print("  Position automatically aligned to field frames")
+        print("✓ Napari viewer opened")
+        print("  Position automatically aligned to field frames")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 7: Backend Comparison
@@ -545,33 +608,36 @@ except ImportError:
 # %%
 print("Example 7a: Napari Backend (Full Support)")
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    # All overlay types supported
-    viewer = env.animate_fields(
-        fields,
-        overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
-        show_regions=True,
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Napari: All Overlays",
-    )
+        # All overlay types supported
+        viewer = env.animate_fields(
+            fields,
+            overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
+            show_regions=True,
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Napari: All Overlays",
+        )
 
-    print("✓ Napari: Position + Pose + Head Direction + Regions")
+        print("✓ Napari: Position + Pose + Head Direction + Regions")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("⊗ Napari not available")
+    except ImportError:
+        print("⊗ Napari not available")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %%
 print("Example 7b: Video Backend (Full Support)")
 
-if check_ffmpeg_available():
+if RUN_VIDEO_EXPORT and check_ffmpeg_available():
     # All overlay types supported
     output_path = env.animate_fields(
         fields,
@@ -585,7 +651,9 @@ if check_ffmpeg_available():
     )
     print(f"✓ Video: Saved to {output_path}")
 else:
-    print("⊗ ffmpeg not available for video export")
+    print(
+        "⊗ Video export disabled by default or ffmpeg unavailable (RUN_VIDEO_EXPORT=True)"
+    )
 
 # %%
 print("Example 7c: HTML Backend (Position + Regions Only)")
@@ -609,25 +677,28 @@ print("  (Position + Regions rendered; pose/head direction not supported)")
 # %%
 print("Example 7d: Widget Backend (Full Support)")
 
-try:
-    from IPython import get_ipython
+if RUN_WIDGET:
+    try:
+        from IPython import get_ipython
 
-    if get_ipython() is not None:
-        # All overlay types supported
-        widget = env.animate_fields(
-            fields,
-            overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
-            show_regions=True,
-            frame_times=frame_times,
-            backend="widget",
-            speed=1.0,
-        )
-        print("✓ Widget: Position + Pose + Head Direction + Regions")
-    else:
-        print("⊗ Not in Jupyter notebook")
+        if get_ipython() is not None:
+            # All overlay types supported
+            widget = env.animate_fields(
+                fields,
+                overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
+                show_regions=True,
+                frame_times=frame_times,
+                backend="widget",
+                speed=1.0,
+            )
+            print("✓ Widget: Position + Pose + Head Direction + Regions")
+        else:
+            print("⊗ Not in Jupyter notebook")
 
-except ImportError:
-    print("⊗ IPython/ipywidgets not available")
+    except ImportError:
+        print("⊗ IPython/ipywidgets not available")
+else:
+    print("Optional viewer skipped; set RUN_WIDGET=True to enable it.")
 
 # %% [markdown]
 # ## Key Takeaways
@@ -652,8 +723,8 @@ except ImportError:
 #
 # - Add `times` parameter to overlay for timestamps
 # - Add `frame_times` parameter to `animate_fields()` for field timestamps
-# - Linear interpolation automatically aligns overlay to field frames
-# - Works even when overlay and fields have different sampling rates
+# - Interpolation resamples known timestamps; it does not synchronize separate clocks
+# - Use a shared clock; split observation gaps before interpolation
 #
 # ### Backend Capabilities
 #
@@ -672,12 +743,12 @@ except ImportError:
 #
 # ```python
 # # Simple trajectory overlay
-# from neurospatial import PositionOverlay
+# from neurospatial.animation import PositionOverlay
 # overlay = PositionOverlay(positions=trajectory, color="red", trail_length=10)
 # env.animate_fields(fields, frame_times=frame_times, overlays=[overlay], backend="napari")
 #
 # # Pose with skeleton
-# from neurospatial import BodypartOverlay
+# from neurospatial.animation import BodypartOverlay
 # from neurospatial.animation import Skeleton
 # skeleton = Skeleton(
 #     name="mouse",
@@ -735,5 +806,5 @@ except ImportError:
 # - Use temporal alignment for multi-modal data (tracking + neural recordings)
 #
 # For more details, see:
-# - `docs/animation_overlays.md` - Complete overlay documentation
-# - `examples/16_field_animation.ipynb` - Animation backends without overlays
+# - [18: video overlays](18_video_overlay.ipynb) — calibration and synchronized video
+# - [16: field animation](16_field_animation.ipynb) — backends without overlays

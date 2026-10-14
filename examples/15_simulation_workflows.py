@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 30-40 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 #
 # ## Learning Objectives
 #
@@ -70,7 +70,9 @@
 
 # %%
 # Import all simulation functions
+import sys
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -100,6 +102,15 @@ from neurospatial.simulation import (
 # Set random seed for reproducibility
 np.random.seed(42)
 
+_here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+from _style import apply_style
+
+apply_style(figsize=(12, 8))
+
 # %% [markdown]
 # ## 2. Quick Start with Pre-Configured Sessions
 #
@@ -108,7 +119,7 @@ np.random.seed(42)
 # %%
 # Generate a complete open field session in one line
 session = open_field_session(
-    duration=10.0,  # 10 seconds (short for demo)
+    duration=120.0,  # enough exploration for an informative overview
     arena_size=100.0,  # 100 cm square arena
     bin_size=2.0,  # 2 cm spatial bins
     n_place_cells=20,  # 20 place cells
@@ -289,7 +300,7 @@ spike_trains = generate_population_spikes(
     positions=positions,
     times=times,
     refractory_period=0.002,  # 2 ms refractory period
-    seed=42,
+    seed=142,  # independent from trajectory seed 42
     show_progress=False,  # Disable progress bar for cleaner output
 )
 
@@ -313,7 +324,9 @@ plt.show()
 # %% [markdown]
 # ## 4. All Pre-Configured Examples
 #
-# The simulation subpackage provides several pre-configured session types for common experimental paradigms.
+# The following short sessions demonstrate API construction. Ten seconds
+# usually does not cover an arena or estimate tuning reliably; the validation
+# session below is longer and still requires inspecting coverage and spike counts.
 
 # %% [markdown]
 # ### 4.1 Open Field Session
@@ -322,10 +335,10 @@ plt.show()
 
 # %%
 open_field = open_field_session(
-    duration=10.0,
+    duration=300.0,
     arena_size=100.0,
-    bin_size=2.0,
-    n_place_cells=15,
+    bin_size=4.0,
+    n_place_cells=8,
     seed=100,
 )
 
@@ -430,32 +443,49 @@ print(report["summary"])
 
 # Check if validation passed
 if report["passed"]:
-    print("\n✓ Validation PASSED - Place field detection is working correctly!")
+    print(
+        "\nRecovery met this report's error/correlation thresholds for this realization."
+    )
 else:
-    print("\n✗ Validation FAILED - Check detection parameters")
+    print(
+        "\nRecovery did not meet the thresholds; inspect coverage, counts and estimator choices."
+    )
 
 # %% [markdown]
 # ### Examine Validation Metrics
 #
-# The validation report contains detailed metrics for each cell:
+# The report evaluates recovery for this finite sample and chosen thresholds;
+# it is not a proof that an estimator is correct. Unvisited fields and silent
+# units can produce missing metrics. Report their number alongside finite values.
 
 # %%
 print("Validation metrics:")
+print(
+    f"Finite center errors: {np.isfinite(report['center_errors']).sum()}/{len(report['center_errors'])}"
+)
+print(
+    f"Finite correlations: {np.isfinite(report['correlations']).sum()}/{len(report['correlations'])}"
+)
 print(f"  Center errors: {report['center_errors'][:5]} cm (first 5 cells)")
-print(f"  Mean center error: {np.mean(report['center_errors']):.2f} cm")
-print(f"  Mean correlation: {np.mean(report['correlations']):.3f}")
+print(f"  Mean center error: {np.nanmean(report['center_errors']):.2f} cm")
+print(f"  Mean correlation: {np.nanmean(report['correlations']):.3f}")
 
 # Visualize error distribution
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
 # Center errors
-axes[0].hist(report["center_errors"], bins=10, edgecolor="black", alpha=0.7)
+axes[0].hist(
+    np.asarray(report["center_errors"])[np.isfinite(report["center_errors"])],
+    bins=10,
+    edgecolor="black",
+    alpha=0.7,
+)
 axes[0].axvline(
-    np.mean(report["center_errors"]),
+    np.nanmean(report["center_errors"]),
     color="red",
     linestyle="--",
     linewidth=2,
-    label=f"Mean: {np.mean(report['center_errors']):.2f} cm",
+    label=f"Mean: {np.nanmean(report['center_errors']):.2f} cm",
 )
 axes[0].set_xlabel("Center error (cm)")
 axes[0].set_ylabel("Count")
@@ -464,13 +494,18 @@ axes[0].legend()
 axes[0].grid(True, alpha=0.3)
 
 # Correlations
-axes[1].hist(report["correlations"], bins=10, edgecolor="black", alpha=0.7)
+axes[1].hist(
+    np.asarray(report["correlations"])[np.isfinite(report["correlations"])],
+    bins=10,
+    edgecolor="black",
+    alpha=0.7,
+)
 axes[1].axvline(
-    np.mean(report["correlations"]),
+    np.nanmean(report["correlations"]),
     color="red",
     linestyle="--",
     linewidth=2,
-    label=f"Mean: {np.mean(report['correlations']):.3f}",
+    label=f"Mean: {np.nanmean(report['correlations']):.3f}",
 )
 axes[1].set_xlabel("Rate map correlation")
 axes[1].set_ylabel("Count")
@@ -532,7 +567,7 @@ spikes_right = generate_poisson_spikes(
     firing_rate=pc_right.firing_rate(lap_positions, lap_times),
     times=lap_times,
     refractory_period=0.002,
-    seed=200,
+    seed=1200,  # independent spike-sampling stream
 )
 
 print(f"Direction-selective cell: {len(spikes_right)} spikes")
@@ -602,7 +637,7 @@ spikes_speed = generate_poisson_spikes(
     firing_rate=pc_speed.firing_rate(speed_positions, speed_times),
     times=speed_times,
     refractory_period=0.002,
-    seed=201,
+    seed=1201,  # independent from trajectory seed 201
 )
 
 # Compute actual speed for visualization
@@ -669,7 +704,7 @@ spikes_boundary = generate_poisson_spikes(
     firing_rate=bc_south.firing_rate(bc_positions, bc_times),
     times=bc_times,
     refractory_period=0.002,
-    seed=202,
+    seed=1202,  # independent from trajectory seed 202
 )
 
 print(f"Boundary vector cell: {len(spikes_boundary)} spikes")
@@ -688,9 +723,7 @@ print(
 # ### 7.1 Choose Appropriate Distance Metrics
 #
 # - **Euclidean** (fast): Use for open field environments without barriers
-#   - ~10 ms for 6000 positions
 # - **Geodesic** (slow but accurate): Use for complex environments with walls
-#   - ~100x slower than Euclidean
 #   - Precomputes distance field once in `__init__()`
 
 # %%
@@ -743,6 +776,8 @@ print(f"Identical sessions with same seed: {spikes_match}")
 # - **Duration**: Longer simulations provide better coverage but take more time
 #   - 60-180s typical for open field
 #   - 120-300s for grid cells (need more coverage)
+# These durations are examples, not guarantees of sufficient coverage. Inspect
+# occupancy and spikes per field before drawing conclusions.
 # - **Time step (dt)**: Balance accuracy vs performance
 #   - 0.01s (10 ms) is usually sufficient
 #   - Smaller dt needed for fast movements or high frequencies
@@ -793,9 +828,11 @@ print(f"Generated {len(sessions)} sessions in batch")
 #
 # - Use **high-level API** for most applications (faster, cleaner)
 # - Use **low-level API** for custom models and fine-grained control
-# - Always **set seeds** for reproducible results
-# - Choose **Euclidean distance** for speed, **geodesic** for accuracy
-# - Use **validation** to verify neurospatial's analysis functions
+# - Use **independent seeds** for stimulus trajectories and spike sampling
+#   when calling low-level functions; reuse a high-level session seed only to
+#   reproduce the same complete simulation.
+# - Choose **Euclidean distance** for speed, **geodesic** to respect barriers/topology
+# - Use **validation** to inspect recovery for a specified model and observation duration
 #
 # ### Next Steps
 #

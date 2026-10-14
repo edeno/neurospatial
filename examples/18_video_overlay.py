@@ -28,7 +28,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [17_animation_with_overlays.ipynb](../17_animation_with_overlays/)
+# **Prerequisites**: [17_animation_with_overlays.ipynb](17_animation_with_overlays.ipynb)
 #
 # ## Learning Objectives
 #
@@ -42,7 +42,14 @@
 #
 # ## Prerequisites
 #
-# **Required dependencies**:
+# **Required for this notebook**: install `neurospatial[video]` or run
+# `uv sync --extra notebooks --extra video` from this checkout. This extra is
+# needed for creating/reading the short synthetic video; examples 16–17 run
+# their static/HTML sections without it. No private video is required.
+#
+# The optional full exported field/video composite remains behind a flag.
+#
+# **Video packages**:
 #
 # ```bash
 # # OpenCV for video reading
@@ -64,11 +71,19 @@
 # ```
 #
 # **Note**: VideoOverlay requires 2D environments (not supported on 1D linearized tracks).
-
+#
+# The default run creates static previews and temporary demo artifacts. Desktop
+# viewers and expensive final exports require an explicit opt-in below, even
+# when their packages are installed. Re-run cells after changing a flag.
+#
 # %%
+import sys
+import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
+from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.animation import PositionOverlay, VideoOverlay, calibrate_video
@@ -79,11 +94,24 @@ from neurospatial.ops.transforms import (
     calibrate_from_scale_bar,
 )
 
+RUN_NAPARI = False
+RUN_VIDEO_EXPORT = False
+RUN_WIDGET = False  # optional notebook controls, also disabled for batch execution
+
 # Set random seed for reproducibility
 np.random.seed(42)
 
+_here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+from _style import apply_style
+
+apply_style(figsize=(12, 8))
+
 # Output directory
-output_dir = Path.cwd()
+output_dir = Path(tempfile.mkdtemp(prefix="neurospatial-example-18-"))
 print(f"Output directory: {output_dir}")
 
 # %% [markdown]
@@ -108,11 +136,7 @@ positions = np.array(
     ]
 )
 
-env = Environment.from_samples(
-    positions=np.random.uniform(0, 100, (1000, 2)),  # Fill arena
-    bin_size=2.5,
-    name="SquareArena",
-)
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.5, name="SquareArena")
 env.units = "cm"
 env.frame = "behavioral_box"
 
@@ -123,13 +147,18 @@ print(f"Spatial extent: {env.dimension_ranges}")
 print("\nCreating synthetic video...")
 
 try:
+    import cv2  # reader used by VideoReader below
     import imageio.v3 as iio
-except ImportError:
-    import imageio as iio
+except ImportError as error:
+    raise ImportError(
+        "Example 18 requires the video extra: uv sync --extra notebooks --extra video"
+    ) from error
+
+print(f"Video reader: OpenCV {cv2.__version__}")
 
 # Video parameters
 video_width, video_height = 320, 240  # pixels
-n_video_frames = 100
+n_video_frames = 30  # one-second synthetic fixture; no large export by default
 video_fps = 30.0
 video_path = output_dir / "synthetic_video.mp4"
 
@@ -150,6 +179,9 @@ for i in range(n_video_frames):
     B = (128 + 127 * np.cos(4 * np.pi * (X + Y) + phase)).astype(np.uint8)
 
     frame = np.stack([R, G, B], axis=-1)
+    # Visible corners of a square arena: 220 x 220 px represents 100 x 100 cm.
+    for marker_x, marker_y in [(50, 10), (270, 10), (270, 230), (50, 230)]:
+        frame[marker_y - 2 : marker_y + 3, marker_x - 2 : marker_x + 3] = 255
     frames.append(frame)
 
 # Write video file
@@ -180,7 +212,7 @@ trajectory = np.column_stack(
 # Clip trajectory to environment bounds (with small margin)
 trajectory = np.clip(trajectory, 5, 95)
 
-# Place field following trajectory
+# Moving synthetic activity bump (a.u.); this is not a fitted place-cell map
 fields = []
 for i in range(n_frames):
     pos = trajectory[i : i + 1]
@@ -252,10 +284,10 @@ print("Example 2: Scale Bar Calibration")
 print("=" * 50)
 
 # Assume we have a scale bar spanning the video width
-# Video is 320 pixels wide, representing 100 cm
-p1_px = (10, 120)  # Left end of scale bar (x, y) in pixels
-p2_px = (310, 120)  # Right end of scale bar
-known_length_cm = 100.0  # 300 pixels = 100 cm
+# The square arena covers 220 pixels of the 320-pixel-wide frame
+p1_px = (50, 120)  # Left end of scale bar (x, y) in pixels
+p2_px = (270, 120)  # Right end of scale bar
+known_length_cm = 100.0  # 220 pixels = 100 cm
 
 # Method 1: Using calibrate_from_scale_bar directly
 transform = calibrate_from_scale_bar(
@@ -315,10 +347,10 @@ print("=" * 50)
 # Assuming video shows arena with some margin
 landmarks_px = np.array(
     [
-        [10, 10],  # Top-left corner (pixel coords, origin top-left)
-        [310, 10],  # Top-right corner
-        [310, 230],  # Bottom-right corner
-        [10, 230],  # Bottom-left corner
+        [50, 10],  # Top-left corner (pixel coords, origin top-left)
+        [270, 10],  # Top-right corner
+        [270, 230],  # Bottom-right corner
+        [50, 230],  # Bottom-left corner
     ]
 )
 
@@ -367,10 +399,51 @@ calibration_lm_easy = calibrate_video(
 print("Calibration created successfully!")
 print(f"  cm_per_px: {calibration_lm_easy.cm_per_px:.4f}")
 
-# Verify round-trip accuracy
+# Check landmark residuals (this is a fit check, not an independent validation)
 transformed = calibration_lm_easy.transform_px_to_cm(landmarks_px)
 error = np.abs(transformed - landmarks_env).max()
-print(f"\nRound-trip error: {error:.6f} cm (should be ~0)")
+print(f"\nLandmark fit residual: {error:.6f} cm")
+assert error < 1e-8  # exact synthetic correspondences; real landmarks have noise
+
+# %% [markdown]
+# Scale-bar calibration determines uniform scale and a video-origin convention;
+# it does not locate the arena's translated origin. Landmarks supply that missing
+# registration here. A similarity transform fits our square pixel arena exactly;
+# a rectangle mapped to a square would require a different model and a residual check.
+# These synthetic corners verify coordinate conventions, not a real camera model.
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
+axes[0].imshow(frame_0)
+axes[0].scatter(
+    landmarks_px[:, 0], landmarks_px[:, 1], facecolors="none", edgecolors="white"
+)
+axes[0].set_title("Synthetic video (pixel coordinates, y downward)")
+axes[0].set_xlabel("column (px)")
+axes[0].set_ylabel("row (px)")
+# The exact landmarks yield a translated/flipped image extent in environment cm.
+corners = calibration_landmarks.transform_px_to_cm(
+    np.array([[0, video_height], [video_width, 0]])
+)
+axes[1].imshow(
+    frame_0,
+    extent=[corners[0, 0], corners[1, 0], corners[0, 1], corners[1, 1]],
+    origin="upper",
+    alpha=0.5,
+)
+env.plot_field(
+    fields[0],
+    ax=axes[1],
+    alpha=0.5,
+    vmin=0,
+    vmax=1,
+    colorbar_label="Synthetic activity (a.u.)",
+)
+axes[1].scatter(*trajectory[0], color="red", label="t=0 s")
+axes[1].set_title("Calibrated video + synthetic field")
+axes[1].set_aspect("equal")
+axes[1].legend()
+plt.show()
 
 # %% [markdown]
 # ## Example 4: Creating VideoOverlay with Various Options
@@ -383,7 +456,7 @@ print(f"\nRound-trip error: {error:.6f} cm (should be ~0)")
 # | `z_order` | "above" or "below" field | "above" |
 # | `crop` | (x, y, width, height) | None |
 # | `downsample` | Spatial downsampling factor | 1 |
-# | `times` | Video frame timestamps | Auto from fps |
+# | `times` | Explicit source frame timestamps on the field clock | None (index alignment) |
 
 # %%
 print("Example 4a: Basic VideoOverlay")
@@ -392,6 +465,7 @@ print("=" * 50)
 # Basic video overlay with calibration
 video_overlay = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
 )
 
@@ -407,6 +481,7 @@ print("-" * 50)
 # Field dominant (low alpha)
 overlay_field_dominant = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     alpha=0.3,  # 30% video, 70% field
 )
@@ -414,6 +489,7 @@ overlay_field_dominant = VideoOverlay(
 # Balanced (default)
 overlay_balanced = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     alpha=0.5,  # 50% video, 50% field
 )
@@ -421,6 +497,7 @@ overlay_balanced = VideoOverlay(
 # Video dominant (high alpha)
 overlay_video_dominant = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     alpha=0.7,  # 70% video, 30% field
 )
@@ -437,6 +514,7 @@ print("-" * 50)
 # Video above field (default)
 overlay_above = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     z_order="above",  # Video on top of field
 )
@@ -444,6 +522,7 @@ overlay_above = VideoOverlay(
 # Video below field (only visible if field has transparency)
 overlay_below = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     z_order="below",  # Video behind field
 )
@@ -459,6 +538,7 @@ print("-" * 50)
 # Crop to region of interest
 overlay_cropped = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     crop=(50, 30, 200, 150),  # (x, y, width, height) in pixels
 )
@@ -466,6 +546,7 @@ overlay_cropped = VideoOverlay(
 # Downsample for faster rendering
 overlay_downsampled = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     downsample=2,  # Half resolution (160x120)
 )
@@ -492,6 +573,7 @@ print("=" * 50)
 # Create video overlay with position tracking
 video_overlay = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     alpha=0.5,
 )
@@ -503,34 +585,37 @@ position_overlay = PositionOverlay(
     trail_length=10,
 )
 
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("Launching Napari viewer...")
+        print("Launching Napari viewer...")
 
-    # IMPORTANT: Clear cache before parallel rendering
-    env.clear_cache()
+        # IMPORTANT: Clear cache before parallel rendering
+        env.clear_cache()
 
-    viewer = env.animate_fields(
-        fields,
-        overlays=[video_overlay, position_overlay],
-        frame_times=frame_times,
-        backend="napari",
-        speed=1.0,
-        title="Video + Field Animation",
-    )
+        viewer = env.animate_fields(
+            fields,
+            overlays=[video_overlay, position_overlay],
+            frame_times=frame_times,
+            backend="napari",
+            speed=1.0,
+            title="Video + Field Animation",
+        )
 
-    print("\nNapari viewer opened:")
-    print("  - Video layer with field overlay")
-    print("  - Position tracking with trail")
-    print("  - Use slider or play button to animate")
+        print("\nNapari viewer opened:")
+        print("  - Video layer with field overlay")
+        print("  - Position tracking with trail")
+        print("  - Use slider or play button to animate")
 
-    if get_ipython() is None:
-        napari.run()
+        if get_ipython() is None:
+            napari.run()
 
-except ImportError:
-    print("Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 6: Exporting Synchronized Video
@@ -548,7 +633,7 @@ except ImportError:
 print("Example 6: Exporting Video with Overlay")
 print("=" * 50)
 
-if check_ffmpeg_available():
+if RUN_VIDEO_EXPORT and check_ffmpeg_available():
     output_path = output_dir / "18_video_overlay_export.mp4"
 
     # IMPORTANT: Clear cache before parallel rendering
@@ -561,64 +646,69 @@ if check_ffmpeg_available():
         backend="video",
         save_path=output_path,
         speed=1.0,
-        n_workers=4,  # Parallel rendering
+        n_workers=1,  # script/notebook-safe; parallel export is a separate optimization
         dpi=100,
     )
 
     print(f"\nVideo exported to: {result}")
     print(f"  Frames: {n_frames}")
     print(f"  FPS: {video_fps}")
-    print("  Workers: 4 (parallel)")
+    print("  Workers: 1 (serial)")
 else:
-    print("ffmpeg not available for video export.")
+    print(
+        "Video export disabled by default or ffmpeg unavailable (RUN_VIDEO_EXPORT=True)."
+    )
     print("Install with: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)")
 
 # %%
 print("Example 6b: Widget Backend (Jupyter Playback)")
 print("-" * 50)
 
-try:
-    from IPython import get_ipython
-    from IPython.display import display
+if RUN_WIDGET:
+    try:
+        from IPython import get_ipython
+        from IPython.display import display
 
-    if get_ipython() is not None:
-        # Clear cache before rendering
-        env.clear_cache()
+        if get_ipython() is not None:
+            # Clear cache before rendering
+            env.clear_cache()
 
-        # Use only first 30 frames for quick demo
-        n_demo = 30
+            # Use only first 30 frames for quick demo
+            n_demo = 30
 
-        # Create video timestamps for the full video
-        video_times = np.arange(n_video_frames) / video_fps
-        # Create field timestamps for the demo subset
-        field_times = video_times[:n_demo]
+            # Create video timestamps for the full video
+            video_times = np.arange(n_video_frames) / video_fps
+            # Create field timestamps for the demo subset
+            field_times = video_times[:n_demo]
 
-        widget = env.animate_fields(
-            fields[:n_demo],
-            overlays=[
-                VideoOverlay(
-                    source=video_path,
-                    calibration=calibration_landmarks,
-                    times=video_times,  # Full video timestamps
-                    alpha=0.5,
-                ),
-                PositionOverlay(
-                    positions=trajectory[:n_demo],
-                    color="red",
-                    trail_length=10,
-                ),
-            ],
-            frame_times=field_times,  # Field timestamps for alignment
-            backend="widget",
-            speed=1.0,
-        )
-        print("Widget created - use slider to navigate")
-        display(widget)
-    else:
-        print("Not in Jupyter notebook environment")
+            widget = env.animate_fields(
+                fields[:n_demo],
+                overlays=[
+                    VideoOverlay(
+                        source=video_path,
+                        calibration=calibration_landmarks,
+                        times=video_times,  # Full video timestamps
+                        alpha=0.5,
+                    ),
+                    PositionOverlay(
+                        positions=trajectory[:n_demo],
+                        color="red",
+                        trail_length=10,
+                    ),
+                ],
+                frame_times=field_times,  # Field timestamps for alignment
+                backend="widget",
+                speed=1.0,
+            )
+            print("Widget created - use slider to navigate")
+            display(widget)
+        else:
+            print("Not in Jupyter notebook environment")
 
-except ImportError:
-    print("IPython/ipywidgets not available")
+    except ImportError:
+        print("IPython/ipywidgets not available")
+else:
+    print("Optional viewer skipped; set RUN_WIDGET=True to enable it.")
 
 # %% [markdown]
 # ## Example 7: Performance Tips for Large Videos
@@ -655,6 +745,7 @@ print("  cache_size=200: Higher memory, better for sequential playback")
 print("\nTip 2: Downsample for speed")
 overlay_fast = VideoOverlay(
     source=video_path,
+    times=frame_times,
     calibration=calibration_landmarks,
     downsample=2,  # Half resolution
 )
@@ -689,21 +780,17 @@ print(
 # %% [markdown]
 # ## Cleanup
 #
-# Remove the synthetic video file created for this example.
+# Release readers after optional viewers close. Temporary demo video is
+# retained for the lifetime of this notebook so an opted-in widget can still
+# request its frames. The operating system temp directory holds all artifacts.
 
 # %%
-# Cleanup synthetic video
-if video_path.exists():
-    video_path.unlink()
-    print(f"Removed: {video_path}")
-
-# Cleanup exported video
-export_path = output_dir / "18_video_overlay_export.mp4"
-if export_path.exists():
-    export_path.unlink()
-    print(f"Removed: {export_path}")
-
-print("\nCleanup complete!")
+reader.close()
+reader_small_cache.close()
+reader_large_cache.close()
+print(
+    f"Synthetic video and any opted-in export are in the temporary directory: {output_dir}"
+)
 
 # %% [markdown]
 # ## Key Takeaways
@@ -713,7 +800,7 @@ print("\nCleanup complete!")
 # 1. **Scale Bar**: Use when you have a known-length reference in the video
 #    ```python
 #    calibration = calibrate_video(
-#        "video.mp4", env,
+#        env, "video.mp4",
 #        scale_bar=((x1, y1), (x2, y2), length_cm)
 #    )
 #    ```
@@ -721,7 +808,7 @@ print("\nCleanup complete!")
 # 2. **Landmarks**: Use when you know pixel locations of arena corners
 #    ```python
 #    calibration = calibrate_video(
-#        "video.mp4", env,
+#        env, "video.mp4",
 #        landmarks_px=corners_px,
 #        landmarks_env=corners_cm
 #    )
@@ -730,7 +817,7 @@ print("\nCleanup complete!")
 # 3. **Direct Scale**: Use when you know the exact cm/pixel ratio
 #    ```python
 #    calibration = calibrate_video(
-#        "video.mp4", env,
+#        env, "video.mp4",
 #        cm_per_px=0.25
 #    )
 #    ```
@@ -767,5 +854,5 @@ print("\nCleanup complete!")
 # - Export publication-quality videos with synchronized behavior
 #
 # For more details, see:
-# - `examples/17_animation_with_overlays.ipynb` - Other overlay types
-# - `examples/16_field_animation.ipynb` - Animation backends
+# - [17: overlays](17_animation_with_overlays.ipynb) — other overlay types
+# - [16: animation](16_field_animation.ipynb) — backend choices

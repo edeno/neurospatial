@@ -48,7 +48,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 
 # %% [markdown]
 # ## Setup
@@ -115,7 +115,9 @@ positions, times = simulate_trajectory_ou(
 )
 dt = float(times[1] - times[0])
 
-# Compute heading from velocity (radians, world frame: 0=East, +pi/2=North)
+# Facing is assumed to follow movement for this fixture; real head orientation
+# may differ. Angles use world coordinates: 0=East, +pi/2=North.
+# Compute heading from velocity
 headings = heading_from_velocity(times, positions, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {len(times)} samples, {times[-1]:.1f}s")
@@ -187,7 +189,7 @@ ovc_model = ObjectVectorCellModel(
 
 # firing_rate requires headings when preferred_direction is set
 ovc_rates = ovc_model.firing_rate(positions, headings=headings)
-ovc_spikes = generate_poisson_spikes(ovc_rates, times, seed=42)
+ovc_spikes = generate_poisson_spikes(ovc_rates, times, seed=11241)
 
 print(f"Object-vector cell: {len(ovc_spikes)} spikes")
 print(f"Mean firing rate: {len(ovc_spikes) / times[-1]:.2f} Hz")
@@ -203,8 +205,8 @@ print(
 # A place cell fires when the animal is AT a fixed location. We use it
 # as a negative control. As Part 9 shows, a structured place cell can
 # still clear the one-shot ``is_egocentric_object_vector_cell`` info-only screen
-# (its egocentric tuning carries information), but it fails the stricter
-# manual score-plus-info check that captures true object-vector tuning.
+# because position, bearing and distance are correlated. The manual screen below
+# is also illustrative; passing or failing it does not establish object-vector identity.
 
 # %%
 place_model = PlaceCellModel(
@@ -215,7 +217,7 @@ place_model = PlaceCellModel(
     baseline_rate=0.1,
 )
 pc_rates = place_model.firing_rate(positions)
-pc_spikes = generate_poisson_spikes(pc_rates, times, seed=43)
+pc_spikes = generate_poisson_spikes(pc_rates, times, seed=11242)
 
 print(f"Place cell: {len(pc_spikes)} spikes")
 print(f"Mean firing rate: {len(pc_spikes) / times[-1]:.2f} Hz")
@@ -493,8 +495,8 @@ print(f"  OVC -> {ovc_is_ovc}")
 print(f"  Place cell -> {pc_is_ovc}")
 if pc_is_ovc:
     print(
-        "  (Note: the place cell clears the info-only screen; the stricter "
-        "manual score+info check below rejects it.)"
+        "  The place-cell control passes the information screen; inspect the "
+        "manual screen below without interpreting either as cell identity."
     )
 
 # 2. Manual screening on the smoothed tuning we computed in Part 5.
@@ -606,14 +608,14 @@ for label, test in shuffle_results.items():
 # - Circular shifts calibrate association under a stable-clock null; a
 #   significant place-cell control still does not establish object-vector identity.
 # - Comparing egocentric vs allocentric spatial information (Part 8)
-#   is a frame-specific check: the egocentric model should favor egocentric
-#   tuning; the allocentric model below should favor allocentric tuning.
+#   is descriptive. Correlated sampling, support and smoothing can change
+#   their ordering; prefer held-out models and object-displacement controls.
 #
 # ### Next Steps
 # - Apply to real recordings with tracked head direction and known
 #   object positions
 # - Try ``metric="geodesic"`` for environments with obstacles
-# - Combine with [spatial view cells](../22_spatial_view_cells/) for a
+# - Combine with [spatial view cells](22_spatial_view_cells.ipynb) for a
 #   fuller picture of egocentric coding
 #
 # ### References
@@ -645,7 +647,7 @@ allocentric_model = ObjectVectorCellModel(
 allocentric_spikes = generate_poisson_spikes(
     allocentric_model.firing_rate(positions),
     times,
-    seed=43,
+    seed=144,
 )
 allocentric_result = compute_object_vector_rate(
     env,

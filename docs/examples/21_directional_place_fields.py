@@ -21,7 +21,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 #
 # ## Learning Objectives
 #
@@ -68,9 +68,6 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
-
-# Set random seed for reproducibility
-np.random.seed(42)
 
 # %% [markdown]
 # ---
@@ -280,7 +277,7 @@ spike_times = generate_poisson_spikes(
     firing_rates,
     times,
     refractory_period=0.002,
-    seed=44,
+    seed=11211,
 )
 
 print(f"Generated {len(spike_times)} spikes")
@@ -408,7 +405,8 @@ plt.show()
 #
 # In open field environments, animals don't have predefined start/goal locations.
 # Instead, we can label direction based on the animal's **heading** - the direction
-# they are moving at each moment.
+# they are moving at each moment. This is movement direction, not a measured
+# head or gaze direction; animals can face away from their direction of travel.
 #
 # ### Workflow:
 # 1. Create an open field environment
@@ -479,11 +477,13 @@ plt.show()
 # ### Generate Heading Direction Labels
 #
 # `heading_direction_labels()` bins the animal's heading angle into sectors.
-# By default, it uses 8 sectors (45 degrees each): 0-45, 45-90, ..., 315-360.
+# It uses sectors over [-180°, 180°]. Four bins are quadrants, not sectors
+# centered on the four cardinal directions. Slow or undefined motion is labeled
+# "stationary"; that is a separate behavioral category, not a heading angle.
 
 # %%
 # Generate heading-based direction labels
-# Using 4 directions for clearer visualization (N, E, S, W)
+# Using four quadrants for clearer visualization
 heading_labels = heading_direction_labels(
     arena_positions,
     arena_times,
@@ -506,7 +506,7 @@ for label, count in zip(unique_labels, counts, strict=True):
 
 # %%
 # Create a place cell in the center of the arena
-# It fires most strongly when moving eastward (0-90 degrees)
+# It fires most strongly at 0 radians (east), decreasing continuously toward west.
 arena_field_center = np.array([40.0, 40.0])
 
 # Base place cell model
@@ -524,7 +524,7 @@ pc_base = PlaceCellModel(
 base_rate = pc_base.firing_rate(arena_positions, arena_times)
 
 # Modulate by heading direction
-# East (0-90 degrees) gets full rate, opposite direction gets reduced rate
+# East (0 radians) gets full rate; west (pi radians) is suppressed.
 # Compute heading angles
 velocity = np.diff(arena_positions, axis=0) / np.diff(arena_times)[:, np.newaxis]
 heading_angles = np.arctan2(velocity[:, 1], velocity[:, 0])
@@ -542,7 +542,7 @@ arena_spike_times = generate_poisson_spikes(
     modulated_rate,
     arena_times,
     refractory_period=0.002,
-    seed=201,
+    seed=11212,
 )
 
 print(f"Generated {len(arena_spike_times)} spikes")
@@ -576,20 +576,13 @@ for label in directional_fields_heading.labels:
 # Create 2x2 visualization of directional fields
 fig, axes = plt.subplots(2, 2, figsize=(12, 12), constrained_layout=True)
 
-# Define direction order for visualization (matching compass layout)
-direction_order = [
-    ("\u221290\u201390\u00b0", "North (Up)"),  # -90 to 90
-    ("0\u201390\u00b0", "East (Right)"),  # 0 to 90
-    ("90\u2013180\u00b0", "South (Down)"),  # 90 to 180
-    ("\u2212180\u2013\u221290\u00b0", "West (Left)"),  # -180 to -90
-]
-
-# Map to actual labels in our data
+# Exact API labels use ASCII minus and an en dash between bounds. Quadrants
+# have world-frame angles: 0=East, +90=North, -90=South, +/-180=West.
 label_map = {
-    "\u221290\u20130\u00b0": ("East/North", (0, 0)),
-    "0\u201390\u00b0": ("East/South", (0, 1)),
-    "90\u2013180\u00b0": ("West/South", (1, 1)),
-    "\u2212180\u2013\u221290\u00b0": ("West/North", (1, 0)),
+    "90–180°": ("Northwest", (0, 0)),  # noqa: RUF001
+    "0–90°": ("Northeast", (0, 1)),  # noqa: RUF001
+    "-180–-90°": ("Southwest", (1, 0)),  # noqa: RUF001
+    "-90–0°": ("Southeast", (1, 1)),  # noqa: RUF001
 }
 
 # Get max rate for consistent color scaling (skip NaN-only fields like stationary)
@@ -607,20 +600,9 @@ for label in directional_fields_heading.labels:
     if np.all(np.isnan(field)) or "stationary" in label.lower():
         continue
 
-    # Determine subplot position based on label
-    # Parse the label to get approximate direction
-    if "0" in label and "90" in label and "-" not in label.replace("°", ""):
-        ax = axes[0, 1]
-        title = f"East ({label})"
-    elif "90" in label and "180" in label:
-        ax = axes[1, 0]
-        title = f"South/West ({label})"
-    elif "-180" in label:
-        ax = axes[1, 1]
-        title = f"West ({label})"
-    else:
-        ax = axes[0, 0]
-        title = f"North ({label})"
+    quadrant, (row, col) = label_map[label]
+    ax = axes[row, col]
+    title = f"{quadrant} ({label})"
 
     arena_env.plot_field(
         field,
@@ -654,19 +636,12 @@ plt.show()
 # rotates away from east.
 
 # %% [markdown]
-# ### Compare East vs West Directionality
+# ### Compare Northeast vs Southwest Quadrants
 
 # %%
-# Get East and West fields for comparison
-# Find the labels containing east and west directions
-# East direction is 0-90 degrees, West is -180 to -90 degrees
-east_label = None
-west_label = None
-for label in directional_fields_heading.labels:
-    if "0" in label and "90" in label and "-" not in label.replace("°", ""):
-        east_label = label  # "0–90°"
-    elif "-180" in label:
-        west_label = label  # "-180–-90°"
+# Compare one eastward and one westward quadrant, using exact API labels.
+east_label = "0–90°"  # noqa: RUF001  # Northeast, exact API label
+west_label = "-180–-90°"  # noqa: RUF001  # Southwest, exact API label
 
 if east_label and west_label:
     east_field = directional_fields_heading.firing_rates[east_label]
@@ -675,10 +650,10 @@ if east_label and west_label:
     # Compute directional index (east vs west): (east - west) / (east + west + eps)
     ew_index = (east_field - west_field) / (east_field + west_field + 1e-9)
 
-    print("\nEast vs West Directional Index:")
+    print("\nNortheast vs Southwest Directional Index:")
     print(f"  Range: [{np.nanmin(ew_index):.2f}, {np.nanmax(ew_index):.2f}]")
     print(f"  Mean: {np.nanmean(ew_index):.2f}")
-    print("  (Positive = East-preferring, Negative = West-preferring)")
+    print("  (Positive = NE-preferring, Negative = SW-preferring)")
 
     # Visualize
     fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
@@ -686,12 +661,12 @@ if east_label and west_label:
     arena_env.plot_field(
         east_field, ax=axes[0], cmap="hot", colorbar_label="Firing Rate (Hz)"
     )
-    axes[0].set_title(f"East ({east_label})", fontsize=13, fontweight="bold")
+    axes[0].set_title(f"Northeast ({east_label})", fontsize=13, fontweight="bold")
 
     arena_env.plot_field(
         west_field, ax=axes[1], cmap="hot", colorbar_label="Firing Rate (Hz)"
     )
-    axes[1].set_title(f"West ({west_label})", fontsize=13, fontweight="bold")
+    axes[1].set_title(f"Southwest ({west_label})", fontsize=13, fontweight="bold")
 
     arena_env.plot_field(
         ew_index,
@@ -701,9 +676,11 @@ if east_label and west_label:
         vmax=1,
         colorbar_label="Directional Index",
     )
-    axes[2].set_title("East vs West Index", fontsize=13, fontweight="bold")
+    axes[2].set_title("NE vs SW Index", fontsize=13, fontweight="bold")
 
-    plt.suptitle("East vs West Directional Comparison", fontsize=16, fontweight="bold")
+    plt.suptitle(
+        "Northeast vs Southwest Quadrant Comparison", fontsize=16, fontweight="bold"
+    )
     plt.show()
 
 # %% [markdown]
@@ -736,11 +713,8 @@ if east_label and west_label:
 # ### Key Functions
 #
 # ```python
-# from neurospatial import (
-#     compute_directional_place_fields,
-#     goal_pair_direction_labels,
-#     heading_direction_labels,
-# )
+# from neurospatial.encoding import compute_directional_place_fields
+# from neurospatial.behavior import goal_pair_direction_labels, heading_direction_labels
 # ```
 #
 # ### Typical Workflow
@@ -749,15 +723,15 @@ if east_label and west_label:
 # # For trialized tasks
 # trials = segment_trials(trajectory_bins, times, env, start_region="home", end_regions=["goal"])
 # labels = goal_pair_direction_labels(times, trials)
-# result = compute_directional_place_fields(env, spike_times, times, positions, labels)
+# directional = compute_directional_place_fields(env, spike_times, times, positions, labels)
 #
 # # For open fields
 # labels = heading_direction_labels(positions, times, n_directions=8)
 # result = compute_directional_place_fields(env, spike_times, times, positions, labels)
 #
 # # Quantify directionality (simple formula)
-# outbound = result.firing_rates["home→goal"]
-# inbound = result.firing_rates["goal→home"]
+# outbound = directional.firing_rates["home→goal"]
+# inbound = directional.firing_rates["goal→home"]
 # index = (outbound - inbound) / (outbound + inbound + 1e-9)
 # ```
 #

@@ -27,7 +27,9 @@
 # - Compare different reward decay profiles
 # - Apply reward shaping strategies to spatial navigation tasks
 #
-# **Estimated time: 20-25 minutes**
+# **Estimated time**: 20-25 minutes
+#
+# **Prerequisites**: [01: introduction](01_introduction_basics.ipynb).
 
 # %% [markdown]
 # ## Setup
@@ -35,6 +37,10 @@
 # First, let's import the necessary libraries:
 
 # %%
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import Point
@@ -47,13 +53,6 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
-
-# Set random seed for reproducibility
-np.random.seed(42)
-
-# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys
-from pathlib import Path
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
@@ -113,7 +112,7 @@ temp_env = Environment.from_samples(arena_data, bin_size=5.0)
 temp_env.units = "cm"  # Required for trajectory simulation
 
 # 2. Generate smooth random walk trajectory using Ornstein-Uhlenbeck process
-duration = 800.0  # seconds (sufficient for uniform spatial coverage with rotational OU)
+duration = 800.0  # seconds; inspect occupancy rather than assuming uniform coverage
 positions, times = simulate_trajectory_ou(
     temp_env,
     duration=duration,
@@ -122,7 +121,7 @@ positions, times = simulate_trajectory_ou(
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
     boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
-    seed=42,  # Seed produces uniform spatial coverage with rotational OU,
+    seed=42,  # Reproducible trajectory; spikes use an independent seed below.
     speed_units="cm",
 )
 
@@ -146,7 +145,7 @@ spike_times = generate_poisson_spikes(
     firing_rates,
     times,
     refractory_period=0.002,  # 2ms refractory period
-    seed=42,
+    seed=11082,
 )
 
 print(f"Generated trajectory: {len(times)} samples over {times[-1]:.1f} seconds")
@@ -382,7 +381,7 @@ result_filtered = compute_spatial_rate(
     positions,
     method="binned",
     bandwidth=0.1,
-    min_occupancy=0.5,  # Standard threshold
+    min_occupancy=0.5,  # Illustrative raw occupancy threshold in seconds
 )
 firing_rate_filtered = result_filtered.firing_rate
 
@@ -825,7 +824,11 @@ for ax in axes:
 plt.show()
 
 # %% [markdown]
-# **Strategy:** Keep the sparse reward dominant (100) and add a small shaping component (0.1 * 10 = 1). This provides gradient guidance while maintaining the correct optimal policy.
+# **Strategy:** The sparse reward is larger (100) than the shaping component
+# (at most 1), but small weights alone do not guarantee policy invariance.
+# These are static reward fields, not a potential-based transition reward.
+# For that guarantee, use shaping of the form gamma*Phi(next_state)-Phi(state)
+# with the appropriate discount and terminal conventions, and validate behavior.
 
 # %% [markdown]
 # ---
@@ -836,7 +839,7 @@ plt.show()
 #
 # ### Spike Field Conversion
 # - ✅ Convert spike trains to firing rate fields using `compute_spatial_rate()`
-# - ✅ Apply occupancy thresholds (`min_occupancy=0.5` is standard)
+# - ✅ Apply occupancy thresholds (choose `min_occupancy` for your bin size and sampling)
 # - ✅ Use `compute_spatial_rate()` for one-liner workflows with smoothing
 # - ✅ Access firing rate from result object: `result.firing_rate`
 # - ✅ Visualize occupancy, raw, and filtered firing rates

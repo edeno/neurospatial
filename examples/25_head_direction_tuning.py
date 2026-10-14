@@ -26,7 +26,7 @@
 #
 # 1. Simulating an HD cell with known preferred direction
 # 2. Computing a circular tuning curve over heading
-# 3. Testing for significant directionality (Rayleigh test)
+# 3. Inspecting MVL and the occupancy-sensitive Rayleigh statistic
 # 4. Classifying neurons as HD cells using mean vector length
 # 5. Plotting on a polar axis
 #
@@ -40,12 +40,12 @@
 # - Simulate HD cells with configurable concentration and preferred direction
 # - Compute directional rate maps with ``compute_directional_rate``
 # - Interpret the mean vector length (MVL) and Rayleigh p-value
-# - Classify neurons as HD cells using ``is_head_direction_cell``
+# - Screen directional associations using ``is_head_direction_cell``
 # - Plot HD tuning curves on a polar axis
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [08_spike_field_basics.ipynb](../08_spike_field_basics/)
+# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
 
 # %% [markdown]
 # ## Setup
@@ -83,7 +83,9 @@ apply_style(figsize=(10, 8))
 # ## Part 1: Create Environment and Trajectory
 #
 # We need an environment to drive the trajectory simulator and produce
-# a realistic distribution of headings.
+# a distribution of movement directions. We assume facing direction equals
+# movement direction in this simulation. Real head direction requires tracked
+# orientation, particularly during sideways motion and pauses.
 
 # %%
 xx, yy = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
@@ -145,7 +147,7 @@ hd_model = HeadDirectionCellModel(
     baseline_rate=0.5,
 )
 hd_rates = hd_model.firing_rate(headings)
-hd_spikes = generate_poisson_spikes(hd_rates, times, seed=42)
+hd_spikes = generate_poisson_spikes(hd_rates, times, seed=11251)
 
 print(f"HD cell: {len(hd_spikes)} spikes")
 print(f"Preferred direction: {np.degrees(preferred):.0f}° (North)")
@@ -167,7 +169,7 @@ place_model = PlaceCellModel(
     baseline_rate=0.5,
 )
 pc_rates = place_model.firing_rate(positions)
-pc_spikes = generate_poisson_spikes(pc_rates, times, seed=43)
+pc_spikes = generate_poisson_spikes(pc_rates, times, seed=11252)
 
 print(f"Place cell: {len(pc_spikes)} spikes")
 print(f"Mean firing rate: {len(pc_spikes) / times[-1]:.2f} Hz")
@@ -220,10 +222,11 @@ print(
 # - **Mean vector length (MVL)** - in [0, 1]. Larger = sharper tuning.
 #   MVL near 0 means firing is uniform across directions; MVL near 1
 #   means firing is concentrated in a single direction.
-# - **Rayleigh p-value** - probability that a uniform distribution
-#   could have produced this much concentration by chance.
+# - **Rayleigh p-value** - under independent, uniform spike-angle samples,
+#   the probability of concentration at least as large as observed. Spike-angle
+#   occupancy and temporal dependence can violate this null.
 #
-# An HD cell typically has MVL ≥ 0.4 and Rayleigh p < 0.05.
+# MVL ≥ 0.4 and p < 0.05 form an illustrative screen, not a cell-identity test.
 
 # %%
 hd_mvl = hd_result.mean_vector_length()
@@ -249,24 +252,39 @@ print(f"True preferred direction: {np.degrees(preferred):.0f}° (HD cell)")
 # ## Part 6: Classify with `is_head_direction_cell`
 #
 # ``is_head_direction_cell`` is the standalone classifier used for
-# screening. It applies the standard MVL ≥ 0.4 and Rayleigh p < 0.05
+# screening. It applies the illustrative MVL ≥ 0.4 and Rayleigh p < 0.05
 # criteria. MVL weights firing rates; Rayleigh weights spike counts and can
 # be occupancy-biased. For a calibrated circular-shift verdict use
 # head_direction_cell_significance on raw arrays.
 
 # %%
 hd_is_hd = is_head_direction_cell(
-    hd_spikes, times, headings, criterion="threshold", min_mvl=0.4, alpha=0.05
+    hd_spikes,
+    times,
+    headings,
+    criterion="threshold",
+    bin_size=np.deg2rad(6.0),
+    bandwidth=np.deg2rad(10.0),
+    min_mvl=0.4,
+    alpha=0.05,
 )
 pc_is_hd = is_head_direction_cell(
-    pc_spikes, times, headings, criterion="threshold", min_mvl=0.4, alpha=0.05
+    pc_spikes,
+    times,
+    headings,
+    criterion="threshold",
+    bin_size=np.deg2rad(6.0),
+    bandwidth=np.deg2rad(10.0),
+    min_mvl=0.4,
+    alpha=0.05,
 )
 print(f"HD cell classified as HD:    {hd_is_hd}")
 print(f"Place cell classified as HD: {pc_is_hd}")
 
 # %% [markdown]
-# Equivalently, the result class has a method form that uses the same
-# defaults but is cheaper if you already computed the rate map:
+# Equivalently, the result class has a method form. Both forms use the
+# same bin size, smoothing and thresholds here; reusing the result avoids
+# computing the rate map again:
 
 # %%
 print(
@@ -324,8 +342,8 @@ plt.show()
 # - **Head direction cells** fire when the animal faces a specific
 #   allocentric direction, independent of position
 # - **Mean vector length (MVL)** quantifies tuning sharpness in [0, 1]
-# - **Rayleigh test** rejects the null hypothesis of uniform firing
-#   across directions
+# - **Rayleigh statistic** concerns spike-angle concentration; unequal heading
+#   occupancy and temporal dependence prevent a direct tuning verdict
 # - HD tuning curves are circular; use polar plots for visualization
 #
 # ### API
@@ -341,7 +359,7 @@ plt.show()
 #   default MVL ≥ 0.4 and α = 0.05
 #
 # ### Classification
-# - HD cells typically have MVL ≥ 0.4 and Rayleigh p < 0.05
+# - MVL ≥ 0.4 and Rayleigh p < 0.05 are heuristic screening choices
 # - Place cells with uniform coverage of headings at their preferred
 #   location should not pass these thresholds
 # - Real recordings benefit from shuffling controls in addition to the
@@ -350,7 +368,7 @@ plt.show()
 # ### Next Steps
 # - Compute HD tuning across multiple cells with
 #   ``compute_directional_rates`` (batch version)
-# - Combine with [object-vector cells](../24_object_vector_cells/) to
+# - Combine with [object-vector cells](24_object_vector_cells.ipynb) to
 #   model conjunctive (HD x location) coding
 # - For an analysis that crosses HD with allocentric position, see the
 #   ``encoding.directional`` module

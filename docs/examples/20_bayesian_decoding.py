@@ -18,7 +18,7 @@
 #
 # **Estimated time**: 35-45 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/), [15_simulation_workflows.ipynb](../15_simulation_workflows/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)
 #
 # ## Learning Objectives
 #
@@ -32,7 +32,6 @@
 # - Detect trajectory structure using isotonic/linear regression and Radon transform
 # - Compare a sequence score with a specified shuffle null
 #
-# **Estimated time: 25-30 minutes**
 
 # %% [markdown]
 # ---
@@ -47,6 +46,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.decoding import (
+    BayesianDecoder,
     bin_spikes_in_time,
     confusion_matrix,
     decode_position,
@@ -66,7 +66,7 @@ from neurospatial.simulation import (
 from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 
 # Set random seed for reproducibility
-np.random.seed(42)
+rng = np.random.default_rng(7)
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
 import sys
@@ -156,8 +156,8 @@ plt.show()
 # Create place cells with fields distributed along the track
 n_neurons = 30
 field_centers = np.linspace(5, track_length - 5, n_neurons)  # Spread across track
-field_widths = np.random.uniform(8, 15, n_neurons)  # Variable field widths
-peak_rates = np.random.uniform(10, 30, n_neurons)  # Variable peak firing rates
+field_widths = rng.uniform(8, 15, n_neurons)  # Variable field widths
+peak_rates = rng.uniform(10, 30, n_neurons)  # Variable peak firing rates
 
 # Create PlaceCellModel for each neuron and generate spikes
 spike_times_list = []
@@ -175,7 +175,9 @@ for i in range(n_neurons):
 
     # Generate spike train
     rates = cell.firing_rate(positions, times)
-    spikes = generate_poisson_spikes(rates, times, refractory_period=0.002, seed=42 + i)
+    spikes = generate_poisson_spikes(
+        rates, times, refractory_period=0.002, seed=1000 + i
+    )
     spike_times_list.append(spikes)
 
 print(f"Created {n_neurons} place cells")
@@ -227,6 +229,8 @@ plt.show()
 # population spike trains, the timestamps, and the positions, and it builds the
 # encoding models (place fields), bins the spikes onto a regular time grid, and
 # runs the Bayesian decoder for you — returning a `DecodingResult`.
+# This first reconstruction uses the training data. A separate held-out example
+# below evaluates generalization; do not report reconstruction error as test accuracy.
 
 # %%
 # Decode position from spikes + behavior in a single call.
@@ -293,7 +297,7 @@ plt.show()
 # Keep `actual_track` and `result.map_position` in centimeters for accuracy metrics
 # and separate physical-coordinate plots. For gapped recordings, use only actual
 # positions aligned to `result.times`, which omit the missing intervals. See the
-# [continuous/gapped overlay recipe](../../user-guide/workflows/#overlaying-actual-position-on-a-posterior)
+# [continuous/gapped overlay recipe](https://edeno.github.io/neurospatial/user-guide/workflows/#overlaying-actual-position-on-a-posterior)
 # for a small exact example.
 
 # %% [markdown]
@@ -329,8 +333,8 @@ plt.show()
 # diffusion kernel once, then processes all neurons in a single pass.
 # Passing ``fill_value=0.0`` replaces low-occupancy bins (NaN under the
 # default ``fill_value=None``) with an explicit zero firing rate, so the
-# encoding models compose directly with ``decode_position`` — no manual
-# ``np.nan_to_num`` scrubbing required.
+# encoding models can be passed as arrays. Their spatial support must also be
+# carried into the prior: an unobserved location is not a measured silent location.
 batch_result = compute_spatial_rates(
     env,
     spike_times_list,
@@ -361,7 +365,7 @@ im = ax.imshow(
     sorted_models,
     aspect="auto",
     cmap="hot",
-    extent=[0, track_length, n_neurons, 0],
+    extent=[env.grid_edges[0][0], env.grid_edges[0][-1], n_neurons, 0],
     vmin=0,
     vmax=np.percentile(sorted_models, 95),
 )
@@ -416,7 +420,7 @@ result = decode_position(
     spike_counts,
     encoding_models,
     dt,
-    prior=None,  # Uniform prior
+    prior=batch_result.spatial_support.astype(float),  # Uniform on training support
     times=time_bin_centers,
 )
 
@@ -548,12 +552,12 @@ print("In-Sample Decoding Error Summary:")
 print("\nMAP estimate:")
 print(f"  Median error: {median_err:.2f} cm")
 print(f"  Mean error: {np.nanmean(errors):.2f} cm")
-print(f"  Std error: {np.nanstd(errors):.2f} cm")
+print(f"  Error s.d.: {np.nanstd(errors):.2f} cm")
 
 print("\nMean position estimate:")
 print(f"  Median error: {median_mean_err:.2f} cm")
 print(f"  Mean error: {np.nanmean(mean_errors):.2f} cm")
-print(f"  Std error: {np.nanstd(mean_errors):.2f} cm")
+print(f"  Error s.d.: {np.nanstd(mean_errors):.2f} cm")
 
 # %%
 # Plot error distribution
@@ -589,6 +593,34 @@ corr = decoding_correlation(result.map_position, actual_positions)
 print(f"\nDecoding correlation: {corr:.3f}")
 
 # %% [markdown]
+# ### Evaluate a held-out time block
+#
+# Fit only the first half and predict the second. For experimental data choose
+# independent trials or blocks appropriate to the design, select settings on a
+# separate validation set, and reserve a test set. This fixed split demonstrates
+# the separation without tuning on the test result.
+
+# %%
+split_time = float(times[len(times) // 2])
+heldout_decoder = BayesianDecoder(env, dt=dt, bandwidth=5.0, min_occupancy=0.5).fit(
+    spike_times_list,
+    times,
+    positions,
+    epochs=(float(times[0]), split_time),
+)
+heldout = heldout_decoder.predict(
+    spike_times_list,
+    times,
+    epochs=(split_time, float(times[-1])),
+)
+heldout_errors = heldout.error_against(times, positions)
+print(f"Held-out median error: {np.nanmedian(heldout_errors):.2f} cm")
+print(f"Training support: {heldout_decoder.spatial_support.sum()} / {env.n_bins} bins")
+print(
+    f"Finite held-out errors: {np.isfinite(heldout_errors).sum()} / {len(heldout_errors)}"
+)
+
+# %% [markdown]
 # ### Confusion Matrix
 #
 # A confusion matrix shows which positions are confused with each other:
@@ -615,10 +647,12 @@ print(f"Diagonal (correct) proportion: {np.diag(cm).sum() / cm.sum():.1%}")
 #
 # ## Part 4: Trajectory Analysis (for Replay Detection)
 #
-# For replay detection, we often want to detect whether decoded positions follow a coherent trajectory. Let's analyze a short segment that might resemble replay.
+# Sequence fitting can describe coherent decoded motion. This is a segment of
+# simulated running, not a detected replay event; the example does not simulate
+# ripple activity, compressed replay or an independent candidate-event detector.
 
 # %%
-# Select a short segment (simulating a replay event)
+# Select a fixed short segment of simulated running
 start_idx = 100
 end_idx = 150  # 50 time bins = 5 seconds
 
@@ -657,7 +691,7 @@ fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
 # Posterior heatmap with isotonic fit
 ax = axes[0]
-extent = [segment_times[0], segment_times[-1], 0, env.n_bins]
+extent = [segment_times[0] - dt / 2, segment_times[-1] + dt / 2, -0.5, env.n_bins - 0.5]
 ax.imshow(
     segment_posterior.T, aspect="auto", origin="lower", cmap="viridis", extent=extent
 )
@@ -742,7 +776,13 @@ null_scores = []
 print(f"Running {n_shuffles} shuffles...")
 for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, rng=42):
     # Decode shuffled spikes
-    shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
+    shuffled_result = decode_position(
+        env,
+        shuffled_spikes,
+        encoding_models,
+        dt,
+        prior=batch_result.spatial_support.astype(float),
+    )
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
         shuffled_result.posterior, segment_times, method="expected"

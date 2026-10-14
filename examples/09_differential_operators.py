@@ -16,11 +16,13 @@
 # %% [markdown]
 # # Differential Operators on Spatial Graphs
 #
-# This notebook demonstrates the differential operator infrastructure for graph signal processing on spatial environments. These operators enable gradient-based analyses for reinforcement learning, replay analysis, and flow field computations.
-#
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [02_layout_engines.ipynb](../02_layout_engines/)
+# **Prerequisites**: [02: layouts](02_layout_engines.ipynb).
+#
+# This notebook demonstrates the differential operator infrastructure for graph signal processing on spatial environments. These operators enable gradient-based analyses for reinforcement learning, replay analysis, and flow field computations.
+#
+#
 #
 # ## Learning Objectives
 #
@@ -30,14 +32,14 @@
 # - Calculate divergence of flow fields to detect sources and sinks
 # - Apply Laplacian smoothing for graph-based spatial field processing
 # - Understand the differential operator matrix and its role in graph calculus
-# - Use these operators for reinforcement learning and replay analysis
+# - Interpret flux divergence in a constructed set of shortest-path journeys
 #
 # ## Contents
 #
 # 1. **Gradient of Distance Fields** - Compute goal-directed flow from distance gradients
 # 2. **Divergence of Flow Fields** - Detect sources and sinks in spatial trajectories
 # 3. **Laplacian Smoothing** - Compare graph-based smoothing with Gaussian smoothing
-# 4. **RL Successor Representation** - Analyze flow fields from replay trajectories
+# 4. **Journey Flux** - Verify sources, sinks and conservation on known paths
 #
 # ## Mathematical Background
 #
@@ -49,7 +51,10 @@
 # - **Laplacian**: $\text{div}(\text{grad}(f)) = -M^{-1}(\mathrm{Deg}-W)f$, with $W=A/d$
 
 # %%
+from itertools import pairwise
+
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 
 from neurospatial import Environment
@@ -102,8 +107,14 @@ for i in range(1, n_samples):
 
     trajectory[i] = new_pos
 
-# Create environment with 5 cm bins
-env = Environment.from_samples(trajectory, bin_size=5.0)
+# Define the full known arena, independently of where this walk sampled.
+# Orthogonal edges have shared faces of length 5 cm.
+arena_edges = np.linspace(0.0, arena_size, 21)
+env = Environment.from_grid_mask(
+    np.ones((20, 20), dtype=bool),
+    (arena_edges, arena_edges),
+    connect_diagonal_neighbors=False,
+)
 env.units = "cm"
 env.frame = "arena"
 
@@ -136,7 +147,8 @@ print(
 #
 # ### Application: Goal-Directed Navigation
 #
-# The negative gradient of a distance field points toward the goal, providing the optimal navigation direction.
+# Negative edge gradients identify neighboring bins with lower distance.
+# They are local graph directions, not an inferred continuous animal velocity.
 
 # %%
 # Define goal bin (use a bin near the center of environment)
@@ -232,8 +244,8 @@ plt.show()
 # **Interpretation**:
 # - **Left panel**: Distance increases away from goal (purple = close, yellow = far)
 # - **Right panel**: Gradient magnitude shows steepness of distance change (red = steep, dark = flat)
-# - Near the goal, gradient is high (steep distance change)
-# - Far from goal, gradient is relatively uniform
+# - A distance field has approximately unit slope along shortest-path directions;
+#   its gradient need not become steeper near the goal.
 
 # %% [markdown]
 # ## Part 2: Divergence of Flow Fields
@@ -255,7 +267,9 @@ plt.show()
 #
 # ### Application: Source and Sink Detection
 #
-# In goal-directed navigation, the negative gradient of distance defines a flow field toward the goal. Computing divergence identifies the goal as a sink (negative divergence) and distant bins as sources (positive divergence).
+# Treat the negative gradient as a constructed flux density. Its divergence
+# depends on geometry and boundary conditions; it is not an estimate of
+# occupancy-weighted animal flow or a transition probability.
 
 # %%
 # Create goal-directed flow field (negative gradient points toward goal)
@@ -313,7 +327,7 @@ plt.show()
 # %% [markdown]
 # **Interpretation**:
 # - **Blue bins (negative divergence)**: Flow terminates here (sinks) - includes goal location
-# - **Red bins (positive divergence)**: Flow originates here (sources) - bins far from goal
+# - **Red bins (positive divergence)**: Local net outflow under this constructed flux
 # - **White bins (zero divergence)**: Conservation - equal inflow and outflow
 # - Goal bin is the strongest sink (most negative divergence)
 
@@ -341,7 +355,7 @@ np.random.seed(42)
 noisy_field = np.random.randn(env.n_bins)
 
 
-def laplacian_smooth(field, env, alpha=0.05, n_iterations=20):
+def laplacian_smooth(field, env, alpha=1.0, n_iterations=50):
     """Smooth field via iterative Laplacian (heat diffusion)."""
     smoothed = field.copy()
 
@@ -357,10 +371,17 @@ def laplacian_smooth(field, env, alpha=0.05, n_iterations=20):
 
 
 # Apply Laplacian smoothing
-laplacian_smoothed = laplacian_smooth(noisy_field, env, alpha=0.05, n_iterations=20)
+alpha = 1.0  # cm squared; below h^2 / 4 for this 5 cm orthogonal grid
+n_iterations = 50
+laplacian_smoothed = laplacian_smooth(
+    noisy_field, env, alpha=alpha, n_iterations=n_iterations
+)
 
-# Compare with Gaussian smoothing
-gaussian_smoothed = env.smooth(noisy_field, bandwidth=10.0)
+# Match heat time t = n_iterations * alpha to bandwidth sigma = sqrt(2*t).
+# mode="average" preserves an intensive field and its constant baseline.
+bandwidth = np.sqrt(2 * alpha * n_iterations)
+gaussian_smoothed = env.smooth(noisy_field, bandwidth=bandwidth, mode="average")
+np.testing.assert_allclose(gaussian_smoothed.mean(), noisy_field.mean(), atol=1e-12)
 
 print(f"Original field std: {noisy_field.std():.3f}")
 print(f"Laplacian smoothed std: {laplacian_smoothed.std():.3f}")
@@ -397,7 +418,7 @@ env.plot_field(
     vmax=vmax,
 )
 ax.set_title(
-    "Laplacian Smoothed\n(20 iterations, alpha=0.05)", fontsize=16, fontweight="bold"
+    "Euler Heat Diffusion\n(50 steps, alpha=1 cm²)", fontsize=16, fontweight="bold"
 )
 
 # Gaussian smoothed
@@ -409,7 +430,7 @@ env.plot_field(
     vmin=vmin,
     vmax=vmax,
 )
-ax.set_title("Gaussian Smoothed\n(bandwidth=10 cm)", fontsize=16, fontweight="bold")
+ax.set_title("env.smooth\n(matched bandwidth=10 cm)", fontsize=16, fontweight="bold")
 
 plt.show()
 
@@ -417,9 +438,9 @@ plt.show()
 # **Interpretation**:
 # - **Left**: Original noisy field with high variance
 # - **Middle**: Laplacian smoothing via iterative heat diffusion
-# - **Right**: Gaussian smoothing via distance-based kernel
-# - Both methods smooth the field, but Laplacian smoothing is more diffusive (broader smoothing)
-# - Gaussian smoothing preserves more local structure (controlled by bandwidth parameter)
+# - **Right**: The built-in heat operator at the same nominal diffusion time
+# - Both use the same finite-volume geometry. Euler steps approximate the
+#   exponential heat operator; reducing the step improves their agreement.
 
 # %% [markdown]
 # ### Verification: Mathematical Correctness
@@ -430,6 +451,7 @@ plt.show()
 # %%
 edges = np.arange(21, dtype=float)
 check_env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
+check_env.units = "cm"
 test_field = np.sum(check_env.bin_centers**2, axis=1)
 laplacian_ours = divergence(check_env, gradient(check_env, test_field))
 interior = np.array([degree == 8 for _, degree in check_env.connectivity.degree()])
@@ -438,158 +460,81 @@ print(f"Interior ∇²(x² + y²): {np.mean(laplacian_ours[interior]):.6f} (expe
 assert laplacian_smoothed.var() < noisy_field.var()
 
 # %% [markdown]
-# ## Part 4: RL Successor Representation Analysis
+# ## Part 4: Flux from Constructed Shortest-Path Journeys
 #
-# In reinforcement learning, the **successor representation** (SR) defines expected future occupancy of states. Analyzing the gradient and divergence of SR fields reveals flow patterns in learned policies.
-#
-# ### Simulated Example: Random Walk vs. Goal-Directed Policy
-#
-# We'll compare:
-# 1. **Random walk**: Uniform transition probabilities (no policy)
-# 2. **Goal-directed policy**: Biased transitions toward goal
-#
-# The divergence of flow fields will reveal:
-# - Random walk: Approximately zero divergence everywhere (conservation)
-# - Goal-directed: Positive divergence at start states, negative at goal
+# Choose starts and route each one to a common goal using the graph's shortest
+# paths. These are synthetic journeys, not recorded behavior, a learned policy,
+# a successor representation or detected replay. Signed edge traversal counts
+# conserve flow at intermediate bins. Dividing by face length converts counts
+# to the flux density required by `divergence`.
 
 # %%
-# Define start and goal regions (use actual bin centers to ensure they're valid)
-# Use bins in opposite corners of the environment
-min_coords = env.bin_centers.min(axis=0)
-max_coords = env.bin_centers.max(axis=0)
+start_bin = int(np.argmin(np.linalg.norm(env.bin_centers - [20.0, 20.0], axis=1)))
+goal_bin = int(np.argmin(np.linalg.norm(env.bin_centers - [80.0, 80.0], axis=1)))
+journey_rng = np.random.default_rng(7)
+n_journeys = 50
+available_starts = np.setdiff1d(np.arange(env.n_bins), [goal_bin])
+journey_starts = journey_rng.choice(available_starts, size=n_journeys)
+journey_starts[0] = start_bin
 
-# Find bin closest to lower-left corner (start)
-lower_left = min_coords + (max_coords - min_coords) * 0.2
-distances_to_start = np.linalg.norm(env.bin_centers - lower_left, axis=1)
-start_bin = int(np.argmin(distances_to_start))
+edge_order = list(env.connectivity.edges())
+edge_lookup = {frozenset((u, v)): (i, u, v) for i, (u, v) in enumerate(edge_order)}
+signed_counts = np.zeros(len(edge_order))
+for source in journey_starts:
+    path = nx.shortest_path(env.connectivity, int(source), goal_bin, weight="distance")
+    for u, v in pairwise(path):
+        edge_id, oriented_u, _ = edge_lookup[frozenset((u, v))]
+        signed_counts[edge_id] += 1.0 if u == oriented_u else -1.0
 
-# Find bin closest to upper-right corner (goal)
-upper_right = min_coords + (max_coords - min_coords) * 0.8
-distances_to_goal = np.linalg.norm(env.bin_centers - upper_right, axis=1)
-goal_bin = int(np.argmin(distances_to_goal))
+# The known square grid has 5 cm faces and 25 cm² cells (no diagonal fluxes).
+face_length = 5.0
+journey_flux = signed_counts / (n_journeys * face_length)
+div_journeys = divergence(env, journey_flux)
+expected_net = np.bincount(journey_starts, minlength=env.n_bins) / n_journeys
+expected_net[goal_bin] -= 1.0
+np.testing.assert_allclose(div_journeys * env.bin_sizes, expected_net, atol=1e-12)
+np.testing.assert_allclose(np.dot(div_journeys, env.bin_sizes), 0.0, atol=1e-12)
+print(f"Routed {n_journeys} synthetic journeys to goal bin {goal_bin}")
+print(f"Goal divergence: {div_journeys[goal_bin]:.4f} per cm² per journey")
+print("Volume-weighted divergence equals starts minus arrivals, with zero total.")
 
-print(f"Start bin: {start_bin} at position {env.bin_centers[start_bin]}")
-print(f"Goal bin: {goal_bin} at position {env.bin_centers[goal_bin]}")
-
-# %% [markdown]
-# ### Simulate Goal-Directed Policy
-#
-# Create a simple policy where transitions are biased toward the goal (higher probability for moves that decrease distance).
-
-# %%
-# Compute distances from goal
-distances_from_goal = distance_field(env.connectivity, sources=[goal_bin])
-
-# Create goal-directed transition matrix
-# For each edge, assign higher weight if it moves toward goal
-edge_weights = np.zeros(env.connectivity.number_of_edges())
-
-for edge_id, (u, v) in enumerate(env.connectivity.edges()):
-    # If edge moves toward goal (distance decreases), assign higher weight
-    distance_change = distances_from_goal[v] - distances_from_goal[u]
-
-    if distance_change < 0:  # Moving toward goal
-        edge_weights[edge_id] = 2.0  # Higher probability
-    else:  # Moving away from goal
-        edge_weights[edge_id] = 0.5  # Lower probability
-
-# Normalize to create flow field (like transition probabilities)
-# Normalize by outgoing degree at each node
-normalized_flow = edge_weights.copy()
-for edge_id, (u, _v) in enumerate(env.connectivity.edges()):
-    # Get total outgoing weight from u
-    outgoing_weight = sum(
-        edge_weights[eid]
-        for eid, (src, _dst) in enumerate(env.connectivity.edges())
-        if src == u
-    )
-    if outgoing_weight > 0:
-        normalized_flow[edge_id] /= outgoing_weight
-
-print(f"Flow field shape: {normalized_flow.shape}")
-print(f"Flow field range: [{normalized_flow.min():.3f}, {normalized_flow.max():.3f}]")
-
-# %% [markdown]
-# ### Analyze Flow Divergence for Goal-Directed Policy
-
-# %%
-# Compute divergence of goal-directed flow
-div_policy = divergence(env, normalized_flow)
-
-print(f"Divergence at selected start bin: {div_policy[start_bin]:.3f}")
-print(
-    f"Divergence at goal bin: {div_policy[goal_bin]:.3f}  (should be negative - sink)"
-)
-
-# Find strongest sources and sinks
-sources_policy = np.argsort(div_policy)[-10:]  # Top 10 sources
-sinks_policy = np.argsort(div_policy)[:10]  # Top 10 sinks
-
-print(f"\nStrongest sources: {sources_policy}")
-print(f"Strongest sinks: {sinks_policy}")
-
-# %% [markdown]
-# ### Visualizing Policy Flow Divergence
-
-# %%
 fig, ax = plt.subplots(figsize=(10, 8), constrained_layout=True)
-
-# Divergence field
+limit = float(np.max(np.abs(div_journeys)))
 env.plot_field(
-    div_policy,
+    div_journeys,
     ax=ax,
     cmap="RdBu_r",
-    vmin=-0.1,
-    vmax=0.1,
-    colorbar_label="Divergence\n(red = source, blue = sink)",
+    vmin=-limit,
+    vmax=limit,
+    colorbar_label="Net outflow / cm² / journey",
 )
-
-# Mark start (should be source)
 ax.scatter(
-    env.bin_centers[start_bin, 0],
-    env.bin_centers[start_bin, 1],
+    *env.bin_centers[start_bin],
     marker="o",
-    s=600,
+    s=250,
     c="lime",
     edgecolors="black",
-    linewidths=2,
-    label="Selected Start",
+    label="One chosen start",
     zorder=10,
 )
-
-# Mark goal (should be sink)
 ax.scatter(
-    env.bin_centers[goal_bin, 0],
-    env.bin_centers[goal_bin, 1],
+    *env.bin_centers[goal_bin],
     marker="*",
-    s=800,
+    s=400,
     c="gold",
     edgecolors="black",
-    linewidths=2,
-    label="Goal (Sink)",
+    label="Shared goal",
     zorder=10,
 )
-
-ax.set_title(
-    "Policy Flow Divergence\n(Goal-Directed Navigation)", fontsize=16, fontweight="bold"
-)
-ax.legend(fontsize=12, loc="upper right")
-
+ax.set_title("Divergence of Signed Journey Flux")
+ax.legend()
 plt.show()
 
 # %% [markdown]
-# **Interpretation**:
-# - **Goal bin (gold star)**: Strong sink (negative divergence) - flow terminates here
-# - **Selected start (green circle)**: Its measured divergence determines whether it is a source or sink; selecting a bin does not guarantee its sign.
-# - **Intermediate bins**: Near-zero divergence (conservation) - flow passes through
-# - This pattern reflects the goal-directed policy bias toward the goal location
-#
-# ### Applications in Neuroscience
-#
-# 1. **Replay Analysis**: Analyze hippocampal replay sequences to identify preferred start and end states
-# 2. **Policy Learning**: Track how flow patterns change during learning (diffuse → directed)
-# 3. **Successor Representation**: Validate learned SR matrices capture correct flow dynamics
-# 4. **Spatial Navigation**: Identify decision points (high divergence) vs. committed paths (low divergence)
+# The shared goal is a sink. Starts are sources, and bins traversed without
+# starting or stopping conserve net flux. Geometry and the chosen journeys
+# determine this example; applying it to recordings requires appropriate
+# observation windows and a justified conversion from transitions to flux.
 
 # %% [markdown]
 # ## Summary
@@ -604,10 +549,10 @@ plt.show()
 #
 # ### Applications
 #
-# - **Goal-directed navigation**: Gradient of distance field → optimal policy direction
-# - **Source/sink detection**: Divergence of flow field → trajectory origins and destinations
+# - **Constructed navigation fields**: Negative distance gradients identify downhill edges
+# - **Source/sink detection**: Divergence of signed face flux gives net local outflow
 # - **Graph smoothing**: Laplacian diffusion → alternative to Gaussian smoothing
-# - **RL analysis**: Flow divergence → learned policy structure
+# - **Journey analysis**: Check sources and sinks of explicitly supplied paths
 #
 # ### When to Use Differential Operators
 #
@@ -622,3 +567,9 @@ plt.show()
 # - Shuman et al. (2013): *The Emerging Field of Signal Processing on Graphs*
 # - Stachenfeld et al. (2017): *The Hippocampus as a Predictive Map*
 # - Pfeiffer & Foster (2013): *Hippocampal Place-Cell Sequences Depict Future Paths*
+
+# %% [markdown]
+# ## Next Steps
+#
+# Continue to [10: signal processing](10_signal_processing_primitives.ipynb)
+# for neighborhood statistics and custom kernels.

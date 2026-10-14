@@ -4,6 +4,10 @@
 
 ### Added
 
+- Check the complete notebook collection in CI, including paired source and
+  documentation parity, local links and an acyclic prerequisite graph. Generate
+  one shared catalog from notebook metadata for the repository and docs site.
+
 - Download and cache the real J16 bandit recording from
   Zenodo (10.5281/zenodo.23020757), verifying its
   pinned SHA-256 before loading numeric NPZ arrays without pickle. Examples 19
@@ -64,6 +68,12 @@
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Changed
+
+- Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
+  observed support, independent simulation randomness and calibrated scientific
+  language. Correct rate-map and direction labels, add held-out decoding,
+  preserve real-data transition endpoints/gaps, and make desktop viewers and
+  long video exports opt-in. Refresh worked outputs and align prerequisite links.
 
 - Rate and peri-event results store read-only copies of their arrays. This
   covers spatial, directional, view and object-vector results (single-unit

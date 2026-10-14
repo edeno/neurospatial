@@ -16,75 +16,48 @@
 # %% [markdown]
 # # Loading from NWB
 #
-# **NWB (Neurodata Without Borders)** is the dominant interoperable
-# file format for systems neuroscience. neurospatial reads position,
-# pose, spikes, events, and intervals from NWB files - and writes
-# derived results (environments, place fields, occupancy maps, laps,
-# trials, region crossings) back into them.
-#
-# This notebook demonstrates the round-trip:
-#
-# 1. Build a synthetic NWB file with position + spike data
-# 2. Read position from NWB, build a neurospatial ``Environment``
-# 3. Compute a place field and write it back into the NWB file
-# 4. Read the place field and environment back, confirm round-tripping
-#
-# We use a synthetic in-memory NWB file so the notebook runs without
-# downloading anything. The same API works on real DANDI datasets - see
-# the [io.nwb API reference](../../api/neurospatial/io/nwb/) for
-# the full surface.
-#
-# ## Learning Objectives
-#
-# By the end of this notebook, you will be able to:
-#
-# - Build a minimal NWB file with position data
-# - Read NWB position with ``read_position``
-# - Build an environment directly from NWB with ``environment_from_position``
-# - Write derived results back with ``write_environment`` and ``write_place_field``
-# - Read environments back with ``read_environment``
+# Read position and labeled spikes, compute spatial rates with explicit recording
+# support, and preserve the results in an NWB file. This synthetic example writes
+# a real temporary `.nwb` file and reopens it, so no download or private data is needed.
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**:
-# [01_introduction_basics.ipynb](../01_introduction_basics/),
-# [11_place_field_analysis.ipynb](../11_place_field_analysis/).
-# Requires the optional ``pynwb`` dependency
-# (``uv add pynwb`` or install ``neurospatial[nwb]``).
-
-# %% [markdown]
+# **Prerequisites**: [01: basics](01_introduction_basics.ipynb),
+# [11: place fields](11_place_field_analysis.ipynb).
+# This notebook requires the optional NWB extra: from the repository root use
+# `uv sync --extra notebooks --extra nwb` and select that environment's kernel.
+# The array-only analyses in the other notebooks do not require NWB packages.
+#
 # ## Setup
 
 # %%
 import sys
-from datetime import datetime
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 try:
-    from pynwb import NWBFile  # type: ignore[import-not-found]
-    from pynwb.behavior import Position, SpatialSeries  # type: ignore[import-not-found]
-except ImportError as err:
-    # pynwb ships as a required dependency, so this should not happen
-    # in a normal install. If it does, surface a clear actionable error
-    # rather than failing deep in the analysis cells. RuntimeError shows
-    # cleanly in a Jupyter cell (no SystemExit traceback box).
-    raise RuntimeError(
-        "pynwb is not installed. Run: pip install pynwb (or uv add pynwb), "
-        "then restart the kernel."
-    ) from err
+    from pynwb import NWBHDF5IO, NWBFile
+    from pynwb.behavior import Position, SpatialSeries
+except ImportError as error:
+    raise ImportError(
+        "Example 27 requires neurospatial[nwb]. In a checkout run "
+        "`uv sync --extra notebooks --extra nwb`, then restart the kernel."
+    ) from error
 
 from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial.encoding import compute_spatial_rates
 from neurospatial.io.nwb import (
     environment_from_position,
     read_environment,
+    read_place_field,
     read_position,
+    read_units,
     write_environment,
-    write_place_field,
+    write_spatial_rates,
 )
 from neurospatial.simulation import (
     PlaceCellModel,
@@ -102,18 +75,16 @@ from _style import apply_style
 apply_style(figsize=(10, 8))
 
 # %% [markdown]
-# ## Part 1: Build a Synthetic NWB File
+# ## 1. Construct position and spikes with known units and support
 #
-# In a real workflow you would do
-# ``NWBHDF5IO("session.nwb", "r")`` and skip this section. Here we
-# construct an in-memory NWB file with realistic position + spike data.
+# Position and spikes share a clock in seconds. A 50 Hz trajectory represents
+# ten minutes in a 100 × 100 cm arena. Use independent random streams for
+# trajectory and spike generation; the complete simulation is reproducible.
 
 # %%
 xx, yy = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
-samples = np.column_stack([xx.ravel(), yy.ravel()])
-sim_env = Environment.from_samples(samples, bin_size=4.0)
+sim_env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=4.0)
 sim_env.units = "cm"
-
 positions, times = simulate_trajectory_ou(
     sim_env,
     duration=600.0,
@@ -122,30 +93,19 @@ positions, times = simulate_trajectory_ou(
     speed_mean=15.0,
     seed=42,
 )
-
 cell = PlaceCellModel(
-    sim_env,
-    center=np.array([50.0, 50.0]),
-    width=10.0,
-    max_rate=30.0,
-    baseline_rate=0.5,
-    seed=42,
+    sim_env, center=[50.0, 50.0], width=10.0, max_rate=30.0, baseline_rate=0.5
 )
-rates = cell.firing_rate(positions)
-spike_times = generate_poisson_spikes(rates, times, seed=42)
+spike_times = generate_poisson_spikes(cell.firing_rate(positions), times, seed=142)
+recording_window = np.array([[times[0], times[-1]]])
+# Keep the half-open interval used throughout the analysis.
+spike_times = spike_times[(spike_times >= times[0]) & (spike_times < times[-1])]
 
-print(f"Simulated session: {len(times)} samples, {len(spike_times)} spikes")
-
-# %% [markdown]
-# Wrap the trajectory in a minimal NWB file:
-
-# %%
 nwbfile = NWBFile(
     session_description="Synthetic place-cell session",
-    identifier=str(uuid4()),
-    session_start_time=datetime.now().astimezone(),
+    identifier="neurospatial-example-27",
+    session_start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
 )
-
 position_container = Position(name="Position")
 position_container.add_spatial_series(
     SpatialSeries(
@@ -157,169 +117,132 @@ position_container.add_spatial_series(
         unit="cm",
     )
 )
-behavior_module = nwbfile.create_processing_module(
-    name="behavior",
-    description="Behavioural processing",
+nwbfile.create_processing_module("behavior", "Behavioral tracking").add(
+    position_container
 )
-behavior_module.add(position_container)
-
-print(f"NWB file built: {nwbfile.identifier[:8]}...")
-print(f"Processing modules: {list(nwbfile.processing.keys())}")
-
-# %% [markdown]
-# ## Part 2: Read Position from NWB
-#
-# ``read_position`` auto-discovers the Position container (priority:
-# ``processing/behavior`` > ``processing/*`` > ``acquisition``). Pass
-# ``processing_module`` and / or ``position_name`` to disambiguate when
-# multiple series exist.
-
-# %%
-pos = read_position(nwbfile)
-positions_nwb, times_nwb = pos.positions, pos.times
-print(f"Declared physical units: {pos.units}")
-print(f"Read positions: shape={positions_nwb.shape}, dtype={positions_nwb.dtype}")
+# Label 7 is explicitly chosen for this synthetic unit, not inferred from row order.
+nwbfile.add_unit(id=7, spike_times=spike_times, obs_intervals=recording_window)
 print(
-    f"Read times:     shape={times_nwb.shape}, range=[{times_nwb[0]:.1f}, "
-    f"{times_nwb[-1]:.1f}] s"
+    f"Synthetic recording: {len(times):,} position samples, {len(spike_times):,} spikes"
 )
-print(f"Round-trip match: {np.allclose(positions_nwb, positions)}")
 
 # %% [markdown]
-# ## Part 3: Build an Environment Directly from NWB
+# ## 2. Read arrays and preserve identity at the NWB boundary
 #
-# ``environment_from_position`` reads the position channel and calls
-# ``Environment.from_samples`` for you. ``units`` is auto-detected
-# from the SpatialSeries.
+# Readers return named holders. Eager arrays (the default) remain usable after
+# closing a file; `lazy=True` handles must be used while their file is open.
+# Specify channel/module names when multiple position series exist. Stored
+# conversion and offset are applied by `read_position`; values are in `pos.units`.
 
 # %%
-env = environment_from_position(nwbfile, bin_size=4.0)
-print(f"Environment: {env.n_bins} bins, units={env.units}")
+pos = read_position(nwbfile, processing_module="behavior", position_name="position")
+units = read_units(nwbfile)
+np.testing.assert_array_equal(pos.positions, positions)
+np.testing.assert_array_equal(units.unit_ids, [7])
+np.testing.assert_array_equal(units.spike_times[0], spike_times)
+print(f"Position units: {pos.units}; unit labels: {units.unit_ids.tolist()}")
+print(f"Spike recording windows: {units.spike_window}")
 
 # %% [markdown]
-# ## Part 4: Compute a Place Field
+# ## 3. Estimate fields with explicit analysis choices
 #
-# Standard ``compute_spatial_rate`` workflow using the NWB-derived
-# environment and the spike times we already have.
+# `environment_from_position` constructs bins from the selected tracking channel.
+# Check declared units before constructing an environment; missing metadata should
+# be resolved from the experiment. Inferring active bins from visited samples is
+# one environment choice; a known arena boundary is another.
+#
+# `spike_window` records acquisition coverage, and `epochs` selects analysis
+# windows. They are separate concepts even though they match in this example.
+# Bins without sufficient observed occupancy remain unsupported. Keep NaNs and
+# the support mask instead of presenting unobserved space as a zero firing rate.
 
 # %%
-result = compute_spatial_rate(
+if pos.units is None:
+    raise ValueError("Choose spatial units from the experiment before continuing.")
+env = environment_from_position(nwbfile, bin_size=4.0, units=pos.units)
+rates = compute_spatial_rates(
     env,
-    spike_times,
-    times_nwb,
-    positions_nwb,
-    method="diffusion_kde",
+    units.spike_times,
+    pos.times,
+    pos.positions,
+    unit_ids=units.unit_ids,
+    epochs=recording_window,
+    spike_window=units.spike_window,
     bandwidth=5.0,
+    min_occupancy=0.05,
 )
-print(f"Place field peak: {np.nanmax(result.firing_rate):.2f} Hz")
-print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
-
+result = rates.sel(unit_id=7)
+print(rates.summary_table())
+print(f"Observed supported bins: {rates.spatial_support.sum()} / {env.n_bins}")
 fig, ax = plt.subplots(figsize=(7, 7))
-env.plot_field(result.firing_rate, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)")
-ax.scatter(
-    [50],
-    [50],
-    c="cyan",
-    s=200,
-    marker="*",
-    edgecolors="white",
-    linewidths=2,
-    zorder=5,
-    label="True centre",
-)
-ax.set_xlabel("x (cm)")
-ax.set_ylabel("y (cm)")
-ax.set_title(
-    f"Place field from NWB-derived environment\n"
-    f"info = {result.spatial_information():.3f} bits/spike"
-)
-ax.legend(loc="upper right")
-plt.tight_layout()
+result.plot(ax=ax, cmap="hot")
+ax.scatter(50, 50, c="cyan", s=150, marker="*", label="Simulated field center")
+ax.set_title("Spatial rate estimated from NWB arrays")
+ax.legend()
 plt.show()
 
 # %% [markdown]
-# ## Part 5: Write Results Back into the NWB File
+# ## 4. Persist the full result and reopen the file
 #
-# Neurospatial provides ``write_environment`` (stores environment
-# metadata, bin centres, and the edge list in scratch/) and
-# ``write_place_field`` (stores the
-# rate map aligned to bin centers in analysis/). Both attach to an
-# in-memory NWBFile; persist with ``NWBHDF5IO(...).write(nwbfile)``.
+# `write_spatial_rates` stores maps, occupancy, unit labels, analysis settings,
+# support, and a companion environment. `read_place_field` is its population-result
+# reader despite its singular name. `write_place_field` is a lower-level array
+# writer and does not preserve the complete result provenance.
+#
+# Writers modify the in-memory NWBFile; `NWBHDF5IO.write` persists it. This demo
+# uses a fresh temporary directory on each run rather than overwriting recordings.
+# To add results to your own file, choose an output copy or deliberate update
+# workflow, and register ndx-pose/ndx-events before opening files containing those
+# extensions. This minimal example uses only core NWB containers.
 
 # %%
-write_environment(nwbfile, env, name="my_environment")
-write_place_field(
-    nwbfile,
-    env,
-    np.asarray(result.firing_rate),
-    name="cell_001_place_field",
-    description="Place field for simulated cell 001",
-    unit="Hz",
-)
-print(f"Scratch entries: {list(nwbfile.scratch.keys())}")
-analysis_module = nwbfile.processing["analysis"]
+write_environment(nwbfile, env, name="analysis_environment")
+write_spatial_rates(nwbfile, rates, name="spatial_rates")
+temporary_data = tempfile.TemporaryDirectory(prefix="neurospatial-nwb-example-")
+nwb_path = Path(temporary_data.name) / "synthetic_session.nwb"
+with NWBHDF5IO(str(nwb_path), "w") as io:
+    io.write(nwbfile)
+with NWBHDF5IO(str(nwb_path), "r") as io:
+    restored_file = io.read()
+    restored_position = read_position(restored_file)
+    restored_units = read_units(restored_file)
+    env_back = read_environment(restored_file, name="analysis_environment")
+    rates_back = read_place_field(restored_file, name="spatial_rates")
+
+# All readers above were eager; comparison happens after the file is closed.
+np.testing.assert_array_equal(restored_position.positions, pos.positions)
+np.testing.assert_array_equal(restored_units.unit_ids, units.unit_ids)
+np.testing.assert_allclose(rates_back.firing_rates, rates.firing_rates, equal_nan=True)
+np.testing.assert_array_equal(rates_back.occupancy, rates.occupancy)
+np.testing.assert_array_equal(rates_back.spatial_support, rates.spatial_support)
+np.testing.assert_array_equal(rates_back.unit_ids, rates.unit_ids)
+assert rates_back.analysis_settings == rates.analysis_settings
+np.testing.assert_array_equal(env_back.bin_centers, env.bin_centers)
+assert set(env_back.connectivity.edges) == set(env.connectivity.edges)
+assert env_back.units == env.units
 print(
-    f"Analysis processing module entries: "
-    f"{list(analysis_module.data_interfaces.keys())}"
+    "Disk round trip preserved positions, labeled rates, occupancy, support and analysis settings."
 )
 
 # %% [markdown]
-# ## Part 6: Round-Trip the Environment
-#
-# ``read_environment`` reconstructs the full ``Environment`` (active
-# bins, connectivity graph, regions, layout) from the stored bin
-# centres and edge list. Check the pieces we care about to confirm
-# the round-trip is structurally faithful:
+# Bin arrays and connectivity checks do not establish every geometric capability
+# for every layout. Test point lookup and other operations you need after loading,
+# especially for non-grid layouts. Here is an explicit outside-arena probe:
 
 # %%
-env_back = read_environment(nwbfile, name="my_environment")
-print(f"Original env:   {env.n_bins} bins, units={env.units}")
-print(f"Round-trip env: {env_back.n_bins} bins, units={env_back.units}")
-print(f"bin_centers match: {np.allclose(env.bin_centers, env_back.bin_centers)}")
+outside = np.array([[-100.0, -100.0]])
 print(
-    f"n_edges match:     {env.connectivity.number_of_edges() == env_back.connectivity.number_of_edges()}"
+    f"Outside point lookup: original={env.bin_at(outside).tolist()}, "
+    f"reloaded={env_back.bin_at(outside).tolist()}"
 )
-print(f"units match:       {env.units == env_back.units}")
-# Note: regions and layout class are also preserved; see read_environment
-# documentation for the full equivalence contract.
+# The temporary file is no longer needed: all returned arrays were eager.
+temporary_data.cleanup()
 
 # %% [markdown]
-# ## Summary
+# ## Next steps
 #
-# In this notebook, you learned:
-#
-# ### NWB Round-Trip API
-# - ``read_position`` reads a Position SpatialSeries from
-#   ``processing/behavior`` (or anywhere in ``processing/*`` or
-#   ``acquisition``)
-# - ``environment_from_position`` is a one-liner that reads position
-#   and calls ``Environment.from_samples``
-# - ``read_environment`` reads back a previously-written environment,
-#   reconstructing the layout, active bins, and connectivity graph
-# - ``write_environment`` stores environment metadata, bin centres,
-#   and the edge list in ``scratch/``
-# - ``write_place_field`` stores a rate map aligned to bin centres in
-#   ``analysis/``
-#
-# ### Persistence
-# - These functions operate on an in-memory ``NWBFile``; use
-#   ``NWBHDF5IO(path, mode).write(nwbfile)`` to flush changes to disk
-#
-# ### Other Readers/Writers
-# - ``read_pose``: pose tracking (body parts)
-# - ``read_head_direction``: ``CompassDirection`` data
-# - ``read_events`` / ``read_intervals`` / ``read_trials``: discrete
-#   events, epoch intervals, trial tables
-# - ``write_laps`` / ``write_region_crossings`` / ``write_trials`` /
-#   ``write_events``: behavioural segmentation outputs
-# - ``write_occupancy``: occupancy maps
-#
-# ### Next Steps
-# - For real DANDI data, point ``NWBHDF5IO`` at a downloaded ``.nwb``
-#   file and the same API applies
-# - For an end-to-end real-data example, see
-#   [19_real_data_bandit_task.ipynb](../19_real_data_bandit_task/)
-#
-# ### References
-# - [NWB website](https://www.nwb.org/)
-# - [DANDI archive](https://dandiarchive.org/) - public NWB datasets
+# - [19: real-data spatial coding](19_real_data_bandit_task.ipynb) uses the same array workflow.
+# - [26: peri-event histograms](26_peri_event_psth.ipynb) demonstrates full-window event exposure.
+# - NWB also supports `read_pose`, `read_head_direction`, `read_events`, `read_intervals`
+#   and `read_trials`; install the corresponding extensions before opening those files.
+# - [NWB](https://www.nwb.org/) and [DANDI](https://dandiarchive.org/) provide format/data resources.

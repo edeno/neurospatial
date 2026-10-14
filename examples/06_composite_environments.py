@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Composite Environments: Merging Multiple Spaces
 #
+# **Estimated time**: 25-30 minutes
+#
+# **Prerequisites**: [02: layouts](02_layout_engines.ipynb), [04: regions](04_regions_of_interest.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -28,7 +32,6 @@
 # - Query across sub-environments seamlessly
 # - Visualize composite structures with bridges
 #
-# **Estimated time: 25-30 minutes**
 
 # %% [markdown]
 # ## What Are Composite Environments?
@@ -46,7 +49,10 @@
 # 3. Automatically infer "bridge" connections between spaces
 # 4. Query and analyze across all spaces with a single API
 #
-# **Key insight:** The composite environment looks just like a regular `Environment` from the outside, but internally manages multiple sub-environments and their connections.
+# A composite supports the spatial queries demonstrated here, but is not a
+# replacement for every `Environment` analysis method. All components must
+# share physical units and a common coordinate frame; composition does not
+# register separate sessions. Inferred bridges are assumptions, not detected doors.
 
 # %% [markdown]
 # ## Setup
@@ -76,7 +82,9 @@ apply_style(figsize=(14, 10), font_size=11)
 # %% [markdown]
 # ## Example 1: Two-Room Experiment
 #
-# Let's start with a simple scenario: an animal explores two separate rooms. Each room is recorded separately, but we want to analyze neural activity across both contexts.
+# These toy rooms share a coordinate frame. We first inspect unconstrained
+# MNN bridging, then restrict bridge distances. For real rooms, allow only
+# physically traversable connections, not edges through walls.
 
 # %% [markdown]
 # ### Create Two Separate Environments
@@ -88,13 +96,17 @@ n_samples_room1 = 2000
 room1_data = np.random.randn(n_samples_room1, 2) * 8 + np.array([25, 25])
 room1_data = np.clip(room1_data, 5, 45)
 
-env_room1 = Environment.from_samples(positions=room1_data, bin_size=4.0, name="Room1")
+env_room1 = Environment.from_samples(
+    positions=room1_data, bin_size=4.0, name="Room1", units="cm"
+)
 
 # Room 2: Different location, 40x60 cm rectangular arena
 n_samples_room2 = 1500
 room2_data = np.random.uniform(low=[60, 10], high=[95, 65], size=(n_samples_room2, 2))
 
-env_room2 = Environment.from_samples(positions=room2_data, bin_size=4.0, name="Room2")
+env_room2 = Environment.from_samples(
+    positions=room2_data, bin_size=4.0, name="Room2", units="cm"
+)
 
 print(f"Room 1: {env_room1.n_bins} bins, range {env_room1.dimension_ranges}")
 print(f"Room 2: {env_room2.n_bins} bins, range {env_room2.dimension_ranges}")
@@ -146,7 +158,8 @@ print(f"  Total edges: {composite_env.connectivity.number_of_edges()}")
 # 3. Keep only the **mutual** nearest neighbors (A→B and B→A both agree)
 # 4. Create bridge edges with proper distance weights
 #
-# Let's examine the bridges:
+# The low-level inspection below uses private composite bookkeeping. Ordinary
+# bin, region and distance queries later in the notebook use public methods.
 
 # %%
 # Examine the bridges in detail
@@ -283,9 +296,11 @@ def create_circular_arena(
 
     # Create environment
     circle_polygon = Point(center_x, center_y).buffer(radius)
-    return Environment.from_polygon(
+    arena = Environment.from_polygon(
         polygon=circle_polygon, bin_size=bin_size, name=name
     )
+    arena.units = "cm"
+    return arena
 
 
 # Create three arenas in a line
@@ -388,25 +403,25 @@ plt.show()
 # Start box (bottom)
 start_box_data = np.random.uniform(low=[45, 0], high=[55, 30], size=(600, 2))
 env_start = Environment.from_samples(
-    positions=start_box_data, bin_size=3.0, name="StartBox"
+    positions=start_box_data, bin_size=3.0, name="StartBox", units="cm"
 )
 
 # Left arm
 left_arm_data = np.random.uniform(low=[10, 30], high=[45, 40], size=(500, 2))
 env_left = Environment.from_samples(
-    positions=left_arm_data, bin_size=3.0, name="LeftArm"
+    positions=left_arm_data, bin_size=3.0, name="LeftArm", units="cm"
 )
 
 # Right arm
 right_arm_data = np.random.uniform(low=[55, 30], high=[90, 40], size=(500, 2))
 env_right = Environment.from_samples(
-    positions=right_arm_data, bin_size=3.0, name="RightArm"
+    positions=right_arm_data, bin_size=3.0, name="RightArm", units="cm"
 )
 
 # Center junction
 junction_data = np.random.uniform(low=[40, 28], high=[60, 35], size=(400, 2))
 env_junction = Environment.from_samples(
-    positions=junction_data, bin_size=3.0, name="Junction"
+    positions=junction_data, bin_size=3.0, name="Junction", units="cm"
 )
 
 print("T-Maze Compartments:")
@@ -521,7 +536,9 @@ bin_start = tmaze_composite.bin_at(point_start.reshape(1, -1))[0]
 bin_left_end = tmaze_composite.bin_at(point_left_end.reshape(1, -1))[0]
 
 # Find shortest path using networkx
-path = nx.shortest_path(tmaze_composite.connectivity, bin_start, bin_left_end)
+path = nx.shortest_path(
+    tmaze_composite.connectivity, bin_start, bin_left_end, weight="distance"
+)
 
 print("\nPath from Start Box to Left Arm:")
 print(f"  Path length: {len(path)} bins")
@@ -654,7 +671,8 @@ print(f"  Left ↔ Right:  {dist_left_right:.2f} cm")
 # ### Pitfall 1: Sub-environments must have same dimensionality
 
 # %%
-# This would fail (mixing 2D and 1D environments)
+# Mixing embeddings with different n_dims would fail. A graph track
+# embedded in 2D still has n_dims=2.
 # composite_bad = CompositeEnvironment(
 #     subenvs=[env_2d, env_1d]  # Error: incompatible dimensions!
 # )
@@ -675,9 +693,7 @@ no_bridges_composite = CompositeEnvironment(
 
 print(f"\nWith max_mnn_distance=1.0: {len(no_bridges_composite._bridge_list)} bridges")
 print("⚠ Warning: Very strict threshold may result in disconnected sub-environments")
-print(
-    "✓ Solution: Increase threshold or use auto_bridge=True with max_mnn_distance=None"
-)
+print("✓ Check intended doors and coordinate frames before allowing longer bridges")
 
 # %% [markdown]
 # ### Best Practice: Check connectivity
@@ -693,14 +709,12 @@ print(f"  Number of components: {n_components}")
 
 if not is_connected:
     print(f"  ⚠ Warning: Graph has {n_components} disconnected components!")
-    print(
-        "  Consider: Increasing max_mnn_distance or checking sub-environment positions"
-    )
+    print("  Compare missing connections against intended doors and coordinate frames")
 
 # %% [markdown]
 # ## Example 4: CompositeEnvironment Methods
 #
-# `CompositeEnvironment` has full API parity with `Environment` class, including:
+# `CompositeEnvironment` supports these public operations:
 # - Region queries: `bins_in_region()`, `region_mask()`
 # - Pathfinding: `path_between()`
 # - Diagnostics: `info()`
@@ -801,7 +815,7 @@ if path:
     total_distance = sum(
         tmaze_with_regions.connectivity[u][v]["distance"] for u, v in pairwise(path)
     )
-    print(f"  Total distance: {total_distance:.2f} units")
+    print(f"  Total distance: {total_distance:.2f} cm")
 
 # %% [markdown]
 # ### Pathfinding Example: No Path Between Disconnected Components
@@ -861,10 +875,15 @@ with tempfile.TemporaryDirectory() as tmpdir:
     print(f"  Regions preserved: {list(loaded_composite.regions.keys())}")
 
     # Test that loaded composite works
-    test_points = np.array([[5.0, 5.0]])
+    test_points = np.asarray([tmaze_with_regions.bin_centers[0]])
     bins_loaded = loaded_composite.bin_at(test_points)
     bins_original = tmaze_with_regions.bin_at(test_points)
     print(f"  bin_at() test: loaded={bins_loaded[0]}, original={bins_original[0]}")
+    assert bins_loaded[0] >= 0
+    np.testing.assert_array_equal(bins_loaded, bins_original)
+    np.testing.assert_allclose(
+        loaded_composite.bin_centers, tmaze_with_regions.bin_centers
+    )
 
     print("\n✓ Save/load preserves all composite structure and functionality")
 
@@ -879,7 +898,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # 3. **`max_mnn_distance` parameter** controls which environments connect (None = no limit)
 #
-# 4. **Full API parity with Environment**:
+# 4. **Public operations demonstrated here**:
 #    - Spatial queries: `bin_at()`, `distance_between()`, `contains()`
 #    - Region queries: `bins_in_region()`, `region_mask()`
 #    - Pathfinding: `path_between()` (works across bridges!)
@@ -902,7 +921,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # ## Next Steps
 #
-# In the next notebook ([07_advanced_operations.ipynb](../07_advanced_operations/)), you'll learn:
+# In the next notebook ([07_advanced_operations.ipynb](07_advanced_operations.ipynb)), you'll learn:
 # - Advanced path finding and geodesic distances
 # - Alignment and coordinate transformations
 # - Mapping probability distributions between environments

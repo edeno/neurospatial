@@ -35,12 +35,12 @@
 # - Understand the difference between place cells and spatial view cells
 # - Simulate spatial view cells with known tuning properties
 # - Compute view fields indexed by viewed location
-# - Use metrics to classify cells as spatial view vs place cells
+# - Compare descriptive tuning metrics and understand why they do not identify cell type
 # - Work with field of view constraints
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 
 # %% [markdown]
 # ## Setup
@@ -64,6 +64,7 @@ from neurospatial.simulation import (
 
 # Set random seed for reproducibility
 rng = np.random.default_rng(42)
+motion_rng = np.random.default_rng(43)
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
 import sys
@@ -81,7 +82,10 @@ apply_style(figsize=(12, 10), font_size=11)
 # %% [markdown]
 # ## Part 1: Create Environment and Trajectory
 #
-# First, we create a square arena and simulate animal movement with realistic heading.
+# We create a square arena and a finite, clipped random-walk fixture. It can
+# oversample edges and leave much of the arena unvisited. Inspect coverage before
+# interpreting comparisons. Movement-derived heading is a proxy: in real data,
+# head direction and eye position may differ from movement and gaze.
 
 # %%
 # Create environment
@@ -97,7 +101,7 @@ dt = 0.02  # 50 Hz
 times = np.arange(n_time) * dt
 
 # Smooth random walk
-velocities = np.cumsum(rng.normal(0, 0.5, (n_time, 2)), axis=0)
+velocities = np.cumsum(motion_rng.normal(0, 0.5, (n_time, 2)), axis=0)
 velocities = np.clip(velocities, -20, 20)  # Limit speed
 positions = 50 + np.cumsum(velocities * dt, axis=0)
 positions = np.clip(positions, 10, 90)  # Stay in bounds
@@ -185,7 +189,7 @@ svc_model = SpatialViewCellModel(
 
 # Generate firing rates and spikes
 svc_rates = svc_model.firing_rate(positions, times=times, headings=headings)
-svc_spikes = generate_poisson_spikes(svc_rates, times, seed=42)
+svc_spikes = generate_poisson_spikes(svc_rates, times, seed=11221)
 
 print(f"Spatial view cell: {len(svc_spikes)} spikes")
 print(f"Mean firing rate: {len(svc_spikes) / times[-1]:.2f} Hz")
@@ -209,7 +213,7 @@ place_model = PlaceCellModel(
 )
 
 pc_rates = place_model.firing_rate(positions)
-pc_spikes = generate_poisson_spikes(pc_rates, times, seed=43)
+pc_spikes = generate_poisson_spikes(pc_rates, times, seed=11222)
 
 print(f"Place cell: {len(pc_spikes)} spikes")
 print(f"Mean firing rate: {len(pc_spikes) / times[-1]:.2f} Hz")
@@ -223,7 +227,10 @@ print(f"Mean firing rate: {len(pc_spikes) / times[-1]:.2f} Hz")
 # 2. **Place field**: Firing rate indexed by **animal position**
 #
 # For a spatial view cell, the view field should show clear tuning, while the
-# place field may appear diffuse. The opposite pattern holds for place cells.
+# place field may appear diffuse under sufficiently diverse sampling. This is
+# not guaranteed: position and viewed location are correlated on a finite path.
+# Each map has its own occupancy/support; their information values are not a
+# controlled model comparison.
 
 # %%
 # Compute view fields and place fields
@@ -281,7 +288,8 @@ print(f"  Place field peak: {np.nanmax(pc_place_field):.2f} Hz")
 # - **Spatial view cell**: View field shows clear tuning at preferred location
 # - **Place cell**: Place field shows clear tuning at preferred location
 #
-# The "wrong" field type for each cell should appear more diffuse.
+# The model identities are known from construction. Neither apparent sharpness
+# nor a view/place information ratio is a validated classifier on this path.
 
 # %%
 # Visualize fields
@@ -350,12 +358,12 @@ fig.suptitle(
 plt.tight_layout()
 plt.show()
 
-print("\nObservations:")
-print("- Spatial view cell: VIEW field shows clear peak at preferred location")
-print("- Spatial view cell: PLACE field is diffuse (fires from many positions)")
-print("- Place cell: PLACE field shows clear peak at preferred location")
 print(
-    "- Place cell: VIEW field is diffuse (views many locations from preferred position)"
+    "\nCompare the observed maps and their support, rather than assuming a diffuse control."
+)
+print(
+    f"Observed time: view={svc_view_result.occupancy.sum():.2f} s; "
+    f"position={svc_place_result.occupancy.sum():.2f} s"
 )
 
 # %% [markdown]
@@ -380,22 +388,22 @@ print("SPATIAL VIEW CELL METRICS")
 print("=" * 60)
 print(f"View field info: {svc_view_info:.3f} bits/spike")
 print(f"Place field info: {svc_place_info:.3f} bits/spike")
-print(f"Classified as SVC: {svc_is_svc}")
+print(f"View-information screen passes: {svc_is_svc}")
 
 print("\n" + "=" * 60)
 print("PLACE CELL METRICS")
 print("=" * 60)
 print(f"View field info: {pc_view_info:.3f} bits/spike")
 print(f"Place field info: {pc_place_info:.3f} bits/spike")
-print(f"Classified as SVC: {pc_is_svc}")
+print(f"View-information screen passes: {pc_is_svc}")
 
 # %%
 # Quick classification summary
 print("\n" + "=" * 60)
 print("CLASSIFICATION SUMMARY")
 print("=" * 60)
-print(f"Spatial view cell classified as SVC: {svc_is_svc}")
-print(f"Place cell classified as SVC: {pc_is_svc}")
+print(f"Simulated view cell screen passes: {svc_is_svc}")
+print(f"Place-cell control screen passes: {pc_is_svc}")
 
 print("\nKey metrics comparison:")
 print(f"  {'Metric':<30} {'SVC':<15} {'Place Cell':<15}")
@@ -461,9 +469,10 @@ for bearing, label in zip(test_bearings, labels, strict=True):
 # - **Place fields** are indexed by animal position (use `compute_spatial_rate`, access `.firing_rate`)
 #
 # ### Classification
-# - Spatial view cells have higher view field information than place field information
-# - The view/place info ratio (`view_field_skaggs_info / place_field_skaggs_info`) distinguishes cell types
-# - Values > 1.5 suggest spatial view tuning; values < 1 suggest place tuning
+# - View/position information depends on occupancy, smoothing and their correlated sampling.
+# - The view/place information ratio is descriptive; no universal ratio identifies cell types.
+# - A known simulated view cell can fail the fixed information screen; report the observed outcome.
+# - Distinguishing models needs independently varied gaze/location and held-out comparisons.
 #
 # ### Field of View
 # - Different species have different visual fields

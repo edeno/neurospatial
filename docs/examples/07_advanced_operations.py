@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Advanced Operations: Paths, Distances, and Alignment
 #
+# **Estimated time**: 30-35 minutes
+#
+# **Prerequisites**: [02: layouts](02_layout_engines.ipynb), [04: regions](04_regions_of_interest.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -28,15 +32,14 @@
 # - Apply spatial transforms to analyze remapping and context changes
 # - Perform graph-based spatial analysis
 #
-# **Estimated time: 30-35 minutes**
 
 # %% [markdown]
 # ## Conceptual Introduction
 #
 # In real neuroscience experiments, you often need to:
 #
-# 1. **Measure distances** - How far did the animal travel? What's the distance between place fields?
-# 2. **Find paths** - What route did the animal take? What's the shortest path between locations?
+# 1. **Measure distances** - What is the shortest available route between locations?
+# 2. **Find paths** - Which route is shortest under the assumed graph?
 # 3. **Align environments** - Compare data from different sessions where the camera position shifted
 # 4. **Map distributions** - Transfer place fields between slightly different discretizations
 #
@@ -81,7 +84,7 @@ apply_style(figsize=(14, 10), font_size=11)
 # These can differ significantly in complex environments with barriers or non-Euclidean layouts!
 
 # %%
-# Create a U-shaped environment (barrier in middle)
+# Known U-shaped geometry defines the barrier independently of sampled points.
 # Left arm
 left_arm = np.random.uniform(low=[0, 0], high=[20, 60], size=(600, 2))
 # Bottom connector
@@ -91,7 +94,20 @@ right_arm = np.random.uniform(low=[40, 0], high=[60, 60], size=(600, 2))
 
 u_maze_data = np.vstack([left_arm, bottom, right_arm])
 
-env_u = Environment.from_samples(positions=u_maze_data, bin_size=4.0, name="U_Maze")
+u_boundary = Polygon(
+    [
+        (0, 0),
+        (60, 0),
+        (60, 60),
+        (40, 60),
+        (40, 15),
+        (20, 15),
+        (20, 60),
+        (0, 60),
+    ]
+)
+env_u = Environment.from_polygon(polygon=u_boundary, bin_size=4.0, name="U_Maze")
+env_u.units = "cm"
 
 print(f"U-Maze Environment: {env_u.n_bins} bins")
 
@@ -210,7 +226,8 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# **Key insight:** The animal must travel around the barrier, making the actual distance much longer than the straight-line distance!
+# The modeled shortest route detours around the known barrier. It approximates
+# distance between snapped bin centers, not the length of an observed trajectory.
 
 # %% [markdown]
 # ### Analyzing Multiple Paths
@@ -259,7 +276,7 @@ for i, test_point in enumerate(test_points):
 # Create a simple square environment
 square_data = np.random.uniform(0, 40, size=(1000, 2))
 env_original = Environment.from_samples(
-    positions=square_data, bin_size=5.0, name="Original"
+    positions=square_data, bin_size=5.0, name="Original", units="cm"
 )
 
 print(f"Original environment: {env_original.n_bins} bins")
@@ -323,7 +340,8 @@ rotate_30 = Affine2D(
 )
 composite_transform = translate(20, 10) @ rotate_30 @ scale_2d(2.0)
 
-# Apply to bin centers
+# Applying a transform to arrays alone leaves env_original unchanged.
+# Use env.apply_transform(transform) to transform geometry and regions together.
 transformed_centers = composite_transform(env_original.bin_centers)
 
 print("\nComposite Transform (scale → rotate → translate):")
@@ -388,12 +406,15 @@ print(f"  Max error: {max_error:.10f} (should be ~0)")
 # %% [markdown]
 # ## Part 3: Mapping Probability Distributions
 #
-# A common neuroscience task: you have a place field (neural firing rate map) in one discretization, and you need to map it to another discretization.
+# Transfer probability mass (for example, a position posterior) between
+# discretizations. `map_probabilities` accumulates mass; rates in Hz are
+# intensive quantities and must not be summed or normalized as a substitute
+# for a rate-map comparison.
 #
 # **Use cases:**
-# - Compare place fields across sessions with slightly different bin sizes
+# - Transfer position probability mass between different bin sizes
 # - Align data from rotated/shifted environments
-# - Map predictions from one resolution to another
+# - Map a spatial posterior from one resolution to another
 
 # %% [markdown]
 # ### Example: Mapping Between Different Bin Sizes
@@ -404,26 +425,28 @@ circle = Point(50, 50).buffer(25)
 
 # Fine discretization (3 cm bins)
 env_fine = Environment.from_polygon(polygon=circle, bin_size=3.0, name="Fine")
+env_fine.units = "cm"
 
 # Coarse discretization (6 cm bins)
 env_coarse = Environment.from_polygon(polygon=circle, bin_size=6.0, name="Coarse")
+env_coarse.units = "cm"
 
 print(f"Fine environment: {env_fine.n_bins} bins (3 cm)")
 print(f"Coarse environment: {env_coarse.n_bins} bins (6 cm)")
 
 # %%
-# Create a synthetic "place field" - Gaussian bump in the fine environment
+# Create a synthetic spatial probability mass distribution (not a rate map)
 place_field_center = np.array([60.0, 55.0])  # Off-center
 sigma = 8.0  # Width of place field
 
-# Calculate Gaussian firing rate at each bin
+# Gaussian weights on equal-volume bins define the illustrative distribution
 distances_to_center = np.linalg.norm(env_fine.bin_centers - place_field_center, axis=1)
 firing_rates_fine = np.exp(-(distances_to_center**2) / (2 * sigma**2))
 
 # Normalize to be a probability distribution
 firing_probs_fine = firing_rates_fine / firing_rates_fine.sum()
 
-print("\nPlace field statistics (fine):")
+print("\nProbability mass statistics (fine):")
 print(f"  Total probability: {firing_probs_fine.sum():.6f}")
 print(f"  Max probability: {firing_probs_fine.max():.6f}")
 print(f"  Mean probability: {firing_probs_fine.mean():.6f}")
@@ -453,10 +476,10 @@ ax.scatter(
     label="Field center",
 )
 
-plt.colorbar(scatter, ax=ax, label="Firing probability")
+plt.colorbar(scatter, ax=ax, label="Probability mass per bin")
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("Place Field (Fine Grid, 3 cm bins)")
+ax.set_title("Spatial Probability Mass (Fine Grid, 3 cm bins)")
 ax.set_aspect("equal")
 ax.legend()
 plt.tight_layout()
@@ -471,7 +494,7 @@ firing_probs_coarse = map_probabilities(
     mode="nearest",  # Map each source bin to nearest target bin
 )
 
-print("\nPlace field statistics (coarse):")
+print("\nProbability mass statistics (coarse):")
 print(f"  Total probability: {firing_probs_coarse.sum():.6f}")
 print(f"  Max probability: {firing_probs_coarse.max():.6f}")
 print(f"  Mean probability: {firing_probs_coarse.mean():.6f}")
@@ -488,7 +511,7 @@ scatter1 = axes[0].scatter(
     s=150,
     cmap="hot",
     vmin=0,
-    vmax=firing_probs_fine.max(),
+    vmax=max(firing_probs_fine.max(), firing_probs_coarse.max()),
 )
 axes[0].set_title(f"Fine Grid ({env_fine.n_bins} bins, 3 cm)")
 axes[0].set_xlabel("X position (cm)")
@@ -504,7 +527,7 @@ scatter2 = axes[1].scatter(
     s=300,
     cmap="hot",
     vmin=0,
-    vmax=firing_probs_fine.max(),  # Use same scale
+    vmax=max(firing_probs_fine.max(), firing_probs_coarse.max()),
 )
 axes[1].set_title(f"Coarse Grid ({env_coarse.n_bins} bins, 6 cm)")
 axes[1].set_xlabel("X position (cm)")
@@ -539,25 +562,45 @@ rotation = Affine2D(
 )
 rotated_centers = rotation(env_fine.bin_centers)
 
-# Create environment from rotated bin centers
-# (In practice, you'd have new data from Session 2)
-env_rotated = Environment.from_samples(
-    positions=rotated_centers, bin_size=3.0, name="Session2_Rotated"
-)
-
-print(f"\nRotated environment: {env_rotated.n_bins} bins")
+# Transform the fitted geometry rather than fitting a new grid to the centers.
+env_rotated = env_fine.apply_transform(rotation, name="Session2_Rotated")
+assert env_rotated.n_bins == env_fine.n_bins
+np.testing.assert_allclose(env_rotated.bin_centers, rotated_centers)
+np.testing.assert_allclose(env_rotated.bin_sizes, env_fine.bin_sizes)
+print(f"\nRotated environment: {env_rotated.n_bins} corresponding bins")
 
 # %%
-# Map place field from Session 1 to Session 2 coordinates
-# Transform Session 1 bin centers to Session 2 coordinates using the rotation transform
-transformed_bin_centers = rotation(env_fine.bin_centers)
+# Put source and target coordinates in the same frame before nearest-bin mapping.
+rotated_probs = map_probabilities(
+    source_env=env_fine,
+    target_env=env_rotated,
+    source_probs=firing_probs_fine,
+    source_rotation_matrix=rotation_matrix,
+)
+np.testing.assert_allclose(rotated_probs, firing_probs_fine)
+np.testing.assert_allclose(rotated_probs.sum(), 1.0)
 
-# Now map probabilities
-# (This is more complex - we're showing the concept)
-print("\nConcept: Place field mapping across rotated sessions")
-print("  Session 1 (original): Place field centered at", place_field_center)
-print("  Session 2 (45° rotation): Would need to transform center and remap")
-print("\nThis is useful for analyzing place field stability across contexts!")
+fig, axes = plt.subplots(1, 2, figsize=(14, 6), constrained_layout=True)
+for ax, environment, mass, label in [
+    (axes[0], env_fine, firing_probs_fine, "Original frame"),
+    (axes[1], env_rotated, rotated_probs, "Rotated frame (45 degrees)"),
+]:
+    artist = ax.scatter(
+        environment.bin_centers[:, 0],
+        environment.bin_centers[:, 1],
+        c=mass,
+        s=12,
+        cmap="viridis",
+        vmin=0,
+        vmax=firing_probs_fine.max(),
+    )
+    fig.colorbar(artist, ax=ax, label="Probability mass per bin")
+    ax.set_xlabel("X position (cm)")
+    ax.set_ylabel("Y position (cm)")
+    ax.set_title(label)
+    ax.set_aspect("equal")
+plt.show()
+print("Rotation preserved bin correspondence, geometry and probability mass.")
 
 # %% [markdown]
 # ## Part 4: Graph Analysis
@@ -585,6 +628,7 @@ complex_polygon = Polygon(polygon_coords)
 env_complex = Environment.from_polygon(
     polygon=complex_polygon, bin_size=4.0, name="ComplexMaze"
 )
+env_complex.units = "cm"
 
 print(f"Complex maze: {env_complex.n_bins} bins")
 print(f"Edges: {env_complex.connectivity.number_of_edges()}")
@@ -633,7 +677,9 @@ scatter = ax.scatter(
 plt.colorbar(scatter, ax=ax, label="Number of neighbors (degree)")
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("Bin Connectivity (degree)\nBlue = boundary, Red = interior")
+ax.set_title(
+    "Bin Connectivity (degree)\nLow degree suggests a boundary on this regular grid"
+)
 ax.set_aspect("equal")
 plt.tight_layout()
 plt.show()
@@ -693,7 +739,9 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# **Interpretation:** High centrality bins are "bottlenecks" - the animal must pass through them to travel between many locations. These might correspond to junctions in mazes or doorways in multi-room environments.
+# High betweenness identifies bins on many modeled shortest paths. These can
+# suggest junctions or doors, but do not establish which routes an animal used
+# or prove that every path must pass through them.
 
 # %% [markdown]
 # ## Common Pitfalls and Best Practices
@@ -701,17 +749,11 @@ plt.show()
 # ### Pitfall 1: Forgetting to normalize probabilities
 
 # %%
-# When mapping probabilities, they should sum to 1.0
-# If they don't, normalize them first!
-
-firing_rates = np.random.rand(env_fine.n_bins)  # Raw firing rates
-print(f"Raw firing rates sum: {firing_rates.sum():.4f}")
-
-# Normalize
-firing_probs_normalized = firing_rates / firing_rates.sum()
-print(f"Normalized probabilities sum: {firing_probs_normalized.sum():.4f}")
-
-print("\n✓ Always normalize to probabilities before mapping!")
+# Start with nonnegative weights whose interpretation is spatial mass.
+mass_weights = np.random.rand(env_fine.n_bins)
+source_mass = mass_weights / mass_weights.sum()
+print(f"Normalized spatial mass: {source_mass.sum():.4f}")
+print("Do not turn a firing-rate map into a posterior merely by normalizing its sum.")
 
 # %% [markdown]
 # ### Pitfall 2: Transform order matters!
@@ -751,7 +793,7 @@ print("✓ Use test points with known expected results")
 #    - Use `path_between(bin1, bin2)` for bin sequences
 #    - Returns list of bin indices along the path
 #
-# 2. **Geodesic distance** measures actual travel distance along connectivity graph
+# 2. **Geodesic distance** measures the shortest modeled route along the graph
 #    - Use `distance_between(point1, point2)`
 #    - Can differ significantly from Euclidean distance in complex spaces
 #
@@ -763,7 +805,7 @@ print("✓ Use test points with known expected results")
 # 4. **Probability mapping** transfers distributions between environments
 #    - Use `map_probabilities()`
 #    - Preserves total probability while changing discretization
-#    - Useful for comparing place fields across sessions
+#    - Use for spatial probability mass, not direct summation of firing rates
 #
 # 5. **Graph analysis** reveals environment structure
 #    - Degree centrality: number of neighbors
@@ -772,7 +814,7 @@ print("✓ Use test points with known expected results")
 #
 # ## Next Steps
 #
-# In the final notebook ([08_spike_field_basics.ipynb](../08_spike_field_basics/)), you'll see:
+# Continue with [08: spike-field basics](08_spike_field_basics.ipynb) for:
 # - Complete end-to-end neuroscience analysis pipeline
 # - Raw tracking data → place fields → occupancy normalization
 # - Multi-region analysis and comparisons

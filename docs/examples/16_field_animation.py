@@ -25,7 +25,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [08_spike_field_basics.ipynb](../08_spike_field_basics/)
+# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
 #
 # ## Learning Objectives
 #
@@ -56,11 +56,17 @@
 # ```
 #
 # Note: HTML backend requires no additional dependencies.
-
+#
+# The default run creates static previews and temporary demo artifacts. Desktop
+# viewers and expensive final exports require an explicit opt-in below, even
+# when their packages are installed. Re-run cells after changing a flag.
+#
 # %%
+import sys
 import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import Point
 
@@ -68,11 +74,24 @@ from neurospatial import Environment
 from neurospatial.animation import subsample_frames
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 
+RUN_NAPARI = False
+RUN_VIDEO_EXPORT = False
+RUN_WIDGET = False  # optional notebook controls, also disabled for batch execution
+
 # Set random seed for reproducibility
 np.random.seed(42)
 
+_here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+from _style import apply_style
+
+apply_style(figsize=(12, 8))
+
 # Determine output directory (works whether running as script or notebook)
-output_dir = Path.cwd()
+output_dir = Path(tempfile.mkdtemp(prefix="neurospatial-example-16-"))
 print(f"Output directory: {output_dir}")
 
 # %% [markdown]
@@ -83,7 +102,10 @@ print(f"Output directory: {output_dir}")
 # - Undergoes remapping to location B (trials 16-30)
 # - Demonstrates context-dependent spatial coding
 #
-# This models real phenomena like:
+# These prescribed synthetic maps illustrate display behavior; they are not
+# rate estimates from spikes or evidence of a remapping mechanism. Values are
+# arbitrary units, and one second per trial is an assigned presentation clock.
+# Related experimental phenomena include:
 # - Environmental context changes
 # - Learning new reward locations
 # - Hippocampal remapping events
@@ -164,6 +186,23 @@ print(
 )
 
 # %% [markdown]
+# A static preview runs with the core dependencies. The shared color scale keeps
+# prescribed changes in amplitude visible across the two example frames.
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+for ax, index in zip(axes, [0, n_trials - 1], strict=True):
+    env.plot_field(
+        fields[index],
+        ax=ax,
+        vmin=0,
+        vmax=float(np.max(fields)),
+        colorbar_label="Synthetic activity (a.u.)",
+    )
+    ax.set_title(f"Synthetic trial {index + 1}")
+plt.show()
+
+# %% [markdown]
 # ## Example 1: Interactive Napari Viewer
 #
 # **Best for**: Large datasets, exploration, real-time interaction
@@ -177,58 +216,61 @@ print(
 # **Installation**: `pip install 'napari[all]>=0.4.18'`
 
 # %%
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("Launching Napari viewer...")
-    print("")
-    print("ENHANCED PLAYBACK CONTROLS:")
-    print("")
-    print("Built-in Controls (bottom-left):")
-    print("  ▶ Play button - Start/stop animation")
-    print("  ━ Time slider - Scrub through frames with instant seeking")
-    print("  Frame counter - Shows current frame (e.g., '1/30')")
-    print("")
-    print("Enhanced Widget (left sidebar - auto-added):")
-    print("  ⏯ Large Play/Pause button - Toggle animation (synced with spacebar)")
-    print("  📊 Speed slider - Control playback relative to real-time")
-    print("  📋 Frame counter - 'Frame: 15 / 30' with trial label")
-    print("  ✓ Updates in real-time during playback")
-    print("")
-    print("Keyboard Shortcuts:")
-    print("  Spacebar - Play/pause (toggle)")
-    print("  ← → Arrow keys - Step through frames")
-    print("")
-    print("Memory Efficiency:")
-    print("  - Lazy loading with LRU caching (1000 frame cache)")
-    print("  - Chunked caching for >10K frames (100 frames/chunk)")
-    print("  - Instant seeking even with 100K+ frames (<100ms)")
-    print("  - GPU-accelerated rendering")
-    print("")
+        print("Launching Napari viewer...")
+        print("")
+        print("ENHANCED PLAYBACK CONTROLS:")
+        print("")
+        print("Built-in Controls (bottom-left):")
+        print("  ▶ Play button - Start/stop animation")
+        print("  ━ Time slider - Scrub through frames with instant seeking")
+        print("  Frame counter - Shows current frame (e.g., '1/30')")
+        print("")
+        print("Enhanced Widget (left sidebar - auto-added):")
+        print("  ⏯ Large Play/Pause button - Toggle animation (synced with spacebar)")
+        print("  📊 Speed slider - Control playback relative to real-time")
+        print("  📋 Frame counter - 'Frame: 15 / 30' with trial label")
+        print("  ✓ Updates in real-time during playback")
+        print("")
+        print("Keyboard Shortcuts:")
+        print("  Spacebar - Play/pause (toggle)")
+        print("  ← → Arrow keys - Step through frames")
+        print("")
+        print("Memory Efficiency:")
+        print("  - Lazy loading with LRU caching (1000 frame cache)")
+        print("  - Chunked caching for >10K frames (100 frames/chunk)")
+        print("  - On-demand seeking; performance depends on data size and hardware")
+        print("  - GPU-accelerated rendering")
+        print("")
 
-    viewer = env.animate_fields(
-        fields,
-        backend="napari",
-        frame_times=frame_times,
-        speed=10.0,  # 10x real-time (1 trial/second → 10 trials/second)
-        frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
-        title="Place Field Remapping",
-        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
-    )
+        viewer = env.animate_fields(
+            fields,
+            backend="napari",
+            frame_times=frame_times,
+            speed=10.0,  # 10x real-time (1 trial/second → 10 trials/second)
+            frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
+            title="Place Field Remapping",
+            scale_bar=True,  # Shows scale bar with units (env.units = "cm")
+        )
 
-    print("✓ Napari viewer opened")
+        print("✓ Napari viewer opened")
 
-    # Only call napari.run() when running as a script (not in Jupyter)
-    # In Jupyter, the viewer stays open without blocking execution
-    if get_ipython() is None:
-        print("  (Running as script - window will block until closed)")
-        napari.run()
-    else:
-        print("  (Running in Jupyter - window stays open, execution continues)")
+        # Only call napari.run() when running as a script (not in Jupyter)
+        # In Jupyter, the viewer stays open without blocking execution
+        if get_ipython() is None:
+            print("  (Running as script - window will block until closed)")
+            napari.run()
+        else:
+            print("  (Running in Jupyter - window stays open, execution continues)")
 
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 1b: Multi-Field Viewer (Comparing Multiple Neurons)
@@ -248,102 +290,111 @@ except ImportError:
 # - Side-by-side condition comparison (pre/post manipulation)
 
 # %%
-try:
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        import napari
+        from IPython import get_ipython
 
-    print("Creating multi-field comparison...")
-    print("")
-    print("Simulating 3 neurons with different spatial tuning:")
+        print("Creating multi-field comparison...")
+        print("")
+        print("Simulating 3 neurons with different spatial tuning:")
 
-    # Create 3 different neurons with distinct spatial patterns
-    # Neuron A: Maintains stable field at location A
-    # Neuron B: Remaps from A to B (like our original example)
-    # Neuron C: Has field at location B throughout
+        # Create 3 different neurons with distinct spatial patterns
+        # Neuron A: Maintains stable field at location A
+        # Neuron B: Remaps from A to B (like our original example)
+        # Neuron C: Has field at location B throughout
 
-    fields_neuron_a = []  # Stable at location A
-    fields_neuron_b = []  # Remaps from A to B
-    fields_neuron_c = []  # Stable at location B
+        fields_neuron_a = []  # Stable at location A
+        fields_neuron_b = []  # Remaps from A to B
+        fields_neuron_c = []  # Stable at location B
 
-    for trial in range(n_trials):
-        # Neuron A: Stable field at location A
-        distances_a = env.distance_to([bin_a])
-        field_a = np.exp(-(distances_a**2) / (2 * 8.0**2))
-        field_a = field_a + np.random.randn(env.n_bins) * 0.15
-        field_a = np.maximum(field_a, 0)
-        fields_neuron_a.append(field_a)
+        for trial in range(n_trials):
+            # Neuron A: Stable field at location A
+            distances_a = env.distance_to([bin_a])
+            field_a = np.exp(-(distances_a**2) / (2 * 8.0**2))
+            field_a = field_a + np.random.randn(env.n_bins) * 0.15
+            field_a = np.maximum(field_a, 0)
+            fields_neuron_a.append(field_a)
 
-        # Neuron B: Remapping neuron (from earlier example)
-        # This is the same remapping pattern as before
-        if trial < remap_trial:
-            active_bin = bin_a
-            field_strength = 1.0
+            # Neuron B: Remapping neuron (from earlier example)
+            # This is the same remapping pattern as before
+            if trial < remap_trial:
+                active_bin = bin_a
+                field_strength = 1.0
+            else:
+                active_bin = bin_b
+                field_strength = min(1.0, (trial - remap_trial + 1) / 5)
+
+            distances_b = env.distance_to([active_bin])
+            field_b = field_strength * np.exp(-(distances_b**2) / (2 * 8.0**2))
+            field_b = field_b + np.random.randn(env.n_bins) * 0.15
+            field_b = np.maximum(field_b, 0)
+            fields_neuron_b.append(field_b)
+
+            # Neuron C: Stable field at location B
+            distances_c = env.distance_to([bin_b])
+            field_c = np.exp(-(distances_c**2) / (2 * 8.0**2))
+            field_c = field_c + np.random.randn(env.n_bins) * 0.15
+            field_c = np.maximum(field_c, 0)
+            fields_neuron_c.append(field_c)
+
+        print("  Neuron A: Stable field at location A")
+        print("  Neuron B: Remaps from A → B at trial 15")
+        print("  Neuron C: Stable field at location B")
+        print("")
+
+        # Launch multi-field viewer
+        print("Launching multi-field Napari viewer...")
+        print("")
+        print("LAYOUT: Horizontal (side-by-side comparison)")
+        print("  - All fields share same color scale (fair comparison)")
+        print("  - Synchronized playback across layers")
+        print("  - Custom layer names for clarity")
+        print("")
+        print("PLAYBACK CONTROLS (same as single-field viewer):")
+        print("  Bottom-left: ▶ Play button, time slider")
+        print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
+        print("  Left sidebar: 📊 'Playback Speed' widget")
+        print("")
+
+        viewer = env.animate_fields(
+            fields=[
+                fields_neuron_a,
+                fields_neuron_b,
+                fields_neuron_c,
+            ],  # List of sequences
+            backend="napari",
+            layout="horizontal",  # Side-by-side arrangement
+            layer_names=[
+                "Neuron A (Stable A)",
+                "Neuron B (Remap A→B)",
+                "Neuron C (Stable B)",
+            ],
+            frame_times=frame_times,
+            speed=10.0,  # 10x real-time
+            frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
+            title="Multi-Neuron Comparison",
+            scale_bar=True,  # Shows scale bar with units (env.units = "cm")
+        )
+
+        print("✓ Multi-field viewer opened!")
+        print("")
+        print("TIP: Watch how Neuron B remaps while A and C stay stable")
+        print(
+            "TIP: Try different layouts - change 'horizontal' to 'vertical' or 'grid'"
+        )
+
+        # Only call napari.run() when running as a script (not in Jupyter)
+        if get_ipython() is None:
+            print("  (Running as script - window will block until closed)")
+            napari.run()
         else:
-            active_bin = bin_b
-            field_strength = min(1.0, (trial - remap_trial + 1) / 5)
+            print("  (Running in Jupyter - window stays open, execution continues)")
 
-        distances_b = env.distance_to([active_bin])
-        field_b = field_strength * np.exp(-(distances_b**2) / (2 * 8.0**2))
-        field_b = field_b + np.random.randn(env.n_bins) * 0.15
-        field_b = np.maximum(field_b, 0)
-        fields_neuron_b.append(field_b)
-
-        # Neuron C: Stable field at location B
-        distances_c = env.distance_to([bin_b])
-        field_c = np.exp(-(distances_c**2) / (2 * 8.0**2))
-        field_c = field_c + np.random.randn(env.n_bins) * 0.15
-        field_c = np.maximum(field_c, 0)
-        fields_neuron_c.append(field_c)
-
-    print("  Neuron A: Stable field at location A")
-    print("  Neuron B: Remaps from A → B at trial 15")
-    print("  Neuron C: Stable field at location B")
-    print("")
-
-    # Launch multi-field viewer
-    print("Launching multi-field Napari viewer...")
-    print("")
-    print("LAYOUT: Horizontal (side-by-side comparison)")
-    print("  - All fields share same color scale (fair comparison)")
-    print("  - Synchronized playback across layers")
-    print("  - Custom layer names for clarity")
-    print("")
-    print("PLAYBACK CONTROLS (same as single-field viewer):")
-    print("  Bottom-left: ▶ Play button, time slider")
-    print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
-    print("  Left sidebar: 📊 'Playback Speed' widget")
-    print("")
-
-    viewer = env.animate_fields(
-        fields=[fields_neuron_a, fields_neuron_b, fields_neuron_c],  # List of sequences
-        backend="napari",
-        layout="horizontal",  # Side-by-side arrangement
-        layer_names=[
-            "Neuron A (Stable A)",
-            "Neuron B (Remap A→B)",
-            "Neuron C (Stable B)",
-        ],
-        frame_times=frame_times,
-        speed=10.0,  # 10x real-time
-        frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
-        title="Multi-Neuron Comparison",
-        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
-    )
-
-    print("✓ Multi-field viewer opened!")
-    print("")
-    print("TIP: Watch how Neuron B remaps while A and C stay stable")
-    print("TIP: Try different layouts - change 'horizontal' to 'vertical' or 'grid'")
-
-    # Only call napari.run() when running as a script (not in Jupyter)
-    if get_ipython() is None:
-        print("  (Running as script - window will block until closed)")
-        napari.run()
-    else:
-        print("  (Running in Jupyter - window stays open, execution continues)")
-
-except ImportError:
-    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+    except ImportError:
+        print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ## Example 2: Video Export (MP4)
@@ -362,7 +413,7 @@ except ImportError:
 # - Windows: Download from https://ffmpeg.org/download.html
 
 # %%
-if check_ffmpeg_available():
+if RUN_VIDEO_EXPORT and check_ffmpeg_available():
     print("Exporting video with parallel rendering...")
 
     output_path = env.animate_fields(
@@ -379,7 +430,9 @@ if check_ffmpeg_available():
     print(f"✓ Video saved to {output_path}")
 
 else:
-    print("⊗ ffmpeg not available. Video export skipped.")
+    print(
+        "⊗ Video export disabled by default or ffmpeg unavailable; set RUN_VIDEO_EXPORT=True to enable."
+    )
     print("  Install: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)")
 
 # %% [markdown]
@@ -429,25 +482,28 @@ print("  - Keyboard shortcuts: space = play/pause, arrows = step")
 # **Installation**: `pip install 'ipywidgets>=8.0'`
 
 # %%
-try:
-    from IPython import get_ipython
+if RUN_WIDGET:
+    try:
+        from IPython import get_ipython
 
-    if get_ipython() is not None:
-        print("Creating Jupyter widget...")
+        if get_ipython() is not None:
+            print("Creating Jupyter widget...")
 
-        widget = env.animate_fields(
-            fields,
-            backend="widget",
-            frame_times=frame_times,
-            speed=10.0,  # 10x real-time
-            frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
-        )
+            widget = env.animate_fields(
+                fields,
+                backend="widget",
+                frame_times=frame_times,
+                speed=10.0,  # 10x real-time
+                frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
+            )
 
-        print("✓ Widget created (displayed above)")
-    else:
-        print("⊗ Not in Jupyter notebook - widget skipped")
-except ImportError:
-    print("⊗ IPython not available - widget skipped")
+            print("✓ Widget created (displayed above)")
+        else:
+            print("⊗ Not in Jupyter notebook - widget skipped")
+    except ImportError:
+        print("⊗ IPython not available - widget skipped")
+else:
+    print("Optional viewer skipped; set RUN_WIDGET=True to enable it.")
 
 # %% [markdown]
 # ## Example 5: Large-Scale Session Pattern
@@ -465,7 +521,8 @@ except ImportError:
 # - Real file sizes: 300 MB - 4.5 GB
 # - Demo version: 1000 frames (~5 MB) to avoid filling your disk
 #
-# The techniques shown here scale to arbitrarily large datasets!
+# The memmap pattern can support larger files, subject to disk capacity,
+# renderer/cache memory and acceptable latency. This default demo stays small.
 
 # %%
 print("=" * 80)
@@ -508,35 +565,37 @@ print("  (Writing in chunks to avoid memory issues)")
 # For this example, we'll simulate a slowly drifting place field
 initial_bin = env.n_bins // 2  # Start at center of environment
 
-chunk_size = 10000
+chunk_size = 100
 for i in range(0, n_frames_large, chunk_size):
     # Simulate place field that drifts slowly over time
     chunk_end = min(i + chunk_size, n_frames_large)
     chunk_len = chunk_end - i
 
-    # Slowly drifting center (drifts 20 bins over the full session)
-    drift = int((i / n_frames_large) * 20)
-    center_bin = initial_bin + drift
-    if center_bin >= env.n_bins:
-        center_bin = env.n_bins - 1
+    # Move in physical coordinates; neighboring numeric bin IDs need not be
+    # neighbors in space. One center per chunk is sufficient for this I/O demo.
+    center_bin = env.bin_at(np.array([[40.0 + 20.0 * i / n_frames_large, 50.0]]))[0]
 
     distances = env.distance_to([center_bin])
     for j in range(chunk_len):
-        fields_mmap[i + j] = np.exp(-distances / 15) + np.random.randn(env.n_bins) * 0.1
+        fields_mmap[i + j] = np.maximum(
+            0, np.exp(-distances / 15) + np.random.randn(env.n_bins) * 0.1
+        )
 
 fields_mmap.flush()
 
 # Create frame_times for the large session (250 Hz sampling rate)
 large_session_sample_rate = 250.0  # Hz
 large_session_duration = n_frames_large / large_session_sample_rate
-large_session_frame_times = np.linspace(0, large_session_duration, n_frames_large)
+large_session_frame_times = np.arange(n_frames_large) / large_session_sample_rate
 
 print(f"\n✓ Created memory-mapped dataset: {n_frames_large:,} frames")
 print(f"  File size: {n_frames_large * env.n_bins * 4 / 1e9:.2f} GB")
 print(
     f"  Duration: {large_session_duration:.1f}s at {large_session_sample_rate:.0f} Hz"
 )
-print("  RAM usage: ~0 MB (memory-mapped, not loaded)")
+print(
+    "  Memory mapping avoids an eager full-array copy; OS pages and render caches still use RAM."
+)
 
 # %% [markdown]
 # ### Step 2: Interactive Exploration with Napari
@@ -547,52 +606,55 @@ print("  RAM usage: ~0 MB (memory-mapped, not loaded)")
 print("\nOption 1: Interactive exploration (Napari)")
 print("  Napari loads frames on-demand - would handle 900K frames efficiently")
 
-try:
-    # Import napari only if attempting to use it
-    import napari
-    from IPython import get_ipython
+if RUN_NAPARI:
+    try:
+        # Import napari only if attempting to use it
+        import napari
+        from IPython import get_ipython
 
-    print("")
-    print("CHUNKED CACHING FOR LARGE DATASETS:")
-    print(
-        "  - Auto-enabled for >10K frames (this demo has 1000, but shows the pattern)"
-    )
-    print("  - Caches frames in chunks of 100 (not individual frames)")
-    print("  - Pre-loads neighboring frames for smooth sequential playback")
-    print("  - Reduces cache overhead: 900K frames → 9K chunks")
-    print("  - LRU eviction: keeps recently accessed chunks in memory")
-    print("  - Benefits:")
-    print("    • 10x fewer cache entries (faster lookups)")
-    print("    • Better sequential playback (pre-loaded neighbors)")
-    print("    • Same instant seeking (<100ms even for 900K frames)")
-    print("")
-    print("PLAYBACK CONTROLS:")
-    print("  Bottom-left: ▶ Play button, time slider")
-    print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
-    print("  Left sidebar: 📊 'Playback Speed' widget")
-    print("")
+        print("")
+        print("CHUNKED CACHING FOR LARGE DATASETS:")
+        print(
+            "  - Auto-enabled for >10K frames (this demo has 1000, but shows the pattern)"
+        )
+        print("  - Caches frames in chunks of 100 (not individual frames)")
+        print("  - Pre-loads neighboring frames for smooth sequential playback")
+        print("  - Reduces cache overhead: 900K frames → 9K chunks")
+        print("  - LRU eviction: keeps recently accessed chunks in memory")
+        print("  - Benefits:")
+        print("    • 10x fewer cache entries (faster lookups)")
+        print("    • Better sequential playback (pre-loaded neighbors)")
+        print("    • Seeking performance depends on disk, cache and rendering settings")
+        print("")
+        print("PLAYBACK CONTROLS:")
+        print("  Bottom-left: ▶ Play button, time slider")
+        print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
+        print("  Left sidebar: 📊 'Playback Speed' widget")
+        print("")
 
-    viewer = env.animate_fields(
-        fields_mmap,
-        backend="napari",
-        frame_times=large_session_frame_times,
-        speed=1.0,  # Real-time playback
-        title="Large Session Demo (1000 frames)",
-        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
-        # cache_chunk_size=100,  # Auto-detected (default for >10K frames)
-    )
-    print("✓ Napari viewer opened!")
-    print("  (Same technique works for 60K-900K frame sessions)")
+        viewer = env.animate_fields(
+            fields_mmap,
+            backend="napari",
+            frame_times=large_session_frame_times,
+            speed=1.0,  # Real-time playback
+            title="Large Session Demo (1000 frames)",
+            scale_bar=True,  # Shows scale bar with units (env.units = "cm")
+            # cache_chunk_size=100,  # Auto-detected (default for >10K frames)
+        )
+        print("✓ Napari viewer opened!")
+        print("  (Same technique works for 60K-900K frame sessions)")
 
-    # Only call napari.run() when running as a script (not in Jupyter)
-    if get_ipython() is None:
-        print("  (Running as script - window will block until closed)")
-        napari.run()
-    else:
-        print("  (Running in Jupyter - window stays open, execution continues)")
+        # Only call napari.run() when running as a script (not in Jupyter)
+        if get_ipython() is None:
+            print("  (Running as script - window will block until closed)")
+            napari.run()
+        else:
+            print("  (Running in Jupyter - window stays open, execution continues)")
 
-except ImportError:
-    print("⊗ Napari not available (install: pip install 'napari[all]>=0.4.18')")
+    except ImportError:
+        print("⊗ Napari not available (install: pip install 'napari[all]>=0.4.18')")
+else:
+    print("Optional viewer skipped; set RUN_NAPARI=True to enable it.")
 
 # %% [markdown]
 # ### Step 3: Export Subsampled Video
@@ -607,8 +669,13 @@ print("  For large sessions: 250 Hz → 30 fps requires subsampling")
 # For 900K frames, this would produce 108K subsampled frames (1 hour video)
 # For our 1000 frame demo, this produces ~120 frames
 fields_subsampled = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
-subsampled_frame_times = np.linspace(0, large_session_duration, len(fields_subsampled))
-print(f"  Subsampled: {len(fields_subsampled):,} frames (every {250 // 30}th frame)")
+subsampled_frame_times = subsample_frames(
+    large_session_frame_times, target_fps=30, source_fps=250
+)
+assert len(subsampled_frame_times) == len(fields_subsampled)
+print(
+    f"  Subsampled: {len(fields_subsampled):,} frames (rounded sampling indices; retain matching timestamps)"
+)
 print(f"  Video duration: {len(fields_subsampled) / 30:.1f} seconds")
 print("  (For 900K frames, would produce ~1 hour video)")
 
@@ -618,7 +685,7 @@ print("  (For 900K frames, would produce ~1 hour video)")
 # Before committing to a long render, use dry-run mode to estimate time and file size.
 
 # %%
-if check_ffmpeg_available():
+if RUN_VIDEO_EXPORT and check_ffmpeg_available():
     print("\nDry run estimation:")
     env.animate_fields(
         fields_subsampled,
@@ -631,12 +698,18 @@ if check_ffmpeg_available():
     )
     print("\n  To render, run with dry_run=False")
 else:
-    print("  ⊗ ffmpeg not available for video export")
+    print(
+        "  ⊗ Video export disabled by default or ffmpeg unavailable (RUN_VIDEO_EXPORT=True)"
+    )
 
 # %% [markdown]
 # ### Cleanup
 
 # %%
+# Close any opted-in Napari viewers using this array before releasing its backing file.
+if RUN_NAPARI:
+    viewer.close()  # the large-session viewer currently using fields_mmap
+del fields_mmap
 # Clean up temporary files
 print("\nCleaning up temporary files...")
 if mmap_path.exists():
@@ -703,7 +776,7 @@ if mmap_path.exists():
 #
 # - Try animating your own neural data
 # - Experiment with different colormaps (`cmap` parameter)
-# - Add trajectory overlays (`overlay_trajectory` parameter)
+# - Add overlays with [17: animation overlays](17_animation_with_overlays.ipynb)
 # - Compare place field evolution across sessions
 # - Visualize replay events or value function learning
 #

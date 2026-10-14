@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Introduction to neurospatial: The Basics
 #
+# **Estimated time**: 15-20 minutes
+#
+# **Prerequisites**: Basic NumPy; no earlier notebook required.
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -27,7 +31,6 @@
 # - Visualize environments using `plot()`
 # - Avoid common pitfalls when choosing bin_size
 #
-# **Estimated time: 15-20 minutes**
 
 # %% [markdown]
 # ## What is Spatial Discretization?
@@ -83,7 +86,8 @@ apply_style(figsize=(10, 8), font_size=11)
 # Simulate an animal's trajectory through a 100x100 cm open field
 # We'll create a random walk with some drift to make it realistic
 
-n_timepoints = 5000  # About 5 minutes at 20 Hz sampling
+n_timepoints = 5000  # About 4.2 minutes at 20 Hz sampling
+times = np.arange(n_timepoints) / 20.0  # Seconds, one timestamp per sample
 position_2d = np.zeros((n_timepoints, 2))
 position_2d[0] = [50, 50]  # Start at center
 
@@ -98,7 +102,7 @@ for t in range(1, n_timepoints):
     # Update position
     position_2d[t] = position_2d[t - 1] + step + center_pull
 
-    # Enforce boundaries (bounce off walls)
+    # Clamp to the permitted coordinate range (a toy boundary rule).
     position_2d[t] = np.clip(position_2d[t], 5, 95)
 
 print(f"Generated {n_timepoints} position samples")
@@ -152,6 +156,7 @@ env = Environment.from_samples(
     positions=position_2d,
     bin_size=5.0,  # 5 cm bins
     name="OpenFieldExample",
+    units="cm",
 )
 
 print(env.info())
@@ -170,9 +175,12 @@ print(env.info())
 # ## Understanding Active vs Inactive Bins
 #
 # By default, `from_samples()` infers which bins are "active" based on whether they contain data. This is important for:
-# - Ignoring walls and obstacles
+# - Restricting this analysis to sampled parts of the arena
 # - Focusing analysis on visited areas
 # - Avoiding division by zero in occupancy normalization
+#
+# An unvisited bin does not identify a wall: it can also be accessible space
+# the animal did not sample. Use a known polygon or mask when defining walls.
 #
 # Let's explore the environment properties:
 
@@ -229,16 +237,19 @@ print(f"Samples outside active bins: {np.sum(bin_indices < 0)}")
 # %% [markdown]
 # ### 2. Computing Occupancy
 #
-# Let's use bin indices to compute how much time was spent in each bin:
+# Sample counts describe sampling density. For time in seconds, use the
+# timestamps with `env.occupancy`; this also handles irregular intervals.
 
 # %%
 # Count samples per bin (occupancy)
-occupancy = np.bincount(bin_indices[bin_indices >= 0], minlength=env.n_bins)
+sample_counts = np.bincount(bin_indices[bin_indices >= 0], minlength=env.n_bins)
+occupancy = env.occupancy(times, position_2d)
 
 print(f"Occupancy array shape: {occupancy.shape}")
-print(f"Total samples: {occupancy.sum()}")
-print(f"Mean samples per active bin: {occupancy[occupancy > 0].mean():.1f}")
-print(f"Max samples in any bin: {occupancy.max()}")
+print(f"Total samples: {sample_counts.sum()}")
+print(f"Mean samples per active bin: {sample_counts[sample_counts > 0].mean():.1f}")
+print(f"Observed duration: {occupancy.sum():.2f} seconds")
+np.testing.assert_allclose(occupancy.sum(), times[-1] - times[0])
 
 # %% [markdown]
 # Let's visualize the occupancy map:
@@ -259,9 +270,9 @@ scatter = ax.scatter(
 
 ax.set_xlabel("X position (cm)")
 ax.set_ylabel("Y position (cm)")
-ax.set_title("Occupancy Map (samples per bin)")
+ax.set_title("Occupancy Map (seconds per bin)")
 ax.set_aspect("equal")
-plt.colorbar(scatter, ax=ax, label="Samples")
+plt.colorbar(scatter, ax=ax, label="Observed time (s)")
 plt.tight_layout()
 plt.show()
 
@@ -275,7 +286,7 @@ plt.show()
 test_points = np.array(
     [
         [50.0, 50.0],  # Center - should be in
-        [10.0, 10.0],  # Corner - should be in
+        [10.0, 10.0],  # Inside arena bounds, but possibly unvisited
         [0.0, 0.0],  # Far corner - might be out
         [150.0, 50.0],  # Outside bounds - definitely out
     ]
@@ -381,7 +392,10 @@ envs = {}
 
 for bin_size in bin_sizes:
     envs[bin_size] = Environment.from_samples(
-        positions=position_2d, bin_size=bin_size, name=f"OpenField_{bin_size}cm"
+        positions=position_2d,
+        bin_size=bin_size,
+        name=f"OpenField_{bin_size}cm",
+        units="cm",
     )
     print(f"\nBin size = {bin_size} cm:")
     print(f"  Total bins: {envs[bin_size].n_bins}")
@@ -404,26 +418,22 @@ plt.show()
 # - **5 cm bins**: Good balance for most analyses
 # - **10 cm bins**: Lower resolution, but each bin has more samples
 #
-# **Rule of thumb:** Choose bin_size so each bin gets at least 10-20 samples for stable estimates.
+# Assess bin size using observed duration and spike counts per bin, not a fixed
+# sample-count rule: increasing tracking rate alone does not add observation time.
 
 # %% [markdown]
 # ## Common Pitfalls and How to Avoid Them
 #
 # ### Pitfall 1: bin_size is too large
 #
-# If bin_size is larger than your environment, you'll get an error:
+# A bin size larger than the arena can collapse the layout into one coarse bin.
+# A completed constructor does not imply a useful spatial resolution.
 
 # %%
-# This will fail!
-try:
-    bad_env = Environment.from_samples(
-        positions=position_2d,
-        bin_size=200.0,  # 200 cm - way too large!
-        name="TooBig",
-    )
-except ValueError as e:
-    print(f"Error: {e}")
-    print("\nSolution: Use a smaller bin_size!")
+coarse_env = Environment.from_samples(
+    positions=position_2d, bin_size=200.0, name="TooCoarse", units="cm"
+)
+print(f"A 200 cm bin size gives {coarse_env.n_bins} bin(s); spatial detail is lost.")
 
 # %% [markdown]
 # ### Pitfall 2: Unit mismatch
@@ -448,7 +458,7 @@ print("If your data is in pixels, use bin_size in pixels (e.g., 10)")
 # env = Environment()  # This won't work!
 
 # ✓ CORRECT - Use factory methods
-env_correct = Environment.from_samples(positions=position_2d, bin_size=5.0)
+env_correct = Environment.from_samples(positions=position_2d, bin_size=5.0, units="cm")
 print("Always use factory methods like from_samples()!")
 
 # %% [markdown]
@@ -469,7 +479,7 @@ print("Always use factory methods like from_samples()!")
 #
 # ## Next Steps
 #
-# In the next notebook ([02_layout_engines.ipynb](../02_layout_engines/)), you'll learn about:
+# In the next notebook ([02_layout_engines.ipynb](02_layout_engines.ipynb)), you'll learn about:
 # - Different layout engines (hexagonal, polygon-bounded, etc.)
 # - When to use each layout type
 # - Comparing connectivity patterns

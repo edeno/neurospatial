@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Layout Engines: Choosing the Right Spatial Discretization
 #
+# **Estimated time**: 20-25 minutes
+#
+# **Prerequisites**: [01: basics](01_introduction_basics.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -26,7 +30,6 @@
 # - Compare connectivity patterns across different layouts
 # - Understand the trade-offs between different discretization strategies
 #
-# **Estimated time: 20-25 minutes**
 
 # %% [markdown]
 # ## What Are Layout Engines?
@@ -79,11 +82,11 @@ square_data = np.random.uniform(0, 50, size=(n_samples, 2))
 
 # Create regular grid environment
 env_regular = Environment.from_samples(
-    positions=square_data, bin_size=5.0, name="RegularGrid"
+    positions=square_data, bin_size=5.0, name="RegularGrid", units="cm"
 )
 
 print("Regular Grid Environment:")
-print(f"  Layout type: {env_regular.layout._layout_type_tag}")
+print(f"  Layout type: {env_regular.layout_type}")
 print(f"  Number of bins: {env_regular.n_bins}")
 print(f"  Grid shape: {env_regular.grid_shape}")
 
@@ -99,6 +102,7 @@ env_orthogonal = Environment.from_samples(
     bin_size=5.0,
     connect_diagonal_neighbors=False,
     name="Orthogonal",
+    units="cm",
 )
 
 # Include diagonal neighbors (8-connectivity in 2D)
@@ -107,6 +111,7 @@ env_diagonal = Environment.from_samples(
     bin_size=5.0,
     connect_diagonal_neighbors=True,
     name="Diagonal",
+    units="cm",
 )
 
 # Compare number of edges
@@ -149,10 +154,11 @@ env_hex = Environment.from_samples(
     layout="Hexagonal",  # Specify layout type
     bin_size=5.0,  # This is the hexagon width (flat-to-flat distance)
     name="Hexagonal",
+    units="cm",
 )
 
 print("Hexagonal Environment:")
-print(f"  Layout type: {env_hex.layout._layout_type_tag}")
+print(f"  Layout type: {env_hex.layout_type}")
 print(f"  Number of bins: {env_hex.n_bins}")
 print(f"  Number of edges: {env_hex.connectivity.number_of_edges()}")
 
@@ -256,7 +262,9 @@ plt.show()
 # %% [markdown]
 # ## 3. Polygon-Bounded Layouts
 #
-# Real experiments often use circular arenas, water mazes, or other non-rectangular environments. Polygon-bounded layouts let you specify an exact boundary.
+# Polygon-bounded layouts define accessible space independently of sampling.
+# The polygon specifies the boundary; the resulting bins still approximate it
+# at the chosen resolution. Preserve genuine holes when representing obstacles.
 
 # %% [markdown]
 # ### Example 1: Circular Arena
@@ -273,6 +281,7 @@ circle = center.buffer(radius)
 env_circle = Environment.from_polygon(
     polygon=circle, bin_size=3.0, name="CircularArena"
 )
+env_circle.units = "cm"
 
 print("Circular Arena:")
 print(f"  Radius: {radius} cm")
@@ -316,10 +325,6 @@ t_maze_polygon = Polygon(
     [
         (0, 40),
         (0, 50),
-        (25, 50),
-        (25, 60),
-        (35, 60),
-        (35, 50),
         (60, 50),
         (60, 40),
         (35, 40),
@@ -330,6 +335,7 @@ t_maze_polygon = Polygon(
 )
 
 env_tmaze = Environment.from_polygon(polygon=t_maze_polygon, bin_size=3.0, name="TMaze")
+env_tmaze.units = "cm"
 
 print("T-Maze Environment:")
 print(f"  Active bins: {env_tmaze.n_bins}")
@@ -363,7 +369,7 @@ circle_polygon = Point(50, 50).buffer(25)
 
 envs_comparison = {
     "Regular Grid\n(from_samples)": Environment.from_samples(
-        positions=circle_data, bin_size=4.0, name="Regular"
+        positions=circle_data, bin_size=4.0, name="Regular", units="cm"
     ),
     "Regular Grid\n(from_polygon)": Environment.from_polygon(
         polygon=circle_polygon, bin_size=4.0, name="RegularPoly"
@@ -373,10 +379,15 @@ envs_comparison = {
         layout="Hexagonal",
         bin_size=4.0,
         name="HexSamples",
+        units="cm",
     ),
 }
 
 # %%
+# All coordinate values in this comparison are centimeters.
+for comparison_env in envs_comparison.values():
+    comparison_env.units = "cm"
+
 # Plot comparison
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
@@ -391,16 +402,21 @@ plt.show()
 # %% [markdown]
 # ## 5. When to Use Each Layout
 #
+# The sample-based masks above describe visited space; the polygon also includes
+# the unsampled perimeter. Differences reflect both geometry and discretization,
+# so compare layouts on the same explicit domain when isolating layout effects.
+#
 # Here's a decision guide:
 #
 # | Layout | Best For | Advantages | Disadvantages |
 # |--------|----------|------------|---------------|
 # | **Regular Grid** | Most applications, rectangular arenas | Simple, intuitive, fast | Non-uniform neighbor distances (with diagonal) |
 # | **Hexagonal** | Isotropic analysis, grid cells | Uniform neighbor distances, natural for some patterns | Slightly more complex, can't tile rectangles perfectly |
-# | **Polygon-bounded** | Circular arenas, water mazes, custom shapes | Exact boundaries, matches physical setup | Requires polygon definition |
-# | **Graph** (next notebook) | Linear tracks, mazes, 1D analysis | True 1D representation, handles complex track geometry | Only for track-like environments |
+# | **Polygon-bounded** | Circular arenas, water mazes, custom shapes | Explicit geometry, independent of visits | Boundary approximated by bins |
+# | **Graph** ([05](05_track_linearization.ipynb)) | Constrained tracks and mazes | Track coordinates and connectivity | Requires an explicit graph |
 #
-# **Default recommendation:** Start with regular grid (`from_samples()`). It works for 95% of use cases!
+# Start with a regular grid for a simple arena; use known geometry when
+# unvisited accessible areas must remain part of the environment.
 
 # %% [markdown]
 # ## 6. Layout Parameters Summary
@@ -414,8 +430,9 @@ env1 = Environment.from_samples(
     bin_size=5.0,  # Size of bins
     connect_diagonal_neighbors=True,  # Include diagonal connections
     infer_active_bins=True,  # Auto-detect active bins
-    bin_count_threshold=1,  # Min samples per active bin
+    bin_count_threshold=1,  # Regular-grid counts must exceed 1 (at least 2)
     name="FullyConfigured",
+    units="cm",
 )
 
 # Hexagonal parameters
@@ -425,6 +442,7 @@ env2 = Environment.from_samples(
     bin_size=5.0,  # Hexagon width (flat-to-flat)
     infer_active_bins=True,
     name="HexConfigured",
+    units="cm",
 )
 
 # Polygon parameters (from_polygon always uses RegularGrid layout)
@@ -434,6 +452,7 @@ env3 = Environment.from_polygon(
     connect_diagonal_neighbors=True,
     name="PolyConfigured",
 )
+env3.units = "cm"
 
 print("All environments created successfully!")
 
@@ -452,7 +471,7 @@ print("All environments created successfully!")
 #
 # ## Next Steps
 #
-# In the next notebook ([03_morphological_operations.ipynb](../03_morphological_operations/)), you'll learn:
+# In the next notebook ([03_morphological_operations.ipynb](03_morphological_operations.ipynb)), you'll learn:
 # - How to handle sparse or patchy data
 # - Morphological operations: dilate, fill_holes, close_gaps
 # - Controlling active bin inference

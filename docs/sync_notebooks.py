@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Sync example notebooks from examples/ to docs/examples/ for documentation build."""
 
+import re
 import shutil
 from pathlib import Path
 
@@ -9,6 +10,54 @@ examples_dir = Path(__file__).parent.parent / "examples"
 docs_examples_dir = Path(__file__).parent / "examples"
 
 docs_examples_dir.mkdir(parents=True, exist_ok=True)
+
+
+def sync_catalog() -> None:
+    """Keep the complete catalog consistent with the notebook introductions."""
+    rows = ["| Notebook | Estimated time | Start after |", "| --- | --- | --- |"]
+    for source in sorted(examples_dir.glob("[0-9][0-9]_*.py")):
+        text = source.read_text(encoding="utf-8")
+        title = re.search(r"^# # (.+)$", text, flags=re.MULTILINE)
+        estimates = re.findall(
+            r"^# \*\*Estimated time\*\*:[ \t]*([^\n]+)", text, flags=re.MULTILINE
+        )
+        prerequisites = re.search(
+            r"^# \*\*Prerequisites\*\*:[ \t]*(.*(?:\n# [^\n]+)*)",
+            text,
+            flags=re.MULTILINE,
+        )
+        if title is None or len(estimates) != 1 or prerequisites is None:
+            raise ValueError(
+                f"{source.name} needs a title, one **Estimated time**: entry and "
+                "**Prerequisites**: links (or None) before syncing the catalog."
+            )
+        dependencies = re.findall(
+            r"\[[^\]]+\]\(([^)]+\.ipynb)\)", prerequisites.group(1)
+        )
+        dependency_links = (
+            ", ".join(f"[{Path(target).name[:2]}]({target})" for target in dependencies)
+            or "None"
+        )
+        notebook = source.with_suffix(".ipynb").name
+        rows.append(
+            f"| [{source.name[:2]}. {title.group(1)}]({notebook}) | "
+            f"{estimates[0].rstrip('.')} | {dependency_links} |"
+        )
+    readme = examples_dir / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    start = "<!-- notebook-catalog:start -->"
+    end = "<!-- notebook-catalog:end -->"
+    before, remainder = text.split(start, 1)
+    _, after = remainder.split(end, 1)
+    readme.write_text(
+        before + start + "\n\n" + "\n".join(rows) + "\n\n" + end + after,
+        encoding="utf-8",
+    )
+    print(f"Synced catalog for {len(rows) - 2} notebooks")
+
+
+# Validate metadata before publishing any mirrors.
+sync_catalog()
 
 patterns = ("*.ipynb", "*.py")
 synced = 0

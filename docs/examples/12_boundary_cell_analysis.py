@@ -20,30 +20,29 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 #
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
 #
 # - Generate synthetic boundary cell firing patterns using simulation tools
-# - Compute the border score metric (Solstad et al. 2008) to quantify boundary tuning
+# - Compute the library's graph-generalized border score to quantify boundary preference
 # - Understand the components of border score calculation (boundary coverage, mean distance)
-# - Interpret border score values (range [-1, 1], positive values indicate border cells)
+# - Interpret border scores descriptively without treating a cutoff as cell identity
 # - Compare and contrast boundary cells vs place cells in spatial tuning
 # - Use distance fields and boundary detection for analyzing spatial selectivity
 
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
+from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.encoding.border import border_score
 from neurospatial.simulation import simulate_trajectory_ou
-
-# Set random seed for reproducibility
-np.random.seed(42)
 
 # %% [markdown]
 # ## Part 1: Generate Synthetic Border Cell
@@ -59,15 +58,9 @@ np.random.seed(42)
 # Arena size: 80x80 cm square arena (clear boundaries for border cells)
 arena_size = 80.0  # cm
 
-# Create a grid of points spanning the arena
-n_points_per_dim = max(20, int(arena_size / 3.0) + 1)
-x = np.linspace(0, arena_size, n_points_per_dim)
-y = np.linspace(0, arena_size, n_points_per_dim)
-xx, yy = np.meshgrid(x, y)
-arena_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-# Create environment first (needed for trajectory simulation)
-env = Environment.from_samples(arena_data, bin_size=3.0)
+# Define the known continuous boundary explicitly. Binning sparse lattice points
+# at a mismatched spacing can introduce unvisited rows and artificial walls.
+env = Environment.from_polygon(box(0, 0, arena_size, arena_size), bin_size=3.0)
 env.units = "cm"
 env.frame = "arena"
 
@@ -146,12 +139,16 @@ plt.show()
 # $$\text{border score} = \frac{c_M - d}{c_M + d}$$
 #
 # where:
-# - $c_M$ = maximum boundary coverage (fraction of boundary bins in field)
-# - $d$ = mean distance from field bins to nearest boundary (normalized by environment extent)
+# - $c_M$ = overall boundary coverage (fraction of all boundary bins in the field)
+# - $d$ = mean graph distance to the nearest boundary, divided by the bin-center bounding-box diagonal
+#
+# This is the library's graph generalization: it uses overall boundary coverage,
+# rather than the maximum coverage of an individual wall in Solstad et al.
+# Scores and example cutoffs below are descriptive, not calibrated cell-type tests.
 #
 # **Interpretation:**
-# - Score > 0.5: Strong border cell
-# - Score ≈ 0: Neither border nor place cell
+# - Score > 0.5: Strong boundary preference under an illustrative cutoff
+# - Score ≈ 0: Coverage and normalized distance are balanced
 # - Score < 0: Central field (opposite of border cell)
 
 # %%
@@ -161,13 +158,13 @@ score = border_score(env, border_cell_rate, threshold=0.3)
 print(f"Border Score: {score:.3f}")
 print("\nInterpretation:")
 if score > 0.5:
-    print("  ✓ Strong border cell (score > 0.5)")
+    print("  ✓ Strong boundary preference under the illustrative cutoff")
 elif score > 0.3:
     print("  ~ Moderate border cell (0.3 < score < 0.5)")
 elif score > 0:
     print("  ~ Weak border preference (0 < score < 0.3)")
 else:
-    print("  ✗ Not a border cell (score ≤ 0)")
+    print("  Nonpositive boundary-preference score in this example")
 
 # %% [markdown]
 # ### Effect of Threshold Parameter
@@ -189,7 +186,7 @@ ax.axhline(
     linestyle="--",
     linewidth=2,
     alpha=0.7,
-    label="Strong border cell threshold",
+    label="Illustrative score cutoff (0.5)",
 )
 ax.set_xlabel("Threshold (fraction of peak rate)", fontsize=12, fontweight="bold")
 ax.set_ylabel("Border Score", fontsize=12, fontweight="bold")
@@ -231,8 +228,13 @@ boundary_coverage = boundary_in_field.sum() / len(boundary_bins)
 # Normalize distance by environment extent
 extent_x = env.dimension_ranges[0][1] - env.dimension_ranges[0][0]
 extent_y = env.dimension_ranges[1][1] - env.dimension_ranges[1][0]
-extent = np.sqrt(extent_x * extent_y)
+extent = np.linalg.norm(np.ptp(env.bin_centers, axis=0))
 normalized_distance = mean_distance / extent
+np.testing.assert_allclose(
+    (boundary_coverage - normalized_distance)
+    / (boundary_coverage + normalized_distance),
+    score,
+)
 
 print("Border Score Components:")
 print(
@@ -275,9 +277,9 @@ colors[np.where(boundary_in_field)[0]] = 3.0  # Overlap
 env.plot_field(
     colors,
     ax=ax,
-    cmap="Set1",
-    vmin=0,
-    vmax=4,
+    cmap=ListedColormap(["#e41a1c", "#377eb8", "#4daf4a"]),
+    vmin=0.5,
+    vmax=3.5,
     colorbar=False,
 )
 ax.set_title("Boundary Coverage", fontsize=14, fontweight="bold")
@@ -409,13 +411,13 @@ print("=" * 60)
 print("\nBorder Cell:")
 print(f"  Border Score: {border_score_border:.3f}")
 print(
-    f"  Classification: {'✓ Border cell' if border_score_border > 0.5 else '✗ Not border cell'}"
+    f"  Descriptive screen: {'Above cutoff' if border_score_border > 0.5 else 'Below cutoff'}"
 )
 print("  Firing pattern: High near walls, low in center")
 print("\nPlace Cell:")
 print(f"  Border Score: {border_score_place:.3f}")
 print(
-    f"  Classification: {'✓ Border cell' if border_score_place > 0.5 else '✗ Not border cell'}"
+    f"  Descriptive screen: {'Above cutoff' if border_score_place > 0.5 else 'Below cutoff'}"
 )
 print("  Firing pattern: High in center, low near walls")
 print(f"\n{'=' * 60}")
@@ -430,9 +432,9 @@ print(f"\n{'=' * 60}")
 #    - Boundary coverage (how much of the boundary is in the field)
 #    - Mean distance to boundary (how close the field is to walls)
 # 3. **Score interpretation**:
-#    - > 0.5: Strong border cell (like our synthetic example)
+#    - > 0.5: Strong boundary preference under an illustrative cutoff
 #    - 0-0.5: Weak border preference
-#    - < 0: Central field (place cell)
+#    - < 0: Central field in this synthetic comparison; not a place-cell verdict
 # 4. **Threshold matters**: Different thresholds segment the field differently
 #
 # **Key neuroscience insight:**

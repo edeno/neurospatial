@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Track Linearization: Working with 1D Environments
 #
+# **Estimated time**: 25-30 minutes
+#
+# **Prerequisites**: [01: basics](01_introduction_basics.ipynb), [02: layouts](02_layout_engines.ipynb), [04: regions](04_regions_of_interest.ipynb).
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -23,11 +27,10 @@
 # - Understand when and why to use 1D linearization
 # - Create linearized track environments with GraphLayout
 # - Convert between N-D position coordinates and 1D linear position
-# - Work with complex maze structures (plus maze, figure-8)
+# - Work with a branched plus-maze graph
 # - Understand the difference between 1D and N-D environments
 # - Combine linearized coordinates and explicit labels for directional neural analysis
 #
-# **Estimated time: 25-30 minutes**
 
 # %% [markdown]
 # ## Why 1D Linearization?
@@ -45,9 +48,10 @@
 # - **Direction-conditioned analysis**: Combine track coordinates with explicit journey labels
 # - **Place field analysis**: Better capture spatially-tuned neurons on tracks
 # - **Sequence detection**: Identify replay and theta sequences
-# - **Directional coding**: Separate opposing movement directions
+# - **Directional coding**: Combine track geometry with explicit movement labels
 #
-# The `GraphLayout` engine handles this automatically!
+# `GraphLayout` supplies coordinates and connectivity. Trial and direction
+# labels remain explicit inputs to a directional analysis.
 
 # %% [markdown]
 # ## Setup
@@ -154,11 +158,12 @@ env_1d = Environment.from_graph(
     bin_size=5.0,  # 5 cm bins along track
     name="LinearTrack",
 )
+env_1d.units = "cm"
 
 print("1D Environment Created!")
 print(f"Is 1D: {env_1d.is_linearized_track}")
 print(f"Number of bins: {env_1d.n_bins}")
-print(f"Layout type: {env_1d.layout._layout_type_tag}")
+print(f"Layout type: {env_1d.layout_type}")
 
 # %% [markdown]
 # ### Understanding 1D vs 2D Environments
@@ -169,6 +174,8 @@ print(f"Layout type: {env_1d.layout._layout_type_tag}")
 # - **GraphLayout Environment**: Bins represent locations along track edges
 #
 # **Critical insight**: Revisiting the same point on this single-edge track gives the same coordinate and bin in either direction. Linearization describes geometry; direction-specific fields also need explicit trial or movement labels. Branch assignment on more complex graphs depends on the graph and projection settings.
+# Graph environments retain embedded 2D bin centers for geometry and plotting;
+# use `to_linear(env.bin_centers)` to obtain the 1D track coordinates.
 
 # %%
 if env_1d is not None:
@@ -200,6 +207,12 @@ else:
 if env_1d is not None and env_1d.is_linearized_track:
     # Map trajectory to linear position
     linear_positions = env_1d.to_linear(linear_track_data)
+    projected_positions = env_1d.linear_to_nd(linear_positions)
+    np.testing.assert_allclose(projected_positions[:, 0], linear_track_data[:, 0])
+    np.testing.assert_allclose(projected_positions[:, 1], 0.0)
+    print(
+        "Inverse conversion returns the projection onto the track, not off-track noise."
+    )
 
     print(f"Linear positions shape: {linear_positions.shape}")
     print(
@@ -413,6 +426,7 @@ env_plus = Environment.from_graph(
     bin_size=5.0,
     name="PlusMaze",
 )
+env_plus.units = "cm"
 
 print("Plus Maze 1D Environment Created!")
 print(env_plus.info())
@@ -530,7 +544,7 @@ ax.scatter(
     marker="o",
     edgecolors="black",
     linewidth=1,
-    label=f"Spikes (n={len(spike_indices)})",
+    label=f"Samples with spikes (n={len(spike_indices)})",
 )
 
 ax.plot(center[0], center[1], "k*", markersize=20, label="Center")
@@ -556,7 +570,7 @@ print("But NOT when returning from north arm through the same physical space!")
 # %%
 # Create a 2D environment for a direction-pooled comparison
 env_2d = Environment.from_samples(
-    positions=plus_maze_data, bin_size=8.0, name="PlusMaze2D"
+    positions=plus_maze_data, bin_size=8.0, name="PlusMaze2D", units="cm"
 )
 
 # Map to bins
@@ -577,7 +591,7 @@ firing_rate_2d = np.divide(
     spike_counts_per_bin,
     occupancy_per_bin,
     where=occupancy_per_bin > 0,
-    out=np.zeros_like(spike_counts_per_bin, dtype=float),
+    out=np.full_like(spike_counts_per_bin, np.nan, dtype=float),
 )
 
 print(f"2D firing rate map: {env_2d.n_bins} bins")
@@ -588,11 +602,12 @@ print(f"Peak firing rate: {firing_rate_2d.max():.2f} Hz")
 fig, ax = plt.subplots(figsize=(10, 10))
 
 # Plot firing rate
-active_bins = firing_rate_2d > 0
+active_bins = np.isfinite(firing_rate_2d)
 scatter = ax.scatter(
     env_2d.bin_centers[active_bins, 0],
     env_2d.bin_centers[active_bins, 1],
     c=firing_rate_2d[active_bins],
+    vmin=0,
     s=400,
     cmap="hot",
     marker="s",
@@ -648,7 +663,7 @@ if env_plus is not None and env_plus.is_linearized_track:
         spike_counts_per_bin_1d,
         occupancy_per_bin_1d,
         where=occupancy_per_bin_1d > 0,
-        out=np.zeros_like(spike_counts_per_bin_1d, dtype=float),
+        out=np.full_like(spike_counts_per_bin_1d, np.nan, dtype=float),
     )
 
     print(f"1D firing rate map: {env_plus.n_bins} bins")
@@ -666,19 +681,19 @@ if env_plus is not None and env_plus.is_linearized_track:
     linear_pos = env_plus.to_linear(plus_maze_data)
 
     # Plot firing rate as function of linear position
-    bin_linear_positions = np.arange(env_plus.n_bins)
+    bin_linear_positions = env_plus.to_linear(env_plus.bin_centers)
 
     ax.bar(
         bin_linear_positions,
         firing_rate_1d,
-        width=1.0,
+        width=5.0,
         color="red",
         alpha=0.7,
         edgecolor="black",
         linewidth=1,
     )
 
-    ax.set_xlabel("Linear Position (bin index)")
+    ax.set_xlabel("Ordered track coordinate (cm)")
     ax.set_ylabel("Firing Rate (Hz)")
     ax.set_title("Graph-Track Firing Rate (pooled across directions)")
     ax.grid(axis="y", alpha=0.3)
@@ -694,7 +709,7 @@ else:
 # %% [markdown]
 # ## Direction-Specific Fields Need Explicit Trial Labels
 #
-# This complete example combines an explicit graph, out-and-back trials and direction labels. Geometric coordinates repeat on the return path, while the two direction-conditioned maps recover their separately planted centers within one 5 cm bin. The same recipe is executed in the [workflows guide](../../user-guide/workflows/#direction-specific-fields-on-a-graph-track).
+# This complete example combines an explicit graph, out-and-back trials and direction labels. Geometric coordinates repeat on the return path, while the two direction-conditioned maps recover their separately planted centers within one 5 cm bin. The same recipe is executed in the [workflows guide](https://edeno.github.io/neurospatial/user-guide/workflows/#direction-specific-fields-on-a-graph-track).
 
 # %%
 import matplotlib.pyplot as plt
@@ -833,7 +848,7 @@ else:
 # %% [markdown]
 # ### Pitfall 2: Pooling directions when firing depends on direction
 #
-# Both grids and graph tracks pool directions unless the analysis receives explicit direction or trial labels. See the joined graph-track recipe below and [directional place fields](../21_directional_place_fields/).
+# Both grids and graph tracks pool directions unless the analysis receives explicit direction or trial labels. See the joined graph-track recipe below and [directional place fields](21_directional_place_fields.ipynb).
 
 # %% [markdown]
 # ### Pitfall 3: Omitting the graph for a constrained track
@@ -861,7 +876,7 @@ else:
 #
 # ## Next Steps
 #
-# You've completed the core tutorial series! You now know:
+# You can now combine the geometry, regions and explicit labels introduced here:
 #
 # 1. ✓ **Basics** (notebook 01) - Creating environments, spatial queries
 # 2. ✓ **Layout engines** (notebook 02) - Regular, hexagonal, polygon-bounded
@@ -869,13 +884,10 @@ else:
 # 4. ✓ **Regions** (notebook 04) - Defining and analyzing zones
 # 5. ✓ **Linearization** (notebook 05) - 1D track analysis
 #
-# **Advanced topics to explore**:
-# - CompositeEnvironment (merging multiple environments)
-# - Alignment and transformations (mapping between environments)
-# - Custom layout engines (specialized discretizations)
-# - Integration with neural data pipelines
-#
-# Check the documentation and examples directory for more!
+# Continue to [06: composite environments](06_composite_environments.ipynb)
+# for multiple spaces, [08: spike-field basics](08_spike_field_basics.ipynb)
+# for timestamped spike analysis, or [21: directional fields](21_directional_place_fields.ipynb)
+# for a fuller direction-conditioned analysis.
 #
 # ## Exercises (Optional)
 #
