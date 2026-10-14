@@ -177,6 +177,12 @@
 
 ### Fixed
 
+- Match tutorial raster spikes to the PSTH's half-open window, register video
+  preview pixel centers with the full affine transform, and label maze endpoint
+  proxies used by transition summaries. Check exact spike edges and affine
+  registration across notebook sources and documentation mirrors in CI.
+- Omit threshold-based cell labels from the NWB tutorial's persistence summary.
+
 - Resolve heading colormaps such as the default `hsv` to angle-dependent RGBA
   colors in Matplotlib exports and persistent artists. Preserve literal colors,
   update colors with heading, and wrap full turns consistently.

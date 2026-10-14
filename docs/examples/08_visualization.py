@@ -36,6 +36,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.transforms import Affine2D as MplAffine2D
 
 from neurospatial import Environment
 from neurospatial.animation import (
@@ -211,13 +212,13 @@ axes[0].scatter(
     landmarks_px[:, 0], landmarks_px[:, 1], facecolors="none", edgecolors="cyan"
 )
 axes[0].set(xlabel="Column (px)", ylabel="Row (px)", title="Raw synthetic frame")
-# For this axis-aligned transform, the image extent plus origin='upper' places
-# raw image rows correctly in world coordinates. General warps need resampling.
-corners = transform(np.array([[0.0, height], [width, 0.0]]))
+# Pixel centers are integer (column, row) coordinates. Apply the complete
+# affine mapping to those centers, including Y reflection and any rotation.
 axes[1].imshow(
     video_frames[index],
     origin="upper",
-    extent=[corners[0, 0], corners[1, 0], corners[0, 1], corners[1, 1]],
+    extent=[-0.5, width - 0.5, height - 0.5, -0.5],
+    transform=MplAffine2D(transform.A) + axes[1].transData,
 )
 env.plot_field(
     fields[index], ax=axes[1], alpha=0.4, colorbar=False, vmin=0, vmax=1, cmap="magma"

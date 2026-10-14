@@ -47,8 +47,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra notebooks ${{ matrix.extras }}
 
-      - name: Check notebook sources, catalog and links
-        run: uv run pytest tests/docs/test_notebook_collection.py -n 0
+      - name: Check notebook sources, links and scientific boundaries
+        run: >-
+          uv run pytest
+          tests/docs/test_notebook_collection.py
+          tests/docs/test_notebook_boundaries.py
+          tests/docs/test_decoder_plot_examples.py
+          -n 0
 
       - name: Cache the pinned public recording
         if: matrix.group == 'real-data'

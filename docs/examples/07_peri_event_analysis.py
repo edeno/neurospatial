@@ -114,7 +114,11 @@ population = population_peri_event_histogram(
 result = population.sel(unit_id=7)
 retained_events = event_times[result.event_indices]
 retained_names = event_names[result.event_indices]
-aligned = align_spikes_to_events(spike_trains[0], retained_events, window=window)
+# The low-level aligner includes the stop edge; match the PSTH's half-open bins.
+aligned = [
+    train[train < window[1]]
+    for train in align_spikes_to_events(spike_trains[0], retained_events, window=window)
+]
 assert len(aligned) == result.n_events
 np.testing.assert_array_equal(result.event_indices, population.event_indices)
 assert result.n_events + result.n_events_dropped == event_times.size
@@ -149,6 +153,8 @@ plt.show()
 # array. The histogram is the mean spike count per bin across those same cues.
 # `firing_rate` divides by bin width; `sem` is in count units and also needs
 # division by bin width when displayed in Hz.
+# The raster above explicitly removes the aligner's inclusive stop edge, so
+# both views count spikes on the same half-open `[-0.5, 1.0)` s window.
 #
 # The shaded SEM describes variability across retained events under an
 # independence assumption. It is not a confidence band for a cell-type claim.

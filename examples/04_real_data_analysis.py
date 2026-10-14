@@ -47,6 +47,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Circle
 
 from neurospatial import Environment
 from neurospatial.behavior import detect_region_crossings, path_progress
@@ -104,6 +105,8 @@ print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_ga
 # `bin_at` on a graph assigns finite positions to the nearest track-bin center;
 # it does not reject distant tracking outliers or resolve ambiguous branches
 # from movement history. We rely on the archived tracking preprocessing here.
+# The labeled orange circles are 8 cm endpoint proxies used in the transition
+# analysis below; they are operational annotations rather than surveyed wells.
 
 # %%
 graph = recording["track_graph"]
@@ -115,12 +118,39 @@ env = Environment.from_graph(
     name="J16 maze",
 )
 env.units = "cm"
+endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
+well_radius_cm = 8.0
+well_names = []
+for node in endpoint_nodes:
+    name = f"well_{node}"
+    env.regions.buffer(
+        np.asarray(graph.nodes[node]["pos"], dtype=float), well_radius_cm, name
+    )
+    well_names.append(name)
+
 fig, ax = plt.subplots(figsize=(7, 6))
 for first, second in graph.edges:
     segment = np.array([graph.nodes[first]["pos"], graph.nodes[second]["pos"]])
     ax.plot(*segment.T, color="black", linewidth=3, alpha=0.4)
-ax.plot(*positions[::40].T, color="tab:blue", linewidth=0.4, alpha=0.5)
+ax.plot(
+    *positions[::40].T, color="tab:blue", linewidth=0.4, alpha=0.5, label="Tracking"
+)
+for index, (node, name) in enumerate(zip(endpoint_nodes, well_names, strict=True)):
+    center = np.asarray(graph.nodes[node]["pos"], dtype=float)
+    ax.add_patch(
+        Circle(
+            center,
+            well_radius_cm,
+            fill=False,
+            color="tab:orange",
+            linewidth=1.5,
+            label="Endpoint proxy (8 cm radius)" if index == 0 else None,
+        )
+    )
+    ax.annotate(name, center, xytext=(6, 6), textcoords="offset points", fontsize=9)
 ax.set(xlabel="X position (cm)", ylabel="Y position (cm)", title="Tracking and maze")
+ax.margins(0.12)
+ax.legend(loc="best")
 ax.set_aspect("equal")
 plt.show()
 
@@ -201,12 +231,6 @@ plt.show()
 # a measured departure-to-arrival time. Changing the proxy radius changes events.
 
 # %%
-well_names = []
-for node in sorted(node for node in graph if graph.degree(node) == 1):
-    name = f"well_{node}"
-    env.regions.buffer(np.asarray(graph.nodes[node]["pos"], dtype=float), 8.0, name)
-    well_names.append(name)
-
 position_bins = env.bin_at(positions)
 valid = (position_bins >= 0) & np.isfinite(positions).all(axis=1)
 breaks = np.diff(times) > max_gap

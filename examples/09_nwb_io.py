@@ -182,6 +182,8 @@ print(f"Shared electrophysiology coverage:\n{units.spike_window}")
 # This environment is inferred from the tracking extent. A known arena boundary
 # would be another defensible choice. Inspect occupancy and spatial support:
 # unobserved bins remain NaN rather than becoming zero firing rate.
+# The summary reports descriptive metrics without threshold-based cell-type
+# labels; this workflow verifies data persistence rather than cell identity.
 
 # %%
 rates = compute_spatial_rates(
@@ -195,7 +197,7 @@ rates = compute_spatial_rates(
     bandwidth=6.0,
     min_occupancy=0.1,
 )
-print(rates.summary_table())
+print(rates.summary_table(include_classification=False))
 print(f"Supported bins: {rates.spatial_support.sum()} / {env.n_bins}")
 fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
 for ax, unit_id in zip(axes, rates.unit_ids, strict=True):
