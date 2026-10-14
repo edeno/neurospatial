@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 # Module-level imports for hot path performance (avoid per-frame import overhead)
+from matplotlib import colormaps
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import to_rgba
 from matplotlib.patches import Circle, PathPatch
@@ -404,6 +405,24 @@ def _render_bodypart_overlay_matplotlib(
             ax.add_collection(lc)
 
 
+def _head_direction_color(
+    color: str, direction: NDArray[np.float64]
+) -> tuple[float, float, float, float]:
+    """Resolve heading hue or a fixed color to RGBA for Matplotlib.
+
+    Colormaps use counterclockwise heading in environment (x, y) coordinates:
+    east is 0, north is 0.25, west is 0.5, and south is 0.75. Angles wrap at
+    one full turn. Names registered as colormaps take precedence over colors.
+    """
+    if color in colormaps:
+        hue = float((np.arctan2(direction[1], direction[0]) / (2 * np.pi)) % 1.0)
+        # Floating-point sin(2*pi) can put due east just below the wrap point.
+        if 1.0 - hue <= 4 * np.finfo(float).eps:
+            hue = 0.0
+        return colormaps[color](hue)
+    return to_rgba(color)
+
+
 def _render_head_direction_overlay_matplotlib(
     ax: Any,
     head_dir_data: Any,
@@ -435,6 +454,9 @@ def _render_head_direction_overlay_matplotlib(
     When `position_data` is provided, arrows follow the animal's position and
     visualize heading direction at that location. This is the recommended mode
     for tracking moving animals.
+
+    Colormap colors follow counterclockwise heading, with east at hue 0 and
+    one full turn wrapping to 0. Fixed Matplotlib colors retain their color.
     """
     # Determine if data is angles or vectors
     is_angles = head_dir_data.data.ndim == 1
@@ -472,7 +494,7 @@ def _render_head_direction_overlay_matplotlib(
         origin[1],
         direction[0],
         direction[1],
-        color=head_dir_data.color,
+        color=_head_direction_color(head_dir_data.color, direction),
         scale=1,
         scale_units="xy",
         angles="xy",
@@ -1064,7 +1086,7 @@ class OverlayArtistManager:
             origin[1],
             direction[0],
             direction[1],
-            color=head_dir_data.color,
+            color=_head_direction_color(head_dir_data.color, direction),
             scale=1,
             scale_units="xy",
             angles="xy",

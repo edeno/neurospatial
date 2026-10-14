@@ -172,6 +172,10 @@
 
 ### Fixed
 
+- Resolve heading colormaps such as the default `hsv` to angle-dependent RGBA
+  colors in Matplotlib exports and persistent artists. Preserve literal colors,
+  update colors with heading, and wrap full turns consistently.
+
 - Apply the full pixel-to-world affine transform to rendered video images,
   preserving Y-axis flips, rotation, shear and translation. Export and widget
   paths share the same mapping and keep axes/data limits in physical units.
