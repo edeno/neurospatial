@@ -1,14 +1,17 @@
 # Stage A — Continuous arena representation
 
-**Status:** Draft. The boundary-selection policy, wall-connectivity policy and
-initial clipping scope await the user's decisions. No implementation has begun.
+**Status:** Design expansion. Center-based whole-bin selection and physical
+walls that block connectivity are approved. General polygon clipping is in
+Stage A; the user requested an expanded design before implementation. The new
+clipped-bin identity and numerical-capability proposals await review. No
+production implementation has begun.
 
 **Branch:** `feature/environment-arena`, stacked on
 `feature/environment-representation` at `944c818d`.
 
 This is the next stage in the [representation roadmap](../environment-representation/overview.md#roadmap-after-phase-4).
-Stages B–F remain separate work. The completed representation plan and its
-validation record remain unchanged.
+Stages B–F remain separate work. The five completed representation phases and
+their validation record remain complete; this plan scopes the subsequent work.
 
 ## Scientific outcome
 
@@ -21,16 +24,19 @@ For known arena geometry, point assignment first checks the arena, then its
 binning. Whole-bin selection keeps complete cells. Clipping creates new cell
 geometry and updates every quantity that depends on it.
 
-## Decisions required before the implementation plan is finalized
+## Accepted scope and decisions
 
-| Decision | Recommendation | Alternative and consequence |
+| Decision | User's choice | Consequence |
 | --- | --- | --- |
-| Whole-bin selection at a boundary | Select bins whose centers are strictly inside. This preserves the current polygon factory's selection rule. | Require a specified minimum overlap fraction. This needs exact cell footprints and an explicit fraction, and can select different bins. |
-| Physical internal walls | Remove blocked navigation pairs and their matching finite-volume face records. | Store wall geometry without changing connectivity; paths and diffusion could still cross the wall. |
-| Initial clipping scope | Implement exact axis-aligned rectangular clipping of Cartesian rectilinear bins. Design general polygon clipping separately. | Include general polygon clipping now, with an additional design pass for disconnected cell pieces, centers, lookup and diffusion validity. |
+| Whole-bin selection at a boundary | Keep bins whose centers are inside the arena. | Preserve strict center-interior selection, independently of clipping. |
+| Physical internal walls | Walls block connections between bins. | Remove blocked navigation pairs and matching face records. |
+| Clipping scope | Include general polygon clipping in Stage A; expand the design first. | Support valid planar polygons, multipolygons, holes and disconnected cell intersections; rectangular-only clipping does not complete this stage. |
 
-These recommendations are not yet accepted decisions. Any restrictions below
-are proposals to review with the finalized plan, not implemented guarantees.
+The [polygon clipping design](polygon-clipping.md) makes the larger scope
+concrete. It proposes splitting disconnected cell pieces into new bins with an
+explicit parent mapping, and retaining finite-volume capabilities only when
+their geometry is certified. Those proposals and the remaining API/schema
+choices are not approved merely by accepting general clipping.
 
 ## Current evidence
 
@@ -125,7 +131,7 @@ recreate it from that commit when repeating the comparison.
 - Transforms map arena geometry together with binning. Preserve the existing
   proven transform restrictions, including refusal of track non-similarities.
   Copy, deepcopy and pickle preserve ownership and geometry.
-- If wall blocking is chosen, preserve ordered pair/face consistency and
+- Walls block connections: preserve ordered pair/face consistency and
   rebuild connectivity before publishing the geometry once.
 - Proposed initial wall restriction: accept walls supported by cell boundaries;
   refuse a wall cutting through a cell interior until splitting or rebuilding
@@ -143,31 +149,27 @@ recreate it from that commit when repeating the comparison.
 
 - Keep existing whole-bin `subset` semantics distinct from a clipping API.
   Clipping an analysis region changes support without inventing physical walls.
-- Under the recommended initial scope, intersect axis edges with rectangular
-  limits, retain positive-size cell intersections, and recompute centers,
-  sizes, lookup, navigation distances, face areas and flux distances.
-- Exact physical clipping initially requires the existing arena domain to be
-  representable by the rectilinear cells as well. A circle discretized into a
-  square grid does not meet that precondition: clipping its grid edges would
-  still leave square-cell area outside the circle. Refuse known curved or
-  oblique arena boundaries until general clipping can intersect those too.
-  Cell-aligned masks, including holes, remain eligible. For an unknown physical
-  footprint, a clip can establish exact discrete cell geometry only; it must
-  retain the unknown-footprint status and make no physical-area claim.
-- Retain the parent's allowed neighbor policy, including zero-area diagonal
-  links where applicable. All graph and face arrays use the same order.
-  Never turn a path-only link into a conducting face. Arbitrary partial face
-  conductances do not locate their openings; refuse those clips unless stored
-  physical face geometry determines the clipped opening.
-- Do not route partial edge cells through a builder that assumes uniform
-  widths. Publish the resulting data directly. Audit rectilinear consumers
-  before retaining interpolation or linear-time-allocation capabilities.
-- Explicitly refuse unsupported dimensionality, bin geometry or clipping
-  shape with a supported alternative. Do not approximate a polygon clip by
-  selecting centers and call it clipping.
-- General polygon clipping needs a separate design for disconnected pieces
-  and representative centers. Exact shapes or areas alone do not prove that
-  the current two-point finite-volume solver is valid.
+- Include the known polygonal arena domain in the intersection, not just the
+  requested analysis polygon. Never leave square-cell area outside a known
+  circular or oblique polygonal arena and call it an exact physical measure.
+- Materialize exact planar cell boundaries from stored data; preserve shared
+  topology. Retain every positive-area connected intersection as a separate
+  bin, including small pieces, subject to the reviewed split-bin contract.
+- Recompute representatives, true areas, lookup and supported adjacency. Carry
+  a child-to-parent map. Do not copy counts, rates, occupancy or decoder state
+  implicitly onto the new bins.
+- Preserve allowed parent links and closed walls. Do not infer openings from
+  scalar face areas. Never turn a path-only link into a conducting face.
+- Exact shapes and measures do not prove the current scalar two-point
+  finite-volume scheme is valid. Apply the explicit eligibility tests in the
+  detailed design; otherwise retain exact geometry with a `MissingFaces`
+  reason. Expanding the numerical solver is a separate decision.
+- Retain a rectilinear component only when the new cells and representative
+  centers really form that grid. Never use a uniform-width builder for partial
+  cells, or retain grid interpolation/time-allocation shortcuts for polygons.
+- Track intervals, polar sectors, 3-D clipping and absent source-cell geometry
+  get explicit refusals. General **planar polygon** clipping does not imply
+  all-dimensional or all-coordinate-system clipping.
 
 ### Persistence
 
@@ -206,9 +208,11 @@ started** until the decisions above are resolved and its contract is concrete.
 3. **Walls and connectivity.** Implement the chosen wall rule with the stated
    representability restrictions. Validate both paths and diffusion across
    barriers and through openings.
-4. **Exact clipping.** Implement the approved supported geometry, maintaining
-   real sizes, graph and valid numerical capabilities. Verify direct-build
-   or analytical oracles rather than testing only the new implementation.
+4. **General polygon clipping.** Implement the reviewed shared cell geometry,
+   splitting, mapping and effective-domain intersection. Integrate polygon
+   lookup, plotting and interval allocation, then certify or refuse numerical
+   capabilities. Rectangular clips are one regression family, not the scope
+   limit. Verify analytic and independent overlay oracles.
 5. **User workflows and broad validation.** Finish documentation and exercised
    examples, verify the full transport/compatibility matrix, and review the
    accumulated API snapshot changes. Run broad validation and reconcile every
@@ -221,10 +225,10 @@ started** until the decisions above are resolved and its contract is concrete.
 | --- | --- |
 | Continuous containment | Analytic rectangles, circle/holed polygon predicates, exact centerline distances and masked cell unions; inside, outside, boundary, NaN, empty and wrong-width inputs. |
 | Bin support | `contains == (bin_at >= 0)`; dropped-bin points stay `-1`; known-arena exterior is never assigned; unknown footprints do not become invented walls. |
-| Coverage | Explicit counterexamples for center selection near boundaries; positive-measure coverage within the supported clipped cell domain; refusal of curved-domain cases that a grid-edge clip cannot represent exactly. |
+| Coverage | Explicit center-selection counterexamples; clipped cell union equals represented parent support intersected with the clip and known polygonal domain; circle, oblique and holed domains cannot leave unaccounted cell area outside the arena. |
 | Occupancy | Hand-computed dwell times for segments crossing arena edges and holes, including a segment with both sampled endpoints inside. Unsupported intervals stay missing rather than becoming zero activity. |
 | Walls | No navigation path or positive diffusion conductance crosses a closed wall; doorways stay passable; interior-cut walls follow the reviewed split/refusal policy. |
-| Clipping | Analytic partial-cell lengths/areas, center-to-bin identity, ordered pairs/faces, flux-distance and conservation checks. Include one-cell and repeated clips. |
+| Clipping | Analytic areas, component counts, parent mapping, center-to-bin identity, ordered interfaces/pairs and conservation; include split bins, holes, nonconvex cells, slivers, boundary-only contacts and repeated clips. |
 | Derivation | Whole-bin subsets keep physical walls; transformations preserve lookup under mapped probes; original environments remain unchanged. |
 | Persistence | Dict, file and actual NWB file round trips preserve arena, lookup, walls, measures and allowed analyses; v2 fixtures retain unknown footprints; corrupted arena/binning combinations fail before publication. |
 | Ownership | Caller mutation, deepcopy and pickle cannot mutate published arena geometry. |
