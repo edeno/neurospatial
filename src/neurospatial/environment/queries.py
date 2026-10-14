@@ -236,7 +236,7 @@ class EnvironmentQueries:
         True
 
         """
-        return self.layout.bin_sizes()
+        return self._binning.bins.sizes
 
     @check_fitted
     def path_between(

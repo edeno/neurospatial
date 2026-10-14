@@ -39,7 +39,7 @@ from neurospatial._intervals import as_intervals
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._protocols import SelfEnv
-from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear_grid
+from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear
 
 if TYPE_CHECKING:
     import scipy.sparse
@@ -362,8 +362,8 @@ def _occupancy(
 
     # Validate the capability before returning for empty input.
     if time_allocation == "linear":
-        grid = require_rectilinear_grid(
-            env.layout,
+        grid = require_rectilinear(
+            env._binning,
             "occupancy(time_allocation='linear')",
             fix="use time_allocation='start', which works on every layout",
         )

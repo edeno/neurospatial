@@ -31,10 +31,6 @@ from neurospatial.environment.transforms import (
     _rebin,
     _subset_mask,
 )
-from neurospatial.layout._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
-)
 
 if TYPE_CHECKING:
     import shapely
@@ -128,7 +124,7 @@ class CartesianCoordinates:
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self.layout.point_to_bin_index(points_nd).astype(np.intp, copy=False)
+        return self._binning.locator.locate(points_nd).astype(np.intp, copy=False)
 
     @check_fitted
     def contains(
@@ -174,7 +170,7 @@ class CartesianCoordinates:
         """
         # Optimized: compute indices once and check for -1 sentinel
         # This avoids redundant KDTree queries compared to calling bin_at() separately
-        indices = self.layout.point_to_bin_index(points_nd)
+        indices = self._binning.locator.locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
     @check_fitted
@@ -324,16 +320,17 @@ class CartesianCoordinates:
             )
             raise AttributeError(msg)
 
-        if not isinstance(self.layout, TrackLinearizationProvider):
+        linearization = self._binning.linearization
+        if linearization is None:
             raise AttributeError(
                 _format_error(
                     "to_linear() needs the track graph that defines the linearization, and "
-                    f"this environment's {self.layout._layout_type_tag} layout does not keep it.",
+                    f"this environment's {self._binning.kind} layout does not keep it.",
                     why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
                     fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
                 )
             )
-        return self.layout.to_linear(nd_position)
+        return linearization.to_linear(nd_position)
 
     @check_fitted
     def linear_to_nd(
@@ -406,16 +403,17 @@ class CartesianCoordinates:
             )
             raise AttributeError(msg)
 
-        if not isinstance(self.layout, TrackLinearizationProvider):
+        linearization = self._binning.linearization
+        if linearization is None:
             raise AttributeError(
                 _format_error(
                     "linear_to_nd() needs the track graph that defines the linearization, and "
-                    f"this environment's {self.layout._layout_type_tag} layout does not keep it.",
+                    f"this environment's {self._binning.kind} layout does not keep it.",
                     why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
                     fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
                 )
             )
-        return self.layout.linear_to_nd(linear_position)
+        return linearization.linear_to_nd(linear_position)
 
     @check_fitted
     def occupancy(
@@ -1045,7 +1043,7 @@ class CartesianCoordinates:
         # so subsets round-trip through the registered mask layout. Hexagonal,
         # mesh, track, reconstructed and graph-subset layouts lack the method
         # and keep the graph fallback, preserving their coordinate embedding.
-        is_grid_env = isinstance(self.layout, RectilinearGridProvider)
+        is_grid_env = self._binning.rectilinear is not None
         return _grid_subset(self, mask) if is_grid_env else _graph_subset(self, mask)
 
     @check_fitted

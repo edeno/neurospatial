@@ -35,59 +35,22 @@ from neurospatial.environment._protocols import (
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
-from neurospatial.layout._capabilities import require_rectilinear_grid
+from neurospatial.layout._capabilities import require_rectilinear
 from neurospatial.layout._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
 
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import InterpolationConsumer
-    from neurospatial.layout.base import LayoutEngine
+    from neurospatial.layout._binning import Binning
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
         MRFEigenbasisCache,
     )
     from neurospatial.ops.diffusion import MRFBasis
-
-
-def _missing_geometry_error(layout: object, operation: str) -> NotImplementedError:
-    """Explain which operation needs cell geometry that ``layout`` cannot supply.
-
-    Parameters
-    ----------
-    layout : object
-        The environment's layout engine, which lacks ``finite_volume_geometry``.
-    operation : str
-        Name of the analysis the scientist called, used to start the message.
-
-    Returns
-    -------
-    NotImplementedError
-        Error with What / Why / Fix sections, ready to raise.
-    """
-    from neurospatial._exceptions import _format_error
-
-    explain = getattr(layout, "_explain_missing_geometry", None)
-    if explain is not None:
-        return NotImplementedError(explain(operation))
-    return NotImplementedError(
-        _format_error(
-            f"{operation} needs finite-volume cell geometry, which layout "
-            f"{type(layout).__name__!r} does not provide.",
-            why=(
-                "Why: layouts built by Environment factories supply cell faces "
-                f"and measures; {type(layout).__name__!r} does not."
-            ),
-            fix=(
-                "build the environment with a factory method, e.g. "
-                "Environment.from_samples(positions, bin_size=...)"
-            ),
-        )
-    )
 
 
 def _interpolate(
@@ -175,7 +138,7 @@ def _interpolate(
     if mode == "nearest":
         return _interpolate_nearest(env, field, points)
     else:  # mode == "linear"
-        return _interpolate_linear(env.layout, field, points)
+        return _interpolate_linear(env._binning, field, points)
 
 
 def _interpolate_nearest(
@@ -225,7 +188,7 @@ def _interpolate_nearest(
 
 
 def _interpolate_linear(
-    layout: LayoutEngine,
+    binning: Binning,
     field: NDArray[np.float64],
     points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
@@ -256,8 +219,8 @@ def _interpolate_linear(
     requiring an inactive cell's value and out-of-bounds points return NaN.
 
     """
-    grid = require_rectilinear_grid(
-        layout,
+    grid = require_rectilinear(
+        binning,
         "interpolate(mode='linear')",
         fix="use mode='nearest', which works on every layout",
     )
@@ -808,21 +771,7 @@ class EnvironmentFields:
         operators. Read it through :meth:`_require_face_geometry`, which names
         the analysis when the layout has no cell faces.
         """
-        layout = cast("FiniteVolumeGeometryProvider", self.layout)
-        graph, volumes = layout.finite_volume_geometry()
-        # Gradient and divergence index edge fields by env.connectivity's edge
-        # order, so the layout's graph must be that graph, edge for edge.
-        if graph.number_of_nodes() != self.n_bins or list(graph.edges()) != list(
-            self.connectivity.edges()
-        ):
-            raise ValueError(
-                f"{type(layout).__name__}.finite_volume_geometry() returned a graph "
-                f"with {graph.number_of_nodes()} bins and {graph.number_of_edges()} "
-                f"edges that does not match the environment's {self.n_bins} bins "
-                f"and {self.connectivity.number_of_edges()} connectivity edges in "
-                "order; the layout's graph is out of sync with env.connectivity."
-            )
-        return FaceGeometry.from_graph(graph, volumes)
+        return self._binning.faces.build()
 
     def _require_face_geometry(
         self: EnvironmentProtocol, operation: str
@@ -839,8 +788,8 @@ class EnvironmentFields:
         FaceGeometry
             Validated faces and cell measures in connectivity edge order.
         """
-        if not isinstance(self.layout, FiniteVolumeGeometryProvider):
-            raise _missing_geometry_error(self.layout, operation)
+        if not self._binning.faces.available:
+            raise self._binning.faces.missing_error(operation)
         return self._face_geometry
 
     @versioned_cached_property

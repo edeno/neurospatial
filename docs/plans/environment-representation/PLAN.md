@@ -2,7 +2,17 @@
 
 **Committed**: 2026-10-13
 
-**Status:** Not started.
+**Status:** In progress on `feature/environment-representation`.
+
+| Phase | Status |
+| --- | --- |
+| 1 — Binning snapshot | Complete |
+| 2a — Data locators | Pending |
+| 2b — Shapes and plots | Pending |
+| 3 — Save binnings | Pending |
+| 4 — Derived environments | Pending |
+
+Validation evidence: [validation.md](validation.md).
 
 Environments will store their bins, point lookup and optional structure as data,
 built once by a layout and then kept. An environment made by subsetting,

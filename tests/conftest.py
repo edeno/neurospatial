@@ -40,8 +40,10 @@ import numpy as np
 import pytest
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
+from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
+from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 
 # =============================================================================
@@ -985,3 +987,75 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
         )
 
     return offset
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        "grid8",
+        "grid4",
+        "polygon",
+        "mask",
+        "pixels",
+        "hex",
+        "track",
+        "mesh",
+        "polar",
+        "polar_open",
+    ],
+)
+def built_environment(request) -> Environment | EgocentricPolarEnvironment:
+    """Small deterministic environments covering every built-in geometry."""
+    kind = request.param
+    if kind in {"grid8", "grid4"}:
+        positions = np.random.default_rng(0).uniform(0, 12, (1000, 2))
+        return Environment.from_samples(
+            positions,
+            bin_size=3.0,
+            connect_diagonal_neighbors=kind == "grid8",
+        )
+    if kind == "polygon":
+        return Environment.from_polygon(Point(6, 6).buffer(6), bin_size=3.0)
+    if kind in {"mask", "pixels"}:
+        mask = np.ones((5, 5), dtype=bool)
+        mask[2, 2] = False
+        if kind == "pixels":
+            return Environment.from_pixel_mask(mask, pixel_size=3.0)
+        return Environment.from_grid_mask(mask, grid_edges=(np.linspace(0, 15, 6),) * 2)
+    if kind == "hex":
+        return Environment.from_layout(
+            "Hexagonal",
+            {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+        )
+    if kind == "track":
+        graph = nx.Graph()
+        for node, pos in enumerate([(0, 0), (6, 0), (6, 6), (12, 0)]):
+            graph.add_node(node, pos=pos)
+        edge_order = [(0, 1), (1, 2), (1, 3)]
+        for u, v in edge_order:
+            graph.add_edge(u, v, distance=6.0)
+        return Environment.from_graph(
+            graph, edge_order=edge_order, edge_spacing=0.0, bin_size=2.0
+        )
+    if kind == "mesh":
+        return Environment.from_layout(
+            "TriangularMesh",
+            {
+                "boundary_polygon": Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
+                "point_spacing": 4.0,
+            },
+        )
+    if kind == "polar":
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 12.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=3.0,
+            angle_bin_size=np.pi / 3,
+        )
+    return Environment.from_polar_egocentric(
+        distance_range=(2.0, 14.0),
+        angle_range=(-np.pi / 2, np.pi / 2),
+        distance_bin_size=3.0,
+        angle_bin_size=np.pi / 4,
+        circular_angle=False,
+    )

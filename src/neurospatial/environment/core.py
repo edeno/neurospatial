@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, NoReturn, TypeVar, overload
 
@@ -44,6 +44,7 @@ from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
 from neurospatial.environment.trajectory import EnvironmentTrajectory
 from neurospatial.environment.visualization import EnvironmentVisualization
+from neurospatial.layout._binning import Binning, binning_from_layout
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.validation import (
     GraphValidationError,
@@ -123,6 +124,7 @@ class _PublishedGeometry:
     cache, in the same step.
     """
 
+    binning: Binning | None
     bin_centers: NDArray[np.float64]
     connectivity: nx.Graph
     dimension_ranges: Sequence[tuple[float, float]] | None
@@ -483,6 +485,7 @@ class _BaseEnvironment(
         # Initialize attributes that will be populated by _setup_from_layout
         # Placeholder geometry until _setup_from_layout publishes the layout's
         self._geometry = _PublishedGeometry(
+            binning=None,
             bin_centers=np.empty((0, 0)),
             connectivity=nx.Graph(),
             dimension_ranges=None,
@@ -503,6 +506,21 @@ class _BaseEnvironment(
         else:
             # Initialize with an empty Regions instance if not provided
             self.regions = Regions()
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore published geometry from pickles predating binning snapshots."""
+        self.__dict__.update(state)
+        if not hasattr(self._geometry, "binning"):
+            self._geometry = replace(self._geometry, binning=None)
+            if self._is_fitted:
+                self._setup_from_layout()
+
+    @property
+    def _binning(self) -> Binning:
+        """The binning snapshot published with the current geometry."""
+        binning = self._geometry.binning
+        assert binning is not None
+        return binning
 
     # ------------------------------------------------------------------
     # Units validation
@@ -1038,6 +1056,7 @@ class _BaseEnvironment(
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
+        binning = binning_from_layout(self.layout, connectivity)
         grid_edges = getattr(self.layout, "grid_edges", ())
         grid_shape = getattr(self.layout, "grid_shape", None)
         active_mask = getattr(self.layout, "active_mask", None)
@@ -1062,6 +1081,7 @@ class _BaseEnvironment(
                 array.setflags(write=False)
         _freeze_graph_attributes(connectivity)
         self._geometry = _PublishedGeometry(
+            binning=binning,
             bin_centers=bin_centers,
             connectivity=connectivity,
             dimension_ranges=self.layout.dimension_ranges,

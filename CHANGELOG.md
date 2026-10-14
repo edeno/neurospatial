@@ -90,6 +90,9 @@
 
 ### Changed
 
+- `Environment.bin_sizes` now returns an owned, read-only array, like
+  `bin_centers`.
+
 - Rewrite all nine tutorials around spatial neuroscience questions, using
   simple technical English, explanations of analysis choices, figure
   interpretation, and instructions for using recorded data. Update the shared

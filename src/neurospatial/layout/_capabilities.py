@@ -8,15 +8,18 @@ against the protocol is a truthful check, as for
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 
+if TYPE_CHECKING:
+    from neurospatial.layout._binning import Binning
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, eq=False)
 class RectilinearGrid:
     """Axis-aligned rectangular cells, in the layout's own coordinates.
 
@@ -35,6 +38,23 @@ class RectilinearGrid:
     edges: tuple[NDArray[np.float64], ...]
     shape: tuple[int, ...]
     active_mask: NDArray[np.bool_]
+
+    def __post_init__(self) -> None:
+        edges = tuple(
+            np.array(edge, dtype=np.float64, copy=True) for edge in self.edges
+        )
+        active_mask = np.array(self.active_mask, dtype=np.bool_, copy=True)
+        for array in (*edges, active_mask):
+            array.setflags(write=False)
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "active_mask", active_mask)
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore write protection after pickle or deepcopy."""
+        for name, value in state.items():
+            object.__setattr__(self, name, value)
+        for array in (*self.edges, self.active_mask):
+            array.setflags(write=False)
 
 
 @runtime_checkable
@@ -57,23 +77,22 @@ class TrackLinearizationProvider(Protocol):
     ) -> NDArray[np.float64]: ...
 
 
-def require_rectilinear_grid(
-    layout: object, operation: str, *, fix: str
+def require_rectilinear(
+    binning: Binning, operation: str, *, fix: str
 ) -> RectilinearGrid:
-    """Return the layout's rectangular cells, or raise naming ``operation``.
+    """Return the published rectangular cells, or raise naming ``operation``.
 
     Raises
     ------
     NotImplementedError
-        If the layout has no axis-aligned rectangular cells.
+        If the binning has no axis-aligned rectangular cells.
     """
-    if isinstance(layout, RectilinearGridProvider):
-        return layout.rectilinear_grid()
-    kind = getattr(layout, "_layout_type_tag", type(layout).__name__)
+    if binning.rectilinear is not None:
+        return binning.rectilinear
     raise NotImplementedError(
         _format_error(
             f"{operation} needs a grid of axis-aligned rectangular cells; this "
-            f"environment's {kind} layout does not have one.",
+            f"environment's {binning.kind} layout does not have one.",
             why=(
                 "Why: it reads the cell edges along each axis, which grids built "
                 "by from_samples, from_grid_mask, from_pixel_mask and "

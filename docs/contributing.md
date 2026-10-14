@@ -111,8 +111,8 @@ layout capability, defined in `neurospatial.layout._diffusion`:
   so zero-area (corner-touching) edges and isolated bins form separate
   components.
 
-A layout has the capability only when it defines the method, so `isinstance`
-against the protocol is a truthful capability check. A layout that cannot
+The layout-to-binning factory checks these protocols once when publishing
+`env._binning`. Environment operations read the resulting components. A layout that cannot
 supply geometry may define `_explain_missing_geometry(operation)` to tailor the
 error, as layouts read from non-grid NWB records do.
 
@@ -129,7 +129,8 @@ seam edges before the environment is initialized. Its masked-grid build records
 
 Layouts own `connectivity`, `bin_centers` and the grid geometry, and an
 environment publishes them read-only: its geometry attributes are views of one
-frozen `_PublishedGeometry` that cannot be reassigned, the arrays reject
+frozen `_PublishedGeometry` that cannot be reassigned. It includes one `Binning`
+snapshot with owned bin measures and ordered neighbor pairs. The arrays reject
 writes, and both graph topology and its attribute dictionaries reject edits.
 Node positions, original grid indices and edge vectors are owned tuples, so
 restoration cannot leave mutable coordinate lists aliased by graph copies.
@@ -146,7 +147,8 @@ version and clears all analysis caches; `copy()` rebuilds from the layout too.
 Swapping in a different layout object, or changing a layout's bins, and calling
 it again is not supported.
 
-`Environment._face_geometry` caches the validated faces once per state version;
+`Environment._face_geometry` builds from `env._binning.faces` and caches the
+validated faces once per state version;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
 operators all derive from it. Consumers read it through
 `_require_face_geometry(operation)`, which names the analysis when the layout
@@ -204,11 +206,12 @@ measures distance, chooses length scales or names axes asks
 `CoordinateSystem` class with those rules; analysis code does not test the
 persistence type tag `_POLAR`.
 
-Layout-specific operations check a capability protocol on the layout, as
-smoothing does with `FiniteVolumeGeometryProvider`. Linear interpolation and
-time allocation use `RectilinearGridProvider`; track coordinate conversions
-use `TrackLinearizationProvider`. A layout has the capability
-when it defines the method. Do not dispatch new behavior by comparing
+Layout-specific operations read components from `env._binning`: faces for
+smoothing, a rectilinear grid for linear interpolation and time allocation,
+and linearization for track coordinate conversions. Only the layout-to-binning
+factory checks `FiniteVolumeGeometryProvider`, `RectilinearGridProvider` and
+`TrackLinearizationProvider` on layouts. A layout supplies a capability when it
+defines the corresponding method. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
 alternative. Only `rebin` still uses a layout tag: its documented activity rule marks
 every coarse cell active, so widening it to masked arenas would change

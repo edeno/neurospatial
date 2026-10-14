@@ -61,6 +61,11 @@ def test_rate_result_rejects_different_environment(
         monkeypatch.setattr(
             env.layout, "bin_sizes", lambda: small_rates.env.bin_sizes * 2
         )
+        # Measures are snapshotted at publication, rather than read lazily.
+        env = Environment(
+            layout=env.layout, layout_type_used=env.layout._layout_type_tag
+        )
+        env.units, env.frame = "cm", "world"
     else:
         setattr(env, mismatch, "m" if mismatch == "units" else "camera")
 
