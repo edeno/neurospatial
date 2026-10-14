@@ -6,6 +6,12 @@ decoding, behavior, peri-event analysis, simulation, animation and NWB I/O.
 
 ## Design priority: the scientist's experience
 
+Write tutorials for spatial neuroscientists familiar with hippocampal recording,
+place fields, occupancy, running bouts and PSTHs. Use simple technical English.
+Start with the experimental question, explain analysis choices, interpret each
+main figure, and show how to use the reader's own recording. Introduce package
+terms when they are needed for the analysis.
+
 Scientific correctness is part of usability: the obvious path must preserve the
 meaning of the analysis and behave as a scientist expects. The long-term goal is
 coherent workflows covering spatial neuroscience, from recorded data through
