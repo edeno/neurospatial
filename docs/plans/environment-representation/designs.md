@@ -253,7 +253,9 @@ def subset_binning(b: Binning, keep: NDArray[np.bool_]) -> Binning:
   ```
 - **Rectilinear:** the mask is updated in the same way. Shapes are selected
   (`HexagonShapes` centers, `TriangleShapes` triangles). The outline is
-  dropped. The linearization is kept.
+  dropped. Track geometry, absolute linear coordinates and conversions are
+  kept; the linearization active mask is restricted to the selected active
+  bins, preserving their original full-grid IDs.
 - **The legacy facade fields** use the updated rectilinear grid when there is
   one, and the point-based fallback otherwise (`core.py:1002-1007`).
 - **Tags:** the facade tag is `"MaskedGrid"` when a rectilinear grid is kept and

@@ -5,7 +5,8 @@
 Point lookup and track linearization become small frozen objects made of arrays.
 Each one is the single implementation: the layout's own methods call it. After
 this phase a binning no longer needs its layout to find bins or linearize. Phase
-3 saves these objects and phase 4 derives new ones. Outputs don't change.
+3 saves these objects and phase 4 derives new ones. Outputs do not change except that hexagonal lookup now rejects incorrect
+coordinate widths, as required by the locator contract (approved by the user).
 
 **Inputs to read first:**
 
@@ -71,7 +72,8 @@ this phase a binning no longer needs its layout to find bins or linearize. Phase
 - **Tests:**
   - New `tests/layout/test_locators.py`: parity, invariance and property tests.
   - New `tests/layout/test_track_linearization.py`.
-- **Compare the baseline**: zero differences. Measure the median time of
+- **Compare the baseline**: zero differences except the approved hexagonal
+  wrong-width validation. Measure the median time of
   `env.bin_at` on 1,000,000 seeded points, for the 90,000-bin grid and for the
   track. Each must be within 10% of the base commit, or the PR reports the
   delta.

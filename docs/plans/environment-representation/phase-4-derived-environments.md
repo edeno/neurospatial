@@ -43,9 +43,9 @@ reason. This fixes four problems:
     `TransformedLayout` uses today (`ops/transforms.py:1566-1574`).
   - Add `RectilinearLocator.subset(keep)` (a new mask) and
     `RectilinearLocator.transformed(t)`. The `transformed` method is defined
-    only for a diagonal `A`: it returns a locator with edges `a_k e + t_k`,
-    reversed where `a_k < 0`. For any other `A` it returns `None`, and the
-    caller wraps the locator instead.
+    only for a diagonal `A` with every entry positive: it returns a locator
+    with edges `a_k e + t_k` in the original order. For reflections or any
+    other `A` it returns `None`, and the caller wraps the locator instead.
   - Register codecs for both wrappers. A `TransformedLocator` stores the
     inverse matrix as an `(n+1, n+1)` array.
 - **Create `src/neurospatial/layout/_derive.py`** with `subset_binning` and

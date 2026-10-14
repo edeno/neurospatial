@@ -278,7 +278,11 @@ would accept changed positions or distances.
    - `HexagonShapes.centers == bins.centers`;
    - `TriangleShapes.triangles.shape[0] == n_bins`;
    - the active bins of the linearization number `n_bins`.
-6. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
+6. A data locator and its optional grid, shape and track components agree
+   exactly on shared geometry, active masks and ordering. There is one authority
+   for grid edges and masks; changing a component without its locator is invalid.
+   Bin centers and sizes must agree with that geometry.
+7. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
    locate to its own bin. This is one lookup of `n_bins` points.
 
 Derivations (phase 4) build the graph's `"pos"` and `"distance"` from the
