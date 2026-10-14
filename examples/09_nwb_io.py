@@ -14,12 +14,15 @@
 # ---
 
 # %% [markdown]
-# # NWB I/O
+# # Analyze an NWB recording and save the results
 #
-# Read positions, identified spike trains, and acquisition windows from a real
-# NWB file on disk. Compute population rate maps, save an analysis copy, and
-# reopen it to verify the maps, support, units, identities, and settings.
-# The recording here is synthetic, so no download or private data is needed.
+# **Question:** How can I load a session from NWB, calculate firing-rate maps,
+# and save the results so I can use them again? We keep the unit IDs, recording
+# periods, coordinate units, and analysis settings with the maps.
+#
+# **You will need:** An NWB file containing position tracking and unit spike
+# times. The recorded periods must also be known. We create a small synthetic
+# file below so you can run the whole workflow without downloading a recording.
 #
 # **Estimated time**: 15-20 minutes
 #
@@ -27,7 +30,7 @@
 #
 # Install the optional NWB dependencies before running this notebook:
 # `uv sync --extra notebooks --extra nwb` from the repository root, then select
-# that environment's kernel. Array-only workflows do not require this extra.
+# that environment's kernel.
 
 # %%
 import shutil
@@ -73,17 +76,17 @@ from _style import apply_style
 apply_style(figsize=(10, 5))
 
 # %% [markdown]
-# ## 1. Write a small source recording
+# ### Example file
 #
-# Position and spikes share a clock in seconds. Tracking is available at 50 Hz;
-# electrophysiology has a 20 s gap. Observation intervals describe acquisition,
-# not whether a unit fired. Use the actual experiment's acquisition metadata
-# when constructing these windows; first and last spikes do not define coverage.
+# The next cell creates an NWB recording with 50 Hz tracking and two simulated
+# place cells in a 100 cm square arena. Spikes and positions share a clock in
+# seconds. There is a 20 s electrophysiology gap, from 75 to 95 s.
 #
-# Units 7 and 42 are explicit synthetic labels. Independent random streams
-# generate the trajectory and each unit's spikes.
+# This is only example-data preparation; loading and analysis begin in
+# section 1. The simulated neurons have unit IDs 7 and 42, and independent
+# random streams generate the trajectory and each spike train.
 
-# %%
+# %% jupyter={"source_hidden": true}
 sim_env = Environment.from_grid_mask(
     np.ones((20, 20), dtype=bool),
     grid_edges=(np.arange(0, 105, 5.0), np.arange(0, 105, 5.0)),
@@ -137,16 +140,18 @@ print(
 )
 
 # %% [markdown]
-# ## 2. Read the disk file and inspect its metadata
+# ## 1. Load position, spike trains, and recorded periods
 #
-# Readers return named holders. Eager arrays are the default and remain usable
-# after closing the file. `lazy=True` handles require the source file to stay
-# open; lazy position reads also require identity conversion and offset.
+# `source_path` points to the input NWB file. Read positions and spike times
+# inside the `with` block; by default they are loaded into memory and remain
+# available after the file closes. We select neurons by their unit IDs, in the
+# order 42, then 7.
 #
-# `read_position` applies stored conversion and offset before reporting values
-# in `pos.units`. Unit aliases are normalized without rescaling the values.
-# `read_units` selects table identities, rather than row numbers, and exposes
-# the intersection of selected units' observation intervals as `spike_window`.
+# Check the position units before choosing spatial bin widths. `read_position`
+# applies the NWB conversion and offset to the stored values. `read_units`
+# gives the periods when all selected units were being recorded as
+# `units.spike_window`. These periods come from `obs_intervals`, not from the
+# first and last spikes: a quiet neuron can still have been recorded.
 
 # %%
 with NWBHDF5IO(str(source_path), "r") as io:
@@ -166,24 +171,32 @@ with NWBHDF5IO(str(source_path), "r") as io:
         frame="arena",
     )
 
+print(f"Position units: {pos.units}; units loaded: {units.unit_ids.tolist()}")
+print(f"Periods when all selected units were recorded (s):\n{units.spike_window}")
+
+# %% [markdown]
+# The checks below compare the loaded values with the generated example data.
+# They confirm that coordinate conversion, unit selection, and recorded periods
+# were read correctly. Skip this example-only cell when loading your own file.
+
+# %% jupyter={"source_hidden": true}
 np.testing.assert_allclose(pos.positions, positions)
 np.testing.assert_array_equal(units.unit_ids, [42, 7])
 np.testing.assert_array_equal(units.spike_window, coverage)
-print(f"Position units: {pos.units}; selected unit order: {units.unit_ids.tolist()}")
-print(f"Shared electrophysiology coverage:\n{units.spike_window}")
 
 # %% [markdown]
-# ## 3. Compute maps with explicit exposure and settings
+# ## 2. Choose the analysis period and estimate firing-rate maps
 #
-# `epochs` chooses the analyzed time range; `spike_window` describes acquisition.
-# The first/last 5 s and the recording gap are excluded from the analysis.
-# Tracking during an electrophysiology gap must not inflate the rate denominator.
+# Use 5 cm spatial bins, 6 cm smoothing, and a minimum of 0.1 s occupancy per
+# bin. `epochs` chooses the session period to analyze; we leave out the first
+# and last 5 s. `spike_window` also removes the electrophysiology gap. Tracking
+# continues during that gap, but those seconds must not enter the firing-rate
+# denominator.
 #
-# This environment is inferred from the tracking extent. A known arena boundary
-# would be another defensible choice. Inspect occupancy and spatial support:
-# unobserved bins remain NaN rather than becoming zero firing rate.
-# The summary reports descriptive metrics without threshold-based cell-type
-# labels; this workflow verifies data persistence rather than cell identity.
+# Here the spatial grid comes from the range of the tracking coordinates.
+# Use measured arena boundaries when those are a better description of the
+# accessible space. Bins without enough recorded occupancy remain NaN in the
+# maps. An unvisited location does not provide evidence for zero firing.
 
 # %%
 rates = compute_spatial_rates(
@@ -192,30 +205,44 @@ rates = compute_spatial_rates(
     pos.times,
     pos.positions,
     unit_ids=units.unit_ids,
-    epochs=[[5.0, times[-1] - 5.0]],
+    epochs=[[pos.times[0] + 5.0, pos.times[-1] - 5.0]],
     spike_window=units.spike_window,
     bandwidth=6.0,
     min_occupancy=0.1,
 )
-print(rates.summary_table(include_classification=False))
-print(f"Supported bins: {rates.spatial_support.sum()} / {env.n_bins}")
+peak_summary = rates.summary_table(include_classification=False)[
+    ["peak_rate", "peak_x", "peak_y"]
+].rename(
+    columns={
+        "peak_rate": "Peak rate (Hz)",
+        "peak_x": f"Peak x ({pos.units})",
+        "peak_y": f"Peak y ({pos.units})",
+    }
+)
+print(peak_summary.round(2))
+print(f"Spatial bins used for rate maps: {rates.spatial_support.sum()} / {env.n_bins}")
 fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
 for ax, unit_id in zip(axes, rates.unit_ids, strict=True):
     rates.sel(unit_id=int(unit_id)).plot(ax=ax, cmap="magma")
-    ax.set_title(f"Unit {unit_id}: estimated rate")
+    ax.set_title(f"Unit {unit_id}: firing-rate map")
 plt.show()
 
 # %% [markdown]
-# ## 4. Save an analysis copy and reopen it
+# Inspect the location of each firing-rate peak and the regions left blank.
+# Unit 7 was simulated with a field centered at (40, 50) cm, and unit 42 at
+# (60, 50) cm; sampling and smoothing affect the estimated shapes. The summary above
+# describes the maps without assigning cell-type labels. In an experiment,
+# evaluating spatial selectivity requires more than saving or plotting a map.
 #
-# `write_spatial_rates` stores maps, occupancy, identities, spatial support,
-# analysis settings, and a companion environment. `read_place_field` reconstructs
-# the population result despite its singular name. The lower-level
-# `write_place_field` array writer does not preserve this complete provenance.
+# ## 3. Save the maps in an analysis copy of the recording
 #
-# Writers modify an in-memory NWBFile; `io.write` persists it. Here we copy the
-# source first and append to that fresh analysis copy. The source remains usable
-# independently. Choose a meaningful output location when adapting this workflow.
+# Copy the input file to `analysis_path`, add the results, and save the copy.
+# `write_spatial_rates` keeps the maps, occupancy, unit IDs, valid spatial bins,
+# arena geometry, and analysis settings together. Calling `io.write` writes
+# those changes to disk.
+#
+# Reopen the saved file and load the maps with `read_place_field`. This reader
+# can return maps for several neurons even though its name is singular.
 
 # %%
 shutil.copy2(source_path, analysis_path)
@@ -230,40 +257,72 @@ with NWBHDF5IO(str(analysis_path), "r") as io:
     units_back = read_units(restored, unit_ids=[42, 7])
     rates_back = read_place_field(restored, name="spatial_rates")
 
-# Eager holders and results are compared after closing the file.
+# %% [markdown]
+# ## 4. Check that the saved maps match the analysis
+#
+# Compare the reloaded firing rates, unit IDs, and settings after closing the
+# file. A successful comparison means another session can recover the same
+# saved analysis, including the choices used to estimate the maps.
+
+# %%
+np.testing.assert_allclose(rates_back.firing_rates, rates.firing_rates, equal_nan=True)
+np.testing.assert_array_equal(rates_back.unit_ids, rates.unit_ids)
+assert rates_back.analysis_settings == rates.analysis_settings
+print("Reloaded firing-rate maps, unit IDs, and analysis settings match.")
+print(
+    f"Analysis copy: {analysis_path.name} ({analysis_path.stat().st_size / 1e6:.2f} MB)"
+)
+
+# %% [markdown]
+# Additional checks below confirm that position, spikes, occupancy, recorded
+# periods, and coordinate units also survived saving. They check this example's
+# grid geometry, including how points outside the arena are assigned to bins.
+
+# %% jupyter={"source_hidden": true}
 np.testing.assert_allclose(pos_back.positions, pos.positions)
 np.testing.assert_array_equal(units_back.unit_ids, units.unit_ids)
 np.testing.assert_array_equal(units_back.spike_window, units.spike_window)
 for train_back, train in zip(units_back.spike_times, units.spike_times, strict=True):
     np.testing.assert_array_equal(train_back, train)
-np.testing.assert_allclose(rates_back.firing_rates, rates.firing_rates, equal_nan=True)
-np.testing.assert_array_equal(rates_back.unit_ids, rates.unit_ids)
 np.testing.assert_array_equal(rates_back.occupancy, rates.occupancy)
 np.testing.assert_array_equal(rates_back.spatial_support, rates.spatial_support)
 np.testing.assert_array_equal(rates_back.spike_window, rates.spike_window)
-assert rates_back.analysis_settings == rates.analysis_settings
 np.testing.assert_array_equal(rates_back.env.bin_centers, env.bin_centers)
 assert set(rates_back.env.connectivity.edges) == set(env.connectivity.edges)
 assert rates_back.env.units == env.units == pos_back.units == "cm"
 outside = np.array([[-100.0, -100.0]])
 np.testing.assert_array_equal(rates_back.env.bin_at(outside), env.bin_at(outside))
 print(
-    "Disk round trip verified: spike labels/coverage, maps, occupancy, support, settings, units."
-)
-print(
-    f"Analysis copy: {analysis_path.name} ({analysis_path.stat().st_size / 1e6:.2f} MB)"
+    "Additional checks passed: position, spikes, occupancy, recorded periods, and arena geometry."
 )
 
 # %% [markdown]
-# This checks a grid layout, including outside-point lookup. Other layouts may
-# reconstruct with different geometric capabilities; check the operations your
-# analysis requires after loading. For files containing ndx-pose or ndx-events,
-# import those extension packages before opening the file so registered types
-# are available. This example uses only core NWB containers.
+# ## Use your own recording
 #
-# The temporary files are removed below; all eager arrays remain available.
-# For related analyses, see [Peri-event analysis](07_peri_event_analysis.ipynb)
-# and [Real-data analysis](04_real_data_analysis.ipynb).
+# Set `source_path` to your NWB file and `analysis_path` to a separate output
+# file you want to keep. Start at section 1, skipping example-file preparation,
+# the checks against generated data, and the temporary-file cleanup below.
+# Match `processing_module` and `position_name` to your tracking data, and
+# replace `unit_ids=[42, 7]` with the units you want to analyze.
+#
+# Replace `epochs` in the rate-map calculation with your chosen session periods.
+# Check that position units, bin width, smoothing width, and occupancy threshold
+# suit your experiment. Confirm the units table describes recorded periods
+# correctly before using `units.spike_window`. Check saved spatial operations
+# needed by your analysis, particularly when using a layout other than a grid.
+#
+# The default readers load arrays into memory. If you use `lazy=True` to read
+# from disk as needed, keep the file open; lazy position reads also require
+# identity conversion and offset. For files using ndx-pose or ndx-events,
+# import those extension packages before opening the file. This example only
+# uses standard NWB containers.
+#
+# [Firing around a cue](07_peri_event_analysis.ipynb) uses event times and
+# spike recording periods. [Real-data analysis](04_real_data_analysis.ipynb)
+# follows a recording from tracking and spikes to spatial analysis.
+#
+# The final cell removes this notebook's temporary example files. The loaded
+# arrays and calculated results remain available in memory.
 
 # %%
 temporary_data.cleanup()

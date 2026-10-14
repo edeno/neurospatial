@@ -14,14 +14,18 @@
 # ---
 
 # %% [markdown]
-# # Analyze a Hippocampal Recording on a Maze
+# # Where do hippocampal neurons fire along this maze?
 #
-# **Question:** Where do recorded neurons fire, and how does observed movement
-# relate to the maze's topology?
+# **Question:** How does firing rate vary along the maze, and which arm ends
+# does the rat visit in succession?
 #
-# We follow one recording from verified download through graph-based rate maps
-# and endpoint-to-endpoint movement summaries. All analyses share one clock,
-# coordinate system and recording-gap rule.
+# Estimate spatial firing-rate maps from one hippocampal recording, then use
+# the same position samples to describe movement between arm ends. We will
+# distinguish changes in firing rate from uneven time spent along the maze.
+#
+# **You will need:** Spike times, position samples and a maze layout, all
+# supplied with this example. The first download needs an internet connection
+# and about 75 MB of disk space. No previous notebook variables are needed.
 #
 # **Estimated time**: 25-30 minutes
 #
@@ -30,14 +34,17 @@
 #
 # The public [J16 archive](https://doi.org/10.5281/zenodo.23020757) contains
 # 203 hippocampal spike trains, preprocessed 500 Hz tracking and a track graph.
-# Positions are centimeters and timestamps are seconds. Tracking was already
-# smoothed, upsampled and linearized; this tutorial starts after preprocessing.
-# The archive does not retain original unit identifiers, task trials, rewards
-# or intended goals. Array indices identify units within this archive only.
+# Positions are in centimeters and timestamps are in seconds. Tracking was
+# already smoothed, upsampled and assigned to the track. We start with these
+# processed data rather than processing camera detections.
+# The archive does not retain original unit identifiers or trial and reward
+# labels. We can describe firing and movement, but cannot identify rewarded
+# trials or the animal's intended goal. Unit numbers below are array indices
+# within this archive.
 # See the [data guide](https://github.com/edeno/neurospatial/blob/main/data/README.md)
 # for study attribution, CC BY 4.0 licensing and preprocessing details.
 
-# %%
+# %% jupyter={"source_hidden": true}
 import importlib.util
 import sys
 from pathlib import Path
@@ -74,12 +81,13 @@ _loader = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_loader)
 
 # %% [markdown]
-# ## 1. Verify the recording and align its clock
+# ## 1. Load spikes and position on the same clock
 #
 # The first run downloads about 75 MB. Later runs verify and reuse the cached
 # file. For offline work, run `uv run python data/load_bandit_data.py` beforehand.
-# Subtract the same origin from tracking and spikes; independently resetting
-# either clock would destroy their alignment.
+# Both measurements use the recording clock. Subtract the first tracking time
+# from both so that plots start at zero without shifting spikes relative to
+# position. A gap longer than 0.5 s will separate observed stretches of movement.
 
 # %%
 archive = _loader.fetch_bandit_data(_root / "data")
@@ -93,22 +101,24 @@ positions = tracking[["head_position_x", "head_position_y"]].to_numpy()
 spike_times = [train - origin for train in recording["spike_times"]]
 unit_ids = np.arange(len(spike_times))
 spike_counts = np.array([len(train) for train in spike_times])
-max_gap = 0.5  # seconds; the same rule is used for neural and behavioral analyses
+max_gap = 0.5  # seconds; do not join movement or assign spikes across longer gaps
 recording_window = (float(times[0]), float(times[-1]))
-print(f"Verified {archive.name}")
+print(f"Loaded verified recording: {archive.name}")
 print(f"{len(times):,} samples, {len(unit_ids)} units, {times[-1] / 60:.1f} minutes")
 print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_gap)}")
 
 # %% [markdown]
-# ## 2. Represent the known maze
+# ## 2. Map the track and mark the arm ends
 #
-# Graph bins retain physical `(x, y)` coordinates and also have a linear track
-# coordinate. The inserted gaps in that linear display are not travel distance.
-# `bin_at` on a graph assigns finite positions to the nearest track-bin center;
-# it does not reject distant tracking outliers or resolve ambiguous branches
-# from movement history. We rely on the archived tracking preprocessing here.
-# The labeled orange circles are 8 cm endpoint proxies used in the transition
-# analysis below; they are operational annotations rather than surveyed wells.
+# Divide the known track into 2 cm bins. The graph records which track segments
+# connect, so later smoothing follows the maze rather than crossing open space.
+# The plot below checks that the position samples follow this layout.
+#
+# Mark an 8 cm zone around each arm end to define entries consistently. These
+# are analysis regions that we choose, not measured reward-well boundaries.
+# The archived tracking has already been assigned to the track. For your own
+# data, remove tracking outliers before assigning positions to the nearest
+# track bin; nearest-bin assignment alone does not detect those errors.
 
 # %%
 graph = recording["track_graph"]
@@ -121,14 +131,14 @@ env = Environment.from_graph(
 )
 env.units = "cm"
 endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
-well_radius_cm = 8.0
-well_names = []
+arm_end_radius_cm = 8.0
+arm_end_names = []
 for node in endpoint_nodes:
-    name = f"well_{node}"
+    name = f"arm_end_{node}"
     env.regions.buffer(
-        np.asarray(graph.nodes[node]["pos"], dtype=float), well_radius_cm, name
+        np.asarray(graph.nodes[node]["pos"], dtype=float), arm_end_radius_cm, name
     )
-    well_names.append(name)
+    arm_end_names.append(name)
 
 fig, ax = plt.subplots(figsize=(7, 6))
 for first, second in graph.edges:
@@ -137,37 +147,44 @@ for first, second in graph.edges:
 ax.plot(
     *positions[::40].T, color="tab:blue", linewidth=0.4, alpha=0.5, label="Tracking"
 )
-for index, (node, name) in enumerate(zip(endpoint_nodes, well_names, strict=True)):
+for index, node in enumerate(endpoint_nodes):
     center = np.asarray(graph.nodes[node]["pos"], dtype=float)
     ax.add_patch(
         Circle(
             center,
-            well_radius_cm,
+            arm_end_radius_cm,
             fill=False,
             color="tab:orange",
             linewidth=1.5,
-            label="Endpoint proxy (8 cm radius)" if index == 0 else None,
+            label="Arm-end zone (8 cm radius)" if index == 0 else None,
         )
     )
-    ax.annotate(name, center, xytext=(6, 6), textcoords="offset points", fontsize=9)
-ax.set(xlabel="X position (cm)", ylabel="Y position (cm)", title="Tracking and maze")
+    ax.annotate(
+        f"Arm end {node}", center, xytext=(6, 6), textcoords="offset points", fontsize=9
+    )
+ax.set(
+    xlabel="X position (cm)",
+    ylabel="Y position (cm)",
+    title="Rat position, track and arm-end zones",
+)
 ax.margins(0.12)
 ax.legend(loc="best")
 ax.set_aspect("equal")
 plt.show()
 
 # %% [markdown]
-# ## 3. Estimate rates while retaining observation support
+# ## 3. Where do these units fire?
 #
-# Use 8 cm graph diffusion and require 0.5 seconds of occupancy per bin. Missing
-# support remains NaN. These choices affect the estimated maps and should be
-# reported with the result; no cell-type or significance claim follows from a
-# visually localized rate map.
+# Estimate firing rate by dividing spike counts by time spent in each location.
+# Smooth over 8 cm along the connected track and require at least 0.5 s of
+# occupancy per bin. Bins with less occupancy remain missing, rather than
+# appearing to have zero firing rate. These choices set the spatial detail that
+# we can interpret.
 #
-# The archive has no per-unit acquisition intervals. We explicitly assume
-# continuous spike acquisition over the exported tracking epoch, supplied as
-# `spike_window`. Tracking continuity does not prove electrophysiology coverage;
-# replace this assumption with recorded acquisition windows when available.
+# We assume spikes were recorded throughout the exported tracking period and
+# pass that interval as `spike_window`. The archive has no separate acquisition
+# intervals for individual units; use those intervals when your recording has
+# interruptions that are absent from tracking.
 
 # %%
 rates = compute_spatial_rates(
@@ -181,8 +198,8 @@ rates = compute_spatial_rates(
     max_gap=max_gap,
     spike_window=recording_window,
 )
-print(f"Observed tracking exposure: {rates.occupancy.sum():.1f} s")
-print(f"Supported bins: {rates.spatial_support.sum()} / {env.n_bins}")
+print(f"Time assigned to track bins: {rates.occupancy.sum():.1f} s")
+print(f"Bins with enough occupancy: {rates.spatial_support.sum()} / {env.n_bins}")
 summary = pd.DataFrame(
     {
         "spike_count": spike_counts,
@@ -192,16 +209,16 @@ summary = pd.DataFrame(
     },
     index=pd.Index(rates.unit_ids, name="archive_unit_index"),
 )
-# Select by spike count for readable examples, without selecting on spatial tuning.
+# Show three units with many spikes; this does not select for place fields.
 example_units = summary.nlargest(3, "spike_count").index.to_numpy()
 print(summary.loc[example_units].round(3).to_string())
 
 # %%
-# The standard renderer keeps track-display gaps and missing support separate.
+# Display track segments in order, with gaps between separate segments.
 fig, axes = plt.subplots(4, 1, figsize=(11, 9), sharex=True, constrained_layout=True)
 env.plot_field(rates.occupancy, ax=axes[0], colorbar_label="Occupancy (s)")
-axes[0].axhline(0.5, color="black", linestyle="--", label="Support threshold")
-axes[0].set(ylabel="Occupancy (s)", title="Observed exposure and example rate maps")
+axes[0].axhline(0.5, color="black", linestyle="--", label="Minimum occupancy (0.5 s)")
+axes[0].set(ylabel="Occupancy (s)", title="Time spent along the maze")
 axes[0].legend()
 for ax, unit_id in zip(axes[1:], example_units, strict=True):
     rates.sel(unit_id=unit_id).plot(ax=ax, color="tab:orange")
@@ -210,43 +227,59 @@ axes[-1].set(xlabel="Linearized track coordinate (cm)")
 plt.show()
 
 # %% [markdown]
-# ## 4. Summarize observed endpoint transitions
+# The rat spent much more time at some locations than others. Of 248 track
+# bins, 173 have enough occupancy for rate estimation. The three example units
+# fire across several segments; they were selected for spike count, not for
+# having a localized field. Their spatial information values describe these
+# maps and do not establish significant spatial tuning.
 #
-# Circles of radius 8 cm around degree-one graph nodes are operational well
-# proxies, not surveyed boundaries. Entries use track-bin membership. We pair
-# consecutive entries into different endpoints within one observed run. The
-# interval includes dwell time after the first entry; it is not a task trial or
-# a measured departure-to-arrival time. Changing the proxy radius changes events.
-# Visits at recording boundaries are retained with censoring flags. A visit
-# without an observed entry cannot start an entry-to-entry transition. No pair
-# crosses a tracking gap or invalid bin, and repeated visits to the same well
-# remain separate; the last entry supplies the next transition's start.
+# Gaps between displayed segments are for readability and add no travel
+# distance. Within a segment, a missing rate means insufficient occupancy.
+# Neither kind of blank space should be read as a measured zero firing rate.
+#
+# ## 4. Which arm ends are visited in succession?
+#
+# Detect visits to the 8 cm arm-end zones, then pair entries into different
+# zones. Each interval starts at entry into the first zone and ends at entry
+# into the next. It includes any waiting after the first entry, so it is not
+# a departure-to-arrival running time or a task-defined trial. Changing the
+# zone radius changes these entry times.
+#
+# Do not join visits across missing tracking. A visit already in progress when
+# recording starts has no observed entry and cannot start a pair. If the rat
+# re-enters the same zone before visiting another, use its last entry as the
+# start of the next pair.
 
 # %%
 position_bins = env.bin_at(positions)
 visits = detect_region_visits(
-    position_bins, times, env, region_names=well_names, max_gap=max_gap
+    position_bins, times, env, region_names=arm_end_names, max_gap=max_gap
 )
 transitions = region_transitions(visits)
 if not transitions:
     raise ValueError(
-        "No between-endpoint transitions; inspect the tracking and regions."
+        "No movement between arm-end zones; inspect the tracking and regions."
     )
 visit_table = pd.DataFrame(visits)
 transition_table = pd.DataFrame(transitions)
 counts = transition_table.groupby(["source_region", "target_region"]).size()
 print(f"{len(visits)} visits; {visit_table.entry_observed.sum()} observed entries")
-print(f"{len(transitions)} between-endpoint transitions")
+print(f"{len(transitions)} consecutive entries into different arm-end zones")
 print(counts.sort_values(ascending=False).rename("count").to_string())
 
 # %% [markdown]
-# ## 5. Inspect normalized displacement along the graph
+# Most pairs in this recording link arm ends 4 and 5. These counts describe
+# observed movement; without trial and reward labels, they cannot tell us which
+# options were available or why the rat visited an arm.
 #
-# `path_progress` is clipped distance-from-start divided by start-to-destination
-# distance. On a branched maze a detour can reach 1, so 1 alone does not prove
-# arrival or efficient travel. Here the observed entry bins supply both reference
-# endpoints. Include both entry samples, preserving values 0 and 1; adjacent
-# transitions share an entry timestamp but have separate progress curves.
+# ## 5. How does position change between arm-end entries?
+#
+# Plot the first three intervals on a common scale. At each sample, divide the
+# shortest track distance from the starting bin by the track distance between
+# the two entry bins, then limit the result to 0-1. This is `path_progress`.
+# Zero marks the start and one marks the reference distance to the destination.
+# On a branched maze, a detour can also reach that distance, so this quantity
+# alone does not establish arrival or an efficient route.
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 5))
@@ -266,16 +299,34 @@ for transition in transitions[:3]:
         label=f"{transition.source_region} to {transition.target_region}",
     )
 ax.set(
-    xlabel="Time from first entry (s)", ylabel="Normalized displacement", ylim=(0, 1.05)
+    xlabel="Time since entry into first zone (s)",
+    ylabel="Relative distance from start",
+    title="Position change between arm-end entries",
+    ylim=(0, 1.05),
 )
 ax.legend()
 plt.show()
 
 # %% [markdown]
-# We obtained supported rate maps for labeled archive units and descriptive
-# movement summaries from the same recording. Stronger claims require extra
-# evidence: spike-sorting metadata for cell identity, task logs for trials and
-# rewards, and a justified null for tuning significance.
+# The flat portions show little change in distance from the starting bin;
+# the rising portions show movement farther from it. The intervals differ in
+# duration and include waiting. Their endpoints are 0 and 1 by construction,
+# rather than evidence for a particular movement strategy.
+#
+# ## Use your own recording
+#
+# Supply spike times for each unit, tracking times and `(x, y)` positions on the
+# same clock, and a graph of the known track. Set the coordinate units before
+# choosing bin size, smoothing width and arm-end radius. Inspect tracking on
+# the maze, remove outliers, and use the actual spike-acquisition intervals.
+# Keep unit identifiers from spike sorting so maps can be matched to other
+# analyses. If your question concerns running or reward-related firing, define
+# running periods or trials from the relevant measurements before estimating
+# maps; the all-time maps here include waiting.
+#
+# Report the occupancy rule and smoothing width with the maps. Add task logs
+# for trial and reward comparisons, and use appropriate controls before making
+# claims about significant spatial tuning or cell type.
 #
 # Next, use [held-out decoding](06_position_decoding.ipynb) to evaluate prediction
 # on new observations or [peri-event analysis](07_peri_event_analysis.ipynb) to

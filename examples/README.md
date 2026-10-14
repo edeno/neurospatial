@@ -1,8 +1,15 @@
-# neurospatial tutorials
+# Spatial neuroscience tutorials
 
-Nine standalone notebooks follow common spatial-neuroscience tasks. Each creates
-or loads its own inputs. Start a fresh kernel and run from top to bottom; no
-notebook depends on another notebook's variables or generated files.
+These nine notebooks work through questions about occupancy, spatial firing,
+maze behavior, position decoding, and responses to cues. They are written for
+spatial neuroscientists who work with spike times and tracking data and know
+basic Python and NumPy.
+
+Choose the question that matches your analysis. Each notebook provides its own
+recording, explains the analysis choices, and shows how to read the resulting
+figures. A final section describes how to use your own recording. Start a fresh
+kernel and run the cells in order; the notebooks do not share variables or
+require files produced by another notebook.
 
 ## Start here
 
@@ -20,27 +27,28 @@ uv sync --extra dev --extra notebooks --extra video --extra nwb
 uv run jupyter lab examples/
 ```
 
-Begin with [getting started](01_getting_started.ipynb), then
-[spatial rate maps](02_spatial_rate_maps.ipynb). Choose the next task from the
-catalog. Prerequisites introduce concepts; each tutorial supplies its own data.
+If you are new to neurospatial, start with
+[occupancy](01_getting_started.ipynb) and
+[firing-rate maps](02_spatial_rate_maps.ipynb). The background links in the table
+introduce package concepts used later; each notebook can run on its own.
 
 <!-- notebook-catalog:start -->
 
-| Notebook | Estimated time | Start after |
+| Notebook | Estimated time | Useful background |
 | --- | --- | --- |
-| [01. Getting started: define an arena and measure occupancy](01_getting_started.ipynb) | 15-20 minutes | None |
-| [02. Spatial rate maps: estimate firing with observation support](02_spatial_rate_maps.ipynb) | 20-25 minutes | [01](01_getting_started.ipynb) |
-| [03. Trajectories and behavior: segment shuttle traversals](03_trajectories_and_behavior.ipynb) | 20-25 minutes | [01](01_getting_started.ipynb) |
-| [04. Analyze a Hippocampal Recording on a Maze](04_real_data_analysis.ipynb) | 25-30 minutes | [02](02_spatial_rate_maps.ipynb), [03](03_trajectories_and_behavior.ipynb) |
-| [05. Simulation and Validation](05_simulation_and_validation.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
-| [06. Position Decoding](06_position_decoding.ipynb) | 20-25 minutes | [02](02_spatial_rate_maps.ipynb), [05](05_simulation_and_validation.ipynb) |
-| [07. Peri-event analysis](07_peri_event_analysis.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
-| [08. Visualization](08_visualization.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
-| [09. NWB I/O](09_nwb_io.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
+| [01. Where did the animal spend time?](01_getting_started.ipynb) | 15-20 minutes | None |
+| [02. Where does this neuron fire after accounting for occupancy?](02_spatial_rate_maps.ipynb) | 20-25 minutes | [01](01_getting_started.ipynb) |
+| [03. When was the animal running, and which traversals were fully observed?](03_trajectories_and_behavior.ipynb) | 20-25 minutes | [01](01_getting_started.ipynb) |
+| [04. Where do hippocampal neurons fire along this maze?](04_real_data_analysis.ipynb) | 25-30 minutes | [02](02_spatial_rate_maps.ipynb), [03](03_trajectories_and_behavior.ipynb) |
+| [05. Can we recover a known place field from simulated spikes?](05_simulation_and_validation.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
+| [06. How accurately can population activity predict position?](06_position_decoding.ipynb) | 20-25 minutes | [02](02_spatial_rate_maps.ipynb), [05](05_simulation_and_validation.ipynb) |
+| [07. How does firing change around a cue?](07_peri_event_analysis.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
+| [08. Inspect spatial maps alongside behavior and video](08_visualization.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
+| [09. Analyze an NWB recording and save the results](09_nwb_io.ipynb) | 15-20 minutes | [02](02_spatial_rate_maps.ipynb) |
 
 <!-- notebook-catalog:end -->
 
-## Work with a real recording
+## Analyze recorded hippocampal activity
 
 [The real-data tutorial](04_real_data_analysis.ipynb) downloads the 75 MB
 [J16 Zenodo recording](https://doi.org/10.5281/zenodo.23020757), verifies its
@@ -70,18 +78,19 @@ focused recipes and explanations in the user guide:
 - [Animation backends and large recordings](https://edeno.github.io/neurospatial/user-guide/animation/)
   and [video calibration](https://edeno.github.io/neurospatial/user-guide/video-annotation/).
 
-## Scientific conventions
+## Reading and adapting the analyses
 
 - Positions and distances use the environment's declared units. Times are
   seconds and angles are radians. Allocentric angles use zero East and positive
   angles toward North; egocentric angles use zero ahead and positive angles left.
-- Missing observations remain distinct from zero activity. Inspect occupancy and
-  spatial support before interpreting rate maps or fitting a decoder.
-- Field detection segments a map. Threshold screens produce descriptive
-  candidates; a significance claim needs a stated, appropriate statistical test.
-- Decoding performance is evaluated on separate observations. Choose parameters
-  using training/validation data before inspecting the test block.
-- Visits inferred from position do not establish task trials, rewards or goals.
+- Blank rate-map locations have too little recorded occupancy. A measured rate
+  of zero means the animal spent time there while spikes were recorded.
+- A place-field outline depends on the rate and area thresholds used to draw
+  it. A claim about spatial tuning needs an appropriate statistical test.
+- Decode position in a different part of the recording from the one used to
+  estimate place fields. Choose parameters before examining test performance.
+- Position can identify visits to maze arms. Use task logs to identify trials,
+  reward delivery, and the choices available to the animal.
 
 ## Optional viewers and exports
 

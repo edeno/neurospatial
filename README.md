@@ -537,7 +537,7 @@ print(f"Detected peak: {result.peak_location()}")
 
 ### Learn More
 
-Follow the **[Simulation and Validation tutorial](examples/05_simulation_and_validation.ipynb)**
+Follow the **[place-field recovery tutorial](examples/05_simulation_and_validation.ipynb)**
 to generate labeled spike trains, recover known fields, and interpret per-unit
 recovery outcomes and missing metrics. The
 [API reference](https://edeno.github.io/neurospatial/api/) covers additional

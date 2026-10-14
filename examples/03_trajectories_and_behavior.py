@@ -14,16 +14,23 @@
 # ---
 
 # %% [markdown]
-# # Trajectories and behavior: segment shuttle traversals
+# # When was the animal running, and which traversals were fully observed?
+#
+# **Question:** Which running bouts and left-to-right track traversals can we
+# measure without joining observations across a tracking dropout?
+#
+# **You will need:** Tracking positions and timestamps, the measured track
+# centerline, and end-zone definitions. We provide four simulated out-and-back
+# cycles with pauses and a one-second dropout during one left-to-right pass.
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [01: getting started](01_getting_started.ipynb).
+# **Prerequisites**: [01: occupancy](01_getting_started.ipynb).
 #
-# Represent a bent track, identify movement epochs and source-to-target runs,
-# and compare their progress using graph distance. The simulated recording has
-# pauses and an intentional tracking gap. Every summary distinguishes observed
-# movement from unknown behavior during that gap. No download is required.
+# We will express position as distance along the track, identify running bouts,
+# and compare the time courses of complete traversals. These behavioral windows
+# can then be used for firing-rate analysis. The notebook runs independently
+# and requires no downloads.
 
 # %%
 import sys
@@ -52,16 +59,16 @@ from _style import apply_style
 apply_style(figsize=(11, 5))
 
 # %% [markdown]
-# ## 1. Define the track before projecting tracking data
+# ## 1. Express position as distance along the track
 #
-# The ordered waypoints define a 100 cm L-shaped centerline with 2 cm bins.
-# This topology is experimental knowledge; a position cloud alone cannot define
-# the track. The graph retains its embedding in 2D while providing a 1D distance
-# coordinate. `edge_spacing=0` avoids artificial gaps in that coordinate.
+# The animal runs on a 100 cm L-shaped track. Linearized position measures
+# distance from the left end along the bend, so movement on both arms can be
+# shown on one position axis. We divide that distance into 2 cm bins.
 #
-# Projection places observations on a centerline. It can conceal off-track
-# tracking errors or assign the wrong branch near a junction. Inspect projection
-# residuals and verify the graph against your apparatus before using its bins.
+# Define the centerline from the apparatus coordinates in `node_positions`.
+# `linear_track()` keeps both this 2D description and the distance along it.
+# `edge_spacing=0` keeps distance continuous at the corner. The circles have
+# an 8 cm radius and define the end zones for left-to-right traversals below.
 
 # %%
 track = Environment.linear_track(
@@ -75,7 +82,8 @@ track = Environment.linear_track(
 track.regions.add("left", polygon=Point(2.0, 0.0).buffer(8.0))
 track.regions.add("right", polygon=Point(60.0, 38.0).buffer(8.0))
 
-# Repeated traversals with independent, seeded variation in duration and pauses.
+# %% jupyter={"source_hidden": true}
+# Generate repeated traversals with variation in running duration and pause length.
 rng = np.random.default_rng(303)
 knot_times, knot_distances = [0.0, 1.5], [2.0, 2.0]
 for _ in range(4):
@@ -93,44 +101,60 @@ distance = np.interp(full_times, knot_times, knot_distances)
 full_positions = track.linear_to_nd(distance)
 full_positions += rng.normal(0.0, 0.02, size=full_positions.shape)
 
-# Remove one second from the middle of the second outward traversal.
+# Remove one second from the middle of the second left-to-right traversal.
 gap_center = (knot_times[5] + knot_times[6]) / 2
 keep = np.abs(full_times - gap_center) > 0.5
 times, positions = full_times[keep], full_positions[keep]
+
+# %%
 linear_position = track.to_linear(positions)
 projected = track.linear_to_nd(linear_position)
 residual = np.linalg.norm(positions - projected, axis=1)
 position_bins = track.bin_at(positions)
 assert np.all(position_bins >= 0) and np.all(np.diff(times) > 0)
-print(f"Recorded samples: {len(times):,}; track bins: {track.n_bins}")
-print(f"95th percentile projection residual: {np.percentile(residual, 95):.2f} cm")
+print(f"Tracking samples: {len(times):,}; spatial bins along the track: {track.n_bins}")
+print(
+    f"Distance from tracking to centerline, 95th percentile: {np.percentile(residual, 95):.2f} cm"
+)
 
 fig, ax = plt.subplots(figsize=(8, 5), layout="constrained")
 track.plot(ax=ax)
 ax.scatter(*positions[::5].T, s=4, alpha=0.5, label="Tracking")
 for name in ["left", "right"]:
     boundary_x, boundary_y = track.regions[name].data.exterior.xy
-    ax.plot(boundary_x, boundary_y, label=f"{name.capitalize()} region")
-ax.set(xlabel="X (cm)", ylabel="Y (cm)", title="Known track and observed positions")
+    ax.plot(boundary_x, boundary_y, label=f"{name.capitalize()} end zone")
+ax.set(xlabel="X (cm)", ylabel="Y (cm)", title="Tracking on the L-shaped track")
 ax.set_xticks([0, 20, 40, 60])
 ax.set_yticks([0, 20, 40])
 ax.tick_params(bottom=True, left=True, labelbottom=True, labelleft=True)
 handles, labels = ax.get_legend_handles_labels()
-legend_entries = dict(zip(labels, handles))
+legend_entries = {
+    {"original edges": "Track centerline", "bin edges": "Bin boundaries"}.get(
+        label, label
+    ): handle
+    for label, handle in zip(labels, handles)
+}
 ax.legend(legend_entries.values(), legend_entries, loc="upper left")
 ax.set_aspect("equal")
 plt.show()
 
 # %% [markdown]
-# ## 2. Exclude gaps from speed and occupancy
+# Tracking stays close to the defined centerline: 95% of positions are within
+# about 0.04 cm in this simulation. With camera data, inspect departures from
+# the centerline before accepting linearized position. Large differences can
+# indicate calibration errors or off-track positions. On a branching maze,
+# assigning the nearest track segment can also select the wrong arm.
 #
-# Step length divided by elapsed time gives an interval's mean speed. Derive it
-# from continuous positions: bin-center jumps make instantaneous speed strongly
-# dependent on bin size. Here the small tracking noise still affects speed near
-# pauses, so inspect the trace before choosing movement thresholds.
+# ## 2. Identify running bouts while excluding the tracking gap
 #
-# A long interval is missing observation, not a measured slow step. Exclude it
-# explicitly. Occupancy uses the same 100 ms continuity limit below.
+# Calculate speed from changes in the tracked 2D position and elapsed time.
+# This avoids the jumps caused by calculating speed from spatial-bin indices.
+# Tracking samples are 20 ms apart; intervals longer than 100 ms are excluded
+# from speed and occupancy because movement during them was not observed.
+#
+# We smooth speed over 100 ms. A running bout starts above 8 cm/s and ends below
+# 4 cm/s, with a minimum duration of 0.5 s. The two thresholds reduce repeated
+# starts and stops near the cutoff; `hysteresis=2` sets their ratio.
 
 # %%
 intervals = np.diff(times)
@@ -138,9 +162,9 @@ observed_interval = intervals <= 0.1
 step_lengths = compute_step_lengths(positions)
 speed = np.where(observed_interval, step_lengths / intervals, np.nan)
 occupancy = track.occupancy(times, positions, max_gap=0.1)
-print(f"Wall-clock duration: {times[-1] - times[0]:.2f} s")
-print(f"Observed duration: {occupancy.sum():.2f} s")
-print(f"Excluded intervals: {(~observed_interval).sum()}")
+print(f"Time from first to last tracking sample: {times[-1] - times[0]:.2f} s")
+print(f"Time with continuous tracking: {occupancy.sum():.2f} s")
+print(f"Intervals excluded for missing tracking: {(~observed_interval).sum()}")
 assert np.isclose(occupancy.sum(), intervals[observed_interval].sum())
 
 movement = segment_by_velocity(
@@ -152,22 +176,22 @@ movement = segment_by_velocity(
     smooth_window=0.1,
     max_gap=0.1,
 )
-print(f"Movement epochs: {len(movement)}")
+print(f"Running bouts: {len(movement)}")
 
 # %% [markdown]
-# Movement starts above 8 cm/s and ends below 4 cm/s after temporal smoothing;
-# the hysteresis reduces rapid switching at the threshold. These are operational
-# movement labels, not inferred motivation or a universal behavioral state.
-# The detector resets at the gap and can split one physical journey into two
-# observed movement epochs.
+# The detector returns nine bouts. The dropout splits one planned traversal
+# into two separately observed running periods. Small tracking noise affects
+# speed near pauses, so the speed trace below is useful for checking the chosen
+# thresholds before applying them to a real recording.
 
 # %% [markdown]
-# ## 3. Detect source-exit to target-entry runs
+# ## 3. Measure left-to-right traversals
 #
-# Region membership uses track-bin centers. Run boundaries therefore have both
-# sampling and binning uncertainty. `success=True` here means the detector saw
-# the target before the timeout; it says nothing about reward or task accuracy.
-# An incomplete run at a recording gap cannot establish behavioral failure.
+# A traversal begins at the first sample outside the left end zone and ends
+# at the first sample inside the right end zone. Allow up to 12 s to reach the
+# right zone. A tracking gap ends the observed segment before arrival.
+# End-zone membership uses 2 cm bin centers, so event times depend on both
+# tracking frequency and spatial bin width.
 
 # %%
 entries = detect_region_crossings(
@@ -184,16 +208,20 @@ runs = detect_runs_between_regions(
     max_gap=0.1,
 )
 complete_runs = [run for run in runs if run.success]
-print(f"Right-region entries: {len(entries)}")
+print(f"Entries into the right end zone: {len(entries)}")
 print(
-    f"Outward runs: {len(complete_runs)} complete; {len(runs) - len(complete_runs)} incomplete"
+    f"Left-to-right traversals: {len(complete_runs)} complete; {len(runs) - len(complete_runs)} incomplete"
 )
 for number, run in enumerate(runs, start=1):
-    status = "target observed" if run.success else "incomplete observation / timeout"
+    status = (
+        "arrival observed"
+        if run.success
+        else "recording break or time limit before arrival"
+    )
     print(f"  {number}: {run.start_time:.2f}-{run.end_time:.2f} s; {status}")
 
 fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, layout="constrained")
-# Separate chunks so a line never connects observations across the gap.
+# Draw each continuous recording period separately, leaving the tracking gap empty.
 chunks = np.split(np.arange(len(times)), np.flatnonzero(~observed_interval) + 1)
 for chunk in chunks:
     axes[0].plot(times[chunk], linear_position[chunk], color="black", lw=1)
@@ -205,14 +233,15 @@ for run in runs:
         alpha=0.2,
     )
 axes[0].set(
-    ylabel="Track distance (cm)", title="Outward runs: blue complete, orange incomplete"
+    ylabel="Position along track (cm)",
+    title="Left-to-right traversals: complete (blue), incomplete (orange)",
 )
-axes[1].plot(times[:-1], speed, lw=0.7, color="gray", label="Interval speed")
+axes[1].plot(times[:-1], speed, lw=0.7, color="gray", label="Speed from tracking")
 for epoch in movement:
     axes[1].axvspan(epoch.start_time, epoch.end_time, color="#009E73", alpha=0.2)
-axes[1].axhline(8.0, color="black", ls="--", label="Movement entry threshold")
+axes[1].axhline(8.0, color="black", ls="--", label="Running threshold (8 cm/s)")
 axes[1].set(
-    xlabel="Time (s)", ylabel="Speed (cm/s)", title="Green spans: detected movement"
+    xlabel="Time (s)", ylabel="Speed (cm/s)", title="Detected running bouts (green)"
 )
 axes[1].legend(loc="upper right")
 for ax in axes:
@@ -220,19 +249,29 @@ for ax in axes:
 plt.show()
 
 # %% [markdown]
-# Region entries and complete runs count different events: an entry can be
-# observed after a gap even when the source-to-target journey was not observed
-# continuously. Keep the incomplete segment in quality-control summaries.
+# The upper plot shows three complete traversals in blue. The orange segment
+# ends at the gray tracking gap. We still observe four entries into the right
+# zone: seeing an arrival after the gap does not recover the missing part of
+# that journey. The lower plot shows running bouts in both directions, separated
+# by pauses and the same tracking gap. Its speed trace is unsmoothed; bout
+# detection uses 100 ms smoothing, so the green boundaries need not match
+# crossings of the threshold in the displayed trace exactly.
+#
+# In the returned records, `success=True` means that arrival was observed within
+# the time limit. This flag does not describe reward or task accuracy. Keep the
+# incomplete segment when reporting how much behavior could be measured.
 
 # %% [markdown]
-# ## 4. Compare progress within complete traversals
+# ## 4. Compare position over the course of complete traversals
 #
-# Graph progress measures shortest-path distance from each run's observed start,
-# divided by its start-to-arrival distance. On this unbranched track it follows
-# distance along the bend. It is bin-quantized and does not measure cumulative
-# distance traveled; backtracking can reduce progress. The denominator uses the
-# first observed target-region bin, rather than the track's physical endpoint.
-# Relative time permits a descriptive comparison of traversal profiles.
+# Put each complete traversal on a common scale: zero marks its observed start,
+# and one marks entry into the right zone. `path_progress()` measures distance
+# along the track from that start, divided by the start-to-arrival distance.
+# It follows the bend and uses the first arrival bin as the endpoint.
+#
+# Scale elapsed time by each traversal's duration as well. This lets us compare
+# the shape of the movement time course across traversals of different lengths
+# in seconds. The 2 cm spatial bins create small steps in the curves.
 
 # %%
 fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
@@ -250,12 +289,12 @@ for number, run in enumerate(complete_runs, start=1):
     ax.plot(
         relative_time,
         progress,
-        label=f"Run {number}: {run_times[-1] - run_times[0]:.2f} s",
+        label=f"Traversal {number}: {run_times[-1] - run_times[0]:.2f} s",
     )
 ax.set(
-    xlabel="Relative traversal time",
-    ylabel="Graph-distance progress",
-    title="Complete outward runs only",
+    xlabel="Fraction of traversal duration",
+    ylabel="Fraction of start-to-arrival track distance",
+    title="Position during complete left-to-right traversals",
     xlim=(0, 1),
     ylim=(-0.03, 1.03),
 )
@@ -263,17 +302,33 @@ ax.legend()
 plt.show()
 
 # %% [markdown]
-# Progress toward a chosen endpoint is not proof of goal-directed intent. This
-# task's track constrains the available route. In a branching maze, inspect the
-# chosen route and start/target pair before pooling progress curves.
+# The curves mostly overlap because the simulated traversals have approximately
+# constant speed. Their durations differ, as shown in the legend; scaling time
+# removes those duration differences from the horizontal axis. Use the earlier
+# time trace when comparing absolute running times.
 #
-# The `movement` and `runs` objects expose `start_time` and `end_time`. Pass
-# selected intervals as `epochs=` to occupancy or rate estimation, and use the
-# same windows for spikes and tracking. Epoch windows are half-open `[start,
-# stop)`; choose endpoint conventions deliberately when counting arrival events.
+# This distance fraction describes position along the route. It decreases with
+# backtracking, unlike cumulative distance traveled. The track fixes the route
+# in this example. Interpreting goal-directed choices would require a task with
+# alternatives and evidence about the animal's choices.
 #
-# Continue with [04: real-data analysis](04_real_data_analysis.ipynb), or see
+# ## Use your own recording
+#
+# Replace `times` with tracking timestamps in seconds and `positions` with
+# sample-aligned `(x, y)` coordinates in calibrated physical units. Define the
+# track centerline and end zones from your apparatus. Inspect the 2D trace and
+# distances from the centerline before using linearized position.
+#
+# Choose the running-speed thresholds, smoothing interval, minimum bout length,
+# and gap limit from the tracking noise and behavior in your recording. Report
+# the zone sizes and traversal timeout. Position-defined traversals need task
+# logs before they can be interpreted as rewarded trials or correct choices.
+#
+# Running bouts and traversals provide `start_time` and `end_time` in seconds.
+# Pass the desired windows as `epochs=` for firing-rate analysis, using the same
+# windows for spikes and occupancy. These analysis windows are half-open
+# `[start, stop)`; count arrival events separately if they fall at a window end.
+#
+# Continue with [04: a hippocampal recording](04_real_data_analysis.ipynb), or see
 # the [behavior guide](https://edeno.github.io/neurospatial/user-guide/trajectory-and-behavioral-analysis/)
-# for trials, circular laps, turn angles, and mean-square displacement. For graph
-# fields and fluxes, see the
-# [differential-operator guide](https://edeno.github.io/neurospatial/user-guide/differential-operators/).
+# for region visits, circular laps, turn angles, and other movement measures.

@@ -14,7 +14,7 @@ Usage
 ``_style`` is a local helper next to the example notebooks rather
 than part of the installed package, so each notebook prepends
 ``examples/`` to ``sys.path`` before importing it. The canonical
-prologue (used in notebooks 24-27) is::
+prologue used throughout the tutorials is::
 
     import sys
     from pathlib import Path

@@ -14,19 +14,21 @@
 # ---
 
 # %% [markdown]
-# # Peri-event analysis
+# # How does firing change around a cue?
 #
-# Build a raster and peri-event time histogram (PSTH) from the same observed
-# events. We simulate two cue-responsive units and an acquisition gap, retain
-# only complete event windows, and keep event and unit identities in the results.
+# **Question:** Does a neuron fire more after a cue, and how soon does its
+# response appear? Compare individual cue presentations with the average
+# firing rate, then compare response timing across two neurons.
+#
+# **You will need:** Spike times for each unit, cue times, and the periods when
+# spikes were recorded. All times must be in seconds on the same session clock.
+# We generate a short example with two neurons and a recording gap, so no data
+# files are needed.
 #
 # **Estimated time**: 15-20 minutes
 #
 # **Prerequisites**: [Spatial rate maps](02_spatial_rate_maps.ipynb).
 #
-# This notebook creates its own data. Times are seconds, rates are Hz, and every
-# recording or analysis interval is half-open: `[start, stop)`.
-
 # %%
 import sys
 from pathlib import Path
@@ -50,17 +52,17 @@ from _style import apply_style
 apply_style(figsize=(10, 6))
 
 # %% [markdown]
-# ## 1. Create events, responses, and acquisition coverage
+# ## 1. Prepare spike times and cue times
 #
-# Cue times have independent jitter. Unit 7 has an early response; unit 42 has
-# a later response. These imposed responses illustrate alignment, rather than
-# establishing a causal effect or testing for significant modulation.
+# The example is a three-minute session with two simulated neurons, labeled
+# 7 and 42. Both have a baseline firing rate of 2 Hz. We add an early response
+# to unit 7 and a later response to unit 42. The next cell generates the
+# example spike trains and cue times.
 #
-# Electrophysiology is unavailable from 80 to 100 s even though the session
-# clock continues. Removing spikes in that interval does not make it recorded
-# silence: we must pass the acquisition windows to the PSTH calculation.
+# Spikes were not recorded from 80 to 100 s. We describe the recorded periods
+# with `spike_window`; a gap in recording must not count as time with no spikes.
 
-# %%
+# %% jupyter={"source_hidden": true}
 event_rng = np.random.default_rng(42)
 duration = 180.0
 times = np.arange(0.0, duration + 0.001, 0.002)
@@ -84,19 +86,19 @@ for latency, amplitude, seed in [(0.15, 24.0, 142), (0.40, 14.0, 143)]:
         recorded |= (spikes >= start) & (spikes < stop)
     spike_trains.append(spikes[recorded])
 
-print(f"Input events: {len(event_times)}; unit labels: {unit_ids.tolist()}")
+print(f"Cue presentations: {len(event_times)}; unit IDs: {unit_ids.tolist()}")
 print(f"Recorded spikes per unit: {[len(train) for train in spike_trains]}")
 
 # %% [markdown]
-# ## 2. Select complete event windows once
+# ## 2. Choose a time window and calculate firing around each cue
 #
-# An event is retained only when its entire `[-0.5, 1.0)` s window lies within
-# both the analysis epochs and the spike recording support. A window crossing
-# either side of the gap is excluded, even when the event itself was observed.
+# We compare 500 ms before the cue with 1 s after it, using 25 ms bins.
+# `epochs` selects the part of the session to analyze. `spike_window` gives
+# the periods when electrophysiology was recording.
 #
-# `event_indices` refers to positions in the original event array, in input
-# order. Use it to select event metadata and raster rows; reconstructing a
-# separate selection can accidentally give the raster a different cohort.
+# Keep a cue only if spikes were recorded throughout its analysis window.
+# A cue close to a recording gap or the edge of an analysis period is excluded.
+# Both the raster and the average below will use these same cue presentations.
 
 # %%
 window = (-0.5, 1.0)
@@ -116,61 +118,50 @@ retained_names = event_names[result.event_indices]
 assert retained_events.size == result.n_events
 np.testing.assert_array_equal(result.event_indices, population.event_indices)
 assert result.n_events + result.n_events_dropped == event_times.size
-print(
-    f"Retained {result.n_events}; excluded {result.n_events_dropped} incomplete windows"
-)
-print(f"Retained event identities: {retained_names.tolist()}")
-
-# %%
-retained = np.zeros(event_times.size, dtype=bool)
-retained[result.event_indices] = True
-fig, ax = plt.subplots(figsize=(11, 3), constrained_layout=True)
-ax.axvspan(80, 100, color="0.8", label="No electrophysiology")
-ax.axvspan(0, 5, color="0.9", label="Outside analysis epoch")
-ax.axvspan(175, duration, color="0.9")
-ax.scatter(
-    event_times[retained], np.ones(retained.sum()), marker="|", s=180, label="Kept"
-)
-ax.scatter(
-    event_times[~retained], np.zeros((~retained).sum()), marker="x", label="Excluded"
-)
-ax.set(xlim=(0, duration), yticks=[0, 1], yticklabels=["Excluded", "Kept"])
-ax.set_xlabel("Session time (s)")
-ax.set_title("Event-window coverage, including edges and acquisition gap")
-ax.legend(loc="upper center", ncol=3)
-plt.show()
+print(f"Cues analyzed: {result.n_events}; excluded: {result.n_events_dropped}")
+print(f"Cue labels used: {retained_names.tolist()}")
 
 # %% [markdown]
-# ## 3. Plot one unit's matching raster and PSTH
+# ## 3. Compare individual cue responses with the average
 #
-# Each row below represents one retained cue, ordered as in the input event
-# array. The histogram is the mean spike count per bin across those same cues.
-# `plot_peri_event_response` uses the result's retained event indices and actual
-# half-open histogram bin range for both views. Pass the original event array,
-# including excluded cues, and the spike train belonging to the selected unit.
-# The helper displays the mean and SEM in Hz. With a window that is not divisible
-# by `bin_size`, both panels omit the trailing partial bin.
+# Each raster row is one cue presentation; each tick is a spike. The lower
+# panel is the peri-stimulus time histogram (PSTH), shown as a firing rate in Hz.
+# It averages the spike count across cues and divides by the bin width.
 #
-# The shaded SEM describes variability across retained events under an
-# independence assumption. It is not a confidence band for a cell-type claim.
-# Overlapping events or correlated trials require an appropriate resampling
-# design. With a single retained event, the SEM is undefined (NaN).
+# Pass the original cue array and the spike train for unit 7 to
+# `plot_peri_event_response`. The result tells the plot which cues to include.
 
 # %%
 from neurospatial.events import plot_peri_event_response
 
 raster_ax, rate_ax = plot_peri_event_response(spike_trains[0], event_times, result)
 fig = raster_ax.figure
-raster_ax.set_title(f"Unit {result.unit_id}: {result.n_events} fully observed cues")
+raster_ax.set_title(f"Unit {result.unit_id}: {result.n_events} cue presentations")
+raster_ax.set_ylabel("Cue presentation")
+raster_ax.set_yticks(
+    np.arange(result.n_events), labels=np.arange(1, result.n_events + 1)
+)
 rate_ax.set_xlabel("Time relative to cue (s)")
 plt.show()
 
 # %% [markdown]
-# ## 4. Compare labeled units on the same cohort
+# Look for an increase after time zero, and compare it with firing before
+# the cue. The simulated response of unit 7 is centered at 150 ms. The raster
+# shows how spike timing varies across presentations even when the underlying
+# response is the same.
 #
-# Population rows retain the supplied unit labels. These are absolute firing
-# rates, so differences in response size and baseline remain visible. Averages
-# across units answer a different question from variability across events.
+# The shaded band is the SEM of the mean across cues, assuming independent
+# presentations. With one cue it is undefined (NaN). Repeated or overlapping
+# events can violate that independence assumption. In recorded hippocampal
+# activity, position, speed, or licking may also change around a cue; this plot
+# alone does not show that the cue caused a firing-rate change.
+#
+# ## 4. Compare response timing across neurons
+#
+# Both rows below use the same cue presentations and the same time bins.
+# Compare unit 7's early response with unit 42's response, which was simulated
+# to peak at 400 ms. The colors show firing rate in Hz, without normalizing
+# each neuron's response, so baseline and response size also affect the colors.
 
 # %%
 fig, ax = plt.subplots(figsize=(9, 3), constrained_layout=True)
@@ -183,18 +174,55 @@ image = ax.imshow(
 )
 ax.set_yticks(np.arange(population.n_units), labels=population.unit_ids)
 ax.axvline(0, color="white", linestyle="--")
-ax.set(xlabel="Time relative to cue (s)", ylabel="Unit ID", title="Shared event cohort")
+ax.set(
+    xlabel="Time relative to cue (s)",
+    ylabel="Unit ID",
+    title="Firing around the same cue presentations",
+)
 fig.colorbar(image, ax=ax, label="Firing rate (Hz)")
 plt.show()
 
 # %% [markdown]
-# ## 5. Turn event times into a continuous covariate
+# ## 5. Check which cue presentations were excluded
 #
-# Signed nearest-event time is negative before a cue and positive after it.
-# It includes future events and jumps at midpoints between cues, so it is an
-# offline descriptive feature. For a causal predictor, use time since the last
-# event. Choosing this feature does not fit a response model or establish that
-# event timing explains activity beyond position or other behavior.
+# The plot below places included and excluded cues on the session clock.
+# A cue can occur during recording and still be excluded if its full analysis
+# window crosses the gap. `result.event_indices` gives the original cue-array
+# positions, so we can also look up labels such as `retained_names` above.
+#
+# Spike-counting intervals include their start and exclude their stop:
+# `[start, stop)`. If the analysis window is not divisible by `bin_size`, the
+# final partial bin is left out of both the raster and PSTH. The full requested
+# window must still lie within a recorded period.
+
+# %%
+retained = np.zeros(event_times.size, dtype=bool)
+retained[result.event_indices] = True
+fig, ax = plt.subplots(figsize=(11, 3), constrained_layout=True)
+ax.axvspan(80, 100, color="0.8", label="No electrophysiology")
+ax.axvspan(0, 5, color="0.9", label="Outside analysis period")
+ax.axvspan(175, duration, color="0.9")
+ax.scatter(
+    event_times[retained], np.ones(retained.sum()), marker="|", s=180, label="Included"
+)
+ax.scatter(
+    event_times[~retained], np.zeros((~retained).sum()), marker="x", label="Excluded"
+)
+ax.set(xlim=(0, duration), yticks=[0, 1], yticklabels=["Excluded", "Included"])
+ax.set_xlabel("Session time (s)")
+ax.set_title("Cues with a fully recorded analysis window")
+ax.legend(loc="upper center", ncol=3)
+plt.show()
+
+# %% [markdown]
+# ## 6. Optional: describe time before and after the nearest cue
+#
+# A model of firing may include an animal's position, speed, and time relative
+# to a cue. Here, negative values mean a cue is approaching and positive values
+# mean it has passed. This variable uses the nearest cue, including future cues,
+# and jumps halfway between them. It is suitable for describing a completed
+# session. For prediction using only past information, use time since the last
+# cue. We construct the variable here without fitting a firing-rate model.
 
 # %%
 sample_times = np.arange(5.0, 40.0, 0.05)
@@ -203,11 +231,28 @@ fig, ax = plt.subplots(figsize=(10, 3), constrained_layout=True)
 ax.plot(sample_times, nearest)
 for event in event_times[(event_times >= 5) & (event_times < 40)]:
     ax.axvline(event, color="tab:red", linestyle="--", alpha=0.5)
-ax.set(xlabel="Session time (s)", ylabel="Nearest-cue time (s)", ylim=(-2.2, 2.2))
-ax.set_title("Signed nearest-event feature, clipped to ±2 s")
+ax.set(
+    xlabel="Session time (s)",
+    ylabel="Time relative to nearest cue (s)",
+    ylim=(-2.2, 2.2),
+)
+ax.set_title("Time before or after the nearest cue, limited to ±2 s")
 plt.show()
 
 # %% [markdown]
-# For recorded inputs, [NWB I/O](09_nwb_io.ipynb) preserves spike identities and
-# acquisition windows. Use [Visualization](08_visualization.ipynb) to inspect
-# spatial fields and synchronized behavior on their original clock.
+# ## Use your own recording
+#
+# Replace `spike_trains` with one spike-time array per unit and `event_times`
+# with your cue, reward-delivery, or other measured event times. Keep `unit_ids`
+# in the same order as the spike trains. Use seconds and synchronize all streams
+# before alignment. Set `spike_window` from acquisition records and choose
+# `epochs` for the behavior or task period you want to compare.
+#
+# Choose the window and bin width for the response timing you expect. Check
+# individual presentations as well as the mean, and report how many events
+# were excluded. For an experiment with several conditions, analyze each
+# condition explicitly rather than pooling different types of event.
+#
+# [Analyze an NWB recording](09_nwb_io.ipynb) shows how to load spike trains and
+# recorded periods. [Inspect spatial maps alongside behavior](08_visualization.ipynb)
+# shows how to view spatial signals together with tracking and event markers.

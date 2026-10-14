@@ -106,7 +106,7 @@ def test_video_preview_maps_pixel_centers_to_their_calibrated_positions(
         "trajectory": np.repeat(transform(marker[None, :]), 4, axis=0),
         "frame_times": np.arange(4.0),
     }
-    source = _cell("08_visualization", version, 'title="Raw synthetic frame"')
+    source = _cell("08_visualization", version, "transform=MplAffine2D(")
     try:
         exec(compile(source, "video_preview_cell", "exec"), namespace)
         ax = namespace["axes"][1]

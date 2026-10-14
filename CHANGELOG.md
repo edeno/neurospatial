@@ -86,6 +86,11 @@
 
 ### Changed
 
+- Rewrite all nine tutorials around spatial neuroscience questions, using
+  simple technical English, explanations of analysis choices, figure
+  interpretation, and instructions for using recorded data. Update the shared
+  catalog and keep example-data setup separate from the main analysis.
+
 - Consolidate the 27 feature-oriented notebooks into nine standalone task
   tutorials covering environments, rate maps, behavior, real data, simulation,
   held-out decoding, events, visualization and NWB. Combine the J16 neural and

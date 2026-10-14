@@ -1,7 +1,7 @@
 # User Guide
 
-Start with the scientific question you want to answer. Each route below uses
-public APIs and explains the assumptions needed to interpret the output.
+Start with the question you want to answer from spikes, tracking, and behavior.
+Each route explains the analysis choices and how to interpret the figures.
 
 ## Choose a Scientific Task
 
@@ -11,10 +11,10 @@ public APIs and explains the assumptions needed to interpret the output.
 | Find where a neuron fires | [First place field](../getting-started/quickstart.md#your-first-place-field) | Occupancy, smoothing scale and missing spatial coverage |
 | Compare conditions or trials | [Compare analysis windows](workflows.md#compare-conditions-with-explicit-windows) | Shared geometry, identical analysis settings and observed duration |
 | Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
-| Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Disjoint training/test windows and training spatial support |
+| Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Separate training/test periods and locations visited during training |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
-| Measure responses around events | [Peri-event example](../examples/07_peri_event_analysis.ipynb) | Full event-window coverage and the retained event cohort |
-| Save results I can interpret later | [Analysis settings and exports](interoperability.md#analysis-settings-and-exports) | Units, identity, analysis windows and estimator settings |
+| Measure firing around cues | [Raster and PSTH example](../examples/07_peri_event_analysis.ipynb) | Which cues have fully recorded before/after windows |
+| Save results I can interpret later | [Analysis settings and exports](interoperability.md#analysis-settings-and-exports) | Units, neuron labels, analyzed periods, bin widths and smoothing |
 
 ## Contents
 

@@ -186,15 +186,15 @@ nav:
       - Video Annotation: user-guide/video-annotation.md
   - Examples:
       - examples/index.md
-      - Getting Started: examples/01_getting_started.ipynb
-      - Spatial Rate Maps: examples/02_spatial_rate_maps.ipynb
-      - Trajectories and Behavior: examples/03_trajectories_and_behavior.ipynb
-      - Real-Data Analysis: examples/04_real_data_analysis.ipynb
-      - Simulation and Validation: examples/05_simulation_and_validation.ipynb
-      - Position Decoding: examples/06_position_decoding.ipynb
-      - Peri-Event Analysis: examples/07_peri_event_analysis.ipynb
-      - Visualization: examples/08_visualization.ipynb
-      - NWB Input and Output: examples/09_nwb_io.ipynb
+      - Measure occupancy: examples/01_getting_started.ipynb
+      - Estimate firing-rate maps: examples/02_spatial_rate_maps.ipynb
+      - Identify running and track traversals: examples/03_trajectories_and_behavior.ipynb
+      - Analyze a hippocampal maze recording: examples/04_real_data_analysis.ipynb
+      - Recover simulated place fields: examples/05_simulation_and_validation.ipynb
+      - Decode position from spikes: examples/06_position_decoding.ipynb
+      - Measure firing around cues: examples/07_peri_event_analysis.ipynb
+      - Inspect maps, behavior and video: examples/08_visualization.ipynb
+      - Load and save NWB analyses: examples/09_nwb_io.ipynb
   - Advanced:
       - Architecture & Internals: advanced/architecture.md
       - Errors: errors.md

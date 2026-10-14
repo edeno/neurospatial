@@ -14,15 +14,21 @@
 # ---
 
 # %% [markdown]
-# # Getting started: define an arena and measure occupancy
+# # Where did the animal spend time?
+#
+# **Question:** How is time distributed across the arena, and which locations
+# were never visited during this recording?
+#
+# **You will need:** Tracking positions, their timestamps, and the arena
+# boundary. This notebook supplies a simulated two-minute open-field recording.
+# It runs independently and requires no downloads.
 #
 # **Estimated time**: 15-20 minutes
 #
 # **Prerequisites**: None; basic NumPy is helpful.
 #
-# Start with timestamped positions, represent the space the animal could visit,
-# and calculate how much recording time supports each bin. This notebook runs
-# independently with a small simulated recording and requires no downloads.
+# We will calculate occupancy, measure time in the center, and compare spatial
+# bin sizes before using the same approach for firing-rate maps.
 #
 # Run cells in order in a Python environment with `neurospatial` installed.
 # Keep `_style.py` beside this notebook; launching Jupyter from the repository
@@ -51,17 +57,17 @@ from _style import apply_style
 apply_style(figsize=(11, 5))
 
 # %% [markdown]
-# ## 1. Check the recording's coordinates and clock
+# ## 1. Start with a short open-field recording
 #
-# Our arena is a known 60 × 60 cm square. The toy trajectory deliberately covers
-# only part of it. Reflected random steps generate this example; they are not a
-# fitted model of animal behavior. Positions have shape `(n_samples, 2)` and
-# timestamps are increasing seconds on one clock.
+# The arena is a 60 × 60 cm square. We generate a random walk at 20 Hz and keep
+# it within part of the arena so that some accessible locations remain unvisited.
+# This gives us a simple example of uneven spatial sampling.
 #
-# Setting `units="cm"` records the coordinate convention. It does not calibrate
-# camera pixels or rescale coordinates. Calibrate tracking before analysis.
+# `positions` contains one `(x, y)` pair per tracking sample, in centimeters.
+# `times` contains the corresponding timestamps in seconds. The checks below
+# confirm that the arrays match and that time increases throughout the recording.
 
-# %%
+# %% jupyter={"source_hidden": true}
 rng = np.random.default_rng(101)
 times = np.arange(2401, dtype=float) / 20.0
 positions = np.empty((len(times), 2))
@@ -72,22 +78,24 @@ for sample in range(1, len(times)):
     proposed = positions[sample - 1] + rng.normal(0.0, 1.2, size=2)
     positions[sample] = lower + np.abs((proposed - lower + span) % (2 * span) - span)
 
+# %%
 assert positions.shape == (len(times), 2)
 assert np.isfinite(times).all() and np.isfinite(positions).all()
 assert np.all(np.diff(times) > 0)
 print(f"Tracking: {len(times):,} samples over {times[-1] - times[0]:.1f} s")
-print(f"Median interval: {np.median(np.diff(times)):.3f} s")
+print(f"Median time between tracking samples: {np.median(np.diff(times)):.3f} s")
 
 # %% [markdown]
-# ## 2. Separate arena geometry from visited space
+# ## 2. Divide the arena into 5 cm spatial bins
 #
-# Use a known mask when the arena boundary is known. Here each `True` cell is
-# accessible space, including cells the animal never visited. Bin size is 5 cm;
-# grid edges therefore run from 0 to 60 cm in 5 cm steps.
+# We include the whole arena when defining spatial bins. An unvisited part of
+# the floor should remain visible in an occupancy map. Here a 12 × 12 array of
+# `True` values tells `from_grid_mask()` to include every 5 × 5 cm square.
 #
-# `from_samples()` is useful when only tracking is available. Its default active
-# bins describe sampled space. A missing bin can mean unvisited space, so that
-# inferred boundary is not evidence of a physical wall.
+# For comparison, `from_samples()` keeps only bins containing tracking samples.
+# That is useful when the boundary is unknown, but it cannot distinguish a wall
+# from accessible space the animal did not visit. Both methods return an
+# `Environment`, which holds the bins and their neighbor connections.
 
 # %%
 edges = np.arange(0.0, 60.0 + 5.0, 5.0)
@@ -106,12 +114,12 @@ sampled_env = Environment.from_samples(
     units="cm",
     frame="arena",
 )
-print(f"Known arena: {env.n_bins} accessible bins")
-print(f"Sample-inferred space: {sampled_env.n_bins} visited bins")
+print(f"Bins covering the whole arena: {env.n_bins}")
+print(f"Bins containing recorded positions: {sampled_env.n_bins}")
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 5), layout="constrained")
 for ax, space, title in zip(
-    axes, [env, sampled_env], ["Known accessible arena", "Space inferred from visits"]
+    axes, [env, sampled_env], ["Whole arena", "Locations visited during recording"]
 ):
     space.plot(ax=ax, show_connectivity=True)
     ax.plot(positions[:, 0], positions[:, 1], color="black", lw=0.4, alpha=0.5)
@@ -123,22 +131,28 @@ for ax, space, title in zip(
 plt.show()
 
 # %% [markdown]
-# ## 3. Map positions to bins safely
+# Both panels show the same trajectory. The dots mark bin centers, and the
+# connecting lines define neighboring bins for later spatial analyses. The
+# upper-right part of the floor remains in the whole-arena model even though
+# the trajectory never enters it. We use that model for the occupancy map below.
 #
-# `bin_at()` returns one integer per position and `-1` for an outside or missing
-# position. Filter that sentinel before indexing a field: NumPy interprets `-1`
-# as the last array element.
+# ## 3. Check which recorded positions are inside the arena
 #
-# The unvisited upper-right corner belongs to the known arena. The same point
-# has no bin in the sample-inferred environment. Bin IDs belong to a particular
-# environment; do not reuse them after changing its geometry or resolution.
+# `bin_at()` assigns each position to a spatial bin. Compare a visited location,
+# an unvisited corner, and a point outside the arena. The unvisited corner has
+# a bin in the whole-arena model, while the outside point returns `-1`.
+#
+# Keep indices greater than or equal to zero when selecting values from an
+# array. NumPy uses `-1` to select its last element, so it must be excluded.
 
 # %%
 queries = np.array([[25.0, 30.0], [57.5, 57.5], [65.0, 10.0]])
 known_bins = env.bin_at(queries)
 sampled_bins = sampled_env.bin_at(queries)
 for point, known_bin, sampled_bin in zip(queries, known_bins, sampled_bins):
-    print(f"{point} cm -> known bin {known_bin:3d}; sampled-space bin {sampled_bin:3d}")
+    print(
+        f"{point} cm -> whole-arena bin {known_bin:3d}; visited-only bin {sampled_bin:3d}"
+    )
 
 position_bins = env.bin_at(positions)
 valid = position_bins >= 0
@@ -147,26 +161,38 @@ assert known_bins[1] >= 0 and sampled_bins[1] == -1
 assert known_bins[2] == -1
 
 # %% [markdown]
-# ## 4. Measure occupancy in seconds
+# ## 4. Calculate time spent in each bin
 #
-# Occupancy accumulates intervals between timestamps, rather than counting
-# frames. With the default start-sample allocation, each valid interval is
-# assigned to its starting bin; the final sample adds no extra duration.
-# `max_gap=0.1` excludes any interval longer than 100 ms instead of assigning
-# missing recording time to one location. This example has no dropped frames.
+# Each pair of tracking timestamps gives an elapsed time. `occupancy()` adds
+# that time to the bin occupied at the start of the interval. The final sample
+# has no following interval and adds no extra duration.
+#
+# Tracking samples are 50 ms apart here. We set `max_gap=0.1` to exclude any
+# interval longer than 100 ms if frames are missing. This simulated recording
+# has no gaps, so the summed occupancy should equal its full duration.
 
 # %%
 occupancy = env.occupancy(times, positions, max_gap=0.1)
 observed = occupancy > 0
-print(f"Observed duration: {occupancy.sum():.2f} s")
+print(f"Time included in the occupancy map: {occupancy.sum():.2f} s")
 print(f"Visited bins: {observed.sum()} / {env.n_bins}")
 assert np.isclose(occupancy.sum(), times[-1] - times[0])
 
-# A named region is an analysis annotation; it does not change the arena graph.
+# %% [markdown]
+# ## 5. How much time was spent in the center?
+#
+# Define a 20 × 20 cm center zone and add the occupancy of its bins. The zone is
+# an annotation on the same arena; it lets us summarize dwell time without
+# recalculating the map.
+
+# %%
+# Select the center zone using its measured coordinates.
 env.regions.add("center", polygon=box(20.0, 20.0, 40.0, 40.0))
 center_mask = regions_to_mask(env, "center")
 center_time = occupancy[center_mask].sum()
-print(f"Time in center bins: {center_time:.2f} s ({center_time / occupancy.sum():.1%})")
+print(
+    f"Time in the center zone: {center_time:.2f} s ({center_time / occupancy.sum():.1%})"
+)
 
 fig, ax = plt.subplots(figsize=(6, 5), layout="constrained")
 env.plot_field(
@@ -177,26 +203,29 @@ env.plot_field(
     colorbar_label="Occupancy (s)",
 )
 boundary_x, boundary_y = env.regions["center"].data.exterior.xy
-ax.plot(boundary_x, boundary_y, color="black", lw=2, label="Center region")
-ax.set_title("Observed time; gray bins were unvisited")
+ax.plot(boundary_x, boundary_y, color="black", lw=2, label="Center zone")
+ax.set_title("Time spent in each location")
 ax.legend(loc="upper left")
 plt.show()
 
 # %% [markdown]
-# The region uses bin centers to decide membership, so its measured area is a
-# discretized approximation. Time fraction alone does not establish preference:
-# this simulation constrained the trajectory, and regions differ in area.
-# Gray means no observed occupancy here, rather than measured inactivity.
+# Longer dwell times appear in yellow; gray bins were never visited. The animal
+# spent about one fifth of the recording in the center zone. This summarizes
+# the recorded trajectory. Testing center preference would also require
+# accounting for zone area and a suitable behavioral comparison.
+#
+# A bin belongs to the zone when its center is inside the boundary. With coarser
+# bins, a zone's represented area can differ from its measured area.
 
 # %% [markdown]
-# ## 5. Choose a resolution the recording can support
+# ## 6. How much time is available per spatial bin?
 #
-# Finer bins divide the same duration among more locations. Compare coverage and
-# dwell time before selecting a resolution; 5 cm is an example, not a universal
-# recommendation. Keep geometry fixed when making this comparison.
+# Smaller bins resolve finer spatial features but contain less recording time.
+# Compare three bin widths while keeping the arena and trajectory fixed. This
+# helps choose a resolution before estimating firing rates.
 
 # %%
-print("Bin width | Visited / arena bins | Median time per visited bin")
+print("Bin width | Visited / all arena bins | Median occupancy per visited bin")
 for bin_width in [2.5, 5.0, 10.0]:
     comparison_edges = np.arange(0.0, 60.0 + bin_width, bin_width)
     n_cells = len(comparison_edges) - 1
@@ -213,16 +242,26 @@ for bin_width in [2.5, 5.0, 10.0]:
     )
 
 # %% [markdown]
-# ## Continue with your analysis
+# The 2.5 cm bins contain less time per visited bin than the 10 cm bins. All
+# three analyses use the same recording. A longer recording or repeated visits
+# may be needed to estimate firing reliably at finer resolution.
 #
-# Use [02: spatial rate maps](02_spatial_rate_maps.ipynb) to combine spike times
-# with occupancy, or [03: trajectories and behavior](03_trajectories_and_behavior.ipynb)
-# to detect movement and track traversals. Each tutorial creates its own data.
+# ## Use your own recording
 #
-# For other geometry, see the
-# [environment guide](https://edeno.github.io/neurospatial/user-guide/environments/)
-# and [layout guide](https://edeno.github.io/neurospatial/user-guide/layout-engines/).
-# For camera calibration, rotation, and session alignment, use the
-# [alignment guide](https://edeno.github.io/neurospatial/user-guide/alignment/).
-# To connect separate arenas with explicit bridge assumptions, see
-# [composite environments](https://edeno.github.io/neurospatial/user-guide/composite-environments/).
+# Replace `times` with increasing timestamps in seconds and `positions` with
+# one `(x, y)` row per sample. Calibrate camera coordinates into physical units
+# before analysis. Setting `env.units = "cm"` labels values already in cm; it
+# does not convert pixels.
+#
+# Define bins from the measured arena boundary, choose bin width for the spatial
+# features you want to resolve, and inspect occupancy before proceeding. Set
+# `max_gap` from the tracking frame rate and expected dropouts. Replace the
+# center zone with the region relevant to your experiment. After changing the
+# bins, recalculate position-bin assignments and occupancy together.
+#
+# Continue with [02: firing-rate maps](02_spatial_rate_maps.ipynb) or
+# [03: running bouts and track traversals](03_trajectories_and_behavior.ipynb).
+# The [environment guide](https://edeno.github.io/neurospatial/user-guide/environments/)
+# covers other arena shapes, and the
+# [alignment guide](https://edeno.github.io/neurospatial/user-guide/alignment/)
+# explains camera calibration and matching coordinates across recordings.

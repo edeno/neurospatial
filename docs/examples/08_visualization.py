@@ -14,20 +14,25 @@
 # ---
 
 # %% [markdown]
-# # Visualization
+# # Inspect spatial maps alongside behavior and video
 #
-# Inspect spatial fields with synchronized position, pose, heading, and events;
-# export a portable HTML player; and register a synthetic video to arena units.
-# The default run creates static previews and a modest HTML animation. Desktop
-# viewers, widgets, and video exports require an explicit opt-in.
+# **Question:** Does a spatial signal line up with the animal's position and
+# orientation? Check a few frames, play them with behavior and event markers,
+# and put video and tracking in the same arena coordinates.
+#
+# **You will need:** A spatial map for each time point, tracking coordinates,
+# and their timestamps on one clock. Body-part positions, head direction, and
+# event times can be added when available. We create a small example here;
+# no recording or video file is needed.
 #
 # **Estimated time**: 15-20 minutes
 #
 # **Prerequisites**: [Spatial rate maps](02_spatial_rate_maps.ipynb).
 #
-# No private assets or video packages are needed for the default path. The
-# synthetic RGB video stays in memory. Reading a video file instead requires
-# `neurospatial[video]`; desktop/widget viewers use `neurospatial[animation]`.
+# The default run shows figures and an HTML animation. The desktop viewer,
+# notebook widget, and video export are switched off below. Reading a video
+# file requires `neurospatial[video]`; desktop and widget viewers use
+# `neurospatial[animation]`.
 
 # %%
 import sys
@@ -66,17 +71,20 @@ artifacts = tempfile.TemporaryDirectory(prefix="neurospatial-visualization-")
 output_dir = Path(artifacts.name)
 
 # %% [markdown]
-# ## 1. Create a small, synchronized scene
+# ## 1. Prepare maps and tracking on the same clock
 #
-# Sixteen frames at 8 Hz span two seconds of presentation. Timestamps run from
-# 0 to 1.875 s; every overlay uses that same clock. Coordinates are `(x, y)` in
-# centimeters, with zero heading East and positive angles toward North.
+# Each row of `fields` contains one value per spatial bin. We use 16 maps at
+# 8 Hz, with timestamps from 0 to 1.875 s. Position and body-part coordinates
+# are `(x, y)` in centimeters. Head direction is in radians: zero points East
+# and positive angles turn toward North.
 #
-# The moving Gaussian is a visualization fixture in arbitrary units, rather
-# than a fitted rate map or decoded probability. Synthetic pose follows the
-# trajectory tangent; real body orientation need not equal movement direction.
+# The example signal is a Gaussian that follows the simulated animal. Its
+# values are in arbitrary units: they are neither measured firing rates nor
+# decoded probabilities. The nose, body, and tail follow the direction of
+# movement here. In a recording, head or body orientation can differ from
+# movement direction. The next cell prepares these example inputs.
 
-# %%
+# %% jupyter={"source_hidden": true}
 env = Environment.from_grid_mask(
     np.ones((20, 20), dtype=bool),
     grid_edges=(np.arange(0, 105, 5.0), np.arange(0, 105, 5.0)),
@@ -104,14 +112,18 @@ skeleton = Skeleton(
 offsets = env.bin_centers[None, :, :] - trajectory[:, None, :]
 fields = np.exp(-np.sum(offsets**2, axis=-1) / (2 * 12.0**2))
 view_settings = {"frame_times": frame_times, "cmap": "magma", "vmin": 0, "vmax": 1}
-print(f"Fields: {fields.shape}; in-memory field data: {fields.nbytes / 1e6:.2f} MB")
+print(
+    f"{n_frames} maps, {env.n_bins} spatial bins per map; "
+    f"map data use {fields.nbytes / 1e6:.2f} MB"
+)
 
 # %% [markdown]
-# ## 2. Check static frames before animating
+# ## 2. Inspect a few frames before making a movie
 #
 # Use the same color limits for every frame. A changing automatic scale can
-# make a stable signal appear to change amplitude. Pass overlay coordinates
-# in environment order; backends handle their own display conventions.
+# make a stable signal appear to change amplitude. Here the color range is
+# fixed at 0-1. The cyan line shows the movement history, and the white linked
+# points show the tail, body, and nose.
 
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
@@ -121,21 +133,21 @@ for ax, index in zip(axes, [0, 7, 15], strict=True):
     points = np.array([pose[name][index] for name in ("tail", "body", "nose")])
     ax.plot(points[:, 0], points[:, 1], "wo-", lw=2, markeredgecolor="black")
     ax.set_title(f"t = {frame_times[index]:.3f} s")
-fig.suptitle("Synthetic activity (a.u.), common color range 0-1")
+fig.suptitle("Illustrative spatial signal (a.u.), color range 0-1 in every frame")
 plt.show()
 
 # %% [markdown]
-# ## 3. Export a shareable HTML player
+# The bright area follows the animal because we constructed it that way.
+# For a measured signal, inspect whether changes reflect the data, missing
+# observations, or a display choice. Check the positions of the body parts
+# and the arena axes before interpreting a relationship with neural activity.
 #
-# HTML supports positions and trails, pose skeletons, heading arrows, fading
-# events, and regions. These overlays are baked into frame images in both embed
-# modes. Video and time-series overlays are currently unsupported by HTML and
-# trigger explicit warnings, so they are omitted from this export.
+# ## 3. Play the maps with behavior and event markers
 #
-# `EMBED_HTML=True` makes one self-contained file. Set it to False for external
-# PNG frames; distribute that HTML together with its sibling frames directory.
-# Both modes retain the frame limit. For larger recordings, select frames with
-# matching timestamps and subset the overlays consistently before export.
+# The HTML player adds the tracked position and its recent path, linked body
+# parts, and a yellow head-direction arrow. Green marks show two example
+# events at the animal's position. Each added element is an `Overlay` object
+# with its own timestamps. We use the same clock for all of them.
 
 # %%
 overlays = [
@@ -164,24 +176,35 @@ html_path = env.animate_fields(
     frame_labels=[f"t = {time:.3f} s" for time in frame_times],
     **view_settings,
 )
-print(f"HTML export: {html_path} ({html_path.stat().st_size / 1e6:.2f} MB)")
+print(f"Animation saved: {html_path} ({html_path.stat().st_size / 1e6:.2f} MB)")
 if "get_ipython" in globals() and EMBED_HTML:
     from IPython.display import HTML, display
 
     display(HTML(filename=str(html_path)))
 
 # %% [markdown]
-# ## 4. Register raw video pixels to the arena
+# Use the player to check that the path, body parts, and head-direction arrow
+# move together. Event markers should appear at the expected times and places.
+# These checks can reveal a clock offset or swapped coordinates in a recording.
+#
+# `EMBED_HTML=True` keeps all frames inside one HTML file. With False, share
+# the HTML file together with its separate PNG-frame directory. Both choices
+# support position, body parts, head direction, events, and regions. HTML does
+# not display video or additional time-series panels; requesting those produces
+# a warning. For long recordings, select a short period and select its maps,
+# timestamps, and tracking together before export.
+#
+# ## 4. Put video and tracking in the same arena coordinates
 #
 # Video uses `(column, row)` pixels with row increasing downward. Corresponding
-# arena landmarks use `(x, y)` centimeters with y increasing upward. The fitted
-# transform includes the Y flip: pass raw pixel coordinates without flipping
-# them first. Landmarks also locate the translated arena origin; a scale bar
-# alone determines scale, rather than full registration.
+# arena landmarks use `(x, y)` centimeters with y increasing upward. Pick
+# landmarks visible in both coordinate systems, such as the arena corners.
+# The fitted transform includes the change in vertical direction: pass the
+# original pixel coordinates without flipping them first. Landmark coordinates
+# also locate the arena origin; a scale bar alone only establishes scale.
 #
-# Our exact, axis-aligned synthetic geometry is deliberately simple. Small fit
-# residuals do not validate a real camera model; use held-out landmarks and
-# account for perspective or distortion when needed.
+# We know the exact correspondence for this simulated camera. Fit the mapping,
+# check the landmark positions, then use it to place the video beneath the map.
 
 # %%
 width, height = 160, 120
@@ -195,6 +218,12 @@ np.testing.assert_allclose(transform(landmarks_px), landmarks_cm, atol=1e-10)
 np.testing.assert_allclose(
     transform(np.array([[70.0, 60.0]])), [[50.0, 50.0]], atol=1e-10
 )
+
+# %% [markdown]
+# The next cell makes a short video with an orange marker at the simulated
+# animal's position. It only prepares example images.
+
+# %% jupyter={"source_hidden": true}
 pixels = transform.inverse()(trajectory)
 rows, columns = np.mgrid[:height, :width]
 video_frames = np.full((n_frames, height, width, 3), 35, dtype=np.uint8)
@@ -202,7 +231,7 @@ video_frames[:, 10:111, 20:121] = 75
 for index, (column, row) in enumerate(pixels):
     marker = (columns - column) ** 2 + (rows - row) ** 2 <= 3**2
     video_frames[index, marker] = [255, 180, 0]
-print(f"Synthetic video array: {video_frames.nbytes / 1e6:.2f} MB")
+print(f"Example video: {n_frames} frames, {video_frames.nbytes / 1e6:.2f} MB")
 
 # %%
 index = 3
@@ -211,7 +240,7 @@ axes[0].imshow(video_frames[index])
 axes[0].scatter(
     landmarks_px[:, 0], landmarks_px[:, 1], facecolors="none", edgecolors="cyan"
 )
-axes[0].set(xlabel="Column (px)", ylabel="Row (px)", title="Raw synthetic frame")
+axes[0].set(xlabel="Column (px)", ylabel="Row (px)", title="Video in pixel coordinates")
 # Pixel centers are integer (column, row) coordinates. Apply the complete
 # affine mapping to those centers, including Y reflection and any rotation.
 axes[1].imshow(
@@ -228,29 +257,35 @@ axes[1].scatter(
     facecolors="none",
     edgecolors="cyan",
     s=120,
-    label="Known position",
+    label="Simulated position",
 )
 axes[1].set(
     xlabel="x (cm)",
     ylabel="y (cm)",
-    title=f"Registered preview, t={frame_times[index]:.3f} s",
+    title=f"Video and tracking in arena coordinates, t={frame_times[index]:.3f} s",
 )
 axes[1].set_aspect("equal")
 axes[1].legend()
 plt.show()
 
 # %% [markdown]
-# ## 5. Optional viewers and final video export
+# The cyan circle should surround the orange video marker after mapping to
+# arena coordinates. This checks the alignment at a point away from the fitted
+# corners. A real camera also needs checks at landmarks excluded from the fit;
+# small errors at fitted landmarks alone do not establish accuracy elsewhere.
+# Perspective and lens distortion may require a different camera model.
 #
-# Re-run this cell after setting a flag in Setup. Napari needs a working desktop
-# and the animation extra; widgets need Jupyter and ipywidgets. Video export
-# needs an `ffmpeg` executable. These paths are opt-in and are not exercised by
-# the default run. Use explicit backend names so installing a GUI package does
-# not change the notebook's behavior.
+# ## 5. Optional: open another viewer or save an MP4
 #
-# A `VideoOverlay` may read a file lazily or accept this small RGB array. Supply
-# the source video timestamps on the same clock as `frame_times`. A video placed
-# below an opaque field will be hidden; use transparency or place it above.
+# To use this cell, change the relevant flag near the imports and rerun it.
+# Napari needs a working desktop and the animation extra. The widget needs
+# Jupyter and ipywidgets. MP4 export needs an `ffmpeg` executable. These options
+# stay off in the default run.
+#
+# `VideoOverlay` accepts an image array or reads frames from a video file as
+# needed. Give it video timestamps on the same clock as `frame_times`. Use
+# transparency to see both video and map when they occupy the same part of the
+# figure. We select each viewer with its explicit `backend` name below.
 
 # %%
 video_overlay = VideoOverlay(
@@ -294,12 +329,27 @@ if RUN_VIDEO_EXPORT:
     )
 
 print(
-    f"Optional flags: napari={RUN_NAPARI}, widget={RUN_WIDGET}, video={RUN_VIDEO_EXPORT}"
+    f"Optional viewers/exports enabled: napari={RUN_NAPARI}, "
+    f"widget={RUN_WIDGET}, MP4={RUN_VIDEO_EXPORT}"
 )
 
 # %% [markdown]
-# HTML artifacts live in a temporary directory while this kernel is running;
-# copy them to a chosen location to keep or share them. Save analysis results
-# independently of rendered images with [NWB I/O](09_nwb_io.ipynb). The
-# [Position decoding](06_position_decoding.ipynb) workflow provides an example
-# of meaningful spatial probability fields to visualize.
+# ## Use your own recording
+#
+# Replace `fields` with your time-varying maps, with one column per spatial
+# bin in `env`. Replace `trajectory`, `heading`, and `pose` with the available
+# tracking, using the same arena coordinates as the maps. Keep head direction
+# in radians. Use measured orientation when available; movement direction is
+# not always the direction the animal is facing.
+#
+# Synchronize video and tracking clocks before displaying them together. Fit
+# the video mapping from landmarks measured in your recording and inspect
+# points that were not used for fitting. Start with a few static frames, then
+# export a short period using fixed color limits.
+#
+# The example saves HTML in a temporary folder while the kernel is running.
+# Set `output_dir` to a folder you want to keep, or copy the HTML file there
+# before closing the kernel. Save the analysis arrays as well as the movie:
+# [Analyze an NWB recording](09_nwb_io.ipynb) shows how to save rate maps, and
+# [Position decoding](06_position_decoding.ipynb) provides spatial probability
+# maps that can be viewed with behavior.

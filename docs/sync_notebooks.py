@@ -14,7 +14,7 @@ docs_examples_dir.mkdir(parents=True, exist_ok=True)
 
 def sync_catalog() -> None:
     """Keep the complete catalog consistent with the notebook introductions."""
-    rows = ["| Notebook | Estimated time | Start after |", "| --- | --- | --- |"]
+    rows = ["| Notebook | Estimated time | Useful background |", "| --- | --- | --- |"]
     for source in sorted(examples_dir.glob("[0-9][0-9]_*.py")):
         text = source.read_text(encoding="utf-8")
         title = re.search(r"^# # (.+)$", text, flags=re.MULTILINE)
