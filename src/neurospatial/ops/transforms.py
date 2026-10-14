@@ -1366,13 +1366,16 @@ def apply_transform_to_environment(
     Returns
     -------
     Environment
-        New Environment instance with transformed coordinates.
+        New Environment instance with transformed coordinates and physical bin
+        measures. Areas and volumes scale by the absolute determinant of the
+        linear transform; embedded track lengths scale along each segment.
 
     Raises
     ------
     ValueError
         If transform dimensionality doesn't match environment dimensionality,
-        or the transform is not invertible.
+        the transform is not invertible, or an anisotropic track transform
+        requires segment directions absent from a reconstructed layout.
     RuntimeError
         If environment is not fitted.
 
@@ -1479,6 +1482,64 @@ def apply_transform_to_environment(
     # Transform bin centers
     transformed_centers = transform(env.bin_centers)
 
+    # Cell measures transform with their physical dimension. In particular,
+    # an embedded track carries lengths, even when its coordinates are 2-D.
+    linear = transform.A[: env.n_dims, : env.n_dims]
+    bin_directions = getattr(env.layout, "_bin_directions", None)
+    measure_scale: NDArray[np.float64] | float
+    if env.is_linearized_track:
+        if bin_directions is None:
+            track_graph = env.layout._build_params_used.get("graph_definition")
+            if track_graph is not None:
+                segment_vectors = np.array(
+                    [
+                        np.asarray(track_graph.nodes[v]["pos"])
+                        - np.asarray(track_graph.nodes[u]["pos"])
+                        for u, v in track_graph.edges()
+                    ],
+                    dtype=np.float64,
+                )
+                segment_ids = np.array(
+                    [
+                        env.connectivity.nodes[i]["source_edge_id"]
+                        for i in range(env.n_bins)
+                    ],
+                    dtype=np.intp,
+                )
+                bin_directions = segment_vectors[segment_ids]
+                bin_directions /= np.linalg.norm(bin_directions, axis=1)[:, None]
+        if bin_directions is not None:
+            mapped_directions = bin_directions @ linear.T
+            directional_scale = np.linalg.norm(mapped_directions, axis=1)
+            bin_directions = mapped_directions / directional_scale[:, None]
+            measure_scale = directional_scale
+        else:
+            # A restored track may retain its lengths without its substrate.
+            # Similarity transforms still have one unambiguous length scale.
+            gram = linear.T @ linear
+            length_scale = float(np.sqrt(np.trace(gram) / env.n_dims))
+            if not np.isfinite(length_scale) or length_scale <= 0:
+                raise ValueError(
+                    "The track transform's length scale must be finite and positive. "
+                    "Use finite scale factors whose lengths can be represented in float64."
+                )
+            # Compare dimensionless geometry: an absolute tolerance on the
+            # unnormalized Gram matrix would accept any sufficiently small
+            # anisotropic transform as a uniform scale.
+            normalized_linear = linear / length_scale
+            if not np.allclose(
+                normalized_linear.T @ normalized_linear, np.eye(env.n_dims)
+            ):
+                raise ValueError(
+                    "An anisotropic transform of a track needs its segment directions. "
+                    "Rebuild the track with Environment.from_graph before transforming it, "
+                    "or use a rotation, translation or uniform scale."
+                )
+            measure_scale = length_scale
+    else:
+        measure_scale = abs(float(np.linalg.det(linear)))
+    transformed_bin_sizes = np.asarray(env.bin_sizes, dtype=np.float64) * measure_scale
+
     # Create new connectivity graph with updated node positions
 
     new_graph = env.connectivity.copy()
@@ -1548,6 +1609,8 @@ def apply_transform_to_environment(
             self.dimension_ranges = dim_ranges
             self._original_layout = original_layout
             self._inverse_transform = inverse_transform
+            self._bin_sizes = transformed_bin_sizes
+            self._bin_directions = bin_directions
             self.is_linearized_track = original_layout.is_linearized_track
             self._layout_type_tag = f"{original_layout._layout_type_tag}_transformed"
             self._build_params_used = {
@@ -1574,33 +1637,12 @@ def apply_transform_to_environment(
             )
 
         def bin_sizes(self) -> NDArray[np.float64]:
-            """Approximate per-bin area/volume of the transformed layout.
-
-            Returns
-            -------
-            NDArray[np.float64], shape (n_bins,)
-                Per-bin size estimated as the squared nearest-neighbor distance
-                between transformed bin centers.
-
-            Notes
-            -----
-            This is only an approximation. It assumes a locally uniform,
-            isotropic bin spacing and squares the nearest-neighbor distance as
-            a stand-in for area (or, in higher dimensions, still uses the square
-            rather than the dimension-appropriate power). For non-uniform or
-            anisotropic transformed layouts (e.g. after a strongly nonlinear
-            transform), this can substantially misestimate the true bin
-            area/volume. Use it for relative weighting only, not as an exact
-            measure of physical area.
-            """
-            # Approximate from nearest neighbors
-            from scipy.spatial import cKDTree
-
-            if len(self.bin_centers) < 2:
-                return np.array([1.0] * len(self.bin_centers), dtype=np.float64)
-            kdtree = cKDTree(self.bin_centers)
-            dists, _ = kdtree.query(self.bin_centers, k=2)
-            return np.asarray(dists[:, 1] ** 2, dtype=np.float64)  # Approximate area
+            """Original bin measures scaled by the affine map's physical Jacobian."""
+            # Deepcopy may restore writeable ndarray storage. Freeze on access
+            # too, so neither copied layouts nor the environment's cached view
+            # permit edits that permanently change physical bin measures.
+            self._bin_sizes.setflags(write=False)
+            return self._bin_sizes
 
         def plot(self, *args: Any, **kwargs: Any) -> None:
             raise NotImplementedError(

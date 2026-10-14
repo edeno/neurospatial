@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.special import gammaln
 
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
 from neurospatial.decoding._binning import validate_dt
@@ -48,6 +49,32 @@ class SpatialRatesLike(Protocol):
 
     @property
     def firing_rates(self) -> NDArray[np.float64]: ...
+
+
+def _validate_encoding_environment(env: Environment, encoding_models: Any) -> None:
+    """Preserve ordered bin coordinates and metadata carried by rate results.
+
+    Equivalent environment copies are allowed. A result's environment is
+    checked before extracting its rates, while its provenance is available.
+    Unlabelled arrays and result-like objects without an environment retain
+    their existing bin-count validation.
+    """
+    model_env = getattr(encoding_models, "env", None)
+    if model_env is None or model_env is env:
+        return
+    if (
+        type(model_env) is not type(env)
+        or not np.array_equal(model_env.bin_centers, env.bin_centers)
+        or model_env.units != env.units
+        or model_env.frame != env.frame
+    ):
+        raise IncompatibleEnvironmentError(
+            "The encoding result's environment does not match the decoding "
+            "environment's ordered bin coordinates, units or coordinate frame.",
+            fix="pass the environment used to compute the rate result, or recompute the rates on the decoding environment.",
+            first=model_env,
+            second=env,
+        )
 
 
 def _validate_posterior_dtype(dtype: Any) -> np.dtype:
@@ -526,6 +553,9 @@ def decode_position(
         passed directly. Its ``spatial_support`` excludes unobserved,
         below-threshold or non-finite training bins, intersecting any supplied
         prior. This mask is retained even when stored rates were zero-filled.
+        A carried environment must match the decoding environment's ordered
+        bin coordinates, coordinate type, units and frame; equivalent copies
+        are accepted.
         When passing raw arrays, provide a prior that excludes unsupported bins,
         such as ``prior=rates.spatial_support.astype(float)``.
 
@@ -537,7 +567,9 @@ def decode_position(
         not the same as a zero rate: a spike from that neuron cannot count
         against the bin. These raw-array semantics cannot distinguish missing
         training coverage from a valid rate estimate; pass the rate result
-        directly to retain its support mask.
+        directly to retain its support mask. Every observed neuron's complete
+        Poisson term is retained, including its count factorial: that term
+        cannot cancel when the observed neuron set varies between bins.
 
         Inf entries are handled the same way, but only with ``validate=False``:
         each Inf ``(neuron, bin)`` is excluded in the same way, so a
@@ -636,6 +668,8 @@ def decode_position(
         ``env.n_bins``. This is checked unconditionally, even with
         ``validate=False``, because a wrong bin count yields a
         well-formed posterior over the wrong positions.
+        If a rate result carries incompatible bin coordinates, coordinate
+        type, physical units or frame, even with ``validate=False``.
         If ``times`` is provided and its length does not match the number
         of posterior time bins.
 
@@ -695,6 +729,7 @@ def decode_position(
 
     from neurospatial.decoding._support import models_on_support, supported_prior
 
+    _validate_encoding_environment(env, encoding_models)
     support = getattr(encoding_models, "spatial_support", None)
     if support is not None:
         prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
@@ -1341,8 +1376,10 @@ def decode_position_summary(
         Firing-rate maps (place fields) for each neuron, or a population rate
         result object exposing ``firing_rates``. Rate results also carry
         ``spatial_support``, which excludes unsupported training bins and
-        intersects any supplied prior. Same semantics (NaN/Inf handling,
-        no-finite-bins guard) as :func:`decode_position`.
+        intersects any supplied prior. A carried environment must have the
+        same ordered bin coordinates, coordinate type, units and frame.
+        Same semantics (NaN/Inf handling, no-finite-bins guard) as
+        :func:`decode_position`.
     dt : float
         Time-bin width in seconds.
     prior : NDArray[np.float64] | None, default=None
@@ -1424,6 +1461,7 @@ def decode_position_summary(
 
     from neurospatial.decoding._support import models_on_support, supported_prior
 
+    _validate_encoding_environment(env, encoding_models)
     support = getattr(encoding_models, "spatial_support", None)
     if support is not None:
         prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
@@ -1536,13 +1574,16 @@ def _log_poisson_likelihood_nan_safe(
 ) -> NDArray[np.float64]:
     """Poisson log-likelihood that excludes non-finite encoding-model bins.
 
-    Identical to :func:`~neurospatial.decoding.likelihood.log_poisson_likelihood`
-    except that each ``(neuron, bin)`` flagged in ``nan_mask`` contributes
-    zero to the per-bin log-likelihood: both that neuron's spike term
-    ``n_i * log(lambda_i * dt)`` and its rate-penalty term ``-lambda_i * dt``
-    are dropped at that bin, as if the neuron had not been observed there.
-    This is the "treat non-finite encoding-model bins (NaN or Inf) as zero-rate
-    (excluded from the Poisson sum)" defense-in-depth behavior.
+    Each ``(neuron, bin)`` flagged in ``nan_mask`` contributes zero to the
+    per-bin log-likelihood: the spike term ``n_i * log(lambda_i * dt)``, rate
+    penalty ``-lambda_i * dt`` and factorial term ``-log(n_i!)`` are dropped
+    at that bin, as if the neuron had not been observed there. Unlike
+    :func:`~neurospatial.decoding.likelihood.log_poisson_likelihood`, this path
+    retains the factorial term for observing neurons: when different neurons
+    observe different bins, their factorial sum varies with position and
+    cannot be discarded as a per-time constant.
+    Non-finite encoding-model bins (NaN or Inf) therefore represent missing
+    observations excluded from the Poisson sum.
 
     A bin that is non-finite for *every* neuron is a special case: it has no
     observing neuron, so excluding all terms would leave a neutral
@@ -1618,7 +1659,13 @@ def _log_poisson_likelihood_nan_safe(
     # Rate penalty: -sum_i lambda_i * dt over neurons -> (n_bins,)
     rate_penalty = -np.sum(expected_counts, axis=0)
 
-    log_likelihood = spike_term + rate_penalty
+    # Only observed neurons contribute their factorial term. The sum depends
+    # on the spatial bin when the mask varies between neurons, so omitting it
+    # can change both posterior probabilities and the MAP estimate.
+    factorial_term = gammaln(spike_counts.astype(np.float64) + 1) @ (~nan_mask).astype(
+        np.float64
+    )
+    log_likelihood = spike_term + rate_penalty - factorial_term
 
     # A bin that is NaN for EVERY neuron carries no information: there is no
     # observing neuron to decode it from, so its excluded-term log-likelihood

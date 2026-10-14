@@ -11,6 +11,7 @@ from neurospatial import Environment
 from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_step_lengths,
+    compute_trajectory_curvature,
     compute_turn_angles,
     mean_square_displacement,
 )
@@ -399,6 +400,174 @@ class TestMeanSquareDisplacement:
         tau_geo, msd_geo = _msd.lags, _msd.msd
         assert isinstance(tau_geo, np.ndarray)
         assert isinstance(msd_geo, np.ndarray)
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_msd_matches_nearest_time_before_target(self, metric):
+        """An off-grid lag includes movement before the trajectory stops."""
+        times = np.arange(11.0)
+        positions = np.minimum(times, 5)[:, None] + 0.5
+        env = Environment.from_grid_mask(
+            np.ones(6, dtype=bool), grid_edges=(np.arange(7.0),)
+        )
+
+        result = mean_square_displacement(
+            times, positions, metric=metric, env=env, max_tau=2.2
+        )
+
+        # Targets 2.2..9.2 match samples 2..9; later targets are beyond
+        # recording support. Five moving pairs contribute 4,4,4,4,1.
+        assert result.lags[-1] == pytest.approx(2.2)
+        assert result.msd[-1] == pytest.approx(17 / 8)
+
+    def test_msd_uses_both_neighbors_for_irregular_samples(self):
+        """Both sides of a target can be its nearest recorded observation."""
+        times = np.array([0.0, 1.0, 2.3, 3.2, 4.0, 5.0])
+        positions = times[:, None]
+
+        result = mean_square_displacement(times, positions, max_tau=2.1)
+
+        # Target 2.1 chooses the successor 2.3; targets 3.1 and 4.4
+        # choose their predecessor 3.2 and 4.0, respectively.
+        expected = np.mean(np.array([2.3, 2.2, 1.7]) ** 2)
+        assert result.msd[-1] == pytest.approx(expected)
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_msd_keeps_endpoint_pair_despite_timestamp_roundoff(self, metric):
+        """The rounded target .2 + .1 still represents the final observation."""
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+        positions = np.array([[0.5], [1.5], [2.5], [100.5]])
+        env = Environment.from_grid_mask(
+            np.ones(101, dtype=bool), grid_edges=(np.arange(102.0),)
+        )
+
+        result = mean_square_displacement(
+            times, positions, metric=metric, env=env, max_tau=0.1
+        )
+
+        assert result.msd[0] == pytest.approx((1 + 1 + 98**2) / 3)
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_msd_excludes_real_target_after_recording_endpoint(self, metric):
+        """A target beyond support is excluded even within matching tolerance."""
+        times = np.array([0.0, 0.1, 0.2, 0.22, 0.3])
+        positions = np.array([[0.5], [1.5], [2.5], [3.5], [100.5]])
+        env = Environment.from_grid_mask(
+            np.ones(101, dtype=bool), grid_edges=(np.arange(102.0),)
+        )
+
+        result = mean_square_displacement(
+            times, positions, metric=metric, env=env, max_tau=0.09
+        )
+
+        # Median dt is .09: source .22 targets .31 and must be excluded,
+        # while sources 0, .1 and .2 match .1, .2 and .3 respectively.
+        assert result.msd[0] == pytest.approx((1 + 1 + 98**2) / 3)
+
+    def test_msd_without_temporal_matches_is_missing(self):
+        """An unobserved lag across a sampling gap is not zero motion."""
+        times = np.array([0.0, 1.0, 2.0, 100.0, 101.0, 102.0])
+
+        result = mean_square_displacement(times, times[:, None], max_tau=10.0)
+
+        assert result.msd[0] == pytest.approx(1.0)
+        assert np.isnan(result.msd[1:]).all()
+
+    @pytest.mark.parametrize("missing", [100.0, np.nan, np.inf])
+    def test_geodesic_msd_excludes_missing_or_outside_bins(self, missing):
+        """Only the observed stationary pair contributes to the estimate."""
+        env = Environment.from_grid_mask(
+            np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
+        )
+        times = np.arange(4) * 0.1
+        positions = np.array([[0.5], [0.5], [missing], [0.5]])
+
+        result = mean_square_displacement(
+            times, positions, metric="geodesic", env=env, max_tau=0.1
+        )
+
+        assert result.msd[0] == 0.0
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_msd_without_observed_positions_is_missing(self, metric):
+        """Missing positions cannot establish zero displacement."""
+        env = Environment.from_grid_mask(
+            np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
+        )
+        times = np.arange(4) * 0.1
+        positions = np.full((4, 1), np.nan)
+
+        result = mean_square_displacement(
+            times, positions, metric=metric, env=env, max_tau=0.1
+        )
+
+        assert np.isnan(result.msd).all()
+
+    def test_geodesic_msd_without_connected_pairs_is_missing(self):
+        """Disconnected positions supply no finite displacement estimate."""
+        env = Environment.from_grid_mask(
+            np.array([True, False, True]), grid_edges=(np.arange(4.0),)
+        )
+        times = np.arange(4) * 0.1
+        positions = np.array([[0.5], [2.5], [0.5], [2.5]])
+
+        result = mean_square_displacement(
+            times, positions, metric="geodesic", env=env, max_tau=0.1
+        )
+
+        assert np.isnan(result.msd).all()
+
+
+class TestCurvatureSampleAlignment:
+    """Stationary observations preserve the time and index of each turn."""
+
+    @pytest.mark.parametrize("timed", [False, True])
+    def test_stationary_start_preserves_turn_index(self, timed):
+        positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
+        times = np.arange(8) * 0.1 if timed else None
+
+        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+
+        expected = np.zeros(8)
+        expected[6] = np.pi / 2
+        assert_allclose(curvature, expected)
+
+    def test_stationary_vertex_preserves_retained_turn_indices(self):
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [2.0, 1.0],
+                [2.0, 1.0],
+            ]
+        )
+        times = np.arange(len(positions)) * 0.1
+
+        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+
+        expected = np.zeros(len(positions))
+        expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
+        assert_allclose(curvature, expected)
+
+    def test_smoothing_stays_at_turn_time_and_within_observed_run(self):
+        first = np.column_stack([np.arange(8.0), np.zeros(8)])
+        second = np.array(
+            [[0.0, 0.0]] * 6 + [[1.0, 0.0]] + [[1.0, float(y)] for y in range(1, 9)]
+        )
+        times = np.r_[np.arange(8) * 0.1, 10.0 + np.arange(len(second)) * 0.1]
+
+        curvature = compute_trajectory_curvature(
+            np.vstack([first, second]), times, smooth_window=0.1
+        )
+
+        assert_allclose(curvature[:8], 0.0)
+        assert np.argmax(curvature) == 8 + 6
+        expected_second = compute_trajectory_curvature(
+            second, times[8:], smooth_window=0.1
+        )
+        assert_allclose(curvature[8:], expected_second)
 
 
 class TestTrajectoryMetricsIntegration:

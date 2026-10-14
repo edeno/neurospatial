@@ -135,6 +135,66 @@ class TestPhasePrecession:
             f"optimum (MRL={result.mean_resultant_length})"
         )
 
+    def test_significance_resolves_narrow_precession_lobe(self) -> None:
+        """A perfect fit across a physical track must also pass its shuffle test."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        positions = np.sort(np.random.default_rng(0).uniform(0, 200, 300))
+        phases = (-2 * np.pi * positions / 200) % (2 * np.pi)
+        raw = compute_phase_precession(positions, phases, n_shuffles=99, rng=0)
+        normalized = compute_phase_precession(
+            positions, phases, position_range=(0, 200), n_shuffles=99, rng=0
+        )
+        assert raw.mean_resultant_length > 0.99
+        assert raw.pval == normalized.pval == 0.01
+
+    def test_shuffle_test_preserves_physical_unit_conversion(self) -> None:
+        """Changing position units and slope bounds preserves the tested hypothesis."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(34)
+        positions = stimulus.uniform(0, 200, 80)
+        phases = stimulus.uniform(0, 2 * np.pi, len(positions))
+        result = compute_phase_precession(
+            positions, phases, slope_bounds=(-0.2, 0.2), n_shuffles=99, rng=5
+        )
+        converted = compute_phase_precession(
+            positions / 100,
+            phases,
+            slope_bounds=(-20, 20),
+            n_shuffles=99,
+            rng=5,
+        )
+        assert result.pval == converted.pval
+        assert converted.slope == pytest.approx(result.slope * 100, abs=1e-3)
+        assert result.mean_resultant_length == pytest.approx(
+            converted.mean_resultant_length, abs=1e-6
+        )
+
+    def test_constant_positions_cannot_become_significant(self) -> None:
+        """Numerical differences in identical permutation statistics count as ties."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        positions = np.full(50, 123.0)
+        phases = np.random.default_rng(8).uniform(0, 2 * np.pi, len(positions))
+        with pytest.warns(RuntimeWarning, match="no variation"):
+            result = compute_phase_precession(positions, phases, n_shuffles=99, rng=1)
+        assert result.pval == 1.0
+
+    def test_excessive_slope_search_explains_normalization(self) -> None:
+        """An unresolvable search fails before allocating a huge grid of slopes."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        positions = np.linspace(0, 1e8, 30)
+        phases = (-2 * np.pi * positions / 1e8) % (2 * np.pi)
+        with pytest.raises(ValueError, match=r"20,000.*Narrow slope_bounds"):
+            compute_phase_precession(positions, phases, n_shuffles=0)
+        normalized = compute_phase_precession(
+            positions, phases, position_range=(0, 1e8), n_shuffles=9, rng=0
+        )
+        assert normalized.mean_resultant_length > 0.99
+        assert normalized.pval == 0.1
+
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
         from neurospatial.encoding.phase_precession import compute_phase_precession

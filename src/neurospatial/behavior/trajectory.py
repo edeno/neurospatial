@@ -41,7 +41,8 @@ class MSDResult(ResultMixin):
         which MSD was computed. Always strictly increasing and starts at
         the median sample interval.
     msd : NDArray[np.float64], shape (n_lags,)
-        Mean square displacement values, one per lag.
+        Mean square displacement values, one per lag. NaN when no valid
+        displacement pair supports that lag.
     """
 
     lags: NDArray[np.float64]
@@ -564,7 +565,8 @@ def mean_square_displacement(
     -------
     MSDResult
         Frozen dataclass with ``lags`` (lag times) and ``msd`` (MSD values)
-        fields, each of shape ``(n_lags,)``.
+        fields, each of shape ``(n_lags,)``. Lags without observed, finite
+        displacement pairs have NaN MSD rather than zero.
 
     Raises
     ------
@@ -586,6 +588,11 @@ def mean_square_displacement(
 
     where :math:`r(t)` is the position at time t, and the angle brackets denote
     averaging over all time points t.
+
+    Each target time is matched to the nearest recorded sample within half
+    the median sample interval. Targets beyond the recording are excluded.
+    Pairs with missing positions are excluded; geodesic pairs additionally
+    require both positions to be inside the environment and connected.
 
     **Movement classification from scaling exponent**:
 
@@ -701,37 +708,13 @@ def mean_square_displacement(
     n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
 
     tau_values = np.linspace(dt, max_tau, n_lags)
-    msd_values = np.zeros(n_lags, dtype=np.float64)
+    msd_values = np.full(n_lags, np.nan, dtype=np.float64)
 
-    if metric == "euclidean":
-        # Fully vectorized Euclidean MSD computation
-        for i, tau in enumerate(tau_values):
-            # Find all pairs of time points separated by approximately tau
-            # Vectorized: compute time differences for all pairs at once
-            # time_diffs[j] = times[j] - (times[:] + tau) for matching
-            target_times = times + tau
-            # For each target time, find the closest actual time index
-            # Using searchsorted for efficient matching
-            future_idx = np.searchsorted(times, target_times)
-            future_idx = np.clip(future_idx, 0, n_samples - 1)
-
-            # Check which pairs are within tolerance
-            time_errors = np.abs(times[future_idx] - target_times)
-            valid_pairs = time_errors < dt / 2
-
-            if np.any(valid_pairs):
-                # Compute squared displacements for valid pairs (vectorized)
-                current_pos = positions[valid_pairs]
-                future_pos = positions[future_idx[valid_pairs]]
-                sq_dists = np.sum((future_pos - current_pos) ** 2, axis=1)
-                msd_values[i] = np.mean(sq_dists)
-            else:
-                msd_values[i] = 0.0
-
-    else:  # metric == "geodesic"
+    if metric == "geodesic":
         # Map positions to bins for geodesic distance
         assert env is not None  # Already checked above
         position_bins = env.bin_at(positions)
+        valid_bins = (position_bins >= 0) & (position_bins < env.n_bins)
 
         # Optimization: Precompute geodesic distance matrix ONCE
         # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
@@ -741,31 +724,44 @@ def mean_square_displacement(
             env.connectivity, env.n_bins, weight="distance"
         )
 
-        # Fully vectorized geodesic MSD computation
-        for i, tau in enumerate(tau_values):
-            # Find matching time pairs using searchsorted (vectorized)
-            target_times = times + tau
-            future_idx = np.searchsorted(times, target_times)
-            future_idx = np.clip(future_idx, 0, n_samples - 1)
+    sample_indices = np.arange(n_samples)
+    finite_positions = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    # Adding a lag can round an observed endpoint one timestamp ULP upward.
+    # Allow that roundoff without extending support by the matching tolerance.
+    recording_stop = np.nextafter(times[-1], np.inf)
+    for i, tau in enumerate(tau_values):
+        target_times = times + tau
+        # searchsorted gives the successor, which need not be the nearest
+        # sample. Compare both neighbors before applying the lag tolerance.
+        right_idx = np.clip(np.searchsorted(times, target_times), 0, n_samples - 1)
+        left_idx = np.maximum(right_idx - 1, 0)
+        right_error = np.abs(times[right_idx] - target_times)
+        left_error = np.abs(times[left_idx] - target_times)
+        future_idx = np.where(left_error <= right_error, left_idx, right_idx)
+        time_errors = np.abs(times[future_idx] - target_times)
+        valid_pairs = (
+            (future_idx > sample_indices)
+            & (target_times <= recording_stop)
+            & (time_errors < dt / 2)
+            & finite_positions
+            & finite_positions[future_idx]
+        )
 
-            # Check which pairs are within tolerance
-            time_errors = np.abs(times[future_idx] - target_times)
-            valid_pairs = time_errors < dt / 2
+        if metric == "euclidean":
+            displacements = positions[future_idx[valid_pairs]] - positions[valid_pairs]
+            sq_dists = np.sum(displacements**2, axis=1)
+        else:
+            # bin_at returns -1 for missing/outside positions; never index the
+            # distance matrix with it, where NumPy would select the last bin.
+            valid_pairs &= valid_bins & valid_bins[future_idx]
+            distances = dist_matrix[
+                position_bins[valid_pairs], position_bins[future_idx[valid_pairs]]
+            ]
+            sq_dists = distances**2
 
-            if np.any(valid_pairs):
-                # Vectorized distance lookup from precomputed matrix
-                current_bins = position_bins[valid_pairs]
-                future_bins = position_bins[future_idx[valid_pairs]]
-                distances = dist_matrix[current_bins, future_bins]
-
-                # Filter out disconnected bins (inf distance)
-                finite_mask = np.isfinite(distances)
-                if np.any(finite_mask):
-                    msd_values[i] = np.mean(distances[finite_mask] ** 2)
-                else:
-                    msd_values[i] = 0.0
-            else:
-                msd_values[i] = 0.0
+        finite_distances = np.isfinite(sq_dists)
+        if np.any(finite_distances):
+            msd_values[i] = np.mean(sq_dists[finite_distances])
 
     return MSDResult(lags=tau_values, msd=msd_values)
 
@@ -821,22 +817,20 @@ def compute_trajectory_curvature(
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
     is analyzed as a separate recording; no velocity or heading spans a pause.
 
-    When ``times`` is given, turn angles, padding and smoothing are applied
+    When ``times`` is given, turn angles and smoothing are applied
     per run. Samples in no run have NaN curvature. With ``times=None``,
-    ``max_gap`` and ``epochs`` are unused and the original untimed behavior
-    is retained.
+    ``max_gap`` and ``epochs`` are unused and no temporal smoothing is applied.
 
     This function wraps `compute_turn_angles()` and adds:
-    - Padding to match input length (n_samples)
+    - Mapping to the original sample positions (n_samples)
     - Optional temporal smoothing
 
     `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
-    filters stationary periods automatically, and returns length (n_samples - 2).
-
-    **Padding Strategy**: The returned curvature array matches input length by symmetric
-    padding with zeros. Since `compute_turn_angles()` filters stationary periods, the
-    actual number of angles may be less than (n_samples - 2). The remaining positions
-    are padded equally at start and end to maintain temporal centering.
+    filters stationary periods automatically, and returns at most (n_samples - 2)
+    angles. Each angle is assigned to the original index of its middle position
+    after consecutive duplicates are removed (keeping their first sample).
+    Stationary duplicates and the first and last retained positions have zero
+    curvature before smoothing, preserving the timestamps of actual turns.
 
     For N-D trajectories where N > 2, only the first 2 dimensions are used
     (consistent with `compute_turn_angles()` implementation).
@@ -894,33 +888,17 @@ def _compute_trajectory_curvature_contiguous(
     *,
     smooth_window: float | None,
 ) -> NDArray[np.float64]:
-    """Apply the existing angle padding and smoothing within one recording."""
-    # 1. Compute turn angles using existing function
-    # Returns length (n_angles,) where n_angles <= n_samples - 2
-    # Filters stationary periods automatically
+    """Map angles to their original samples and smooth within one recording."""
     angles = compute_turn_angles(positions)
-
-    # 2. Pad to match input length (n_samples)
-    # compute_turn_angles returns variable length due to duplicate filtering
-    # Pad with 0 at start and end to reach n_samples
+    positions = np.asarray(positions)
     n_samples = len(positions)
-    n_angles = len(angles)
+    curvature = np.zeros(n_samples, dtype=np.float64)
+    if len(angles):
+        changed = np.any(positions[1:] != positions[:-1], axis=1)
+        retained_indices = np.flatnonzero(np.r_[True, changed])
+        curvature[retained_indices[1:-1]] = angles
 
-    # Calculate padding needed
-    if n_angles == 0:
-        # Edge case: < 3 unique positions
-        curvature = np.zeros(n_samples, dtype=np.float64)
-    else:
-        # Pad symmetrically: add (n_samples - n_angles) / 2 to each side
-        # If uneven, add extra to the end
-        pad_total = n_samples - n_angles
-        pad_left = pad_total // 2
-        pad_right = pad_total - pad_left
-        curvature = np.pad(
-            angles, (pad_left, pad_right), mode="constant", constant_values=0.0
-        )
-
-    # 3. Optional temporal smoothing
+    # Optional temporal smoothing
     if smooth_window is not None and times is not None:
         from scipy.ndimage import gaussian_filter1d
 

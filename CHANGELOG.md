@@ -141,6 +141,42 @@
 
 ### Fixed
 
+- Windows CI installs FFmpeg with a pinned setup action instead of the
+  unreliable Chocolatey package feed. Every test platform verifies that FFmpeg
+  and FFprobe are available before running the tests.
+- The linear-track validation example records enough repeated traversals and
+  spikes for stable field recovery with continuous Poisson event times.
+  Documentation CI uses each job's declared Python version instead of running
+  both version labels with the repository's default interpreter.
+- Decoding validates the ordered geometry, units and coordinate frame carried
+  by rate results, rejecting maps from another environment even when bin counts
+  match. Partial missing-rate masks retain the position-dependent Poisson
+  factorial terms, preventing incorrect posterior probabilities and MAP bins.
+- Decoder xarray exports contain independent writable arrays, coordinates and
+  metadata, so editing an export cannot corrupt cached position estimates.
+- Fitting a decoder requires observed training support without requiring its
+  prediction bin width to fit inside the training recordings.
+- Phase-precession shuffle statistics use a data-adaptive slope grid that
+  resolves narrow peaks on physical tracks, with the same procedure for the
+  observed and shuffled pairings. Physically equivalent position-unit and
+  slope-bound conversions preserve significance. Searches requiring more than
+  20,000 candidates explain how to narrow slope bounds or normalize positions
+  instead of silently losing resolution.
+- Affine transforms preserve physical cell measures in 1D, 2D and 3D, including
+  anisotropic cells and segment-direction length scaling for embedded tracks.
+  Transformed grids reload from NWB through the documented non-grid fallback
+  instead of attempting reconstruction with stale, untransformed grid edges.
+- Circular polar grids with two angular sectors include both shared radial
+  interfaces in their finite-volume diffusion conductance.
+- **Behavior change:** Poisson spike simulation samples counts and continuous
+  event times inside each observed interval, retaining multiple events under
+  coarse or nonuniform sampling. The final sample no longer invents a following
+  recording interval. Seeded spike trains change; a given seed remains
+  reproducible, and refractory filtering still enforces the requested ISI.
+- MSD matches the nearest recorded time, excludes outside/missing/disconnected
+  geodesic pairs, and returns NaN for lags with no observed displacement pairs.
+  Curvature retains the original sample timestamps through stationary periods
+  before smoothing within each observed run.
 - Editing arrays after handing them to neurospatial no longer changes stored
   state. `SpikeTrains` keeps read-only copies of its trains and labels, so
   editing the caller's labels can no longer create duplicate unit IDs. Every

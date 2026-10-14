@@ -21,6 +21,10 @@ jobs:
         # `Self`, structural unpacks) is caught before users on 3.10 hit it.
         # Intermediate versions are covered by tests.yml.
         python-version: ['3.10', '3.13']
+    env:
+      # Override the repository's .python-version so uv uses the interpreter
+      # selected by this matrix rather than running both jobs on Python 3.13.
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +46,9 @@ jobs:
         run: |
           uv sync --extra dev --extra nwb --extra jax
           uv pip install "ipywidgets>=8.0,<9.0"
+
+      - name: Report test interpreter
+        run: uv run python --version
 
       - name: Run module doctests
         env:

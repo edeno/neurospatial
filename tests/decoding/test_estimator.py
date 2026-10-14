@@ -741,7 +741,7 @@ def test_fit_epochs_excluding_all_intervals_reports_fix(sim):
     epoch = (float(times[0]) - 5.0, float(times[0]) - 1.0)
     with (
         pytest.warns(UserWarning, match="epochs"),
-        pytest.raises(ValueError, match="No decode time bin fits") as caught,
+        pytest.raises(ValueError, match="no occupied bin") as caught,
     ):
         BayesianDecoder(env, dt=0.5).fit(spikes, times, positions, epochs=epoch)
     assert "epochs" in str(caught.value)

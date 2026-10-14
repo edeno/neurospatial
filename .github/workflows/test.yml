@@ -45,15 +45,28 @@ jobs:
           UV_PYTHON: python${{ matrix.python-version }}
 
       - name: Install ffmpeg
+        if: runner.os != 'Windows'
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           elif [ "$RUNNER_OS" == "macOS" ]; then
             brew install ffmpeg
-          elif [ "$RUNNER_OS" == "Windows" ]; then
-            choco install ffmpeg -y
           fi
+        shell: bash
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        # Download upstream binaries instead of relying on Chocolatey's feed,
+        # which can report a successful exit without installing the package.
+        uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
+        with:
+          ffmpeg-version: release
+
+      - name: Verify ffmpeg installation
+        run: |
+          ffmpeg -version
+          ffprobe -version
         shell: bash
 
       - name: Run ruff check

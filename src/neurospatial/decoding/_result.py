@@ -648,6 +648,10 @@ class DecodingResult(ResultMixin):
         ``xarray`` is imported lazily inside this method, so it never becomes
         an import-time dependency of ``neurospatial``.
 
+        Exported arrays, coordinates and array metadata are independent
+        writable copies. Editing the Dataset cannot change this result or
+        its environment.
+
         **Fallback when ``times`` is ``None``.** :attr:`times` defaults to
         ``None`` (the decode produces no timestamps unless the caller supplies
         them). In that case the ``time`` coordinate is the positional integer
@@ -695,7 +699,9 @@ class DecodingResult(ResultMixin):
         # times defaults to None; fall back to a positional integer index
         # rather than passing None into the coord (which would raise).
         if self.times is not None:
-            time_coord: NDArray[Any] = np.asarray(self.times)
+            # xarray indexes may retain their input even after a deep Dataset
+            # copy, so give the index its own writable timestamp storage.
+            time_coord: NDArray[Any] = np.array(self.times, copy=True)
             if time_coord.ndim != 1:
                 raise ValueError(
                     "DecodingResult.to_xarray(): times must be 1-D, but got "
@@ -737,7 +743,9 @@ class DecodingResult(ResultMixin):
         if self.spike_window is not None:
             attrs["spike_window"] = self.spike_window.ravel()
 
-        return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
+        return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs).copy(
+            deep=True
+        )
 
     def error_against(
         self,
@@ -1175,7 +1183,8 @@ class DecodingSummary(ResultMixin):
             ``peak_prob``. The ``time`` index coordinate is :attr:`times` when
             set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
             carry ``units`` (when set), an ``env`` fingerprint, and
-            ``software_version``.
+            ``software_version``. All arrays, coordinates and array metadata
+            are independent writable copies.
 
         Raises
         ------
@@ -1200,7 +1209,9 @@ class DecodingSummary(ResultMixin):
         n_time = self.n_time_bins
 
         if self.times is not None:
-            time_coord: NDArray[Any] = np.asarray(self.times)
+            # Index arrays need independent storage before Dataset creation;
+            # Dataset.copy(deep=True) can retain pandas-backed index buffers.
+            time_coord: NDArray[Any] = np.array(self.times, copy=True)
             if time_coord.ndim != 1 or time_coord.shape[0] != n_time:
                 raise ValueError(
                     "DecodingSummary.to_xarray(): times must be 1-D with "
@@ -1237,4 +1248,4 @@ class DecodingSummary(ResultMixin):
             data_vars=data_vars,
             coords={"time": time_coord},
             attrs=attrs,
-        )
+        ).copy(deep=True)

@@ -28,11 +28,12 @@ def generate_poisson_spikes(
     Parameters
     ----------
     firing_rate : NDArray[np.float64], shape (n_time,)
-        Instantaneous firing rate in Hz at each time point.
+        Firing rate in Hz, held constant on each following sampling interval.
+        The final sample has no following interval and contributes no spikes.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds. Must be strictly increasing. Non-uniform
         spacing is supported: each interval contributes its own width to
-        the per-bin spike probability.
+        the expected spike count. Spikes lie in ``[times[0], times[-1])``.
     refractory_period : float, optional
         Absolute refractory period in seconds (default: 2ms = 0.002s).
         Prevents spikes within this window. Biologically realistic value
@@ -62,10 +63,10 @@ def generate_poisson_spikes(
 
     1. Generate candidate spikes from inhomogeneous Poisson process:
 
-       - For each time step: spike if rand() < 1 - exp(-rate[i] * dt[i]),
-         where dt[i] is the width of the interval following time ``i``
-         (the exact per-bin probability of >=1 event; the linear form
-         rate[i] * dt[i] is only valid when rate[i] * dt[i] << 1)
+       - Draw the spike count in each interval from
+         ``Poisson(rate[i] * (times[i+1] - times[i]))``.
+       - Conditional on that count, place spikes uniformly within the interval.
+         Multiple spikes per interval are supported, even with coarse sampling.
 
     2. Sort candidate spike times (should already be sorted, but ensures correctness)
     3. Apply refractory period filter (single pass, O(n)):
@@ -82,7 +83,11 @@ def generate_poisson_spikes(
     This ensures minimum inter-spike interval (ISI) >= refractory_period,
     matching biological absolute refractory period dynamics.
 
-    **Performance**: O(n) time complexity for n time points. For typical
+    With ``refractory_period=0``, this is an exact piecewise-constant Poisson
+    process. A positive refractory period removes candidates and therefore
+    lowers the realized firing rate relative to the supplied candidate rate.
+
+    **Performance**: O(n + k log k) for n time points and k candidate spikes. For typical
     simulations (60s @ 100 Hz = 6000 points), runs in <50ms.
 
     Examples
@@ -143,6 +148,14 @@ def generate_poisson_spikes(
     times = np.asarray(times, dtype=np.float64)
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
 
+    if times.ndim != 1 or firing_rate.ndim != 1:
+        raise ValueError(
+            "firing_rate and times must be 1-D arrays, got "
+            f"firing_rate.shape={firing_rate.shape}, times.shape={times.shape}."
+        )
+    if not np.isfinite(refractory_period) or refractory_period < 0:
+        raise ValueError("refractory_period must be finite and non-negative.")
+
     if len(firing_rate) != len(times):
         raise ValueError(
             f"firing_rate and times must have the same length, got "
@@ -151,14 +164,14 @@ def generate_poisson_spikes(
 
     firing_rate = validate_finite(firing_rate, name="firing_rate")
 
-    if len(times) < 2:
-        return np.array([], dtype=np.float64)
-
     if not np.all(np.isfinite(times)):
         n_bad = int(np.sum(~np.isfinite(times)))
         raise ValueError(f"times must be finite, got {n_bad} NaN/inf entr(y/ies).")
 
-    # Per-bin dt: the inhomogeneous Poisson probability uses the actual
+    if len(times) < 2:
+        return np.array([], dtype=np.float64)
+
+    # Per-bin dt: the inhomogeneous Poisson count uses the actual
     # spacing of each interval, so non-uniform sampling is handled correctly.
     # Require strictly increasing times: a zero-width interval has no spike
     # probability and a decreasing interval is meaningless for a forward-time
@@ -172,30 +185,18 @@ def generate_poisson_spikes(
             f"{bad_idx.tolist()[:5]}" + (" ..." if len(bad_idx) > 5 else "")
         )
 
-    # Pair each time point with the width of the interval that follows it.
-    # The final sample has no following interval; reuse the last dt so the
-    # `firing_rate` and `dt` arrays stay aligned and length-n.
-    dt = np.empty(len(times), dtype=np.float64)
-    dt[:-1] = bin_dt
-    dt[-1] = bin_dt[-1]
-
-    # Generate candidate spikes from inhomogeneous Poisson process.
-    # Probability of at least one spike in interval dt for a Poisson process
-    # of rate r is P(spike) = 1 - exp(-r * dt). This is the exact per-bin
-    # probability; the linear approximation r * dt only holds when r * dt << 1
-    # and saturates incorrectly at high rates (e.g. clamps to 1.0 instead of
-    # ~0.63 when r * dt = 1). The clip guards against floating-point excursions
-    # outside [0, 1]; negative rates are floored at 0 before exponentiation.
-    spike_probabilities = np.clip(
-        1.0 - np.exp(-np.maximum(firing_rate, 0.0) * dt), 0.0, 1.0
+    # Counts, rather than Bernoulli occupancy, retain Poisson multiplicities.
+    # Uniform conditional event times give the exact process for the specified
+    # piecewise-constant rate, including nonuniform sampling intervals.
+    counts = rng.poisson(np.maximum(firing_rate[:-1], 0.0) * bin_dt)
+    interval_ids = np.repeat(np.arange(len(bin_dt)), counts)
+    candidate_spikes = (
+        times[interval_ids] + rng.random(len(interval_ids)) * bin_dt[interval_ids]
     )
-
-    # Generate random values and compare to probabilities
-    random_values = rng.random(len(times))
-    spike_mask = random_values < spike_probabilities
-
-    # Extract candidate spike times
-    candidate_spikes = times[spike_mask]
+    # Floating-point addition can round a time onto its interval's right edge.
+    candidate_spikes = np.minimum(
+        candidate_spikes, np.nextafter(times[interval_ids + 1], times[interval_ids])
+    )
 
     # Sort candidate spikes (should already be sorted, but ensure correctness)
     candidate_spikes = np.sort(candidate_spikes)
