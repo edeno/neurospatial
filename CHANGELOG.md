@@ -48,6 +48,10 @@
   `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
   `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
   `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
+  Changing fitted encoding settings (`method`, `bandwidth`, `min_occupancy`,
+  `penalty`, `rank`) with `replace` now raises; construct and fit a new decoder.
+  Prediction defaults remain replaceable. `from_rates` uses the rate result's
+  method, bandwidth and recorded encoding settings.
 - Add `Environment.get_divergence_operator()`, the cached finite-volume
   divergence operator that `divergence(env, edge_field)` applies, alongside
   `get_differential_operator()`.
