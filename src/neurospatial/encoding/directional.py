@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import UnitSelectionMixin, label_at
+from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -342,6 +342,7 @@ def _directional_summary_frame(
     return df
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class DirectionalRateResult(SpatialResultMixin):
     """Result of directional rate computation for a single neuron.
@@ -1199,6 +1200,7 @@ class DirectionalRateResult(SpatialResultMixin):
         return "\n".join(lines)
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of directional rate computation for multiple neurons.

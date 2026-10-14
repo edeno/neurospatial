@@ -85,7 +85,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import UnitSelectionMixin, label_at
+from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -168,6 +168,7 @@ def _view_summary_frame(
     return df
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class ViewRateResult(SpatialResultMixin):
     """Result of view rate computation for a single neuron.
@@ -564,6 +565,7 @@ class ViewRateResult(SpatialResultMixin):
         )
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of view rate computation for multiple neurons.

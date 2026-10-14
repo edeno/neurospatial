@@ -38,6 +38,7 @@ from __future__ import annotations
 import operator
 from collections import Counter
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 import numpy as np
@@ -82,6 +83,31 @@ def label_at(unit_ids: Any, index: int) -> Any:
     return value.item() if isinstance(value, np.generic) else value
 
 
+_ResultT = TypeVar("_ResultT")
+
+
+def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
+    """Give a result dataclass independently owned settings on every read.
+
+    Apply after ``@dataclass`` so its constructor and field metadata stay intact.
+
+    Parameters
+    ----------
+    cls : type
+        Result dataclass with an ``analysis_settings`` dictionary field.
+    """
+
+    def read_settings(result: object) -> dict[str, Any] | None:
+        settings: dict[str, Any] | None = vars(result).get("_analysis_settings")
+        return deepcopy(settings)
+
+    def write_settings(result: object, settings: dict[str, Any] | None) -> None:
+        vars(result)["_analysis_settings"] = deepcopy(settings)
+
+    setattr(cls, "analysis_settings", property(read_settings, write_settings))  # noqa: B010
+    return cls
+
+
 class ReadOnlyArraysMixin:
     """A frozen result whose NumPy arrays are read-only copies it owns.
 
@@ -99,6 +125,9 @@ class ReadOnlyArraysMixin:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        if "analysis_settings" in state:
+            state = dict(state)
+            state["_analysis_settings"] = deepcopy(state.pop("analysis_settings"))
         self.__dict__.update(state)
         for value in state.values():
             if isinstance(value, np.ndarray):

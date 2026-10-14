@@ -315,8 +315,8 @@ warn_on_drop
 
     @property
     def analysis_settings(self) -> dict[str, Any] | None:
-        """Recorded training settings, or ``None``."""
-        return None if self._fit is None else self._fit.analysis_settings
+        """An independent copy of recorded training settings, or ``None``."""
+        return None if self._fit is None else copy.deepcopy(self._fit.analysis_settings)
 
     @property
     def _unit_ids_generated(self) -> bool:

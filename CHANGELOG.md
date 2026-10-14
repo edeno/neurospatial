@@ -285,6 +285,11 @@
   geodesic pairs, and returns NaN for lags with no observed displacement pairs.
   Curvature retains the original sample timestamps through stationary periods
   before smoothing within each observed run.
+- Rate results own their analysis settings and return independent copies,
+  including nested recording windows. Fitted decoders also return independent
+  settings. Editing settings can no longer change training support or reported
+  provenance. Previously saved rate-result pickles migrate their stored
+  settings on restoration; results predating provenance keep settings as `None`.
 - Published connectivity graphs reject node, edge and graph attribute edits,
   in addition to topology changes, so edge-distance edits cannot bypass cache
   invalidation. `env.connectivity.copy()` provides an editable graph for
