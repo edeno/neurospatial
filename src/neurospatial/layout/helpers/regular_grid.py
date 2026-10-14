@@ -190,7 +190,8 @@ def _infer_active_bins_from_regular_grid(
     """Infer active bins in a regular grid based on data sample density.
 
     This function first counts positions in each grid bin defined by `edges`.
-    Bins with counts above `bin_count_threshold` are initially marked active.
+    Visited bins with counts at least `bin_count_threshold` are initially active.
+    Thresholds 0 and 1 both retain every visited bin; empty bins remain inactive.
     Optional morphological operations (closing, filling, dilation) can then be
     applied to refine the active area.
 
@@ -210,7 +211,8 @@ def _infer_active_bins_from_regular_grid(
         If True, apply binary dilation to expand the boundary of the active area.
     bin_count_threshold : int, default=0
         Minimum number of samples a bin must contain to be initially
-        considered active (before morphological operations).
+        considered active (before morphological operations). Equality passes;
+        a bin must always contain at least one sample.
     boundary_exists : bool, default=False
         If True, explicitly mark the outermost layer of bins in each dimension
         as inactive *after* morphological operations. This can be used if
@@ -238,7 +240,7 @@ def _infer_active_bins_from_regular_grid(
         return np.zeros(grid_shape, dtype=bool)
 
     bin_counts, _ = np.histogramdd(pos_clean, bins=edges)
-    active_mask = bin_counts > bin_count_threshold
+    active_mask = (bin_counts > 0) & (bin_counts >= bin_count_threshold)
 
     n_dims = positions.shape[1]
     if n_dims > 1:

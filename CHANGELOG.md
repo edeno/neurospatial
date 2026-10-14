@@ -163,6 +163,9 @@
 
 ### Fixed
 
+- Apply inclusive minimum sample-count thresholds consistently across regular
+  and hexagonal grids; threshold zero still leaves unvisited bins inactive.
+
 - Clarify that `detect_goal_directed_runs` evaluates one candidate per observed
   sample run, and that success means sufficient directed progress rather than
   arrival. Point completed-traversal analyses to `detect_runs_between_regions`.
