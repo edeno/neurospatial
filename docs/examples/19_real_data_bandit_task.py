@@ -14,7 +14,7 @@
 # ---
 
 # %% [markdown]
-# # Real Data: Hippocampal Place Cells on a Bandit Task
+# # Real Data: Hippocampal Spatial Coding on a Bandit Task
 #
 # This notebook demonstrates neurospatial analysis with **real neural recording data**
 # from rat hippocampus during a spatial bandit task.
@@ -24,20 +24,36 @@
 # - 709,321 position samples at 500 Hz (~24 minutes)
 # - Maze with 3 reward patches (bandit task)
 #
-# **Estimated time**: 20-25 minutes
+# The first run downloads the 75 MB, CC BY 4.0 archive from
+# [Zenodo, version 1.0](https://doi.org/10.5281/zenodo.23020757).
+# The helper verifies its SHA-256 and reuses the local file on later runs.
+# Unit numbers below are export row indices; the archive does not include
+# original unit identities or curation labels. No database access is needed.
 #
-# **Prerequisites**: [05_track_linearization.ipynb](../05_track_linearization/), [11_place_field_analysis.ipynb](../11_place_field_analysis/), [13_trajectory_analysis.ipynb](../13_trajectory_analysis/)
+# **Estimated time**: 30-40 minutes
+#
+# **Prerequisites**: [05: track linearization](05_track_linearization.ipynb),
+# [11: place-field analysis](11_place_field_analysis.ipynb),
+# [13: trajectory analysis](13_trajectory_analysis.ipynb).
+#
+# Run this notebook from a checkout of the repository: it uses the helper in
+# `data/` and the shared example styling. From the repository root, launch
+# `uv run --extra notebooks jupyter lab examples/`, then open this notebook.
 #
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
 #
-# - Load and preprocess real neural recording data
+# - Load already processed tracking and spike data, and check their time coverage
 # - Create a 1D linearized environment from a track graph
-# - Compute place fields from hippocampal spike data
+# - Estimate spatial firing-rate maps from hippocampal spikes
 # - Analyze spatial coding with Skaggs information and sparsity
 # - Visualize place fields in both 2D and linearized 1D coordinates
-# - Understand trajectory-dependent analysis on complex mazes
+# - Distinguish spatial geometry, observed coverage and evidence of cell selectivity
+#
+# Maps here pool the recording across travel directions and speeds, including
+# pauses at wells. Linearization supplies spatial coordinates; analyzing
+# direction or task history requires explicit labels, as in the follow-up notebooks.
 
 # %%
 # Import the data loading function
@@ -50,12 +66,10 @@ import numpy as np
 from neurospatial import Environment
 from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
 from neurospatial.encoding import (
-    compute_spatial_rate,
+    compute_spatial_rates,
     detect_place_fields,
     field_size,
     rate_map_centroid,
-    sparsity,
-    spatial_information,
 )
 
 
@@ -76,41 +90,14 @@ except NameError:
     _start_path = Path.cwd().resolve()
 _base_path = _find_project_root(_start_path)
 
-# Required data files for this notebook. If any are missing, print a
-# download URL and bail with sys.exit(0) so the docs build / notebook
-# regen CI doesn't fail on a clean checkout. Raw datasets are gitignored.
-_session_id = "j1620210710_02_r1"
-_required_files = [
-    f"{_session_id}_position_info.pkl",
-    f"{_session_id}_HPC_spike_times.pkl",
-    f"{_session_id}_track_graph.pkl",
-    f"{_session_id}_linear_edge_order.pkl",
-    f"{_session_id}_linear_edge_spacing.pkl",
-]
 _data_dir = _base_path / "data"
-_missing = [name for name in _required_files if not (_data_dir / name).exists()]
-if _missing:
-    import sys
-
-    print("=" * 70)
-    print("J16 BANDIT DATASET NOT FOUND")
-    print("=" * 70)
-    print(f"\nMissing files in {_data_dir}:")
-    for name in _missing:
-        print(f"  - {name}")
-    print(
-        "\nDownload from Zenodo (see data/README.md for the published "
-        "DOI / download links), then re-run this notebook."
-    )
-    print("Exiting cleanly so the notebook regen CI doesn't fail.")
-    sys.exit(0)
-
 _loader_path = _data_dir / "load_bandit_data.py"
 _loader_spec = importlib.util.spec_from_file_location("load_bandit_data", _loader_path)
 if _loader_spec is None or _loader_spec.loader is None:
     raise ImportError(f"Could not load bandit data helper from {_loader_path}")
 _loader_module = importlib.util.module_from_spec(_loader_spec)
 _loader_spec.loader.exec_module(_loader_module)
+fetch_bandit_data = _loader_module.fetch_bandit_data
 load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
@@ -132,15 +119,25 @@ apply_style(figsize=(14, 10), font_size=12)
 # - Position tracking (head position, velocity, linear position)
 # - Spike times for 203 hippocampal units
 # - Track graph defining the maze structure
+#
+# LED tracking has already been smoothed, upsampled to 500 Hz and linearized.
+# This notebook does not reconstruct those preprocessing steps. Spike times and
+# tracking share a clock, and positions are in centimeters. To download ahead
+# of time from the repository root, run `uv run python data/load_bandit_data.py`.
 
 # %%
 # Load the dataset
 data_path = _base_path / "data"
+data_file = fetch_bandit_data(data_path)
+print(f"Verified dataset: {data_file.name}")
 data = load_neural_recording_from_files(data_path, "j1620210710_02_r1")
 
 # Extract components
-position_info = data["position_info"]
-spike_times_all = data["spike_times"]
+position_info = data["position_info"].copy()
+# Subtract the SAME origin from tracking and spikes, preserving their alignment.
+time_origin = float(position_info.index[0])
+position_info.index = position_info.index - time_origin
+spike_times_all = [spikes - time_origin for spikes in data["spike_times"]]
 track_graph = data["track_graph"]
 linear_edge_order = data["linear_edge_order"]
 linear_edge_spacing = data["linear_edge_spacing"]
@@ -149,7 +146,8 @@ linear_edge_spacing = data["linear_edge_spacing"]
 n_units = len(spike_times_all)
 n_samples = len(position_info)
 duration = position_info.index[-1] - position_info.index[0]
-sample_rate = n_samples / duration
+sample_rate = 1.0 / np.median(np.diff(position_info.index.to_numpy()))
+max_gap = 0.5  # seconds; use the same recording-gap rule throughout the analysis
 
 print("=" * 60)
 print("J16 BANDIT TASK - NEURAL RECORDING DATA")
@@ -158,6 +156,8 @@ print(f"\nRecording duration: {duration:.1f} seconds ({duration / 60:.1f} minute
 print(f"Position samples: {n_samples:,} at {sample_rate:.0f} Hz")
 print(f"Hippocampal units: {n_units}")
 print(f"Total spikes: {sum(len(s) for s in spike_times_all):,}")
+print(f"Empty spike trains in this epoch: {sum(len(s) == 0 for s in spike_times_all)}")
+print(f"Tracking gaps > {max_gap} s: {np.sum(np.diff(position_info.index) > max_gap)}")
 
 # %% [markdown]
 # ### Examine Position Data
@@ -290,8 +290,10 @@ print("\nTrajectory covers the full maze with repeated visits to all arms")
 # %% [markdown]
 # ## Part 3: Create Linearized Environment
 #
-# We use `Environment.from_graph()` to create a 1D linearized representation
-# of the maze. This is essential for trajectory-dependent analysis.
+# We use `Environment.from_graph()` to preserve the maze centerline's connectivity.
+# Its bins have 2D locations and a separate linearized coordinate. The edge order
+# and inserted gaps define the display coordinate; they do not encode running
+# direction. We compare graph-based neural maps with the 2D maps in Part 6a.
 
 # %%
 # Create 1D linearized environment from track graph
@@ -307,12 +309,17 @@ env_1d.units = "cm"
 print("1D Linearized Environment Created!")
 print(f"  Is 1D: {env_1d.is_linearized_track}")
 print(f"  Number of bins: {env_1d.n_bins}")
+linear_bin_centers = env_1d.to_linear(env_1d.bin_centers)
 print(
-    f"  Linear extent: [{env_1d.dimension_ranges[0][0]:.1f}, {env_1d.dimension_ranges[0][1]:.1f}] cm"
+    f"  Linear bin-center range: [{linear_bin_centers.min():.1f}, "
+    f"{linear_bin_centers.max():.1f}] cm"
 )
 
 # %% [markdown]
-# We can also create a 2D environment for comparison:
+# A 2D grid gives a familiar overhead view. Its active bins come from visited
+# positions. This is a sampled approximation to the maze footprint, rather than
+# a surveyed wall model: its smoothing follows grid connectivity. The track
+# graph provides the known centerline topology for the comparison below.
 
 # %%
 # Create 2D environment from position samples
@@ -329,9 +336,10 @@ print(f"  Number of bins: {env_2d.n_bins}")
 print(f"  Dimensions: {env_2d.n_dims}D")
 
 # %% [markdown]
-# ## Part 4: Examine Spike Data and Select Place Cells
+# ## Part 4: Examine Spike Data and Select Active Units
 #
-# Let's look at the spike count distribution to identify active neurons:
+# We retain units with at least 50 spikes for an exploratory population summary.
+# This count threshold does not establish isolation quality or place-cell identity.
 
 # %%
 # Count spikes for each unit
@@ -356,7 +364,6 @@ ax.set_title(
     "Spike Count Distribution (203 Hippocampal Units)", fontsize=15, fontweight="bold"
 )
 ax.legend(fontsize=12)
-ax.set_xlim(0, 30000)
 ax.grid(True, alpha=0.3, axis="y")
 
 plt.show()
@@ -367,17 +374,20 @@ active_units = [i for i, count in enumerate(spike_counts) if count >= min_spikes
 print(f"\nUnits with >= {min_spikes} spikes: {len(active_units)} / {n_units}")
 
 # %% [markdown]
-# ## Part 5: Compute Place Fields for Selected Neurons
+# ## Part 5: Estimate Spatial Rate Maps
 #
-# We'll compute place fields for several well-recorded neurons and analyze
-# their spatial coding properties.
+# We estimate rate maps for the retained population and show six units selected
+# by spike count alone. They include broad and spatially selective activity;
+# they have not been classified as place cells.
+# Mean firing rates below use exported spike count divided by epoch duration.
+# Information and sparsity describe the observed spatial map under its support mask.
 
 # %%
 # Prepare trajectory data
 times_array = position_info.index.values
 positions_array = positions_2d
 
-# Select a few example neurons with good spike counts
+# Select examples deterministically by spike count, without tuning on a map score.
 example_units = [i for i in active_units if 3000 <= spike_counts[i] <= 20000][:6]
 print(f"Analyzing {len(example_units)} example units:")
 for _i, unit_idx in enumerate(example_units):
@@ -386,38 +396,46 @@ for _i, unit_idx in enumerate(example_units):
     )
 
 # %% [markdown]
-# ### Compute Place Fields
+# ### Estimate Population Maps
+#
+# The 8 cm smoothing bandwidth and 0.5 s minimum occupancy are illustrative
+# analysis choices. The threshold uses raw time per bin; it can mask briefly
+# visited corridors and split supported space into separate patches. Inspect
+# that mask below before interpreting a rate map or counting candidate fields.
+# We include stationary periods and assume spikes were recorded throughout
+# the tracked epoch, because this export has no separate acquisition intervals.
 
 # %%
-# Compute place fields for each example unit
+# Compute the population once, sharing occupancy and smoothing across units.
+# Unit labels are the export row indices selected above.
+bandwidth_cm = 8.0
+min_occupancy_s = 0.5
+population_rates = compute_spatial_rates(
+    env_2d,
+    [spike_times_all[unit_idx] for unit_idx in active_units],
+    times_array,
+    positions_array,
+    unit_ids=active_units,
+    method="diffusion_kde",
+    bandwidth=bandwidth_cm,
+    min_occupancy=min_occupancy_s,
+    max_gap=max_gap,
+)
 place_fields = {}
 spatial_metrics = {}
 
 for unit_idx in example_units:
     spikes = spike_times_all[unit_idx]
-
-    # Compute place field using diffusion KDE (boundary-aware)
-    result = compute_spatial_rate(
-        env_2d,
-        spikes,
-        times_array,
-        positions_array,
-        method="diffusion_kde",
-        bandwidth=8.0,  # 8 cm smoothing
-        min_occupancy=0.5,
-    )
+    result = population_rates.sel(unit_id=unit_idx)
     firing_rate = result.firing_rate
 
     place_fields[unit_idx] = firing_rate
 
-    # Compute spatial metrics
-    occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
-
     # Skaggs spatial information (bits/spike)
-    info = spatial_information(firing_rate, occupancy, base=2.0)
+    info = result.spatial_information()
 
     # Sparsity
-    sparse = sparsity(firing_rate, occupancy)
+    sparse = result.sparsity()
 
     # Mean firing rate
     mean_rate = len(spikes) / duration
@@ -432,7 +450,37 @@ for unit_idx in example_units:
         "peak_rate": peak_rate,
     }
 
-print("\nPlace fields computed for all example units")
+print("\nSpatial rate maps computed for the retained population")
+
+# %% [markdown]
+# ### Check occupancy and observed support
+#
+# Occupancy is time observed in each bin. Gray rate-map bins are unsupported
+# observations under these settings; they are not evidence of zero firing.
+# The support panel shows which locations contribute to interpretation.
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
+env_2d.plot_field(
+    population_rates.occupancy,
+    ax=axes[0],
+    cmap="viridis",
+    vmin=0,
+    colorbar_label="Occupancy (s)",
+)
+axes[0].set_title("Raw occupancy")
+env_2d.plot_field(
+    population_rates.spatial_support.astype(float),
+    ax=axes[1],
+    cmap="gray_r",
+    vmin=0,
+    vmax=1,
+    colorbar_label="Supported bin (1 = yes)",
+)
+axes[1].set_title(f"Observed support at {min_occupancy_s:g} s per bin")
+plt.show()
+print(f"Observed tracking time: {population_rates.occupancy.sum():.2f} s")
+print(f"Supported bins: {population_rates.spatial_support.sum()} / {env_2d.n_bins}")
 
 # %% [markdown]
 # ### Analyze Spatial Metrics
@@ -454,13 +502,16 @@ for unit_idx in example_units:
 
 print("-" * 70)
 print("\nInterpretation:")
-print("  Skaggs Info > 1.0 bits/spike: Strong spatial coding")
-print("  Sparsity > 0.3: Focal place field (fires in limited area)")
+print("  Higher information indicates greater descriptive spatial selectivity.")
+print("  Lower sparsity indicates activity concentrated in fewer locations.")
+print("  These metrics and detected fields do not establish place-cell significance.")
 
 # %% [markdown]
-# ## Part 6: Visualize Place Fields
+# ## Part 6: Visualize Spatial Rate Maps
 #
-# Let's visualize the place fields for our selected neurons:
+# Color scales start at zero, with a separate maximum for each unit. Compare
+# the labeled rates as well as spatial patterns: a broad map can have a visible
+# gradient without being strongly selective. Gray bins follow the support mask.
 
 # %%
 n_cols = 3
@@ -476,6 +527,7 @@ for i, unit_idx in enumerate(example_units):
         place_fields[unit_idx],
         ax=ax,
         cmap="hot",
+        vmin=0,
         colorbar_label="Hz",
     )
 
@@ -499,92 +551,113 @@ for i, unit_idx in enumerate(example_units):
     )
     ax.set_aspect("equal")
 
-plt.suptitle("Hippocampal Place Fields", fontsize=16, fontweight="bold")
+plt.suptitle("Hippocampal Spatial Rate Maps", fontsize=16, fontweight="bold")
 plt.show()
+
+# %% [markdown]
+# ## Part 6a: Compare Maps Along the Track Graph
+#
+# Recompute the same six units using the graph environment, the same 8 cm
+# bandwidth and 0.5 s occupancy threshold. Graph smoothing follows connected
+# track segments. The grid and graph divide space differently, so their
+# occupancy and rate estimates need not agree bin by bin.
+#
+# Each line below uses physical linearized coordinates. Blank intervals mark
+# inserted edge-display gaps or unsupported bins. These coordinates describe
+# track geometry and pool both travel directions.
+
+# %%
+track_rates = compute_spatial_rates(
+    env_1d,
+    [spike_times_all[unit_idx] for unit_idx in example_units],
+    times_array,
+    positions_array,
+    unit_ids=example_units,
+    bandwidth=bandwidth_cm,
+    min_occupancy=min_occupancy_s,
+    max_gap=max_gap,
+)
+linear_edges = env_1d.grid_edges[0]
+linear_centers_full = (linear_edges[:-1] + linear_edges[1:]) / 2
+linear_active = env_1d.active_mask.ravel()
+np.testing.assert_allclose(linear_centers_full[linear_active], linear_bin_centers)
+fig, axes = plt.subplots(3, 2, figsize=(14, 10), constrained_layout=True)
+for ax, unit_idx in zip(axes.flat, example_units, strict=True):
+    rate = track_rates.sel(unit_id=unit_idx)
+    linear_field = np.full(linear_centers_full.shape, np.nan)
+    linear_field[linear_active] = rate.firing_rate
+    ax.plot(linear_centers_full, linear_field, color="steelblue")
+    ax.set(
+        xlabel="Linearized position (cm)",
+        ylabel="Firing rate (Hz)",
+        title=f"Unit {unit_idx}: graph-based spatial rate",
+        ylim=(0, None),
+        xlim=(linear_edges[0], linear_edges[-1]),
+    )
+    ax.grid(alpha=0.3)
+plt.show()
+print(f"Graph support: {track_rates.spatial_support.sum()} / {env_1d.n_bins} bins")
 
 # %% [markdown]
 # ## Part 6b: Interactive Visualization with Napari
 #
 # For interactive exploration, we can use napari to animate the animal's position
-# over the place field. This is especially useful for understanding how spatial
-# firing relates to the animal's trajectory.
+# over a static rate map. The preview below covers the first 30 seconds, while
+# the map was estimated from the full epoch. It shows where the animal moved;
+# it does not estimate how a field changed over time.
 #
-# **Note**: This section requires napari (`pip install napari[all]`). If napari
-# is not installed, this cell will be skipped.
+# Set `RUN_NAPARI = True` below to launch the optional desktop viewer.
+# This section requires napari (`pip install 'napari[all]'`).
 
 # %%
-# Check if napari is available
-NAPARI_AVAILABLE = importlib.util.find_spec("napari") is not None
-if not NAPARI_AVAILABLE:
-    print("Napari not installed. Skipping interactive visualization.")
-    print("Install with: pip install napari[all]")
-
-# %%
-if NAPARI_AVAILABLE:
-    # Select a cell with a clear place field for visualization
-    best_unit = max(example_units, key=lambda u: spatial_metrics[u]["spatial_info"])
-    best_field = place_fields[best_unit]
-
-    print(f"Visualizing Unit {best_unit} in napari")
-    print(
-        f"  Spatial info: {spatial_metrics[best_unit]['spatial_info']:.2f} bits/spike"
-    )
-
-    # Subsample position data for smoother animation (500 Hz -> 30 fps)
-    # Take every ~17th sample to get approximately 30 Hz
-    subsample_rate = 17
-    positions_subsampled = positions_array[::subsample_rate]
-    times_subsampled = times_array[::subsample_rate]
-    n_frames = len(positions_subsampled)
-
-    # Tile static place field to match number of overlay frames
-    # This displays a static field with the animated position overlay on top
-    fields_animated = np.tile(best_field, (n_frames, 1))
-
-    print("\nAnimation setup:")
-    print(f"  Original samples: {len(positions_array):,}")
-    print(
-        f"  Subsampled to: {n_frames} frames (~{n_frames / 30:.1f} seconds at 30 fps)"
-    )
-    print(f"  Duration: {duration / 60:.1f} minutes")
-
-    # Create position overlay with trail
-    position_overlay = PositionOverlay(
-        positions=positions_subsampled,
-        color="cyan",
-        size=15.0,
-        trail_length=15,  # Show last 15 positions as a trail
-    )
-
-    # Create head direction overlay if data is available
-    overlays = [position_overlay]
-    if "head_orientation" in position_info.columns:
-        head_angles = position_info["head_orientation"].values[::subsample_rate]
-        head_direction_overlay = HeadDirectionOverlay(
-            headings=head_angles,
+# Prepare a short preview even when the desktop viewer is disabled.
+preview_duration = 30.0
+preview_indices = np.flatnonzero(times_array < times_array[0] + preview_duration)[::17]
+positions_subsampled = positions_array[preview_indices]
+times_subsampled = times_array[preview_indices]
+best_unit = max(example_units, key=lambda u: spatial_metrics[u]["spatial_info"])
+fields_animated = np.broadcast_to(
+    place_fields[best_unit], (len(preview_indices), env_2d.n_bins)
+)
+position_overlay = PositionOverlay(
+    positions=positions_subsampled,
+    times=times_subsampled,
+    color="cyan",
+    size=15.0,
+    trail_length=15,
+)
+overlays = [position_overlay]
+if "head_orientation" in position_info.columns:
+    overlays.append(
+        HeadDirectionOverlay(
+            headings=position_info["head_orientation"].to_numpy()[preview_indices],
+            times=times_subsampled,
             color="yellow",
-            length=10.0,  # Arrow length in cm
+            length=10.0,
             width=2.0,
         )
-        overlays.append(head_direction_overlay)
-        print("  Head direction: Available (yellow arrows)")
-    else:
-        print("  Head direction: Not available in this dataset")
+    )
+print(
+    f"Unit {best_unit} preview: {times_subsampled[-1] - times_subsampled[0]:.2f} s, "
+    f"{len(preview_indices)} frames"
+)
 
-    # Launch napari viewer with animation
-    print("\nLaunching napari viewer...")
-    print("  - Use the playback controls to animate")
-    print("  - The cyan dot shows the animal's position")
-    print("  - The trail shows recent movement history")
-
+# %%
+# Opt in so running the whole notebook does not open a desktop window.
+RUN_NAPARI = False
+if RUN_NAPARI and importlib.util.find_spec("napari") is not None:
     env_2d.animate_fields(
         fields_animated,
         overlays=overlays,
         frame_times=times_subsampled,
         backend="napari",
-        colormap="hot",
+        cmap="hot",
         title=f"Unit {best_unit} Place Field - Interactive",
     )
+elif RUN_NAPARI:
+    print("Install napari with: pip install 'napari[all]'")
+else:
+    print("Set RUN_NAPARI = True to open the optional desktop viewer.")
 
 # %% [markdown]
 # ### Napari Features
@@ -596,20 +669,21 @@ if NAPARI_AVAILABLE:
 # - **Trail visualization**: Recent movement history shown as fading trail
 # - **Interactive exploration**: Zoom, pan, adjust contrast
 #
-# For longer recordings, consider using video export:
-# ```python
-# env_2d.animate_fields(
-#     fields, overlays=[position_overlay],
-#     backend="video", save_path="place_field_animation.mp4",
-#     fps=30, n_workers=4
-# )
-# ```
+# For a complete video-export workflow, see
+# [16: field animation](16_field_animation.ipynb).
 
 # %% [markdown]
-# ## Part 7: Detect Place Fields Automatically
+# ## Part 7: Segment Candidate Map Regions
 #
-# Use the `detect_place_fields()` function to identify place field bins
-# for each of our example neurons:
+# `detect_place_fields()` segments above-threshold connected regions. We disable
+# its mean-rate exclusion heuristic here, because our aim is to describe maps,
+# and this export has no cell-type curation. We also disable recursive subfields
+# to keep the displayed regions disjoint.
+#
+# A broad map fragmented by the occupancy mask can yield several candidate
+# regions. Neither their number nor their area establishes biological place
+# fields or a place-cell verdict. Check sensitivity to bin size, occupancy,
+# bandwidth and the relative threshold before interpreting them.
 
 # %%
 # Detect place fields for all example units
@@ -624,12 +698,13 @@ for unit_idx in example_units:
         field,
         threshold=0.2,  # 20% of peak rate
         min_size=4,  # Minimum 4 bins
-        detect_subfields=True,
+        max_mean_rate=np.inf,  # No cell-type exclusion for this descriptive exercise
+        detect_subfields=False,
     )
 
     detected_fields_all[unit_idx] = detected
 
-    print(f"Unit {unit_idx}: {len(detected)} place field(s) detected")
+    print(f"Unit {unit_idx}: {len(detected)} candidate region(s)")
 
 # %% [markdown]
 # ### Visualize Detected Fields for Each Cell
@@ -653,6 +728,7 @@ for unit_idx in example_units:
         field,
         ax=ax,
         cmap="hot",
+        vmin=0,
         colorbar_label="Firing Rate (Hz)",
     )
 
@@ -668,7 +744,7 @@ for unit_idx in example_units:
             label=f"Field {i + 1}",
         )
 
-        # Mark centroid using geodesic method (respects maze geometry)
+        # Mark the centroid under the sampled grid's connectivity.
         centroid = rate_map_centroid(env_2d, field, field_bins, method="geodesic")
         ax.scatter(
             centroid[0],
@@ -690,7 +766,7 @@ for unit_idx in example_units:
         )
 
     ax.set_title(
-        f"Unit {unit_idx}: {len(detected_fields)} Place Field(s)\n"
+        f"Unit {unit_idx}: {len(detected_fields)} Candidate Region(s)\n"
         f"Info: {m['spatial_info']:.2f} bits/spike",
         fontsize=13,
         fontweight="bold",
@@ -713,13 +789,14 @@ for unit_idx in example_units:
 
     # Plot spike locations
     spikes = spike_times_all[unit_idx]
-    spike_positions = []
-    for spike_time in spikes:
-        idx = np.searchsorted(times_array, spike_time)
-        if 0 <= idx < len(positions_array):
-            spike_positions.append(positions_array[idx])
-
-    spike_positions = np.array(spike_positions)
+    # Use the enclosing interval's start sample, as in occupancy allocation.
+    # Exclude spikes outside tracking support or inside long tracking gaps.
+    interval_indices = np.searchsorted(times_array, spikes, side="right") - 1
+    tracked = (interval_indices >= 0) & (interval_indices < len(times_array) - 1)
+    interval_indices = interval_indices[tracked]
+    tracked_intervals = np.diff(times_array)[interval_indices] <= max_gap
+    spike_positions = positions_array[interval_indices[tracked_intervals]]
+    spike_positions = spike_positions[np.isfinite(spike_positions).all(axis=1)]
     ax.scatter(
         spike_positions[:, 0],
         spike_positions[:, 1],
@@ -740,7 +817,7 @@ for unit_idx in example_units:
     ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
     ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
     ax.set_title(
-        f"Unit {unit_idx}: Spike Locations ({len(spikes):,} spikes)",
+        f"Unit {unit_idx}: Tracked Spike Locations ({len(spike_positions):,})",
         fontsize=13,
         fontweight="bold",
     )
@@ -750,15 +827,15 @@ for unit_idx in example_units:
     plt.show()
 
 # %% [markdown]
-# ### Place Field Summary
+# ### Candidate Region Summary
 
 # %%
 # Print summary of detected place fields
 print("\n" + "=" * 70)
-print("PLACE FIELD DETECTION SUMMARY")
+print("CANDIDATE REGION SUMMARY")
 print("=" * 70)
 print(
-    f"{'Unit':<8} {'Fields':<10} {'Total Area':<15} {'Peak Rate':<12} {'Sparsity':<10}"
+    f"{'Unit':<8} {'Regions':<10} {'Area (cm²)':<15} {'Peak Rate':<12} {'Sparsity':<10}"
 )
 print("-" * 70)
 
@@ -780,32 +857,24 @@ print("-" * 70)
 # %% [markdown]
 # ## Part 8: Population Summary
 #
-# Let's analyze spatial coding across all well-recorded neurons:
+# Summarize the retained units descriptively. Low spike counts can yield unstable
+# maps and inflated information estimates, so a high information value alone
+# does not establish selectivity. These distributions describe our spike-count
+# selection and analysis settings; they do not estimate place-cell prevalence.
 
 # %%
-# Compute metrics for all active units
+# Reuse the population maps computed above.
 all_metrics = []
 
 print("Computing spatial metrics for all active units...")
 for unit_idx in active_units:
     spikes = spike_times_all[unit_idx]
-
-    # Compute place field
-    result = compute_spatial_rate(
-        env_2d,
-        spikes,
-        times_array,
-        positions_array,
-        method="diffusion_kde",
-        bandwidth=8.0,
-        min_occupancy=0.5,
-    )
+    result = population_rates.sel(unit_id=unit_idx)
     firing_rate = result.firing_rate
 
     # Compute metrics
-    occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
-    info = spatial_information(firing_rate, occupancy, base=2.0)
-    sparse = sparsity(firing_rate, occupancy)
+    info = result.spatial_information()
+    sparse = result.sparsity()
     mean_rate = len(spikes) / duration
     peak_rate = np.nanmax(firing_rate)
 
@@ -835,9 +904,6 @@ peak_rate_all = np.array([m["peak_rate"] for m in all_metrics])
 # Top-left: Spatial information distribution
 ax = axes[0, 0]
 ax.hist(spatial_info_all, bins=30, color="steelblue", edgecolor="black", alpha=0.7)
-ax.axvline(
-    1.0, color="red", linestyle="--", linewidth=2, label="Place cell threshold (1.0)"
-)
 ax.axvline(
     np.median(spatial_info_all),
     color="orange",
@@ -878,7 +944,6 @@ ax.scatter(
     edgecolors="black",
     linewidths=0.5,
 )
-ax.axhline(1.0, color="red", linestyle="--", linewidth=1.5, alpha=0.7)
 ax.set_xlabel("Mean Firing Rate (Hz)", fontsize=13, fontweight="bold")
 ax.set_ylabel("Skaggs Information (bits/spike)", fontsize=13, fontweight="bold")
 ax.set_title("Spatial Information vs Firing Rate", fontsize=15, fontweight="bold")
@@ -896,7 +961,6 @@ scatter = ax.scatter(
     edgecolors="black",
     linewidths=0.5,
 )
-ax.axhline(1.0, color="red", linestyle="--", linewidth=1.5, alpha=0.7)
 ax.set_xlabel("Sparsity", fontsize=13, fontweight="bold")
 ax.set_ylabel("Skaggs Information (bits/spike)", fontsize=13, fontweight="bold")
 ax.set_title("Spatial Information vs Sparsity", fontsize=15, fontweight="bold")
@@ -909,14 +973,11 @@ plt.suptitle(
 plt.show()
 
 # Summary statistics
-n_place_cells = np.sum(spatial_info_all > 1.0)
 print("\n" + "=" * 60)
 print("POPULATION SUMMARY")
 print("=" * 60)
 print(f"\nTotal analyzed units: {len(all_metrics)}")
-print(
-    f"Place cells (info > 1.0 bits/spike): {n_place_cells} ({100 * n_place_cells / len(all_metrics):.1f}%)"
-)
+print("These are descriptive metrics; cell-type inference requires a chosen test.")
 print("\nSpatial Information:")
 print(f"  Mean: {np.mean(spatial_info_all):.3f} bits/spike")
 print(f"  Median: {np.median(spatial_info_all):.3f} bits/spike")
@@ -936,30 +997,33 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 # 1. **Data Loading**: Successfully loaded neural data with 203 hippocampal units
 #    and 709,321 position samples
 #
-# 2. **Environment Creation**: Built both 2D and 1D linearized representations
-#    of the maze from a track graph
+# 2. **Environment Creation**: Built a sampled 2D grid and a separate
+#    graph-based representation of the maze, and inspected occupancy/support
 #
-# 3. **Place Field Computation**: Used `compute_spatial_rate()` with diffusion KDE
-#    for boundary-aware smoothing
+# 3. **Place Field Computation**: Used `compute_spatial_rates()` with diffusion KDE
+#    for boundary-aware smoothing and shared population computation
 #
-# 4. **Interactive Visualization**: Used napari to animate position overlays on
-#    place fields for interactive exploration
+# 4. **Geometry Comparison**: Computed rate maps along the connected track graph
+#    and plotted them in linearized centimeters, with explicit display gaps
 #
 # 5. **Spatial Metrics**: Computed Skaggs information and sparsity for population
 #    analysis
 #
-# 6. **Place Field Detection**: Automatically identified place fields with
-#    `detect_place_fields()`
+# 6. **Candidate Regions**: Segmented descriptive above-threshold map regions;
+#    these do not establish cell type or statistical significance
+#
+# 7. **Optional Visualization**: Prepared a 30-second position/head-direction
+#    preview over a static full-epoch map; the napari viewer is opt-in
 #
 # ### Key Functions Used
 #
 # - `Environment.from_graph()` - Create 1D linearized environment
 # - `Environment.from_samples()` - Create 2D spatial environment
-# - `compute_spatial_rate()` - Convert spikes to firing rate maps (returns `SpatialRateResult`)
+# - `compute_spatial_rates()` - Convert population spikes to labeled firing rate maps
 # - `env.animate_fields()` - Interactive napari visualization
 # - `PositionOverlay` - Animate animal position with trail
-# - `spatial_information()` - Measure spatial information (bits/spike)
-# - `sparsity()` - Measure firing field compactness
+# - `result.spatial_information()` - Measure spatial information (bits/spike)
+# - `result.sparsity()` - Measure how broadly activity is distributed
 # - `detect_place_fields()` - Automatic place field detection
 # - `field_size()`, `rate_map_centroid()` - Place field properties
 #

@@ -1,157 +1,133 @@
 # Example Data
 
-Example datasets for the `neurospatial` package. The raw files (`*.pkl`,
-`*.mp4`, `*.h264`, `*.parquet`) are **not** checked in — they're hosted
-externally and downloaded on demand. This README and the
-`load_bandit_data.py` helper are the only files tracked here.
+The public J16 recording used by the real-data examples is downloaded on demand.
+Data files are not committed to this repository; this README and
+`load_bandit_data.py` are tracked.
 
 ## Downloading the J16 bandit dataset
 
-The J16 plus-maze recording used by
-[`examples/19_real_data_bandit_task.ipynb`](../examples/19_real_data_bandit_task.ipynb)
-is hosted on Zenodo. To run that notebook locally:
+Examples [19: real-data place fields](../examples/19_real_data_bandit_task.ipynb)
+and [23: path progression](../examples/23_path_progression.ipynb) use the
+recording from rat J16, July 10, 2021, run epoch `02_r1`, on a spatial-bandit
+maze task.
+
+From the repository root, download the published file with:
 
 ```bash
-# Replace <ZENODO_DOI> with the published DOI when available.
-# Until then, ask the maintainer for a pre-publication download link.
-wget https://zenodo.org/record/<RECORD_ID>/files/j1620210710_02_r1_position_info.pkl -P data/
-wget https://zenodo.org/record/<RECORD_ID>/files/j1620210710_02_r1_HPC_spike_times.pkl -P data/
-wget https://zenodo.org/record/<RECORD_ID>/files/j1620210710_02_r1_track_graph.pkl -P data/
-wget https://zenodo.org/record/<RECORD_ID>/files/j1620210710_02_r1_linear_edge_order.pkl -P data/
-wget https://zenodo.org/record/<RECORD_ID>/files/j1620210710_02_r1_linear_edge_spacing.pkl -P data/
+uv run python data/load_bandit_data.py
 ```
 
-The notebook prints the same URL and exits cleanly when the data files
-are missing, so you can browse the rendered notebook on the docs site
-without downloading anything.
+This saves `data/j1620210710_02_r1_figure04_inputs.npz` (about 75 MB) and
+verifies its SHA-256. A verified cached copy is reused without downloading.
+An existing file with a different checksum is left untouched; move it aside
+before fetching the published copy. To choose another directory:
 
----
+```bash
+uv run python data/load_bandit_data.py --data-path /path/to/recordings
+```
 
-## Arthur Session (2022-03-24)
+The notebooks fetch and verify the file when run, so their first run needs an
+internet connection. Download it in advance to run them offline. Browsing the
+rendered documentation does not download data.
 
-Real trodestrack data from rat "Arthur" recorded on March 24, 2022.
-To be used as example data for `neurospatial` package.
+| Published input | Value |
+| --- | --- |
+| Archive | [Zenodo, version 1.0, DOI: 10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757) |
+| File | `j1620210710_02_r1_figure04_inputs.npz` |
+| Size | 75,064,686 bytes |
+| SHA-256 | `60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3` |
+| Data license | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
-### Arthur Files
+The archive contains numeric and string arrays, loaded with
+`np.load(..., allow_pickle=False)`. It replaces the five pickle/joblib files
+previously used by these examples; those files are not needed.
 
-- **`arthur20220324_position_info.parquet`** - Camera tracking data (73,450 frames, 40 min)
-- **`20220324_arthur_02_r1.mp4`** - Video recording (279 MB)
+### Loading J16 data
 
-### Arthur Data Format
+```python
+from data.load_bandit_data import fetch_bandit_data, load_neural_recording_from_files
 
-#### Timestamps
+fetch_bandit_data("data/")  # Verify the cached file or download it once.
+data = load_neural_recording_from_files("data/", "j1620210710_02_r1")
 
-- **Format**: Unix timestamps (float64) as pandas DataFrame index
-- **Example**: 1648163575.123 (seconds since epoch)
+position_info = data["position_info"]          # pandas DataFrame
+spike_times = data["spike_times"]              # Per-unit spike-time arrays
+track_graph = data["track_graph"]              # NetworkX graph
+linear_edge_order = data["linear_edge_order"]  # Ordered track edges
+linear_edge_spacing = data["linear_edge_spacing"]  # 15 cm
+```
 
-#### Camera Data
+`load_neural_recording_from_files` reads the local NPZ and returns the same
+dictionary keys as the earlier loader. Fetching is explicit; importing the
+helper does not download anything. Use the same directory in both calls if
+you chose a custom download location.
 
-- **Frames**: 73,450
-- **Rate**: 30.4 Hz
-- **Duration**: 2416.5 seconds (40.3 minutes)
-- **Columns**:
-  - `xloc`, `yloc`: LED positions in pixels (raw 16-bit integers) of first LED
-  - `xloc2`, `yloc2`: LED positions in pixels (raw 16-bit integers) of second LED
-  - `video_frame_ind`: Video frame index
-  - `HWframeCount`: Hardware frame count
-  - `HWTimestamp`: Hardware timestamp
-- **Units**: Pixels (raw 16-bit integers)
-- **Conversion to meters**: `position_m = pixel_value × 0.0022` (user-provided)
-- **LED separation**: 21.6 pixels = 4.75 cm
+### Recording contents and units
 
-### Loading Arthur Data
+The published file contains 709,321 position samples spanning approximately
+1,418.6 seconds (23.6 minutes), sampled at 500 Hz. The position DataFrame has
+Unix timestamps in seconds as its index and these columns:
+
+| Columns | Meaning and units |
+| --- | --- |
+| `head_position_x`, `head_position_y` | Head position in cm |
+| `head_orientation` | Head direction in radians |
+| `head_velocity_x`, `head_velocity_y`, `head_speed` | Velocity components and speed in cm/s |
+| `linear_position` | Position along the linearized track in cm |
+| `track_segment_id` | Track segment identifier |
+| `projected_x_position`, `projected_y_position` | Head position projected onto the track, in cm |
+| `patch_id` | Reward-patch identifier |
+
+The 203 hippocampal spike-time arrays contain 870,018 spikes in total; 21
+arrays are empty in this epoch. Spike times use the same clock as position.
+The track graph has 10 nodes and 9 edges, with an edge spacing of 15 cm for
+linearization. Spike times are clipped to the epoch's first and last position
+timestamps; this is an epoch export rather than a full recording session.
+
+### Provenance and attribution
+
+These are derived analysis inputs from the spatial-bandit recordings of
+[Comrie et al. (2026)](https://doi.org/10.1016/j.neuron.2026.08.023).
+Position comes from LED tracking processed through Spyglass, with smoothing,
+upsampling to 500 Hz and track linearization already applied. The spike
+arrays were exported from the hippocampal Mountainsort4 sorting after the
+source workflow's automatic curation. The public input preserves their
+exported order, but does **not** include original unit identities, waveforms
+or per-unit curation labels. Unit numbers in the examples identify array
+positions and do not establish single-unit quality or cell type.
+
+The related [DANDI dandiset 001942](https://dandiarchive.org/dandiset/001942)
+contains raw recording and position data; the exact hippocampal spike sorting
+used here is supplied by the Zenodo input rather than that DANDI export.
+When reusing these data, attribute the study and the
+[versioned Zenodo input](https://doi.org/10.5281/zenodo.23020757) under its
+CC BY 4.0 license.
+
+### Optional video
+
+The local J16 video `20210710_j16_02_r1.1.mp4` used by some video-overlay
+demonstrations is **not** part of the Zenodo archive. It is not downloaded
+by this helper and has no public download provided here. The place-field
+and path-progression analyses do not require it.
+
+## Separate local example: Arthur session (2022-03-24)
+
+The following describes optional Trodes tracking data from rat Arthur on
+March 24, 2022. These files are separate from the public J16 archive and
+are not provided or downloaded by `load_bandit_data.py`.
+
+- `arthur20220324_position_info.parquet`: camera tracking (73,450 frames,
+  approximately 40 minutes).
+- `20220324_arthur_02_r1.mp4`: video recording (279 MB).
+
+The tracking DataFrame uses Unix timestamps in seconds as its index. Its
+columns include `xloc`, `yloc`, `xloc2`, `yloc2` (the two LED positions in
+pixels), `video_frame_ind`, `HWframeCount` and `HWTimestamp`. The documented
+calibration is `position_m = pixel_value * 0.0022`, with an LED separation
+of 21.6 pixels (4.75 cm). If you have this local file, load it with:
 
 ```python
 import pandas as pd
 
-pos_df = pd.read_parquet('arthur20220324_position_info.parquet')
+pos_df = pd.read_parquet("data/arthur20220324_position_info.parquet")
 ```
-
----
-
-## J16 Bandit Session (2021-07-10)
-
-Neural recording data from rat "J16" on a bandit task, recorded July 10, 2021.
-Used as example data for `neurospatial` place field and linearization examples.
-
-### J16 Files
-
-- **`j1620210710_02_r1_position_info.pkl`** - Position tracking data (709,321 samples, ~24 min)
-- **`j1620210710_02_r1_HPC_spike_times.pkl`** - Hippocampal spike times (203 units)
-- **`j1620210710_02_r1_track_graph.pkl`** - Plus maze track graph (10 nodes, 9 edges)
-- **`j1620210710_02_r1_linear_edge_order.pkl`** - Edge ordering for linearization
-- **`j1620210710_02_r1_linear_edge_spacing.pkl`** - Node spacing (15 cm)
-- **`20210710_j16_02_r1.1.mp4`** - Video recording (49 MB, 820×780, ~24 min at 30 fps)
-- **`load_bandit_data.py`** - Loading utility function
-
-### J16 Data Format
-
-#### Position Info
-
-- **Samples**: 709,321
-- **Rate**: 500 Hz
-- **Duration**: 1418.6 seconds (~23.6 minutes)
-- **Index**: Unix timestamps (float64) as pandas DataFrame index
-- **Columns**:
-  - `head_position_x`, `head_position_y`: 2D position (cm)
-  - `head_orientation`: Head direction (radians)
-  - `head_velocity_x`, `head_velocity_y`: Velocity components (cm/s)
-  - `head_speed`: Speed magnitude (cm/s)
-  - `linear_position`: Linearized track position (0–608 cm)
-  - `track_segment_id`: Track segment identifier (0–8)
-  - `projected_x_position`, `projected_y_position`: Position projected onto track
-  - `patch_id`: Reward patch identifier (1, 2, or 3)
-- **Spatial extent**: X: [30, 233] cm, Y: [33, 223] cm
-
-#### Spike Times
-
-- **Units**: 203 hippocampal units
-- **Total spikes**: 870,018
-- **Format**: List of numpy arrays, one per unit
-
-#### Track Graph (Plus Maze)
-
-- **Nodes**: 10 (including 3 arm endpoints, 3 junction nodes, center)
-- **Edges**: 9 (tree structure)
-- **Patches**: 3 reward locations at arm endpoints
-
-### Loading J16 Data
-
-```python
-from data.load_bandit_data import load_neural_recording_from_files
-
-data = load_neural_recording_from_files('data/', 'j1620210710_02_r1')
-
-position_info = data['position_info']      # pd.DataFrame
-spike_times = data['spike_times']          # list[np.ndarray]
-track_graph = data['track_graph']          # networkx.Graph
-linear_edge_order = data['linear_edge_order']  # list[tuple]
-linear_edge_spacing = data['linear_edge_spacing']  # float
-```
-
-### Track Graph Annotation Example
-
-The script `track_graph_annotation_example.py` demonstrates how to use
-neurospatial's track graph annotation tool with the J16 video.
-
-```bash
-# Visualize the existing track graph overlaid on video frame
-uv run python data/track_graph_annotation_example.py visualize
-
-# Create a new track graph from scratch (interactive napari)
-uv run python data/track_graph_annotation_example.py create
-
-# Edit the existing track graph (interactive napari)
-uv run python data/track_graph_annotation_example.py edit
-
-# Load saved track graph and create Environment
-uv run python data/track_graph_annotation_example.py load
-```
-
-**Keyboard Shortcuts** (for create/edit modes):
-
-- `A` - Add node mode
-- `E` - Add edge mode (click two nodes)
-- `X` - Delete mode
-- `Shift+S` - Set start node
-- `Ctrl+Z` - Undo

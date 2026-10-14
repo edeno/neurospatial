@@ -256,6 +256,13 @@ with the raw arrays (about 1000 map recomputes by default).
 See [example 11](https://github.com/edeno/neurospatial/blob/main/examples/11_place_field_analysis.ipynb)
 for the full tutorial.
 
+To start with a real recording, run
+[example 19](examples/19_real_data_bandit_task.ipynb): it downloads and verifies
+the 75 MB [J16 Zenodo dataset](https://doi.org/10.5281/zenodo.23020757), then
+analyzes its 203 hippocampal spike trains.
+To download ahead of time, run `uv run python data/load_bandit_data.py` from the
+repository root. See [the data guide](data/README.md) for units and attribution.
+
 To go the other way — reconstruct position from population spikes — the one-call
 path is
 [`decode_session`](https://edeno.github.io/neurospatial/api/):

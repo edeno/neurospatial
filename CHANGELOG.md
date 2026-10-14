@@ -4,6 +4,13 @@
 
 ### Added
 
+- Download and cache the real J16 bandit recording from
+  Zenodo (10.5281/zenodo.23020757), verifying its
+  pinned SHA-256 before loading numeric NPZ arrays without pickle. Examples 19
+  and 23 fetch this archive explicitly and reuse it offline; data instructions
+  include the source, license and citation. The optional napari viewer in
+  example 19 now requires an explicit opt-in.
+
 - Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
   population result (spatial, directional, view, object-vector and peri-event).
   `[]` selects by position on all of them, so `spikes[i]` and `rates[i]` are
