@@ -393,17 +393,16 @@ class TestImmutability:
             dec.dt = 0.1  # type: ignore[misc]
 
     def test_from_rates_decoder_isolated_from_rate_result(self, sim) -> None:
-        # A fitted decoder is a snapshot: editing the rates it was built from
-        # must not change its posterior or its recorded training settings.
+        # A fitted decoder is a snapshot: the rate maps it was built from are
+        # read-only, and editing their recorded settings does not reach it.
         from neurospatial.encoding import compute_spatial_rates
 
         env, spikes, times, positions = sim
         rates = compute_spatial_rates(env, spikes, times, positions, fill_value=0.0)
         decoder = BayesianDecoder.from_rates(rates, dt=0.5)
-        before = decoder.predict(spikes, times).posterior.copy()
-        np.asarray(rates.firing_rates)[:] = 1.0
+        with pytest.raises(ValueError, match="read-only"):
+            np.asarray(rates.firing_rates)[:] = 1.0
         rates.analysis_settings["method"] = "edited"
-        assert_array_equal(decoder.predict(spikes, times).posterior, before)
         assert decoder.analysis_settings["method"] == "diffusion_kde"
 
     def test_fitted_state_is_read_only(self, sim) -> None:

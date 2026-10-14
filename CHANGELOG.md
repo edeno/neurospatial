@@ -58,6 +58,15 @@
 
 ### Changed
 
+- Rate and peri-event results store read-only copies of their arrays. This
+  covers spatial, directional, view and object-vector results (single-unit
+  and population) and both peri-event results. Editing an array a result was
+  built from no longer changes it, and editing a result's arrays in place, for
+  example `rates.firing_rates /= peak`, raises instead of silently changing
+  what the result reports. **Breaking:** copy before modifying values:
+  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
+  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
+  used to edit the result.
 - `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
   on environments built with `from_polygon`, `from_grid_mask` and
   `from_pixel_mask`, and on grid environments read from NWB. They previously

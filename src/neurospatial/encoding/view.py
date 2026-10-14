@@ -299,6 +299,10 @@ class ViewRateResult(SpatialResultMixin):
         default=None, kw_only=True, repr=False, compare=False
     )
 
+    def __post_init__(self) -> None:
+        """Store the arrays as read-only copies."""
+        self._own_arrays()
+
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
 
@@ -711,6 +715,7 @@ class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
             "unit_table",
             align_unit_table(self.unit_table, self.unit_ids, context="ViewRatesResult"),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return the number of units.

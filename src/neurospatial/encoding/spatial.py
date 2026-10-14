@@ -843,6 +843,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             },
             n_units=None,
         )
+        self._own_arrays()
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -1701,6 +1702,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 self.unit_table, self.unit_ids, context="SpatialRatesResult"
             ),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return number of units.

@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin, UnitSelectionMixin
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    UnitSelectionMixin,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -27,7 +31,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, repr=False)
-class PeriEventResult(ResultMixin):
+class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
     """
     Result from peri-event histogram analysis.
 
@@ -94,6 +98,7 @@ class PeriEventResult(ResultMixin):
     def __post_init__(self) -> None:
         # Frozen dataclass: bypass setattr to populate the cached field.
         object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
+        self._own_arrays()
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of the PSTH: one row per time bin.
@@ -316,6 +321,7 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
                 self.unit_table, self.unit_ids, context="PopulationPeriEventResult"
             ),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return the number of units in the population.

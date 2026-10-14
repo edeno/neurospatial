@@ -41,7 +41,10 @@ Each terminal verb means the same thing on every result class:
 - `summary()` returns a flat dict of scalars; `plot(ax=None, ...)` returns the
   `Axes`.
 
-Results keep no raw input arrays or recompute closures.
+Results keep no raw input arrays or recompute closures. Rate and peri-event
+results inherit `ReadOnlyArraysMixin` and call `self._own_arrays()` last in
+`__post_init__`, so their arrays are read-only copies; exports
+(`to_dataframe`, `to_xarray`) hand out writable copies.
 
 ## Cell types
 

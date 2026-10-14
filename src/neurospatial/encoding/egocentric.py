@@ -287,6 +287,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
     def __post_init__(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
+        self._own_arrays()
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _egocentric_xarray_attrs(self)
@@ -805,6 +806,7 @@ class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 self.unit_table, self.unit_ids, context="ObjectVectorRatesResult"
             ),
         )
+        self._own_arrays()
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:

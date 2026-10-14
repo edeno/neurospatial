@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -159,7 +159,7 @@ class HasEnvironment(Protocol):
     env: Environment
 
 
-class SpatialResultMixin(ResultMixin):
+class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     """Mixin providing common spatial result methods.
 
     Extends :class:`neurospatial._results.ResultMixin`, so every spatial result

@@ -82,6 +82,29 @@ def label_at(unit_ids: Any, index: int) -> Any:
     return value.item() if isinstance(value, np.generic) else value
 
 
+class ReadOnlyArraysMixin:
+    """A frozen result whose NumPy arrays are read-only copies it owns.
+
+    A subclass calls :meth:`_own_arrays` at the end of ``__post_init__``.
+    Editing an array the result was built from then cannot change it, and
+    editing an array read from it raises. Copy with ``np.array(...)`` to
+    modify values. JAX arrays are immutable already and are kept as given.
+    """
+
+    def _own_arrays(self) -> None:
+        """Replace every NumPy array attribute with a read-only copy."""
+        for name, value in list(vars(self).items()):
+            if isinstance(value, np.ndarray):
+                object.__setattr__(self, name, read_only_copy(value))
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        for value in state.values():
+            if isinstance(value, np.ndarray):
+                value.flags.writeable = False
+
+
 _Unit_co = TypeVar("_Unit_co", covariant=True)
 
 
@@ -96,7 +119,7 @@ class _UnitContainer(Protocol[_Unit_co]):
     def __getitem__(self, index: int, /) -> _Unit_co: ...
 
 
-class UnitSelectionMixin:
+class UnitSelectionMixin(ReadOnlyArraysMixin):
     """Position indexing with ``[i]`` and label selection with :meth:`sel`.
 
     Shared by every container of units (``SpikeTrains`` and the population
@@ -107,11 +130,6 @@ class UnitSelectionMixin:
     including after pickling or copying, so it cannot be edited into the
     duplicate labels that would make ``sel`` return the first match.
     """
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping ``unit_ids`` read-only."""
-        self.__dict__.update(state)
-        state["unit_ids"].flags.writeable = False
 
     def sel(self: _UnitContainer[_Unit_co], *, unit_id: Any) -> _Unit_co:
         """Return the unit whose label is ``unit_id``.
@@ -603,7 +621,8 @@ def build_population_dataset(
             "'pip install neurospatial[xarray]' or 'pip install xarray'."
         ) from exc
 
-    rates = np.asarray(firing_rates, dtype=np.float64)
+    # Copies: the Dataset is the caller's to edit, and results are read-only.
+    rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.asarray(unit_ids)
 
@@ -634,7 +653,7 @@ def build_population_dataset(
         # bin_centers IS present (passed explicitly, e.g. directional angular
         # centers); a shape disagreement is a real inconsistency, not an
         # optional coord. Raise rather than silently omitting the coord.
-        bc = np.asarray(bin_centers, dtype=np.float64)
+        bc = np.array(bin_centers, dtype=np.float64)
         if bc.ndim != 1 or bc.shape[0] != n_bins:
             raise ValueError(
                 "bin_centers length does not match the firing-rate bin "
@@ -652,7 +671,7 @@ def build_population_dataset(
     if occupancy is not None:
         # occupancy IS present; a length disagreement is a real inconsistency,
         # not an absent-optional. Raise rather than silently dropping the var.
-        occ = np.asarray(occupancy, dtype=np.float64)
+        occ = np.array(occupancy, dtype=np.float64)
         if occ.ndim != 1 or occ.shape[0] != n_bins:
             raise ValueError(
                 "occupancy length does not match the firing-rate bin count: "

@@ -410,7 +410,7 @@ class TestSpatialRatesRoundTrip:
             write_spatial_rates(empty_nwb, result)
 
     def test_copy_on_write_decouples_from_result(self, empty_nwb, sample_environment):
-        """Mutating result arrays after write does not change what was written (L1)."""
+        """Result arrays cannot be mutated after write; the written data matches."""
         from neurospatial.io.nwb import read_place_field, write_spatial_rates
 
         env = sample_environment
@@ -420,9 +420,12 @@ class TestSpatialRatesRoundTrip:
 
         write_spatial_rates(empty_nwb, result)
 
-        # Mutate the live result's arrays in place after the write.
-        np.asarray(result.firing_rates)[:] = -999.0
-        np.asarray(result.occupancy)[:] = -1.0
+        # The live result's arrays are read-only, so nothing can change them
+        # after the write.
+        with pytest.raises(ValueError, match="read-only"):
+            np.asarray(result.firing_rates)[:] = -999.0
+        with pytest.raises(ValueError, match="read-only"):
+            np.asarray(result.occupancy)[:] = -1.0
 
         back = read_place_field(empty_nwb, env=env)
         np.testing.assert_array_equal(np.asarray(back.firing_rates), original_rates)
