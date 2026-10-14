@@ -60,9 +60,23 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     assert_allclose(basis[0], expm_multiply(-generator, delta), rtol=1e-10, atol=1e-12)
 
 
-def test_heat_kernel_raises_without_finite_volume_geometry(reloaded_graph_env):
+@pytest.mark.nwb
+def test_heat_kernel_uses_faces_after_nwb_round_trip(graph_environment_round_trip):
+    original, loaded = graph_environment_round_trip
+    kwargs = {
+        "centers": np.array([0, original.n_bins - 1]),
+        "scales": [0.5, 2.0],
+        "normalize": "none",
+    }
+    np.testing.assert_array_equal(
+        heat_kernel_wavelet_basis(loaded, **kwargs),
+        heat_kernel_wavelet_basis(original, **kwargs),
+    )
+
+
+def test_heat_kernel_raises_without_finite_volume_geometry(missing_faces_env):
     with pytest.raises(NotImplementedError, match="heat_kernel_wavelet_basis") as exc:
-        heat_kernel_wavelet_basis(reloaded_graph_env, centers=np.array([0]))
+        heat_kernel_wavelet_basis(missing_faces_env, centers=np.array([0]))
     assert "\nFix:" in str(exc.value)
 
 

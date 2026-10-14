@@ -59,6 +59,7 @@ from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.layout._locators import HexLocator
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -118,10 +119,17 @@ class EnvironmentMetrics:
         Found 6 boundary bins
 
         """
+        grid_shape, active_mask = self.grid_shape, self.active_mask
+        locator = self._binning.locator
+        if isinstance(locator, HexLocator):
+            # The public facade uses point-based fallback grid fields; the
+            # hexagonal locator retains its actual lattice support.
+            grid_shape = locator.centers_shape
+            active_mask = (locator.flat_to_active >= 0).reshape(grid_shape)
         return find_boundary_nodes(
             graph=self.connectivity,
-            grid_shape=self.grid_shape,
-            active_mask=self.active_mask,
+            grid_shape=grid_shape,
+            active_mask=active_mask,
             layout_kind=self._layout_type_used,
         ).astype(np.intp, copy=False)
 

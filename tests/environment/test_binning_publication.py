@@ -363,8 +363,9 @@ def test_faces_reject_isolated_graph_nodes_without_centers(monkeypatch) -> None:
         _ = env._face_geometry
 
 
-def test_missing_faces_message_unchanged() -> None:
-    """A non-grid NWB record retains the actionable factory-rebuild refusal."""
+@pytest.mark.nwb
+def test_non_grid_nwb_record_retains_faces() -> None:
+    """A saved non-grid binning supports smoothing without its original layout."""
     pynwb = pytest.importorskip("pynwb")
     from neurospatial.io.nwb import read_environment, write_environment
 
@@ -376,15 +377,12 @@ def test_missing_faces_message_unchanged() -> None:
     )
     write_environment(nwb, env)
     restored = read_environment(nwb)
-    assert not restored._binning.faces.available
+    assert restored._binning.faces.available
     assert restored._binning.rectilinear is None
     assert restored._binning.linearization is None
-    with pytest.raises(NotImplementedError) as exc:
-        restored.smooth(np.ones(restored.n_bins), bandwidth=1.0)
-    assert str(exc.value) == (
-        "smoothing needs finite-volume cell geometry, which is not available for this Hexagonal environment read from NWB.\n"
-        "Why: read_environment restores bin centers, connectivity and bin measures for non-grid layouts, but not the layout engine that defines cell faces.\n"
-        "Fix: rebuild the environment with the factory and Hexagonal layout parameters that created it, and run smoothing on that; grid layouts read from NWB support it directly"
+    field = np.arange(env.n_bins, dtype=float)
+    np.testing.assert_array_equal(
+        restored.smooth(field, bandwidth=1.0), env.smooth(field, bandwidth=1.0)
     )
 
 

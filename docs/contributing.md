@@ -113,8 +113,8 @@ layout capability, defined in `neurospatial.layout._diffusion`:
 
 The layout-to-binning factory checks these protocols once when publishing
 `env._binning`. Environment operations read the resulting components. A layout that cannot
-supply geometry may define `_explain_missing_geometry(operation)` to tailor the
-error, as layouts read from non-grid NWB records do.
+supply geometry is represented by a `MissingFaces` reason. Saved binnings use
+`KnownFaces` for validated geometry and retain that reason when geometry is absent.
 
 Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
 Polar environments are built on `_PolarGridLayout`, a masked grid over
@@ -135,17 +135,26 @@ writes, and both graph topology and its attribute dictionaries reject edits.
 Node positions, original grid indices and edge vectors are owned tuples, so
 restoration cannot leave mutable coordinate lists aliased by graph copies.
 `env.connectivity.copy()` supplies an editable graph for separate analyses.
-`_setup_from_layout` swaps that object whole
-and advances `_state_version`, which keys every derived cache, in one step. Factories and readers share one construction path: the file and NWB
-readers call `_from_saved_layout`, which rebuilds the layout from its saved
-parameters (and with it every derived lookup), checks the saved bin centers
-against it, replaces the rebuilt graph with the saved one (authoritative for
-4-connected grids, open angular axes and physical polar distances), and
-constructs the environment once. `_setup_from_layout` validates the graph before
-changing anything, synchronizes the environment's views, advances its state
-version and clears all analysis caches; `copy()` rebuilds from the layout too.
-Swapping in a different layout object, or changing a layout's bins, and calling
-it again is not supported.
+`_setup_from_layout` swaps that object whole and advances `_state_version`,
+which keys every derived cache, in one step. Factories build native layouts;
+readers decode the saved binning and node-link graph into `BinningLayout`, a
+protocol-compatible facade. Neither loading nor copying a loaded environment
+runs a layout builder. The facade checks graph positions, ordered edges and
+distances, face measures, and agreement between locators and their grid, shape
+or track components before publication. Its legacy grid fields derive from
+those components. Descriptive build parameters are retained for inspection.
+`_setup_from_layout` validates the graph, publishes the geometry and clears
+analysis caches through the normal constructor. Changing a layout's bins and
+calling it again is not supported.
+
+Files and dictionaries use `Environment-v2`; NWB environment records use `2.0`.
+Older records are refused with instructions to recreate and re-save the
+environment. Pure codecs in `layout/_codecs.py` store typed arrays and JSON
+metadata; bounded KD-tree and Delaunay memos are rebuilt from saved data.
+Standard NWB containers reject slash-containing names, so a one-row ragged
+DynamicTable stores arrays under safe column names. Its description holds the
+JSON metadata and canonical-key/shape/dtype mapping, without padding or a
+custom extension.
 
 `Environment._face_geometry` builds from `env._binning.faces` and caches the
 validated faces once per state version;

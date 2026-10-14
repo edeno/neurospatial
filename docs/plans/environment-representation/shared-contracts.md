@@ -250,6 +250,7 @@ class BinningLayout:
         layout_type: str,                       # the category: "grid", "mask", "hexagonal", ...
         build_params: dict[str, Any],           # descriptive record; never re-run
         is_linearized_track: bool,
+        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     ) -> None: ...
 
     def binning(self) -> Binning: ...           # binning_from_layout returns this directly
@@ -282,6 +283,8 @@ would accept changed positions or distances.
    exactly on shared geometry, active masks and ordering. There is one authority
    for grid edges and masks; changing a component without its locator is invalid.
    Bin centers and sizes must agree with that geometry.
+   Polar grid measures include the radial bin center; the facade receives the
+   saved coordinate kind to distinguish these from Cartesian cell measures.
 7. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
    locate to its own bin. This is one lookup of `n_bins` points.
 

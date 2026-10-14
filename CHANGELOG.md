@@ -90,6 +90,11 @@
 
 ### Changed
 
+- Environment files and dictionaries now use `Environment-v2`; NWB environment
+  records use schema `2.0`. They store the complete binning and restore it
+  without rebuilding layouts. Older versions are refused: recreate the
+  environment with a factory and save it again.
+
 - Point lookup consistently rejects incorrect coordinate widths, including
   hexagonal inputs with extra columns and empty or non-finite grid queries.
 
@@ -209,6 +214,9 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- NWB environment read-back retains geometric lookup, smoothing, boundaries,
+  plotting and track linearization, with the original graph attributes.
 
 - Plot graph fields against physical linearized coordinates, preserving
   unsupported bins and inserted display gaps in both lines and shaded areas.

@@ -576,13 +576,13 @@ class TestSubsetKeepsParentConnectivity:
             (x0, y0), (x1, y1) = centers[u], centers[v]
             return (x0 - 3.0) * (x1 - 3.0) < 0 and min(y0, y1) > 2.0
 
-        data = to_dict(env)
-        data["graph"]["links"] = [
-            link
-            for link in data["graph"]["links"]
-            if not crosses_wall(link["source"], link["target"])
-        ]
-        walled = from_dict(data)
+        graph = env.connectivity.copy()
+        graph.remove_edges_from([(u, v) for u, v in graph.edges if crosses_wall(u, v)])
+        env.layout.connectivity = graph
+        walled = Environment(
+            layout=env.layout, layout_type_used=env.layout._layout_type_tag
+        )
+        walled = from_dict(to_dict(walled))
         assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())
 
         sub = walled.subset(bins=np.ones(walled.n_bins, dtype=bool))

@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
 PathLike = str | Path
 
 # Schema version for serialization format
-_SCHEMA_VERSION = "Environment-v1"
+_SCHEMA_VERSION = "Environment-v2"
 
 
 def _convert_arrays_to_lists(obj: Any) -> Any:
@@ -156,7 +155,9 @@ def _decode_layout_parameters(params: Any) -> Any:
     """Inverse of ``_jsonsafe_layout_parameters`` for the sentinel dicts."""
     if isinstance(params, dict):
         if set(params) == {"__nx_graph__"}:
-            return nx.node_link_graph(params["__nx_graph__"], edges="links")
+            from neurospatial.layout._codecs import graph_from_node_link
+
+            return graph_from_node_link(params["__nx_graph__"])
         if set(params) == {"__shapely_wkt__"}:
             try:
                 from shapely import wkt as _wkt
@@ -243,8 +244,9 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     - `path.json`: Metadata, graph structure, and small arrays
     - `path.npz`: Large numerical arrays (bin_centers, etc.)
 
-    The format is stable across versions and supports forward/backward
-    compatibility through schema versioning.
+    The v2 format stores bins, lookup, cell faces and drawing components.
+    Loading decodes this data without rebuilding a layout. Older formats are
+    refused; recreate and re-save those environments with a factory.
 
     Parameters
     ----------
@@ -303,66 +305,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     # Ensure parent directory exists
     json_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build metadata dictionary
-    metadata: dict[str, Any] = {
-        "schema_version": _SCHEMA_VERSION,
-        "library_version": _get_library_version(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "name": env.name,
-        "n_dims": int(env.n_dims),
-        "n_bins": int(env.n_bins),
-        "is_linearized_track": bool(env.is_linearized_track),
-        "layout_type": env.layout_type,
-        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
-    }
-
-    # Add optional attributes
-    if env.dimension_ranges is not None:
-        metadata["dimension_ranges"] = [
-            [float(lo), float(hi)] for lo, hi in env.dimension_ranges
-        ]
-
-    if env.grid_shape is not None:
-        metadata["grid_shape"] = [int(x) for x in env.grid_shape]
-
-    # Add units and frame if present
-    if hasattr(env, "units") and env.units is not None:
-        metadata["units"] = env.units
-    if hasattr(env, "frame") and env.frame is not None:
-        metadata["frame"] = env.frame
-    # Persist a "coordinate_kind" marker for egocentric polar environments so
-    # the loader can restore the EgocentricPolarEnvironment type. Cartesian
-    # envs omit the key (loaders treat a missing key as "cartesian"), keeping
-    # the on-disk format stable for non-polar envs.
-    if getattr(env, "_POLAR", False):
-        metadata["coordinate_kind"] = "polar"
-
-    # Serialize graph to node-link format
-    graph_data = nx.node_link_data(env.connectivity, edges="links")
-    metadata["graph"] = graph_data
-
-    # Serialize regions if present
-    if env.regions and len(env.regions) > 0:
-        metadata["regions"] = [reg.to_dict() for reg in env.regions.values()]
-    else:
-        metadata["regions"] = []
-
-    # Convert entire metadata to JSON-safe format (must be done AFTER all modifications)
-    metadata = _convert_arrays_to_lists(metadata)
-
-    # Prepare arrays for npz
-    arrays_to_save: dict[str, NDArray] = {
-        "bin_centers": env.bin_centers,
-    }
-
-    # Add optional arrays
-    if env.active_mask is not None:
-        arrays_to_save["active_mask"] = env.active_mask
-
-    if env.grid_edges is not None and len(env.grid_edges) > 0:
-        # Save grid edges as separate arrays (grid_edges_0, grid_edges_1, ...)
-        for i, edges in enumerate(env.grid_edges):
-            arrays_to_save[f"grid_edges_{i}"] = edges
+    metadata, arrays_to_save = _environment_payload(env)
 
     # Write both files atomically: stage to temp files in the same directory,
     # then Path.replace() both into place only after BOTH writes succeed. This
@@ -390,7 +333,9 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 
 
 def from_file(path: PathLike) -> Environment:
-    """Load Environment from a versioned JSON + npz file pair.
+    """Load v2 binning data without running a layout builder.
+
+    Older file versions are refused; recreate and re-save them with a factory.
 
     Parameters
     ----------
@@ -454,101 +399,190 @@ def from_file(path: PathLike) -> Environment:
     with json_path.open("r") as f:
         metadata = json.load(f)
 
-    # Check schema version
-    schema_version = metadata.get("schema_version")
-    if schema_version != _SCHEMA_VERSION:
-        warnings.warn(
-            f"Schema version mismatch: file has {schema_version!r}, "
-            f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
-            stacklevel=2,
-            category=UserWarning,
+    _check_schema(metadata, str(json_path))
+    with np.load(npz_path, allow_pickle=False) as archive:
+        arrays = {key: archive[key] for key in archive.files}
+    return _restore_environment(metadata, source=str(json_path), arrays=arrays)
+
+
+def _environment_payload(
+    env: Environment,
+) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
+    """Build the shared lossless metadata and numerical-array payload."""
+    from neurospatial.layout._codecs import encode
+
+    binning_meta, binning_arrays = encode(env._binning, "binning")
+    metadata: dict[str, Any] = {
+        "schema_version": _SCHEMA_VERSION,
+        "library_version": _get_library_version(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "name": env.name,
+        "n_dims": env.n_dims,
+        "n_bins": env.n_bins,
+        "is_linearized_track": env.is_linearized_track,
+        "layout_type": env.layout_type,
+        "layout_category": env.layout.layout_type,
+        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
+        "binning": binning_meta,
+        "dimension_ranges": env.dimension_ranges,
+        "grid_shape": env.grid_shape,
+        "graph": nx.node_link_data(env.connectivity, edges="links"),
+        "regions": [region.to_dict() for region in env.regions.values()],
+        "coordinate_kind": "polar" if getattr(env, "_POLAR", False) else "cartesian",
+    }
+    for attribute in ("units", "frame"):
+        value = getattr(env, attribute)
+        if value is not None:
+            metadata[attribute] = value
+    arrays = {"bin_centers": env.bin_centers, **binning_arrays}
+    if env.active_mask is not None:
+        arrays["active_mask"] = env.active_mask
+    for index, edges in enumerate(env.grid_edges or ()):
+        arrays[f"grid_edges_{index}"] = edges
+    metadata["array_specs"] = {
+        key: {"shape": list(value.shape), "dtype": value.dtype.str}
+        for key, value in arrays.items()
+    }
+    return cast("dict[str, Any]", _convert_arrays_to_lists(metadata)), arrays
+
+
+def _check_schema(metadata: dict[str, Any], source: str) -> None:
+    """Refuse obsolete or unknown file formats with a reproducible recovery."""
+    version = metadata.get("schema_version")
+    if version != _SCHEMA_VERSION:
+        raise ValueError(
+            _format_error(
+                f"Unsupported environment schema {version!r} in {source}; expected {_SCHEMA_VERSION!r}.",
+                why="Why: this version stores the binning itself and does not rebuild older layout records.",
+                fix="recreate the environment with an Environment factory and save it again with this version",
+            )
         )
-
-    # Load arrays. allow_pickle=False is safe because to_file only stores plain
-    # numeric arrays (bin_centers, active_mask, grid_edges_*); it also blocks
-    # arbitrary-code execution from a tampered .npz. Use a context manager so
-    # the underlying file handle is closed promptly. The grid arrays follow from
-    # the saved layout parameters, so only bin_centers is read (and checked).
-    with np.load(npz_path, allow_pickle=False) as arrays:
-        # bin_centers: enforce float64 to match the in-memory from_dict path,
-        # regardless of the dtype stored on disk.
-        bin_centers = np.asarray(arrays["bin_centers"], dtype=np.float64)
-
-    return _restore_environment(
-        metadata, source=str(json_path), bin_centers=bin_centers
-    )
 
 
 def _restore_environment(
     metadata: dict[str, Any],
     *,
     source: str,
-    bin_centers: NDArray[np.float64],
+    arrays: dict[str, NDArray[Any]],
 ) -> Environment:
-    """Rebuild an environment from saved metadata plus its saved bin centers.
-
-    Shared by :func:`from_file` and :func:`from_dict`, which differ only in
-    where the arrays are stored (``.npz`` file vs. inline lists). The layout is
-    rebuilt from its saved parameters, the saved bin centers are checked against
-    it, and the saved graph replaces the rebuilt one before the environment is
-    constructed once.
-
-    Parameters
-    ----------
-    metadata : dict
-        The ``to_file`` JSON metadata or the ``to_dict`` dictionary.
-    source : str
-        Where the data came from, named if it is inconsistent or invalid.
-    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
-        Saved bin centers.
-
-    Returns
-    -------
-    Environment
-        Reconstructed environment (``EgocentricPolarEnvironment`` for polar data).
-    """
+    """Decode authoritative binning data and publish it without a layout builder."""
     from neurospatial.environment import Environment
+    from neurospatial.layout._binning import Binning, TrackLinearization
+    from neurospatial.layout._binning_layout import BinningLayout
+    from neurospatial.layout._codecs import decode
     from neurospatial.regions import Region, Regions
 
-    dimension_ranges = None
-    if "dimension_ranges" in metadata:
-        dimension_ranges = [tuple(r) for r in metadata["dimension_ranges"]]
+    try:
+        for key, spec in metadata["array_specs"].items():
+            array = arrays[key]
+            if list(array.shape) != spec["shape"] or array.dtype.str != spec["dtype"]:
+                raise ValueError(
+                    f"array {key!r} does not match its stored shape or dtype"
+                )
+        binning = decode(metadata["binning"], arrays, "binning")
+        if not isinstance(binning, Binning):
+            raise ValueError("the binning payload is not a Binning")
+        if (
+            metadata["n_bins"] != binning.bins.n_bins
+            or metadata["n_dims"] != binning.bins.n_dims
+        ):
+            raise ValueError("stored bin counts/dimensions differ from the binning")
+        centers = arrays["bin_centers"]
+        if not np.all(np.isfinite(centers)):
+            raise ValueError("stored bin_centers contain non-finite coordinates")
+        if not np.array_equal(centers, binning.bins.centers):
+            raise ValueError(
+                "stored bin_centers differ from the authoritative binning centers"
+            )
+        params = _decode_layout_parameters(
+            _convert_lists_to_arrays(metadata["layout_parameters"])
+        )
+        ranges = metadata.get("dimension_ranges")
+        layout = BinningLayout(
+            binning,
+            connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
+            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
+            layout_type_tag=metadata["layout_type"],
+            layout_type=metadata["layout_category"],
+            build_params=params,
+            is_linearized_track=metadata["is_linearized_track"],
+            coordinate_kind=metadata.get("coordinate_kind", "cartesian"),
+        )
+        if binning.rectilinear is not None or isinstance(
+            binning.linearization, TrackLinearization
+        ):
+            if (
+                "grid_shape" in metadata
+                and metadata["grid_shape"] is not None
+                and tuple(metadata["grid_shape"]) != layout.grid_shape
+            ):
+                raise ValueError("stored grid_shape differs from the binning")
+            if "active_mask" in arrays and not np.array_equal(
+                arrays["active_mask"], layout.active_mask
+            ):
+                raise ValueError("stored active_mask differs from the binning")
+            for index, edges in enumerate(layout.grid_edges or ()):
+                key = f"grid_edges_{index}"
+                if key in arrays and not np.array_equal(arrays[key], edges):
+                    raise ValueError(f"stored {key} differs from the binning")
+        env_cls: type[_BaseEnvironment] = Environment
+        if metadata.get("coordinate_kind") == "polar":
+            from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-    # Convert lists back to numpy arrays, then decode the JSON-safe sentinels
-    # written by _jsonsafe_layout_parameters so the parameters match the original.
-    layout_params = _decode_layout_parameters(
-        _convert_lists_to_arrays(metadata["layout_parameters"])
-    )
+            env_cls = EgocentricPolarEnvironment
+        elif metadata.get("coordinate_kind", "cartesian") != "cartesian":
+            raise ValueError("unknown coordinate_kind")
+        env = env_cls(
+            metadata["name"],
+            layout,
+            metadata["layout_type"],
+            params,
+            regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
+            restored_from=source,
+        )
+        for attribute in ("units", "frame"):
+            if attribute in metadata:
+                setattr(env, attribute, metadata[attribute])
+        return cast("Environment", env)
+    except (ValueError, TypeError, KeyError, IndexError, OverflowError) as error:
+        raise ValueError(
+            _format_error(
+                f"Invalid environment data in {source}: {error}",
+                why="Why: saved bins, lookup, components and connectivity must describe the same geometry.",
+                fix="re-save the environment from its original factory-built object with this version",
+            )
+        ) from error
 
-    # Polar environments (coordinate_kind "polar") restore as the distinct
-    # EgocentricPolarEnvironment type; the saved connectivity already carries
-    # the physical polar edge distances and seams.
-    env_cls: type[_BaseEnvironment] = Environment
-    if metadata.get("coordinate_kind") == "polar":
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-        env_cls = EgocentricPolarEnvironment
-    env = env_cls._from_saved_layout(
-        metadata["layout_type"],
-        layout_params,
-        name=metadata["name"],
-        bin_centers=bin_centers,
-        connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
-        restored_from=source,
-        dimension_ranges=dimension_ranges,
-    )
-
-    if metadata.get("regions"):
-        env.regions = Regions([Region.from_dict(r) for r in metadata["regions"]])
-    if "units" in metadata:
-        env.units = metadata["units"]
-    if "frame" in metadata:
-        env.frame = metadata["frame"]
-    return env
+def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
+    """Restore JSON numerical arrays, preserving empty shapes and scalar dtypes."""
+    arrays = {}
+    for key, spec in metadata["array_specs"].items():
+        raw = np.asarray(metadata["arrays"][key])
+        dtype = np.dtype(spec["dtype"])
+        if dtype.kind not in "biuf":
+            raise ValueError(f"array {key!r} has unsupported dtype {dtype}")
+        if raw.size and raw.dtype.kind not in "biuf":
+            raise ValueError(f"array {key!r} must contain numerical values")
+        if (
+            raw.size
+            and dtype.kind in "iu"
+            and raw.dtype.kind == "f"
+            and np.any(~np.isfinite(raw) | (raw != np.floor(raw)))
+        ):
+            raise ValueError(f"array {key!r} must contain integer indices")
+        if raw.size and dtype.kind in "iu":
+            limits = np.iinfo(dtype)
+            if np.any(raw < limits.min) or np.any(raw > limits.max):
+                raise ValueError(f"array {key!r} contains integers outside {dtype}")
+        if raw.size and dtype.kind == "b" and raw.dtype.kind != "b":
+            raise ValueError(f"array {key!r} must contain booleans")
+        arrays[key] = np.asarray(raw, dtype=dtype).reshape(spec["shape"])
+    return arrays
 
 
 def to_dict(env: Environment) -> dict[str, Any]:
-    """Convert Environment to a dictionary for in-memory handoff.
+    """Convert complete v2 binning data to a dictionary for in-memory handoff.
 
     This is useful for passing environments between processes or for
     temporary storage without writing to disk.
@@ -584,64 +618,13 @@ def to_dict(env: Environment) -> dict[str, Any]:
 
     """
     # Similar to to_file but with arrays as lists
-    metadata: dict[str, Any] = {
-        "schema_version": _SCHEMA_VERSION,
-        "library_version": _get_library_version(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "name": env.name,
-        "n_dims": int(env.n_dims),
-        "n_bins": int(env.n_bins),
-        "is_linearized_track": bool(env.is_linearized_track),
-        "layout_type": env.layout_type,
-        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
-        "bin_centers": env.bin_centers.tolist(),
-    }
-
-    # Add optional attributes
-    if env.dimension_ranges is not None:
-        metadata["dimension_ranges"] = [
-            [float(lo), float(hi)] for lo, hi in env.dimension_ranges
-        ]
-
-    if env.grid_shape is not None:
-        metadata["grid_shape"] = [int(x) for x in env.grid_shape]
-
-    if env.active_mask is not None:
-        metadata["active_mask"] = env.active_mask.tolist()
-
-    if env.grid_edges is not None and len(env.grid_edges) > 0:
-        metadata["grid_edges"] = [edges.tolist() for edges in env.grid_edges]
-
-    # Add units and frame if present
-    if hasattr(env, "units") and env.units is not None:
-        metadata["units"] = env.units
-    if hasattr(env, "frame") and env.frame is not None:
-        metadata["frame"] = env.frame
-    # Persist a "coordinate_kind" marker for egocentric polar environments so
-    # the loader can restore the EgocentricPolarEnvironment type. Cartesian
-    # envs omit the key (loaders treat a missing key as "cartesian"), keeping
-    # the on-disk format stable for non-polar envs.
-    if getattr(env, "_POLAR", False):
-        metadata["coordinate_kind"] = "polar"
-
-    # Serialize graph
-    graph_data = nx.node_link_data(env.connectivity, edges="links")
-    metadata["graph"] = graph_data
-
-    # Serialize regions
-    if env.regions and len(env.regions) > 0:
-        metadata["regions"] = [reg.to_dict() for reg in env.regions.values()]
-    else:
-        metadata["regions"] = []
-
-    # Convert entire metadata to JSON-safe format
-    metadata = _convert_arrays_to_lists(metadata)
-
+    metadata, arrays = _environment_payload(env)
+    metadata["arrays"] = {key: value.tolist() for key, value in arrays.items()}
     return metadata
 
 
 def from_dict(data: dict[str, Any]) -> Environment:
-    """Reconstruct Environment from dictionary representation.
+    """Decode v2 binning data without rebuilding; refuse older dictionary versions.
 
     Parameters
     ----------
@@ -665,19 +648,13 @@ def from_dict(data: dict[str, Any]) -> Environment:
 
     """
     # Check schema version
-    schema_version = data.get("schema_version")
-    if schema_version != _SCHEMA_VERSION:
-        warnings.warn(
-            f"Schema version mismatch: data has {schema_version!r}, "
-            f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
-            stacklevel=2,
-            category=UserWarning,
-        )
-
-    # The grid arrays follow from the saved layout parameters, so only the bin
-    # centers are read (and checked against the rebuilt layout).
-    bin_centers = np.array(data["bin_centers"], dtype=np.float64)
-
+    _check_schema(data, "the environment dictionary")
+    try:
+        arrays = _arrays_from_lists(data)
+    except (ValueError, TypeError, KeyError, OverflowError) as error:
+        raise ValueError(
+            f"Invalid arrays in the environment dictionary: {error}"
+        ) from error
     return _restore_environment(
-        data, source="the environment dictionary", bin_centers=bin_centers
+        data, source="the environment dictionary", arrays=arrays
     )

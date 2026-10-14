@@ -9,7 +9,7 @@
 | 1 — Binning snapshot | Complete |
 | 2a — Data locators | Complete |
 | 2b — Shapes and plots | Complete |
-| 3 — Save binnings | Pending |
+| 3 — Save binnings | Complete |
 | 4 — Derived environments | Pending |
 
 Validation evidence: [validation.md](validation.md).

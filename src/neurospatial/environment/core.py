@@ -991,11 +991,10 @@ class _BaseEnvironment(
         It also applies fallbacks for certain grid-specific attributes if the
         layout is point-based to ensure consistency. It also advances the state
         version, clears all analysis caches and publishes the geometry
-        read-only. Readers restore a saved graph onto the rebuilt layout before
-        the environment is constructed (``_from_saved_layout``), so this runs
-        once per environment. Lookups a layout derives at build time are not
-        rebuilt, so swapping in a different layout or changing a layout's bins
-        and calling this again is not supported.
+        read-only. Readers decode bins, lookup and graph data into a layout
+        facade before the normal constructor, so this runs once per environment
+        without rebuilding a layout. Swapping in a different layout or changing
+        its bins and calling this again is not supported.
 
         Parameters
         ----------

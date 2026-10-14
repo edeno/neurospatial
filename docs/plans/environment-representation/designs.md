@@ -201,8 +201,12 @@ The reason text comes from today's message for the same environment, so a
 loaded environment refuses with the same explanation.
 
 **NWB** (`src/neurospatial/io/nwb/_environment.py:114` write, `:516` read):
-- The environment record stores the same JSON meta (one string attribute) and
-  the same arrays (one dataset each, under the same keys).
+- The environment record stores the same JSON meta as one description
+  attribute on a standard one-row DynamicTable. NWB forbids slash-containing
+  container names: `array_specs` maps canonical keys to safe column names,
+  shapes and dtypes. Each typed array is stored as a ragged vector without
+  padding, with its VectorIndex. This standard-container representation was
+  verified by an HDF5 round trip and approved by the user.
 - The node-link graph is stored like files store it, so nodes keep
   `original_grid_nd_index`. That fixes `boundary_bins` on NWB read-back.
 - `TrackLinearization` is encoded, which fixes `to_linear` on NWB read-back.

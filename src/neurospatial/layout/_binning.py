@@ -249,9 +249,6 @@ def _missing_geometry_error(layout: object, operation: str) -> NotImplementedErr
     """
     from neurospatial._exceptions import _format_error
 
-    explain = getattr(layout, "_explain_missing_geometry", None)
-    if explain is not None:
-        return NotImplementedError(explain(operation))
     return NotImplementedError(
         _format_error(
             f"{operation} needs finite-volume cell geometry, which layout "
@@ -312,6 +309,92 @@ class LayoutFaces:
         return _missing_geometry_error(self.layout, operation)
 
 
+@dataclass(frozen=True, eq=False)
+class KnownFaces:
+    """Owned finite-volume faces that no longer need their originating layout."""
+
+    faces: FaceGeometry
+
+    def __post_init__(self) -> None:
+        raw = self.faces
+        edges = np.asarray(raw.edges)
+        areas = np.array(raw.A, dtype=np.float64, copy=True)
+        distances = np.array(raw.distance, dtype=np.float64, copy=True)
+        volumes = np.array(raw.volumes, dtype=np.float64, copy=True)
+        if volumes.ndim != 1 or np.any(~np.isfinite(volumes) | (volumes <= 0)):
+            raise ValueError(
+                "face volumes must be finite, positive and one-dimensional."
+            )
+        if edges.ndim != 2 or edges.shape[1] != 2 or edges.dtype.kind not in "iu":
+            raise ValueError(
+                "face edges must have shape (n_faces, 2) and integer indices."
+            )
+        if np.any((edges < 0) | (edges >= len(volumes))):
+            raise ValueError("face edges contain an out-of-range bin index.")
+        if areas.shape != (len(edges),) or np.any(~np.isfinite(areas) | (areas < 0)):
+            raise ValueError(
+                "face areas must have shape (n_faces,) and be finite and non-negative."
+            )
+        if distances.shape != (len(edges),) or np.any(
+            ~np.isfinite(distances) | (distances <= 0)
+        ):
+            raise ValueError(
+                "face distances must have shape (n_faces,) and be finite and positive."
+            )
+        owned_edges = np.array(edges, dtype=np.intp, copy=True)
+        for array in (owned_edges, areas, distances, volumes):
+            array.setflags(write=False)
+        object.__setattr__(
+            self, "faces", FaceGeometry(owned_edges, areas, distances, volumes)
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        for array in state["faces"]:
+            array.setflags(write=False)
+        object.__setattr__(self, "faces", state["faces"])
+
+    @property
+    def available(self) -> bool:
+        """Whether validated face geometry can be obtained."""
+        return True
+
+    def build(self) -> FaceGeometry:
+        """Return the stored faces in published pair order."""
+        return self.faces
+
+    def missing_error(self, operation: str) -> NotImplementedError:
+        """Return an error only relevant to unavailable face sources."""
+        return NotImplementedError(f"{operation}: stored faces are available.")
+
+
+@dataclass(frozen=True, eq=False)
+class MissingFaces:
+    """The reason finite-volume operations cannot use a binning."""
+
+    reason: str
+
+    @property
+    def available(self) -> bool:
+        """Whether validated face geometry can be obtained."""
+        return False
+
+    def build(self) -> FaceGeometry:
+        """Refuse construction because valid face geometry is unavailable."""
+        raise self.missing_error("This operation")
+
+    def missing_error(self, operation: str) -> NotImplementedError:
+        """Name the operation, missing geometry and supported recovery."""
+        from neurospatial._exceptions import _format_error
+
+        return NotImplementedError(
+            _format_error(
+                f"{operation} needs finite-volume cell geometry. {self.reason}",
+                why="Why: finite-volume operations require valid cell faces, measures and normal distances.",
+                fix="use the original environment or rebuild an environment from the changed geometry",
+            )
+        )
+
+
 class _ReadOnlyTrackAttributes(dict[str, Any]):
     """Protect stored track geometry while supporting pickle and editable copies."""
 
@@ -361,7 +444,17 @@ class TrackLinearization:
             graph._node[node] = _ReadOnlyTrackAttributes(
                 attrs, pos=tuple(float(value) for value in attrs["pos"])
             )
-        for u, v, attrs in graph.edges(data=True):
+        for expected_id, (u, v, attrs) in enumerate(graph.edges(data=True)):
+            edge_id = attrs.get("edge_id")
+            if (
+                not isinstance(edge_id, (int, np.integer))
+                or isinstance(edge_id, (bool, np.bool_))
+                or edge_id != expected_id
+            ):
+                raise ValueError(
+                    f"track edge ({u!r}, {v!r}) edge_id must equal its graph "
+                    f"enumeration index {expected_id}, got {edge_id!r}"
+                )
             frozen = _ReadOnlyTrackAttributes(attrs)
             graph._adj[u][v] = graph._adj[v][u] = frozen
         graph.graph = _ReadOnlyTrackAttributes(graph.graph)
@@ -447,6 +540,9 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
     Binning
         Owned bin arrays and adapters retaining the layout's capabilities.
     """
+    factory = getattr(layout, "binning", None)
+    if factory is not None:
+        return cast("Binning", factory())
     edges = list(connectivity.edges(data=True))
     pairs = np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2)
     distances = np.array([data["distance"] for _, _, data in edges], dtype=np.float64)

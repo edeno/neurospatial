@@ -85,10 +85,10 @@ class EnvironmentSerialization:
     """
 
     def to_file(self: SelfEnv, path: str | Path, *, overwrite: bool = False) -> None:
-        """Save Environment to versioned JSON + npz files.
+        """Save complete Environment-v2 binning data to JSON and NPZ files.
 
-        This method provides stable, reproducible serialization compatible
-        across Python versions. Creates two files:
+        Loading restores bins, lookup, faces and drawing components without
+        rebuilding a layout. Older versions are refused. Creates two files:
         `{path}.json` (metadata) and `{path}.npz` (arrays).
 
         Parameters
@@ -170,8 +170,9 @@ class EnvironmentSerialization:
 
         Notes
         -----
-        This method can load environments saved with any serialization version,
-        providing forward and backward compatibility.
+        Only Environment-v2 files are accepted. Loading decodes bins, lookup,
+        faces and drawing components without rebuilding a layout. Recreate
+        older environments with a factory and save them again.
 
         """
         from neurospatial.io import from_file as _from_file
@@ -181,9 +182,9 @@ class EnvironmentSerialization:
     def to_dict(self: SelfEnv) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
-        Returns a dictionary representation with all numpy arrays converted
-        to lists for JSON compatibility. Useful for programmatic access,
-        testing, or passing to other libraries.
+        Stores complete Environment-v2 binning data with numerical arrays as
+        lists and explicit shapes/dtypes. Loading decodes this data without
+        rebuilding a layout; older dictionary versions are refused.
 
         Returns
         -------
@@ -216,7 +217,10 @@ class EnvironmentSerialization:
 
     @classmethod
     def from_dict(cls: type[EnvironmentProtocol], data: dict[str, Any]) -> Environment:
-        """Reconstruct Environment from dictionary representation.
+        """Decode complete Environment-v2 data without rebuilding a layout.
+
+        Older dictionary formats are refused; recreate and re-save them with
+        an Environment factory.
 
         Parameters
         ----------
@@ -258,12 +262,10 @@ class EnvironmentSerialization:
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
-        The stored data includes:
-
-        - bin_centers and connectivity graph structure
-        - dimension_ranges and edge weights
-        - regions (points and polygons)
-        - metadata (units, frame, name, layout_type)
+        Schema 2.0 stores bins, exact lookup, cell faces, drawing components,
+        track linearization, graph attributes, regions and coordinate metadata.
+        Loading restores this data without rebuilding a layout. Older NWB
+        environment records must be recreated with a factory and saved again.
 
         Parameters
         ----------

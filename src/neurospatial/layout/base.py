@@ -160,9 +160,20 @@ class LayoutEngine(Protocol):
     dimension_ranges: Sequence[tuple[float, float]] | None
 
     # Attributes primarily for GRID-BASED Layouts
-    grid_edges: tuple[NDArray[np.float64], ...] | None = None
-    grid_shape: tuple[int, ...] | None = None
-    active_mask: NDArray[np.bool_] | None = None
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None:
+        """Cell edges when a grid or track representation is available."""
+        ...
+
+    @property
+    def grid_shape(self) -> tuple[int, ...] | None:
+        """Full grid shape, including inactive cells."""
+        ...
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_] | None:
+        """Active cells in full grid order."""
+        ...
 
     # Internal Attributes for Introspection/Serialization
     _layout_type_tag: str

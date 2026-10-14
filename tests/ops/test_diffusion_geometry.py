@@ -246,11 +246,15 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
         )
 
 
-def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
-    """Readers take grid arrays from the rebuilt layout, not the saved data."""
+def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
+    """Descriptive grid arrays can be omitted when encoded components retain them."""
     grid = _four_connected_grid()
     data = to_dict(grid)
-    data.pop("grid_edges")
+    for name in tuple(data["arrays"]):
+        if name.startswith("grid_edges_"):
+            data["arrays"].pop(name)
+            data["array_specs"].pop(name)
+    data.pop("grid_shape")
     restored = from_dict(data)
     np.testing.assert_array_equal(
         restored.bin_at(grid.bin_centers), np.arange(grid.n_bins)
@@ -260,8 +264,8 @@ def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
         "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
     )
     restored = from_dict(to_dict(hexagonal))
-    assert restored.layout.grid_edges == hexagonal.layout.grid_edges
-    assert restored.copy().grid_edges == hexagonal.grid_edges
+    assert tuple(restored.layout.grid_edges) == ()
+    assert tuple(restored.copy().grid_edges) == ()
     np.testing.assert_array_equal(
         restored.bin_at(hexagonal.bin_centers), np.arange(hexagonal.n_bins)
     )
@@ -269,7 +273,7 @@ def test_missing_optional_keys_keep_the_rebuilt_layout_geometry():
 
 @pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
-    """Readers rebuild, restore the saved graph, then set the environment up once."""
+    """Readers decode geometry and set the environment up exactly once."""
     from neurospatial.environment.core import _BaseEnvironment
 
     original = _four_connected_grid()
@@ -286,11 +290,11 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
 
 
-def test_saved_bin_centers_must_match_the_rebuilt_layout():
+def test_saved_bin_centers_must_match_the_authoritative_binning():
     data = to_dict(_four_connected_grid())
-    data["bin_centers"][0][0] += 1.0
+    data["arrays"]["bin_centers"][0][0] += 1.0
     with pytest.raises(
-        ValueError, match="bin centers in the environment dictionary do not match"
+        ValueError, match=r"bin_centers.*authoritative binning centers"
     ) as exc:
         from_dict(data)
     assert "\nFix:" in str(exc.value)
@@ -300,26 +304,32 @@ def test_saved_bin_centers_must_match_the_rebuilt_layout():
     ("origin", "float32_resolves_bins"), [(0.0, True), (1e6, True), (1e7, False)]
 )
 def test_center_check_rejects_a_bin_shift_at_any_origin(origin, float32_resolves_bins):
-    """Tolerance follows bin spacing and storage precision, not the origin."""
+    """Cell geometry catches shifted centers regardless of coordinate origin."""
     # Unit-width bins with half-integer centers, e.g. origin + 0.5, + 1.5, ...
     edges = origin + np.arange(11.0)
     env = Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool), grid_edges=(edges,) * 2
     )
-    stored = np.asarray(to_dict(env)["bin_centers"])
+    stored = np.asarray(to_dict(env)["arrays"]["binning/bins/centers"])
 
     shifted = to_dict(env)
-    shifted["bin_centers"] = (stored + np.array([1.0, 0.0])).tolist()
-    with pytest.raises(ValueError, match="do not match"):
+    centers = (stored + np.array([1.0, 0.0])).tolist()
+    shifted["arrays"]["binning/bins/centers"] = centers
+    shifted["arrays"]["bin_centers"] = centers
+    for node in shifted["graph"]["nodes"]:
+        node["pos"] = centers[node["id"]]
+    with pytest.raises(ValueError, match=r"centers.*does not match"):
         from_dict(shifted)
 
     # float32 has unit spacing near 1e7: half-integer centers round by half a bin.
     float32 = to_dict(env)
-    float32["bin_centers"] = stored.astype(np.float32).astype(float).tolist()
+    float32["arrays"]["binning/bins/centers"] = (
+        stored.astype(np.float32).astype(float).tolist()
+    )
     if float32_resolves_bins:
         assert from_dict(float32).n_bins == env.n_bins
     else:
-        with pytest.raises(ValueError, match="do not match"):
+        with pytest.raises(ValueError, match="centers"):
             from_dict(float32)
 
 
@@ -339,19 +349,23 @@ def test_center_check_rejects_neighbor_substitution_in_sparse_mask(
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
 
     rounded = to_dict(env)
-    rounded["bin_centers"] = env.bin_centers.astype(np.float32).astype(float).tolist()
-    np.testing.assert_array_equal(from_dict(rounded).bin_centers, env.bin_centers)
+    rounded["arrays"]["binning/bins/centers"] = (
+        env.bin_centers.astype(np.float32).astype(float).tolist()
+    )
+    with pytest.raises(ValueError, match="centers"):
+        from_dict(rounded)
 
     source, neighbor = neighbor_pair
-    data["bin_centers"][source] = data["bin_centers"][neighbor].copy()
-    with pytest.raises(ValueError, match="do not match"):
+    centers = data["arrays"]["binning/bins/centers"]
+    centers[source] = centers[neighbor].copy()
+    with pytest.raises(ValueError, match="centers"):
         from_dict(data)
 
 
 def test_non_finite_saved_centers_are_rejected():
     data = to_dict(_four_connected_grid())
-    data["bin_centers"][0][0] = float("nan")
-    with pytest.raises(ValueError, match="contain 1 non-finite values") as exc:
+    data["arrays"]["binning/bins/centers"][0][0] = float("nan")
+    with pytest.raises(ValueError, match=r"centers.*finite") as exc:
         from_dict(data)
     assert "\nFix:" in str(exc.value)
 

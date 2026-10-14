@@ -7,7 +7,8 @@ Validation uses the existing isolated Python 3.13 environment through
 `UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache uv run --no-sync`.
 Non-GUI pytest commands use `-p no:napari`: the installed napari plugin tries
 to write its theme cache outside the sandbox during unrelated tests.
-Matplotlib uses `MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache`.
+Matplotlib uses `MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache` and
+`MPLBACKEND=Agg` so documentation examples cannot block on an interactive window.
 
 ## Binning snapshot
 
@@ -131,3 +132,54 @@ Ruff pass. Independent review found and verified the MultiPolygon outline fix;
 no remaining findings. Intermediate unreleased private Binning pickle states
 are not a supported storage format; starting-commit public environment/result
 pickles remain covered by the tested migration.
+
+## Saved binning records
+
+Files and dictionaries use `Environment-v2`; NWB records use schema `2.0`.
+All three transports decode the same component payload without a layout builder.
+The user approved a standard one-row ragged DynamicTable for NWB arrays, with
+one JSON description holding shapes, dtypes and safe column-name mappings.
+Real v1 file and NWB 1.0/1.1 fixtures were captured before changing the writer;
+the new readers refuse them with recreation instructions.
+
+The independent review found two integrity gaps and confirmed their repairs:
+track edge IDs must match graph edge order, and grid sizes must match physical
+cell measures, including the radial factor for polar cells. Regression tests
+first failed, then passed. Measure checks retain the native grid builder's
+documented uniform-spacing rounding rule and accept genuine variable widths;
+exact comparisons still protect duplicated stored arrays.
+
+The reviewed persistence slice passes 544 tests with numerical RuntimeWarnings
+treated as errors. The broader owned slice previously passed 946 tests; the
+updated cross-module slice passes after replacing obsolete rebuild/capability-loss
+expectations. The broad CPU run passed 10,069 tests before those updates;
+its 14 failures were those obsolete expectations and two missing NWB docstring
+examples, now repaired (all four NWB flagship examples pass). The serial full
+NWB run passes 564 tests, with nine deselected. Full-source and typing-contract
+mypy passes 227 files; Ruff and formatting pass. The prior 595 doctests pass,
+and the two restored executable NWB examples are checked separately.
+
+Baseline comparison against `baseline-after-plots.npz` changes 232 NPZ entries,
+representing 142 logical probes. Exactly 130 changed NWB scientific/refusal
+probes now equal their corresponding factory-built original probes exactly;
+the other 12 are persistence docstrings, with signatures and member kinds
+unchanged. No native, dictionary or file scientific output changed. The complete
+inventory follows. Each operation appears for both `<fixture>|nwb/<operation>`
+and `<fixture>|nwb|copy/<operation>`, matching the corresponding native output
+or refusal exactly (including `#err` entries).
+
+| Fixture | Changed operations |
+| --- | --- |
+| `grid4`, `grid8` | `boundary_bins`, `rebin` |
+| `hex` | `bin_at`, `contains`, `diffuse`, `divgrad`, `grad`, `interpolate_linear`, `kernel_average`, `kernel_density`, `kernel_transition`, `ncomp`, `occupancy_linear`, `occupancy_smoothed`, `rebin`, `smooth`, `transitions_diffusion`, `wavelet` |
+| `mask` | `boundary_bins` |
+| `mesh` | `bin_at`, `bin_sequence`, `bin_sequence_all`, `bin_sequence_with_runs`, `contains`, `diffuse`, `divgrad`, `grad`, `interpolate_linear`, `kernel_average`, `kernel_density`, `kernel_transition`, `ncomp`, `occupancy_linear`, `occupancy_smoothed`, `occupancy_speed`, `occupancy_start`, `rebin`, `smooth`, `transitions_diffusion`, `transitions_trajectory`, `wavelet` |
+| `pixels`, `polygon` | `boundary_bins`, `rebin` |
+| `polar`, `polar_open` | `boundary_bins` |
+| `track` | `diffuse`, `divgrad`, `grad`, `interpolate_linear`, `kernel_average`, `kernel_density`, `kernel_transition`, `linear_to_nd`, `ncomp`, `occupancy_linear`, `occupancy_smoothed`, `rebin`, `smooth`, `to_linear`, `transitions_diffusion`, `wavelet` |
+
+The 12 API probes are
+`api/{Environment,EgocentricPolarEnvironment}.{from_dict,from_file,from_nwb,to_dict,to_file,to_nwb}`.
+The artifact directory retains `baseline-save-diff-inventory.json`, with every
+logical probe and its exact native comparison key, and the unabridged
+`baseline-save-differences.txt`. No unexpected differences remain.

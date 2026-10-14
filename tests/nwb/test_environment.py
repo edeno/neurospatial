@@ -8,11 +8,21 @@ Tests for:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 # Skip all tests if pynwb is not installed
 pynwb = pytest.importorskip("pynwb")
+
+
+def _stored_array(record, key):
+    """Read one shaped numerical array through the persisted column mapping."""
+    metadata = json.loads(record.description)
+    spec = metadata["array_specs"][key]
+    return np.asarray(record[spec["column"]][0]).reshape(spec["shape"])
 
 
 @pytest.mark.parametrize("circular", [False, True])
@@ -21,11 +31,8 @@ def test_polar_circularity_survives_nwb_round_trip(
     empty_nwb, tmp_path, circular: bool, n_angle: int
 ) -> None:
     """NWB preserves circularity even when seam edges cannot distinguish it."""
-    import json
-
     from neurospatial import Environment
     from neurospatial.io.nwb import read_environment, write_environment
-    from neurospatial.io.nwb._environment import COL_GRID_DATA
 
     env = Environment.from_polar_egocentric(
         distance_range=(0, 3),
@@ -43,25 +50,13 @@ def test_polar_circularity_survives_nwb_round_trip(
     assert restored._angular_is_circular is circular
     np.testing.assert_allclose(restored.compute_kernel(1.0), env.compute_kernel(1.0))
 
-    # Old records cannot distinguish small open and circular axes; retain
-    # their previous open-axis interpretation, and infer larger axes by edges.
-    table = empty_nwb.scratch["spatial_environment"]
-    grid_data = json.loads(table[COL_GRID_DATA][0])
-    grid_data.pop("circular_angle")
-    table[COL_GRID_DATA].data[0] = json.dumps(grid_data)
-    legacy = read_environment(empty_nwb)
-    assert legacy._angular_is_circular is (circular if n_angle > 2 else False)
-
 
 @pytest.mark.parametrize("kind", ["translation", "rotation", "shear_and_scaling"])
 @pytest.mark.integration
-def test_transformed_grid_round_trips_nwb_without_source_grid_edges(
-    empty_nwb, tmp_path, kind
-):
-    """Aligned grids retain their coordinates and measures via non-grid reconstruction."""
+def test_transformed_grid_nwb_save_refuses_layout_backed_lookup(empty_nwb, kind):
+    """Unsupported wrapper lookup fails clearly before writing partial records."""
     from neurospatial import Environment
-    from neurospatial.io.nwb import read_environment, write_environment
-    from neurospatial.layout._capabilities import RectilinearGridProvider
+    from neurospatial.io.nwb import write_environment
     from neurospatial.ops.transforms import Affine2D
 
     mask = np.ones((3, 3), dtype=bool)
@@ -79,37 +74,18 @@ def test_transformed_grid_round_trips_nwb_without_source_grid_edges(
         "shear_and_scaling": [[2, 1, 10], [0, 3, 20], [0, 0, 1]],
     }
     aligned = env.apply_transform(Affine2D(np.array(matrices[kind], dtype=float)))
-    write_environment(empty_nwb, aligned)
-    path = tmp_path / "aligned.nwb"
-    with pynwb.NWBHDF5IO(str(path), "w") as io:
-        io.write(empty_nwb)
-    with pynwb.NWBHDF5IO(str(path), "r") as io:
-        restored = read_environment(io.read())
-
-    np.testing.assert_array_equal(restored.bin_centers, aligned.bin_centers)
-    np.testing.assert_allclose(restored.bin_sizes, aligned.bin_sizes)
-    np.testing.assert_array_equal(restored.dimension_ranges, aligned.dimension_ranges)
-    np.testing.assert_array_equal(
-        restored.bin_at(aligned.bin_centers), np.arange(aligned.n_bins)
-    )
-    assert list(restored.connectivity.edges()) == list(aligned.connectivity.edges())
-    np.testing.assert_allclose(
-        [data["distance"] for _, _, data in restored.connectivity.edges(data=True)],
-        [data["distance"] for _, _, data in aligned.connectivity.edges(data=True)],
-    )
-    assert restored.units == aligned.units
-    assert restored.frame == aligned.frame
-    assert restored.name == aligned.name
-    assert not isinstance(restored.layout, RectilinearGridProvider)
-    assert restored.grid_edges is None
+    with pytest.raises(ValueError, match="TransformedLayout") as caught:
+        write_environment(empty_nwb, aligned)
+    assert "Fix:" in str(caught.value)
+    assert "spatial_environment" not in empty_nwb.scratch
 
 
 @pytest.mark.parametrize("scale", [3.0, 1e-5], ids=["ordinary_scale", "small_scale"])
-def test_restored_track_transforms_keep_lengths_or_explain_missing_directions(
+def test_restored_track_transforms_keep_segment_lengths(
     empty_nwb,
     scale,
 ):
-    """A track without its substrate still supports similarity length scaling."""
+    """Stored track directions support both similarity and anisotropic scaling."""
     from neurospatial import Environment
     from neurospatial.io.nwb import read_environment, write_environment
     from neurospatial.ops.transforms import scale_2d
@@ -119,8 +95,10 @@ def test_restored_track_transforms_keep_lengths_or_explain_missing_directions(
     restored = read_environment(empty_nwb)
     scaled = restored.apply_transform(scale_2d(scale))
     np.testing.assert_allclose(scaled.bin_sizes, scale * env.bin_sizes)
-    with pytest.raises(ValueError, match="needs its segment directions"):
-        restored.apply_transform(scale_2d(scale, 2 * scale))
+    actual = restored.apply_transform(scale_2d(scale, 2 * scale))
+    expected = env.apply_transform(scale_2d(scale, 2 * scale))
+    np.testing.assert_array_equal(actual.bin_centers, expected.bin_centers)
+    np.testing.assert_array_equal(actual.bin_sizes, expected.bin_sizes)
 
 
 @pytest.mark.integration
@@ -196,22 +174,20 @@ def test_read_grid_preserves_linear_operations(empty_nwb, tmp_path, kind):
 
 
 @pytest.mark.integration
-def test_read_track_explains_missing_linearization_graph(empty_nwb):
-    """Both conversions name the missing topology and how to rebuild it."""
+def test_read_track_preserves_linearization_graph(empty_nwb):
+    """Both coordinate conversions use the saved track substrate."""
     from neurospatial import Environment
     from neurospatial.io.nwb import read_environment, write_environment
 
     env = Environment.linear_track(endpoints=((0.0, 0.0), (10.0, 0.0)), bin_size=1.0)
     write_environment(empty_nwb, env)
     restored = read_environment(empty_nwb)
-    for call in [
-        lambda: restored.to_linear(np.array([[5.0, 0.0]])),
-        lambda: restored.linear_to_nd(np.array([5.0])),
-    ]:
-        with pytest.raises(AttributeError, match="needs the track graph") as caught:
-            call()
-        assert "Environment.from_graph" in str(caught.value)
-        assert "please report" not in str(caught.value)
+    points = np.array([[0.0, 0.0], [5.0, 1.0], [10.0, 0.0]])
+    linear = env.to_linear(points)
+    np.testing.assert_array_equal(restored.to_linear(points), linear)
+    np.testing.assert_array_equal(
+        restored.linear_to_nd(linear), env.linear_to_nd(linear)
+    )
 
 
 class TestEnvironmentFromPosition:
@@ -383,74 +359,47 @@ class TestWriteEnvironment:
         assert scratch_data is not None
 
     def test_bin_centers_dataset(self, empty_nwb, sample_environment):
-        """Test bin_centers dataset stored with correct shape (n_bins, n_dims)."""
+        """Centers retain their exact shape in a typed ragged column."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        # Access the bin_centers from the DynamicTable columns
-        assert "bin_centers" in scratch_data.colnames
-        bin_centers = scratch_data["bin_centers"][:]
-        # Data is padded, so check first n_bins rows
-        n_bins = sample_environment.n_bins
-        np.testing.assert_array_almost_equal(
-            bin_centers[:n_bins], sample_environment.bin_centers
-        )
+        table = empty_nwb.scratch["spatial_environment"]
+        centers = _stored_array(table, "binning/bins/centers")
+        assert centers.shape == (sample_environment.n_bins, sample_environment.n_dims)
+        np.testing.assert_array_equal(centers, sample_environment.bin_centers)
 
     def test_edges_dataset_as_edge_list(self, empty_nwb, sample_environment):
-        """Test edges dataset stored as edge list (n_edges, 2)."""
+        """Pairs retain graph iteration order and orientation without padding."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert "edges" in scratch_data.colnames
-        edges = scratch_data["edges"][:]
-
-        # Should have shape (n_rows, 2) - padded to n_rows
-        assert edges.ndim == 2
-        assert edges.shape[1] == 2
-
-        # Get actual edges (non-zero rows)
-        expected_n_edges = sample_environment.connectivity.number_of_edges()
-        # Check that the first n_edges rows contain valid edges
-        actual_edges = edges[:expected_n_edges]
-        assert actual_edges.shape[0] == expected_n_edges
+        table = empty_nwb.scratch["spatial_environment"]
+        edges = _stored_array(table, "binning/bins/pairs")
+        np.testing.assert_array_equal(
+            edges, list(sample_environment.connectivity.edges)
+        )
 
     def test_edge_weights_dataset(self, empty_nwb, sample_environment):
-        """Test edge_weights dataset stored with correct shape (n_edges,)."""
+        """Navigation distances stay aligned with the stored pairs."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert "edge_weights" in scratch_data.colnames
-        edge_weights = scratch_data["edge_weights"][:]
-
-        # Data is padded, get first n_edges values
-        expected_n_edges = sample_environment.connectivity.number_of_edges()
-        actual_weights = edge_weights[:expected_n_edges]
-
-        # Weights should be non-negative (distances)
-        assert np.all(actual_weights >= 0)
+        table = empty_nwb.scratch["spatial_environment"]
+        actual = _stored_array(table, "binning/bins/pair_distances")
+        expected = [
+            d["distance"]
+            for _, _, d in sample_environment.connectivity.edges(data=True)
+        ]
+        np.testing.assert_array_equal(actual, expected)
 
     def test_dimension_ranges_dataset(self, empty_nwb, sample_environment):
-        """Test dimension_ranges dataset stored with shape (n_dims, 2)."""
+        """Coordinate extents are stored in the shared JSON metadata."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert "dimension_ranges" in scratch_data.colnames
-        dim_ranges = scratch_data["dimension_ranges"][:]
-
-        # Data is padded, get first n_dims rows
-        n_dims = sample_environment.bin_centers.shape[1]
-
-        # Check values match environment dimension_ranges
-        np.testing.assert_array_almost_equal(
-            dim_ranges[:n_dims], sample_environment.dimension_ranges
+        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        np.testing.assert_array_equal(
+            metadata["dimension_ranges"], sample_environment.dimension_ranges
         )
 
     def test_group_attributes_units(self, empty_nwb, sample_environment):
@@ -480,15 +429,12 @@ class TestWriteEnvironment:
         )
 
     def test_group_attributes_n_dims(self, empty_nwb, sample_environment):
-        """Test n_dims attribute is stored."""
+        """Coordinate dimensionality is explicit JSON metadata."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        # n_dims should be in the description or metadata
-        n_dims = sample_environment.bin_centers.shape[1]
-        assert f"n_dims={n_dims}" in scratch_data.description
+        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        assert metadata["n_dims"] == sample_environment.n_dims
 
     def test_group_attributes_layout_type(self, empty_nwb, sample_environment):
         """Test layout_type attribute is stored."""
@@ -538,38 +484,31 @@ class TestWriteEnvironment:
         assert "meters" in scratch_data.description
 
     def test_point_regions_stored(self, empty_nwb, sample_environment):
-        """Test point regions are stored correctly."""
+        """Point regions use the canonical Region JSON schema."""
         from neurospatial.io.nwb import write_environment
 
-        # Ensure we have point regions
         sample_environment.regions.add("center", point=(50.0, 50.0))
-
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        # Regions should be stored as column
-        assert "regions" in scratch_data.colnames
+        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        expected = sample_environment.regions["center"].to_dict()
+        assert expected in metadata["regions"]
 
     def test_polygon_regions_stored(self, empty_nwb):
-        """Test polygon regions are stored correctly with ragged vertices."""
+        """Polygon region coordinates remain canonical JSON geometry."""
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
         from neurospatial.io.nwb import write_environment
 
-        # Create environment with polygon region
-        rng = np.random.default_rng(42)
-        positions = rng.uniform(0, 100, (1000, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        # Add polygon region
+        env = Environment.from_samples(
+            np.random.default_rng(42).uniform(0, 100, (1000, 2)), bin_size=5.0
+        )
         triangle = Polygon([(10, 10), (30, 10), (20, 30)])
         env.regions.add("reward_zone", polygon=triangle)
-
         write_environment(empty_nwb, env)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert "regions" in scratch_data.colnames
+        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        expected = json.loads(json.dumps(env.regions["reward_zone"].to_dict()))
+        assert expected in metadata["regions"]
 
     def test_empty_regions(self, empty_nwb):
         """Test environment with no regions."""
@@ -588,54 +527,36 @@ class TestWriteEnvironment:
         assert scratch_data is not None
 
     def test_metadata_json_stored(self, empty_nwb, sample_environment):
-        """Test metadata.json stored for extra attributes."""
+        """The description stores versioned JSON metadata, separate from arrays."""
         from neurospatial.io.nwb import write_environment
 
         sample_environment.name = "test_arena"
-
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        # Metadata JSON should be stored as column
-        assert "metadata" in scratch_data.colnames
+        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        assert metadata["name"] == "test_arena"
+        assert metadata["schema_version"] == "2.0"
 
     def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
-        """Test bin_centers data integrity after write."""
+        """Writing preserves every center value exactly."""
         from neurospatial.io.nwb import write_environment
 
-        original_bin_centers = sample_environment.bin_centers.copy()
-
+        expected = sample_environment.bin_centers.copy()
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        stored_bin_centers = scratch_data["bin_centers"][:]
-        n_bins = sample_environment.n_bins
-
-        np.testing.assert_array_equal(stored_bin_centers[:n_bins], original_bin_centers)
+        table = empty_nwb.scratch["spatial_environment"]
+        np.testing.assert_array_equal(
+            _stored_array(table, "binning/bins/centers"), expected
+        )
 
     def test_data_integrity_edges(self, empty_nwb, sample_environment):
-        """Test edges data integrity after write."""
+        """Writing preserves pair order and orientation exactly."""
         from neurospatial.io.nwb import write_environment
 
-        # Get original edges from connectivity graph
-        original_edges = np.array(list(sample_environment.connectivity.edges()))
-
+        expected = np.array(list(sample_environment.connectivity.edges))
         write_environment(empty_nwb, sample_environment)
-
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        stored_edges = scratch_data["edges"][:]
-        n_edges = sample_environment.connectivity.number_of_edges()
-
-        # Get only the actual edges (first n_edges rows)
-        stored_edges = stored_edges[:n_edges]
-
-        # Edges should match (potentially different order, so sort)
-        original_sorted = np.sort(original_edges, axis=1)
-        stored_sorted = np.sort(stored_edges, axis=1)
-        original_sorted = original_sorted[np.lexsort(original_sorted.T)]
-        stored_sorted = stored_sorted[np.lexsort(stored_sorted.T)]
-
-        np.testing.assert_array_equal(stored_sorted, original_sorted)
+        table = empty_nwb.scratch["spatial_environment"]
+        np.testing.assert_array_equal(
+            _stored_array(table, "binning/bins/pairs"), expected
+        )
 
     def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
         """Test EnvironmentNotFittedError when writing unfitted Environment."""
@@ -2209,29 +2130,34 @@ class TestCoordinateKindRoundTrip:
         assert isinstance(loaded, Environment)
         assert not isinstance(loaded, EgocentricPolarEnvironment)
 
-    def test_read_environment_old_file_without_coordinate_kind(
+    def test_read_environment_missing_polar_coordinate_kind_is_rejected(
         self, empty_nwb, sample_polar_environment
     ):
-        """A stored metadata JSON missing coordinate_kind defaults to Cartesian."""
-        import json
-
-        from neurospatial import Environment
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        """Polar measures cannot be interpreted as Cartesian cell areas."""
         from neurospatial.io.nwb import read_environment, write_environment
-        from neurospatial.io.nwb._environment import COL_METADATA
 
         write_environment(empty_nwb, sample_polar_environment, name="polar_env")
+        record = empty_nwb.scratch["polar_env"]
+        metadata = json.loads(record.description)
+        metadata.pop("coordinate_kind")
+        record.fields["description"] = json.dumps(metadata)
+        with pytest.raises(ValueError, match=r"sizes|measures"):
+            read_environment(empty_nwb, name="polar_env")
 
-        # Simulate an older file written before coordinate_kind was persisted:
-        # strip the key from the stored metadata JSON.
-        scratch_data = empty_nwb.scratch["polar_env"]
-        metadata = json.loads(scratch_data[COL_METADATA][0])
-        metadata.pop("coordinate_kind", None)
-        scratch_data[COL_METADATA].data[0] = json.dumps(metadata)
+    def test_read_environment_missing_cartesian_coordinate_kind_defaults(
+        self, empty_nwb, sample_environment
+    ):
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
-        loaded = read_environment(empty_nwb, name="polar_env")
+        write_environment(empty_nwb, sample_environment)
+        record = empty_nwb.scratch["spatial_environment"]
+        metadata = json.loads(record.description)
+        metadata.pop("coordinate_kind")
+        record.fields["description"] = json.dumps(metadata)
+        loaded = read_environment(empty_nwb)
         assert isinstance(loaded, Environment)
-        assert not isinstance(loaded, EgocentricPolarEnvironment)
+        np.testing.assert_array_equal(loaded.bin_sizes, sample_environment.bin_sizes)
 
     def test_polar_nwb_roundtrip_type(self, tmp_path, sample_polar_environment):
         """A polar env survives a real NWB file round-trip as the polar type.
@@ -2269,24 +2195,6 @@ class TestCoordinateKindRoundTrip:
                 d["distance"] for _, _, d in loaded.connectivity.edges(data=True)
             )
             np.testing.assert_allclose(loaded_weights, orig_weights, rtol=1e-9)
-
-
-def test_reconstructed_layout_estimates_bin_size_from_spacing():
-    """Without stored measures, the KDTree fallback estimates each bin as
-    (median nearest-neighbour spacing) ** n_dims."""
-    import networkx as nx
-
-    from neurospatial.io.nwb._environment import _ReconstructedLayout
-
-    # Points on a line spaced 3 apart; indices grow much faster than spacing.
-    bin_centers = np.column_stack([np.arange(50) * 3.0, np.zeros(50)])
-    layout = _ReconstructedLayout(
-        bin_centers=bin_centers,
-        connectivity=nx.Graph(),
-        dimension_ranges=[(0.0, 147.0), (0.0, 0.0)],
-        layout_type="Graph",
-    )
-    np.testing.assert_allclose(layout.bin_sizes(), 9.0)
 
 
 def _y_track_env():
@@ -2344,60 +2252,19 @@ class TestGraphGeometryRoundTrip:
         ]
         assert flipped == []
 
-    def test_reads_schema_1_0_file(self, tmp_path, caplog):
-        """A 1.0 file (no bin_sizes column, no grid geometry) still reads, with
-        bin sizes estimated from bin spacing and no schema warning."""
-        import json
-        import logging
-
-        from hdmf.common import DynamicTable, VectorData
+    def test_refuses_schema_1_0_file(self):
+        """Old records are refused instead of guessing missing bin measures."""
         from pynwb import NWBHDF5IO
-        from scipy.spatial import KDTree
 
-        from neurospatial.io.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment
 
-        env = _y_track_env()
-        current = _create_nwb_for_test()
-        write_environment(current, env)
-        table = current.scratch["spatial_environment"]
-
-        metadata = json.loads(table["metadata"][0])
-        metadata["schema_version"] = "1.0"
-        metadata.pop("grid_edges", None)
-        metadata.pop("grid_shape", None)
-        columns = []
-        for column in table.columns:
-            if column.name == "bin_sizes":
-                continue
-            data = column.data
-            if column.name == "metadata":
-                data = [json.dumps(metadata)] * len(data)
-            columns.append(
-                VectorData(name=column.name, data=data, description=column.description)
-            )
-        legacy = _create_nwb_for_test()
-        legacy.add_scratch(
-            DynamicTable(
-                name="spatial_environment",
-                description=table.description,
-                columns=columns,
-            )
-        )
-        path = tmp_path / "legacy.nwb"
-        with NWBHDF5IO(str(path), "w") as io:
-            io.write(legacy)
-
+        path = Path(__file__).parent / "data/environment_schema_1_0.nwb"
         with (
-            caplog.at_level(logging.WARNING, logger="neurospatial"),
             NWBHDF5IO(str(path), "r") as io,
+            pytest.raises(ValueError, match=r"1\.0") as caught,
         ):
-            loaded = read_environment(io.read())
-
-        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
-        spacing = np.median(
-            KDTree(env.bin_centers).query(env.bin_centers, k=2)[0][:, 1]
-        )
-        np.testing.assert_allclose(loaded.bin_sizes, spacing**2)
+            read_environment(io.read())
+        assert "Fix:" in str(caught.value)
 
 
 def test_environment_from_position_uses_converted_meters(make_scaled_position_nwb):
@@ -2451,42 +2318,27 @@ def hexagonal_env_from_nwb(empty_nwb):
         layout_params={"hexagon_width": 5.0, "dimension_ranges": [(0, 50), (0, 50)]},
     )
     write_environment(empty_nwb, env)
-    return read_environment(empty_nwb)
+    return env, read_environment(empty_nwb)
 
 
 @pytest.mark.parametrize("operation", ["gradient", "divergence", "smooth", "basis"])
-def test_finite_volume_ops_on_nwb_layout_explain_the_round_trip(
-    hexagonal_env_from_nwb, operation
-):
-    """The fix must name the NWB round trip, not a factory the user never skipped."""
+def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operation):
+    """Stored faces preserve calculus, smoothing and heat-kernel bases exactly."""
     from neurospatial.ops.basis import heat_kernel_wavelet_basis
     from neurospatial.ops.calculus import divergence, gradient
 
-    env = hexagonal_env_from_nwb
-    # Each call, and the analysis its error must name.
-    calls = {
-        "gradient": (
-            lambda: gradient(env, np.ones(env.n_bins)),
-            "gradient/divergence",
-        ),
-        "divergence": (
-            lambda: divergence(env, np.ones(env.connectivity.number_of_edges())),
-            "gradient/divergence",
-        ),
-        "smooth": (
-            lambda: env.smooth(np.ones(env.n_bins), bandwidth=5.0),
-            "smoothing",
-        ),
-        "basis": (
-            lambda: heat_kernel_wavelet_basis(env, centers=np.array([0])),
-            "heat_kernel_wavelet_basis",
-        ),
-    }
-    call, named = calls[operation]
-    with pytest.raises(NotImplementedError) as exc:
-        call()
-    message = str(exc.value)
-    assert message.startswith(f"{named} needs ")
-    assert "read from NWB" in message
-    assert "Hexagonal" in message
-    assert "\nFix:" in message
+    original, loaded = hexagonal_env_from_nwb
+
+    def evaluate(env):
+        field = np.sin(np.arange(env.n_bins))
+        if operation == "gradient":
+            return gradient(env, field)
+        if operation == "divergence":
+            return divergence(
+                env, np.sin(np.arange(env.connectivity.number_of_edges()))
+            )
+        if operation == "smooth":
+            return env.smooth(field, bandwidth=5.0)
+        return heat_kernel_wavelet_basis(env, centers=np.array([0]))
+
+    np.testing.assert_array_equal(evaluate(loaded), evaluate(original))

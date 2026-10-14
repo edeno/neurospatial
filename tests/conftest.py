@@ -29,10 +29,13 @@ Size Guidelines (approximate bin counts):
     - large: 1000+ bins (stress tests, mark as @pytest.mark.slow)
 """
 
+import copy
+import json
 import os
 from collections import UserDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import networkx as nx
@@ -1068,3 +1071,134 @@ def built_environment(request) -> Environment | EgocentricPolarEnvironment:
         angle_bin_size=np.pi / 4,
         circular_angle=False,
     )
+
+
+@pytest.fixture(params=["file", "dict", pytest.param("nwb", marks=pytest.mark.nwb)])
+def environment_round_trip(built_environment, request, tmp_path):
+    """Save labelled geometry once and expose an independently repeatable loader."""
+    from neurospatial.io.files import from_dict, from_file, to_dict, to_file
+
+    original = copy.deepcopy(built_environment)
+    original.name = "saved_arena"
+    original.units = "cm"
+    original.frame = "recording"
+    original.regions.add("goal", point=tuple(original.bin_centers[0]))
+    # Graph metadata is scientifically relevant and must survive beyond topology.
+    graph = original.connectivity.copy()
+    graph.graph["recording"] = "session-a"
+    graph.nodes[0]["label"] = "start"
+    first_edge = next(iter(graph.edges))
+    graph.edges[first_edge]["annotation"] = ["measured", 7]
+    original.layout.connectivity = graph
+    original._setup_from_layout()
+
+    if request.param == "file":
+        path = tmp_path / "environment"
+        to_file(original, path)
+        return original, lambda: from_file(path)
+    if request.param == "dict":
+        payload = json.loads(json.dumps(to_dict(original)))
+        return original, lambda: from_dict(copy.deepcopy(payload))
+
+    pynwb = pytest.importorskip("pynwb")
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    nwbfile = pynwb.NWBFile(
+        session_description="Geometry serialization test",
+        identifier="geometry-round-trip",
+        session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    write_environment(nwbfile, original)
+    path = tmp_path / "environment.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+
+    def restore():
+        # The decoded snapshot must own buffers and remain usable after closing.
+        with pynwb.NWBHDF5IO(str(path), "r") as io:
+            return read_environment(io.read())
+
+    return original, restore
+
+
+@pytest.fixture
+def forbid_layout_builds(monkeypatch):
+    """Forbid all built-in builders, including the internal polar subclass."""
+    from neurospatial.layout.engines._polar import _PolarGridLayout
+    from neurospatial.layout.engines.hexagonal import HexagonalLayout
+    from neurospatial.layout.engines.image_mask import ImageMaskLayout
+    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+    from neurospatial.layout.engines.regular_grid import RegularGridLayout
+    from neurospatial.layout.engines.shapely_polygon import ShapelyPolygonLayout
+    from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("Loading geometry must not run a layout builder")
+
+    for cls in (
+        _PolarGridLayout,
+        GraphLayout,
+        HexagonalLayout,
+        ImageMaskLayout,
+        MaskedGridLayout,
+        RegularGridLayout,
+        ShapelyPolygonLayout,
+        TriangularMeshLayout,
+    ):
+        monkeypatch.setattr(cls, "build", refuse)
+
+
+@pytest.fixture(params=["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb)])
+def corrupted_environment_round_trip(built_environment, request, tmp_path):
+    """Apply a controlled metadata/array corruption before using a public reader."""
+    from neurospatial.io import from_dict, from_file, to_dict, to_file
+
+    env = built_environment
+
+    def restore_after(corrupt):
+        if request.param == "dict":
+            metadata = to_dict(env)
+            arrays = {
+                name: np.asarray(value, dtype=metadata["array_specs"][name]["dtype"])
+                .reshape(metadata["array_specs"][name]["shape"])
+                .copy()
+                for name, value in metadata.pop("arrays").items()
+            }
+            corrupt(metadata, arrays)
+            metadata["arrays"] = {
+                name: value.tolist() for name, value in arrays.items()
+            }
+            return from_dict(metadata)
+        if request.param == "file":
+            path = tmp_path / "corrupt_environment"
+            to_file(env, path)
+            metadata = json.loads(path.with_suffix(".json").read_text())
+            with np.load(path.with_suffix(".npz")) as stored:
+                arrays = {name: stored[name].copy() for name in stored}
+            corrupt(metadata, arrays)
+            path.with_suffix(".json").write_text(json.dumps(metadata))
+            np.savez_compressed(path.with_suffix(".npz"), **arrays)
+            return from_file(path)
+
+        pynwb = pytest.importorskip("pynwb")
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        nwbfile = pynwb.NWBFile(
+            "Malformed geometry test",
+            "corrupt-geometry",
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        write_environment(nwbfile, env)
+        record = nwbfile.scratch["spatial_environment"]
+        metadata = json.loads(record.description)
+        arrays = {
+            name: np.asarray(record[spec["column"]][0]).reshape(spec["shape"]).copy()
+            for name, spec in metadata["array_specs"].items()
+        }
+        corrupt(metadata, arrays)
+        record.fields["description"] = json.dumps(metadata)
+        for name, spec in metadata["array_specs"].items():
+            record[spec["column"]].target.data[:] = arrays[name].reshape(-1)
+        return read_environment(nwbfile)
+
+    return restore_after
