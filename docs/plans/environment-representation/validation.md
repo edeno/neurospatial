@@ -101,3 +101,33 @@ Lookup medians on the exact saved queries, seven runs, one million points:
 
 Both satisfy the 10% limit. Query and output hashes are identical; these timing
 observations do not establish a general performance improvement.
+
+## Shapes and drawing
+
+At `654ac1c5`, the pre-change artist capture recorded 27,310 numeric/string
+arrays for eleven environments into `tests/environment/data/plot_artists.npz`.
+It includes layout plots, field plots with NaNs and colorbars, and the track's
+linear plot. The helper records artists on every axes after drawing. Its 23
+72-dpi PNGs are retained in `/private/tmp/neurospatial-plot-parity-20261014/before`.
+Capture command: `uv run --no-sync python
+/private/tmp/neurospatial_capture_plot_parity.py before`, using the cache
+variables above.
+
+The old early 3D field-plot refusal is retained. Legacy NWB tracks that lack
+linearization data retain their previous plotting path until the loading phase
+restores that data; they do not silently switch to a spatial scatter plot.
+
+All 4,046 baseline probes remain identical. The 27,310 default artist arrays
+and 23 PNG pairs match exactly; eight custom-options cases add 9,824 identical
+artist arrays and eight identical PNG pairs. The committed fixture is a
+lossless packed NPZ (440,236 bytes), preserving every array's dtype, shape and
+raw bytes without thousands of separate ZIP headers.
+
+The broad non-GUI run passed 10,122 tests with six obsolete tag/absent-component
+assertions, which were updated to test actual component behavior. The final
+190-test visualization/publication/components/API slice passes, including the
+slow artist comparisons. All 597 doctests pass (132 skipped); full mypy and
+Ruff pass. Independent review found and verified the MultiPolygon outline fix;
+no remaining findings. Intermediate unreleased private Binning pickle states
+are not a supported storage format; starting-commit public environment/result
+pickles remain covered by the tested migration.

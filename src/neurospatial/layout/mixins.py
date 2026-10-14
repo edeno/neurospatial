@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 
 import matplotlib
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -9,6 +8,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._locators import NearestBinLocator, RectilinearLocator
+from neurospatial.layout._plotting import plot_grid
 
 
 # ---------------------------------------------------------------------------
@@ -265,46 +265,19 @@ class _GridMixin:
                 ),
             )
 
-        is_2d_grid = len(self.grid_shape) == 2 and len(self.grid_edges) == 2
-
-        if is_2d_grid:
-            if ax is None:
-                _, ax = plt.subplots(figsize=figsize)
-            ax.pcolormesh(
-                self.grid_edges[0],
-                self.grid_edges[1],
-                self.active_mask.T,
-                cmap=cmap,
-                alpha=alpha,
-                shading="auto",
-            )
-            ax.set_xticks(self.grid_edges[0])
-            ax.set_yticks(self.grid_edges[1])
-            ax.grid(True, ls="-", lw=0.5, c="gray")
-            ax.set_aspect("equal")
-            ax.set_title(f"{self._layout_type_tag} (2D Grid)")
-            ax.set_xlabel("Dimension 0")
-            ax.set_ylabel("Dimension 1")
-            if self.dimension_ranges:
-                ax.set_xlim(self.dimension_ranges[0])
-                ax.set_ylim(self.dimension_ranges[1])
-
-            if show_connectivity:
-                node_position = nx.get_node_attributes(self.connectivity, "pos")
-                nx.draw_networkx_nodes(
-                    self.connectivity,
-                    node_position,
-                    ax=ax,
-                    node_size=node_size,
-                    node_color=node_color,
-                )
-                for node_id1, node_id2 in self.connectivity.edges:
-                    pos = np.stack((node_position[node_id1], node_position[node_id2]))
-                    ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
-
-            return ax
-        raise NotImplementedError(
-            "Plotting for non-2D grid layouts is not implemented yet.",
+        return plot_grid(
+            ax,
+            title=self._layout_type_tag,
+            bin_centers=self.bin_centers,
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            rectilinear=self.rectilinear_grid(),
+            figsize=figsize,
+            cmap=cmap,
+            alpha=alpha,
+            show_connectivity=show_connectivity,
+            node_size=node_size,
+            node_color=node_color,
         )
 
     @property

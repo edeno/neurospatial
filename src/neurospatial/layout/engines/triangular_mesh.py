@@ -3,21 +3,20 @@ from __future__ import annotations
 import math
 import warnings
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import Polygon as MplPolygon
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.layout._components import Outline, TriangleShapes
 from neurospatial.layout._locators import MeshLocator
+from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -337,101 +336,43 @@ class TriangularMeshLayout:
                 ),
             )
 
-        if ax is None:
-            _, ax = plt.subplots(figsize=(7, 7))  # Default figsize
+        return plot_triangles(
+            ax,
+            title=self._layout_type_tag,
+            shapes=self.bin_shapes(),
+            outline=self.outline(),
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            bin_centers=self.bin_centers,
+            show_triangles=show_triangles,
+            show_centroids=show_centroids,
+            show_connectivity=show_connectivity,
+            show_boundary=show_boundary,
+            triangle_kwargs=triangle_kwargs,
+            centroid_kwargs=centroid_kwargs,
+            connectivity_kwargs=connectivity_kwargs,
+            boundary_kwargs=boundary_kwargs,
+        )
 
-        # Default kwargs
-        _triangle_kwargs = {
-            "alpha": 0.4,
-            "facecolor": "lightblue",
-            "edgecolor": "gray",
-            "linewidth": 0.5,
-        }
-        if triangle_kwargs:
-            _triangle_kwargs.update(triangle_kwargs)
-
-        _centroid_kwargs = {"color": "blue", "s": 10, "zorder": 3}
-        if centroid_kwargs:
-            _centroid_kwargs.update(centroid_kwargs)
-
-        _connectivity_kwargs = {
-            "color": "black",
-            "alpha": 0.5,
-            "linewidth": 0.75,
-            "zorder": 2,
-        }
-        if connectivity_kwargs:
-            _connectivity_kwargs.update(connectivity_kwargs)
-
-        _boundary_kwargs = {
-            "color": "black",
-            "linewidth": 1.5,
-            "linestyle": "--",
-            "zorder": 4,
-        }
-        if boundary_kwargs:
-            _boundary_kwargs.update(boundary_kwargs)
-
-        # Plot boundary polygon
-        if show_boundary and self._boundary_polygon_stored:
-            xb, yb = self._boundary_polygon_stored.exterior.xy
-            # Use cast to work around matplotlib stub limitations
-            plot_func = cast("Any", ax.plot)
-            plot_func(xb, yb, label="Boundary", **_boundary_kwargs)
-            for interior in self._boundary_polygon_stored.interiors:
-                xbi, ybi = interior.xy
-                plot_func(xbi, ybi, **_boundary_kwargs)
-
-        # Plot active triangles
-        if show_triangles:
-            patches: list[MplPolygon] = []
-            mesh_points = self._full_delaunay_tri.points
-            active_simplices_vertices = mesh_points[
-                self._full_delaunay_tri.simplices[self._active_original_simplex_indices]
-            ]
-
-            for vertices in active_simplices_vertices:  # Iterate over (n_active, 3, 2)
-                patches.append(MplPolygon(vertices, closed=True))
-
-            # Use cast to work around matplotlib stub limitations
-            pc_constructor = cast("Any", PatchCollection)
-            pc = pc_constructor(patches, **_triangle_kwargs)
-            ax.add_collection(pc)
-
-        # Plot centroids (which are self.bin_centers)
-        if show_centroids and self.bin_centers.shape[0] > 0:
-            # Use cast to work around matplotlib stub limitations
-            scatter_func = cast("Any", ax.scatter)
-            scatter_func(
-                self.bin_centers[:, 0],
-                self.bin_centers[:, 1],
-                **_centroid_kwargs,
-            )
-
-        # Plot connectivity edges
-        if show_connectivity:
-            # Use cast to work around matplotlib stub limitations
-            plot_func2 = cast("Any", ax.plot)
-            for u, v in self.connectivity.edges():
-                pos_u = self.connectivity.nodes[u]["pos"]
-                pos_v = self.connectivity.nodes[v]["pos"]
-                plot_func2(
-                    [pos_u[0], pos_v[0]],
-                    [pos_u[1], pos_v[1]],
-                    **_connectivity_kwargs,
-                )
-
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlim(self.dimension_ranges[0])
-        ax.set_ylim(self.dimension_ranges[1])
-        ax.set_xlabel("X coordinate")
-        ax.set_ylabel("Y coordinate")
-        ax.set_title(self._layout_type_tag)
+    def bin_shapes(self) -> TriangleShapes:
+        """Return mesh points and the active triangles in bin order."""
         if (
-            show_boundary and self._boundary_polygon_stored
-        ):  # Add legend if boundary shown
-            ax.legend()
-        return ax
+            self._full_delaunay_tri is None
+            or self._active_original_simplex_indices is None
+        ):
+            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        return TriangleShapes(
+            self._full_delaunay_tri.points,
+            self._full_delaunay_tri.simplices[self._active_original_simplex_indices],
+        )
+
+    def outline(self) -> Outline | None:
+        """Return the mesh boundary, including its interior rings when present."""
+        return (
+            Outline(self._boundary_polygon_stored)
+            if self._boundary_polygon_stored is not None
+            else None
+        )
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Return the N-dimensional volume of each active N-simplex (bin).

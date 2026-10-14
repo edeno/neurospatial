@@ -3,14 +3,13 @@ from typing import Any
 
 import matplotlib
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-from track_linearization import plot_graph_as_1D
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout._binning import TrackLinearization
+from neurospatial.layout._plotting import plot_track, plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -209,80 +208,15 @@ class GraphLayout(_KDTreeMixin):
             The axes on which the layout is plotted.
 
         """
-        if ax is None:
-            _, ax = plt.subplots(figsize=(7, 7))
-
-        # Draw the original graph nodes
-        original_node_pos = nx.get_node_attributes(
-            self._build_params_used["graph_definition"],
-            "pos",
+        return plot_track(
+            ax,
+            title=self._layout_type_tag,
+            linearization=self.linearization(),
+            bin_centers=self.bin_centers,
+            connectivity=self.connectivity,
+            grid_edges=self.grid_edges,
+            **kwargs,
         )
-        nx.draw_networkx_nodes(
-            self._build_params_used["graph_definition"],
-            original_node_pos,
-            ax=ax,
-            node_size=300,
-            node_color="#1f77b4",
-        )
-        # Draw the original graph edges
-        for node_id1, node_id2 in self._build_params_used["graph_definition"].edges:
-            pos = np.stack(
-                (
-                    original_node_pos[node_id1],
-                    original_node_pos[node_id2],
-                ),
-            )
-            ax.plot(
-                pos[:, 0],
-                pos[:, 1],
-                color="gray",
-                zorder=-1,
-                label="original edges",
-            )
-
-        for node_id, pos in original_node_pos.items():
-            ax.text(
-                pos[0],
-                pos[1],
-                str(node_id),
-                ha="center",
-                va="center",
-                zorder=10,
-            )
-
-        # Draw the bin centers
-        bin_centers = nx.get_node_attributes(self.connectivity, "pos")
-        nx.draw_networkx_nodes(
-            self.connectivity,
-            bin_centers,
-            ax=ax,
-            node_size=30,
-            node_color="black",
-        )
-
-        # Draw connectivity graph edges
-        if self.connectivity is not None:
-            for node_id1, node_id2 in self.connectivity.edges:
-                pos = np.stack((bin_centers[node_id1], bin_centers[node_id2]))
-                ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
-
-        if self.grid_edges is not None:
-            grid_line_2d = _project_1d_to_2d(
-                self.grid_edges[0],
-                self._build_params_used["graph_definition"],
-                self._build_params_used["edge_order"],
-                self._build_params_used["edge_spacing"],
-            )
-            for grid_line in grid_line_2d:
-                ax.plot(
-                    grid_line[0],
-                    grid_line[1],
-                    color="gray",
-                    marker="+",
-                    alpha=0.8,
-                    label="bin edges",
-                )
-        return ax
 
     def plot_linear_layout(
         self,
@@ -310,24 +244,13 @@ class GraphLayout(_KDTreeMixin):
             The axes on which the 1D layout is plotted.
 
         """
-        if ax is None:
-            _, ax = plt.subplots(figsize=kwargs.get("figsize", (10, 3)))
-
-        plot_graph_as_1D(
-            self._build_params_used["graph_definition"],
-            self._build_params_used["edge_order"],
-            self._build_params_used["edge_spacing"],
-            ax=ax,
+        return plot_track_linear(
+            ax,
+            title=self._layout_type_tag,
+            linearization=self.linearization(),
+            grid_edges=self.grid_edges,
             **kwargs,
         )
-        if self.grid_edges is not None:
-            for grid_line in self.grid_edges[0]:
-                ax.axvline(grid_line, color="gray", linestyle="--", alpha=0.5)
-        ax.set_title(f"{self._layout_type_tag} Layout")
-        ax.set_xlabel("Linearized Position")
-        ax.set_ylabel("Bin Index")
-
-        return ax
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Convert N-D points to 1D linearized coordinates along the track.

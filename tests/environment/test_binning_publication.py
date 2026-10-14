@@ -87,8 +87,10 @@ def test_binning_capabilities_match_layout_protocols(
     assert binning.faces.available == isinstance(
         env.layout, FiniteVolumeGeometryProvider
     )
-    assert binning.shapes is None
-    assert binning.outline is None
+    if not hasattr(env.layout, "bin_shapes"):
+        assert binning.shapes is None
+    if not hasattr(env.layout, "outline"):
+        assert binning.outline is None
     assert binning.kind == env.layout._layout_type_tag
     if binning.rectilinear is not None:
         expected = env.layout.rectilinear_grid()

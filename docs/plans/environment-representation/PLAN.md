@@ -8,7 +8,7 @@
 | --- | --- |
 | 1 — Binning snapshot | Complete |
 | 2a — Data locators | Complete |
-| 2b — Shapes and plots | Pending |
+| 2b — Shapes and plots | Complete |
 | 3 — Save binnings | Pending |
 | 4 — Derived environments | Pending |
 

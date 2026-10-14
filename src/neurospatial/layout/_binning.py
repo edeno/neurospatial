@@ -20,6 +20,7 @@ from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
+from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
@@ -427,8 +428,8 @@ class Binning:
     faces: FacesSource
     rectilinear: RectilinearGrid | None = None
     linearization: TrackLinearizationProvider | None = None
-    shapes: None = None
-    outline: None = None
+    shapes: HexagonShapes | TriangleShapes | None = None
+    outline: Outline | None = None
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:
@@ -468,6 +469,8 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
             else None
         ),
         linearization=_linearization_of(layout),
+        shapes=_shapes_of(layout),
+        outline=_outline_of(layout),
     )
 
 
@@ -483,3 +486,15 @@ def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None
     if factory is not None:
         return cast("TrackLinearizationProvider", factory())
     return layout if isinstance(layout, TrackLinearizationProvider) else None
+
+
+def _shapes_of(layout: LayoutEngine) -> HexagonShapes | TriangleShapes | None:
+    """Read optional drawing shapes without knowing the layout class."""
+    factory = getattr(layout, "bin_shapes", None)
+    return cast("HexagonShapes | TriangleShapes", factory()) if factory else None
+
+
+def _outline_of(layout: LayoutEngine) -> Outline | None:
+    """Read an optional immutable boundary for drawing."""
+    factory = getattr(layout, "outline", None)
+    return cast("Outline | None", factory()) if factory else None
