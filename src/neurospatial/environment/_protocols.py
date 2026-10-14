@@ -186,7 +186,7 @@ class EnvironmentProtocol(Protocol):
         field: NDArray[np.float64],
         bandwidth: float,
         *,
-        mode: KernelMode = "density",
+        mode: KernelMode = "average",
     ) -> NDArray[np.float64]:
         """Apply graph-based smoothing to a spatial field."""
         ...

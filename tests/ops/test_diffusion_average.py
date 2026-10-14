@@ -73,6 +73,22 @@ def test_average_smooths_intensive_field(polar_env):
     )
 
 
+def test_smooth_default_preserves_rate_level_and_volume_integral(polar_env):
+    """The obvious rate-map smoother preserves intensive units on coarse and polar bins."""
+    coarse = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0) * 3,) * 2
+    )
+    for env in (coarse, polar_env):
+        np.testing.assert_allclose(
+            env.smooth(np.full(env.n_bins, 7.0), bandwidth=4.0), 7.0, atol=1e-9
+        )
+        rates = np.linspace(-2.0, 5.0, env.n_bins)
+        smoothed = env.smooth(rates, bandwidth=4.0)
+        np.testing.assert_allclose(
+            np.dot(smoothed, env.bin_sizes), np.dot(rates, env.bin_sizes), rtol=1e-9
+        )
+
+
 def _masked_average(kernel, rate, valid):
     """Reference Nadaraya-Watson masked average with an explicit kernel."""
     rate_filled = np.where(valid, rate, 0.0)

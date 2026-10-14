@@ -600,7 +600,7 @@ def smooth(
     field: NDArray[np.float64],
     bandwidth: float,
     *,
-    mode: Literal["transition", "density"] = "density",
+    mode: Literal["transition", "density", "average"] = "average",
 ) -> NDArray[np.float64]:
     """
     Apply Gaussian smoothing to field values.
@@ -613,11 +613,11 @@ def smooth(
         Spatial bandwidth of Gaussian kernel in physical units
         (matching environment coordinates, e.g., cm, meters).
         REQUIRED parameter - no default.
-    mode : {"transition", "density"}, optional
-        Smoothing mode:
-        - "density": Standard Gaussian smoothing for density fields
-        - "transition": Graph-based smoothing following connectivity
-        Default is "density".
+    mode : {"transition", "density", "average"}, default="average"
+        All modes follow the same graph connectivity:
+        - "average": Smooth intensive values, such as rates in Hz; preserves constants.
+        - "transition": Smooth extensive quantities, preserving their sum.
+        - "density": Convert counts to a density, preserving their volume integral.
 
     Returns
     -------
@@ -637,17 +637,11 @@ def smooth(
 **Example:**
 
 ```python
-# Compute raw firing rate
-spike_counts = compute_spike_counts(env, spike_times, positions)
-occupancy = env.occupancy(times, positions)
-firing_rate_raw = np.divide(
-    spike_counts,
-    occupancy,
-    where=occupancy > 0.1,
-    out=np.full(env.n_bins, np.nan)
-)
+# A finite intensive field in Hz: smoothing should not divide its level by bin area.
+import numpy as np
 
-# Smooth the firing rate map (bandwidth in physical units)
+firing_rate_raw = np.full(env.n_bins, 7.0)
+firing_rate_raw[env.n_bins // 2] += 5.0
 firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=5.0)  # 5 cm
 
 # Compare raw vs smoothed
@@ -675,6 +669,20 @@ for ax, data, title in zip(
 plt.show()
 ```
 
+**Migrating the default:** `env.smooth(field, bandwidth)` now uses `mode="average"`.
+To preserve the previous count-to-density operation, write
+`env.smooth(counts, bandwidth, mode="density")`. Use `mode="transition"` when
+smoothing per-bin counts, occupancy, or probability mass while keeping their sum.
+`compute_kernel` and the lower-level `diffuse` retain their existing defaults;
+select their mode explicitly when composing operators.
+
+`env.smooth` requires finite input and rejects NaN/Inf. For spike-derived rate
+maps, prefer `compute_spatial_rate`, which handles shared spike/occupancy support
+and estimator-specific smoothing. Applying another smoothing pass to a returned
+map changes that estimator. A masked average requires smoothing both the filled
+numerator and the validity weights, dividing, then restoring the desired mask;
+simply replacing missing observations with zero changes their meaning.
+
 **Use Cases:**
 
 - Noise reduction in firing rate maps
@@ -695,12 +703,9 @@ bandwidth_bins = 2  # Smooth over 2 bins
 bandwidth_cm = bandwidth_bins * bin_size_cm  # 5.0 cm
 firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=bandwidth_cm)
 
-# Graph-based smoothing (follows connectivity, respects barriers)
-firing_rate_smooth_graph = env.smooth(firing_rate_raw, bandwidth=5.0, mode="transition")
-
-# NaN values are handled automatically - they don't contribute to smoothing
-# and smoothed values at NaN locations remain NaN
-assert np.isnan(firing_rate_smooth)[np.isnan(firing_rate_raw)].all()
+# All modes follow connectivity; choose the mode according to field meaning.
+smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
+spike_density = env.smooth(spike_counts, bandwidth=5.0, mode="density")
 ```
 
 ---

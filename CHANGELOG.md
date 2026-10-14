@@ -74,6 +74,15 @@
 
 ### Changed
 
+- **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
+  units and level of a rate map. Pass `mode="density"` explicitly to retain
+  the previous count-to-density default; kernel constructors are unchanged.
+- **Breaking:** field detection and population coverage now default to no
+  map-mean exclusion (`max_mean_rate=np.inf`). Pass `max_mean_rate=10.0` to
+  retain the previous filter. Its unweighted spatial-bin mean is not a
+  recording-time mean or a cell-type verdict. Coverage displays report maps
+  with segmented fields rather than asserting cell identity.
+
 - Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
   observed support, independent simulation randomness and calibrated scientific
   language. Correct rate-map and direction labels, add held-out decoding,
@@ -162,6 +171,10 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- Explain the generalized border score's untuned baseline: a uniform map can
+  have a strongly positive score. Add analytic flat, boundary-only and central
+  controls, and require geometry-specific interpretation of score thresholds.
 
 - Use a normalized center-surround contrast in the graph-convolution example,
   with a positive center and no response to a constant input.

@@ -98,7 +98,7 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
     {
         "threshold": 0.2,
         "min_size": None,
-        "max_mean_rate": 10.0,
+        "max_mean_rate": np.inf,
         "detect_subfields": True,
     }
 )
@@ -112,9 +112,9 @@ PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
 class PlaceFieldsResult(ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
-    Returned by :func:`detect_place_fields`. Distinguishes "this neuron
-    has no detectable place fields" (``fields=[]``, ``excluded_reason=None``)
-    from "this neuron was excluded by the interneuron-rate filter"
+    Returned by :func:`detect_place_fields`. Distinguishes "this map
+    has no detectable fields" (``fields=[]``, ``excluded_reason=None``)
+    from "this map was excluded by an explicitly requested spatial-map-mean filter"
     (``fields=[]``, ``excluded_reason="mean_rate_above_threshold"``) so a
     population pipeline can branch without listening for warnings.
 
@@ -123,12 +123,12 @@ class PlaceFieldsResult(ResultMixin):
     fields : list of NDArray[np.int64], length n_fields
         Each element is a 1-D array of bin indices belonging to one
         place field. Empty list if no fields were detected, or if the
-        neuron was excluded by the ``max_mean_rate`` filter.
+        map was excluded by the ``max_mean_rate`` filter.
     excluded_reason : str | None
-        ``None`` when the neuron passed all filters and ``fields``
+        ``None`` when the map passed all filters and ``fields``
         reflects the actual detection result. A non-None string when a
         filter caused detection to short-circuit. The only value used
-        currently is ``"mean_rate_above_threshold"`` (putative interneuron);
+        currently is ``"mean_rate_above_threshold"`` (explicit map-mean cutoff);
         future filters (e.g. ``"all_nan_rate_map"``) may add more.
     n_excluded : int
         ``1`` if ``excluded_reason`` is set, else ``0``. Provided so
@@ -1313,7 +1313,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         *,
         threshold: float = 0.2,
         min_size: int | None = None,
-        max_mean_rate: float = 10.0,
+        max_mean_rate: float = np.inf,
         detect_subfields: bool = True,
     ) -> bool:
         """Detect whether the rate map has a place field; this is not a cell-type verdict.
@@ -1329,9 +1329,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             Fraction of peak rate for field boundary detection (0-1).
         min_size : int, optional
             Minimum number of bins for a valid field. If None, defaults to 9.
-        max_mean_rate : float, default=10.0
-            Maximum mean firing rate (Hz). Neurons exceeding this are excluded
-            as putative interneurons.
+        max_mean_rate : float, default=np.inf
+            Optional upper bound on the unweighted mean of non-NaN spatial-bin
+            rates (Hz). The default disables exclusion. This is not the
+            recording-time mean firing rate and does not identify cell type.
         detect_subfields : bool, default=True
             If True, recursively detect subfields within large fields.
 
@@ -4436,13 +4437,14 @@ def detect_place_fields(
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
-    max_mean_rate: float = 10.0,
+    max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
 ) -> PlaceFieldsResult:
     """Detect place fields using iterative peak-based approach (neurocode method).
 
     This implements the field-standard algorithm used by neurocode (AyA Lab)
-    with support for subfield discrimination and interneuron exclusion.
+    with support for subfield discrimination and an optional spatial-map-mean filter.
+    By default this segments the map without excluding neurons by rate or cell type.
 
     Parameters
     ----------
@@ -4455,9 +4457,10 @@ def detect_place_fields(
         Standard value is 0.2 (20% of peak).
     min_size : int, optional
         Minimum number of bins for a valid field. If None, defaults to 9 bins.
-    max_mean_rate : float, default=10.0
-        Maximum mean firing rate (Hz). Neurons exceeding this are excluded
-        as putative interneurons (vandermeerlab convention).
+    max_mean_rate : float, default=np.inf
+        Optional upper bound on the unweighted mean of non-NaN spatial-bin
+        rates (Hz). The default disables exclusion. This is not the
+        recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, recursively detect subfields within large fields using
         higher thresholds. This discriminates coalescent place fields.
@@ -4468,7 +4471,7 @@ def detect_place_fields(
         Container with ``fields`` (list of bin-index arrays, one per
         detected field) plus ``excluded_reason`` and ``n_excluded``
         attributes that distinguish "no detectable fields" from
-        "neuron excluded by interneuron-rate filter". The result is
+        "map excluded by an explicit map-mean filter". The result is
         iterable and indexable like the underlying list, so existing
         ``for f in result`` / ``len(result)`` / ``result[i]`` patterns
         keep working.
@@ -4477,7 +4480,7 @@ def detect_place_fields(
     -----
     **Algorithm (neurocode approach)**:
 
-    1. **Interneuron exclusion**: If mean rate > max_mean_rate, return no fields
+    1. **Optional map-mean filter**: If an explicit finite cutoff is exceeded, return no fields
     2. **Peak detection**: Find global maximum in firing rate map
     3. **Field segmentation**: Threshold at fraction of peak to define boundary
     4. **Connected component**: Extract bins above threshold connected to peak
@@ -4486,9 +4489,12 @@ def detect_place_fields(
        higher thresholds (0.5, 0.7) to discriminate coalescent fields
     7. **Iteration**: Remove detected field bins and repeat until no peaks remain
 
-    **Interneuron exclusion**: Following vandermeerlab convention, neurons with
-    mean firing rate > 10 Hz are excluded as putative interneurons. Pyramidal
-    cells (place cells) typically fire at 0.5-5 Hz.
+    **Segmentation is not cell classification.** An unmodulated or high-rate
+    map can contain detected regions. An explicit finite ``max_mean_rate``
+    filters the unweighted mean of spatial-bin rates; unequal occupancy makes
+    that different from total spikes divided by recording duration. To recover
+    the previous optional 10 Hz map-mean filter, pass ``max_mean_rate=10.0``.
+    Neither the filter nor the resulting field count establishes cell identity.
 
     **Subfield detection**: When two place fields are close together, they may
     appear as a single broad field at low thresholds. Recursive thresholding
@@ -4535,28 +4541,25 @@ def detect_place_fields(
     if min_size is None:
         min_size = 9  # Standard minimum (3×3 bins for 2D)
 
-    # Interneuron exclusion. Emit a UserWarning AND surface the reason
-    # in the returned PlaceFieldsResult so a caller running
-    # detect_place_fields over a population can tell "this neuron has
-    # no detectable place fields" (empty fields, excluded_reason=None)
-    # from "this neuron was excluded as a putative interneuron"
-    # (empty fields, excluded_reason="mean_rate_above_threshold").
-    # The structured signal removes the need to listen for warnings.
-    mean_rate = np.nanmean(firing_rate)
-    if mean_rate > max_mean_rate:
-        warnings.warn(
-            f"detect_place_fields: neuron excluded as putative interneuron "
-            f"(mean rate {float(mean_rate):.2f} Hz > max_mean_rate "
-            f"{max_mean_rate} Hz). Returning empty field list. Pass a larger "
-            "max_mean_rate to include fast-firing cells.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return PlaceFieldsResult(
-            fields=[],
-            excluded_reason="mean_rate_above_threshold",
-            n_excluded=1,
-        )
+    # A finite cutoff is an explicit map-level filter, independent of cell type.
+    # Skip the reduction when disabled, and avoid an all-NaN mean warning.
+    if np.isfinite(max_mean_rate) and np.any(np.isfinite(firing_rate)):
+        mean_rate = np.nanmean(firing_rate)
+        if mean_rate > max_mean_rate:
+            warnings.warn(
+                f"detect_place_fields: map excluded by the spatial-map-mean filter "
+                f"(unweighted mean {float(mean_rate):.2f} Hz > max_mean_rate "
+                f"{max_mean_rate} Hz). Returning empty field list. This is not "
+                "a recording-time mean or a cell-type verdict. Pass "
+                "max_mean_rate=np.inf to disable the filter.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return PlaceFieldsResult(
+                fields=[],
+                excluded_reason="mean_rate_above_threshold",
+                n_excluded=1,
+            )
 
     # Make a copy to modify during iteration
     rate_map = firing_rate.copy()
@@ -4630,7 +4633,7 @@ def has_place_field(
     spike_window: Any = None,
     threshold: float = 0.2,
     min_size: int | None = None,
-    max_mean_rate: float = 10.0,
+    max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     min_occupancy: float | None = None,
     fill_value: float | None = None,
@@ -4688,9 +4691,10 @@ def has_place_field(
         Fraction of peak rate for field boundary detection (0-1).
     min_size : int, optional
         Minimum number of bins for a valid field. If None, defaults to 9.
-    max_mean_rate : float, default=10.0
-        Maximum mean firing rate (Hz). Neurons exceeding this are excluded
-        as putative interneurons.
+    max_mean_rate : float, default=np.inf
+        Optional upper bound on the unweighted mean of non-NaN spatial-bin
+        rates (Hz). The default disables exclusion. This is not the
+        recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, recursively detect subfields within large fields.
 

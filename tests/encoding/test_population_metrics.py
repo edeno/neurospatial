@@ -203,18 +203,28 @@ class TestPopulationCoverage:
         assert len(result.uncovered_bins) > 0
         assert len(result.uncovered_positions) == len(result.uncovered_bins)
 
-    def test_zero_coverage(self, simple_env: Environment) -> None:
-        """Test when no place fields are detected (all neurons are putative interneurons)."""
+    def test_zero_coverage_with_explicit_map_mean_filter(
+        self, simple_env: Environment
+    ) -> None:
+        """An explicitly requested map-mean cutoff can exclude every map."""
         n_bins = simple_env.n_bins
-        # Create high mean firing rate (above max_mean_rate threshold)
-        # This will cause detect_place_fields to classify them as interneurons
-        firing_rates = np.ones((5, n_bins)) * 15.0  # Above default max_mean_rate=10
+        # Every map exceeds the explicitly requested spatial-map-mean cutoff.
+        firing_rates = np.ones((5, n_bins)) * 15.0
 
-        result = population_coverage(simple_env, firing_rates)
+        with pytest.warns(UserWarning, match="spatial-map-mean filter"):
+            result = population_coverage(simple_env, firing_rates, max_mean_rate=10.0)
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
         assert result.n_fields == 0
+
+    def test_default_coverage_does_not_exclude_high_rate_maps(self, simple_env):
+        """A flat high-rate map covers space descriptively without implying cell identity."""
+        rates = np.full((2, simple_env.n_bins), 25.0)
+        result = population_coverage(simple_env, rates)
+        assert result.coverage_fraction == pytest.approx(1.0)
+        assert result.n_place_cells == 2  # Legacy name: units with segmented regions.
+        assert all(fields.excluded_reason is None for fields in result.place_fields)
 
     def test_single_neuron(self, simple_env: Environment) -> None:
         """Test with a single neuron."""

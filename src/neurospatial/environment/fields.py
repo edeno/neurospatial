@@ -475,7 +475,7 @@ class EnvironmentFields:
         field: NDArray[np.float64],
         bandwidth: float,
         *,
-        mode: KernelMode = "density",
+        mode: KernelMode = "average",
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
 
@@ -491,10 +491,11 @@ class EnvironmentFields:
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
-        mode : {'transition', 'density', 'average'}, default='density'
+        mode : {'transition', 'density', 'average'}, default='average'
             Smoothing mode, distinguished by the **input type**. The default
-            stays ``'density'`` for backward compatibility; ``'average'`` is the
-            correct choice for an intensive rate map.
+            ``'average'`` preserves the units and level of an intensive field
+            such as a firing-rate map. For the previous count-to-density
+            behavior, pass ``mode='density'`` explicitly.
 
             - 'transition': Mass-conserving smoothing of an **extensive**
               quantity (a total per bin). Total sum is preserved:
@@ -585,6 +586,9 @@ class EnvironmentFields:
 
         Examples
         --------
+        >>> # Smooth an intensive rate map without changing its units or level
+        >>> smoothed_rate = env.smooth(firing_rate, bandwidth=5.0)  # doctest: +SKIP
+
         >>> # Smooth spike counts (mass-conserving)
         >>> smoothed_counts = env.smooth(
         ...     spike_counts, bandwidth=5.0, mode="transition"

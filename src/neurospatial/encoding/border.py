@@ -34,8 +34,9 @@ def border_score(
     Compute border score for a spatial firing rate map.
 
     The border score quantifies how much a cell's firing field is aligned with
-    environmental boundaries (walls). It ranges from -1 (center-preferring) to
-    +1 (perfect border cell). Implements the algorithm from Solstad et al. (2008).
+    environmental boundaries (walls). It ranges from -1 (no boundary coverage
+    with positive boundary distance) to +1 (field bins lie on the boundary).
+    Adapts the algorithm from Solstad et al. (2008) to general graphs.
 
     Parameters
     ----------
@@ -77,14 +78,20 @@ def border_score(
     1. Segment field at threshold: bins where `firing_rate >= threshold * peak`
     2. Compute boundary coverage (cM): fraction of boundary bins in field
     3. Compute normalized mean distance (d): mean distance from field bins to
-       nearest boundary bin, normalized by environment diameter
+       nearest boundary bin, normalized by the bin-center bounding-box diagonal
     4. Border score: `(cM - d) / (cM + d)`
 
     **Interpretation**:
 
-    - **+1**: Perfect border cell (field covers boundary, far from center)
-    - **0**: No boundary preference (uniform or mixed)
-    - **-1**: Anti-border (field in center, far from boundaries)
+    - **+1**: Field covers boundary bins with zero mean boundary distance
+    - **0**: Boundary coverage equals the normalized mean boundary distance
+    - **-1**: No boundary coverage with positive boundary distance
+
+    A uniform positive map covers every boundary and can score well above 0.5
+    under this generalized definition; zero is not the untuned baseline. A
+    positive score or fixed cutoff alone does not establish boundary-selective
+    firing. Compare with appropriate untuned controls and spatial information,
+    and calibrate any classification threshold for the geometry and estimator.
 
     **Differences from opexebo and Solstad et al. (2008)**:
 

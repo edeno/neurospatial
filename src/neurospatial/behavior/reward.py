@@ -198,7 +198,7 @@ def region_reward_field(
         # field is non-negative, so floor it (the dense clipped kernel did this
         # implicitly). Positivity is the consumer's job for the linear smoother.
         smoothed = np.maximum(
-            np.asarray(env.smooth(indicator, bandwidth)),
+            np.asarray(env.smooth(indicator, bandwidth, mode="average")),
             0.0,
         )
 

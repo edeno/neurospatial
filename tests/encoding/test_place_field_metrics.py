@@ -169,37 +169,25 @@ class TestDetectPlaceFields:
         # Should merge into one field
         assert len(fields_no_subfields) == 1
 
-    def test_detect_place_fields_interneuron_exclusion(self):
-        """Test interneuron exclusion (high mean rate > 10 Hz).
-
-        The function emits a UserWarning before returning [], so a
-        caller running detect_place_fields over a population can tell
-        the difference between "no detectable fields" and "excluded as
-        putative interneuron". The empty-list return is preserved (later
-        folded into a richer PlaceFieldsResult).
-        """
+    def test_detect_place_fields_explicit_map_mean_exclusion(self):
+        """A requested map-mean cutoff warns when it excludes a map."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # Create high firing rate everywhere (interneuron-like)
+        # Create a uniform map above the explicitly requested cutoff.
         firing_rate = np.ones(env.n_bins) * 15.0  # 15 Hz everywhere
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        # Should detect no fields (excluded as interneuron) and warn.
-        with pytest.warns(UserWarning, match=r"putative interneuron.*15\.00 Hz"):
+        # Explicit filtering should exclude the map and warn.
+        with pytest.warns(UserWarning, match=r"spatial-map-mean filter.*15\.00 Hz"):
             fields = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
 
         assert len(fields) == 0
 
-    def test_detect_place_fields_no_warning_for_typical_pyramidal_cell(self):
-        """Pyramidal-rate cells should NOT emit the interneuron warning.
-
-        Regression: the warning must fire ONLY when the
-        max_mean_rate threshold is crossed. Don't bother quiet
-        well-formed pyramidal cells with a noisy log.
-        """
+    def test_detect_place_fields_no_warning_below_explicit_map_mean_cutoff(self):
+        """A map below an explicit cutoff should not emit a filter warning."""
         rng = np.random.default_rng(0)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
@@ -221,14 +209,13 @@ class TestDetectPlaceFields:
 
         Uniform firing creates one large connected field because all bins
         are above threshold (threshold is fraction of peak, and peak equals
-        the uniform rate). This tests the expected behavior: uniform firing
-        is NOT spatially selective, so no discrete place fields are detected.
+        the uniform rate). Segmentation alone does not assess selectivity.
         """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # Uniform firing rate everywhere (below interneuron threshold)
+        # Uniform firing rate everywhere.
         firing_rate = np.ones(env.n_bins) * 5.0  # 5 Hz everywhere
 
         from neurospatial.encoding.spatial import detect_place_fields
@@ -1813,7 +1800,7 @@ class TestDetectPlaceFieldsValidation:
 
         # PlaceFieldsResult is sized + iterable; len() == 0 means no
         # fields were detected (and excluded_reason is None because
-        # all-NaN doesn't trigger the interneuron filter).
+        # all-NaN doesn't trigger the optional map-mean filter).
         assert len(fields) == 0
         assert fields.excluded_reason is None
 
@@ -2291,8 +2278,8 @@ class TestPlaceFieldsResult:
     """Regression: detect_place_fields returns PlaceFieldsResult.
 
     Pre-fix detect_place_fields returned a bare ``list[NDArray[np.int64]]``,
-    so callers could not tell "this neuron was excluded by the
-    interneuron-rate filter" apart from "this neuron has no detectable
+    so callers could not tell "this map was excluded by an explicit
+    map-mean filter" apart from "this map has no detectable
     place fields" without listening for warnings. Now returns a
     structured PlaceFieldsResult with `excluded_reason` and
     `n_excluded` attributes; iterates / sizes like the old list for
@@ -2306,7 +2293,7 @@ class TestPlaceFieldsResult:
         positions = rng.uniform(-20, 20, size=(2000, 2))
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # Slow pyramidal-rate cell with a clear gaussian place field.
+        # A clear synthetic Gaussian rate field.
         firing_rate = np.zeros(env.n_bins)
         for i in range(env.n_bins):
             dist = float(np.linalg.norm(env.bin_centers[i]))
@@ -2327,17 +2314,43 @@ class TestPlaceFieldsResult:
         # At least one detected field on this synthetic gaussian.
         assert len(result) >= 1
 
-    def test_excluded_reason_set_on_interneuron(self):
+    def test_default_segmentation_is_invariant_to_rate_rescaling(self):
+        """Relative-threshold segmentation should not silently impose a cell-type cutoff."""
+        from neurospatial.encoding import detect_place_fields
+
+        env, rates = self._build_env_and_rates()
+        original = detect_place_fields(env, rates, detect_subfields=False)
+        high_rate = detect_place_fields(env, rates * 1000, detect_subfields=False)
+        assert len(original) > 0
+        assert len(high_rate) == len(original)
+        assert high_rate.excluded_reason is None
+        for low_bins, high_bins in zip(original, high_rate, strict=True):
+            np.testing.assert_array_equal(high_bins, low_bins)
+
+    def test_high_rate_segmentation_defaults_agree_across_public_entry_points(self):
+        """Raw-array and result predicates detect regions without a default rate exclusion."""
+        from neurospatial.encoding import compute_spatial_rate, has_place_field
+
+        env = Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        )
+        times = np.arange(200, dtype=float) * 0.05
+        positions = env.bin_centers[np.arange(len(times)) % env.n_bins]
+        spikes = times[:-1] + 0.025  # One spike per tracked interval: 20 Hz everywhere.
+        result = compute_spatial_rate(env, spikes, times, positions, bandwidth=1.0)
+        assert result.has_place_field()
+        assert has_place_field(env, spikes, times, positions, bandwidth=1.0)
+
+    def test_excluded_reason_set_on_explicit_map_mean_filter(self):
         from neurospatial.encoding.spatial import (
             PlaceFieldsResult,
             detect_place_fields,
         )
 
         env, _ = self._build_env_and_rates()
-        # Push mean rate above the default 10 Hz threshold so the
-        # interneuron filter fires.
+        # Push the spatial-map mean above the explicit 10 Hz cutoff.
         firing_rate = np.full(env.n_bins, 20.0)
-        with pytest.warns(UserWarning, match=r"interneuron"):
+        with pytest.warns(UserWarning, match=r"spatial-map-mean filter"):
             result = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
         assert isinstance(result, PlaceFieldsResult)
         assert result.excluded_reason == "mean_rate_above_threshold"

@@ -8,13 +8,14 @@ another package or identify a biological cell type.
 
 ## Overview
 
-The `neurospatial.metrics` module provides three categories of metrics:
+The `neurospatial.encoding` package provides three categories of metrics:
 
 1. **Place Field Metrics** - Single-cell spatial tuning analysis
 2. **Population Metrics** - Multi-cell spatial representation analysis
 3. **Boundary Cell Metrics** - Border cell detection and analysis
 
-All metrics follow the neurospatial API convention: **field/data comes first, then environment** in the parameter order.
+Spatial analysis functions take the **environment first**, followed by data.
+Non-spatial statistics that operate only on arrays do not need an environment.
 
 ## Place Field Detection and Metrics
 
@@ -34,12 +35,12 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 # Detect place fields
 fields = detect_place_fields(env, firing_rate,
     threshold=0.2,          # 20% of peak rate
-    min_size=None,          # Auto-compute from bin size
-    max_mean_rate=10.0,     # Exclude interneurons (>10 Hz)
+    min_size=None,          # Default: at least 9 bins
+    max_mean_rate=np.inf,   # Default: no rate-based exclusion
     detect_subfields=True   # Discriminate coalescent fields
 )
 
-# Result: list of arrays
+# Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
 # fields[0] = np.array([10, 11, 12, 23, 24, 25])  # Bin indices for field 1
 # fields[1] = np.array([45, 46, 56, 57])          # Bin indices for field 2
 ```
@@ -48,15 +49,24 @@ fields = detect_place_fields(env, firing_rate,
 
 1. **Iterative peak detection**: Identifies local maxima above threshold
 2. **Connected component extraction**: Groups neighboring bins into fields
-3. **Interneuron exclusion**: Filters cells with mean rate > 10 Hz (hippocampus standard)
+3. **Optional map-mean filter**: An explicitly finite `max_mean_rate` can skip maps
 4. **Subfield discrimination**: Recursively re-thresholds at 50% and 70% to separate coalescent fields
 
 **Key parameters:**
 
 - `threshold`: Fraction of peak rate (default 0.2 = 20%, following Muller & Kubie, 1989)
-- `min_size`: Minimum field size in bins (defaults to reasonable value based on bin size)
-- `max_mean_rate`: Maximum mean firing rate (10 Hz standard for pyramidal cells)
+- `min_size`: Minimum field size in bins (defaults to 9; choose for your bin size)
+- `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
+  (default `np.inf`, disabled). This is not spike count divided by recording time,
+  and does not identify interneurons or another cell type.
 - `detect_subfields`: Enable subfield discrimination (default True, following neurocode)
+
+Segmentation is descriptive: even a flat map can yield a region. Field count
+and `has_place_field` do not establish a place cell. Keep cell-type tests and
+quality selection separate from map segmentation. To recover the previous
+10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
+`fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
+requested filter skips the map.
 
 ### Field Size
 
@@ -139,9 +149,10 @@ $$
 $$
 
 **Interpretation:**
-- **0**: Cell fires uniformly across entire environment
-- **1**: Cell fires in only one location (maximally sparse)
-- Typical place cells: 0.2-0.5 (fire in 20-50% of environment)
+- **1**: Uniform positive firing over the occupied environment
+- **Smaller values**: Firing concentrated in a smaller part of the occupied environment
+- For equal occupancy and equal positive rates in a subset of bins, the value
+  equals the fraction of occupied bins in that subset. A zero-rate map returns 0.
 
 ### Field Stability
 
@@ -334,15 +345,23 @@ score = border_score(
 
 1. Segment field at threshold: bins where `firing_rate >= threshold × peak_rate`
 2. Compute boundary coverage (cM): fraction of boundary bins in field
-3. Compute normalized mean distance (d): mean distance from field bins to nearest boundary
+3. Compute normalized mean distance (d): mean distance from field bins to nearest boundary,
+   divided by the bin-center bounding-box diagonal
 4. Border score: `(cM - d) / (cM + d)`
 
 **Interpretation:**
-- **+1**: Maximal boundary association under this score
+- **+1**: Field covers boundary bins with zero mean boundary distance
 - **0**: Boundary coverage equals normalized boundary distance
-- **-1**: Anti-border (field in center, far from boundaries)
+- **-1**: No boundary coverage with positive boundary distance
 - **>0.5**: A possible candidate-screen cutoff; its calibration does not
   automatically transfer from a rectangular arena to this graph adaptation
+
+A uniform positive map also covers every boundary and can score well above 0.5;
+zero is not its untuned baseline. For a complete 5 × 5 unit grid, mean boundary
+distance is `(8*1 + 1*2)/25`, the bin-center diagonal is `4*sqrt(2)`, and this
+formula gives approximately 0.868 for a flat map. Compare with untuned controls
+and spatial information before interpreting a boundary-selectivity claim;
+this cutoff alone is insufficient.
 
 **Key differences from original algorithm:**
 

@@ -56,11 +56,11 @@ class PopulationCoverageResult(ResultMixin):
         Detected place fields for each neuron (output of detect_place_fields).
         Each PlaceFieldsResult is iterable / indexable / sized like a
         list[NDArray[np.int64]] but also carries `excluded_reason` and
-        `n_excluded` for cells filtered as putative interneurons.
+        `n_excluded` for cells filtered by an explicit spatial-map-mean cutoff.
     place_cell_fraction : float
-        Computed property: n_place_cells / n_neurons (typical CA1: 0.3-0.5).
+        Computed property: n_place_cells / n_neurons, a descriptive segmentation fraction.
     fields_per_place_cell : float
-        Computed property: n_fields / n_place_cells (typical: 1.0-2.0).
+        Computed property: n_fields / n_place_cells.
     mean_redundancy : float
         Computed property: average field_count over covered bins.
     """
@@ -76,7 +76,7 @@ class PopulationCoverageResult(ResultMixin):
     n_fields: int
     # Per-neuron PlaceFieldsResult; iterates as list[NDArray[np.int64]]
     # for backwards-compatible len/iter access, and exposes
-    # excluded_reason / n_excluded for population-level interneuron
+    # excluded_reason / n_excluded for population-level map-mean
     # accounting.
     place_fields: list[PlaceFieldsResult]
 
@@ -93,9 +93,9 @@ class PopulationCoverageResult(ResultMixin):
 
     @property
     def place_cell_fraction(self) -> float:
-        """Fraction of neurons that are place cells.
+        """Fraction of neurons with at least one segmented map region.
 
-        Typical values in hippocampal CA1: 0.3-0.5 (30-50%).
+        The legacy name does not imply a cell-type test or place-cell prevalence.
 
         References
         ----------
@@ -108,10 +108,10 @@ class PopulationCoverageResult(ResultMixin):
 
     @property
     def fields_per_place_cell(self) -> float:
-        """Average number of place fields per place cell.
+        """Average number of segmented fields per map containing a field.
 
-        Typical values: 1.0-2.0 in familiar environments.
-        Higher values (>2) may indicate multifield cells or novel environments.
+        This descriptive ratio depends on the segmentation settings and is
+        not a cell-type classification.
 
         References
         ----------
@@ -146,10 +146,10 @@ class PopulationCoverageResult(ResultMixin):
         return (
             f"PopulationCoverageResult:\n"
             f"  Coverage: {self.coverage_fraction:.1%}\n"
-            f"  Place cells: {self.n_place_cells}/{self.n_neurons} "
+            f"  Maps with fields: {self.n_place_cells}/{self.n_neurons} "
             f"({self.place_cell_fraction:.1%})\n"
             f"  Total fields: {self.n_fields} "
-            f"({self.fields_per_place_cell:.1f} per place cell)\n"
+            f"({self.fields_per_place_cell:.1f} per map with fields)\n"
             f"  Mean redundancy: {self.mean_redundancy:.2f} fields/bin\n"
             f"  Gaps: {len(self.uncovered_bins)} bins"
         )
@@ -161,14 +161,15 @@ def population_coverage(
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
-    max_mean_rate: float = 10.0,
+    max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     n_jobs: int = 1,
 ) -> PopulationCoverageResult:
     r"""Compute spatial coverage of a place cell population.
 
     Detects place fields for each neuron, then computes comprehensive
-    coverage statistics including gap locations.
+    coverage statistics including gap locations. Segmentation is descriptive:
+    neurons with detected regions are not thereby classified as place cells.
 
     Parameters
     ----------
@@ -183,9 +184,10 @@ def population_coverage(
     min_size : int, optional
         Minimum number of bins for a valid field. Default is 9.
         Passed to `detect_place_fields()`.
-    max_mean_rate : float, default=10.0
-        Maximum mean firing rate (Hz). Neurons exceeding this are
-        excluded as putative interneurons. Passed to `detect_place_fields()`.
+    max_mean_rate : float, default=np.inf
+        Optional cutoff on the unweighted mean of non-NaN spatial-bin rates
+        (Hz), passed to ``detect_place_fields``. The default disables exclusion.
+        This is not a recording-time mean and does not identify cell type.
     detect_subfields : bool, default=True
         If True, recursively detect subfields within large fields.
         Passed to `detect_place_fields()`.
@@ -194,7 +196,7 @@ def population_coverage(
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
         overhead). Results are byte-for-byte identical regardless of
         ``n_jobs`` (joblib preserves submission order). Note: per-neuron
-        interneuron-exclusion ``UserWarning``\s from ``detect_place_fields``
+        map-mean-exclusion ``UserWarning``\s from ``detect_place_fields``
         are not surfaced when ``n_jobs != 1`` (joblib worker warnings are
         commonly swallowed); inspect ``result.place_fields[i].excluded_reason``
         instead.
@@ -248,7 +250,7 @@ def population_coverage(
     >>> result = population_coverage(env, firing_rates)  # doctest: +SKIP
     >>> print(f"Coverage: {result.coverage_fraction:.1%}")  # doctest: +SKIP
     >>> print(
-    ...     f"Place cells: {result.n_place_cells}/{result.n_neurons}"
+    ...     f"Maps with fields: {result.n_place_cells}/{result.n_neurons}"
     ... )  # doctest: +SKIP
     >>> print(f"Gaps: {len(result.uncovered_bins)} bins")  # doctest: +SKIP
     >>>
@@ -497,7 +499,7 @@ def plot_population_coverage(
     # Add informative title
     ax.set_title(
         f"Bin Coverage: {result.coverage_fraction:.1%} "
-        f"({result.n_place_cells}/{result.n_neurons} place cells, "
+        f"({result.n_place_cells}/{result.n_neurons} maps with fields, "
         f"{result.n_fields} fields)"
     )
 

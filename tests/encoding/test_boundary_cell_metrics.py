@@ -20,6 +20,34 @@ from neurospatial import Environment
 class TestBorderScore:
     """Test border_score function."""
 
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_uniform_map_control_has_geometry_dependent_positive_baseline(self, metric):
+        """Pin the generalized formula without treating a positive score as tuning."""
+        from neurospatial.encoding import border_score
+
+        env = Environment.from_grid_mask(
+            np.ones((5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 2
+        )
+        # Sixteen outer bins have distance 0, eight inner bins have distance 1,
+        # and the center has distance 2. Mean distance is 10/25 and the
+        # bin-center bounding-box diagonal is 4*sqrt(2). Coverage is 1.
+        normalized_distance = (10 / 25) / (4 * np.sqrt(2))
+        expected_uniform = (1 - normalized_distance) / (1 + normalized_distance)
+        uniform = np.full(env.n_bins, 2.0)
+        uniform_score = border_score(env, uniform, metric=metric)
+        np.testing.assert_allclose(uniform_score, expected_uniform)
+        assert uniform_score > 0.5  # The usual screen also passes this untuned control.
+        np.testing.assert_allclose(
+            border_score(env, uniform * 7, metric=metric), uniform_score
+        )
+
+        boundary_only = np.zeros(env.n_bins)
+        boundary_only[env.boundary_bins] = 2.0
+        center_only = np.zeros(env.n_bins)
+        center_only[12] = 2.0
+        np.testing.assert_allclose(border_score(env, boundary_only, metric=metric), 1.0)
+        np.testing.assert_allclose(border_score(env, center_only, metric=metric), -1.0)
+
     def test_border_score_anchor_boundary_only_field(self) -> None:
         """Anchor test: Field active ONLY on boundary bins should have score ≈ 1.0.
 
