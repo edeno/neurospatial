@@ -103,8 +103,8 @@ need the simulator holder because it carries simulation-specific data.
 
 `SpikeTrains` is a frozen bundle of ragged per-unit spike trains plus their
 identity labels (`unit_ids`) and an optional per-unit metadata table
-(`unit_table`). It gives you label access, iteration, and a metadata-driven
-`filter`, and it flows **directly** into the batch encoding / decoding functions
+(`unit_table`). It gives you positional access, label selection, iteration and
+a metadata-driven `filter`, and it flows **directly** into the batch encoding / decoding functions
 (it duck-types as a spike-input group, so its `unit_ids` are carried into the
 result).
 
@@ -121,13 +121,15 @@ st = SpikeTrains(
 
 st.index          # unit_ids (the group-key surface): array([7, 9])
 list(st)          # iterate -> the per-unit train arrays
-st[9]             # label access by unit id -> array([0.5, 3. , 6. ])
+st[1]             # by position -> array([0.5, 3. , 6. ])
+st.sel(unit_id=9) # by label: the same unit
 
 # Metadata-driven selection (returns a new SpikeTrains).
 ca1 = st.filter("region == 'CA1' and quality > 0.5")
 
 # Flows straight into batch compute — unit_ids are carried into the result.
 rates = compute_spatial_rates(env, st, times, positions)
+rates.sel(unit_id=9)  # that unit's rate map; rates[1] is the same unit
 ```
 
 ### Restricting to epochs

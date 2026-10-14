@@ -35,9 +35,10 @@ without forcing a single tabular shape onto every result.
 
 from __future__ import annotations
 
+import operator
 from collections import Counter
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -47,6 +48,13 @@ from neurospatial._exceptions import _format_error
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+
+
+def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
+    """Return a read-only copy that no caller-held view can alias."""
+    owned = np.array(array, dtype=dtype, copy=True)
+    owned.flags.writeable = False
+    return owned
 
 
 def as_label_array(labels: Any) -> NDArray[Any]:
@@ -74,6 +82,125 @@ def label_at(unit_ids: Any, index: int) -> Any:
     return value.item() if isinstance(value, np.generic) else value
 
 
+class ReadOnlyArraysMixin:
+    """A frozen result whose NumPy arrays are read-only copies it owns.
+
+    A subclass calls :meth:`_own_arrays` at the end of ``__post_init__``.
+    Editing an array the result was built from then cannot change it, and
+    editing an array read from it raises. Copy with ``np.array(...)`` to
+    modify values. JAX arrays are immutable already and are kept as given.
+    """
+
+    def _own_arrays(self) -> None:
+        """Replace every NumPy array attribute with a read-only copy."""
+        for name, value in list(vars(self).items()):
+            if isinstance(value, np.ndarray):
+                object.__setattr__(self, name, read_only_copy(value))
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        for value in state.values():
+            if isinstance(value, np.ndarray):
+                value.flags.writeable = False
+
+
+_Unit_co = TypeVar("_Unit_co", covariant=True)
+
+
+class _UnitContainer(Protocol[_Unit_co]):
+    """A labelled container whose ``[i]`` returns its ``i``-th unit."""
+
+    @property
+    def unit_ids(self) -> Any: ...
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, index: int, /) -> _Unit_co: ...
+
+
+class UnitSelectionMixin(ReadOnlyArraysMixin):
+    """Position indexing with ``[i]`` and label selection with :meth:`sel`.
+
+    Shared by every container of units (``SpikeTrains`` and the population
+    results) so ``[]`` has one meaning everywhere: ``x[i]`` is the ``i``-th
+    unit in stored order, the same row as every per-unit array and as
+    iteration. Labels are selected explicitly with ``x.sel(unit_id=label)``,
+    as in ``x.to_xarray().sel(unit_id=label)``. ``unit_ids`` stays read-only,
+    including after pickling or copying, so it cannot be edited into the
+    duplicate labels that would make ``sel`` return the first match.
+    """
+
+    def sel(self: _UnitContainer[_Unit_co], *, unit_id: Any) -> _Unit_co:
+        """Return the unit whose label is ``unit_id``.
+
+        Parameters
+        ----------
+        unit_id : Any
+            An entry of ``unit_ids``.
+
+        Returns
+        -------
+        object
+            What ``self[i]`` returns at that unit's position: the spike train
+            for :class:`~neurospatial.encoding.SpikeTrains`, the single-unit
+            result for a population result.
+
+        Raises
+        ------
+        KeyError
+            If no unit has this label.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding import SpikeTrains
+        >>> st = SpikeTrains([np.array([0.1]), np.array([0.2, 0.3])], unit_ids=[7, 9])
+        >>> st.sel(unit_id=9)
+        array([0.2, 0.3])
+        >>> st[1]  # the same unit, by position
+        array([0.2, 0.3])
+        """
+        labels = np.asarray(self.unit_ids).tolist()
+        try:
+            position = labels.index(unit_id)
+        except ValueError:
+            shown = ", ".join(repr(label) for label in labels[:10])
+            more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
+            missing = unit_id.item() if isinstance(unit_id, np.generic) else unit_id
+            raise KeyError(
+                f"unit_id {missing!r} is not in this {type(self).__name__} "
+                f"(unit_ids: {shown}{more}). Pass one of these labels to "
+                "sel(), or use [i] to select the i-th unit by position."
+            ) from None
+        return self[position]
+
+    def _unit_position(self: _UnitContainer[Any], index: Any) -> int:
+        """Validate a positional ``[]`` index, pointing label lookups at ``sel``."""
+        name = type(self).__name__
+        try:
+            position = operator.index(index)
+        except TypeError:
+            label = index.item() if isinstance(index, np.generic) else index
+            raise TypeError(
+                _format_error(
+                    f"{name}[{label!r}]: [] selects one unit by integer position.",
+                    fix=f"use .sel(unit_id={label!r}) to select a unit by label",
+                )
+            ) from None
+        n_units = len(self)
+        if not -n_units <= position < n_units:
+            raise IndexError(
+                _format_error(
+                    f"{name}[{position}] is out of range for {n_units} unit(s).",
+                    why="Why: [] selects by position, not by unit_id.",
+                    fix=f"use .sel(unit_id={position!r}) to select a unit by "
+                    f"label, or a position from {-n_units} to {n_units - 1}",
+                )
+            )
+        return position
+
+
 def resolve_unit_ids(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     n_units: int,
@@ -83,10 +210,11 @@ def resolve_unit_ids(
 ) -> NDArray[Any]:
     """Resolve and validate per-unit identity labels.
 
-    Returns an ``ndarray`` of unit identity labels: ``unit_ids`` when given,
-    else the labels the spike input carries (``input_ids``), else
+    Returns a read-only ``ndarray`` of unit identity labels: ``unit_ids`` when
+    given, else the labels the spike input carries (``input_ids``), else
     ``np.arange(n_units)``. Validates that there is exactly one label per unit
-    and that no label repeats.
+    and that no label repeats. The array is a copy, so editing the caller's
+    labels afterwards cannot relabel or duplicate a unit.
 
     Parameters
     ----------
@@ -104,7 +232,7 @@ def resolve_unit_ids(
     Returns
     -------
     ndarray
-        Resolved labels as a 1D array of length ``n_units``.
+        Resolved labels as a read-only 1D array of length ``n_units``.
 
     Raises
     ------
@@ -128,9 +256,9 @@ def resolve_unit_ids(
     from_input = unit_ids is None and input_ids is not None
     unit_ids = unit_ids if unit_ids is not None else input_ids
     if unit_ids is None:
-        return np.arange(n_units)
+        return read_only_copy(np.arange(n_units))
 
-    resolved = as_label_array(unit_ids)
+    resolved = read_only_copy(as_label_array(unit_ids))
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
         raise ValueError(
@@ -493,7 +621,8 @@ def build_population_dataset(
             "'pip install neurospatial[xarray]' or 'pip install xarray'."
         ) from exc
 
-    rates = np.asarray(firing_rates, dtype=np.float64)
+    # Copies: the Dataset is the caller's to edit, and results are read-only.
+    rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.asarray(unit_ids)
 
@@ -524,7 +653,7 @@ def build_population_dataset(
         # bin_centers IS present (passed explicitly, e.g. directional angular
         # centers); a shape disagreement is a real inconsistency, not an
         # optional coord. Raise rather than silently omitting the coord.
-        bc = np.asarray(bin_centers, dtype=np.float64)
+        bc = np.array(bin_centers, dtype=np.float64)
         if bc.ndim != 1 or bc.shape[0] != n_bins:
             raise ValueError(
                 "bin_centers length does not match the firing-rate bin "
@@ -542,7 +671,7 @@ def build_population_dataset(
     if occupancy is not None:
         # occupancy IS present; a length disagreement is a real inconsistency,
         # not an absent-optional. Raise rather than silently dropping the var.
-        occ = np.asarray(occupancy, dtype=np.float64)
+        occ = np.array(occupancy, dtype=np.float64)
         if occ.ndim != 1 or occ.shape[0] != n_bins:
             raise ValueError(
                 "occupancy length does not match the firing-rate bin count: "

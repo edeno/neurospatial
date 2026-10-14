@@ -73,6 +73,7 @@ class GridData(TypedDict, total=False):
     grid_shape: list[int]  # Grid dimensions
     total_grid_cells: int  # Total cells for padding calculation
     active_mask_flat: NDArray[np.bool_]  # Added during deserialization (not in JSON)
+    circular_angle: bool  # Polar axes; absent in older records
 
 
 # =============================================================================
@@ -473,12 +474,16 @@ def _extract_grid_data(env: Environment) -> dict[str, Any] | None:
     # Convert grid_edges tuple of arrays to list of lists for JSON
     grid_edges_list = [edge.tolist() for edge in grid_edges]
 
-    return {
+    data = {
         "grid_edges": grid_edges_list,
         "grid_shape": list(grid_shape),
         "active_mask_flat": active_mask.ravel(),  # Stored in separate column, NOT in JSON
         "total_grid_cells": int(np.prod(grid_shape)),
     }
+    circular_angle = getattr(env, "_angular_is_circular", None)
+    if circular_angle is not None:
+        data["circular_angle"] = bool(circular_angle)
+    return data
 
 
 def _regions_to_json(regions) -> str:
@@ -812,9 +817,17 @@ def _reconstruct_environment(
             # Rebuild the exact grid (polar type when is_polar), then use the
             # stored graph (4-connectivity, physical polar distances and seams)
             # and extents, since every grid is stored as a masked grid.
+            layout_params: dict[str, Any] = {
+                "active_mask": active_mask,
+                "grid_edges": grid_edges,
+            }
+            if is_polar:
+                # One/two-bin axes have no distinguishable seam edges. Older
+                # records did not store the flag and treated these axes as open.
+                layout_params["circular_angle"] = grid_data.get("circular_angle", False)
             return env_cls._from_saved_layout(
                 "MaskedGrid",
-                {"active_mask": active_mask, "grid_edges": grid_edges},
+                layout_params,
                 name=env_name,
                 bin_centers=bin_centers,
                 connectivity=connectivity,

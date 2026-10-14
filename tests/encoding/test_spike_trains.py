@@ -2,7 +2,7 @@
 
 ``SpikeTrains`` is the one justified new container in Phase 3: ragged per-unit
 spike times genuinely do not fit a rectangular array. It must duck-type as a
-``SpikeTrainsLike`` group so it flows through the Phase 3.1 spike-input adapter
+spike group so it flows through the Phase 3.1 spike-input adapter
 (:func:`as_spike_trains_with_ids`) via the **iterate-yields-trains** branch:
 
 - it is NOT a ``collections.abc.Mapping`` (so the adapter iterates it),
@@ -102,7 +102,7 @@ def test_mixed_type_unique_unit_ids_are_accepted(trains: list[np.ndarray]) -> No
     # mixed labels must simply be accepted.
     st = SpikeTrains(trains, unit_ids=np.array([1, "a", 2], dtype=object))
     np.testing.assert_array_equal(st.unit_ids, np.array([1, "a", 2], dtype=object))
-    np.testing.assert_array_equal(st["a"], trains[1])  # label access still works
+    np.testing.assert_array_equal(st.sel(unit_id="a"), trains[1])
 
 
 def test_mixed_type_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
@@ -113,27 +113,37 @@ def test_mixed_type_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Label access (by unit id, NOT position)
+# 2. Selection: [] by position, sel() by label
 # ---------------------------------------------------------------------------
 
 
-def test_getitem_is_label_access_not_position(trains: list[np.ndarray]) -> None:
-    # A permutation of ids proves label lookup: id 0 lives at position 1.
+def test_getitem_is_position_and_sel_is_label(trains: list[np.ndarray]) -> None:
+    # A permutation of ids separates the two: id 0 lives at position 1.
     st = SpikeTrains(trains, unit_ids=np.array([2, 0, 1]))
-    np.testing.assert_array_equal(st[0], trains[1])
-    np.testing.assert_array_equal(st[2], trains[0])
-    np.testing.assert_array_equal(st[1], trains[2])
+    for i, train in enumerate(trains):
+        np.testing.assert_array_equal(st[i], train)
+    np.testing.assert_array_equal(st.sel(unit_id=0), trains[1])
+    np.testing.assert_array_equal(st.sel(unit_id=2), trains[0])
+    np.testing.assert_array_equal(st[-1], trains[2])
 
 
-def test_getitem_string_labels(trains: list[np.ndarray]) -> None:
+def test_sel_string_labels(trains: list[np.ndarray]) -> None:
     st = SpikeTrains(trains, unit_ids=np.array(["a", "b", "c"]))
-    np.testing.assert_array_equal(st["b"], trains[1])
+    np.testing.assert_array_equal(st.sel(unit_id="b"), trains[1])
 
 
-def test_getitem_absent_id_raises_keyerror(trains: list[np.ndarray]) -> None:
+def test_sel_absent_id_raises_keyerror(trains: list[np.ndarray]) -> None:
     st = SpikeTrains(trains, unit_ids=np.array([10, 20, 30]))
-    with pytest.raises(KeyError, match="999"):
-        st[999]
+    with pytest.raises(KeyError, match=r"999.*10, 20, 30"):
+        st.sel(unit_id=999)
+
+
+def test_getitem_with_label_points_to_sel(trains: list[np.ndarray]) -> None:
+    st = SpikeTrains(trains, unit_ids=np.array(["a", "b", "c"]))
+    with pytest.raises(TypeError, match=r"sel\(unit_id='b'\)"):
+        st["b"]
+    with pytest.raises(IndexError, match=r"sel\(unit_id=30\)"):
+        SpikeTrains(trains, unit_ids=np.array([10, 20, 30]))[30]
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +228,40 @@ def test_list_input_still_accepted(trains: list[np.ndarray]) -> None:
     assert len(st) == len(trains)
 
 
+def test_container_is_isolated_from_caller_arrays(trains: list[np.ndarray]) -> None:
+    # Editing the arrays passed in must not change the container: shared
+    # labels could be edited into duplicates, bypassing the uniqueness check.
+    ids = np.array([7, 9, 11])
+    st = SpikeTrains(trains, unit_ids=ids)
+    expected = [t.copy() for t in trains]
+    ids[0] = 9
+    trains[0][0] = -1.0
+    np.testing.assert_array_equal(st.unit_ids, [7, 9, 11])
+    np.testing.assert_array_equal(st.trains[0], expected[0])
+
+
+def test_stored_arrays_are_read_only(trains: list[np.ndarray]) -> None:
+    st = SpikeTrains(trains, unit_ids=np.array([7, 9, 11]))
+    with pytest.raises(ValueError, match="read-only"):
+        st.trains[0][0] = -1.0
+    with pytest.raises(ValueError, match="read-only"):
+        st.unit_ids[0] = 9
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_copied_container_stays_read_only(trains: list[np.ndarray], how: str) -> None:
+    import copy
+    import pickle
+
+    st = SpikeTrains(trains, unit_ids=np.array([7, 9, 11]))
+    st2 = pickle.loads(pickle.dumps(st)) if how == "pickle" else copy.deepcopy(st)
+    np.testing.assert_array_equal(st2.unit_ids, st.unit_ids)
+    assert all(train.flags.writeable is False for train in st2.trains)
+    assert st2.unit_ids.flags.writeable is False
+
+
 # ---------------------------------------------------------------------------
-# 6. Duck-typing as SpikeTrainsLike (the footgun guard)
+# 6. Duck-typing as a spike group (the footgun guard)
 # ---------------------------------------------------------------------------
 
 

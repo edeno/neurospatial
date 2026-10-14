@@ -16,19 +16,12 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin, _coord_dim_names
+from neurospatial._results import ResultMixin, _coord_dim_names, read_only_copy
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial.environment import Environment
-
-
-def _read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
-    """Return a read-only copy that no caller-held view can alias."""
-    owned = np.array(array, dtype=dtype, copy=True)
-    owned.flags.writeable = False
-    return owned
 
 
 def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
@@ -125,9 +118,9 @@ class DecodingResult(ResultMixin):
 
     def __post_init__(self) -> None:
         """Take ownership of input arrays as read-only copies, checking shapes."""
-        object.__setattr__(self, "posterior", _read_only_copy(self.posterior))
+        object.__setattr__(self, "posterior", read_only_copy(self.posterior))
         if self.times is not None:
-            object.__setattr__(self, "times", _read_only_copy(self.times, np.float64))
+            object.__setattr__(self, "times", read_only_copy(self.times, np.float64))
         problems = []
         if self.posterior.ndim != 2:
             problems.append(
@@ -164,7 +157,7 @@ class DecodingResult(ResultMixin):
             )
         if self.spike_window is not None:
             object.__setattr__(
-                self, "spike_window", _read_only_copy(self.spike_window, np.float64)
+                self, "spike_window", read_only_copy(self.spike_window, np.float64)
             )
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -192,10 +185,10 @@ class DecodingResult(ResultMixin):
         for name, value in fields.items():
             object.__setattr__(obj, name, value)
         if obj.times is not None:
-            object.__setattr__(obj, "times", _read_only_copy(obj.times, np.float64))
+            object.__setattr__(obj, "times", read_only_copy(obj.times, np.float64))
         if obj.spike_window is not None:
             object.__setattr__(
-                obj, "spike_window", _read_only_copy(obj.spike_window, np.float64)
+                obj, "spike_window", read_only_copy(obj.spike_window, np.float64)
             )
         return obj
 
@@ -960,7 +953,7 @@ class DecodingSummary(ResultMixin):
         """
         if self.spike_window is not None:
             object.__setattr__(
-                self, "spike_window", _read_only_copy(self.spike_window, np.float64)
+                self, "spike_window", read_only_copy(self.spike_window, np.float64)
             )
         n_time = self.map_bin.shape[0]
         n_dims = self.env.n_dims

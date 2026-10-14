@@ -315,8 +315,10 @@ pynwb.
 **Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
 
 - `SpikeTrains`: Frozen ragged per-unit spike trains with `unit_ids` / optional
-  `unit_table`. Label access (`st[unit_id]`), iteration, `.filter(query)`; flows
-  directly into the batch `compute_*` / `decode_*` functions.
+  `unit_table`. Positional access (`st[i]`), label selection
+  (`st.sel(unit_id=...)`), iteration, `.filter(query)`; flows directly into
+  the batch `compute_*` / `decode_*` functions. Population results select units
+  the same way: `rates[i]` by position, `rates.sel(unit_id=...)` by label.
 
 **Epoch selection** ([neurospatial.behavior.epochs](neurospatial/behavior/epochs.md)):
 
@@ -335,6 +337,10 @@ pynwb.
   `SpatialRatesResult`, preserving unit identity and training spike-window
   provenance. Prediction takes spikes and array timestamps; supplied labels
   align by identity, generated labels pair by position.
+- `BayesianDecoder.from_models(env, encoding_models, unit_ids=..., spatial_support=..., dt=...)`:
+  Fitted decoder from hand-built `(n_units, n_bins)` rate maps, such as a
+  simulation's ground truth. The constructor takes configuration only; fitted
+  decoders come from `fit`, `from_rates` or `from_models`.
 - `fit(spike_times, times, positions, unit_ids=...)` requires tracking positions;
   explicit labels must match a labelled spike group's values and order.
   `decode_session` also requires positions and computes its own encoding maps.

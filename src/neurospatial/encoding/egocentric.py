@@ -51,7 +51,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
     from neurospatial import Environment
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
@@ -286,6 +287,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
     def __post_init__(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
+        self._own_arrays()
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _egocentric_xarray_attrs(self)
@@ -651,7 +653,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class ObjectVectorRatesResult(SpatialResultMixin):
+class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of object-vector rate computation for multiple neurons.
 
     This class wraps object-vector firing rate maps for a population of neurons
@@ -804,6 +806,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
                 self.unit_table, self.unit_ids, context="ObjectVectorRatesResult"
             ),
         )
+        self._own_arrays()
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -848,7 +851,8 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Index of the neuron (0-based).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -875,6 +879,7 @@ class ObjectVectorRatesResult(SpatialResultMixin):
         >>> isinstance(single, ObjectVectorRateResult)
         True
         """
+        idx = self._unit_position(idx)
         return ObjectVectorRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
@@ -2042,7 +2047,7 @@ def _object_vector_rate(
 
 def compute_egocentric_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -2339,7 +2344,7 @@ def compute_egocentric_rates(
 
 def compute_object_vector_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     object_positions: NDArray[np.float64],
@@ -2571,7 +2576,7 @@ def compute_object_vector_rates(
 
 def _object_vector_rates(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -3501,7 +3506,7 @@ def plot_object_vector_tuning(
 
 def _object_vector_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -3671,7 +3676,7 @@ def _object_vector_significance(
 
 def object_vector_cell_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     object_positions: NDArray[np.float64],
@@ -3862,7 +3867,7 @@ def object_vector_cell_significance(
 
 def egocentric_object_vector_cell_significance(
     env: Environment | None,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],

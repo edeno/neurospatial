@@ -54,7 +54,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin, label_at
+from neurospatial._results import ResultMixin, UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
@@ -843,6 +843,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             },
             n_units=None,
         )
+        self._own_arrays()
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -1434,7 +1435,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
 
 @dataclass(frozen=True, repr=False)
-class SpatialRatesResult(SpatialResultMixin):
+class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of spatial rate computation for multiple neurons.
 
     This class wraps spatial firing rate maps for a population of neurons
@@ -1701,6 +1702,7 @@ class SpatialRatesResult(SpatialResultMixin):
                 self.unit_table, self.unit_ids, context="SpatialRatesResult"
             ),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return number of units.
@@ -1719,7 +1721,8 @@ class SpatialRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Neuron index.
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -1744,6 +1747,7 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> single.firing_rate.shape == (env.n_bins,)
         True
         """
+        idx = self._unit_position(idx)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         # Slice the per-unit GAM fields; shared / batch-scalar fields carry
         # through unchanged. All ``None`` for ratio results (the ``is not None``
@@ -3181,7 +3185,7 @@ default="diffusion_kde"
 
 def compute_spatial_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
@@ -3577,7 +3581,7 @@ default="diffusion_kde"
         _validate_smoothing_parameters(method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing any
-    # unit ids the spikes object carries (a SpikeTrainsLike group, e.g. a
+    # unit ids the spikes object carries (a spike group, e.g. a
     # pynapple-TsGroup-like). Plain-array/sequence inputs return `None` ids, so
     # the trains are byte-for-byte identical to `as_spike_trains(spike_times)`.
     spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
@@ -5447,7 +5451,7 @@ def _detect_subfields(
 
 def place_cell_significance(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,

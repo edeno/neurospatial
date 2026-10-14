@@ -29,6 +29,7 @@ _DROP_WARN_THRESHOLD = 0.5
 _SUMMARY_DEFAULT_TIME_CHUNK = 1024
 
 if TYPE_CHECKING:
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
@@ -95,7 +96,7 @@ def _warn_if_spikes_out_of_window(
 
 def decode_session(
     env: Environment,
-    spike_times: Any,
+    spike_times: SpikeTrainsLike,
     times: ArrayLike,
     positions: NDArray[np.float64],
     *,
@@ -651,7 +652,7 @@ _SUMMARY_TIME_CHUNK_NONE_MSG = (
 
 def decode_session_summary(
     env: Environment,
-    spike_times: Any,
+    spike_times: SpikeTrainsLike,
     times: ArrayLike,
     positions: NDArray[np.float64],
     *,

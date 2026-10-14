@@ -1411,20 +1411,31 @@ def test_cartesian_factories_refuse_to_build_polar_environments(build):
 
 
 @pytest.mark.parametrize("circular", [True, False])
-def test_boundary_bins_respect_the_angular_seam(circular):
+@pytest.mark.parametrize("n_angle", [1, 2, 3, 6])
+def test_boundary_bins_respect_the_angular_seam(circular, n_angle, tmp_path):
     """A circular angle has no edge: only the inner and outer rings are boundary."""
     env = Environment.from_polar_egocentric(
         distance_range=(0.0, 20.0),
         angle_range=(-np.pi, np.pi),
         distance_bin_size=5.0,
-        angle_bin_size=np.pi / 3,
+        angle_bin_size=2 * np.pi / n_angle,
         circular_angle=circular,
     )
     r, theta = env.bin_centers.T
     edge = np.isclose(r, r.min()) | np.isclose(r, r.max())
     if not circular:
         edge |= np.isclose(theta, theta.min()) | np.isclose(theta, theta.max())
-    assert set(env.boundary_bins.tolist()) == set(np.flatnonzero(edge).tolist())
+    expected = np.flatnonzero(edge)
+    path = tmp_path / "polar"
+    env.to_file(path)
+    for restored in (
+        env,
+        env.copy(),
+        Environment.from_file(path),
+        Environment.from_dict(env.to_dict()),
+    ):
+        np.testing.assert_array_equal(restored.boundary_bins, expected)
+        assert restored._angular_is_circular is circular
 
 
 def test_cartesian_operations_are_the_capability_methods():

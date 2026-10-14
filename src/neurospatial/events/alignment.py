@@ -463,7 +463,7 @@ def peri_event_histogram(
 
 
 def population_peri_event_histogram(
-    spike_times: Sequence[NDArray[np.float64]] | SpikeTrainsLike,
+    spike_times: SpikeTrainsLike,
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     *,

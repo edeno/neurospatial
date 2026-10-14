@@ -20,6 +20,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial._results import resolve_unit_ids
+from neurospatial.encoding import SpikeTrains
 from neurospatial.encoding.directional import (
     DirectionalRatesResult,
     compute_directional_rates,
@@ -78,6 +79,96 @@ def test_unit_ids_round_trip(name, trajectory, spike_trains):
     ids = np.array([10, 20, 30])
     result = _compute(name, env, times, positions, headings, spike_trains, unit_ids=ids)
     np.testing.assert_array_equal(result.unit_ids, ids)
+
+
+def _container(name, trajectory, trains, unit_ids):
+    """Build any labelled unit container: a population result or SpikeTrains."""
+    if name == "spike_trains":
+        return SpikeTrains(trains, unit_ids=unit_ids)
+    if name == "peri_event":
+        from neurospatial.events import population_peri_event_histogram
+
+        return population_peri_event_histogram(
+            trains, np.array([10.0, 20.0]), (-1.0, 1.0), unit_ids=unit_ids
+        )
+    return _compute(name, *trajectory, trains, unit_ids=unit_ids)
+
+
+CONTAINERS = [*ALL, "peri_event", "spike_trains"]
+
+
+@pytest.mark.parametrize("name", CONTAINERS)
+def test_getitem_is_position_and_sel_is_label(name, trajectory, spike_trains):
+    """On every unit container, [i] is row i and sel(unit_id=) finds a label."""
+    ids = [2, 0, 1]  # label != position for every unit but the last
+    container = _container(name, trajectory, spike_trains, ids)
+    for position, label in enumerate(ids):
+        if name == "spike_trains":
+            np.testing.assert_array_equal(container[position], spike_trains[position])
+            np.testing.assert_array_equal(
+                container.sel(unit_id=label), spike_trains[position]
+            )
+        else:
+            assert container[position].unit_id == label
+            assert container.sel(unit_id=label).unit_id == label
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+@pytest.mark.parametrize("name", CONTAINERS)
+def test_copied_container_keeps_labels_read_only(name, how, trajectory, spike_trains):
+    """A pickled or deep-copied container cannot be edited into duplicate labels.
+
+    Duplicate labels would make sel(unit_id=) silently return the first match.
+    """
+    import copy
+    import pickle
+
+    container = _container(name, trajectory, spike_trains, [7, 8, 9])
+    copied = (
+        pickle.loads(pickle.dumps(container))
+        if how == "pickle"
+        else copy.deepcopy(container)
+    )
+    np.testing.assert_array_equal(copied.unit_ids, [7, 8, 9])
+    with pytest.raises(ValueError, match="read-only"):
+        copied.unit_ids[0] = 8
+
+
+@pytest.mark.parametrize("name", CONTAINERS)
+def test_selection_errors_name_the_other_accessor(name, trajectory, spike_trains):
+    container = _container(name, trajectory, spike_trains, STR_IDS)
+    with pytest.raises(KeyError, match="ca1_01"):
+        container.sel(unit_id="ca3_99")
+    with pytest.raises(TypeError, match=r"sel\(unit_id='ca1_02'\)"):
+        container["ca1_02"]
+    with pytest.raises(IndexError, match=r"sel\(unit_id=3\)"):
+        container[3]
+
+
+def test_label_selects_same_neuron_in_spikes_and_rates(trajectory, spike_trains):
+    """sel(unit_id=u) on the spike input and on its rates names one neuron."""
+    from neurospatial.encoding.spatial import compute_spatial_rate
+
+    env, times, positions, _ = trajectory
+    spikes = SpikeTrains(spike_trains, unit_ids=[2, 0, 1])
+    rates = compute_spatial_rates(env, spikes, times, positions)
+    for label in (0, 1, 2):
+        single = compute_spatial_rate(env, spikes.sel(unit_id=label), times, positions)
+        np.testing.assert_allclose(
+            rates.sel(unit_id=label).firing_rate, single.firing_rate, equal_nan=True
+        )
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_unit_ids_are_isolated_from_caller_array(name, trajectory, spike_trains):
+    """Editing the caller's labels after the call cannot relabel a unit."""
+    env, times, positions, headings = trajectory
+    ids = np.array([10, 20, 30])
+    result = _compute(name, env, times, positions, headings, spike_trains, unit_ids=ids)
+    ids[0] = 20  # would duplicate label 20 if the result shared this array
+    np.testing.assert_array_equal(result.unit_ids, [10, 20, 30])
+    with pytest.raises(ValueError, match="read-only"):
+        result.unit_ids[0] = 20
 
 
 @pytest.mark.parametrize("name", ALL)

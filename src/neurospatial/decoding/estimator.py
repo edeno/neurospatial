@@ -20,6 +20,7 @@ track or a masked open field, not just a rectangular grid.
 
 from __future__ import annotations
 
+import copy
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -39,14 +40,73 @@ if TYPE_CHECKING:
 __all__ = ["BayesianDecoder"]
 
 
+@dataclass(frozen=True, eq=False)
+class _FittedState:
+    """A fitted decoder's encoding models with their identity and provenance.
+
+    Holds read-only copies, so editing the arrays a decoder was built from
+    cannot change it. Built by :meth:`BayesianDecoder.fit`,
+    :meth:`BayesianDecoder.from_rates` and :meth:`BayesianDecoder.from_models`;
+    the decoder checks it against its environment.
+    """
+
+    encoding_models: NDArray[np.float64]
+    unit_ids: NDArray[Any] | Sequence[Any] | None
+    # True when ``arange`` labels were generated for an unlabelled input; such
+    # labels never drive label-based pairing.
+    unit_ids_generated: bool
+    spatial_support: NDArray[np.bool_] | None = None
+    spike_window: NDArray[np.float64] | None = None
+    analysis_settings: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        """Snapshot the arrays and validate the models and their labels."""
+        from neurospatial._results import read_only_copy, resolve_unit_ids
+
+        models = read_only_copy(self.encoding_models)
+        if models.ndim != 2:
+            raise ValueError(
+                f"encoding_models must be 2-D (n_units, n_bins), got "
+                f"{models.ndim}-D with shape {models.shape}."
+            )
+        object.__setattr__(self, "encoding_models", models)
+        # One distinct label per encoding model: label pairing relies on it.
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder"),
+        )
+        if self.spatial_support is not None:
+            object.__setattr__(
+                self, "spatial_support", read_only_copy(self.spatial_support)
+            )
+        if self.spike_window is not None:
+            object.__setattr__(
+                self, "spike_window", read_only_copy(self.spike_window, np.float64)
+            )
+        object.__setattr__(
+            self, "analysis_settings", copy.deepcopy(self.analysis_settings)
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        for value in state.values():
+            if isinstance(value, np.ndarray):
+                value.flags.writeable = False
+
+
 @dataclass(frozen=True)
 class BayesianDecoder:
     """Immutable Bayesian position decoder over the functional decode core.
 
     A thin, frozen wrapper that pairs an :class:`~neurospatial.environment.Environment`
     and a set of encoding parameters with (once fitted) a population of encoding
-    models. :meth:`fit` builds the encoding models and returns a **new** fitted
-    decoder; :meth:`predict` / :meth:`predict_summary` decode fresh spikes
+    models. The constructor takes configuration only. :meth:`fit` builds the
+    encoding models and returns a **new** fitted decoder;
+    :meth:`from_rates` wraps rates from :func:`compute_spatial_rates`, and
+    :meth:`from_models` wraps hand-built rate maps such as a simulation's
+    ground truth. :meth:`predict` / :meth:`predict_summary` decode fresh spikes
     against those models; :meth:`score` reports decode error against ground
     truth. The class is frozen, so "fitting" never mutates the original decoder.
 
@@ -105,64 +165,48 @@ class BayesianDecoder:
         Set ``False`` to silence those warnings on a genuinely sparse session;
         a single knob covers both the fit and predict passes (the default would
         otherwise warn once per pass).
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
-        Fitted encoding-model firing-rate maps. ``None`` (default) marks the
-        decoder **unfitted**; :meth:`predict` / :meth:`predict_summary` /
-        :meth:`score` raise until :meth:`fit` populates it. Set only via
-        :meth:`fit`.
-    unit_ids : NDArray or None, default=None
-        Identity label per encoding model. Populated by :meth:`fit` from a
-        labelled spike input such as a pynapple ``TsGroup`` (its index), or
-        ``arange(n_neurons)`` when the input carries no labels. Labels passed
-        here directly, or captured by :meth:`fit` from a labelled input, are
-        used to pair spike trains with encoding models: when both they and the
-        spike input given to :meth:`predict` / :meth:`predict_summary` /
-        :meth:`score` are labelled, trains are matched to models by label. In
-        every other case (including the generated ``arange`` labels) trains are
-        paired by position, one per fitted unit, in fit order.
 
     Attributes
     ----------
     env, dt, bandwidth, method, min_occupancy, penalty, rank, max_gap, dtype, \
 warn_on_drop
         The configuration passed at construction (immutable).
-    encoding_models : NDArray[np.float64] or None
-        The fitted encoding models, or ``None`` when unfitted.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins), or None
+        The fitted firing-rate maps (a read-only copy), or ``None`` when
+        unfitted; :meth:`predict` / :meth:`predict_summary` / :meth:`score`
+        raise until the decoder is fitted.
     unit_ids : NDArray or None
-        Per-model identity labels, or ``None`` when unfitted.
-    is_fitted : bool
-        Read-only property: ``True`` once :meth:`fit` has populated the
-        encoding models, ``False`` otherwise.
-
-    Raises
-    ------
-    ValueError
-        At construction, if ``dt`` is not a finite ``> 0`` number, if ``dtype``
-        is not ``np.float32`` / ``np.float64``, if the method-specific params are
-        invalid (an unknown ``method``; a ratio param with ``method="glm"`` or a
-        glm param with a ratio method; an out-of-domain ``penalty`` / ``rank``) --
-        these mirror ``compute_spatial_rate`` -- or (when ``encoding_models`` is
-        injected directly) if the fitted state is inconsistent (missing
-        ``unit_ids``, wrong ndim, or a bin/unit-count mismatch against ``env``).
-    RuntimeError
-        From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
-        decoder is unfitted.
-
-    Other Parameters
-    ----------------
-    _unit_ids_generated : bool, default=False
-        Internal identity flag carried by selection or fitting when unit labels
-        were generated. Leave it at its default when supplying real unit IDs.
-
+        Identity label per encoding model (read-only), or ``None`` when
+        unfitted. :meth:`fit` takes them from a labelled spike input such as a
+        pynapple ``TsGroup`` (its index) or from ``fit(unit_ids=...)``, and
+        generates ``arange(n_neurons)`` otherwise. When both these labels and
+        the spike input given to :meth:`predict` / :meth:`predict_summary` /
+        :meth:`score` are caller-supplied, trains are matched to models by
+        label. In every other case (including generated labels) trains are
+        paired by position, one per fitted unit, in fit order.
     spatial_support : ndarray of bool or None
-        Training bins allowed in the posterior. Set by fit/from_rates from
-        observed occupancy and the occupancy threshold. None for explicit
-        hand-built models whose support is the caller's responsibility.
+        Training bins allowed in the posterior, from observed occupancy and the
+        occupancy threshold. ``None`` when unfitted, and for
+        :meth:`from_models` decoders built without one.
     analysis_settings : dict or None
         Recorded training settings, including observed intervals and gates.
     spike_window : ndarray or None
         Spike-recording windows carried from training or precomputed rates as
         provenance. Prediction takes its own explicit observation window.
+    is_fitted : bool
+        ``True`` once the decoder holds encoding models.
+
+    Raises
+    ------
+    ValueError
+        At construction, if ``dt`` is not a finite ``> 0`` number, if ``dtype``
+        is not ``np.float32`` / ``np.float64``, or if the method-specific
+        params are invalid (an unknown ``method``; a ratio param with
+        ``method="glm"`` or a glm param with a ratio method; an out-of-domain
+        ``penalty`` / ``rank``) -- these mirror ``compute_spatial_rate``.
+    RuntimeError
+        From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
+        decoder is unfitted.
 
     Examples
     --------
@@ -195,29 +239,18 @@ warn_on_drop
     max_gap: float | None = 0.5
     dtype: type[np.float32] | type[np.float64] = np.float64
     warn_on_drop: bool = True
-    # Fitted state (private; ``None`` => unfitted). Set only via :meth:`fit`.
-    encoding_models: NDArray[np.float64] | None = None
-    unit_ids: NDArray[Any] | None = None
-    # True only when ``fit`` generated ``arange`` labels for an unlabelled
-    # input; such labels never drive label-based pairing.
-    _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
-    spike_window: NDArray[np.float64] | None = field(
-        default=None, kw_only=True, compare=False
-    )
-
-    spatial_support: NDArray[np.bool_] | None = field(
-        default=None, kw_only=True, repr=False, compare=False
-    )
-    analysis_settings: dict[str, Any] | None = field(
-        default=None, kw_only=True, repr=False, compare=False
-    )
+    # Fitted state; ``None`` marks an unfitted decoder. Built by fit,
+    # from_rates and from_models, and carried through dataclasses.replace.
+    _fit: _FittedState | None = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate config domain and (if injected) fitted-state coupling.
+        """Validate the configuration and any fitted state against ``env``.
 
         Runs at construction and again on every :func:`~dataclasses.replace`
-        (so :meth:`fit`'s returned decoder is validated too). The dataclass is
-        frozen, so this only raises -- it never assigns fields. Reuses the core
+        (so :meth:`fit`'s returned decoder is validated too). Fitted state is
+        stored as read-only copies, so editing the arrays a decoder was built
+        from (for example ``rates.firing_rates`` after :meth:`from_rates`)
+        cannot change its predictions. Reuses the core
         :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
         cannot drift from the decode entry points, and the encoder's
         :func:`~neurospatial.encoding._smoothing.validate_spatial_method_params`
@@ -247,39 +280,48 @@ warn_on_drop
             rank=self.rank,
         )
 
-        # Fitted-state coupling: only meaningful when encoding_models is set.
-        # This closes the direct-injection backdoor
-        # (``BayesianDecoder(env, encoding_models=arr)``): a hand-built fitted
-        # decoder is now checked for the same invariants ``fit`` guarantees.
-        if self.encoding_models is not None:
-            if self.unit_ids is None:
+        # The models' bin axis must match the environment they decode over.
+        if self._fit is not None:
+            n_model_bins = self._fit.encoding_models.shape[1]
+            if n_model_bins != self.env.n_bins:
                 raise ValueError(
-                    "encoding_models is set but unit_ids is None; a fitted "
-                    "BayesianDecoder must carry one unit_id per encoding model. "
-                    "Build fitted decoders via `.fit(...)` (which populates "
-                    "unit_ids), or pass a matching `unit_ids` array."
-                )
-            models = np.asarray(self.encoding_models)
-            if models.ndim != 2:
-                raise ValueError(
-                    f"encoding_models must be 2-D (n_units, n_bins), got "
-                    f"{models.ndim}-D with shape {models.shape}."
-                )
-            if models.shape[1] != self.env.n_bins:
-                raise ValueError(
-                    f"encoding_models has {models.shape[1]} bins but env.n_bins "
+                    f"encoding_models has {n_model_bins} bins but env.n_bins "
                     f"is {self.env.n_bins}; the encoding model's bin axis must "
                     f"match the environment it decodes over."
                 )
-            # One distinct label per encoding model: label pairing in predict
-            # relies on it. Runs for constructor labels and, via replace, for
-            # the labels fit captures.
-            from neurospatial._results import resolve_unit_ids
-
-            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder")
             from neurospatial.decoding._support import supported_prior
 
-            supported_prior(None, self.spatial_support, self.env.n_bins, 0)
+            supported_prior(None, self._fit.spatial_support, self.env.n_bins, 0)
+
+    @property
+    def encoding_models(self) -> NDArray[np.float64] | None:
+        """Fitted ``(n_neurons, n_bins)`` rate maps, or ``None`` when unfitted."""
+        return None if self._fit is None else self._fit.encoding_models
+
+    @property
+    def unit_ids(self) -> NDArray[Any] | None:
+        """Identity label per encoding model, or ``None`` when unfitted."""
+        return None if self._fit is None else np.asarray(self._fit.unit_ids)
+
+    @property
+    def spatial_support(self) -> NDArray[np.bool_] | None:
+        """Training bins allowed in the posterior, or ``None``."""
+        return None if self._fit is None else self._fit.spatial_support
+
+    @property
+    def spike_window(self) -> NDArray[np.float64] | None:
+        """Training spike-recording windows (provenance), or ``None``."""
+        return None if self._fit is None else self._fit.spike_window
+
+    @property
+    def analysis_settings(self) -> dict[str, Any] | None:
+        """Recorded training settings, or ``None``."""
+        return None if self._fit is None else self._fit.analysis_settings
+
+    @property
+    def _unit_ids_generated(self) -> bool:
+        """Whether the labels were generated, so pairing stays positional."""
+        return self._fit is not None and self._fit.unit_ids_generated
 
     @property
     def is_fitted(self) -> bool:
@@ -366,12 +408,88 @@ warn_on_drop
             rates.env,
             dt=dt,
             dtype=dtype,
-            encoding_models=models,
-            unit_ids=np.asarray(rates.unit_ids),
-            _unit_ids_generated=rates._unit_ids_generated,
-            spike_window=rates.spike_window,
-            spatial_support=rates.spatial_support,
-            analysis_settings=rates.analysis_settings,
+            _fit=_FittedState(
+                models,
+                rates.unit_ids,
+                unit_ids_generated=rates._unit_ids_generated,
+                spatial_support=rates.spatial_support,
+                spike_window=rates.spike_window,
+                analysis_settings=rates.analysis_settings,
+            ),
+        )
+
+    @classmethod
+    def from_models(
+        cls,
+        env: Environment,
+        encoding_models: ArrayLike,
+        *,
+        unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+        spatial_support: ArrayLike | None = None,
+        dt: float = 0.025,
+    ) -> BayesianDecoder:
+        """Create a fitted decoder from hand-built encoding models.
+
+        Use this for rate maps that do not come from
+        :func:`~neurospatial.compute_spatial_rates`, such as a simulation's
+        ground-truth rates. For rates computed by neurospatial, prefer
+        :meth:`from_rates`, which also carries their training support, unit
+        labels and settings.
+
+        Parameters
+        ----------
+        env : Environment
+            Environment whose bins the models are defined on.
+        encoding_models : array-like, shape (n_neurons, n_bins)
+            Expected firing rate (Hz) of each unit in each bin. Copied.
+        unit_ids : ndarray or sequence, optional
+            One distinct label per model. With labels, labelled prediction
+            inputs are paired with models by label; without them, spike trains
+            are paired by position.
+        spatial_support : ndarray of bool, shape (n_bins,), optional
+            Bins allowed in the posterior. ``None`` allows every bin, so every
+            bin must hold a finite rate.
+        dt : float, default=0.025
+            Decode bin width in seconds.
+
+        Returns
+        -------
+        BayesianDecoder
+            Frozen fitted decoder; call ``predict`` or ``predict_summary``.
+
+        Raises
+        ------
+        ValueError
+            If the models are not 2-D or their bin axis does not match ``env``,
+            if ``unit_ids`` has the wrong length or repeats a label, or if
+            ``spatial_support`` is not a boolean ``(n_bins,)`` mask with at
+            least one supported bin.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> corners = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        >>> env = Environment.from_samples(corners, bin_size=5.0)
+        >>> models = np.full((2, env.n_bins), 5.0)
+        >>> decoder = BayesianDecoder.from_models(env, models, unit_ids=[3, 8])
+        >>> decoder.is_fitted, decoder.unit_ids.tolist()
+        (True, [3, 8])
+        """
+        models = np.asarray(encoding_models)
+        dtype = np.float32 if models.dtype == np.float32 else np.float64
+        return cls(
+            env,
+            dt=dt,
+            dtype=dtype,
+            _fit=_FittedState(
+                models.astype(dtype, copy=False),
+                unit_ids,
+                unit_ids_generated=unit_ids is None,
+                spatial_support=(
+                    None if spatial_support is None else np.asarray(spatial_support)
+                ),
+            ),
         )
 
     def _check_fitted(self) -> NDArray[np.float64]:
@@ -389,8 +507,12 @@ warn_on_drop
         """
         if self.encoding_models is None:
             raise RuntimeError(
-                "BayesianDecoder is not fitted; call "
-                "`.fit(spike_times, times, positions)` first."
+                "BayesianDecoder is not fitted.\n"
+                "Why: fit() returns a new fitted decoder and leaves the original "
+                "unchanged, so calling decoder.fit(...) without keeping the result "
+                "does not fit decoder.\n"
+                "Fix: decoder = decoder.fit(spike_times, times, positions), or "
+                "decoder = BayesianDecoder.from_rates(rates) for precomputed rate maps."
             )
         return self.encoding_models
 
@@ -524,12 +646,14 @@ warn_on_drop
 
         return replace(
             self,
-            encoding_models=firing_rates,
-            spatial_support=rates_result.spatial_support,
-            analysis_settings=rates_result.analysis_settings,
-            unit_ids=resolved_ids,
-            _unit_ids_generated=unit_ids is None and extracted_ids is None,
-            spike_window=resolved_spike_window,
+            _fit=_FittedState(
+                firing_rates,
+                resolved_ids,
+                unit_ids_generated=unit_ids is None and extracted_ids is None,
+                spatial_support=rates_result.spatial_support,
+                spike_window=resolved_spike_window,
+                analysis_settings=rates_result.analysis_settings,
+            ),
         )
 
     def _align_to_fitted_units(

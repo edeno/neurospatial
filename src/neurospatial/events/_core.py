@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    UnitSelectionMixin,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -27,7 +31,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, repr=False)
-class PeriEventResult(ResultMixin):
+class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
     """
     Result from peri-event histogram analysis.
 
@@ -94,6 +98,7 @@ class PeriEventResult(ResultMixin):
     def __post_init__(self) -> None:
         # Frozen dataclass: bypass setattr to populate the cached field.
         object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
+        self._own_arrays()
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of the PSTH: one row per time bin.
@@ -214,7 +219,7 @@ class PeriEventResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class PopulationPeriEventResult(ResultMixin):
+class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
     """
     Result from population peri-event histogram analysis.
 
@@ -316,6 +321,7 @@ class PopulationPeriEventResult(ResultMixin):
                 self.unit_table, self.unit_ids, context="PopulationPeriEventResult"
             ),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return the number of units in the population.
@@ -337,7 +343,8 @@ class PopulationPeriEventResult(ResultMixin):
         Parameters
         ----------
         idx : int
-            Unit index (0-based).
+            Unit position (0-based), the row of :attr:`histograms`. Select by
+            label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -364,6 +371,7 @@ class PopulationPeriEventResult(ResultMixin):
         >>> result[1].unit_id
         'b'
         """
+        idx = self._unit_position(idx)
         histograms = np.asarray(self.histograms)
         sem = np.asarray(self.sem)
         unit_id_value = np.asarray(self.unit_ids)[idx]

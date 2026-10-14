@@ -60,10 +60,11 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -457,6 +458,10 @@ class DirectionalRateResult(SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        """Store the arrays as read-only copies."""
+        self._own_arrays()
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _directional_xarray_attrs(self)
@@ -1195,7 +1200,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class DirectionalRatesResult(SpatialResultMixin):
+class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -1351,6 +1356,7 @@ class DirectionalRatesResult(SpatialResultMixin):
                 self.unit_table, self.unit_ids, context="DirectionalRatesResult"
             ),
         )
+        self._own_arrays()
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1380,7 +1386,8 @@ class DirectionalRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Neuron index (0-indexed).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -1406,6 +1413,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         >>> single.firing_rate.shape
         (60,)
         """
+        idx = self._unit_position(idx)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         counts = self.spike_counts
         return DirectionalRateResult(
@@ -2117,7 +2125,7 @@ def compute_directional_rate(
 
 
 def compute_directional_rates(
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
@@ -2851,7 +2859,7 @@ def plot_head_direction_tuning(
 
 
 def head_direction_cell_significance(
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,

@@ -85,7 +85,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import resolve_time_windows, run_time_bounds
-from neurospatial._results import label_at
+from neurospatial._results import UnitSelectionMixin, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
     _warn_if_population_silent,
@@ -103,6 +103,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial._typing import SpikeTrainsLike
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -297,6 +298,10 @@ class ViewRateResult(SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        """Store the arrays as read-only copies."""
+        self._own_arrays()
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
@@ -560,7 +565,7 @@ class ViewRateResult(SpatialResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class ViewRatesResult(SpatialResultMixin):
+class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of view rate computation for multiple neurons.
 
     This class wraps view fields for a population of neurons with shared
@@ -710,6 +715,7 @@ class ViewRatesResult(SpatialResultMixin):
             "unit_table",
             align_unit_table(self.unit_table, self.unit_ids, context="ViewRatesResult"),
         )
+        self._own_arrays()
 
     def __len__(self) -> int:
         """Return the number of units.
@@ -744,7 +750,8 @@ class ViewRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Index of the neuron (0-based).
+            Unit position (0-based), the row of :attr:`firing_rates`. Select
+            by label with ``sel(unit_id=...)``.
 
         Returns
         -------
@@ -769,6 +776,7 @@ class ViewRatesResult(SpatialResultMixin):
         >>> isinstance(single, ViewRateResult)
         True
         """
+        idx = self._unit_position(idx)
         return ViewRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
@@ -1491,7 +1499,7 @@ def compute_view_rate(
 
 def compute_view_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1759,7 +1767,7 @@ def compute_view_rates(
 
 def _compute_view_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -2177,7 +2185,7 @@ def is_spatial_view_cell(
 
 def spatial_view_cell_significance(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],

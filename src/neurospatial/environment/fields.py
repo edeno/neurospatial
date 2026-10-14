@@ -250,10 +250,10 @@ def _interpolate_linear(
 
     Notes
     -----
-    On a holed/masked grid (where ``n_bins < prod(grid_shape)``), inactive
-    cells are filled with NaN before interpolation. Query points over an
-    inactive cell therefore return NaN, consistent with the out-of-bounds
-    ``fill_value=np.nan`` behavior for points outside the grid entirely.
+    On a holed/masked grid (where ``n_bins < prod(grid_shape)``), a missing
+    corner contributes NaN only when its interpolation weight is positive.
+    Active-bin centers therefore retain their known values, while points
+    requiring an inactive cell's value and out-of-bounds points return NaN.
 
     """
     grid = require_rectilinear_grid(
@@ -277,16 +277,16 @@ def _interpolate_linear(
     # Scatter active-bin values into a full-grid array before reshaping.
     # `field` is indexed by active-bin id (length n_bins); `grid_shape`
     # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
-    # so a direct reshape would raise. Inactive cells are filled with NaN,
-    # which the RegularGridInterpolator (fill_value=np.nan) already treats
-    # as "no data" — query points over a hole interpolate to NaN.
+    # so a direct reshape would raise. Use finite placeholders for inactive
+    # cells and mask their positive-weight contributions separately below:
+    # 0 * NaN would otherwise erase even exact active-bin center values.
     n_full = int(np.prod(grid_shape))
     active_mask = grid.active_mask
     if field.shape[0] == n_full:
         # Fully-active grid: field already covers every cell.
         field_grid = field.reshape(grid_shape)
     else:
-        full_field = np.full(n_full, np.nan, dtype=np.float64)
+        full_field = np.zeros(n_full, dtype=np.float64)
         full_field[np.flatnonzero(active_mask.ravel())] = field
         field_grid = full_field.reshape(grid_shape)
 
@@ -310,6 +310,15 @@ def _interpolate_linear(
 
     # Evaluate at query points
     result: NDArray[np.float64] = interpolator(points)
+    if field.shape[0] != n_full:
+        missing_weight = RegularGridInterpolator(
+            grid_points,
+            (~active_mask).astype(np.float64),
+            method="linear",
+            bounds_error=False,
+            fill_value=1.0,
+        )(points)
+        result[missing_weight > 0.0] = np.nan
 
     return result
 

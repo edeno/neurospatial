@@ -15,6 +15,43 @@ import pytest
 pynwb = pytest.importorskip("pynwb")
 
 
+@pytest.mark.parametrize("circular", [False, True])
+@pytest.mark.parametrize("n_angle", [1, 2, 6])
+def test_polar_circularity_survives_nwb_round_trip(
+    empty_nwb, tmp_path, circular: bool, n_angle: int
+) -> None:
+    """NWB preserves circularity even when seam edges cannot distinguish it."""
+    import json
+
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+    from neurospatial.io.nwb._environment import COL_GRID_DATA
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0, 3),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=2 * np.pi / n_angle,
+        circular_angle=circular,
+    )
+    write_environment(empty_nwb, env)
+    path = tmp_path / "polar.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        restored = read_environment(io.read())
+    assert restored._angular_is_circular is circular
+
+    # Old records cannot distinguish small open and circular axes; retain
+    # their previous open-axis interpretation, and infer larger axes by edges.
+    table = empty_nwb.scratch["spatial_environment"]
+    grid_data = json.loads(table[COL_GRID_DATA][0])
+    grid_data.pop("circular_angle")
+    table[COL_GRID_DATA].data[0] = json.dumps(grid_data)
+    legacy = read_environment(empty_nwb)
+    assert legacy._angular_is_circular is (circular if n_angle > 2 else False)
+
+
 @pytest.mark.integration
 def test_subset_of_read_four_connected_grid_keeps_its_connectivity(empty_nwb, tmp_path):
     """A 4-connected grid read from NWB stays 4-connected through subset."""

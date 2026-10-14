@@ -4,6 +4,22 @@
 
 ### Added
 
+- Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
+  population result (spatial, directional, view, object-vector and peri-event).
+  `[]` selects by position on all of them, so `spikes[i]` and `rates[i]` are
+  the same neuron. A label passed to `[]`, or a position out of range, raises
+  an error that names the `sel` call to use. **Breaking:** `SpikeTrains[...]`
+  used to look up a label; replace `st[unit_id]` with `st.sel(unit_id=unit_id)`.
+- Build a fitted decoder from hand-built rate maps, such as a simulation's
+  ground truth, with `BayesianDecoder.from_models(env, encoding_models,
+  unit_ids=..., spatial_support=..., dt=...)`. Without `unit_ids`, spike trains
+  pair with models by position. **Breaking:** the `BayesianDecoder` constructor
+  now takes configuration only. `encoding_models`, `unit_ids`,
+  `spatial_support`, `spike_window` and `analysis_settings` are read-only
+  attributes, set by `fit`, `from_rates` or `from_models`; replace
+  `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
+  `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
+  `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
 - Add `Environment.get_divergence_operator()`, the cached finite-volume
   divergence operator that `divergence(env, edge_field)` applies, alongside
   `get_differential_operator()`.
@@ -42,6 +58,15 @@
 
 ### Changed
 
+- Rate and peri-event results store read-only copies of their arrays. This
+  covers spatial, directional, view and object-vector results (single-unit
+  and population) and both peri-event results. Editing an array a result was
+  built from no longer changes it, and editing a result's arrays in place, for
+  example `rates.firing_rates /= peak`, raises instead of silently changing
+  what the result reports. **Breaking:** copy before modifying values:
+  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
+  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
+  used to edit the result.
 - `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
   on environments built with `from_polygon`, `from_grid_mask` and
   `from_pixel_mask`, and on grid environments read from NWB. They previously
@@ -116,6 +141,31 @@
 
 ### Fixed
 
+- Editing arrays after handing them to neurospatial no longer changes stored
+  state. `SpikeTrains` keeps read-only copies of its trains and labels, so
+  editing the caller's labels can no longer create duplicate unit IDs. Every
+  result's `unit_ids` is a read-only copy. A `BayesianDecoder` keeps read-only
+  copies of its rate maps, labels and training support, so editing
+  `rates.firing_rates` after `BayesianDecoder.from_rates(rates)` no longer
+  changes its predictions. Arrays stay read-only after pickling and deep copies.
+- Static type checkers such as mypy accept every documented spike input: a
+  list of per-unit arrays, a 1-D or NaN-padded 2-D array, `SpikeTrains` or a
+  pynapple `TsGroup`. This covers every population encoder and significance
+  test, `population_peri_event_histogram`, `decode_session`,
+  `decode_session_summary` and the `BayesianDecoder` methods. Previously,
+  passing a plain list or `SpikeTrains` to `BayesianDecoder.fit` failed type
+  checking.
+- Predicting with an unfitted `BayesianDecoder` now explains that `fit()`
+  returns a new decoder and shows the fix,
+  `decoder = decoder.fit(spike_times, times, positions)`. The old message told
+  users who had already called `fit()` to call it again.
+- Rebinned environments load from files and dictionaries again, and rebinning
+  preserves diagonal connectivity on small and sparse grids.
+- Linear interpolation retains known values at active-bin centers and grid
+  lines next to holes; missing corners with positive weight still produce NaN.
+- Circular polar grids with one or two angular bins correctly exclude interior
+  radial rings from their boundary. The circular flag also survives NWB saves;
+  older NWB records without the flag retain their previous open-axis behavior.
 - Type checkers report wrong arguments to environment methods, such as
   `env.bin_at("not an array")` or an unknown keyword; the fitted-state check
   previously hid every decorated method's signature. `plot_field` accepts a

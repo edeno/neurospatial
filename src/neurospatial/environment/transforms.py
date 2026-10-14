@@ -145,20 +145,12 @@ def _rebin(
 
     # --- Build new connectivity graph ---
 
-    # Infer whether the original grid used diagonal connections by looking
-    # at the MAXIMUM node degree in the active connectivity graph. The
-    # graph is keyed by ACTIVE-bin ids (0..n_bins-1), so we must not index
-    # it with a full-grid flat index. Interior nodes have the full
-    # neighbour count; boundary/hole-adjacent nodes have fewer, so the max
-    # over all active nodes is the robust signal:
-    #   2D: 4-conn -> max degree 4, 8-conn -> max degree 8
-    #   3D: 6-conn -> max degree 6, 26-conn -> max degree 26
-    if env.connectivity.number_of_nodes() > 0:
-        max_degree = max((deg for _, deg in env.connectivity.degree()), default=0)
-        connect_diagonal = max_degree > 2 * n_dims
-    else:
-        # Empty graph (degenerate): default to the common case.
-        connect_diagonal = True
+    # A diagonal changes more than one coordinate. Inspect actual edges:
+    # small or sparsely active grids need not have any full-degree nodes.
+    connect_diagonal = any(
+        np.count_nonzero(layout.bin_centers[u] != layout.bin_centers[v]) > 1
+        for u, v in env.connectivity.edges()
+    )
 
     # Create new layout
     from neurospatial.layout.helpers.regular_grid import (
@@ -191,7 +183,7 @@ def _rebin(
             (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
         ),
         "dimension_ranges": new_layout.dimension_ranges,
-        "rebinned_from": f"factor={factor_tuple}",
+        "connect_diagonal_neighbors": connect_diagonal,
     }
 
     # Create new environment - cast to Environment class for proper type checking
