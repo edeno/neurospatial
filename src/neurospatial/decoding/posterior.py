@@ -51,28 +51,42 @@ class SpatialRatesLike(Protocol):
     def firing_rates(self) -> NDArray[np.float64]: ...
 
 
-def _validate_encoding_environment(env: Environment, encoding_models: Any) -> None:
-    """Preserve ordered bin coordinates and metadata carried by rate results.
-
-    Equivalent environment copies are allowed. A result's environment is
-    checked before extracting its rates, while its provenance is available.
-    Unlabelled arrays and result-like objects without an environment retain
-    their existing bin-count validation.
-    """
-    model_env = getattr(encoding_models, "env", None)
-    if model_env is None or model_env is env:
+def _validate_encoding_environment(
+    env: Environment, encoding_models: Any, *, context: str
+) -> None:
+    """Check a rate result's spatial meaning before extracting its arrays."""
+    source = getattr(encoding_models, "env", None)
+    if source is None or source is env:
         return
-    if (
-        type(model_env) is not type(env)
-        or not np.array_equal(model_env.bin_centers, env.bin_centers)
-        or model_env.units != env.units
-        or model_env.frame != env.frame
-    ):
+
+    from neurospatial.encoding._validation import validate_env_fitted
+
+    validate_env_fitted(
+        env, context=context, arguments="spike_counts, encoding_models, dt"
+    )
+    mismatch = None
+    if source._coordinate_system != env._coordinate_system:
+        mismatch = "coordinate systems"
+    elif source.units != env.units or source.frame != env.frame:
+        mismatch = "units or coordinate frames"
+    elif not np.array_equal(source.bin_centers, env.bin_centers):
+        mismatch = "bin coordinates or ordering"
+    elif not np.array_equal(source.bin_sizes, env.bin_sizes):
+        mismatch = "bin measures"
+    else:
+        source_graph, target_graph = source.connectivity, env.connectivity
+        if source_graph.number_of_edges() != target_graph.number_of_edges() or any(
+            not target_graph.has_edge(u, v)
+            or data["distance"] != target_graph.edges[u, v]["distance"]
+            for u, v, data in source_graph.edges(data=True)
+        ):
+            mismatch = "weighted connectivity"
+    if mismatch is not None:
         raise IncompatibleEnvironmentError(
-            "The encoding result's environment does not match the decoding "
-            "environment's ordered bin coordinates, units or coordinate frame.",
-            fix="pass the environment used to compute the rate result, or recompute the rates on the decoding environment.",
-            first=model_env,
+            f"{context}: the encoding result's environment differs from the "
+            f"decoding environment in {mismatch}.",
+            fix="decode on the result's env, or recompute rates on the decoding environment.",
+            first=source,
             second=env,
         )
 
@@ -558,6 +572,10 @@ def decode_position(
         are accepted.
         When passing raw arrays, provide a prior that excludes unsupported bins,
         such as ``prior=rates.spatial_support.astype(float)``.
+        A result's environment must match the decoding environment's ordered
+        bin coordinates, measures, coordinate system, units, frame and weighted
+        connectivity. Equivalent copies are accepted, including with
+        ``validate=False``.
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
         ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
@@ -729,7 +747,7 @@ def decode_position(
 
     from neurospatial.decoding._support import models_on_support, supported_prior
 
-    _validate_encoding_environment(env, encoding_models)
+    _validate_encoding_environment(env, encoding_models, context="decode_position")
     support = getattr(encoding_models, "spatial_support", None)
     if support is not None:
         prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
@@ -1376,9 +1394,8 @@ def decode_position_summary(
         Firing-rate maps (place fields) for each neuron, or a population rate
         result object exposing ``firing_rates``. Rate results also carry
         ``spatial_support``, which excludes unsupported training bins and
-        intersects any supplied prior. A carried environment must have the
-        same ordered bin coordinates, coordinate type, units and frame.
-        Same semantics (NaN/Inf handling, no-finite-bins guard) as
+        intersects any supplied prior. Same semantics (NaN/Inf handling,
+        no-finite-bins guard and environment compatibility) as
         :func:`decode_position`.
     dt : float
         Time-bin width in seconds.
@@ -1461,7 +1478,9 @@ def decode_position_summary(
 
     from neurospatial.decoding._support import models_on_support, supported_prior
 
-    _validate_encoding_environment(env, encoding_models)
+    _validate_encoding_environment(
+        env, encoding_models, context="decode_position_summary"
+    )
     support = getattr(encoding_models, "spatial_support", None)
     if support is not None:
         prior = supported_prior(prior, support, env.n_bins, len(spike_counts))

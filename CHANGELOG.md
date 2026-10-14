@@ -265,9 +265,7 @@
   spikes for stable field recovery with continuous Poisson event times.
   Documentation CI uses each job's declared Python version instead of running
   both version labels with the repository's default interpreter.
-- Decoding validates the ordered geometry, units and coordinate frame carried
-  by rate results, rejecting maps from another environment even when bin counts
-  match. Partial missing-rate masks retain the position-dependent Poisson
+- Partial missing-rate masks retain the position-dependent Poisson
   factorial terms, preventing incorrect posterior probabilities and MAP bins.
 - Decoder xarray exports contain independent writable arrays, coordinates and
   metadata, so editing an export cannot corrupt cached position estimates.
@@ -294,6 +292,10 @@
   geodesic pairs, and returns NaN for lags with no observed displacement pairs.
   Curvature retains the original sample timestamps through stationary periods
   before smoothing within each observed run.
+- Position decoding rejects rate results built on different bin coordinates,
+  measures, coordinate systems, units, frames or weighted connectivity, even
+  when bin counts match or `validate=False`. Equivalent copied environments
+  remain supported.
 - Rate results own their analysis settings and return independent copies,
   including nested recording windows. Fitted decoders also return independent
   settings. Editing settings can no longer change training support or reported
@@ -306,6 +308,8 @@
   grid indices and edge vectors are owned immutable tuples, including after
   JSON/file restoration, so nested edits and graph copies cannot corrupt
   boundary caches or transformed edge geometry.
+- The introductory decoding examples execute on partially observed space and
+  pass rate results directly, preserving support even after zero filling.
 
 - Editing arrays after handing them to neurospatial no longer changes stored
   state. `SpikeTrains` keeps read-only copies of its trains and labels, so
