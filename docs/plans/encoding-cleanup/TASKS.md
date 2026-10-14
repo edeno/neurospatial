@@ -2,6 +2,29 @@
 
 **Committed**: 2026-05-07
 
+**Status**: Partially implemented historical plan; core cleanup delivered, residual deferred.
+**Status reviewed**: 2026-10-14
+
+The M0–M6 core changes are present in current source: shared
+[validation](../../../src/neurospatial/encoding/_validation.py),
+[result mixin](../../../src/neurospatial/encoding/_base.py),
+[backend kernels](../../../src/neurospatial/encoding/_core_jax.py), and
+[kernel caching](../../../src/neurospatial/encoding/_smoothing.py).
+Git records [compiled kernels/caching](https://github.com/edeno/neurospatial/commit/5cda6c6a)
+and [legacy-module removal](https://github.com/edeno/neurospatial/commit/3bcec9a9).
+The task 3.1 reversion has a surviving [regression test](../../../tests/encoding/test_encoding_binning.py);
+task 2.4 remains an intentional skip rather than pending implementation.
+
+Do not mark task 6.5 complete: current
+[`_compute_object_coords`](../../../src/neurospatial/encoding/_egocentric_binning.py#L172)
+shares bearing computation but retains local distance computation. Benchmark
+before/after records for M3/M5 are also still `TBD`; performance verification is
+not established by this source/history review. Preserve the task history below.
+Its `EgocentricRateResult(s)`, `detect_hd_cells`, `neuron_id`, and summary-style
+`to_dataframe()` vocabulary is superseded by
+[public-api.md](../../../.claude/rules/public-api.md) and
+[current result contracts](../../../tests/encoding/test_terminal_verbs_contract.py).
+
 Reference: see [PLAN.md](PLAN.md) for design rationale, milestone ordering,
 and gating criteria. This document tracks per-task progress with file paths
 and concrete change descriptions.

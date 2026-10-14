@@ -1,9 +1,50 @@
 # v0.4 UX Cleanup — Implementation Plan
 
 **Committed**: 2026-05-08
-**Status**: Proposed
-**Target release**: v0.4.0 (single cut, hard API break from v0.3.x)
+**Status**: Superseded after v0.4.0 release; M0–M6 complete, M7 partial
+**Status reviewed**: 2026-10-14
+**Historical target release**: v0.4.0 (single cut, hard API break from v0.3.x)
 **Source**: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_2026-05-08.md) (~162 findings across 11 categories).
+
+## Current disposition
+
+The implementation shipped in the annotated `v0.4.0` tag on 2026-05-26,
+pointing to [merge commit 55bc0851](https://github.com/edeno/neurospatial/commit/55bc08518adfe5f730f71963f20d8cba0d26ed66).
+The tag explicitly records **M0–M6 plus M7 partial**, consistent with the
+[0.4.0 release notes](../../../CHANGELOG.md#040---2026-05-26). This is historical
+design and task history, not a current release or implementation queue.
+
+| Milestone | Reviewed disposition and evidence |
+| --- | --- |
+| M0 — Onboarding | Delivered. Indexed snippet tooling was subsequently replaced by [executable Markdown tests](../../../tests/docs/test_executable_docs.py) in [2b746d07](https://github.com/edeno/neurospatial/commit/2b746d07); [.github/workflows/test_docs.yml](../../../.github/workflows/test_docs.yml) now runs module doctests. |
+| M1 — Wrong-result paths | Delivered within the original scope: [field-exclusion metadata](../../../src/neurospatial/encoding/spatial.py#L110), [batch failure masks](../../../src/neurospatial/encoding/_metrics.py#L48), and fitted/input validation exist. General subset capabilities remain follow-on work, not an unfinished promise that every layout was fixed in M1. |
+| M2 — API consolidation | Delivered; subsequent conventions are maintained by the [API snapshot](../../../tests/test_public_api_snapshot.py), [argument checks](../../../tests/test_argument_conventions.py), and [public API rules](../../../.claude/rules/public-api.md). Historical symbol names are not the current API catalog. |
+| M3 — Errors/validation | Delivered; current [exception types](../../../src/neurospatial/_exceptions.py), [spike validation](../../../src/neurospatial/encoding/_validation.py#L166), and [first-run error regressions](../../../tests/test_first_run_errors.py) retain and extend this work. |
+| M4 — Coordinates | Delivered and subsequently redesigned: [EgocentricPolarEnvironment](../../../src/neurospatial/environment/polar.py) is now a distinct sibling type. Do not reintroduce the original flag-based Cartesian guards. |
+| M5 — Environment polish | Delivered within scope. [Read-only geometry publication](../../../src/neurospatial/environment/core.py#L1009) supersedes the historical instructions about editing arrays and manually clearing caches; factories, regions and file I/O remain. |
+| M6 — Examples/docs | Delivered; the old numbered notebooks were superseded by [nine scientist workflows](../../../examples/README.md), covered by [collection tests](../../../tests/docs/test_notebook_collection.py) and [notebook CI](../../../.github/workflows/test_notebooks.yml). |
+| M7 — Release preparation | Partial. Changelog/version work shipped and the tag exists. Task 7.1's standalone v0.4 migration page/checker was not delivered; the full publication portion of 7.6 is not established by local evidence. |
+
+### Historical gaps and remaining scope
+
+- Task **7.1** remains an omitted historical deliverable: neither
+  `docs/migrating-to-v0.4.md` nor `scripts/check_migration_doc.py` exists at the
+  release tag or in the current tree. The checked 7.5 smoke task does not prove
+  that this missing checker ran. Release notes contain migration examples, but
+  they do not fulfill the promised page/checker contract.
+- Task **7.6** has verified local tag evidence, not verified wheel/sdist upload,
+  remote publication or release-note state. Its historical checkbox is retained
+  rather than marking the whole action complete.
+- Retire the old release/migration roadmap. Current package metadata is
+  [0.8.0](../../../pyproject.toml); do not repeat the v0.4 bump or rebuild removed
+  snippet tools/notebooks. Use the [current migration guide](../../migration/v0.6.md),
+  [changelog](../../../CHANGELOG.md), and tested public API documentation instead.
+- There is no active implementation scope under this plan. Remaining environment
+  representation defects belong to the
+  [environment representation plan](../environment-representation/PLAN.md);
+  observation/history/path extensions belong to
+  [continuous behavior](../continuous-behavior/PLAN.md). Preserve the milestone
+  details below as the original decisions, including their scoped exceptions.
 
 ## Source
 

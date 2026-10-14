@@ -2,6 +2,19 @@
 
 **Committed**: 2025-11-23
 
+**Status**: Backlog; agent facade and MCP integration not implemented here.
+**Status reviewed**: 2026-10-14.
+
+This checkout has no `neurospatial.agent_api`, ID registries, MCP server,
+agent-tool tests, or proposed skills/playbooks. Current
+[Python workflows](../../user-guide/index.md) and
+[NWB integration](../../../src/neurospatial/io/nwb/__init__.py) provide underlying
+capabilities, not the planned tool layer. No replacement plan covers that layer,
+so this proposal is neither completed nor superseded. Any future implementation
+needs a new scope review against the
+[current API contract](../../../.claude/rules/public-api.md); the signatures and
+document paths below are historical proposals.
+
 **Goal:** Make `neurospatial` directly usable by LLM agents (including via MCP), with a small, robust tool surface, good schemas, and “skills”/playbooks that describe higher‑level workflows.
 
 ---

@@ -2,8 +2,24 @@
 
 **Committed**: 2025-11-04
 **Version**: 0.3.0
-**Status**: Planning
+**Status**: Partially implemented; remaining work is backlog requiring re-scoping.
+**Status reviewed**: 2026-10-14.
 **Target**: Hippocampal replay and theta sequence analysis
+
+Current [transition implementations](../../../src/neurospatial/environment/trajectory.py)
+and [tests](../../../tests/environment/test_transitions.py) cover empirical,
+uniform random-walk, and diffusion modes through `Environment.transitions()`.
+They use row-stochastic `T[current, next]` matrices, replacing this plan's
+column-stochastic, nine-function module proposal for those delivered modes.
+The proposed distance-biased, smoothing, mixing, entropy, directional, and
+momentum utilities are not implemented; the whole plan is not complete.
+
+Do not implement the old signatures or transpose the current convention to match
+this document. Re-scope remaining proposals against the
+[public API contract](../../../.claude/rules/public-api.md). Observation support,
+movement operators, and occurrence-based directionality now have separate
+accepted plans in [continuous behavior](../continuous-behavior/PLAN.md); those
+workstreams do not commit to the remaining replay utilities or null models.
 
 ---
 

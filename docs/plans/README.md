@@ -4,31 +4,40 @@ This directory contains implementation plans, task trackers, scratchpads, and ba
 
 Date labels are the first Git commit date for the original artifact, based on `git log --follow --diff-filter=A`. Individual plan/task documents also include a `Committed` label near the title.
 
-## Active or Recently Active
+Statuses were reviewed on **2026-10-14** against the current source, tests, and
+Git history. Status notes in each plan and task tracker distinguish delivered
+work from historical checkboxes and remaining proposals.
+
+## Active Plans
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
-| 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | Created 2026-10-14. Six accepted workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Links the existing representation refactor; statistical/null-model frameworks remain outside scope. |
-| 2026-10-13 | Environment representation | [environment-representation/PLAN.md](environment-representation/PLAN.md) | Phase files in the same directory | Stores each environment's bins, point lookup and components as data, so subset, transformed and loaded environments keep their features. Five phases (published binning, data locators, shapes and plots, save/load without rebuild, derived environments), with roadmap stages A–F in its `overview.md`. Replaces in place; no deprecation cycle. |
-| 2026-05-08 | v0.4 UX cleanup | [v0.4-ux-cleanup/PLAN.md](v0.4-ux-cleanup/PLAN.md) | [v0.4-ux-cleanup/TASKS.md](v0.4-ux-cleanup/TASKS.md) | Repository-wide UX & interface consistency cleanup driven by [`docs/reviews/UX_REVIEW_2026-05-08.md`](../reviews/UX_REVIEW_2026-05-08.md). Eight milestones (M0 onboarding hotfixes → M7 v0.4.0 release). Hard-break release; no deprecation cycle. |
-| 2026-05-07 | Encoding cleanup | [encoding-cleanup/PLAN.md](encoding-cleanup/PLAN.md) | [encoding-cleanup/TASKS.md](encoding-cleanup/TASKS.md) | Post-review cleanup of the encoding refactor. Six milestones (M1 consistency → M6 legacy delegation), targeting ~−1500 LOC net. M0 wins already applied on `encoding-refactor-wip`. |
-| 2025-11-22 | Napari playback | [napari-playback/PLAN.md](napari-playback/PLAN.md) | [napari-playback/TASKS.md](napari-playback/TASKS.md) | Tasks committed 2025-11-03. Playback interface enhancement plan and task breakdown. |
-| 2025-12-05 | Behavior metrics | [behavior-metrics/PLAN.md](behavior-metrics/PLAN.md) | [behavior-metrics/TASKS.md](behavior-metrics/TASKS.md) | Tasks committed 2025-12-05. Advanced behavioral metrics plan. It references an earlier `BEHAV_PLAN.md` prerequisite that is not present in this checkout. |
+| 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | **Not started; accepted scope.** Six workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Links the existing representation refactor; statistical/null-model frameworks remain outside scope. |
+| 2026-10-13 | Environment representation | [environment-representation/PLAN.md](environment-representation/PLAN.md) | Phase files in the same directory | **Not started.** Baseline tooling exists, but stored `Binning`/locators, save-without-rebuild, and derived-bin preservation have not landed. Five representation phases plus later roadmap stages A–F; required for geometry follow-ons and dependent correspondence/snapshot slices. Initial observation and signal work can proceed independently. |
 
-## Archived / Superseded
+## Partially Implemented Plans
+
+| Plan committed | Area | Plan | Tasks | Status and remaining work |
+| --- | --- | --- | --- | --- |
+| 2026-05-07 | Encoding cleanup | [encoding-cleanup/PLAN.md](encoding-cleanup/PLAN.md) | [encoding-cleanup/TASKS.md](encoding-cleanup/TASKS.md) | **Partially implemented.** Core cleanup, JAX/cache work, and legacy removal landed. Task 6.5 distance delegation remains deferred, and before/after benchmark tables remain unfilled; review current APIs before resuming. |
+| 2025-11-22 | Napari playback | [napari-playback/PLAN.md](napari-playback/PLAN.md) | [napari-playback/TASKS.md](napari-playback/TASKS.md) | **Partially implemented.** FPS slider, play/pause, Space shortcut, and frame counter exist. Proposed speed presets/dropdown, extra shortcuts, and their tests remain absent. Tasks first committed 2025-11-03. |
+| 2025-11-04 | Replay transition matrix | [replay-transition/PLAN.md](replay-transition/PLAN.md) | — | **Partially implemented; remaining scope needs review.** Empirical, random-walk, and diffusion modes exist through `Environment.transitions()` with row-stochastic matrices. Six other utilities remain proposals; the old module/signatures and column-stochastic convention are superseded for delivered modes. |
+
+## Completed / Superseded
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
-| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Complete historical plan. Superseded for current API vocabulary by the API contract in `.claude/rules/public-api.md`; do not copy its old `neuron_id`, `detect_*`, or view-specific peak names into new work. |
+| 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | **Completed historical implementation.** Merged 2026-05-07 (`e6cc25c0`), with documented JAX grid/border deferrals. Current vocabulary is governed by [public API rules](../../.claude/rules/public-api.md); do not copy old `neuron_id`, classification, or result-class names. |
 | 2025-12-06 | Environment refactor | [environment-refactor/PLAN.md](environment-refactor/PLAN.md) | — | Superseded by [environment-representation/PLAN.md](environment-representation/PLAN.md). Do not execute: its frozen ~25-method `Environment`, methods moved to `ops/`, and layout-parameter persistence contradict the current design. |
+| 2026-05-08 | v0.4 UX cleanup | [v0.4-ux-cleanup/PLAN.md](v0.4-ux-cleanup/PLAN.md) | [v0.4-ux-cleanup/TASKS.md](v0.4-ux-cleanup/TASKS.md) | **Superseded after the v0.4.0 release.** M0–M6 landed; local tag `v0.4.0` points to `55bc0851`. M7 was partial: migration page/checker never landed. Current API rules and tutorials replace the old release roadmap; do not mark the omitted migration work as completed. |
 
 ## Planning Backlog
 
 | Document committed | Area | Document | Notes |
 | --- | --- | --- | --- |
-| 2025-11-23 | LLM integration | [llm-integration/PLAN.md](llm-integration/PLAN.md) | Tooling and agent-facing integration plan. |
-| 2025-11-04 | Replay transition matrix | [replay-transition/PLAN.md](replay-transition/PLAN.md) | Replay-analysis transition matrix construction plan. |
-| 2025-11-19 | General backlog | [backlog/TODO.md](backlog/TODO.md) | Older broad backlog notes. |
+| 2025-12-05 | Advanced behavior metrics | [behavior-metrics/PLAN.md](behavior-metrics/PLAN.md) | **Not implemented; needs scope/API review.** Reachability information, manifold embeddings, diffusion baselines, and geodesic VTE extensions are absent. Existing basic behavior metrics do not complete this plan. [Task tracker](behavior-metrics/TASKS.md). |
+| 2025-11-23 | LLM integration | [llm-integration/PLAN.md](llm-integration/PLAN.md) | **Not implemented here.** Python/NWB workflows exist, but the proposed agent facade, registries, MCP server, and playbooks do not. No replacement plan covers that layer. |
+| 2025-11-19 | General backlog | [backlog/TODO.md](backlog/TODO.md) | **Historical; partly implemented and partly superseded.** Population/results/visibility entries are stale. Follow current topic plans for overlapping work; remaining statistics, pipelines, and scaling ideas are unapproved backlog. |
 
 ## Root Policy
 

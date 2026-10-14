@@ -2,6 +2,23 @@
 
 **Committed**: 2025-12-05
 
+**Status**: Completed historical implementation; current API vocabulary superseded.
+**Status reviewed**: 2026-10-14
+
+The refactor was merged in [e6cc25c0](https://github.com/edeno/neurospatial/commit/e6cc25c0)
+on 2026-05-07. Its single/population rate families, shared results and optional
+backend implementations are present in [encoding exports](../../../src/neurospatial/encoding/__init__.py),
+[_base.py](../../../src/neurospatial/encoding/_base.py), and
+[_core_jax.py](../../../src/neurospatial/encoding/_core_jax.py).
+[Backend tests](../../../tests/encoding/test_backend_dispatch.py),
+[result contracts](../../../tests/encoding/test_terminal_verbs_contract.py), and
+[current usage](../../user-guide/interoperability.md) support the implemented scope.
+No original implementation milestone remains open; the intentional grid/border
+JAX skip and later API changes are recorded in [TASKS.md](TASKS.md).
+Current object-vector results are `ObjectVectorRateResult` / `ObjectVectorRatesResult`;
+use `unit_id`, `summary_table()`, boolean `classify()`, and `label_cell_types()`.
+The design and examples below are retained as historical records.
+
 > **Superseded for current API vocabulary.** This historical plan predates the
 > v0.6 naming contract. Do not treat names such as `neuron_id`,
 > `to_dataframe(neuron_ids=...)`, `detect_hd_cells`, `detect_view_cells`, or

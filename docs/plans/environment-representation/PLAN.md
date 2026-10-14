@@ -3,6 +3,19 @@
 **Committed**: 2026-10-13
 
 **Status:** Not started.
+**Status reviewed:** 2026-10-14.
+
+The representation phases remain planned. Current
+[environment construction](../../../src/neurospatial/environment/core.py) still
+publishes layout-backed geometry,
+[subsets](../../../src/neurospatial/environment/transforms.py) still use
+`_SubsetLayout`, and [file loading](../../../src/neurospatial/io/files.py) still
+rebuilds layouts. The proposed `Binning`/`SpatialBins` representation has not
+landed. [Baseline tooling](../../../scripts/environment_baseline.py) is present;
+it does not establish completion of the representation phases. Continuous
+behavior's geometry follow-ons and dependent correspondence/snapshot slices
+need this work; initial observation and signal work can proceed independently.
+The continuous behavior plan does not supersede this refactor.
 
 Environments will store their bins, point lookup and optional structure as data,
 built once by a layout and then kept. An environment made by subsetting,
