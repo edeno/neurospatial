@@ -154,6 +154,12 @@ class TestCalibrateVideoLandmarks:
 
         assert isinstance(calibration, VideoCalibration)
         assert calibration.frame_size_px == (16, 16)
+        assert_allclose(
+            calibration.transform_px_to_cm(landmarks_px), landmarks_env, atol=1e-10
+        )
+        assert_allclose(
+            calibration.transform_cm_to_px(landmarks_env), landmarks_px, atol=1e-10
+        )
 
     def test_landmarks_with_different_scale(
         self, tiny_video_path: Path, simple_env_16cm: Environment
@@ -187,6 +193,9 @@ class TestCalibrateVideoLandmarks:
         )
 
         assert calibration.cm_per_px == pytest.approx(2.0, rel=0.05)
+        assert_allclose(
+            calibration.transform_px_to_cm(landmarks_px), landmarks_env, atol=1e-10
+        )
 
 
 class TestCalibrateVideoCmPerPx:

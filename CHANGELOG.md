@@ -148,6 +148,9 @@
 
 ### Fixed
 
+- Landmark video calibration now includes the raw-pixel Y-axis flip in the
+  returned transform, so landmarks and unseen video points map to the intended
+  physical coordinates for rigid, similarity and affine fits.
 - Windows CI installs FFmpeg with a pinned setup action instead of the
   unreliable Chocolatey package feed. Every test platform verifies that FFmpeg
   and FFprobe are available before running the tests.

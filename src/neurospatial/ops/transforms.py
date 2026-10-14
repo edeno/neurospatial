@@ -649,8 +649,8 @@ def calibrate_from_landmarks(
         Video frame size as (width, height) in pixels.
     kind : {"rigid", "similarity", "affine"}, default="similarity"
         Type of transform to estimate:
-        - "rigid": rotation + translation (4 DOF)
-        - "similarity": uniform scale + rotation + translation (5 DOF)
+        - "rigid": rotation + translation (3 DOF)
+        - "similarity": uniform scale + rotation + translation (4 DOF)
         - "affine": full affine (6 DOF)
 
     Returns
@@ -669,7 +669,8 @@ def calibrate_from_landmarks(
     Pixel coordinates use (x_px, y_px) = (column, row) ordering in image space.
     The frame_size_px is used to apply Y-flip before transform estimation,
     converting from video coordinates (origin top-left) to standard Cartesian
-    coordinates (origin bottom-left).
+    coordinates (origin bottom-left). The returned transform includes this
+    Y-flip, so pass raw video pixel coordinates to it without flipping them first.
 
     For best results, use landmarks that:
     - Span the full video frame
@@ -758,7 +759,9 @@ def calibrate_from_landmarks(
     # Use estimate_transform from this module (returns AffineND, wrap in Affine2D)
     result = estimate_transform(landmarks_px_flipped, landmarks_cm, kind=kind)
 
-    return Affine2D(result.A)
+    # The fit accepts flipped pixels; compose the flip so callers can supply
+    # raw image pixels, as they do for calibrate_from_scale_bar.
+    return Affine2D(result.A) @ flip_y(frame_height)
 
 
 @dataclass

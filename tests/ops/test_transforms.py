@@ -123,6 +123,54 @@ class TestCalibrateFromScaleBar:
 class TestCalibrateFromLandmarks:
     """Tests for calibrate_from_landmarks()."""
 
+    @pytest.mark.parametrize("kind", ["rigid", "similarity", "affine"])
+    def test_maps_raw_pixels_to_world_landmarks_and_unseen_points(self, kind):
+        """A calibrated transform accepts raw image pixels, including their Y-down axis."""
+        landmarks_px = np.array(
+            [[30, 20], [220, 35], [200, 160], [40, 170]], dtype=float
+        )
+        angle = np.deg2rad(27.0)
+        rotation = np.array(
+            [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+        )
+        if kind == "rigid":
+            linear = rotation
+        elif kind == "similarity":
+            linear = 0.35 * rotation
+        else:
+            linear = np.array([[0.3, 0.07], [-0.04, 0.4]])
+
+        def world_coordinates(raw_pixels):
+            cartesian = np.column_stack([raw_pixels[:, 0], 240.0 - raw_pixels[:, 1]])
+            return cartesian @ linear.T + [10.0, -30.0]
+
+        landmarks_cm = world_coordinates(landmarks_px)
+        original_pixels = landmarks_px.copy()
+        transform = calibrate_from_landmarks(
+            landmarks_px, landmarks_cm, frame_size_px=(320, 240), kind=kind
+        )
+
+        assert_allclose(transform(landmarks_px), landmarks_cm, atol=1e-10)
+        assert_allclose(transform.inverse()(landmarks_cm), landmarks_px, atol=1e-10)
+        unseen_px = np.array([[15.0, 215.0], [147.0, 73.0]])
+        assert_allclose(transform(unseen_px), world_coordinates(unseen_px), atol=1e-10)
+        assert_allclose(landmarks_px, original_pixels)
+
+    def test_landmark_and_scale_bar_calibrations_share_raw_pixel_convention(self):
+        """Both calibration methods map a raw pixel height to the same world height."""
+        landmarks_px = np.array([[0, 0], [640, 0], [640, 480], [0, 480]], dtype=float)
+        landmarks_cm = np.array([[0, 120], [160, 120], [160, 0], [0, 0]], dtype=float)
+        landmark_transform = calibrate_from_landmarks(
+            landmarks_px, landmarks_cm, frame_size_px=(640, 480)
+        )
+        scale_bar_transform = calibrate_from_scale_bar(
+            (100.0, 200.0), (300.0, 200.0), 50.0, frame_size_px=(640, 480)
+        )
+        raw_pixels = np.array([[7.0, 31.0], [503.0, 419.0]])
+        expected_cm = np.array([[1.75, 112.25], [125.75, 15.25]])
+        assert_allclose(landmark_transform(raw_pixels), expected_cm, atol=1e-10)
+        assert_allclose(scale_bar_transform(raw_pixels), expected_cm, atol=1e-10)
+
     def test_rigid_transform(self):
         """Rigid (rotation + translation) transform from landmarks."""
         # Simple case: 4 corners, no rotation, pure scaling + Y-flip
