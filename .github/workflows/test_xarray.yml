@@ -1,8 +1,7 @@
 name: Tests (xarray interop)
 
-# xarray is an optional extra. The default test job does NOT install it, so the
-# labeled-Dataset to_xarray() exports would otherwise go untested in CI. This
-# job installs the xarray extra and runs only the xarray interop tests.
+# Keep a focused xarray interop check alongside the full test matrix, which
+# also installs the optional xarray extra.
 
 on:
   push:
