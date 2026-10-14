@@ -1733,7 +1733,10 @@ def _render_worker_frames(task: dict) -> None:
     # plot_field() is called last (after any z_order="below" video overlays),
     # so the field artist is the most recently added artist of its kind.
     primary_artist: Any = _get_field_artist(ax)
-    reuse_artists = bool(reuse_flag and primary_artist is not None)
+    # OverlayArtistManager does not manage video images. Use the complete
+    # redraw path for those tasks so video frames are drawn and updated too.
+    has_video = overlay_data is not None and bool(overlay_data.videos)
+    reuse_artists = bool(reuse_flag and primary_artist is not None and not has_video)
 
     # Create overlay artist manager for efficient artist reuse
     # (only when we have overlays and are using artist reuse path)
@@ -1746,10 +1749,15 @@ def _render_worker_frames(task: dict) -> None:
             show_regions=show_regions,
             region_alpha=region_alpha,
         )
-        overlay_manager.initialize(frame_idx=0)
+        # Overlay arrays and clocks are shared in full across worker chunks.
+        # Global indices preserve trails, event decay, and time-series cursors
+        # across chunk boundaries; only fields and labels use local indices.
+        overlay_manager.initialize(frame_idx=start_idx)
     else:
         # Render overlays for frame 0 using legacy path
-        _render_all_overlays(ax, env, 0, overlay_data, show_regions, region_alpha)
+        _render_all_overlays(
+            ax, env, start_idx, overlay_data, show_regions, region_alpha
+        )
 
     # Freeze autoscale to avoid changing extents while updating data
     if reuse_artists:
@@ -1757,7 +1765,7 @@ def _render_worker_frames(task: dict) -> None:
 
     # Initialize time series for frame 0
     if ts_manager is not None:
-        ts_manager.update(0, timeseries_data)
+        ts_manager.update(start_idx, timeseries_data)
 
     try:
         # Save frame 0
@@ -1786,17 +1794,22 @@ def _render_worker_frames(task: dict) -> None:
 
                 # Update overlay artists efficiently (no clear/recreate)
                 if overlay_manager is not None:
-                    overlay_manager.update_frame(local_idx)
+                    overlay_manager.update_frame(start_idx + local_idx)
                 else:
                     # Fallback: clear and re-render (no overlays case)
                     _clear_overlay_artists(ax)
                     _render_all_overlays(
-                        ax, env, local_idx, overlay_data, show_regions, region_alpha
+                        ax,
+                        env,
+                        start_idx + local_idx,
+                        overlay_data,
+                        show_regions,
+                        region_alpha,
                     )
 
                 # Update time series artists if present
                 if ts_manager is not None:
-                    ts_manager.update(local_idx, timeseries_data)
+                    ts_manager.update(start_idx + local_idx, timeseries_data)
 
                 # No need to clear or re-layout. Draw and save.
                 frame_number = start_idx + local_idx
@@ -1826,12 +1839,17 @@ def _render_worker_frames(task: dict) -> None:
 
                 # Render overlays for this frame
                 _render_all_overlays(
-                    ax, env, local_idx, overlay_data, show_regions, region_alpha
+                    ax,
+                    env,
+                    start_idx + local_idx,
+                    overlay_data,
+                    show_regions,
+                    region_alpha,
                 )
 
                 # Update time series artists if present
                 if ts_manager is not None:
-                    ts_manager.update(local_idx, timeseries_data)
+                    ts_manager.update(start_idx + local_idx, timeseries_data)
 
                 frame_number = start_idx + local_idx
                 filename = f"frame_{frame_number:0{digits}d}.png"

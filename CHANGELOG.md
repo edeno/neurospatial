@@ -172,6 +172,12 @@
 
 ### Fixed
 
+- Render supported overlays consistently in embedded and external-frame HTML,
+  including regions without other overlays. Preserve global frame clocks and
+  overlay histories across parallel workers, and redraw video overlays when
+  persistent artists cannot represent them. Warn and skip unsupported HTML
+  overlays without mutating or reading them.
+
 - Simulation recovery validation requires finite center-error and correlation
   metrics for every selected unit before passing. Return aligned unit labels,
   spike counts, per-unit outcomes and skip reasons; report evaluable counts

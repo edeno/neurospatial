@@ -1,9 +1,21 @@
 """Standalone HTML player backend with instant scrubbing.
 
-Overlay JSON Schema
--------------------
-The HTML backend serializes overlay data to JSON for rendering in the browser.
-The schema is:
+Overlay rendering
+-----------------
+Positions and trails, body parts and skeletons, head directions, events
+(including decay), and regions are rendered into each image by Matplotlib.
+Both embedded and external-frame exports support these overlays; JavaScript
+provides playback controls without drawing a second overlay layer. Coordinates
+are in environment units.
+
+Video, time series, and object-vector overlays are not implemented by this
+backend and are skipped with explicit warnings.
+
+Legacy overlay JSON schema
+--------------------------
+The internal HTML player helpers also accept a limited JSON overlay schema.
+``render_html`` does not use this schema, because overlays are baked into its
+images. The schema is:
 
 .. code-block:: json
 
@@ -51,7 +63,7 @@ The schema is:
 
 Coordinate System
 -----------------
-All coordinates are in environment space (cm), NOT pixels. The JavaScript
+All coordinates are in environment units, not pixels. The JavaScript
 renderer transforms these to canvas coordinates based on dimension_ranges.
 
 - Position data: (n_frames, 2) array as nested lists, each row is [x, y]
@@ -59,13 +71,6 @@ renderer transforms these to canvas coordinates based on dimension_ranges.
 - Region coordinates: Environment (x, y) coordinates
 - dimension_ranges: Bounding box for coordinate scaling
 
-Limitations
------------
-- Only PositionOverlay, EventOverlay (instant mode), and regions are supported
-- EventOverlay decay_frames > 0 falls back to instant mode (warning emitted)
-- BodypartOverlay and HeadDirectionOverlay are silently skipped (warning emitted)
-- VideoOverlay is not supported (warning emitted)
-- Large overlay datasets (>1 MB JSON) may cause browser rendering delays
 """
 
 from __future__ import annotations
@@ -76,6 +81,7 @@ import json
 import logging
 import os
 import warnings
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -500,7 +506,7 @@ def render_html(
     image_format : {"png", "jpeg"}, default="png"
         Image format for frames. PNG is lossless with sharp edges (ideal for
         scientific visualization). JPEG is lossy but typically 2-10x smaller
-        for high-DPI renders (dpi >= 100).
+        for high-DPI renders (dpi >= 100). External-frame mode always writes PNG.
 
         **Recommendation**: Use ``image_format='jpeg'`` when file size matters
         and you're using high DPI. For low DPI (<100) or when preserving exact
@@ -513,7 +519,7 @@ def render_html(
     embed : bool, default=True
         If True, embed frames as base64 data URLs (self-contained HTML).
         If False, write frames to disk and reference via relative paths
-        (smaller HTML, suitable for 500+ frames).
+        (smaller HTML). The max_html_frames limit applies to both modes.
     frames_dir : str or Path or None, optional
         Directory to write frames when embed=False. Defaults to a sibling
         directory based on save_path name (e.g., "animation/").
@@ -521,11 +527,10 @@ def render_html(
         Number of parallel workers for frame rendering (embed=False only).
         Defaults to CPU count / 2.
     overlay_data : OverlayData or None, optional
-        Overlay data for rendering positions and regions. HTML backend supports:
-        - Position overlays (with trails)
-        - Region overlays
-        Bodypart and head direction overlays are not supported and will emit warnings.
-        Default is None.
+        Aligned positions (with trails), body parts and skeletons, head
+        directions, and events (including decay), rendered into the frame
+        images in both embed modes. Video, time series, and object-vector
+        overlays are skipped with warnings. Default is None.
     show_regions : bool or list of str, default=False
         Whether to show environment regions. If True, show all regions.
         If list, show only regions with names in the list.
@@ -613,10 +618,8 @@ def render_html(
         backend_name="html",
     )
 
-    # Validate overlay capabilities and emit warnings for unsupported types
-    # Note: Most overlay types (positions, bodyparts, head direction, events)
-    # are now rendered via matplotlib and are fully supported.
-    # Only video overlays require special handling.
+    # Use one Matplotlib overlay path in both embed modes. Filter unsupported
+    # types without mutating the caller's data or accessing its video readers.
     if overlay_data is not None:
         # Check for unsupported video overlays
         has_video_overlays = len(overlay_data.videos) > 0
@@ -624,9 +627,8 @@ def render_html(
             warnings.warn(
                 "HTML backend does not support video overlays.\n"
                 "\n"
-                "WHAT: Video overlays cannot be rendered in standalone HTML files.\n"
-                "WHY: HTML embeds frames as base64 images; video compositing requires\n"
-                "     frame-by-frame rendering which is only supported in video/napari.\n"
+                "WHAT: This HTML exporter does not implement video compositing.\n"
+                "WHY: Video layers are currently supported by the video and napari backends.\n"
                 "\n"
                 "Fix:\n"
                 "  1. Use video backend for full video overlay support:\n"
@@ -638,7 +640,7 @@ def render_html(
                 "     env.animate_fields(fields, frame_times=frame_times,\n"
                 "                        backend='napari', overlays=[video_overlay])\n"
                 "\n"
-                "Video overlays will be skipped. Other overlays (positions, regions) will render.",
+                "Video overlays will be skipped. Other supported overlays will render.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -649,10 +651,8 @@ def render_html(
             warnings.warn(
                 "HTML backend does not support time series overlays.\n"
                 "\n"
-                "WHAT: Time series overlays require a separate panel with scrolling\n"
-                "      time series plots, which cannot be rendered in HTML.\n"
-                "WHY: HTML embeds frames as static base64 images. Time series display\n"
-                "     requires dynamic chart updates and multi-panel layout.\n"
+                "WHAT: This HTML exporter does not implement time series panels.\n"
+                "WHY: The HTML exporter renders a single spatial panel.\n"
                 "\n"
                 "Fix:\n"
                 "  1. Use video backend for time series support:\n"
@@ -668,6 +668,25 @@ def render_html(
                 UserWarning,
                 stacklevel=2,
             )
+
+        if overlay_data.object_vectors:
+            warnings.warn(
+                "HTML backend does not support object-vector overlays. "
+                "They will be skipped. Use the napari backend for these overlays.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        if has_video_overlays or has_timeseries_overlays or overlay_data.object_vectors:
+            overlay_data = replace(
+                overlay_data, videos=[], timeseries=[], object_vectors=[]
+            )
+    elif show_regions:
+        # The single-frame renderer enters its overlay path only for a data
+        # container; a regions-only export still needs that path.
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData()
 
     # Normalize image_format
     image_format = image_format.lower()
@@ -722,33 +741,6 @@ def render_html(
             stacklevel=2,
         )
 
-    # Estimate overlay JSON size and warn if large (threshold: 1 MB)
-    # 1 MB of JSON is substantial for browser rendering - larger datasets
-    # should use video or napari backends for better performance
-    overlay_size_mb = _estimate_overlay_json_size(overlay_data, env, show_regions)
-    if overlay_size_mb > 1.0:
-        warnings.warn(
-            f"\nHTML overlay data will be large (~{overlay_size_mb:.1f} MB JSON).\n"
-            f"Large overlay datasets can slow down browser rendering.\n"
-            f"\n"
-            f"Consider these alternatives:\n"
-            f"  1. Subsample position data:\n"
-            f"     # Subsample overlay positions to match reduced frame rate\n"
-            f"     positions_subsampled = positions[::5]  # Every 5th position\n"
-            f"     overlay = PositionOverlay(positions=positions_subsampled, ...)\n"
-            f"\n"
-            f"  2. Use video backend for full-fidelity overlays:\n"
-            f"     env.animate_fields(fields, frame_times=frame_times,\n"
-            f"                        backend='video', save_path='output.mp4',\n"
-            f"                        overlays=[overlay], ...)\n"
-            f"\n"
-            f"  3. Use Napari for interactive viewing:\n"
-            f"     env.animate_fields(fields, frame_times=frame_times,\n"
-            f"                        backend='napari', overlays=[overlay], ...)\n",
-            UserWarning,
-            stacklevel=2,
-        )
-
     # Compute global color scale
     vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)
     vmin = vmin if vmin is not None else vmin_computed
@@ -780,16 +772,14 @@ def render_html(
             frame_labels=frame_labels,
             dpi=dpi,
             n_workers=n_workers,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
         )
 
         # Generate frame labels if not provided
         if frame_labels is None:
             frame_labels = [f"Frame {i + 1}" for i in range(n_frames)]
-
-        # Serialize overlay data
-        overlay_json = _serialize_overlay_data(
-            overlay_data, env, show_regions, region_alpha
-        )
 
         # Generate lightweight HTML with relative frame references
         html = _generate_non_embedded_html_player(
@@ -799,7 +789,7 @@ def render_html(
             fps=fps,
             title=title,
             image_format="png",  # parallel_render_frames always uses PNG
-            overlay_data=overlay_json,
+            overlay_data=None,  # Overlays are baked into the PNGs, as in embed=True.
         )
 
         # Write HTML
