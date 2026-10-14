@@ -9,6 +9,20 @@ from neurospatial import Environment
 from neurospatial.environment.decorators import versioned_cached_property
 
 
+@pytest.fixture(params=["dict", "file"])
+def restored_grid(request, tmp_path) -> Environment:
+    import json
+
+    grid = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+    )
+    if request.param == "dict":
+        return Environment.from_dict(json.loads(json.dumps(grid.to_dict())))
+    path = tmp_path / "grid.npz"
+    grid.to_file(path)
+    return Environment.from_file(path)
+
+
 @pytest.fixture
 def env() -> Environment:
     rng = np.random.default_rng(0)
@@ -97,6 +111,129 @@ class TestPublishedGeometryIsReadOnly:
             env.bin_centers[0, 0] = 99.0
         with pytest.raises(nx.NetworkXError, match="Frozen"):
             env.connectivity.add_edge(0, 8)
+
+    @pytest.mark.parametrize("target", ["node", "edge", "graph"])
+    @pytest.mark.parametrize("method", ["assignment", "update", "delete"])
+    def test_graph_attributes_reject_edits(self, target, method) -> None:
+        env = Environment.from_grid_mask(
+            np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
+        )
+        env.compute_kernel(1.0)
+        if target == "node":
+            attrs, key, value = env.connectivity.nodes[0], "pos", (99.0,)
+        elif target == "edge":
+            attrs, key, value = env.connectivity.edges[0, 1], "distance", 100.0
+        else:
+            attrs, key, value = env.connectivity.graph, "test", "changed"
+
+        with pytest.raises(TypeError, match="read-only"):
+            if method == "assignment":
+                attrs[key] = value
+            elif method == "update":
+                attrs.update({key: value})
+            else:
+                attrs.pop(key, None)
+        assert env.distance_between(np.array([0.5]), np.array([2.5])) == 2.0
+
+    @pytest.mark.parametrize("how", ["copy", "deepcopy", "pickle"])
+    def test_graph_attributes_stay_read_only_after_copy(self, how) -> None:
+        import copy
+        import pickle
+
+        env = Environment.from_grid_mask(
+            np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
+        )
+        restored = (
+            env.copy()
+            if how == "copy"
+            else copy.deepcopy(env)
+            if how == "deepcopy"
+            else pickle.loads(pickle.dumps(env))
+        )
+        with pytest.raises(TypeError, match="read-only"):
+            restored.connectivity.edges[0, 1]["distance"] = 100.0
+        editable = restored.connectivity.copy()
+        editable.edges[0, 1]["distance"] = 100.0
+        assert restored.connectivity.edges[0, 1]["distance"] == 1.0
+
+    @pytest.mark.parametrize("attribute", ["pos", "original_grid_nd_index", "vector"])
+    def test_restored_graph_sequences_reject_edits(
+        self, restored_grid, attribute
+    ) -> None:
+        from neurospatial.layout.helpers.utils import find_boundary_nodes
+
+        env = restored_grid
+        boundary = env.boundary_bins.copy()
+        version = env._state_version
+        attrs = (
+            env.connectivity.edges[0, 1]
+            if attribute == "vector"
+            else env.connectivity.nodes[4]
+        )
+        with pytest.raises(TypeError):
+            attrs[attribute][0] = 0
+
+        assert env._state_version == version
+        np.testing.assert_array_equal(env.boundary_bins, boundary)
+        np.testing.assert_array_equal(
+            find_boundary_nodes(
+                env.connectivity, env.grid_shape, env.active_mask, env.layout_type
+            ),
+            boundary,
+        )
+
+    def test_restored_graph_copy_cannot_corrupt_transformed_distances(
+        self, restored_grid
+    ) -> None:
+        from neurospatial.ops.transforms import from_rotation_matrix
+
+        env = restored_grid
+        editable = env.connectivity.copy()
+        original = tuple(env.connectivity.nodes[0]["pos"])
+        with pytest.raises(TypeError):
+            editable.nodes[0]["pos"][0] = 99.0
+        editable.nodes[0]["pos"] = [99.0, original[1]]
+        assert tuple(env.connectivity.nodes[0]["pos"]) == original
+
+        angle = 0.2
+        transform = from_rotation_matrix(
+            np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+        )
+        transformed = env.apply_transform(transform)
+        for u, v, attrs in transformed.connectivity.edges(data=True):
+            assert attrs["distance"] == pytest.approx(
+                np.linalg.norm(transformed.bin_centers[v] - transformed.bin_centers[u])
+            )
+
+    @pytest.mark.parametrize("container", [list, np.array])
+    def test_published_graph_owns_coordinate_index_and_vector_values(
+        self, container
+    ) -> None:
+        import copy
+
+        env = Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        )
+        layout = copy.deepcopy(env.layout)
+        graph = layout.connectivity.copy()
+        pos = container(graph.nodes[0]["pos"])
+        index = container(graph.nodes[0]["original_grid_nd_index"])
+        vector = container(graph.edges[0, 1]["vector"])
+        graph.nodes[0]["pos"] = pos
+        graph.nodes[0]["original_grid_nd_index"] = index
+        graph.edges[0, 1]["vector"] = vector
+        layout.connectivity = graph
+        published = Environment(
+            name="", layout=layout, layout_type_used=layout._layout_type_tag
+        )
+
+        pos[0] = index[0] = vector[0] = 99
+        assert tuple(published.connectivity.nodes[0]["pos"]) == (0.5, 0.5)
+        assert tuple(published.connectivity.nodes[0]["original_grid_nd_index"]) == (
+            0,
+            0,
+        )
+        assert tuple(published.connectivity.edges[0, 1]["vector"]) == (0.0, 1.0)
 
     def test_caller_arrays_stay_writable_and_independent(self) -> None:
         """The environment freezes its own copies, not the caller's arrays."""

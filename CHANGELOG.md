@@ -285,6 +285,14 @@
   geodesic pairs, and returns NaN for lags with no observed displacement pairs.
   Curvature retains the original sample timestamps through stationary periods
   before smoothing within each observed run.
+- Published connectivity graphs reject node, edge and graph attribute edits,
+  in addition to topology changes, so edge-distance edits cannot bypass cache
+  invalidation. `env.connectivity.copy()` provides an editable graph for
+  separate analyses; protection survives pickling and deep copies. Coordinates,
+  grid indices and edge vectors are owned immutable tuples, including after
+  JSON/file restoration, so nested edits and graph copies cannot corrupt
+  boundary caches or transformed edge geometry.
+
 - Editing arrays after handing them to neurospatial no longer changes stored
   state. `SpikeTrains` keeps read-only copies of its trains and labels, so
   editing the caller's labels can no longer create duplicate unit IDs. Every

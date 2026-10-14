@@ -68,6 +68,52 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
+class _ReadOnlyGraphAttributes(dict[str, Any]):
+    """Published graph attributes, with pickle and editable-copy support."""
+
+    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise TypeError(
+            _format_error(
+                "Environment.connectivity attributes are read-only.",
+                why="Why: editing geometry would leave cached kernels and operators stale.",
+                fix="build a new environment; use env.connectivity.copy() for an editable graph for separate analyses",
+            )
+        )
+
+    __setitem__ = _refuse_edit
+    __delitem__ = _refuse_edit
+    clear = _refuse_edit
+    pop = _refuse_edit
+    popitem = _refuse_edit
+    setdefault = _refuse_edit
+    update = _refuse_edit
+    __ior__ = _refuse_edit
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return type(self), (dict(self),)
+
+
+def _freeze_graph_attributes(graph: nx.Graph) -> None:
+    """Protect node, edge and graph attributes when publishing connectivity."""
+    # NetworkX's freeze protects topology only. Replace its attribute mappings
+    # in place so the layout and environment keep sharing the same graph.
+    for node, attrs in graph.nodes(data=True):
+        graph._node[node] = _ReadOnlyGraphAttributes(
+            attrs,
+            pos=tuple(float(value) for value in attrs["pos"]),
+            original_grid_nd_index=tuple(
+                int(value) for value in attrs["original_grid_nd_index"]
+            ),
+        )
+    for u, v, attrs in graph.edges(data=True):
+        frozen = _ReadOnlyGraphAttributes(
+            attrs, vector=tuple(float(value) for value in attrs["vector"])
+        )
+        graph._adj[u][v] = graph._adj[v][u] = frozen
+    graph.graph = _ReadOnlyGraphAttributes(graph.graph)
+    nx.freeze(graph)
+
+
 @dataclass(frozen=True)
 class _PublishedGeometry:
     """The geometry an environment publishes, replaced whole and never edited.
@@ -1014,7 +1060,7 @@ class _BaseEnvironment(
         for array in (bin_centers, active_mask, *(grid_edges or ())):
             if isinstance(array, np.ndarray):
                 array.setflags(write=False)
-        nx.freeze(connectivity)
+        _freeze_graph_attributes(connectivity)
         self._geometry = _PublishedGeometry(
             bin_centers=bin_centers,
             connectivity=connectivity,
