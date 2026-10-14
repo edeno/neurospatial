@@ -886,7 +886,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from neurospatial.events import (
-    add_positions, align_spikes_to_events, peri_event_histogram,
+    add_positions, peri_event_histogram, plot_peri_event_response,
     event_count_in_window, event_indicator,
 )
 
@@ -909,11 +909,10 @@ events["retained"] = False
 events.loc[selected.index, "retained"] = True
 event_times = selected["timestamp"].to_numpy()
 
-aligned = align_spikes_to_events(spike_times, event_times, window=window)
-fig, ax = plt.subplots()
-ax.eventplot(aligned, lineoffsets=np.arange(len(event_times)))
-ax.set_yticks(np.arange(len(event_times)), selected["event_id"])
-ax.set_xlabel("Time from event (s)")
+raster_ax, rate_ax = plot_peri_event_response(
+    spike_times, events["timestamp"].to_numpy(), psth,
+)
+raster_ax.set_yticks(np.arange(len(event_times)), selected["event_id"])
 
 regressors = pd.DataFrame({
     "timestamp": times,
@@ -922,28 +921,29 @@ regressors = pd.DataFrame({
 })
 positioned = add_positions(selected, times=times, positions=positions, epochs=epochs)
 table = events.join(positioned[["x", "y"]])
-assert psth.n_events == len(aligned) == len(positioned) == 2
+assert psth.n_events == len(positioned) == 2
 assert selected["event_id"].tolist() == ["reward-a", "reward-c"]
 assert regressors["event_count"].dtype == np.int64
 assert regressors["event_present"].dtype == np.bool_
 print(table.to_string(index=False))
 
-# The cohort is shared; the helpers keep their documented edge rules.
+# Raster and PSTH share half-open bins; regressors keep their own edge rules.
 assert psth.histogram.sum() == 2.0  # Average of two spikes per event.
-assert [len(row) for row in aligned] == [3, 3]  # Includes the +1 s spike.
 assert event_count_in_window(
     np.array([4.0, 6.0]), np.array([5.0]), window=window,
 ).tolist() == [1, 1]  # Both adjacent windows include the boundary event.
-plt.close(fig)
+plt.close(raster_ax.figure)
 ```
 
-PSTHs count spikes on `[event + start, event + stop)` and exclude the stop edge.
-Raster alignment includes that stop edge. Event-count and indicator windows
-include both edges, so neighboring sample windows can count the same boundary
-event twice. Sharing the event cohort preserves event identity and inclusion;
-it does not make these spike-edge rules identical. Regressors describe the
-selected events at each sample; restrict their sample rows to your modeling
-epochs when fitting a model.
+`plot_peri_event_response` uses the PSTH's retained event indices and actual
+complete-bin range for both panels. Spikes on the right edge and in a trailing
+partial bin are excluded from both views. Supply the original event array and
+the spike train belonging to the selected unit. The low-level
+`align_spikes_to_events` retains its inclusive stop-edge convention for custom
+alignment. Event-count and indicator windows also include both edges, so
+neighboring sample windows can count the same boundary event twice. Regressors
+describe the selected events at each sample; restrict their sample rows to your
+modeling epochs when fitting a model.
 
 ## Common Patterns
 

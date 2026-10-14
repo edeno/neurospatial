@@ -33,6 +33,7 @@ Peri-Event Analysis:
 
 Visualization:
     plot_peri_event_histogram : Plot PSTH results
+    plot_peri_event_response : Plot a raster and PSTH for the same retained events
 
 Examples
 --------
@@ -65,6 +66,7 @@ from neurospatial.events._core import (
     PopulationPeriEventResult,
     plot_peri_event_histogram,
 )
+from neurospatial.events._plotting import plot_peri_event_response
 from neurospatial.events.alignment import (
     align_events,
     align_spikes_to_events,
@@ -110,4 +112,5 @@ __all__ = [
     "population_peri_event_histogram",
     # Visualization
     "plot_peri_event_histogram",
+    "plot_peri_event_response",
 ]

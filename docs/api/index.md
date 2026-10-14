@@ -176,6 +176,8 @@ Peri-event spike alignment and GLM regressors.
 **Key Functions:**
 
 - `peri_event_histogram()`: PSTH around discrete events
+- `plot_peri_event_response()`: Matching raster and PSTH using the same retained
+  events and half-open histogram bins
 - `align_spikes_to_events()`: Per-trial spike rasters
 - `time_to_nearest_event()`, `distance_to_reward()`: GLM regressors
 

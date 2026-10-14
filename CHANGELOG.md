@@ -8,6 +8,9 @@
   `DecodingResult.plot(true_times=..., true_positions=..., max_gap=...)`.
   Ground-truth alignment is shared with `error_against`, preserving tracking
   gaps and missing observations without manual coordinate conversions.
+- Add `plot_peri_event_response` for a matching raster and PSTH. Both panels
+  reuse the result's original event cohort and complete half-open bins,
+  including exact boundary handling on the absolute recording clock.
 
 - Peri-event results expose read-only `event_indices` identifying retained
   events in the original input. Indexing a population preserves this cohort,

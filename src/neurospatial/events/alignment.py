@@ -11,7 +11,7 @@ This module provides functions for aligning neural data to events:
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -269,17 +269,13 @@ def _keep_observed_events(
     return event_times[keep], np.flatnonzero(keep)
 
 
-def _count_peri_event_bins(
-    spike_times: NDArray[np.float64],
+def _iter_peri_event_bin_edges(
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     bin_edges: NDArray[np.float64],
     bin_size: float,
-) -> NDArray[np.float64]:
-    """Count on the absolute clock without rounding spikes across boundaries."""
-    # Preserve the primitive's spike/event validation. Its relative-time output
-    # cannot be used for counting: subtraction can move an exact boundary spike.
-    align_spikes_to_events(spike_times, event_times, window)
+) -> Iterator[NDArray[np.float64]]:
+    """Yield the absolute bin edges shared by histogram counting and rasters."""
     windows = np.c_[event_times + window[0], event_times + window[1]]
     _time_bin_rounding(
         windows,
@@ -291,10 +287,26 @@ def _count_peri_event_bins(
             "(keep the relative window unchanged), or use a larger bin_size."
         ),
     )
+    for event, bounds in zip(event_times, windows, strict=True):
+        yield np.minimum(event + bin_edges, bounds[1])
+
+
+def _count_peri_event_bins(
+    spike_times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    bin_edges: NDArray[np.float64],
+    bin_size: float,
+) -> NDArray[np.float64]:
+    """Count on the absolute clock without rounding spikes across boundaries."""
+    # Preserve the primitive's spike/event validation. Its relative-time output
+    # cannot be used for counting: subtraction can move an exact boundary spike.
+    align_spikes_to_events(spike_times, event_times, window)
     spikes = np.sort(np.asarray(spike_times, dtype=np.float64))
     histograms = np.zeros((event_times.size, bin_edges.size - 1), dtype=np.float64)
-    for i, event in enumerate(event_times):
-        edges = np.minimum(event + bin_edges, windows[i, 1])
+    for i, edges in enumerate(
+        _iter_peri_event_bin_edges(event_times, window, bin_edges, bin_size)
+    ):
         start = np.searchsorted(spikes, edges[0], side="left")
         stop = np.searchsorted(spikes, edges[-1], side="left")
         histograms[i] = count_spikes_in_time_bins(

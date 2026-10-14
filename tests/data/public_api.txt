@@ -237,6 +237,7 @@ neurospatial.events.filter_by_intervals(events, intervals, *, include=True, time
 neurospatial.events.intervals_to_events(intervals, which='start', *, start_column='start_time', stop_column='stop_time', preserve_columns=None)
 neurospatial.events.peri_event_histogram(spike_times, event_times, window, *, bin_size=0.025, epochs=None, spike_window=None)
 neurospatial.events.plot_peri_event_histogram(result, *, ax=None, show_sem=True, color='C0', as_rate=True, title=None, xlabel='Time from event (s)', ylabel=None)
+neurospatial.events.plot_peri_event_response(spike_times, event_times, result, *, axes=None, show_sem=True, as_rate=True, color='C0', raster_color='black')
 neurospatial.events.population_peri_event_histogram(spike_times, event_times, window, *, bin_size=0.025, epochs=None, spike_window=None, unit_ids=None)
 neurospatial.events.time_to_nearest_event(sample_times, event_times, *, signed=True, max_time=None)
 neurospatial.io (module)

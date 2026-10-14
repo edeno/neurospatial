@@ -35,7 +35,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial.events import (
-    align_spikes_to_events,
     population_peri_event_histogram,
     time_to_nearest_event,
 )
@@ -114,12 +113,7 @@ population = population_peri_event_histogram(
 result = population.sel(unit_id=7)
 retained_events = event_times[result.event_indices]
 retained_names = event_names[result.event_indices]
-# The low-level aligner includes the stop edge; match the PSTH's half-open bins.
-aligned = [
-    train[train < window[1]]
-    for train in align_spikes_to_events(spike_trains[0], retained_events, window=window)
-]
-assert len(aligned) == result.n_events
+assert retained_events.size == result.n_events
 np.testing.assert_array_equal(result.event_indices, population.event_indices)
 assert result.n_events + result.n_events_dropped == event_times.size
 print(
@@ -151,10 +145,11 @@ plt.show()
 #
 # Each row below represents one retained cue, ordered as in the input event
 # array. The histogram is the mean spike count per bin across those same cues.
-# `firing_rate` divides by bin width; `sem` is in count units and also needs
-# division by bin width when displayed in Hz.
-# The raster above explicitly removes the aligner's inclusive stop edge, so
-# both views count spikes on the same half-open `[-0.5, 1.0)` s window.
+# `plot_peri_event_response` uses the result's retained event indices and actual
+# half-open histogram bin range for both views. Pass the original event array,
+# including excluded cues, and the spike train belonging to the selected unit.
+# The helper displays the mean and SEM in Hz. With a window that is not divisible
+# by `bin_size`, both panels omit the trailing partial bin.
 #
 # The shaded SEM describes variability across retained events under an
 # independence assumption. It is not a confidence band for a cell-type claim.
@@ -162,31 +157,12 @@ plt.show()
 # design. With a single retained event, the SEM is undefined (NaN).
 
 # %%
-fig, (raster_ax, rate_ax) = plt.subplots(
-    2,
-    1,
-    figsize=(10, 7),
-    sharex=True,
-    gridspec_kw={"height_ratios": [2, 1]},
-    constrained_layout=True,
-)
-raster_ax.eventplot(aligned, colors="black", linelengths=0.8, linewidths=0.8)
-raster_ax.set_ylabel("Retained event row")
+from neurospatial.events import plot_peri_event_response
+
+raster_ax, rate_ax = plot_peri_event_response(spike_trains[0], event_times, result)
+fig = raster_ax.figure
 raster_ax.set_title(f"Unit {result.unit_id}: {result.n_events} fully observed cues")
-rate_ax.plot(result.bin_centers, result.firing_rate, color="tab:blue")
-sem_hz = result.sem / bin_size
-if np.any(np.isfinite(sem_hz)):
-    rate_ax.fill_between(
-        result.bin_centers,
-        result.firing_rate - sem_hz,
-        result.firing_rate + sem_hz,
-        color="tab:blue",
-        alpha=0.25,
-    )
-for ax in (raster_ax, rate_ax):
-    ax.axvline(0.0, color="tab:red", linestyle="--")
-    ax.set_xlim(window)
-rate_ax.set(xlabel="Time relative to cue (s)", ylabel="Firing rate (Hz)")
+rate_ax.set_xlabel("Time relative to cue (s)")
 plt.show()
 
 # %% [markdown]

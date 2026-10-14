@@ -8,10 +8,7 @@ import pytest
 from matplotlib.transforms import Affine2D as MplAffine2D
 
 from neurospatial import Environment
-from neurospatial.events import (
-    align_spikes_to_events,
-    population_peri_event_histogram,
-)
+from neurospatial.events import population_peri_event_histogram
 from neurospatial.ops.transforms import Affine2D
 
 jupytext = pytest.importorskip("jupytext")
@@ -42,6 +39,7 @@ def test_event_raster_and_histogram_count_the_same_half_open_windows(version):
     spikes = np.array([0.5, 1.0, 2.0, 3.5, 4.0, 7.5, 8.0, 9.0])
     namespace = {
         "np": np,
+        "plt": plt,
         "event_times": events,
         "event_names": np.array([f"cue_{i}" for i in range(len(events))]),
         "spike_trains": [spikes, spikes.copy()],
@@ -49,21 +47,30 @@ def test_event_raster_and_histogram_count_the_same_half_open_windows(version):
         "epochs": np.array([[0.0, 10.0]]),
         "spike_window": np.array([[0.0, 5.0], [7.0, 10.0]]),
         "population_peri_event_histogram": population_peri_event_histogram,
-        "align_spikes_to_events": align_spikes_to_events,
     }
     source = _cell(
         "07_peri_event_analysis",
         version,
         "population = population_peri_event_histogram(",
     )
-    exec(compile(source, "peri_event_cohort_cell", "exec"), namespace)
-    result, aligned = namespace["result"], namespace["aligned"]
-    np.testing.assert_array_equal(result.event_indices, [1, 2, 3])
-    assert [len(train) for train in aligned] == [2, 2, 2]
-    assert all(np.all((train >= -0.5) & (train < 1.0)) for train in aligned)
-    assert result.histogram.sum() == pytest.approx(
-        sum(map(len, aligned)) / result.n_events
-    )
+    try:
+        exec(compile(source, "peri_event_cohort_cell", "exec"), namespace)
+        plot_source = _cell(
+            "07_peri_event_analysis", version, "plot_peri_event_response("
+        )
+        exec(compile(plot_source, "peri_event_plot_cell", "exec"), namespace)
+        result = namespace["result"]
+        np.testing.assert_array_equal(result.event_indices, [1, 2, 3])
+        rows = namespace["raster_ax"].collections
+        assert [len(row.get_segments()) for row in rows] == [2, 2, 2]
+        for row in rows:
+            x = np.array([segment[0, 0] for segment in row.get_segments()])
+            assert np.all((x >= -0.5) & (x < 1.0))
+        assert result.histogram.sum() == pytest.approx(
+            sum(len(row.get_segments()) for row in rows) / result.n_events
+        )
+    finally:
+        plt.close("all")
 
 
 @pytest.mark.parametrize("version", VERSIONS)
