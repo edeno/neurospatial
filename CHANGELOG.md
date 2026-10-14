@@ -172,6 +172,11 @@
 
 ### Fixed
 
+- Apply the full pixel-to-world affine transform to rendered video images,
+  preserving Y-axis flips, rotation, shear and translation. Export and widget
+  paths share the same mapping and keep axes/data limits in physical units.
+  Pixel-position regressions check both initial and updated frames.
+
 - Render supported overlays consistently in embedded and external-frame HTML,
   including regions without other overlays. Preserve global frame clocks and
   overlay histories across parallel workers, and redraw video overlays when

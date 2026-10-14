@@ -483,6 +483,56 @@ def _render_head_direction_overlay_matplotlib(
     )
 
 
+def _video_image_geometry(ax: Any, video_data: Any, frame: Any) -> dict[str, Any]:
+    """Map raw pixel centers with the complete calibration, including reflections."""
+    if video_data.transform_to_env is None:
+        return {"extent": list(video_data.env_bounds), "origin": "lower"}
+    from matplotlib.transforms import Affine2D as MplAffine2D
+
+    height, width = frame.shape[:2]
+    return {
+        # Raw video coordinates are (column, row), with the first pixel at (0, 0).
+        "extent": [-0.5, width - 0.5, height - 0.5, -0.5],
+        "origin": "upper",
+        "transform": MplAffine2D(video_data.transform_to_env.A) + ax.transData,
+    }
+
+
+def _imshow_video_frame(ax: Any, video_data: Any, frame: Any) -> Any:
+    """Draw calibrated pixels while keeping axes and data bounds in world units."""
+    geometry = _video_image_geometry(ax, video_data, frame)
+    had_data = ax.has_data()
+    old_data_limits = ax.dataLim.frozen()
+    x_limits, y_limits = ax.get_xlim(), ax.get_ylim()
+    auto_x, auto_y = ax.get_autoscalex_on(), ax.get_autoscaley_on()
+    artist = ax.imshow(
+        frame,
+        **geometry,
+        aspect="auto",
+        alpha=video_data.alpha,
+        zorder=-1 if video_data.z_order == "below" else 1,
+    )
+    if video_data.transform_to_env is not None:
+        left, right, bottom, top = geometry["extent"]
+        corners = video_data.transform_to_env(
+            np.array([[left, bottom], [right, bottom], [right, top], [left, top]])
+        )
+        # imshow initially registers its raw pixel extent, even with an affine
+        # artist transform. Replace that contribution with calibrated bounds.
+        if had_data:
+            ax.dataLim.set(old_data_limits)
+            ax.update_datalim(corners)
+        else:
+            ax.dataLim.set_points(np.array([corners.min(axis=0), corners.max(axis=0)]))
+        if not had_data and auto_x:
+            x_limits = (corners[:, 0].min(), corners[:, 0].max())
+        if not had_data and auto_y:
+            y_limits = (corners[:, 1].min(), corners[:, 1].max())
+        ax.set_xlim(x_limits, auto=auto_x)
+        ax.set_ylim(y_limits, auto=auto_y)
+    return artist
+
+
 def _render_video_background(
     ax: Any,
     video_data: Any,
@@ -525,35 +575,7 @@ def _render_video_background(
     if frame_rgb is None:
         return
 
-    # Calculate extent in environment coordinates
-    if video_data.transform_to_env is not None:
-        # Use transform to compute extent from video corners
-        h, w = frame_rgb.shape[:2]
-        corners_px = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float64)
-        corners_cm = video_data.transform_to_env(corners_px)
-        extent = [
-            corners_cm[:, 0].min(),
-            corners_cm[:, 0].max(),
-            corners_cm[:, 1].min(),
-            corners_cm[:, 1].max(),
-        ]
-    else:
-        # No transform - use env_bounds directly
-        xmin, xmax, ymin, ymax = video_data.env_bounds
-        extent = [xmin, xmax, ymin, ymax]
-
-    # Determine zorder based on z_order setting
-    zorder = -1 if video_data.z_order == "below" else 1
-
-    # Render video frame
-    ax.imshow(
-        frame_rgb,
-        extent=extent,
-        aspect="auto",
-        origin="lower",  # Use lower origin (Y-flip is in calibration transform)
-        alpha=video_data.alpha,
-        zorder=zorder,
-    )
+    _imshow_video_frame(ax, video_data, frame_rgb)
 
 
 class VideoFrameRenderer:
@@ -578,11 +600,12 @@ class VideoFrameRenderer:
         Video overlay data.
     _artist : AxesImage | None
         The matplotlib imshow artist, created on first render.
-    _extent : list[float]
-        Pre-computed extent for the video.
 
     Notes
     -----
+    Calibration is applied to raw pixel centers using the complete affine
+    matrix; a bounding box alone would discard reflections, rotation and shear.
+
     For parallel rendering (n_workers > 1), use _render_video_background()
     instead as each worker needs fresh artists.
     """
@@ -596,32 +619,6 @@ class VideoFrameRenderer:
         """
         self.video_data = video_data
         self._artist: Any | None = None
-        self._extent = self._compute_extent(video_data)
-
-    def _compute_extent(self, video_data: Any) -> list[float]:
-        """Compute extent once (assumes constant frame size)."""
-        if video_data.transform_to_env is not None:
-            # Need a sample frame to get dimensions
-            # Try to get first valid frame
-            for i, idx in enumerate(video_data.frame_indices):
-                if idx >= 0:
-                    frame = video_data.get_frame(i)
-                    if frame is not None:
-                        h, w = frame.shape[:2]
-                        corners_px = np.array(
-                            [[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float64
-                        )
-                        corners_cm = video_data.transform_to_env(corners_px)
-                        return [
-                            corners_cm[:, 0].min(),
-                            corners_cm[:, 0].max(),
-                            corners_cm[:, 1].min(),
-                            corners_cm[:, 1].max(),
-                        ]
-            # Fallback to env_bounds if no valid frames
-            return list(video_data.env_bounds)
-        else:
-            return list(video_data.env_bounds)
 
     def render(self, ax: Any, frame_idx: int) -> None:
         """Render video frame, reusing artist if possible.
@@ -653,19 +650,8 @@ class VideoFrameRenderer:
                 self._artist.set_visible(False)
             return
 
-        # Determine zorder based on z_order setting
-        zorder = -1 if self.video_data.z_order == "below" else 1
-
         if self._artist is None:
-            # First frame: create artist
-            self._artist = ax.imshow(
-                frame_rgb,
-                extent=self._extent,
-                aspect="auto",
-                origin="lower",
-                alpha=self.video_data.alpha,
-                zorder=zorder,
-            )
+            self._artist = _imshow_video_frame(ax, self.video_data, frame_rgb)
         else:
             # Subsequent frames: reuse artist with set_data
             self._artist.set_data(frame_rgb)
