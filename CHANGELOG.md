@@ -141,6 +141,10 @@
 
 ### Fixed
 
+- The linear-track validation example records enough repeated traversals and
+  spikes for stable field recovery with continuous Poisson event times.
+  Documentation CI uses each job's declared Python version instead of running
+  both version labels with the repository's default interpreter.
 - Decoding validates the ordered geometry, units and coordinate frame carried
   by rate results, rejecting maps from another environment even when bin counts
   match. Partial missing-rate masks retain the position-dependent Poisson

@@ -244,10 +244,14 @@ def linear_track_session(
     >>> len(session.spike_times)
     3
 
-    Validate place field detection on 1D track:
+    Validate place field detection on a 1D track. Estimating each field's
+    center requires repeated visits and enough spikes. This example records
+    one minute with six traversals, approximately 20 cm/s on the 200 cm track:
 
     >>> from neurospatial.simulation import linear_track_session, validate_simulation
-    >>> session = linear_track_session(duration=5.0, n_place_cells=3, n_laps=2, seed=42)
+    >>> session = linear_track_session(
+    ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
+    ... )
     >>> report = validate_simulation(session)
     >>> print(f"Validation: {report['passed']}")
     Validation: True
