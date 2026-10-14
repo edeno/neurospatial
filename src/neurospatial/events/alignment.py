@@ -242,8 +242,8 @@ def _keep_observed_events(
     window: tuple[float, float],
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
-) -> tuple[NDArray[np.float64], int]:
-    """Keep events with windows contained in epochs and spike_window.
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Keep events with observed windows and return their original input indices.
 
     Non-finite events are kept so align_spikes_to_events still raises on them.
     """
@@ -266,7 +266,7 @@ def _keep_observed_events(
             f"if no spikes occurred there.\nFix: check that event_times, epochs "
             f"and spike_window share one clock (seconds), or narrow `window`."
         )
-    return event_times[keep], n_dropped
+    return event_times[keep], np.flatnonzero(keep)
 
 
 def _count_peri_event_bins(
@@ -352,6 +352,8 @@ def peri_event_histogram(
         - sem: Standard error of the mean across events
         - n_events: Number of retained events
         - n_events_dropped: Events whose windows leave the recording
+        - event_indices: Positions of retained events in the original input;
+          use ``event_times[result.event_indices]`` for a matching raster cohort
         - window: The input window
         - bin_size: The input bin_size
 
@@ -420,9 +422,11 @@ def peri_event_histogram(
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    event_times, n_dropped = _keep_observed_events(
+    n_input_events = event_times.size
+    event_times, event_indices = _keep_observed_events(
         event_times, window, resolved_epochs, resolved_spike_window
     )
+    n_dropped = int(n_input_events - event_indices.size)
     n_events = len(event_times)
 
     # Warn about single event
@@ -459,6 +463,7 @@ def peri_event_histogram(
         window=window,
         bin_size=bin_size,
         n_events_dropped=n_dropped,
+        event_indices=event_indices,
     )
 
 
@@ -520,6 +525,8 @@ def population_peri_event_histogram(
         - mean_histogram: Population average, shape (n_bins,)
         - n_events: Number of retained events
         - n_events_dropped: Events whose windows leave the recording
+        - event_indices: Positions of retained events in the original input;
+          use ``event_times[result.event_indices]`` for a matching raster cohort
         - n_units: Number of units
         - window: The input window
         - bin_size: The input bin_size
@@ -601,9 +608,11 @@ def population_peri_event_histogram(
         )
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    event_times, n_dropped = _keep_observed_events(
+    n_input_events = event_times.size
+    event_times, event_indices = _keep_observed_events(
         event_times, window, resolved_epochs, resolved_spike_window
     )
+    n_dropped = int(n_input_events - event_indices.size)
     n_units = len(trains)
     n_events = len(event_times)
 
@@ -663,6 +672,7 @@ def population_peri_event_histogram(
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
         n_events_dropped=n_dropped,
+        event_indices=event_indices,
     )
 
 

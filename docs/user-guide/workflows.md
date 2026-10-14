@@ -872,10 +872,11 @@ needed.
 
 ## Workflow 7: One Event Cohort Across a Gapped Recording
 
-Choose events whose entire peri-event window fits both the spike recording and
-the analysis epochs. Keep the original identifiers and selection mask in a
-table, then reuse the selected timestamps for every view of those events. A
-PSTH can otherwise retain fewer events than a raster or positioned-event table.
+A PSTH keeps events whose entire peri-event window fits both the spike
+recording and the analysis epochs. Its ``event_indices`` identifies retained
+rows in your original event input. Use those rows for the raster, positioned
+events and regressors so every view describes the same cohort. Manually
+constructed results use ``event_indices=None`` when provenance is unavailable.
 
 <!-- docs-test: run -->
 ```python
@@ -897,24 +898,15 @@ events = pd.DataFrame({
 spike_window = np.array([[0.0, 10.0], [20.0, 30.0]])
 epochs = np.array([[1.0, 9.0], [21.0, 29.0]])
 window = (-1.0, 1.0)
-starts = events["timestamp"].to_numpy() + window[0]
-stops = events["timestamp"].to_numpy() + window[1]
-
-fits_recording = (
-    (starts[:, None] >= spike_window[:, 0])
-    & (stops[:, None] <= spike_window[:, 1])
-).any(axis=1)
-fits_analysis = (
-    (starts[:, None] >= epochs[:, 0]) & (stops[:, None] <= epochs[:, 1])
-).any(axis=1)
-events["retained"] = fits_recording & fits_analysis
-selected = events.loc[events["retained"]].copy()
-event_times = selected["timestamp"].to_numpy()
-
 psth = peri_event_histogram(
-    spike_times, event_times, window=window, bin_size=0.2,
+    spike_times, events["timestamp"].to_numpy(), window=window, bin_size=0.2,
     epochs=epochs, spike_window=spike_window,
 )
+selected = events.iloc[psth.event_indices].copy()
+events["retained"] = False
+events.loc[selected.index, "retained"] = True
+event_times = selected["timestamp"].to_numpy()
+
 aligned = align_spikes_to_events(spike_times, event_times, window=window)
 fig, ax = plt.subplots()
 ax.eventplot(aligned, lineoffsets=np.arange(len(event_times)))

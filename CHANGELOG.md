@@ -4,6 +4,11 @@
 
 ### Added
 
+- Peri-event results expose read-only `event_indices` identifying retained
+  events in the original input. Indexing a population preserves this cohort,
+  so rasters, PSTHs and event tables can share exposure filtering without
+  duplicating it. Hand-built results use `None` for unavailable provenance.
+
 - Check the complete notebook collection in CI, including paired source and
   documentation parity, local links and an acyclic prerequisite graph. Generate
   one shared catalog from notebook metadata for the repository and docs site.

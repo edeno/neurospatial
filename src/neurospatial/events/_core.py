@@ -27,6 +27,27 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
+def _validate_event_indices(
+    event_indices: NDArray[np.intp] | None, n_events: int, n_events_dropped: int
+) -> None:
+    """Validate optional cohort provenance without retaining raw event times."""
+    if event_indices is None:
+        return
+    indices = np.asarray(event_indices)
+    if (
+        indices.shape != (n_events,)
+        or indices.dtype.kind not in "iu"
+        or np.any(indices < 0)
+        or np.any(indices >= n_events + n_events_dropped)
+        or np.any(np.diff(indices.astype(np.intp)) <= 0)
+    ):
+        raise ValueError(
+            "event_indices must contain one increasing original input position per "
+            "retained event, within n_events + n_events_dropped. "
+            "Use None when the original event cohort is unknown."
+        )
+
+
 # --- Result Dataclasses ---
 
 
@@ -53,6 +74,12 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         Number of events used in analysis.
     n_events_dropped : int
         Number of events excluded because their windows leave the recording.
+    event_indices : NDArray[np.intp], shape (n_events,), or None
+        Original input positions of retained events, in input order. Use
+        ``event_times[result.event_indices]`` to align a raster to the same
+        cohort as this histogram. Read-only; None for manually constructed
+        results whose original event cohort is unknown. Raw event times are
+        not retained.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -93,9 +120,13 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
     bin_size: float
     unit_id: int | str | None = None
     n_events_dropped: int = 0
+    event_indices: NDArray[np.intp] | None = field(default=None, compare=False)
     firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
+        _validate_event_indices(
+            self.event_indices, self.n_events, self.n_events_dropped
+        )
         # Frozen dataclass: bypass setattr to populate the cached field.
         object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
         self._own_arrays()
@@ -244,6 +275,12 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         Number of units in population.
     n_events_dropped : int
         Number of events excluded because their windows leave the recording.
+    event_indices : NDArray[np.intp], shape (n_events,), or None
+        Original input positions of retained events, in input order. Use
+        ``event_times[result.event_indices]`` to align a raster to the same
+        cohort as this histogram. Read-only; None for manually constructed
+        results whose original event cohort is unknown. Raw event times are
+        not retained.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -297,10 +334,14 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     n_events_dropped: int = field(default=0, compare=False)
+    event_indices: NDArray[np.intp] | None = field(default=None, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
+        _validate_event_indices(
+            self.event_indices, self.n_events, self.n_events_dropped
+        )
         from neurospatial._results import align_unit_table, resolve_unit_ids
 
         # Frozen dataclass: bypass setattr to populate the cached fields.
@@ -387,6 +428,7 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
             bin_size=self.bin_size,
             unit_id=unit_id,
             n_events_dropped=self.n_events_dropped,
+            event_indices=self.event_indices,
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -597,6 +639,7 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
             window=self.window,
             bin_size=self.bin_size,
             n_events_dropped=self.n_events_dropped,
+            event_indices=self.event_indices,
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 
