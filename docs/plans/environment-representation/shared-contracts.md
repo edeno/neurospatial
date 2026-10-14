@@ -347,6 +347,11 @@ Track binnings (`measure_dim < n_dims`) accept translation and similarity only.
 Any other class raises `ValueError`, because the new bin lengths would depend on
 each bin's direction.
 
+Triangle drawing vertices are retained under every invertible affine map.
+This is independent of finite-volume face validity: a sheared or unequally
+scaled mesh still refuses smoothing when its faces lose the required right
+angles. Regular hexagon shapes remain limited to proper similarities.
+
 The normalized Gram check allows floating-point off-diagonal roundoff in a
 rotation. A zero absolute tolerance would reject ordinary rotations despite
 their unit diagonal. Normalization keeps the bound relative to scale, so a tiny

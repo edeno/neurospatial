@@ -154,6 +154,8 @@ finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
 Other affine maps retain inverse lookup and cell measures, with a `MissingFaces`
 reason where right angles are lost; tracks refuse non-similarities. New
 derivations follow these rules and never rebuild through a factory.
+Triangle drawing vertices are retained under all invertible affine maps,
+independently of whether finite-volume faces remain valid for smoothing.
 Custom layout lookup and track conversions retain their delegated in-memory
 behavior through private adapters; saving them still requires a supported codec.
 

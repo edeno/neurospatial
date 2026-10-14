@@ -247,3 +247,25 @@ entry agrees with absolute tolerance 1e-12 and zero relative tolerance.
 The artifact directory retains the complete `baseline-derive-diff-inventory.json`
 and `baseline-derive-differences.txt`. New geometry/capability behavior beyond
 the baseline's flattened environment outputs is covered by the invariant tests.
+
+## Exact affine triangle drawing
+
+The user approved keeping triangle drawing shapes under every invertible affine
+map, including shear and unequal scaling. This resolves the earlier scope
+conflict in favor of mapping the stored vertices. Regular hexagon restrictions
+and finite-volume face validity are unchanged: retained polygons do not make
+smoothing valid when the required right angles are lost.
+
+Four new non-similarity cases first failed because triangle shapes were dropped;
+reflection cases already passed. The final regression slice passes 529 tests
+with numerical RuntimeWarnings treated as errors. It covers exact mapped
+vertices and topology, nested subsets, file/dict/NWB round trips, polygon
+renderers, and rejection of corrupted saved vertices or triangle ordering.
+Ruff and full-source/typing mypy pass. Independent review approved after 70
+focused tests and three additional oblique affine probes, including reflection.
+
+The fresh capture `baseline-after-affine-triangles.npz` contains all 4,046 probes.
+Compared with `baseline-after-derive.npz`, only the approved
+`api/Environment.apply_transform` docstring differs; its signature and all
+scientific probe values remain unchanged. The retained triangle drawing
+behavior is checked by the dedicated artist and geometry regressions.

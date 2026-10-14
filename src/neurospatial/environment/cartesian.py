@@ -1121,7 +1121,9 @@ class CartesianCoordinates:
         preserve bin identity through inverse lookup and drop rectilinear
         interpolation. General affine maps keep containment and scale cell
         measures; smoothing refuses when the map loses the right angles needed
-        by finite-volume faces. Tracks accept translation and similarity only.
+        by finite-volume faces. Triangle plots retain their exact mapped vertices
+        under every invertible affine map. Tracks accept translation and
+        similarity only.
 
         Parameters
         ----------

@@ -117,8 +117,10 @@ reason. This fixes four problems:
   stage A. `subset` selects whole bins only.
 - **Exact faces under general affine maps**, which need face normals and
   Nanson's formula, are roadmap stage E. Here those faces are `MissingFaces`.
-- **Shapes under non-similarity transforms.** They're dropped, and `plot` uses
-  the center-scatter fallback. Making them exact is roadmap stage E.
+- **Regular hexagon shapes under non-similarity transforms.** They're dropped,
+  and `plot` uses the center-scatter fallback. Triangle vertices transform
+  exactly under every invertible affine map and are retained for drawing;
+  this does not supply the missing finite-volume faces needed for smoothing.
 - **Units changes from calibration transforms** (pixels to cm) belong to the
   coordinate-system work in roadmap stage B. Units are copied unchanged, as
   today.

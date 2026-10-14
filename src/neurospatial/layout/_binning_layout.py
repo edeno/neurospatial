@@ -505,8 +505,6 @@ def _locator_geometry(
         geometry.orientation_error += (
             4 * (rounding + normalized_error) * (1 + abs(geometry.orientation))
         )
-    elif geometry.triangles is not None:
-        geometry.shapes_supported &= bool(similarity)
     geometry.computed = True
     return geometry
 

@@ -16,6 +16,7 @@ from neurospatial.io import from_dict, to_dict
 from neurospatial.layout._binning import MissingFaces
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._codecs import encode
+from neurospatial.layout._components import TriangleShapes
 from neurospatial.ops.transforms import Affine2D
 
 _CARTESIAN_CASES = [
@@ -487,6 +488,80 @@ def test_wrapped_geometry_corruption_is_rejected(
         corrupted_environment_round_trip(corrupt, environment=child)
 
 
+@pytest.mark.parametrize("built_environment", ["mesh", "mesh_boundary"], indirect=True)
+@pytest.mark.parametrize("derivation", ["shear", "axis_scaling", "reflection"])
+def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
+    built_environment, derivation, round_trip_environment, forbid_layout_builds
+):
+    parent = built_environment
+    mapped = _derive_environment(parent, derivation)
+    assert isinstance(mapped._binning.shapes, TriangleShapes)
+    keep = _keep_bins(mapped)
+    offset = _affine(offset=(-0.5, 1.5))
+    child = mapped.subset(bins=keep).apply_transform(offset)
+    second_keep = _keep_bins(child)
+    child = child.subset(bins=second_keep)
+    expected_points = offset(mapped._binning.shapes.points)
+    expected_triangles = parent._binning.shapes.triangles[keep][second_keep]
+    loaded = round_trip_environment(child)
+
+    for current in (child, loaded):
+        shapes = current._binning.shapes
+        assert isinstance(shapes, TriangleShapes)
+        np.testing.assert_array_equal(shapes.points, expected_points)
+        np.testing.assert_array_equal(shapes.triangles, expected_triangles)
+        assert not shapes.points.flags.writeable
+        assert not shapes.triangles.flags.writeable
+        np.testing.assert_array_equal(
+            current.bin_at(child.bin_centers), np.arange(child.n_bins)
+        )
+        field = np.arange(current.n_bins, dtype=float)
+        for operation, renderer in (
+            ("plot", "PatchCollection"),
+            ("plot_field", "PolyCollection"),
+        ):
+            figure, axes = plt.subplots()
+            try:
+                if operation == "plot":
+                    current.plot(ax=axes)
+                else:
+                    current.plot_field(field, ax=axes, colorbar=False)
+                figure.canvas.draw()
+                assert type(axes.collections[0]).__name__ == renderer
+                assert len(axes.collections[0].get_paths()) == current.n_bins
+            finally:
+                plt.close(figure)
+        if derivation == "reflection":
+            assert current._binning.faces.available
+            np.testing.assert_array_equal(
+                current.smooth(field, 2.0), child.smooth(field, 2.0)
+            )
+        else:
+            assert not current._binning.faces.available
+            with pytest.raises(NotImplementedError, match="right angle"):
+                current.smooth(field, 2.0)
+
+
+@pytest.mark.parametrize("built_environment", ["mesh", "mesh_boundary"], indirect=True)
+@pytest.mark.parametrize("corruption", ["points", "triangles"])
+def test_retained_affine_triangle_corruption_is_rejected(
+    built_environment, corruption, corrupted_environment_round_trip
+):
+    child = _derive_environment(built_environment, "shear")
+    child = child.subset(bins=_keep_bins(child))
+    assert isinstance(child._binning.shapes, TriangleShapes)
+
+    def corrupt(metadata, arrays):
+        if corruption == "points":
+            arrays["binning/shapes/points"][0, 0] += 0.125
+        else:
+            triangles = arrays["binning/shapes/triangles"]
+            triangles[[0, 1]] = triangles[[1, 0]]
+
+    with pytest.raises(ValueError, match=rf"shapes\.{corruption}"):
+        corrupted_environment_round_trip(corrupt, environment=child)
+
+
 @pytest.mark.parametrize(
     "built_environment,derivation,renderer",
     [
@@ -503,8 +578,8 @@ def test_wrapped_geometry_corruption_is_rejected(
         ("mesh", "rotation", "PolyCollection"),
         ("mesh", "uniform_scaling", "PolyCollection"),
         ("mesh", "reflection", "PolyCollection"),
-        ("mesh", "axis_scaling", "PathCollection"),
-        ("mesh", "shear", "PathCollection"),
+        ("mesh", "axis_scaling", "PolyCollection"),
+        ("mesh", "shear", "PolyCollection"),
         ("track", "translation", "FillBetweenPolyCollection"),
     ],
     indirect=["built_environment"],

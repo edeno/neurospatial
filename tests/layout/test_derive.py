@@ -9,6 +9,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.layout._binning import KnownFaces, MissingFaces
+from neurospatial.layout._components import TriangleShapes
 from neurospatial.layout._derive import subset_binning, transform_binning
 from neurospatial.layout._locators import (
     RectilinearLocator,
@@ -16,6 +17,39 @@ from neurospatial.layout._locators import (
     TransformedLocator,
 )
 from neurospatial.ops.transforms import AffineND
+
+
+@pytest.mark.parametrize("built_environment", ["mesh", "mesh_boundary"], indirect=True)
+@pytest.mark.parametrize(
+    "linear",
+    [
+        np.array([[1.0, 0.25], [0.0, 1.0]]),
+        np.diag([2.0, 0.5]),
+        np.diag([-1.0, 1.0]),
+    ],
+    ids=["shear", "unequal-scaling", "reflection"],
+)
+def test_affine_triangle_shapes_keep_exact_vertices_and_connectivity(
+    built_environment, linear
+):
+    parent = built_environment._binning
+    matrix = np.eye(3)
+    matrix[:2, :2] = linear
+    matrix[:2, 2] = (1.25, -2.5)
+    transform = AffineND(matrix)
+    original_points = parent.shapes.points.copy()
+    original_triangles = parent.shapes.triangles.copy()
+
+    child = transform_binning(parent, transform)
+
+    assert isinstance(child.shapes, TriangleShapes)
+    np.testing.assert_array_equal(child.shapes.points, transform(original_points))
+    np.testing.assert_array_equal(child.shapes.triangles, original_triangles)
+    np.testing.assert_array_equal(parent.shapes.points, original_points)
+    np.testing.assert_array_equal(parent.shapes.triangles, original_triangles)
+    assert not child.shapes.points.flags.writeable
+    assert not child.shapes.triangles.flags.writeable
+    assert not np.shares_memory(child.shapes.points, parent.shapes.points)
 
 
 def test_subset_binning_restricts_arrays_and_pair_order(built_environment):

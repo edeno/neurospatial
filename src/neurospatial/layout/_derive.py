@@ -465,11 +465,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             else None
         )
     elif isinstance(shapes, TriangleShapes):
-        shapes = (
-            TriangleShapes(_mapped(shapes.points, matrix), shapes.triangles)
-            if similarity
-            else None
-        )
+        shapes = TriangleShapes(_mapped(shapes.points, matrix), shapes.triangles)
     outline = binning.outline
     if outline is not None:
         if parent.n_dims != 2:

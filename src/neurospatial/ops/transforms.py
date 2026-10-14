@@ -1373,7 +1373,8 @@ def apply_transform_to_environment(
         similarity transform. Finite-volume geometry is retained for
         similarities and axis-aligned grid scaling. General affine maps retain
         lookup but refuse smoothing when right angles between faces and center
-        links are lost.
+        links are lost. Triangle drawing vertices are retained under every
+        invertible affine map.
 
     Raises
     ------

@@ -283,7 +283,7 @@ The transform is `x ↦ A x + t`. `m` is `measure_dim`, `n` is `n_dims`, and
 | faces `volumes` | same | `× s**m` | `× abs(det A)` | — |
 | rectilinear | edges `+ t_k` | kept only if `A` is diagonal with **all entries positive**: edges `a_k e + t_k`, same order, same mask | kept only if every `a_k > 0`: same rule | dropped |
 | locator | `RectilinearLocator` with shifted edges, or `TransformedLocator` | exact when the rectilinear grid is kept, `TransformedLocator` otherwise | same | `TransformedLocator` |
-| shapes | shifted | hexagons only for a proper similarity (`det A > 0`): `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; hexagons dropped for reflections; triangles: points mapped | dropped | dropped |
+| shapes | shifted | hexagons only for a proper similarity (`det A > 0`): `s × radius`, orientation plus `atan2(Q[1,0], Q[0,0])`; hexagons dropped for reflections; triangles: points mapped | hexagons dropped; triangles: points mapped | hexagons dropped; triangles: points mapped |
 | outline | `shapely.affinity.affine_transform` | same | same | same |
 | linearization | node positions mapped | node positions mapped; edge spacing `× s` | refused for tracks | refused for tracks |
 
@@ -318,9 +318,10 @@ transform class.
 `np.allclose((A/s) @ (A/s).T, np.eye(n), rtol=1e-12, atol=1e-12)` with
 `s = abs(det A) ** (1/n)`.
 The normalized absolute tolerance permits ordinary rotation roundoff in the
-off-diagonal entries without allowing small-magnitude anisotropy. Shape
-retention follows the explicit scope boundary: non-similarities use the
-center-scatter fallback, including triangles.
+off-diagonal entries without allowing small-magnitude anisotropy. Triangle
+vertices transform exactly under every invertible affine map and are retained
+for drawing. Regular hexagon shapes are dropped under non-similarities.
+Retaining drawing geometry does not restore missing finite-volume faces.
 
 **Regions** are transformed by the existing code (`ops/transforms.py:1622-1661`).
 Units are copied; frame keeps the existing `"_transformed"` suffix behavior.

@@ -225,6 +225,9 @@
 - Translations and similarities retain smoothing, differential operators and
   drawing components; positive diagonal grid scaling also keeps rectilinear
   interpolation and updates the grid edges.
+- Triangle plots retain exact mapped vertices under every invertible affine
+  transform, including shear and unequal scaling. Smoothing still refuses maps
+  that lose the required finite-volume face geometry.
 
 - NWB environment read-back retains geometric lookup, smoothing, boundaries,
   plotting and track linearization, with the original graph attributes.
