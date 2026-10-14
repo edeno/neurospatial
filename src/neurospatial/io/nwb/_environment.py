@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
+from neurospatial.layout._capabilities import RectilinearGridProvider
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
@@ -270,12 +271,12 @@ def write_environment(
     # Extract grid data for grid-based layouts (needed for proper point_to_bin_index)
     grid_data = _extract_grid_data(env)
 
-    # Graph / linearized-track layouts carry grid edges but no active mask, so
-    # _extract_grid_data skips them and the reader uses the KDTree fallback.
-    # Store their grid geometry in the metadata so the fallback restores it.
+    # Linearized tracks carry 1-D grid edges but have N-D bin coordinates, so
+    # the reader uses the KDTree fallback and retains their linear geometry.
+    # A transformed grid's source edges do not describe its current coordinates.
     fallback_grid_edges: list[list[float]] | None = None
     fallback_grid_shape: list[int] | None = None
-    if grid_data is None and env.grid_edges:
+    if grid_data is None and env.is_linearized_track and env.grid_edges:
         fallback_grid_edges = [
             np.asarray(edge, dtype=np.float64).tolist() for edge in env.grid_edges
         ]
@@ -452,15 +453,16 @@ def _extract_grid_data(env: Environment) -> dict[str, Any] | None:
     if is_linearized_track:
         return None
 
-    # Check if layout has grid_edges and active_mask (grid-based layouts)
-    grid_edges = getattr(env.layout, "grid_edges", None)
-    grid_shape = getattr(env.layout, "grid_shape", None)
-    active_mask = getattr(env.layout, "active_mask", None)
-
-    # Only extract grid data for layouts with non-empty grid_edges
-    # (Hexagonal and TriangularMesh have empty grid_edges tuple)
-    if grid_edges is None or grid_shape is None or active_mask is None:
+    # Transformed layouts may retain their source grid attributes for
+    # introspection, but those cells are in the original coordinate frame.
+    # Only the capability guarantees edges describe the current bin centers.
+    if not isinstance(env.layout, RectilinearGridProvider):
         return None
+    grid = env.layout.rectilinear_grid()
+    grid_edges = grid.edges
+    grid_shape = grid.shape
+    active_mask = grid.active_mask
+
     if len(grid_edges) == 0:
         return None  # Not a proper grid layout
 
@@ -554,12 +556,13 @@ def read_environment(
     the layout is fully reconstructed from stored grid_edges and active_mask,
     enabling proper point_to_bin_index functionality.
 
-    For layouts without a rectangular grid (Graph, Hexagonal, TriangularMesh),
-    a KDTree-based layout is used. This provides nearest-neighbor point mapping
+    For layouts without a rectangular grid (Graph, Hexagonal, TriangularMesh,
+    and affine-transformed grids), a KDTree-based layout is used. This provides
+    nearest-neighbor point mapping
     over the stored bin centers and connectivity, and restores the stored
     per-bin measures, edge vectors and (for graph tracks) 1-D grid edges. It
-    does not rebuild the original layout engine, so smoothing, binned rate
-    maps, ``ops.calculus.gradient``/``divergence`` and
+    does not rebuild the original layout engine or its exact cell containment,
+    so smoothing, binned rate maps, ``ops.calculus.gradient``/``divergence`` and
     ``ops.basis.heat_kernel_wavelet_basis`` are not available on it; rebuild
     the environment with its original factory for those. Files written before schema 1.1 have no
     stored measures; their bin sizes are estimated from bin spacing.

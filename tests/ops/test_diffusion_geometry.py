@@ -406,6 +406,52 @@ def test_polar_from_layout_requires_the_masked_grid():
 
 @pytest.mark.parametrize("circular", [False, True])
 @pytest.mark.parametrize("diagonal", [False, True])
+def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal):
+    """Half-annuli have one shared face on an open axis and two on a circle."""
+    env = Environment.from_polar_egocentric(
+        (1.0, 4.0),
+        (-np.pi, np.pi),
+        1.0,
+        np.pi,
+        circular_angle=circular,
+        connect_diagonal_neighbors=diagonal,
+    )
+    graph, _ = env.layout.finite_volume_geometry()
+    for ring in range(3):
+        assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
+    for u, v, data in graph.edges(data=True):
+        if (
+            env.bin_centers[u, 0] != env.bin_centers[v, 0]
+            and env.bin_centers[u, 1] != env.bin_centers[v, 1]
+        ):
+            assert data["A"] == 0
+
+
+@pytest.mark.parametrize("circular", [False, True])
+def test_two_polar_sectors_diffuse_at_the_physical_angular_rate(circular):
+    """Diffusion agrees with the analytical solution for the two-cell system."""
+    env = Environment.from_polar_egocentric(
+        (1.0, 2.0),
+        (-np.pi, np.pi),
+        1.0,
+        np.pi,
+        circular_angle=circular,
+        connect_diagonal_neighbors=False,
+    )
+    radius, radial_width, angular_width = 1.5, 1.0, np.pi
+    face_length = radial_width * (2 if circular else 1)
+    conductance = face_length / (radius * angular_width)
+    area = radius * radial_width * angular_width
+    bandwidth = 2.0
+    contrast = np.exp(-2 * conductance / area * bandwidth**2 / 2)
+    expected = 0.5 * np.array([1 + contrast, 1 - contrast])
+    np.testing.assert_allclose(
+        env.diffuse(np.array([1.0, 0.0]), bandwidth, mode="average"), expected
+    )
+
+
+@pytest.mark.parametrize("circular", [False, True])
+@pytest.mark.parametrize("diagonal", [False, True])
 def test_polar_layout_builds_physical_geometry(circular, diagonal):
     """Edges, lengths, faces and areas match closed-form annular-sector geometry."""
     from neurospatial.layout.engines._polar import _PolarGridLayout

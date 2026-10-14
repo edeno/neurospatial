@@ -4,7 +4,7 @@ Provides :class:`BayesianDecoder`, a thin **frozen** convenience layer over the
 existing functional decoders (:func:`~neurospatial.decoding.decode_session`,
 :func:`~neurospatial.decoding.decode_session_summary`). The wrapper does **not**
 re-implement decoding: ``fit`` reuses the same internal encoder
-(``decode_session``'s ``_build_encoding_model``) that ``decode_session`` runs
+(``decode_session``'s ``_fit_encoding_model``) that ``decode_session`` runs
 internally, and ``predict``/``predict_summary`` delegate straight to the
 functional core with the fitted encoding models. Reusing that internal encoder
 is what guarantees the encoding step is byte-identical to ``decode_session``'s
@@ -532,7 +532,7 @@ warn_on_drop
 
         Encodes the population's spatial rate maps using the same internal
         encoder :func:`~neurospatial.decoding.decode_session` runs
-        (``_build_encoding_model``), so the models are byte-identical to
+        (``_fit_encoding_model``), so the models are byte-identical to
         ``decode_session``'s internal encode step. Does **not** mutate ``self``:
         the original decoder stays unfitted and a new frozen decoder carrying the
         fitted ``encoding_models`` + ``unit_ids`` is returned.
@@ -590,6 +590,9 @@ warn_on_drop
         a short training epoch may cover little of the test trajectory. A fit
         with no supported bin raises an actionable ValueError.
 
+        Training runs may be shorter than ``dt``: fitting requires supported
+        position intervals, and decoding time bins are formed during prediction.
+
         When predicting with the fitted decoder, decode time bins are formed
         separately within each run of samples whose
         gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
@@ -604,7 +607,7 @@ warn_on_drop
         """
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._results import resolve_unit_ids
-        from neurospatial.decoding.session import _build_encoding_model
+        from neurospatial.decoding.session import _fit_encoding_model
         from neurospatial.encoding._spikes import as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
@@ -621,12 +624,11 @@ warn_on_drop
             epochs, spike_window
         )
 
-        built = _build_encoding_model(
+        _, firing_rates, rates_result = _fit_encoding_model(
             self.env,
             trains,
             times,
             positions,
-            dt=self.dt,
             bandwidth=self.bandwidth,
             method=self.method,
             min_occupancy=self.min_occupancy,
@@ -641,9 +643,6 @@ warn_on_drop
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
         )
-        firing_rates = built[1]
-        rates_result = built[4]
-
         return replace(
             self,
             _fit=_FittedState(

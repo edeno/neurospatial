@@ -332,19 +332,61 @@ class PhasePrecessionResult(ResultMixin):
         return self.interpretation()
 
 
+def _slope_grid(
+    positions: NDArray[np.float64], slope_bounds: tuple[float, float]
+) -> NDArray[np.float64]:
+    """Resolve the residual MRL's lobes at the supplied position scale."""
+    bounds = np.asarray(slope_bounds, dtype=np.float64)
+    if (
+        bounds.shape != (2,)
+        or not np.all(np.isfinite(bounds))
+        or bounds[0] >= bounds[1]
+    ):
+        raise ValueError("slope_bounds must contain two finite, increasing bounds.")
+    span = float(bounds[1] - bounds[0])
+    position_span = float(np.ptp(positions))
+    # The main lobe has half-width about pi / position_span. Resolve it with
+    # four samples per half-width for both fitting and the permutation test.
+    required_steps = 4 * span * position_span / np.pi
+    if not np.isfinite(required_steps) or required_steps > 19_999:
+        raise ValueError(
+            "Resolving slope_bounds over this position span requires more than "
+            "20,000 slope candidates. Narrow slope_bounds in radians per position "
+            "unit, or supply position_range and bounds in normalized position units."
+        )
+    n_grid = max(100, int(np.ceil(required_steps)) + 1)
+    return np.linspace(bounds[0], bounds[1], n_grid)
+
+
+def _max_residual_mrls(
+    phasors: NDArray[np.complex128],
+    positions: NDArray[np.float64],
+    grid_slopes: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Maximize MRL for columns of phase draws, with bounded temporary storage."""
+    maxima = np.zeros(phasors.shape[1], dtype=np.float64)
+    block_size = max(1, 1_000_000 // len(positions))
+    centered_positions = positions - positions.mean()
+    for start in range(0, len(grid_slopes), block_size):
+        slopes = grid_slopes[start : start + block_size]
+        basis = np.exp(-1j * slopes[:, None] * centered_positions)
+        values = np.abs(basis @ phasors) / len(positions)
+        maxima = np.maximum(maxima, values.max(axis=0))
+    return maxima
+
+
 def _best_residual_mrl(
     phases: NDArray[np.float64],
     positions: NDArray[np.float64],
     slope_bounds: tuple[float, float],
 ) -> float:
-    """Coarse-grid maximum of the residual mean resultant length over the slope.
+    """Data-adaptive grid maximum of residual mean resultant length.
 
-    Evaluates a fixed coarse slope grid and returns the largest mean resultant
+    Evaluates a position-scale-dependent grid and returns the largest mean resultant
     length (MRL) of the phase residuals. This is the statistic used for both
     the observed value and each shuffle in the permutation null, so the
-    comparison is unbiased. A fixed coarse grid (rather than the full adaptive
-    grid + Brent refinement of :func:`_fit_slope`) bounds the per-shuffle cost:
-    the null only needs a comparable statistic, not a precision slope.
+    comparison is unbiased. The grid resolves narrow peaks without requiring
+    Brent refinement for each shuffled slope.
 
     Parameters
     ----------
@@ -358,16 +400,16 @@ def _best_residual_mrl(
     Returns
     -------
     float
-        Maximum residual MRL over the coarse slope grid, in [0, 1].
+        Maximum residual MRL over the adaptive slope grid, in [0, 1].
     """
 
-    def _neg_mean_resultant_length(slope: float) -> float:
-        residuals = (phases - slope * positions) % (2 * np.pi)
-        return -_mean_resultant_length(residuals)
-
-    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], 100)
-    grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
-    return float(-grid_values.min())
+    return float(
+        _max_residual_mrls(
+            np.exp(1j * phases)[:, None],
+            positions,
+            _slope_grid(positions, slope_bounds),
+        )[0]
+    )
 
 
 def _fit_slope(
@@ -413,20 +455,8 @@ def _fit_slope(
     # Make the grid data-adaptive: sample finely enough that at least a few
     # points fall inside the main lobe regardless of position span, then
     # refine within the single grid cell bracketing the best grid point.
-    span = float(slope_bounds[1] - slope_bounds[0])
-    position_span = float(np.ptp(positions))
-    samples_per_lobe = 4
-    if position_span > 0:
-        lobe_half_width = np.pi / position_span
-        target_spacing = lobe_half_width / samples_per_lobe
-        n_grid = int(np.ceil(span / target_spacing)) + 1
-    else:
-        n_grid = 100
-    # Clamp to a sensible range: never coarser than the original 100-point
-    # grid, never so dense the O(n_grid) sweep dominates runtime.
-    n_grid = int(np.clip(n_grid, 100, 20000))
-
-    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], n_grid)
+    grid_slopes = _slope_grid(positions, slope_bounds)
+    n_grid = len(grid_slopes)
     grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
 
     # Bracket the best grid point by its immediate neighbors (one grid cell on
@@ -509,7 +539,8 @@ def compute_phase_precession(
     Raises
     ------
     ValueError
-        If insufficient spikes or invalid input.
+        If insufficient spikes or invalid input, or resolving the supplied
+        slope bounds at the position scale requires more than 20,000 grid points.
 
     See Also
     --------
@@ -532,11 +563,12 @@ def compute_phase_precession(
     smoothing is applied (Phipson & Smyth, 2010) so ``pval`` is never exactly
     zero.
 
-    **Performance.** The null re-fits the slope per shuffle. To bound latency,
-    the per-shuffle re-fit uses a fixed coarse slope grid (no Brent
-    refinement); the observed fit keeps the full data-adaptive grid + Brent
-    search. The cost scales with ``n_shuffles``; reduce it for faster
-    screening.
+    **Performance.** Observed and shuffled test statistics use the same
+    data-adaptive slope grid, with spacing determined by the position span.
+    The reported fit additionally uses Brent refinement. Shuffles are evaluated
+    in batches with bounded temporary storage; the cost scales with the slope
+    range, position span and ``n_shuffles``. Reduce the shuffle count or narrow
+    physically appropriate slope bounds for faster screening.
 
     ``correlation`` is the circular-linear correlation (Mardia & Jupp),
     reported as a descriptive, slope-independent effect size — it does not
@@ -597,24 +629,35 @@ def compute_phase_precession(
     # each shuffle, and compare the resulting MRL. This makes the p-value test
     # the SAME hypothesis the slope fit optimizes (a real position-dependent
     # phase relationship), instead of the slope-free circular-linear
-    # correlation that ignores the fitted slope entirely. A fixed coarse grid
-    # is used per shuffle (refine=False) to bound the per-shuffle cost.
+    # correlation that ignores the fitted slope entirely.
     #
-    # The observed statistic is computed with the SAME coarse procedure as the
+    # The observed statistic is computed with the SAME grid procedure as the
     # null (not the refined fit) so the comparison is unbiased: the refined
-    # `mean_resultant_length` would sit slightly above its coarse-grid null and
+    # `mean_resultant_length` would sit slightly above its grid null and
     # spuriously deflate the p-value. The refined MRL is still reported as the
     # fit-quality field.
-    observed_mrl = _best_residual_mrl(phases, positions, slope_bounds)
-
     rng = np.random.default_rng(rng)
     n_shuffles_eff = int(n_shuffles)
+    if n_shuffles_eff < 0:
+        raise ValueError("n_shuffles must be non-negative.")
+    grid_slopes = _slope_grid(positions, slope_bounds)
+    phasors = np.exp(1j * phases)
+    observed_mrl = _max_residual_mrls(phasors[:, None], positions, grid_slopes)[0]
     null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
-    for i in range(n_shuffles_eff):
-        shuffled_pos = rng.permutation(positions)
-        null_mrls[i] = _best_residual_mrl(phases, shuffled_pos, slope_bounds)
+    batch_size = max(1, min(64, 1_000_000 // len(positions)))
+    for start in range(0, n_shuffles_eff, batch_size):
+        stop = min(start + batch_size, n_shuffles_eff)
+        # Permuting phases instead of positions gives the same pairing null
+        # while reusing each block's position/slope basis across the batch.
+        draws = np.column_stack([rng.permutation(phasors) for _ in range(stop - start)])
+        null_mrls[start:stop] = _max_residual_mrls(draws, positions, grid_slopes)
     # +1 smoothing avoids p == 0 (Phipson & Smyth 2010).
-    pval = float((np.sum(null_mrls >= observed_mrl) + 1) / (n_shuffles_eff + 1))
+    # Count numerical ties too: BLAS may sum vector and batched products in a
+    # different order, but equivalent permutations must never become significant.
+    tied = np.isclose(null_mrls, observed_mrl, rtol=1e-12, atol=1e-12)
+    pval = float(
+        (np.sum((null_mrls >= observed_mrl) | tied) + 1) / (n_shuffles_eff + 1)
+    )
 
     # Report the circular-linear correlation alongside as a descriptive
     # effect size (slope-independent), NOT as the significance.

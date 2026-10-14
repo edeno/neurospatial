@@ -474,13 +474,12 @@ def _prepare_session_decode(
     return trains, firing_rates, bin_left, bin_right
 
 
-def _build_encoding_model(
+def _fit_encoding_model(
     env: Environment,
     spike_times: Any,
     times: ArrayLike,
     positions: NDArray[np.float64],
     *,
-    dt: float,
     bandwidth: float | None,
     method: str,
     min_occupancy: float | None,
@@ -497,18 +496,14 @@ def _build_encoding_model(
 ) -> tuple[
     list[NDArray[np.float64]],
     NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
     SpatialRatesResult,
 ]:
-    """Encode tracking data, then prepare the shared observed-run decode bins."""
+    """Fit supported rate maps independently of the prediction time bins."""
     from neurospatial._validation import validate_times_positions
-    from neurospatial.decoding._binning import validate_dt
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
-    dt = validate_dt(dt)
     dtype = _validate_session_dtype(dtype)
     trains, _ = as_spike_trains_with_ids(spike_times)
     # Mirror the encoder's method-specific validation (mutual exclusivity +
@@ -562,20 +557,8 @@ def _build_encoding_model(
         "NDArray[np.float64]",
         np.asarray(rates_result.firing_rates, dtype=dtype),
     )
-    prepared = _prepare_session_decode(
-        trains,
-        times_arr,
-        firing_rates,
-        dt=dt,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-        warn_on_drop=False,
-        dtype=dtype,
-        context=context,
-    )
-    # After the decode-bin check, whose error names epochs/max_gap precisely:
-    # time bins can exist while speed or occupancy gates leave no trained bin.
+    # Training requires observed spatial support, independent of whether a
+    # prediction bin of any particular width fits in the training intervals.
     occupancy = np.asarray(rates_result.occupancy)
     if not np.any((occupancy > 0) & (occupancy >= (min_occupancy or 0.0))):
         raise ValueError(
@@ -594,6 +577,71 @@ def _build_encoding_model(
                 ),
             )
         )
+    return trains, firing_rates, rates_result
+
+
+def _build_encoding_model(
+    env: Environment,
+    spike_times: Any,
+    times: ArrayLike,
+    positions: NDArray[np.float64],
+    *,
+    dt: float,
+    bandwidth: float | None,
+    method: str,
+    min_occupancy: float | None,
+    penalty: float | None = None,
+    rank: int | None = None,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    warn_on_drop: bool,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+    context: str = "decode_session",
+) -> tuple[
+    list[NDArray[np.float64]],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    SpatialRatesResult,
+]:
+    """Fit tracking data, then tile decode bins for a functional session."""
+    from neurospatial.decoding._binning import validate_dt
+
+    dt = validate_dt(dt)
+    trains, firing_rates, rates_result = _fit_encoding_model(
+        env,
+        spike_times,
+        times,
+        positions,
+        bandwidth=bandwidth,
+        method=method,
+        min_occupancy=min_occupancy,
+        penalty=penalty,
+        rank=rank,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+        dtype=dtype,
+        context=context,
+    )
+    prepared = _prepare_session_decode(
+        trains,
+        times,
+        firing_rates,
+        dt=dt,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=False,
+        dtype=dtype,
+        context=context,
+    )
     return (*prepared, rates_result)
 
 

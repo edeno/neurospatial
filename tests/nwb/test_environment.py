@@ -41,6 +41,7 @@ def test_polar_circularity_survives_nwb_round_trip(
     with pynwb.NWBHDF5IO(str(path), "r") as io:
         restored = read_environment(io.read())
     assert restored._angular_is_circular is circular
+    np.testing.assert_allclose(restored.compute_kernel(1.0), env.compute_kernel(1.0))
 
     # Old records cannot distinguish small open and circular axes; retain
     # their previous open-axis interpretation, and infer larger axes by edges.
@@ -50,6 +51,76 @@ def test_polar_circularity_survives_nwb_round_trip(
     table[COL_GRID_DATA].data[0] = json.dumps(grid_data)
     legacy = read_environment(empty_nwb)
     assert legacy._angular_is_circular is (circular if n_angle > 2 else False)
+
+
+@pytest.mark.parametrize("kind", ["translation", "rotation", "shear_and_scaling"])
+@pytest.mark.integration
+def test_transformed_grid_round_trips_nwb_without_source_grid_edges(
+    empty_nwb, tmp_path, kind
+):
+    """Aligned grids retain their coordinates and measures via non-grid reconstruction."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+    from neurospatial.layout._capabilities import RectilinearGridProvider
+    from neurospatial.ops.transforms import Affine2D
+
+    mask = np.ones((3, 3), dtype=bool)
+    mask[1, 1] = False
+    env = Environment.from_grid_mask(
+        mask,
+        grid_edges=(np.arange(4.0) * 2, np.arange(4.0)),
+        name="arena",
+    )
+    env.units = "cm"
+    env.frame = "recording"
+    matrices = {
+        "translation": [[1, 0, 10], [0, 1, 20], [0, 0, 1]],
+        "rotation": [[0, -1, 10], [1, 0, 20], [0, 0, 1]],
+        "shear_and_scaling": [[2, 1, 10], [0, 3, 20], [0, 0, 1]],
+    }
+    aligned = env.apply_transform(Affine2D(np.array(matrices[kind], dtype=float)))
+    write_environment(empty_nwb, aligned)
+    path = tmp_path / "aligned.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        restored = read_environment(io.read())
+
+    np.testing.assert_array_equal(restored.bin_centers, aligned.bin_centers)
+    np.testing.assert_allclose(restored.bin_sizes, aligned.bin_sizes)
+    np.testing.assert_array_equal(restored.dimension_ranges, aligned.dimension_ranges)
+    np.testing.assert_array_equal(
+        restored.bin_at(aligned.bin_centers), np.arange(aligned.n_bins)
+    )
+    assert list(restored.connectivity.edges()) == list(aligned.connectivity.edges())
+    np.testing.assert_allclose(
+        [data["distance"] for _, _, data in restored.connectivity.edges(data=True)],
+        [data["distance"] for _, _, data in aligned.connectivity.edges(data=True)],
+    )
+    assert restored.units == aligned.units
+    assert restored.frame == aligned.frame
+    assert restored.name == aligned.name
+    assert not isinstance(restored.layout, RectilinearGridProvider)
+    assert restored.grid_edges is None
+
+
+@pytest.mark.parametrize("scale", [3.0, 1e-5], ids=["ordinary_scale", "small_scale"])
+def test_restored_track_transforms_keep_lengths_or_explain_missing_directions(
+    empty_nwb,
+    scale,
+):
+    """A track without its substrate still supports similarity length scaling."""
+    from neurospatial import Environment
+    from neurospatial.io.nwb import read_environment, write_environment
+    from neurospatial.ops.transforms import scale_2d
+
+    env = Environment.linear_track(endpoints=((0.0, 0.0), (10.0, 0.0)), bin_size=2.0)
+    write_environment(empty_nwb, env)
+    restored = read_environment(empty_nwb)
+    scaled = restored.apply_transform(scale_2d(scale))
+    np.testing.assert_allclose(scaled.bin_sizes, scale * env.bin_sizes)
+    with pytest.raises(ValueError, match="needs its segment directions"):
+        restored.apply_transform(scale_2d(scale, 2 * scale))
 
 
 @pytest.mark.integration

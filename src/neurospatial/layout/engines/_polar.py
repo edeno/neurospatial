@@ -103,9 +103,14 @@ class _PolarGridLayout(MaskedGridLayout):
         """
         graph, volumes = super().finite_volume_geometry()
         r = self.bin_centers[:, 0]
+        assert self.grid_shape is not None
         for u, v, data in graph.edges(data=True):
             if abs(r[u] - r[v]) > 1e-9:  # radial step (diagonals keep A = 0)
                 data["A"] *= 0.5 * (r[u] + r[v])
+            elif self.grid_shape[1] == 2 and self._build_params_used["circular_angle"]:
+                # Two half-annuli share both angular interfaces. The simple
+                # graph stores their node pair once, so sum both face measures.
+                data["A"] *= 2.0
         return graph, volumes
 
 

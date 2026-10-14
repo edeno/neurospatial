@@ -130,32 +130,60 @@ class TestGeneratePoissonSpikes:
     def test_per_bin_probability_uses_exponential_not_linear(self):
         """Per-bin spike probability must be 1 - exp(-rate*dt), not rate*dt.
 
-        With ``rate * dt`` near 1, the linear approximation ``rate * dt``
-        saturates at the clip ceiling 1.0 (every bin spikes), whereas the
-        correct inhomogeneous-Poisson per-bin probability is
-        ``1 - exp(-rate * dt)`` (~0.63 at rate*dt = 1). This test drives
-        independent Bernoulli trials by disabling the refractory period and
-        checks the empirical spike fraction matches the exponential value.
+        Poisson counts have mean and variance one when rate*dt=1, while only
+        about 63% of intervals contain spikes. Checking occupancy separately
+        from counts detects both Bernoulli undercounting and saturated rates.
         """
-        # dt = 0.1 s and rate = 10 Hz give rate*dt = 1.0 exactly.
-        n_bins = 200_000
+        n_bins = 20_000
         dt = 0.1
         rate = 10.0
-        times = np.arange(n_bins) * dt
-        firing_rate = np.full(n_bins, rate)
+        times = np.arange(n_bins + 1) * dt
+        firing_rate = np.full(len(times), rate)
 
         spike_times = generate_poisson_spikes(
             firing_rate, times, refractory_period=0.0, seed=0
         )
 
-        empirical_p = len(spike_times) / n_bins
+        counts = np.histogram(spike_times, bins=times)[0]
+        empirical_p = np.mean(counts > 0)
         expected_p = 1.0 - np.exp(-rate * dt)  # ~0.6321
 
-        # The linear+clip implementation would give empirical_p ~= 1.0.
-        assert abs(empirical_p - expected_p) < 0.01, (
-            f"empirical per-bin probability {empirical_p:.4f} should match "
-            f"1 - exp(-rate*dt) = {expected_p:.4f}, not the saturated linear value 1.0"
+        assert empirical_p == pytest.approx(expected_p, abs=0.015)
+        assert counts.mean() == pytest.approx(rate * dt, abs=0.035)
+        assert counts.var() == pytest.approx(rate * dt, abs=0.08)
+        assert np.any(counts > 1)
+
+    def test_coarse_nonuniform_intervals_preserve_time_varying_rates(self):
+        """Coarse intervals retain multiple events and their own rate integrals."""
+        times = np.r_[np.arange(1001) * 0.01, 10 + np.arange(1, 1001) * 0.1]
+        firing_rate = np.r_[np.full(1000, 20.0), np.full(1001, 30.0)]
+        spikes = generate_poisson_spikes(
+            firing_rate, times, refractory_period=0.0, seed=17
         )
+        assert np.sum(spikes < 10) == pytest.approx(20 * 10, rel=0.2)
+        assert np.sum(spikes >= 10) == pytest.approx(30 * 100, rel=0.08)
+        assert np.all((spikes >= times[0]) & (spikes < times[-1]))
+        assert np.any(~np.isin(spikes, times))
+
+    def test_final_sample_does_not_extrapolate_recording(self):
+        """The endpoint rate must not invent a final unobserved interval."""
+        spikes = generate_poisson_spikes(
+            np.array([0.0, 0.0, 1e6]),
+            np.array([10.0, 11.0, 12.0]),
+            refractory_period=0.0,
+            seed=0,
+        )
+        assert spikes.size == 0
+
+    def test_coarse_candidates_still_obey_refractory_period(self):
+        """Multiple candidates in a coarse interval respect continuous-time ISIs."""
+        times = np.array([10.0, 11.0, 12.0])
+        spikes = generate_poisson_spikes(
+            np.full(3, 1000.0), times, refractory_period=0.002, seed=0
+        )
+        assert spikes.size > len(times)
+        assert np.all(np.diff(spikes) >= 0.002)
+        assert np.all((spikes >= times[0]) & (spikes < times[-1]))
 
     def test_nonincreasing_times_raises(self):
         """Non-increasing times raise ValueError mentioning 'strictly increasing'."""
@@ -199,8 +227,8 @@ class TestGeneratePoissonSpikes:
         n_narrow = int(np.sum(spikes < boundary))
         n_wide = int(np.sum(spikes >= boundary))
 
-        # Per-bin dt: narrow bins ~ n_each * (1 - exp(-rate*narrow_dt)),
-        # wide bins ~ n_each * (1 - exp(-rate*wide_dt)). The wide region
+        # Per-bin dt: narrow bins average n_each * rate * narrow_dt spikes,
+        # wide bins average n_each * rate * wide_dt spikes. The wide region
         # should fire about wide_dt/narrow_dt = 10x more.
         ratio = n_wide / n_narrow
         assert 8.0 < ratio < 12.0, (
