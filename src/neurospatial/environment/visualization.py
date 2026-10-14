@@ -321,7 +321,8 @@ class EnvironmentVisualization:
         - **Hexagonal**: Colored hexagon patches via ``PatchCollection``
         - **Triangular mesh**: Colored triangle faces via ``tripcolor``
         - **1D tracks**: Line plot with filled area
-        - **Other**: Scatter plot with auto-sized colored markers
+        - **Other**: Scatter plot with markers sized in display points; override
+          their area with ``s=`` (in points squared, as in Matplotlib).
 
         Parameters
         ----------
@@ -1149,29 +1150,57 @@ def _plot_scatter_field(
     if len(plot_centers) == 0:
         return None
 
-    # Auto-compute marker size from bin spacing
-    if env.n_bins > 1:
+    # Scatter sizes are areas in display points, never physical coordinate
+    # units. Estimate visible spacing after accounting for the eventual axes
+    # limits and aspect ratio. A cap keeps sparse layouts readable as points.
+    if "s" not in kwargs and env.n_bins > 1:
         from scipy.spatial import cKDTree
 
-        tree = cKDTree(env.bin_centers)
+        ranges = (
+            np.asarray(env.dimension_ranges, dtype=float)
+            if env.dimension_ranges is not None
+            else np.column_stack(
+                (env.bin_centers.min(axis=0), env.bin_centers.max(axis=0))
+            )
+        )
+        spans = ranges[:2, 1] - ranges[:2, 0]
+        axes_points = np.asarray(ax.get_window_extent().size) * 72.0 / ax.figure.dpi
+        points_per_unit = np.divide(axes_points, spans, out=np.ones(2), where=spans > 0)
+        if env._coordinate_system.equal_aspect and np.any(spans > 0):
+            points_per_unit[:] = np.min(points_per_unit[spans > 0])
+        display_centers = (env.bin_centers[:, :2] - ranges[:2, 0]) * points_per_unit
+        tree = cKDTree(display_centers)
         # Find nearest neighbor distance for sample
         sample_size = min(100, env.n_bins)
-        distances, _ = tree.query(env.bin_centers[:sample_size], k=2)
+        distances, _ = tree.query(display_centers[:sample_size], k=2)
         typical_spacing = np.median(distances[:, 1])
-        marker_size = (typical_spacing * 72 / 2) ** 2 if typical_spacing > 0 else 100
+        kwargs["s"] = (
+            min(100.0, (0.8 * typical_spacing) ** 2) if typical_spacing > 0 else 100.0
+        )
+    elif "s" not in kwargs:
+        kwargs["s"] = 100.0
+
+    # Keep caller-supplied per-bin sizes aligned when skipping NaN bins.
+    if nan_color is None:
+        sizes = np.asarray(kwargs["s"])
+        if sizes.ndim > 0 and sizes.size == env.n_bins:
+            kwargs["s"] = sizes.ravel()[valid_mask]
     else:
-        marker_size = 100
+        # Matplotlib otherwise drops nonfinite colors instead of showing the
+        # documented missing-support color. Copy so global colormaps stay intact.
+        cmap = plt.get_cmap(cmap).copy()
+        cmap.set_bad(nan_color)
+        kwargs.setdefault("plotnonfinite", True)
+    kwargs.setdefault("edgecolors", "none")
 
     # Plot
     scatter = ax.scatter(
         plot_centers[:, 0],
         plot_centers[:, 1],
         c=plot_values,
-        s=marker_size,
         cmap=cmap,
         vmin=vmin,
         vmax=vmax,
-        edgecolors="none",
         rasterized=rasterized,
         **kwargs,
     )

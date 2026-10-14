@@ -163,6 +163,10 @@
 
 ### Fixed
 
+- Render transformed-layout field markers in display units, honor scatter size
+  overrides and retain the requested missing-support color without changing
+  shared colormaps.
+
 - Apply inclusive minimum sample-count thresholds consistently across regular
   and hexagonal grids; threshold zero still leaves unvisited bins inactive.
 
