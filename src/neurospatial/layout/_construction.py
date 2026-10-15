@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Sequence
+from typing import Any, cast
 
 import networkx as nx
 import numpy as np
 
+from neurospatial.layout import (
+    GraphLayout,
+    HexagonalLayout,
+    ImageMaskLayout,
+    MaskedGridLayout,
+    RegularGridLayout,
+    ShapelyPolygonLayout,
+    TriangularMeshLayout,
+)
 from neurospatial.layout._binning import (
     Binning,
     FacesSource,
-    LayoutFaces,
-    LayoutLocator,
     Locator,
     SpatialBins,
 )
@@ -20,9 +28,11 @@ from neurospatial.layout._capabilities import (
     TrackLinearizationProvider,
 )
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.layout._context import GridIndex
 from neurospatial.layout._face_normals import FaceNormals, geometric_normals
 from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import LayoutEngine
+from neurospatial.layout.engines._polar import _PolarGridLayout
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:
@@ -109,7 +119,11 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
 def _locator_of(layout: LayoutEngine) -> Locator:
     """Use owned lookup data when a layout supplies it."""
     factory = getattr(layout, "locator", None)
-    return cast("Locator", factory()) if factory is not None else LayoutLocator(layout)
+    if factory is None:
+        raise TypeError(
+            "Custom layouts must provide supported owned locator snapshots."
+        )
+    return cast("Locator", factory())
 
 
 def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None:
@@ -117,7 +131,7 @@ def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None
     factory = getattr(layout, "linearization", None)
     if factory is not None:
         return cast("TrackLinearizationProvider", factory())
-    return layout if isinstance(layout, TrackLinearizationProvider) else None
+    return None
 
 
 def _shapes_of(layout: LayoutEngine) -> HexagonShapes | TriangleShapes | None:
@@ -174,4 +188,75 @@ def _native_faces_of(layout: object, bins: SpatialBins, graph: nx.Graph) -> Face
         return NativeFaces(
             bins, "grid", (np.array([float(np.diff(edge)[0]) for edge in grid.edges]),)
         )
-    return LayoutFaces(cast("LayoutEngine", layout), graph)
+    raise TypeError(
+        "Unsupported native face geometry; provide an owned binning snapshot."
+    )
+
+
+def built_layout_data(
+    layout: LayoutEngine,
+) -> tuple[
+    Binning,
+    nx.Graph,
+    Sequence[tuple[float, float]] | None,
+    str,
+    str,
+    dict[str, Any],
+    GridIndex | None,
+]:
+    """Extract native component data once; retain no builder or callback."""
+    from neurospatial.layout._context import GridIndex
+
+    if type(layout) not in _NATIVE_LAYOUTS:
+        from neurospatial.environment._from_bins import prepare_bins
+        from neurospatial.extensions import _snapshot_provider
+
+        binning, graph, ranges, category = prepare_bins(
+            _snapshot_provider(layout, "binning")
+        )
+        return binning, graph, ranges, binning.kind, category, {}, None
+    _check_native_layout(layout)
+    graph = layout.connectivity
+    if graph is None:
+        raise ValueError("Build the layout before publishing its owned snapshot.")
+    binning = binning_from_layout(layout, graph)
+    index = GridIndex(
+        layout.grid_edges or (),
+        layout.grid_shape or (binning.bins.n_bins,),
+        np.ones(binning.bins.n_bins, dtype=bool)
+        if layout.active_mask is None
+        else layout.active_mask,
+    )
+    return (
+        binning,
+        graph,
+        layout.dimension_ranges,
+        layout._layout_type_tag,
+        layout.layout_type,
+        layout._build_params_used,
+        index,
+    )
+
+
+_NATIVE_LAYOUTS = (
+    RegularGridLayout,
+    MaskedGridLayout,
+    ImageMaskLayout,
+    ShapelyPolygonLayout,
+    HexagonalLayout,
+    GraphLayout,
+    TriangularMeshLayout,
+    _PolarGridLayout,
+)
+
+
+def _check_native_layout(layout: LayoutEngine) -> None:
+    """Admit native data, not instance-level replacements of geometry methods."""
+    if type(layout) not in _NATIVE_LAYOUTS:
+        raise TypeError(
+            "Native geometry methods cannot be replaced; provide an owned binning snapshot."
+        )
+    if any(callable(getattr(type(layout), name, None)) for name in vars(layout)):
+        raise TypeError(
+            "Native geometry methods cannot be replaced; provide an owned binning snapshot."
+        )

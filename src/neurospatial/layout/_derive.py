@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,7 +13,6 @@ from neurospatial.layout._binning import (
     Binning,
     FacesSource,
     KnownFaces,
-    LayoutLocator,
     Locator,
     MissingFaces,
     SpatialBins,
@@ -23,7 +20,6 @@ from neurospatial.layout._binning import (
 )
 from neurospatial.layout._capabilities import (
     RectilinearGrid,
-    TrackLinearizationProvider,
 )
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import FaceGeometry
@@ -52,105 +48,6 @@ def _restricted_mask(
     selected: NDArray[np.bool_] = np.array(mask, dtype=np.bool_, copy=True)
     selected.ravel()[np.flatnonzero(mask)] = keep
     return selected
-
-
-@dataclass(frozen=True, eq=False)
-class _LegacyTrackLinearization:
-    """Retain a custom provider's conversions through an in-memory derivation.
-
-    Parameters
-    ----------
-    base : TrackLinearizationProvider
-        Custom conversions in the parent coordinate frame.
-    grid_edges : tuple of ndarray
-        Published full linear edges, or an empty tuple when unavailable.
-    active_mask : ndarray of bool
-        Published active linear cells, or all current bins without grid metadata.
-    forward : ndarray, shape (n_dims + 1, n_dims + 1)
-        Homogeneous map from the parent's Cartesian frame to this frame.
-    scale : float
-        Positive similarity scale for the parent's absolute linear coordinates.
-    """
-
-    base: TrackLinearizationProvider
-    grid_edges: tuple[NDArray[np.float64], ...]
-    active_mask: NDArray[np.bool_]
-    forward: NDArray[np.float64]
-    scale: float
-    inverse: NDArray[np.float64] = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        edges = tuple(
-            np.array(edge, dtype=np.float64, copy=True) for edge in self.grid_edges
-        )
-        mask = np.array(self.active_mask, dtype=np.bool_, copy=True)
-        forward = np.array(self.forward, dtype=np.float64, copy=True)
-        inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
-        for array in (*edges, mask, forward, inverse):
-            array.setflags(write=False)
-        object.__setattr__(self, "grid_edges", edges)
-        object.__setattr__(self, "active_mask", mask)
-        object.__setattr__(self, "forward", forward)
-        object.__setattr__(self, "inverse", inverse)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore array protection after pickle or deepcopy."""
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        for array in (*self.grid_edges, self.active_mask, self.forward, self.inverse):
-            array.setflags(write=False)
-
-    def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Map ``(n_points, n_dims)`` points through the parent provider."""
-        points = _mapped(np.asarray(data_points, dtype=np.float64), self.inverse)
-        return np.asarray(self.base.to_linear(points), dtype=np.float64) * self.scale
-
-    def linear_to_nd(
-        self, linear_coordinates: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        """Map ``(n_points,)`` linear coordinates through the parent provider."""
-        coordinates = np.asarray(linear_coordinates, dtype=np.float64) / self.scale
-        points = np.asarray(self.base.linear_to_nd(coordinates), dtype=np.float64)
-        return _mapped(points, self.forward)
-
-
-def _legacy_track_view(
-    track: TrackLinearizationProvider, locator: Locator, n_bins: int, n_dims: int
-) -> _LegacyTrackLinearization:
-    """Capture optional custom grid metadata without requiring that capability."""
-    if isinstance(track, _LegacyTrackLinearization):
-        return track
-    leaf = locator
-    while isinstance(leaf, (SubsetLocator, TransformedLocator)):
-        leaf = leaf.base
-    sources: list[object] = [track]
-    if isinstance(leaf, LayoutLocator):
-        sources.append(leaf.layout)
-    edges: tuple[NDArray[np.float64], ...] = ()
-    mask = np.ones(n_bins, dtype=np.bool_)
-    for source in sources:
-        supplied = getattr(source, "grid_edges", ())
-        supplied_mask = np.asarray(getattr(source, "active_mask", None))
-        if (
-            not isinstance(supplied, (tuple, list))
-            or len(supplied) != 1
-            or supplied_mask.dtype.kind != "b"
-        ):
-            continue
-        edge = np.asarray(supplied[0])
-        if (
-            edge.dtype.kind not in "iuf"
-            or edge.ndim != 1
-            or len(edge) < 2
-            or not np.all(np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-            or supplied_mask.shape != (len(edge) - 1,)
-            or np.count_nonzero(supplied_mask) != n_bins
-        ):
-            continue
-        edges, mask = (np.asarray(edge, dtype=np.float64),), supplied_mask
-        break
-    return _LegacyTrackLinearization(track, edges, mask, np.eye(n_dims + 1), 1.0)
 
 
 def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
@@ -236,17 +133,8 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
                 _restricted_mask(track.active_mask, keep),
             )
         else:
-            legacy = _legacy_track_view(
-                track, binning.locator, binning.bins.n_bins, binning.bins.n_dims
-            )
-            track = _LegacyTrackLinearization(
-                legacy,
-                legacy.grid_edges,
-                _restricted_mask(legacy.active_mask, keep)
-                if legacy.grid_edges
-                else np.ones(len(parent_ids), dtype=np.bool_),
-                np.eye(binning.bins.n_dims + 1),
-                1.0,
+            raise TypeError(
+                "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
         "MaskedGrid" if grid is not None else "subset",
@@ -621,15 +509,8 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if isinstance(track, TrackLinearization):
             track = _track_transform(track, matrix, scale)
         else:
-            legacy = _legacy_track_view(
-                track, binning.locator, parent.n_bins, parent.n_dims
-            )
-            track = _LegacyTrackLinearization(
-                legacy,
-                tuple(edge * scale for edge in legacy.grid_edges),
-                legacy.active_mask,
-                matrix,
-                scale,
+            raise TypeError(
+                "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
         f"{binning.kind}_transformed",

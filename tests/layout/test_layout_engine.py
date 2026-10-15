@@ -510,7 +510,7 @@ def test_point_to_bin_index_dtype_is_intp():
 
     # GraphLayout is the _KDTreeMixin path (the historical int32 source).
     track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
-    assert track.layout.point_to_bin_index(np.array([[10.0, 0.0]])).dtype == np.intp
+    assert track._binning.locator.locate(np.array([[10.0, 0.0]])).dtype == np.intp
 
 
 def test_environment_index_surface_dtype_is_intp():

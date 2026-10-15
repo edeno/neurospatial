@@ -31,9 +31,7 @@ class TestOpenField:
         reference = Environment.from_samples(positions, bin_size=5.0, fill_holes=True)
 
         assert preset.n_bins == reference.n_bins
-        np.testing.assert_array_equal(
-            preset.layout.active_mask, reference.layout.active_mask
-        )
+        np.testing.assert_array_equal(preset.active_mask, reference.active_mask)
 
     def test_differs_from_default_when_holes_present(self):
         """fill_holes=True changes the active mask vs the bare default."""

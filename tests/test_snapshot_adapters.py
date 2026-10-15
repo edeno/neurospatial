@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from shapely.geometry import box
 
 from neurospatial import Environment
@@ -360,7 +361,7 @@ def _data_adapter(provider_type, role, *, name=None, decode=None):
 
 
 def _explicit_binning(env):
-    meta, arrays = encode(env.layout.binning(), "native")
+    meta, arrays = encode(env._binning, "native")
     return decode(meta, arrays, "native")
 
 
@@ -375,12 +376,12 @@ def test_public_binning_adapter_owns_data_and_drops_provider_provenance(
     provider = provider_type(data)
     reference = weakref.ref(provider)
     if ingress == "constructor":
-        env = Environment("adapted", provider, "external")
+        env = publish_environment("adapted", provider, "external")
         assert env.layout_parameters == {}
     else:
         env = Environment.from_bins(provider, name="adapted", units="cm", frame="lab")
         assert (env.units, env.frame) == ("cm", "lab")
-    assert env.is_linearized_track == env.layout.is_linearized_track
+    assert env.is_linearized_track == env.is_linearized_track
     assert env.is_linearized_track
     np.testing.assert_allclose(
         env.to_linear(np.array([[0.25, 0], [3.5, 0]])), [0.25, 3.5]
@@ -526,8 +527,10 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
         np.ones(shape, dtype=bool), (np.arange(shape[0] + 1.0), np.arange(3.0))
     )
     if ingress == "constructor":
-        layout = native.layout
-        env = Environment("adapted", layout, layout._layout_type_tag, arena=provider)
+        layout = native
+        env = publish_environment(
+            "adapted", layout, layout._layout_type_tag, arena=provider
+        )
     elif ingress == "from_bins":
         env = Environment.from_bins(_explicit_binning(native), arena=provider)
     else:

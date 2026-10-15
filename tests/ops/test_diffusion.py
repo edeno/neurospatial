@@ -21,6 +21,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import scipy.sparse
+from environment_helpers import publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
@@ -106,7 +107,7 @@ def build_track(bin_size: float, *, straight: bool) -> Environment:
     }
     layout = GraphLayout()
     layout.build(**params)
-    return Environment(
+    return publish_environment(
         name="track",
         layout=layout,
         layout_type_used="Graph",

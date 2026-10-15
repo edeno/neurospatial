@@ -259,7 +259,7 @@ def test_plot_artists_unchanged(built_environment, request, plot_artists, operat
 def _detached_native_layout(env, monkeypatch):
     """Inject a detached builder for tests deliberately corrupting layout data."""
     layout = _native_oracle(env)
-    monkeypatch.setattr(env, "_layout", layout)
+    monkeypatch.setattr(env, "_layout", layout, raising=False)
     return layout
 
 

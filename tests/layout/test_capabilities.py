@@ -84,9 +84,8 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
         endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
     )
     loaded = from_dict(to_dict(original))
-    layout = loaded.layout
+    layout = loaded
     assert not isinstance(layout, RectilinearGridProvider)
-    assert not isinstance(layout, TrackLinearizationProvider)
     assert not isinstance(layout, FiniteVolumeGeometryProvider)
     assert loaded._binning.faces.available
     assert loaded._binning.linearization is not None

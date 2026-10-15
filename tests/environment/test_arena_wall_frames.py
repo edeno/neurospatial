@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Polygon, box
 
@@ -13,9 +14,9 @@ from neurospatial.ops.transforms import Affine2D
 
 
 def _publish(child, arena):
-    return Environment(
+    return publish_environment(
         name="wall frame",
-        layout=child.layout,
+        layout=child,
         layout_type_used=child.layout_type,
         layout_params_used=child.layout_parameters,
         arena=arena,

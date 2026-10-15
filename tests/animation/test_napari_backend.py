@@ -697,7 +697,7 @@ def test_env_scale_caches_correct_values(simple_env):
     assert scale.y_max == y_max
 
     # Check grid shape matches
-    n_x, n_y = simple_env.layout.grid_shape
+    n_x, n_y = simple_env.grid_shape
     assert scale.n_x == n_x
     assert scale.n_y == n_y
 
@@ -729,7 +729,7 @@ def test_env_scale_from_env_returns_none_for_missing_attrs():
     class FakeEnvNoGridShape:
         def __init__(self):
             self.dimension_ranges = [(0, 10), (0, 10)]
-            self.layout = object()  # No grid_shape attribute
+            self = object()  # No grid_shape attribute
 
     assert _EnvScale.from_env(FakeEnvNoGridShape()) is None
 

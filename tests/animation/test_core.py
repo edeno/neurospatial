@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
 from neurospatial.animation.overlays import PositionOverlay
@@ -316,7 +317,7 @@ class TestAnimateFieldsValidation:
         rng = np.random.default_rng(42)
         # Create environment with layout but not fitted
         layout = RegularGridLayout()
-        env = Environment(layout=layout)
+        env = publish_environment(layout=layout)
         # Manually set _is_fitted to False (simulating unfitted state)
         env._is_fitted = False
 

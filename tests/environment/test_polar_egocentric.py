@@ -420,18 +420,19 @@ class TestPolarStateVersionFreshness:
         """Initial setup already sees physical distances and circular faces."""
         from neurospatial import Environment
 
-        setup = Environment._setup_from_layout
+        setup = Environment._from_binning.__func__
         captured = []
 
-        def capture_setup(env, **kwargs):
-            setup(env, **kwargs)
+        def capture_setup(cls, binning, **kwargs):
+            env = setup(cls, binning, **kwargs)
             assert env.connectivity.has_edge(0, 3)
             assert env.connectivity.edges[0, 1]["distance"] == pytest.approx(
                 5.0 * np.pi / 2
             )
             captured.append(env._face_geometry)
+            return env
 
-        monkeypatch.setattr(Environment, "_setup_from_layout", capture_setup)
+        monkeypatch.setattr(Environment, "_from_binning", classmethod(capture_setup))
 
         polar_env = Environment.from_polar_egocentric(
             distance_range=(0.0, 10.0),
@@ -1325,7 +1326,6 @@ _POLAR_INHERITED_MEMBERS = {
         "dimension_ranges",
         "grid_edges",
         "grid_shape",
-        "layout",
     },
     "bin bookkeeping, metadata and diagnostics": {
         "bin_center_of",

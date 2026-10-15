@@ -42,7 +42,7 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     def fail(*args, **kwargs):
         raise AssertionError("metadata replacement must not publish geometry again")
 
-    monkeypatch.setattr(Environment, "_setup_from_layout", fail)
+    monkeypatch.setattr(Environment, "_from_binning", fail)
     updated = env.with_metadata(name="comparison", units="m", frame=None)
     assert type(updated) is type(env)
     assert updated is not env
@@ -146,14 +146,13 @@ def test_layout_parameters_are_independently_owned_exports():
     "restore", [copy.copy, copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))]
 )
 def test_unfitted_environment_views_and_copies_remain_available(restore):
-    from neurospatial.layout import RegularGridLayout
-
-    env = Environment("unfitted", RegularGridLayout())
-    assert env.bin_centers.shape == (0, 0)
+    env = _environment().with_metadata(name="unfitted")
+    env._is_fitted = False
+    expected = env.bin_centers.copy()
     clone = restore(env)
     assert clone.name == "unfitted"
     assert not clone._is_fitted
-    assert clone.bin_centers.shape == (0, 0)
+    np.testing.assert_array_equal(clone.bin_centers, expected)
 
 
 @pytest.mark.parametrize("name", ["graph", "nodes", "edges", "degree", "adj", "name"])

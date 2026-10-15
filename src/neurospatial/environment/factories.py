@@ -242,15 +242,18 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
-    from neurospatial.environment._from_bins import layout_from_bins
+    from neurospatial.environment._from_bins import prepare_bins
 
-    layout = layout_from_bins(binning)
-    env_cls = cast("type[Environment]", cls)
-    return env_cls(
+    snapshot, graph, ranges, category = prepare_bins(binning)
+    return cls._from_binning(
+        snapshot,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        layout_type_tag=snapshot.kind,
+        layout_type=category,
+        build_params={},
+        is_linearized_track=snapshot.linearization is not None,
         name=name,
-        layout=layout,
-        layout_type_used=layout._layout_type_tag,
-        layout_params_used={},
         units=units,
         frame=frame,
         regions=regions,
@@ -737,11 +740,11 @@ def _from_layout(
     # Note: This call will work when cls is Environment (via inheritance).
     # Mypy can't infer this for mixins, so we use cast() to help the type checker.
     env_cls = cast("type[Environment]", cls)
-    env = env_cls(
-        name,
+    env = env_cls._from_built_layout(
         layout_instance,
-        kind,
-        layout_params,
+        name=name,
+        layout_type_used=kind,
+        layout_params_used=layout_params,
         regions=regions,
         units=units,
         frame=frame,
@@ -760,13 +763,25 @@ def _from_layout(
         if not np.all(keep):
             env = env.subset(bins=keep)
     if arena is not None:
-        env = env_cls(
-            name,
-            env.layout,
-            env._layout_type_used,
-            env._layout_params_used,
+        from neurospatial.layout._context import GridIndex
+
+        assert env.active_mask is not None
+        env = env_cls._from_binning(
+            env._binning,
+            connectivity=env.connectivity,
+            dimension_ranges=env.dimension_ranges,
+            layout_type_tag=env.layout_type,
+            layout_type=env._layout_category,
+            build_params=env.layout_parameters,
+            is_linearized_track=env.is_linearized_track,
+            name=name,
             regions=regions,
             arena=arena,
+            component_diagonal=env._component_diagonal,
+            _grid_index=GridIndex(
+                env.grid_edges or (), env.grid_shape or (env.n_bins,), env.active_mask
+            ),
+            _check_center_lookup=False,
             units=units,
             frame=frame,
         )

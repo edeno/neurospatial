@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
@@ -416,7 +417,7 @@ class TestApplyTransformToEnvironment:
 
         layout = RegularGridLayout()
         # Don't call build(), so it remains unfitted
-        env = Environment(name="unfitted", layout=layout)
+        env = publish_environment(name="unfitted", layout=layout)
         transform = translate(5, 5)
 
         from neurospatial.environment.decorators import EnvironmentNotFittedError

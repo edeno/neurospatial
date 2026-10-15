@@ -7,12 +7,12 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.decoding.posterior import _validate_encoding_environment
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._locators import (
     RectilinearLocator,
     SubsetLocator,
@@ -60,7 +60,7 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         source._binning,
         locator=ClippedLocator(alternate, source._binning.shapes, source.clip_mapping),
     )
-    layout = BinningLayout(
+    layout = Environment._from_binning(
         binning,
         connectivity=source.connectivity,
         dimension_ranges=source.dimension_ranges,
@@ -69,7 +69,9 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         build_params={},
         is_linearized_track=False,
     )
-    target = Environment("alternate", layout, "PolygonCells", {}, arena=source.arena)
+    target = publish_environment(
+        "alternate", layout, "PolygonCells", {}, arena=source.arena
+    )
     query = np.array([[1.0, 0.5]])
     np.testing.assert_array_equal(source.bin_at(query), [1])
     np.testing.assert_array_equal(target.bin_at(query), [0])
@@ -125,9 +127,9 @@ def test_mapped_clipped_circle_stays_inside_its_mapped_arena():
 def test_known_arena_still_refuses_excluded_stored_center():
     parent = _grid()
     with pytest.raises(ValueError, match="bin center"):
-        Environment(
+        publish_environment(
             "invalid",
-            parent.layout,
+            parent,
             "MaskedGrid",
             {},
             arena=OpenArena(box(0, 0, 0.75, 1)),
@@ -146,9 +148,9 @@ def test_arena_cell_containment_still_rejects_resolvable_outside_slivers(origin)
         )
     )
     with pytest.raises(ValueError, match=r"outside.*arena"):
-        Environment(
+        publish_environment(
             "invalid",
-            parent.layout,
+            parent,
             "PolygonCells",
             {},
             arena=OpenArena(box(origin, origin, origin + 2 - 1e-3, origin + 1)),
@@ -252,8 +254,10 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
         TypeError,
         match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
     ):
-        Environment("custom", _CustomHexLayout(built_environment), "CustomHex", {})
-    layout = BinningLayout(
+        publish_environment(
+            "custom", _CustomHexLayout(built_environment), "CustomHex", {}
+        )
+    layout = Environment._from_binning(
         built_environment._binning,
         connectivity=built_environment.connectivity,
         dimension_ranges=built_environment.dimension_ranges,
@@ -262,7 +266,7 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
         build_params={},
         is_linearized_track=False,
     )
-    env = Environment("custom", layout, "CustomHex", {})
+    env = publish_environment("custom", layout, "CustomHex", {})
     assert env.arena.domain_known
     assert not env.arena.physical_footprint_known
     np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))

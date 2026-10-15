@@ -694,7 +694,7 @@ class TestShufflePlaceFieldsCircular2D:
     def encoding_models_2d(self, env_2d) -> np.ndarray:
         """Sample encoding models for 2D environment: (3 neurons, n_bins)."""
         # For 2D shuffle, encoding models must match full grid size
-        grid_shape = env_2d.layout.grid_shape
+        grid_shape = env_2d.grid_shape
         n_bins = int(np.prod(grid_shape))
         rng = np.random.default_rng(42)
         # Create simple place fields with some structure

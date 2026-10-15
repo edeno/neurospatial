@@ -135,14 +135,14 @@ class TestRebinBasic:
         )
 
         # Get original shape
-        original_shape = env.layout.grid_shape
+        original_shape = env.grid_shape
 
         # Rebin by factor 2 (may warn if not evenly divisible)
         coarse = env.rebin(factor=2)
 
         # Check new shape is original // 2 (truncated if not evenly divisible)
         expected_shape = (original_shape[0] // 2, original_shape[1] // 2)
-        assert coarse.layout.grid_shape == expected_shape
+        assert coarse.grid_shape == expected_shape
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
         _assert_coarse_oracle(env, coarse, 2)
 
@@ -170,13 +170,13 @@ class TestRebinBasic:
             ]
         )
         env = Environment.from_samples(data, bin_size=10.0)
-        assert env.layout.grid_shape == (4, 4)
+        assert env.grid_shape == (4, 4)
 
         # Rebin by factor 2 → 2x2 grid
         coarse = env.rebin(factor=2)
 
         # Should have 2x2 grid with 4 bins
-        assert coarse.layout.grid_shape == (2, 2)
+        assert coarse.grid_shape == (2, 2)
         assert coarse.n_bins == 4
 
         # Bin centers should be within the original data range
@@ -195,7 +195,7 @@ class TestRebinBasic:
         )
 
         # Get grid shape
-        grid_shape = env.layout.grid_shape
+        grid_shape = env.grid_shape
 
         # Rebin (may warn if not evenly divisible)
         coarse = env.rebin(factor=2)
@@ -203,7 +203,7 @@ class TestRebinBasic:
         # Verify geometry is correct (truncated to nearest divisible size)
         expected_shape = (grid_shape[0] // 2, grid_shape[1] // 2)
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
-        assert coarse.layout.grid_shape == expected_shape
+        assert coarse.grid_shape == expected_shape
         _assert_coarse_oracle(env, coarse, 2)
 
     def test_rebin_creates_valid_environment(self):
@@ -235,7 +235,7 @@ class TestRebinBasic:
         coarse = env.rebin(factor=2)
 
         # Verify shape is correct
-        assert coarse.layout.grid_shape == (2, 2)
+        assert coarse.grid_shape == (2, 2)
         assert coarse.n_bins == 4
 
         # Verify it's a valid environment
@@ -281,7 +281,7 @@ class TestRebinBasic:
         coarse = env.rebin(factor=2)
 
         # Independent expectation: 2x2 coarse grid covering the same extent.
-        assert coarse.layout.grid_shape == (2, 2)
+        assert coarse.grid_shape == (2, 2)
         assert coarse.n_bins == 4
         # Bin centers sorted should be the midpoints of each 2x2 block.
         sorted_centers = coarse.bin_centers[np.lexsort(coarse.bin_centers.T[::-1])]
@@ -304,14 +304,14 @@ class TestRebinFactorVariations:
         data = np.column_stack([x, y])
         env = Environment.from_samples(data, bin_size=10.0)
 
-        original_shape = env.layout.grid_shape
+        original_shape = env.grid_shape
 
         # Coarsen by (2, 3)
         coarse = env.rebin(factor=(2, 3))
 
         # Expected shape: (original[0]//2, original[1]//3)
         expected_shape = (original_shape[0] // 2, original_shape[1] // 3)
-        assert coarse.layout.grid_shape == expected_shape
+        assert coarse.grid_shape == expected_shape
 
     def test_rebin_factor_3(self):
         """Factor 3 works correctly."""
@@ -322,14 +322,14 @@ class TestRebinFactorVariations:
             infer_active_bins=False,
         )
 
-        grid_shape = env.layout.grid_shape
+        grid_shape = env.grid_shape
 
         # Rebin by 3 (may warn if not evenly divisible)
         coarse = env.rebin(factor=3)
 
         # Should be shape // 3 (truncated if not evenly divisible)
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)
-        assert coarse.layout.grid_shape == expected_shape
+        assert coarse.grid_shape == expected_shape
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
         _assert_coarse_oracle(env, coarse, 3)
 
@@ -422,7 +422,7 @@ class TestRebinValidation:
             infer_active_bins=False,
         )
 
-        grid_shape = env.layout.grid_shape
+        grid_shape = env.grid_shape
 
         # Only run if shape is not divisible by 3
         if grid_shape[0] % 3 == 0 and grid_shape[1] % 3 == 0:
@@ -436,7 +436,7 @@ class TestRebinValidation:
 
         # Should truncate
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)
-        assert coarse.layout.grid_shape == expected_shape
+        assert coarse.grid_shape == expected_shape
         _assert_coarse_oracle(env, coarse, 3)
 
 
@@ -452,7 +452,7 @@ class TestRebinEdgeCases:
         coarse = env.rebin(factor=1)
 
         # Should have same grid shape
-        assert coarse.layout.grid_shape == env.layout.grid_shape
+        assert coarse.grid_shape == env.grid_shape
 
         # May have more bins if original had inactive bins
         # (rebin creates a full grid with all bins active)

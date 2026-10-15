@@ -126,7 +126,7 @@ def test_field_to_rgb_for_napari_grid():
     assert rgb.shape[-1] == 3  # RGB channels
 
     # For grid layouts, should have spatial dimensions
-    if hasattr(env.layout, "grid_shape") and env.layout.grid_shape is not None:
+    if hasattr(env, "grid_shape") and env.grid_shape is not None:
         assert rgb.ndim == 3  # (height, width, 3)
 
 
@@ -665,7 +665,7 @@ def test_field_to_rgb_for_napari_orientation():
     env = Environment.from_samples(
         np.column_stack([xx.ravel(), yy.ravel()]), bin_size=10.0
     )
-    assert env.layout.grid_shape == (4, 4)
+    assert env.grid_shape == (4, 4)
 
     # Identity colormap: index i -> (i, i, i). Channel 0 == colormap index.
     cmap_lookup = np.stack([np.arange(256)] * 3, axis=1).astype(np.uint8)

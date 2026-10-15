@@ -47,7 +47,7 @@ class TestRebin:
         all of the coarse cells in this fixture.
         """
         # Get original grid shape
-        original_shape = medium_2d_env.layout.grid_shape
+        original_shape = medium_2d_env.grid_shape
         original_grid_total = original_shape[0] * original_shape[1]
 
         # Rebin by factor 2
@@ -65,7 +65,7 @@ class TestRebin:
             )
 
         # Grid shape should be approximately halved
-        rebinned_shape = rebinned.layout.grid_shape
+        rebinned_shape = rebinned.grid_shape
         assert rebinned_shape[0] <= (original_shape[0] + 1) // 2
         assert rebinned_shape[1] <= (original_shape[1] + 1) // 2
 
@@ -109,7 +109,7 @@ class TestRebin:
 
     def test_rebin_invalid_bin_size_too_large(self, small_2d_env: Environment) -> None:
         """Test that factor larger than grid shape raises ValueError."""
-        grid_shape = small_2d_env.layout.grid_shape
+        grid_shape = small_2d_env.grid_shape
 
         # Factor larger than smallest dimension
         too_large_factor = max(grid_shape) + 10
@@ -129,8 +129,8 @@ class TestRebin:
         assert nx.is_connected(rebinned.connectivity)
 
         # Grid shape should be approximately divided by factor
-        original_shape = medium_2d_env.layout.grid_shape
-        rebinned_shape = rebinned.layout.grid_shape
+        original_shape = medium_2d_env.grid_shape
+        rebinned_shape = rebinned.grid_shape
 
         for orig_size, new_size in zip(original_shape, rebinned_shape, strict=False):
             # New size should be original // factor (or close due to truncation)
@@ -141,7 +141,7 @@ class TestRebin:
     def test_rebin_anisotropic_factor_tuple(self, medium_2d_env: Environment) -> None:
         """Test rebinning with different factors per dimension."""
         # Get original shape
-        original_shape = medium_2d_env.layout.grid_shape
+        original_shape = medium_2d_env.grid_shape
 
         # Use different factors for each dimension
         factor = (2, 3)
@@ -152,7 +152,7 @@ class TestRebin:
         assert rebinned.n_bins > 0
 
         # Grid shape should reflect anisotropic coarsening
-        rebinned_shape = rebinned.layout.grid_shape
+        rebinned_shape = rebinned.grid_shape
         assert rebinned_shape[0] <= (original_shape[0] // 2) + 1
         assert rebinned_shape[1] <= (original_shape[1] // 3) + 1
 
@@ -183,7 +183,7 @@ class TestRebin:
 
     def test_rebin_non_divisible_warns(self, small_2d_env: Environment) -> None:
         """Test that non-divisible grid dimensions trigger warning."""
-        grid_shape = small_2d_env.layout.grid_shape
+        grid_shape = small_2d_env.grid_shape
 
         # Choose factor that doesn't evenly divide grid shape
         # Find a factor that creates remainder
@@ -506,13 +506,13 @@ class TestRebinProperties:
         Coarse cell centers must also lie in the original continuous arena;
         the total grid shape describes the candidate cells before selection.
         """
-        original_shape = small_2d_env.layout.grid_shape
+        original_shape = small_2d_env.grid_shape
         original_grid_total = original_shape[0] * original_shape[1]
 
         rebinned = small_2d_env.rebin(factor=factor)
 
         # Grid shape should be reduced by factor
-        rebinned_shape = rebinned.layout.grid_shape
+        rebinned_shape = rebinned.grid_shape
         rebinned_grid_total = rebinned_shape[0] * rebinned_shape[1]
 
         # Total grid cells should be reduced (roughly by factor^n_dims)

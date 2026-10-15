@@ -228,9 +228,9 @@ def _rebin(
     from neurospatial.layout.base import LayoutEngine
 
     env_cls = cast("type[Environment]", env.__class__)
-    coarse_env = env_cls(
+    coarse_env = env_cls._from_built_layout(
+        cast("LayoutEngine", new_layout),
         name=f"{env.name}_rebinned" if env.name else "",
-        layout=cast("LayoutEngine", new_layout),
         layout_type_used="RegularGrid",
         layout_params_used=new_layout._build_params_used,
         regions=Regions(),

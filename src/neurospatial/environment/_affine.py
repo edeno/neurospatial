@@ -61,7 +61,6 @@ def _apply_transform_to_environment(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._derive import transform_binning
 
     binning = transform_binning(env._binning, transform)
@@ -121,7 +120,8 @@ def _apply_transform_to_environment(
 
     tag = f"{env.layout_type}_transformed"
     params = {**env.layout_parameters, "transformed": True}
-    transformed_layout = BinningLayout(
+    new_name = name if name is not None else f"{env.name}_transformed"
+    new_env = Environment._from_binning(
         binning,
         connectivity=new_graph,
         dimension_ranges=transformed_dim_ranges,
@@ -129,17 +129,10 @@ def _apply_transform_to_environment(
         layout_type=env._layout_category,
         build_params=params,
         is_linearized_track=env.is_linearized_track,
-    )
-    new_name = name if name is not None else f"{env.name}_transformed"
-    new_env = Environment(
-        new_name,
-        transformed_layout,
-        tag,
-        params,
+        name=new_name,
         arena=env.arena.transformed(transform.A),
         clip_mapping=env.clip_mapping,
     )
-
     # Transform and copy regions
     if env.regions and len(env.regions) > 0:
         transformed_regions = []

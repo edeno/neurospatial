@@ -10,6 +10,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
+from environment_helpers import publish_environment
 from numpy.typing import NDArray
 from shapely.geometry import Polygon as ShapelyPoly
 
@@ -977,7 +978,7 @@ def env_path_graph_3nodes() -> Environment:
     # For simpler graph testing, we can directly build the GraphLayout and then Environment
     gl = GraphLayout()
     gl.build(**layout_params)  # GraphLayout will create its own binning
-    return Environment(
+    return publish_environment(
         name="PathGraph3",
         layout=gl,
         layout_type_used="Graph",

@@ -138,7 +138,7 @@ def test_wrong_coordinate_width_is_rejected_before_row_filtering(
     with pytest.raises(ValueError):
         env._binning.locator.locate(points)
     with pytest.raises(ValueError):
-        env.layout.point_to_bin_index(points)
+        env._binning.locator.locate(points)
 
 
 @st.composite

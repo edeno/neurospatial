@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 import networkx as nx
 import numpy as np
@@ -22,12 +22,10 @@ from neurospatial.layout._capabilities import (
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import (
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
 from neurospatial.layout._face_normals import FaceNormals
 from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._rebin_spec import GridBinningSpec
-from neurospatial.layout.base import LayoutEngine
 
 if TYPE_CHECKING:
     from neurospatial.layout._polygon import ClipMapping, PolygonCells
@@ -210,17 +208,6 @@ class Locator(Protocol):
         ...
 
 
-@dataclass(frozen=True, eq=False)
-class LayoutLocator:
-    """Point lookup delegated to a built layout."""
-
-    layout: LayoutEngine
-
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Return the layout's bin indices with native integer dtype."""
-        return self.layout.point_to_bin_index(points).astype(np.intp, copy=False)
-
-
 class FacesSource(Protocol):
     """Source of an environment's finite-volume cell faces."""
 
@@ -236,83 +223,6 @@ class FacesSource(Protocol):
     def missing_error(self, operation: str) -> Exception:
         """Return an actionable error when the named operation needs faces."""
         ...
-
-
-def _missing_geometry_error(layout: object, operation: str) -> NotImplementedError:
-    """Explain which operation needs cell geometry that ``layout`` cannot supply.
-
-    Parameters
-    ----------
-    layout : object
-        The environment's layout engine, which lacks ``finite_volume_geometry``.
-    operation : str
-        Name of the analysis the scientist called, used to start the message.
-
-    Returns
-    -------
-    NotImplementedError
-        Error with What / Why / Fix sections, ready to raise.
-    """
-    from neurospatial._exceptions import _format_error
-
-    return NotImplementedError(
-        _format_error(
-            f"{operation} needs finite-volume cell geometry, which layout "
-            f"{type(layout).__name__!r} does not provide.",
-            why=(
-                "Why: layouts built by Environment factories supply cell faces "
-                f"and measures; {type(layout).__name__!r} does not."
-            ),
-            fix=(
-                "build the environment with a factory method, e.g. "
-                "Environment.from_samples(positions, bin_size=...)"
-            ),
-        )
-    )
-
-
-@dataclass(frozen=True, eq=False)
-class LayoutFaces:
-    """Finite-volume faces delegated to a layout, checked against connectivity."""
-
-    layout: LayoutEngine
-    connectivity: nx.Graph
-    _available: bool = field(init=False, repr=False)
-    _n_bins: int = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "_available", isinstance(self.layout, FiniteVolumeGeometryProvider)
-        )
-        object.__setattr__(self, "_n_bins", self.layout.bin_centers.shape[0])
-
-    @property
-    def available(self) -> bool:
-        """Whether the layout supplied finite-volume geometry at publication."""
-        return self._available
-
-    def build(self) -> FaceGeometry:
-        """Build validated cell faces in the published connectivity order."""
-        layout = cast("FiniteVolumeGeometryProvider", self.layout)
-        graph, volumes = layout.finite_volume_geometry()
-        # Gradient and divergence index edge fields by env.connectivity's edge
-        # order, so the layout's graph must be that graph, edge for edge.
-        n_bins = self._n_bins
-        if graph.number_of_nodes() != n_bins or list(graph.edges()) != list(
-            self.connectivity.edges()
-        ):
-            raise ValueError(
-                f"{type(layout).__name__}.finite_volume_geometry() returned a graph "
-                f"with {graph.number_of_nodes()} bins and {graph.number_of_edges()} "
-                f"edges that does not match the environment's {n_bins} bins "
-                f"and {self.connectivity.number_of_edges()} connectivity edges in "
-                "order; the layout's graph is out of sync with env.connectivity."
-            )
-        return FaceGeometry.from_graph(graph, volumes)
-
-    def missing_error(self, operation: str) -> NotImplementedError:
-        """Explain why the named operation cannot obtain cell geometry."""
-        return _missing_geometry_error(self.layout, operation)
 
 
 @dataclass(frozen=True, eq=False)

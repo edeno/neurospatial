@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment, Regions
 from neurospatial.layout.validation import GraphValidationError, validate_environment
@@ -32,7 +33,7 @@ class TestValidateEnvironment:
 
         layout = RegularGridLayout()
         # Don't call build(), so it remains unfitted
-        env = Environment(name="unfitted", layout=layout)
+        env = publish_environment(name="unfitted", layout=layout)
 
         with pytest.raises(RuntimeError, match="not fitted"):
             validate_environment(env)

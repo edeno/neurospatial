@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import copy
 import math
-from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import networkx as nx
 import numpy as np
@@ -20,15 +19,12 @@ from shapely.geometry import MultiPolygon, Polygon
 from neurospatial.layout._binning import (
     Binning,
     KnownFaces,
-    LayoutLocator,
     Locator,
     SpatialBins,
     TrackLinearization,
 )
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
 from neurospatial.layout._composition import CombinedLocator
-from neurospatial.layout._construction import _outline_of, _shapes_of
-from neurospatial.layout._derive import _LegacyTrackLinearization
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -47,9 +43,6 @@ from neurospatial.layout._polygon import (
     transform_polygon_cells,
 )
 from neurospatial.layout.helpers.utils import get_centers
-
-if TYPE_CHECKING:
-    from matplotlib.axes import Axes
 
 
 def _equal(actual: Any, expected: Any, name: str) -> None:
@@ -529,34 +522,6 @@ def _primitive_geometry(
         )
         centers = locator.centers[order]
         return _LocatorGeometry(locator, centers, np.zeros_like(centers), [])
-    if isinstance(locator, LayoutLocator):
-        # Existing custom layouts retain their in-memory lookup contract.
-        # This exact adapter type has no codec, including under wrappers;
-        # saved data cannot select this delegated-containment fallback.
-        centers = np.asarray(locator.layout.bin_centers, dtype=np.float64)
-        sizes = np.asarray(locator.layout.bin_sizes(), dtype=np.float64)
-        geometry = _LocatorGeometry(
-            locator,
-            centers,
-            np.zeros_like(centers),
-            [(sizes, np.zeros_like(sizes))],
-        )
-        shapes = _shapes_of(locator.layout)
-        if isinstance(shapes, HexagonShapes):
-            _equal(shapes.centers, centers, "shapes.centers")
-            if not np.isfinite(shapes.radius) or shapes.radius <= 0:
-                raise ValueError("shapes.radius must be finite and positive.")
-            geometry.radius = shapes.radius
-            geometry.orientation = shapes.orientation
-        elif isinstance(shapes, TriangleShapes):
-            if shapes.triangles.shape != (len(centers), 3):
-                raise ValueError("shapes.triangles count does not match n_bins.")
-            geometry.points = shapes.points
-            geometry.point_error = np.zeros_like(shapes.points)
-            geometry.triangles = shapes.triangles
-        outline = _outline_of(locator.layout)
-        geometry.boundary = outline.geometry if outline is not None else None
-        return geometry
     raise ValueError("locator needs supported stored geometry for consistency checks.")
 
 
@@ -711,6 +676,8 @@ def _validate_components(
     binning: Binning,
     is_track: bool,
     coordinate_kind: Literal["cartesian", "polar"],
+    *,
+    check_center_lookup: bool = True,
 ) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     bins, locator = binning.bins, binning.locator
@@ -901,9 +868,7 @@ def _validate_components(
     )
     if (
         track is None
-        and not isinstance(
-            geometry.leaf, (NearestBinLocator, LayoutLocator, CombinedLocator)
-        )
+        and not isinstance(geometry.leaf, (NearestBinLocator, CombinedLocator))
         and bins.measure_dim != bins.n_dims
     ):
         raise ValueError("bins.measure_dim does not match the cell geometry dimension.")
@@ -918,26 +883,6 @@ def _validate_components(
     if grid is not None:
         if isinstance(locator, RectilinearLocator):
             grid_locator = locator
-        elif isinstance(geometry.leaf, LayoutLocator):
-            # The custom adapter has no stored edge duplicate. Check the
-            # retained component internally as well as delegated lookup.
-            grid_locator = RectilinearLocator(
-                grid.edges, grid.shape, grid.active_mask, None
-            )
-            grid_geometry = _rectilinear_geometry(grid_locator, coordinate_kind)
-            _computed_equal(
-                bins.centers,
-                grid_geometry.centers,
-                grid_geometry.center_error,
-                "rectilinear bins.centers",
-                gap=min(_gap(grid_geometry.centers), grid_geometry.cell_gap),
-            )
-            if not any(
-                value.shape == bins.sizes.shape
-                and np.all(np.abs(bins.sizes - value) <= np.minimum(error, value / 4))
-                for value, error in grid_geometry.measures
-            ):
-                raise ValueError("rectilinear bins.sizes do not match cell measures.")
         else:
             raise ValueError(
                 "rectilinear geometry needs a matching rectilinear locator."
@@ -1102,7 +1047,7 @@ def _validate_components(
         raise ValueError(
             "clipped locators require their matching PolygonCells component."
         )
-    if isinstance(geometry.leaf, (MeshLocator, LayoutLocator)):
+    if isinstance(geometry.leaf, MeshLocator):
         outline = binning.outline
         if (outline is None) != (geometry.boundary is None) or (
             outline is not None
@@ -1118,35 +1063,9 @@ def _validate_components(
         raise ValueError(
             "is_linearized_track does not match the linearization component."
         )
-    if isinstance(track, _LegacyTrackLinearization):
-        # This owned view preserves the conversion-only custom-layout
-        # contract. It has no codec and must not replace stored track data.
-        if not isinstance(geometry.leaf, LayoutLocator):
-            raise ValueError("legacy linearization needs a custom LayoutLocator.")
-        if (
-            track.active_mask.ndim != 1
-            or np.count_nonzero(track.active_mask) != bins.n_bins
-        ):
-            raise ValueError("linearization active_mask count does not match n_bins.")
-        if len(track.grid_edges) > 1:
-            raise ValueError("linearization grid_edges must contain one linear axis.")
-        if track.grid_edges:
-            edges = track.grid_edges[0]
-            if (
-                edges.ndim != 1
-                or len(edges) < 2
-                or not np.all(np.isfinite(edges))
-                or np.any(np.diff(edges) <= 0)
-                or track.active_mask.shape != (len(edges) - 1,)
-            ):
-                raise ValueError(
-                    "linearization edges and active_mask shape do not agree."
-                )
-        if bins.measure_dim != 1:
-            raise ValueError("linearization bins.measure_dim must be 1.")
-    elif track is not None:
+    if track is not None:
         if not isinstance(track, TrackLinearization) or not isinstance(
-            geometry.leaf, (NearestBinLocator, LayoutLocator)
+            geometry.leaf, NearestBinLocator
         ):
             raise ValueError(
                 "linearization needs stored track geometry and a nearest-bin locator."
@@ -1190,162 +1109,9 @@ def _validate_components(
         )
         if bins.measure_dim != 1:
             raise ValueError("linearization bins.measure_dim must be 1.")
-    _equal(
-        locator.locate(bins.centers),
-        np.arange(bins.n_bins),
-        "locator bin-center lookup",
-    )
-
-
-class BinningLayout:
-    """Expose stored bins through the layout interface without rebuilding them.
-
-    Parameters
-    ----------
-    binning : Binning
-        Owned bins, point lookup, faces and optional drawing components.
-    connectivity : networkx.Graph
-        Graph whose positions and ordered edge distances match the bins.
-    dimension_ranges : sequence of pairs or None
-        Coordinate bounds used when drawing the layout.
-    layout_type_tag, layout_type : str
-        Descriptive original layout identifier and category.
-    build_params : dict
-        Descriptive construction parameters. They are never executed.
-    is_linearized_track : bool
-        Whether the binning carries track coordinates.
-    coordinate_kind : {"cartesian", "polar"}, default="cartesian"
-        Internal coordinate context for validating physical cell measures.
-        Polar grids store annular-sector areas, including the radial factor.
-
-    Raises
-    ------
-    ValueError
-        If graph, locator or component geometry disagrees with the bins.
-    """
-
-    dimension_ranges: Sequence[tuple[float, float]] | None
-
-    def __init__(
-        self,
-        binning: Binning,
-        *,
-        connectivity: nx.Graph,
-        dimension_ranges: Sequence[tuple[float, float]] | None,
-        layout_type_tag: str,
-        layout_type: str,
-        build_params: dict[str, Any],
-        is_linearized_track: bool,
-        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
-    ) -> None:
-        if coordinate_kind not in ("cartesian", "polar"):
-            raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
-        graph = copy.deepcopy(connectivity)
-        _validate_graph(binning, graph)
-        _validate_components(binning, is_linearized_track, coordinate_kind)
-        self._binning = binning
-        self.bin_centers = binning.bins.centers
-        self.connectivity = graph
-        self.dimension_ranges = (
-            tuple((float(low), float(high)) for low, high in dimension_ranges)
-            if dimension_ranges is not None
-            else None
-        )
-        self._layout_type_tag = layout_type_tag
-        self._layout_type = layout_type
-        self._build_params_used = copy.deepcopy(build_params)
-        self._is_linearized_track = is_linearized_track
-
-    def binning(self) -> Binning:
-        """Return the retained binning itself, preserving its data authority."""
-        return self._binning
-
-    def build(self, **kwargs: Any) -> None:
-        """Keep the stored geometry; descriptive build parameters are not run."""
-
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Locate ``(n_points, n_dims)`` points using the stored locator."""
-        return self._binning.locator.locate(points)
-
-    def bin_sizes(self) -> NDArray[np.float64]:
-        """Return stored cell measures in active-bin order."""
-        return self._binning.bins.sizes
-
-    @property
-    def layout_type(self) -> str:
-        """Original descriptive layout category."""
-        return self._layout_type
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Whether rectangular grid cells are available."""
-        return self._binning.rectilinear is not None
-
-    @property
-    def is_linearized_track(self) -> bool:
-        """Whether the binning carries absolute linear track coordinates."""
-        return self._is_linearized_track
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...]:
-        """Cell edges derived from the rectangular or linear track component."""
-        if self._binning.rectilinear is not None:
-            return self._binning.rectilinear.edges
-        track = self._binning.linearization
-        return (
-            track.grid_edges
-            if isinstance(track, (TrackLinearization, _LegacyTrackLinearization))
-            else ()
-        )
-
-    @property
-    def grid_shape(self) -> tuple[int, ...]:
-        """Full grid shape, or active-bin count for non-grid cells."""
-        if self._binning.rectilinear is not None:
-            return self._binning.rectilinear.shape
-        track = self._binning.linearization
-        if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
-            return track.active_mask.shape
-        if isinstance(self._binning.locator, HexLocator):
-            return self._binning.locator.centers_shape
-        return (self._binning.bins.n_bins,)
-
-    @property
-    def active_mask(self) -> NDArray[np.bool_]:
-        """Active grid cells, or all active bins for a non-grid layout."""
-        if self._binning.rectilinear is not None:
-            return self._binning.rectilinear.active_mask
-        track = self._binning.linearization
-        if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
-            return track.active_mask
-        if isinstance(self._binning.locator, HexLocator):
-            locator = self._binning.locator
-            hex_mask: NDArray[np.bool_] = (locator.flat_to_active >= 0).reshape(
-                locator.centers_shape
-            )
-            hex_mask.setflags(write=False)
-            return hex_mask
-        mask = np.ones(self._binning.bins.n_bins, dtype=bool)
-        mask.setflags(write=False)
-        return mask
-
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Draw retained track, shape or rectangular geometry by component."""
-        from neurospatial.layout._plotting_binning import plot_binning
-
-        return plot_binning(
-            self._binning,
-            self.connectivity,
-            self.dimension_ranges,
-            self._layout_type_tag,
-            ax=ax,
-            **kwargs,
-        )
-
-    def plot_linear_layout(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Draw a retained track in its absolute linear coordinate system."""
-        from neurospatial.layout._plotting_binning import plot_linear_binning
-
-        return plot_linear_binning(
-            self._binning, self._layout_type_tag, ax=ax, **kwargs
+    if check_center_lookup:
+        _equal(
+            copy.deepcopy(locator).locate(bins.centers),
+            np.arange(bins.n_bins),
+            "locator bin-center lookup",
         )

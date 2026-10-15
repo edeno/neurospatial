@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment, Regions
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 
 class TestEnvironmentRepr:
@@ -69,7 +68,10 @@ class TestEnvironmentRepr:
 
     def test_str_falls_back_to_repr_for_unfitted(self):
         """``str(env)`` for an unfitted env mirrors ``repr(env)`` (no info())."""
-        env = Environment(name="", layout=RegularGridLayout())
+        env = Environment.from_grid_mask(
+            np.ones((1, 1), dtype=bool), grid_edges=(np.arange(2.0),) * 2
+        )
+        env._is_fitted = False
         assert str(env) == repr(env)
 
 

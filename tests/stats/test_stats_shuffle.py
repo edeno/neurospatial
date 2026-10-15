@@ -275,10 +275,10 @@ class TestShufflePlaceFieldsCircular2D:
 
         # The function requires full grid (no masked bins)
         # Skip if environment has inactive bins
-        if not hasattr(env.layout, "grid_shape") or env.layout.grid_shape is None:
+        if not hasattr(env, "grid_shape") or env.grid_shape is None:
             pytest.skip("Environment doesn't have grid layout")
 
-        expected_bins = int(np.prod(env.layout.grid_shape))
+        expected_bins = int(np.prod(env.grid_shape))
         if env.n_bins != expected_bins:
             pytest.skip("Environment has masked bins")
 

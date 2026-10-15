@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.decoding.posterior import decode_position, decode_position_summary
@@ -61,7 +62,6 @@ def test_rate_result_rejects_different_environment(
         from dataclasses import replace
 
         from neurospatial.layout._binning import KnownFaces
-        from neurospatial.layout._binning_layout import BinningLayout
         from neurospatial.layout._locators import NearestBinLocator
 
         bins = replace(env._binning.bins, sizes=env.bin_sizes * 2)
@@ -73,7 +73,7 @@ def test_rate_result_rejects_different_environment(
             faces=KnownFaces(faces),
             rectilinear=None,
         )
-        layout = BinningLayout(
+        layout = Environment._from_binning(
             binning,
             connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
@@ -82,7 +82,7 @@ def test_rate_result_rejects_different_environment(
             build_params={},
             is_linearized_track=False,
         )
-        env = Environment(
+        env = publish_environment(
             layout=layout,
             layout_type_used="UnequalCells",
             arena=env.arena,

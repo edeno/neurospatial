@@ -482,13 +482,10 @@ def _restore_environment(
     """Decode authoritative binning and Arena data without a layout builder."""
     from neurospatial.arena import Arena, UnknownArena, decode_arena
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import (
-        CartesianSystem,
-        EgocentricPolarSystem,
-    )
     from neurospatial.layout._binning import Binning, TrackLinearization
-    from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._codecs import decode
+    from neurospatial.layout._context import grid_index
+    from neurospatial.layout._validation import _validate_components, _validate_graph
     from neurospatial.regions import Region, Regions
 
     try:
@@ -542,16 +539,10 @@ def _restore_environment(
             _convert_lists_to_arrays(metadata["layout_parameters"])
         )
         ranges = metadata.get("dimension_ranges")
-        layout = BinningLayout(
-            binning,
-            connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
-            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
-            layout_type_tag=metadata["layout_type"],
-            layout_type=metadata["layout_category"],
-            build_params=params,
-            is_linearized_track=metadata["is_linearized_track"],
-            coordinate_kind=coordinate_kind,
-        )
+        graph = nx.node_link_graph(metadata["graph"], edges="links")
+        _validate_graph(binning, graph)
+        _validate_components(binning, metadata["is_linearized_track"], coordinate_kind)
+        context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
         ):
@@ -566,26 +557,28 @@ def _restore_environment(
             if (
                 "grid_shape" in metadata
                 and metadata["grid_shape"] is not None
-                and tuple(metadata["grid_shape"]) != layout.grid_shape
+                and tuple(metadata["grid_shape"]) != context.shape
             ):
                 raise ValueError("stored grid_shape differs from the binning")
             if "active_mask" in arrays and not np.array_equal(
-                arrays["active_mask"], layout.active_mask
+                arrays["active_mask"], context.active_mask
             ):
                 raise ValueError("stored active_mask differs from the binning")
-            for index, edges in enumerate(layout.grid_edges or ()):
+            for index, edges in enumerate(context.edges or ()):
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        env = Environment(
-            metadata["name"],
-            layout,
-            metadata["layout_type"],
-            params,
+        env = Environment._from_binning(
+            binning,
+            connectivity=graph,
+            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
+            layout_type_tag=metadata["layout_type"],
+            layout_type=metadata["layout_category"],
+            build_params=params,
+            is_linearized_track=metadata["is_linearized_track"],
+            name=metadata["name"],
+            coordinate_kind=coordinate_kind,
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
-            _coordinates=EgocentricPolarSystem(False)
-            if coordinate_kind == "polar"
-            else CartesianSystem(),
             restored_from=source,
             arena=arena,
             units=metadata.get("units"),

@@ -77,7 +77,7 @@ def test_polar_declaration_and_fallback_lengths(polar_env):
     system = polar_env._coordinate_system
     assert isinstance(system, EgocentricPolarSystem)
     assert system.circular == polar_env._angular_is_circular
-    assert system.circular == polar_env.layout._build_params_used["circular_angle"]
+    assert system.circular == polar_env.layout_parameters["circular_angle"]
     np.testing.assert_array_equal(system.fallback_lengths(polar_env), np.full(6, 5.0))
 
 

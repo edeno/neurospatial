@@ -11,7 +11,10 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.environment._coordinates import (
+        CartesianSystem,
+        EgocentricPolarSystem,
+    )
     from neurospatial.ops._protocols import (
         DiffusionAccuracyConsumer,
         DiffusionGeometryConsumer,
@@ -29,8 +32,10 @@ if TYPE_CHECKING:
     )
     from neurospatial.ops.diffusion import diffusion_apply_rtol, diffusion_kernel
 
-    def check_consumers(env: Environment | EgocentricPolarEnvironment) -> None:
-        """Both concrete environments satisfy the narrow contracts without casts."""
+    def check_consumers(
+        env: Environment[CartesianSystem] | Environment[EgocentricPolarSystem],
+    ) -> None:
+        """Both coordinate meanings satisfy the narrow contracts without casts."""
         geometry: DiffusionGeometryConsumer = env
         accuracy: DiffusionAccuracyConsumer = env
         faces: FaceGeometryConsumer = env

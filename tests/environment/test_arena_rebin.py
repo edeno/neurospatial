@@ -74,7 +74,7 @@ def test_rebin_selects_strict_polygon_centers_and_preserves_holes(physical):
     )
     arena = OpenArena(domain) if physical else None
     parent = _regular(arena=arena, holes=True)
-    assert parent.layout._layout_type_tag == "RegularGrid"
+    assert parent.layout_type == "RegularGrid"
     child = parent.rebin(2)
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert child.arena.physical_footprint_known is physical
@@ -123,7 +123,7 @@ def test_rebin_refuses_when_no_coarse_center_is_in_the_arena():
 def test_sparse_rebin_result_remains_in_the_regular_grid_family():
     parent = _regular(holes=True)
     first = parent.rebin(2)
-    assert first.layout._layout_type_tag == "RegularGrid"
+    assert first.layout_type == "RegularGrid"
     assert first._binning.kind == "RegularGrid"
     with pytest.warns(UserWarning, match="truncated"):
         direct = parent.rebin((2, 4))
@@ -141,14 +141,15 @@ def test_sparse_rebin_result_remains_in_the_regular_grid_family():
 @pytest.mark.parametrize("holes", [False, True])
 def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
     parent = _regular(holes=holes)
-    setup = Environment._setup_from_layout
+    setup = Environment._from_binning.__func__
     published = []
 
-    def counted(instance, **kwargs):
+    def counted(cls, binning, **kwargs):
+        instance = setup(cls, binning, **kwargs)
         published.append(instance)
-        return setup(instance, **kwargs)
+        return instance
 
-    monkeypatch.setattr(Environment, "_setup_from_layout", counted)
+    monkeypatch.setattr(Environment, "_from_binning", classmethod(counted))
     child = parent.rebin(2)
     assert published == [child]
     assert child._state_version == 1

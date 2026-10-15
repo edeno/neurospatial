@@ -18,7 +18,6 @@ from neurospatial.layout._binning import (
     SpatialBins,
     TrackLinearization,
 )
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
 from neurospatial.layout._locators import (
     HexLocator,
@@ -109,7 +108,9 @@ def _plot_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
     return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
 
 
-def layout_from_bins(binning: object) -> BinningLayout:
+def prepare_bins(
+    binning: object,
+) -> tuple[Binning, nx.Graph, tuple[tuple[float, float], ...] | None, str]:
     """Own and validate explicit Cartesian bins, with no layout builder.
 
     Parameters
@@ -120,7 +121,7 @@ def layout_from_bins(binning: object) -> BinningLayout:
 
     Returns
     -------
-    BinningLayout
+    tuple
         Validated data and a synthesized navigation graph. Graph iteration
         order can differ from the retained pair order.
 
@@ -192,16 +193,6 @@ def layout_from_bins(binning: object) -> BinningLayout:
         )
         if bins.n_dims == 2:
             graph.edges[u, v]["angle_2d"] = float(np.arctan2(vector[1], vector[0]))
-    layout = BinningLayout(
-        snapshot,
-        connectivity=graph,
-        dimension_ranges=None,
-        layout_type_tag=snapshot.kind,
-        layout_type=_category(snapshot),
-        build_params={},
-        is_linearized_track=snapshot.linearization is not None,
-    )
-    # The facade has now validated masks, maps, geometry and pair alignment.
     source = _source_grid(snapshot.locator)
     if source is None and isinstance(snapshot.linearization, TrackLinearization):
         mask = snapshot.linearization.active_mask
@@ -209,11 +200,10 @@ def layout_from_bins(binning: object) -> BinningLayout:
     if source is not None:
         shape, indices = source
         for index, flat in enumerate(indices):
-            layout.connectivity.nodes[index].update(
+            graph.nodes[index].update(
                 source_grid_flat_index=int(flat),
                 original_grid_nd_index=tuple(
                     int(value) for value in np.unravel_index(flat, shape)
                 ),
             )
-    layout.dimension_ranges = _plot_ranges(snapshot)
-    return layout
+    return snapshot, graph, _plot_ranges(snapshot), _category(snapshot)

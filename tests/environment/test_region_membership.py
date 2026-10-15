@@ -347,11 +347,8 @@ class TestRegionMembershipValidation:
 
     def test_requires_fitted_environment(self):
         """Test that method requires fitted environment."""
-        # Create unfitted environment by instantiating with minimal layout
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
-        layout = RegularGridLayout()
-        env = Environment(layout=layout)
+        env = Environment.__new__(Environment)
+        env._is_fitted = False
 
         with pytest.raises(
             RuntimeError, match="requires the environment to be fully initialized"

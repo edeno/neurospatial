@@ -27,6 +27,7 @@ from pathlib import Path
 
 import networkx as nx
 import numpy as np
+from environment_helpers import publish_environment
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
@@ -72,7 +73,7 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
     }
     layout = GraphLayout()
     layout.build(**params)
-    env = Environment(
+    env = publish_environment(
         name="track",
         layout=layout,
         layout_type_used="Graph",

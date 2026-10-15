@@ -143,7 +143,7 @@ class TestEncodingGridFunctionality:
         result = spatial_autocorrelation(env, firing_rate)
 
         assert result.ndim == 2
-        assert result.shape == env.layout.grid_shape
+        assert result.shape == env.grid_shape
 
     def test_spatial_autocorrelation_graph_runs(self, env_and_data) -> None:
         """spatial_autocorrelation (graph) should run and return tuple."""

@@ -6,6 +6,7 @@ from a selection of bins.
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from shapely.geometry import box
 
 from neurospatial import Environment, Regions
@@ -589,7 +590,7 @@ class TestSubsetKeepsParentConnectivity:
 
         graph = layout.connectivity
         graph.remove_edges_from([(u, v) for u, v in graph.edges if crosses_wall(u, v)])
-        walled = Environment(layout=layout, layout_type_used="MaskedGrid")
+        walled = publish_environment(layout=layout, layout_type_used="MaskedGrid")
         walled = from_dict(to_dict(walled))
         assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())
 

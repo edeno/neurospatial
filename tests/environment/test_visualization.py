@@ -8,6 +8,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from matplotlib.collections import PatchCollection, QuadMesh
 
 from neurospatial import Environment
@@ -45,7 +46,7 @@ class TestPlotField:
             positions=data,
             infer_active_bins=True,
         )
-        env = Environment(layout=layout, layout_type_used="hexagonal")
+        env = publish_environment(layout=layout, layout_type_used="hexagonal")
         field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
@@ -69,7 +70,7 @@ class TestPlotField:
         layout = TriangularMeshLayout()
         layout.build(polygon, point_spacing=20.0)
 
-        env = Environment(layout=layout, layout_type_used="triangular_mesh")
+        env = publish_environment(layout=layout, layout_type_used="triangular_mesh")
         field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()

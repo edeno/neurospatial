@@ -16,7 +16,6 @@ from neurospatial import Environment
 from neurospatial.layout._binning import (
     Binning,
     KnownFaces,
-    LayoutLocator,
     MissingFaces,
     TrackLinearization,
 )
@@ -179,20 +178,17 @@ def test_missing_faces_preserves_actionable_reason():
 
 
 def test_unregistered_layout_locator_refuses():
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
-    )
     with pytest.raises(ValueError) as caught:
-        encode(LayoutLocator(env.layout), "locator")
-    assert type(env.layout).__name__ in str(caught.value)
+        encode(object(), "locator")
+    assert "no codec" in str(caught.value)
     assert "Fix:" in str(caught.value)
 
 
 def test_unregistered_layout_linearization_refuses():
     env = Environment.linear_track(endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0)
     with pytest.raises(ValueError) as caught:
-        encode(env.layout, "linearization")
-    assert type(env.layout).__name__ in str(caught.value)
+        encode(env, "linearization")
+    assert "no codec" in str(caught.value)
     assert "Fix:" in str(caught.value)
 
 

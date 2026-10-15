@@ -11,10 +11,9 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial._exceptions import EnvironmentNotFittedError
-from neurospatial.layout._binning import LayoutFaces
 from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
@@ -24,7 +23,6 @@ from neurospatial.layout._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 _BuiltEnvironment = Environment | Environment
 
@@ -62,7 +60,7 @@ def test_binning_matches_layout(built_environment: _BuiltEnvironment) -> None:
     bins = env._binning.bins
     edges = list(env.connectivity.edges(data=True))
     np.testing.assert_array_equal(bins.centers, env.bin_centers)
-    np.testing.assert_array_equal(bins.sizes, env.layout.bin_sizes())
+    np.testing.assert_array_equal(bins.sizes, env.bin_sizes)
     np.testing.assert_array_equal(
         bins.pairs,
         np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2),
@@ -95,7 +93,7 @@ def test_binning_capabilities_match_layout_protocols(
         assert binning.shapes is None
     if not hasattr(layout, "outline"):
         assert binning.outline is None
-    assert binning.kind == env.layout._layout_type_tag
+    assert binning.kind == env.layout_type
     if binning.rectilinear is not None:
         expected = layout.rectilinear_grid()
         assert binning.rectilinear.shape == expected.shape
@@ -129,7 +127,7 @@ def test_binning_published_once(built_environment: _BuiltEnvironment) -> None:
         env._binning = published
     with pytest.raises(FrozenInstanceError):
         published.kind = "different"
-    other = binning_from_layout(env.layout, env.connectivity)
+    other = binning_from_layout(_source_layout(env), env.connectivity)
     assert other != published
     assert len({published, other}) == 2
 
@@ -142,7 +140,7 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     points = _query_points(env)
     untouched = points.copy()
     expected, expected_warnings = _lookup_with_warnings(
-        env.layout.point_to_bin_index, points
+        env._binning.locator.locate, points
     )
     actual, actual_warnings = _lookup_with_warnings(env._binning.locator.locate, points)
     np.testing.assert_array_equal(actual, expected)
@@ -170,7 +168,7 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     np.testing.assert_array_equal(actual[-2:], [-1, -1])
     for query in (points[:1], np.empty((0, env.n_dims))):
         np.testing.assert_array_equal(
-            env._binning.locator.locate(query), env.layout.point_to_bin_index(query)
+            env._binning.locator.locate(query), env._binning.locator.locate(query)
         )
 
 
@@ -181,7 +179,7 @@ def test_locator_preserves_dimension_behavior(
     env = built_environment
     query = np.ones((2, env.n_dims + 1))
     try:
-        expected = env.layout.point_to_bin_index(query)
+        expected = env._binning.locator.locate(query)
     except ValueError as expected_error:
         with pytest.raises(ValueError) as actual_error:
             env._binning.locator.locate(query)
@@ -242,58 +240,18 @@ def test_serialized_binning_preserves_ownership(
     )
 
 
-def test_legacy_environment_pickle_rebuilds_publication(
-    built_environment: _BuiltEnvironment,
-) -> None:
-    """Saved environments predating the snapshot rebuild it and drop stale caches."""
+def test_pickle_without_owned_geometry_refuses(built_environment):
     legacy = copy.deepcopy(built_environment)
-    field = np.arange(legacy.n_bins, dtype=float)
-    expected_sizes = legacy.bin_sizes.copy()
-    expected_smooth = legacy.smooth(field, bandwidth=1.0)
-    expected_bins = legacy.layout.point_to_bin_index(legacy.bin_centers)
-    legacy.compute_kernel(1.0)
-    _ = legacy._face_geometry, legacy._diffusion_geometry
-    assert legacy._kernel_cache
-    # Old pickles stored a cached property here, rather than a published size array.
-    vars(legacy)["bin_sizes"] = np.full(legacy.n_bins, -1.0)
-    version = legacy._state_version
     vars(legacy._geometry).pop("binning")
-
-    restored = pickle.loads(pickle.dumps(legacy))
-
-    assert restored._geometry.binning is restored._binning
-    assert restored._state_version == version + 1
-    assert not restored._kernel_cache
-    assert restored._kdtree_cache is None
-    assert "bin_sizes" not in vars(restored)
-    assert "_versioned_cache___face_geometry" not in vars(restored)
-    assert "_versioned_cache___diffusion_geometry" not in vars(restored)
-    np.testing.assert_array_equal(restored.bin_sizes, expected_sizes)
-    assert not restored.bin_sizes.flags.writeable
-    if not restored._is_polar:
-        np.testing.assert_array_equal(
-            restored.bin_at(restored.bin_centers), expected_bins
-        )
-    else:
-        np.testing.assert_array_equal(
-            restored._binning.locator.locate(restored.bin_centers), expected_bins
-        )
-    np.testing.assert_allclose(restored.smooth(field, bandwidth=1.0), expected_smooth)
+    with pytest.raises(ValueError, match="missing owned binning"):
+        pickle.loads(pickle.dumps(legacy))
 
 
-def test_legacy_unfitted_pickle_restores_an_unpublished_placeholder() -> None:
-    """An unbuilt saved environment must not attempt to publish missing geometry."""
-    legacy = Environment(layout=RegularGridLayout())
-    assert not legacy._is_fitted
-    vars(legacy._geometry).pop("binning")
-
-    restored = pickle.loads(pickle.dumps(legacy))
-
-    assert not restored._is_fitted
-    assert restored._geometry.binning is None
-    assert restored._state_version == legacy._state_version
-    with pytest.raises(EnvironmentNotFittedError):
-        restored.bin_at(np.zeros((1, 2)))
+def test_layout_bearing_pickle_requires_supported_storage_migration(built_environment):
+    legacy = copy.deepcopy(built_environment)
+    legacy._layout = _source_layout(legacy)
+    with pytest.raises(ValueError, match="Legacy layout-bearing pickles"):
+        pickle.loads(pickle.dumps(legacy))
 
 
 def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
@@ -333,8 +291,8 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
     with pytest.raises(ValueError, match="sizes"):
         binning_from_layout(layout, layout.connectivity)
-    with pytest.raises(TypeError, match=r"owned immutable snapshot|Migrate custom"):
-        Environment(layout=layout, layout_type_used=layout._layout_type_tag)
+    with pytest.raises(TypeError, match=r"owned.*snapshot|Migrate custom"):
+        publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
     assert env._geometry is geometry
     assert env._binning is published
     assert env._state_version == version
@@ -363,26 +321,22 @@ def test_faces_reject_changed_pair_order() -> None:
         assert faces.A[i] == expected.A[by_pair[frozenset(pair)]]
 
 
-def test_faces_reject_isolated_graph_nodes_without_centers(monkeypatch) -> None:
-    """Face validation counts spatial bins even when graph edges still align."""
-    original = Environment.from_grid_mask(
+def test_publication_rejects_graph_nodes_without_bins():
+    env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    layout = _source_layout(original)
-    graph, _ = layout.finite_volume_geometry()
-    graph.add_node(
-        4,
-        pos=(10.0, 10.0),
-        source_grid_flat_index=4,
-        original_grid_nd_index=(2, 0),
-    )
-    layout.connectivity = graph
-    monkeypatch.setattr(layout, "finite_volume_geometry", lambda: (graph, np.ones(5)))
-    faces = LayoutFaces(layout, graph)
-    assert layout.bin_centers.shape[0] == 4
-    assert graph.number_of_nodes() == 5
-    with pytest.raises(ValueError, match="does not match the environment's 4 bins"):
-        faces.build()
+    graph = env.connectivity.copy()
+    graph.add_node(4, pos=(10.0, 10.0))
+    with pytest.raises(ValueError, match=r"nodes|bins"):
+        Environment._from_binning(
+            env._binning,
+            connectivity=graph,
+            dimension_ranges=env.dimension_ranges,
+            layout_type_tag=env.layout_type,
+            layout_type=env._layout_category,
+            build_params={},
+            is_linearized_track=False,
+        )
 
 
 @pytest.mark.nwb

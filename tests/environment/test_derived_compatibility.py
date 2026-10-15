@@ -9,21 +9,21 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from matplotlib.patches import RegularPolygon
 
 from neurospatial import Environment
 from neurospatial.io import from_dict, to_dict
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.ops.transforms import Affine2D
 
 
 def _owned_layout(parent, tag):
-    return BinningLayout(
+    return Environment._from_binning(
         parent._binning,
         connectivity=parent.connectivity,
         dimension_ranges=parent.dimension_ranges,
         layout_type_tag=tag,
-        layout_type=parent.layout.layout_type,
+        layout_type=parent._layout_category,
         build_params={},
         is_linearized_track=parent.is_linearized_track,
     )
@@ -53,7 +53,7 @@ class _ExternalGridLayout:
         return self.parent.bin_sizes
 
     def finite_volume_geometry(self):
-        return self.parent.layout.finite_volume_geometry()
+        return self.parent.finite_volume_geometry()
 
     def point_to_bin_index(self, points):
         return self.parent.bin_at(points)
@@ -114,8 +114,8 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
         TypeError,
         match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
     ):
-        Environment("external_track", layout, "ExternalTrack", {})
-    parent = Environment(
+        publish_environment("external_track", layout, "ExternalTrack", {})
+    parent = publish_environment(
         "external_track", _owned_layout(native, "ExternalTrack"), "ExternalTrack", {}
     )
     source_writeability = tuple(
@@ -158,7 +158,7 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     query = np.array([[0.5, 0.2], [4.5, -0.3], [9.5, 0.1]])
     for restored in (child, copy.deepcopy(child), pickle.loads(pickle.dumps(child))):
         assert restored.is_linearized_track
-        assert restored.layout.is_linearized_track
+        assert restored.is_linearized_track
         np.testing.assert_array_equal(restored.bin_centers, expected_centers)
         np.testing.assert_array_equal(
             restored.bin_sizes, native.bin_sizes[indices] * linear_scale
@@ -213,8 +213,8 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
         TypeError,
         match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
     ):
-        Environment("external", _ExternalGridLayout(native), "ExternalGrid", {})
-    parent = Environment(
+        publish_environment("external", _ExternalGridLayout(native), "ExternalGrid", {})
+    parent = publish_environment(
         "external", _owned_layout(native, "ExternalGrid"), "ExternalGrid", {}
     )
     transform = Affine2D(

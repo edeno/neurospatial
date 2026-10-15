@@ -9,7 +9,6 @@ import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.environment._protocols import ClipConsumer
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._polygon import clip_binning
 
 if TYPE_CHECKING:
@@ -74,7 +73,8 @@ def _clip(
         (float(bounds[:, axis].min()), float(bounds[:, axis + 2].max()))
         for axis in range(2)
     ]
-    layout = BinningLayout(
+    env_cls = cast("type[Environment]", type(env))
+    result = env_cls._from_binning(
         binning,
         connectivity=graph,
         dimension_ranges=ranges,
@@ -82,13 +82,7 @@ def _clip(
         layout_type="polygon",
         build_params={"source": "clip", "original_n_bins": env.n_bins},
         is_linearized_track=False,
-    )
-    env_cls = cast("type[Environment]", type(env))
-    result = env_cls(
-        name if name is not None else env.name,
-        layout,
-        "PolygonCells",
-        layout._build_params_used,
+        name=name if name is not None else env.name,
         arena=env.arena,
         clip_mapping=mapping,
         units=env.units,

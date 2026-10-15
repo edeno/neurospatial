@@ -45,7 +45,8 @@ from scipy import sparse
 from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
-from neurospatial._logging import log_environment_created, log_graph_validation
+from neurospatial._logging import log_environment_created
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._coordinates import (
     CartesianSystem,
     EgocentricPolarSystem,
@@ -312,24 +313,11 @@ class Environment(Generic[_C]):
     (4,)
     """
 
+    _metadata: _Metadata
+    _regions: Regions
+    _layout_category: str
+
     name = _MetadataView[str]()
-
-    @property
-    def layout(self) -> LayoutEngine:
-        """Read-only compatibility bridge over the published geometry."""
-        return self._layout if self._is_fitted else copy_module.deepcopy(self._layout)
-
-    @layout.setter
-    def layout(self, value: LayoutEngine) -> NoReturn:
-        raise AttributeError(
-            "Environment.layout is read-only; build a new environment."
-        )
-
-    @layout.deleter
-    def layout(self) -> NoReturn:
-        raise AttributeError(
-            "Environment.layout is read-only; build a new environment."
-        )
 
     _geometry: _PublishedGeometry = field(init=False, repr=False)
 
@@ -388,202 +376,43 @@ class Environment(Generic[_C]):
 
     _layout_params_used: dict[str, Any] = field(init=False, default_factory=dict)
 
-    def __init__(
-        self,
-        name: str = "",
-        layout: LayoutEngine | None = None,
-        layout_type_used: str | None = None,
-        layout_params_used: dict[str, Any] | None = None,
-        regions: Regions | None = None,
-        *,
-        units: str | None = None,
-        frame: str | None = None,
-        restored_from: str | None = None,
-        arena: Arena | None = None,
-        clip_mapping: ClipMapping | None = None,
-        _coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
-    ) -> None:
-        """Initialize the Environment.
-
-        Note: This constructor is primarily intended for internal use by factory
-        methods. Users should typically create Environment instances using
-        classmethods like `Environment.from_samples(...)`. The provided
-        `layout` instance is assumed to be already built and configured.
-
-        Parameters
-        ----------
-        name : str, optional
-            Name for the environment, by default "".
-        layout : LayoutEngine
-            A fully built LayoutEngine instance that defines the environment's
-            geometry and connectivity.
-        layout_type_used : Optional[str], optional
-            The string identifier for the type of layout used. If None, it's
-            inferred from `layout._layout_type_tag`. Defaults to None.
-        layout_params_used : Optional[Dict[str, Any]], optional
-            Parameters used to build the layout. If None, inferred from
-            `layout._build_params_used`. Defaults to None.
-
-        regions : Regions or None, optional
-            Initial named regions; an empty container is created when omitted.
-        units : str or None, optional
-            Label for the supplied coordinate units; never scales coordinates.
-        frame : str or None, optional
-            Coordinate frame label for the supplied coordinates.
-        restored_from : str, optional
-            Where a read-back environment's saved geometry came from; an invalid
-            saved graph is then reported against that data.
-        arena : Arena, optional
-            Continuous domain. When omitted, infer a domain from the supplied
-            geometry without asserting walls from unvisited samples.
-        _coordinates : CartesianSystem or EgocentricPolarSystem, optional
-            Internal owned coordinate descriptor supplied by factories/readers.
-        clip_mapping : ClipMapping, optional
-            Source-bin mapping for a clipped environment.
-
-        """
-        if layout is None:
-            raise ValueError(
-                _format_error(
-                    "[E1006] Environment cannot be constructed directly — use a factory method.\n\nMost common (from positions you recorded):\n    env = Environment.from_samples(positions, bin_size=2.0)\n\nOther factories, chosen by the data you have:\n    from_polygon     — a Shapely polygon boundary\n    from_graph       — a track/maze graph (linearized 1D)\n    from_grid_mask   — an N-D boolean mask + grid edges\n    from_pixel_mask  — a 2D image / pixel mask\n\nAvoid:\n    env = Environment()  # not supported\n\nSee each factory's docstring for its exact arguments, or:\n    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
-                    fix="env = Environment.from_samples(positions, bin_size=2.0)",
-                    why="Why: a factory builds the geometry and connectivity required by Environment.",
-                )
+    def __init__(self) -> None:
+        """Use an Environment factory to build owned geometry and metadata."""
+        raise ValueError(
+            _format_error(
+                "[E1006] Environment cannot be constructed directly — use a factory method.\n\nMost common (from positions you recorded):\n    env = Environment.from_samples(positions, bin_size=2.0)\n\nOther factories, chosen by the data you have:\n    from_polygon     — a Shapely polygon boundary\n    from_graph       — a track/maze graph (linearized 1D)\n    from_grid_mask   — an N-D boolean mask + grid edges\n    from_pixel_mask  — a 2D image / pixel mask\n\nAvoid:\n    env = Environment()  # not supported\n\nSee each factory's docstring for its exact arguments, or:\n    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
+                fix="env = Environment.from_samples(positions, bin_size=2.0)",
+                why="Why: a factory builds the geometry and connectivity required by Environment.",
             )
-
-        if layout_type_used is not None:
-            from neurospatial.environment._ownership import (
-                _NATIVE_LAYOUTS,
-                _OwnedLayout,
-                own_layout,
-            )
-            from neurospatial.layout._binning_layout import BinningLayout
-
-            if type(layout) not in (*_NATIVE_LAYOUTS, BinningLayout, _OwnedLayout):
-                layout = own_layout(layout)
-                layout_type_used = layout._layout_type_tag
-                layout_params_used = layout._build_params_used
-
-        self._metadata = _Metadata(name, units, frame)
-        type(self)._validate_units(units)
-        self._layout = (
-            layout if layout_type_used is not None else copy_module.deepcopy(layout)
         )
-
-        self._layout_type_used = (
-            layout_type_used
-            if layout_type_used
-            else getattr(layout, "_layout_type_tag", None)
-        )
-        self._layout_params_used = copy_module.deepcopy(
-            layout_params_used
-            if layout_params_used is not None
-            else getattr(layout, "_build_params_used", {})
-        )
-
-        self._layout_category = layout.layout_type
-        self._is_linearized_track_env = layout.is_linearized_track
-
-        # Initialize attributes that will be populated by _setup_from_layout
-        # Placeholder geometry until _setup_from_layout publishes the layout's
-        self._geometry = _PublishedGeometry(
-            binning=None,
-            coordinates=_coordinates or CartesianSystem(),
-            bin_centers=np.empty((0, 0)),
-            connectivity=nx.Graph(),
-            dimension_ranges=None,
-            grid_edges=(),
-            grid_shape=None,
-            active_mask=None,
-        )
-        self._freeze_geometry_arrays()
-        self._is_fitted = False  # Will be set by _setup_from_layout
-        if layout_type_used is not None:
-            # Populate attributes from the built layout
-            self._setup_from_layout(
-                restored_from=restored_from, arena=arena, clip_mapping=clip_mapping
-            )
-        if regions is not None:
-            if not isinstance(regions, Regions):
-                raise TypeError(
-                    f"Expected 'regions' to be a Regions instance, got {type(regions)}.",
-                )
-            self._regions = self._validate_regions(regions)
-        else:
-            # Initialize with an empty Regions instance if not provided
-            self._regions = Regions()._snapshot()
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore published geometry from pickles predating binning snapshots."""
+        """Restore owned state and reset transient caches without a builder."""
         self.__dict__.update(state)
-        legacy_component_policy = "component_diagonal" not in vars(self._geometry)
-        if "_layout" not in state:
-            self._layout = state["layout"]
-        self.__dict__.pop("layout", None)
-        if "_metadata" not in state:
-            self._metadata = _Metadata(
-                state.get("name", ""), state.get("units"), state.get("frame")
+        if "_layout" in state or "layout" in state:
+            raise ValueError(
+                "Legacy layout-bearing pickles are not supported; load a dictionary, file or NWB export to migrate."
             )
-        for key in ("name", "units", "frame"):
-            self.__dict__.pop(key, None)
-        self._regions = self._validate_regions(
-            state.get("_regions", state.get("regions", Regions()))
-        )
-        self.__dict__.pop("regions", None)
-        missing_binning = not hasattr(self._geometry, "binning")
-        if missing_binning or getattr(self._geometry, "arena", None) is None:
-            from neurospatial.arena import UnknownArena
+        if self._is_fitted and getattr(self._geometry, "binning", None) is None:
+            raise ValueError(
+                "Environment pickle is missing owned binning data; load a dictionary, file or NWB export instead."
+            )
+        if self._is_fitted:
+            from neurospatial.environment._ownership import own_arena
 
-            n_dims = self._geometry.bin_centers.shape[1]
-            arena = (
-                UnknownArena(
-                    n_dims, coordinate_kind="polar" if self._is_polar else "cartesian"
-                )
-                if n_dims
-                else None
+            assert self._geometry.arena is not None
+            diagonal = vars(self._geometry).get(
+                "component_diagonal",
+                bool(self._layout_params_used.get("connect_diagonal_neighbors", False)),
             )
             self._geometry = replace(
                 self._geometry,
-                binning=getattr(self._geometry, "binning", None),
-                arena=arena,
-                clip_mapping=getattr(self._geometry, "clip_mapping", None),
-            )
-            if missing_binning and self._is_fitted:
-                self._setup_from_layout(arena=arena)
-        if self._is_fitted:
-            from neurospatial.environment._ownership import own_arena, own_layout
-
-            self._layout = own_layout(self._layout)
-            assert self._geometry.arena is not None
-            self._geometry = replace(
-                self._geometry, arena=own_arena(self._geometry.arena)
+                arena=own_arena(self._geometry.arena),
+                component_diagonal=diagonal,
             )
             _freeze_graph_attributes(self._geometry.connectivity)
+            self._regions = self._validate_regions(self._regions)
             self._reset_analysis_caches()
-        if legacy_component_policy:
-            self._geometry = replace(
-                self._geometry,
-                component_diagonal=bool(
-                    self._layout._build_params_used.get(
-                        "connect_diagonal_neighbors", False
-                    )
-                ),
-            )
-        if getattr(self._geometry, "coordinates", None) is None:
-            self._geometry = replace(
-                self._geometry,
-                coordinates=(
-                    EgocentricPolarSystem(
-                        polar_circularity(
-                            self._geometry.grid_shape,
-                            self._geometry.connectivity,
-                            self._layout_params_used,
-                        )
-                    )
-                    if self._is_polar
-                    else CartesianSystem()
-                ),
-            )
         self._freeze_geometry_arrays()
 
     def _freeze_geometry_arrays(self) -> None:
@@ -707,7 +536,7 @@ class Environment(Generic[_C]):
                 "are allowed but may not be interpreted by tools that consume "
                 "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
                 category=UserWarning,
-                stacklevel=3,
+                stacklevel=_external_stacklevel(),
             )
 
     def _reset_analysis_caches(self) -> None:
@@ -1210,194 +1039,6 @@ class Environment(Generic[_C]):
             lines.append("")
 
         return "\n".join(lines)
-
-    def _setup_from_layout(
-        self,
-        *,
-        restored_from: str | None = None,
-        arena: Arena | None = None,
-        clip_mapping: ClipMapping | None = None,
-    ) -> None:
-        """Refresh Environment geometry and caches from its built LayoutEngine.
-
-        This internal method is called after the `LayoutEngine` is associated
-        with the Environment. It copies essential geometric and connectivity
-        information from the layout to the Environment's attributes.
-        It also applies fallbacks for certain grid-specific attributes if the
-        layout is point-based to ensure consistency. It also advances the state
-        version, clears all analysis caches and publishes the geometry
-        read-only. Readers decode bins, lookup and graph data into a layout
-        facade before the normal constructor, so this runs once per environment
-        without rebuilding a layout. Swapping in a different layout or changing
-        its bins and calling this again is not supported.
-
-        Parameters
-        ----------
-        restored_from : str, optional
-            Where restored geometry came from (e.g. a file path). An invalid
-            graph is then reported as a problem with that saved data rather
-            than as a layout engine bug.
-
-        Raises
-        ------
-        ValueError
-            If the connectivity graph from the layout engine is invalid
-            (missing required node/edge attributes, wrong dimensions, etc.).
-            The environment is left unchanged.
-
-        """
-        bin_centers = self._layout.bin_centers
-        connectivity = getattr(self._layout, "connectivity", nx.Graph())
-
-        # Validate the graph before touching any environment state, so a failure
-        # leaves the previous geometry, version and caches consistent.
-        # Note: Calculate n_dims directly here since self.n_dims has @check_fitted
-        n_dims = bin_centers.shape[1] if bin_centers is not None else 0
-        try:
-            n_nodes = len(connectivity.nodes)
-            n_edges = len(connectivity.edges)
-            log_graph_validation(n_nodes=n_nodes, n_edges=n_edges, n_dims=n_dims)
-            validate_connectivity_graph(
-                connectivity,
-                n_dims=n_dims,
-                check_node_attrs=True,
-                check_edge_attrs=True,
-            )
-        except GraphValidationError as e:
-            if restored_from is not None:
-                # Validator messages assume a layout-built graph and blame the
-                # engine; keep only the defect for saved data.
-                defect = str(e).split("This is a layout engine bug")[0].strip()
-                raise ValueError(
-                    _format_error(
-                        f"The connectivity graph in {restored_from} is invalid: "
-                        f"{defect}",
-                        why=(
-                            "Why: a read-back environment uses its stored graph, "
-                            "whose nodes and edges must carry the attributes "
-                            "neurospatial writes."
-                        ),
-                        fix=(
-                            "re-save the environment from a factory-built "
-                            "Environment with to_file, to_dict or write_environment"
-                        ),
-                    )
-                ) from e
-            raise ValueError(
-                f"Invalid connectivity graph from layout engine "
-                f"'{self._layout._layout_type_tag}': {e}\n\n"
-                f"This is a layout engine bug. Please report it at "
-                f"https://github.com/edeno/neurospatial/issues"
-            ) from e
-
-        from neurospatial.environment._ownership import own_arena, own_layout
-
-        self._layout = own_layout(self._layout)
-        self._is_linearized_track_env = self._layout.is_linearized_track
-        binning = self._layout._binning
-        connectivity = self._layout._owned_connectivity  # type: ignore[attr-defined]
-        bin_centers = binning.bins.centers
-        if clip_mapping is None:
-            clip_mapping = binning.clip_mapping
-        elif clip_mapping is not binning.clip_mapping:
-            binning = replace(binning, clip_mapping=clip_mapping)
-        from neurospatial.layout._binning_layout import _validate_clip_mapping
-
-        _validate_clip_mapping(binning)
-        from neurospatial.environment._arena import (
-            apply_walls,
-            infer_arena,
-            validate_arena,
-        )
-
-        if arena is None:
-            arena = infer_arena(binning, polar=self._is_polar, layout=self._layout)
-        arena = own_arena(arena)
-        validate_arena(arena, binning, polar=self._is_polar)
-        binning, wall_graph = apply_walls(binning, connectivity, arena)
-        if wall_graph is not connectivity:
-            from neurospatial.layout._binning_layout import BinningLayout
-
-            self._layout = own_layout(
-                BinningLayout(
-                    binning,
-                    connectivity=wall_graph,
-                    dimension_ranges=self._layout.dimension_ranges,
-                    layout_type_tag=self._layout._layout_type_tag,
-                    layout_type=self._layout.layout_type,
-                    build_params=self._layout._build_params_used,
-                    is_linearized_track=self._is_linearized_track_env,
-                    coordinate_kind="polar" if self._is_polar else "cartesian",
-                )
-            )
-            connectivity = self._layout._owned_connectivity  # type: ignore[attr-defined]
-        if clip_mapping is not None and len(clip_mapping.parent_bin_indices) != len(
-            bin_centers
-        ):
-            raise ValueError("clip_mapping must have one source index per output bin.")
-        grid_edges = getattr(self._layout, "grid_edges", ())
-        grid_shape = getattr(self._layout, "grid_shape", None)
-        active_mask = getattr(self._layout, "active_mask", None)
-
-        # If it's not a grid layout, grid_shape might be (n_active_bins,),
-        # and active_mask might be 1D all True. This is fine.
-        # Ensure they are at least None if not applicable from layout
-        if grid_shape is None and bin_centers is not None:
-            # Fallback for point-based
-            grid_shape = (bin_centers.shape[0],)
-        if active_mask is None and bin_centers is not None:
-            # Fallback for point-based
-            active_mask = np.ones(bin_centers.shape[0], dtype=bool)
-
-        # Published geometry is read-only and replaced whole: derived caches are
-        # invalidated only through _state_version (bumped below, in the same
-        # step), so an in-place edit would leave them stale. Change geometry by
-        # building a new environment (a factory, subset, rebin or
-        # apply_transform) instead.
-        for array in (bin_centers, active_mask, *(grid_edges or ())):
-            if isinstance(array, np.ndarray):
-                array.setflags(write=False)
-        _freeze_graph_attributes(connectivity)
-        self._geometry = _PublishedGeometry(
-            binning=binning,
-            bin_centers=bin_centers,
-            connectivity=connectivity,
-            dimension_ranges=self._layout.dimension_ranges,
-            grid_edges=grid_edges,
-            grid_shape=grid_shape,
-            active_mask=active_mask,
-            arena=arena,
-            clip_mapping=clip_mapping,
-            component_diagonal=bool(
-                self._layout._build_params_used.get("connect_diagonal_neighbors", False)
-            ),
-            coordinates=(
-                EgocentricPolarSystem(
-                    polar_circularity(
-                        grid_shape, connectivity, self._layout_params_used
-                    )
-                )
-                if self._is_polar
-                else CartesianSystem()
-            ),
-        )
-
-        self._freeze_geometry_arrays()
-        self._is_fitted = True
-        # Bump the state version so any downstream cache (including the
-        # versioned_cached_property values from this and other mixins)
-        # treats this environment as a "freshly built" object.
-        self._state_version += 1
-        self.clear_cache()
-
-        # Log environment creation
-        n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
-        log_environment_created(
-            env_type=self._layout._layout_type_tag,
-            n_bins=n_bins,
-            n_dims=n_dims,
-            env_name=self.name,
-        )
 
     @cached_property
     @check_fitted
@@ -3111,7 +2752,6 @@ class Environment(Generic[_C]):
         mask = _subset_mask(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
         )
-        from neurospatial.layout._binning_layout import BinningLayout
         from neurospatial.layout._components import HexagonShapes, TriangleShapes
         from neurospatial.layout._derive import subset_binning
 
@@ -3164,7 +2804,7 @@ class Environment(Generic[_C]):
                 low, high = float(axis.min()), float(axis.max())
                 margin = 0.05 * (high - low) if shapes is not None else 0.0
                 ranges.append((low - margin, high + margin))
-        layout = BinningLayout(
+        result = self.__class__._from_binning(
             binning,
             connectivity=graph,
             dimension_ranges=ranges,
@@ -3172,13 +2812,6 @@ class Environment(Generic[_C]):
             layout_type="mask" if binning.rectilinear is not None else "subset",
             build_params=params,
             is_linearized_track=self.is_linearized_track,
-        )
-        env_cls = self.__class__
-        result = env_cls(
-            "",
-            layout,
-            tag,
-            params,
             arena=self.arena,
             units=self.units,
             frame=self.frame,
@@ -7281,3 +6914,176 @@ class Environment(Generic[_C]):
             max_gap=max_gap,
             epochs=epochs,
         )
+
+    @classmethod
+    def _from_built_layout(
+        cls,
+        layout: LayoutEngine,
+        *,
+        name: str = "",
+        layout_type_used: str | None = None,
+        layout_params_used: dict[str, Any] | None = None,
+        regions: Regions | None = None,
+        units: str | None = None,
+        frame: str | None = None,
+        arena: Arena | None = None,
+        _coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
+    ) -> Environment[Any]:
+        """Consume a built layout once and publish only its owned data."""
+        from neurospatial.layout._construction import built_layout_data
+
+        binning, graph, ranges, tag, category, resolved, index = built_layout_data(
+            layout
+        )
+        return cls._from_binning(
+            binning,
+            connectivity=graph,
+            dimension_ranges=ranges,
+            layout_type_tag=layout_type_used or tag,
+            layout_type=category,
+            build_params=layout_params_used
+            if layout_params_used is not None
+            else dict(resolved),
+            is_linearized_track=binning.linearization is not None,
+            coordinate_kind="polar"
+            if isinstance(_coordinates, EgocentricPolarSystem)
+            else "cartesian",
+            name=name,
+            regions=regions,
+            units=units,
+            frame=frame,
+            arena=arena,
+            component_diagonal=bool(resolved.get("connect_diagonal_neighbors", False)),
+            _grid_index=index,
+            _check_center_lookup=index is None,
+        )
+
+    @classmethod
+    def _from_binning(
+        cls,
+        binning: Binning,
+        *,
+        connectivity: nx.Graph,
+        dimension_ranges: Sequence[tuple[float, float]] | None,
+        layout_type_tag: str,
+        layout_type: str,
+        build_params: dict[str, Any],
+        is_linearized_track: bool,
+        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
+        name: str = "",
+        regions: Regions | None = None,
+        units: str | None = None,
+        frame: str | None = None,
+        arena: Arena | None = None,
+        clip_mapping: ClipMapping | None = None,
+        restored_from: str | None = None,
+        component_diagonal: bool | None = None,
+        _grid_index: object = None,
+        _check_center_lookup: bool = True,
+    ) -> Environment[Any]:
+        """Publish validated owned data atomically, without a layout facade."""
+        from neurospatial.environment._arena import (
+            apply_walls,
+            infer_arena,
+            validate_arena,
+        )
+        from neurospatial.environment._ownership import own_arena, own_binning
+        from neurospatial.layout._context import GridIndex, grid_index
+        from neurospatial.layout._validation import (
+            _validate_clip_mapping,
+            _validate_components,
+            _validate_graph,
+        )
+
+        if coordinate_kind not in ("cartesian", "polar"):
+            raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
+        cls._validate_units(units)
+        binning = own_binning(binning)
+        graph = copy_module.deepcopy(connectivity)
+        _validate_graph(binning, graph)
+        _validate_components(
+            binning,
+            is_linearized_track,
+            coordinate_kind,
+            check_center_lookup=_check_center_lookup,
+        )
+        if clip_mapping is not None:
+            binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
+        _validate_clip_mapping(binning)
+        polar = coordinate_kind == "polar"
+        index = (
+            _grid_index if isinstance(_grid_index, GridIndex) else grid_index(binning)
+        )
+        coordinates = (
+            EgocentricPolarSystem(polar_circularity(index.shape, graph, build_params))
+            if polar
+            else CartesianSystem()
+        )
+        if arena is None:
+            arena = infer_arena(
+                binning,
+                polar=polar,
+                circular=isinstance(coordinates, EgocentricPolarSystem)
+                and coordinates.circular,
+            )
+        arena = own_arena(arena)
+        validate_arena(arena, binning, polar=polar)
+        binning, graph = apply_walls(binning, graph, arena)
+        try:
+            validate_connectivity_graph(
+                graph,
+                n_dims=binning.bins.n_dims,
+                check_node_attrs=True,
+                check_edge_attrs=True,
+            )
+        except GraphValidationError as error:
+            if restored_from is not None:
+                defect = str(error).split("This is a layout engine bug")[0].strip()
+                raise ValueError(
+                    _format_error(
+                        f"The connectivity graph in {restored_from} is invalid: {defect}",
+                        why="Why: a read-back environment uses its stored graph, whose nodes and edges must carry the attributes neurospatial writes.",
+                        fix="re-save the environment from a factory-built Environment with to_file, to_dict or write_environment",
+                    )
+                ) from error
+            raise ValueError(
+                f"Invalid connectivity graph from layout engine '{layout_type_tag}': {error}"
+            ) from error
+        _freeze_graph_attributes(graph)
+        env = cls.__new__(cls)
+        env._metadata = _Metadata(name, units, frame)
+        env._layout_type_used = layout_type_tag
+        env._layout_category = layout_type
+        env._layout_params_used = copy_module.deepcopy(build_params)
+        env._is_linearized_track_env = is_linearized_track
+        env._state_version = 1
+        env._is_fitted = True
+        env._geometry = _PublishedGeometry(
+            binning=binning,
+            bin_centers=binning.bins.centers,
+            connectivity=graph,
+            dimension_ranges=None
+            if dimension_ranges is None
+            else tuple((float(low), float(high)) for low, high in dimension_ranges),
+            grid_edges=index.edges,
+            grid_shape=index.shape,
+            active_mask=index.active_mask,
+            arena=arena,
+            clip_mapping=binning.clip_mapping,
+            coordinates=coordinates,
+            component_diagonal=bool(
+                build_params.get("connect_diagonal_neighbors", False)
+            )
+            if component_diagonal is None
+            else component_diagonal,
+        )
+        env._freeze_geometry_arrays()
+        env._regions = env._validate_regions(Regions() if regions is None else regions)
+        env._reset_analysis_caches()
+        log_environment_created(
+            env_type=layout_type_tag,
+            n_bins=env.n_bins,
+            n_dims=env.n_dims,
+            env_name=name,
+        )
+        return env

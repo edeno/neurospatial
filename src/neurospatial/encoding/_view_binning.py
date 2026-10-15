@@ -78,9 +78,9 @@ def _resolve_wall_contacts(
     import shapely
 
     from neurospatial.arena import _feature_cap
-    from neurospatial.layout._binning_layout import _polygon_coordinate_errors
     from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
     from neurospatial.layout._polygon import ClippedLocator
+    from neurospatial.layout._validation import _polygon_coordinate_errors
 
     def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
         parent = locator

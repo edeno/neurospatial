@@ -453,7 +453,7 @@ class TestWriteEnvironment:
 
         scratch_data = empty_nwb.scratch["spatial_environment"]
         # Layout type should be stored in description
-        layout_type = sample_environment.layout._layout_type_tag
+        layout_type = sample_environment.layout_type
         assert layout_type in scratch_data.description
 
     def test_custom_name(self, empty_nwb, sample_environment):
@@ -1298,9 +1298,9 @@ class TestEnvironmentRoundTrip:
         # The reconstructed layout itself is the single source of truth: the
         # env property is derived from layout.is_linearized_track, so the two
         # must agree (no post-construction patching of _is_linearized_track_env).
-        assert loaded_env.layout.is_linearized_track is True, (
+        assert loaded_env.is_linearized_track is True, (
             "Reconstructed layout must report is_linearized_track=True so "
-            "env.is_linearized_track and env.layout.is_linearized_track agree"
+            "env.is_linearized_track and env.is_linearized_track agree"
         )
 
         # n_dims is based on bin_centers shape (2D for projected coordinates)

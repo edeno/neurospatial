@@ -69,11 +69,11 @@ def _create_polar_environment(
     }
     layout = _PolarGridLayout()
     layout.build(**params)
-    return Environment(
-        name,
+    return Environment._from_built_layout(
         cast("LayoutEngine", layout),
-        "MaskedGrid",
-        params,
+        name=name,
+        layout_type_used="MaskedGrid",
+        layout_params_used=params,
         units=units,
         frame=frame,
         _coordinates=EgocentricPolarSystem(circular_angle),

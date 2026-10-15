@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
 from neurospatial.io import to_file
@@ -148,7 +149,7 @@ class TestErrorCodeE1004NotFitted:
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
         layout = RegularGridLayout()
-        env = Environment(layout=layout)  # Not fitted yet (no _is_fitted=True)
+        env = publish_environment(layout=layout)  # Not fitted yet (no _is_fitted=True)
 
         # Try to call a method that requires fitted state
         with pytest.raises(RuntimeError, match=r"\[E1004\]"):
@@ -159,7 +160,7 @@ class TestErrorCodeE1004NotFitted:
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
         layout = RegularGridLayout()
-        env = Environment(layout=layout)  # Not fitted
+        env = publish_environment(layout=layout)  # Not fitted
 
         with pytest.raises(RuntimeError) as exc_info:
             env.bin_at([[10.0, 20.0]])

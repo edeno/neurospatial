@@ -91,3 +91,24 @@ pushed through all affected parents; the Windows rerun is pending.
   focused repair checks with no remaining findings.
 - The layout bridge is the remaining F4 work; this checkpoint does not claim
   final Stage F completion or a final full-suite gate.
+
+## F4b — Direct owned publication
+
+- Removed the public layout property, layout-bearing constructor, BinningLayout,
+  _OwnedLayout, LayoutLocator and LayoutFaces. Builders are consumed once by a
+  construction adapter; derived values and readers publish owned binning data.
+  Shared geometric consistency checks remain in layout/_validation.py.
+- Environment/layout/file/NWB gate: 3,943 passed, seven skipped, four regressions
+  identified and repaired. Independent review reran all nine focused checks:
+  coincident native track centers, lazy restored mesh lookup, normalized default
+  segmentation with a supplied arena, and actionable saved-graph errors pass.
+  Stored/explicit bin-center validation remains strict; it probes a detached
+  locator so published query structures stay lazy.
+- Source and all static consumer contracts pass (254 files). Public export
+  snapshot passes. All 4,004 probes match the first F4b capture; versus F4a the
+  only additional API removal is Environment.layout. Scientific probes remain.
+- Tests now exercise owned publication and pure validation instead of the
+  deleted wrapper. Historical layout-bearing pickles refuse with migration to
+  supported dict/file/NWB storage; current copy/deepcopy/pickle remain covered.
+- Full CPU validation is running for the final F5 gate. Final documentation,
+  dependency contracts and performance comparison remain before completion.

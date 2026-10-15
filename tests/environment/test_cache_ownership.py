@@ -8,10 +8,10 @@ import pickle
 import numpy as np
 import pandas as pd
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
 from neurospatial.environment.decorators import versioned_cached_property
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.ops.calculus import divergence, gradient
 
 
@@ -98,7 +98,7 @@ def attributed_env(env):
         "nested": {"name": "original"},
         "samples": np.array([1.0, 2.0]),
     }
-    layout = BinningLayout(
+    layout = Environment._from_binning(
         env._binning,
         connectivity=graph,
         dimension_ranges=env.dimension_ranges,
@@ -107,7 +107,7 @@ def attributed_env(env):
         build_params={},
         is_linearized_track=False,
     )
-    return Environment("attributes", layout, "RegularGrid", {})
+    return publish_environment("attributes", layout, "RegularGrid", {})
 
 
 @pytest.mark.parametrize("restoration", ["fresh", "deepcopy", "pickle"])
