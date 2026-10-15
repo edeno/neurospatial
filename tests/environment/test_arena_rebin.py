@@ -132,6 +132,22 @@ def test_sparse_rebin_result_remains_in_the_regular_grid_family():
         assert sequential.arena is variant.arena
 
 
+@pytest.mark.parametrize("holes", [False, True])
+def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
+    parent = _regular(holes=holes)
+    setup = Environment._setup_from_layout
+    published = []
+
+    def counted(instance, **kwargs):
+        published.append(instance)
+        return setup(instance, **kwargs)
+
+    monkeypatch.setattr(Environment, "_setup_from_layout", counted)
+    child = parent.rebin(2)
+    assert published == [child]
+    assert child._state_version == 1
+
+
 def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
     child = _walled().rebin(2)
     child = child.subset(bins=child.bin_centers[:, 1] < 4)

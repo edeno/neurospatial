@@ -1,11 +1,74 @@
 """Tests for Environment.rebin() - grid coarsening operations."""
 
+from itertools import combinations, product
 from pathlib import Path
 
 import numpy as np
 import pytest
+from shapely.geometry import Point
 
 from neurospatial import Environment
+
+
+def _coarse_oracle(env, factor):
+    """Enumerate candidate cells and test each center against arena geometry."""
+    factors = (factor,) * env.n_dims if isinstance(factor, int) else factor
+    edges = tuple(
+        edge[: (size // step) * step + 1 : step]
+        for edge, size, step in zip(
+            env.grid_edges, env.grid_shape, factors, strict=True
+        )
+    )
+    axes = [(edge[:-1] + edge[1:]) / 2 for edge in edges]
+    candidates = np.asarray(list(product(*axes)))
+    if not env.arena.domain_known:
+        keep = np.ones(len(candidates), dtype=bool)
+    elif (domain := env.arena.polygonal_domain()) is not None:
+        keep = np.array([domain.contains(Point(center)) for center in candidates])
+    else:
+        keep = env.arena.contains(candidates)
+    return edges, candidates[keep], keep.reshape(tuple(map(len, axes)))
+
+
+def _assert_coarse_oracle(env, coarse, factor):
+    edges, centers, active = _coarse_oracle(env, factor)
+    np.testing.assert_array_equal(coarse.bin_centers, centers)
+    np.testing.assert_array_equal(coarse.active_mask, active)
+    for actual, expected in zip(coarse.grid_edges, edges, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+    assert coarse.arena is env.arena
+
+
+def _assert_masked_connectivity(env, coarse, *, diagonal):
+    """Compare every edge with adjacency of retained full-grid indices."""
+    _assert_coarse_oracle(env, coarse, 2)
+    _, _, active = _coarse_oracle(env, 2)
+    indices = np.argwhere(active)
+    expected = {
+        (u, v)
+        for u, v in combinations(range(len(indices)), 2)
+        if (
+            np.max(np.abs(indices[u] - indices[v])) == 1
+            if diagonal
+            else np.sum(np.abs(indices[u] - indices[v])) == 1
+        )
+    }
+    assert set(coarse.connectivity.edges) == expected
+    return indices
+
+
+@pytest.mark.parametrize("factor", [2, 3])
+def test_sparse_observations_do_not_invent_unsupported_coarse_cells(factor):
+    env = Environment.from_samples(
+        positions=np.array([[0.0, 0.0], [100.0, 100.0]]), bin_size=10.0
+    )
+    _, centers, active = _coarse_oracle(env, factor)
+    assert centers.size == 0 and not active.any()
+    with (
+        pytest.warns(UserWarning, match="truncated"),
+        pytest.raises(ValueError, match="no coarse bin center"),
+    ):
+        env.rebin(factor)
 
 
 @pytest.mark.parametrize("diagonal", [False, True])
@@ -61,6 +124,7 @@ class TestRebinBasic:
         env = Environment.from_samples(
             positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
+            infer_active_bins=False,
         )
 
         # Get original shape
@@ -73,6 +137,7 @@ class TestRebinBasic:
         expected_shape = (original_shape[0] // 2, original_shape[1] // 2)
         assert coarse.layout.grid_shape == expected_shape
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
+        _assert_coarse_oracle(env, coarse, 2)
 
     def test_rebin_factor_2_bin_positions(self):
         """Rebinned bin centers are at correct positions."""
@@ -119,6 +184,7 @@ class TestRebinBasic:
         env = Environment.from_samples(
             positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
+            infer_active_bins=False,
         )
 
         # Get grid shape
@@ -131,6 +197,7 @@ class TestRebinBasic:
         expected_shape = (grid_shape[0] // 2, grid_shape[1] // 2)
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
         assert coarse.layout.grid_shape == expected_shape
+        _assert_coarse_oracle(env, coarse, 2)
 
     def test_rebin_creates_valid_environment(self):
         """Rebinning creates a valid Environment instance."""
@@ -181,6 +248,7 @@ class TestRebinBasic:
         env = Environment.from_samples(
             positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
+            infer_active_bins=False,
         )
 
         coarse = env.rebin(factor=2)
@@ -244,6 +312,7 @@ class TestRebinFactorVariations:
         env = Environment.from_samples(
             positions=np.array([[0, 0], [90, 90]]),
             bin_size=10.0,
+            infer_active_bins=False,
         )
 
         grid_shape = env.layout.grid_shape
@@ -255,6 +324,7 @@ class TestRebinFactorVariations:
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)
         assert coarse.layout.grid_shape == expected_shape
         assert coarse.n_bins == expected_shape[0] * expected_shape[1]
+        _assert_coarse_oracle(env, coarse, 3)
 
 
 class TestRebinConnectivity:
@@ -342,6 +412,7 @@ class TestRebinValidation:
         env = Environment.from_samples(
             positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
+            infer_active_bins=False,
         )
 
         grid_shape = env.layout.grid_shape
@@ -359,6 +430,7 @@ class TestRebinValidation:
         # Should truncate
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)
         assert coarse.layout.grid_shape == expected_shape
+        _assert_coarse_oracle(env, coarse, 3)
 
 
 class TestRebinEdgeCases:
@@ -462,8 +534,11 @@ class TestRebinDiagonalConnectivityMaskedGrid:
         assert src_max_degree == 8
 
         coarse = env.rebin(factor=2)
-        coarse_max_degree = max(deg for _, deg in coarse.connectivity.degree())
-        assert coarse_max_degree == 8
+        indices = _assert_masked_connectivity(env, coarse, diagonal=True)
+        assert any(
+            np.count_nonzero(indices[u] != indices[v]) > 1
+            for u, v in coarse.connectivity.edges
+        )
 
     def test_rebin_preserves_orthogonal_connectivity_on_masked_grid(
         self, holed_grid_env_4conn
@@ -475,5 +550,4 @@ class TestRebinDiagonalConnectivityMaskedGrid:
         assert src_max_degree == 4
 
         coarse = env.rebin(factor=2)
-        coarse_max_degree = max(deg for _, deg in coarse.connectivity.degree())
-        assert coarse_max_degree == 4
+        _assert_masked_connectivity(env, coarse, diagonal=False)
