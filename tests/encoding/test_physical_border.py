@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Point, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -162,3 +162,48 @@ def test_independently_transformed_components_refuse_uncertified_contact():
     # field (0.9654 in the smaller 4x4 witness). Refuse uncertified contact.
     with pytest.raises(NotImplementedError, match="shared source frame"):
         border_score(combined, np.ones(combined.n_bins), metric="euclidean")
+
+
+@pytest.mark.parametrize("restore", [False, True])
+@pytest.mark.parametrize("transformed", [False, True])
+def test_combined_rooms_retain_shared_physical_wall(restore, transformed):
+    from neurospatial.ops._boundaries import physical_walls
+
+    rooms = [
+        Environment.from_grid_mask(
+            np.ones((5, 5), dtype=bool),
+            grid_edges=(np.arange(start, start + 6.0), np.arange(6.0)),
+            arena=OpenArena(box(start, 0, start + 5, 5)),
+        )
+        for start in [0, 5]
+    ]
+    env = Environment.combine(
+        dict(zip(["left", "right"], rooms, strict=True)), auto_bridge=False
+    )
+    if transformed:
+        from neurospatial.ops.transforms import Affine2D
+
+        env = env.apply_transform(
+            Affine2D(np.array([[1.0, 0.0, 100.0], [0.0, 1.0, 200.0], [0.0, 0.0, 1.0]]))
+        )
+    if restore:
+        env = Environment.from_dict(env.to_dict())
+    walls = physical_walls(env.arena)
+    assert walls.length == pytest.approx(35.0)  # union includes the shared 5-unit wall
+    assert walls.distance(Point(105.0, 202.5) if transformed else Point(5.0, 2.5)) == 0
+
+
+def test_combined_partial_wall_evidence_does_not_assert_unknown_child_outline():
+    from neurospatial.ops._boundaries import physical_walls
+
+    known = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(6.0),) * 2,
+        arena=OpenArena(box(0, 0, 5, 5)),
+    )
+    unknown = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+    )
+    env = Environment.combine({"known": known, "unknown": unknown}, auto_bridge=False)
+    assert physical_walls(env.arena).equals(physical_walls(known.arena))

@@ -295,6 +295,9 @@
 
 ### Fixed
 
+- Preserve each component’s declared physical walls when environments are combined,
+  including shared room boundaries and measured walls alongside unknown domains.
+
 - Subsets retain exact bin measures, selected finite-volume faces, cell shapes
   and absolute track coordinates. Derived environments can be saved and loaded.
 - Translations and similarities retain smoothing, differential operators and

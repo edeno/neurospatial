@@ -51,14 +51,26 @@ def boundary_geometry(
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
     """Read asserted planar wall evidence independently of analysis bins."""
-    parts: list[shapely.Geometry] = list(arena.walls)
-    if arena.physical_footprint_known:
-        domain = arena.polygonal_domain()
-        if domain is None:
-            raise NotImplementedError(
-                "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
-            )
-        parts.append(domain.boundary)
+    from neurospatial.arena import _CombinedArena, _mapped_geometry, _TransformedArena
+
+    def collect(value: Arena) -> list[shapely.Geometry]:
+        if isinstance(value, _CombinedArena):
+            return [part for child in value.children for part in collect(child)]
+        if isinstance(value, _TransformedArena):
+            return [
+                _mapped_geometry(part, value.forward) for part in collect(value.base)
+            ]
+        parts: list[shapely.Geometry] = list(value.walls)
+        if value.physical_footprint_known:
+            domain = value.polygonal_domain()
+            if domain is None:
+                raise NotImplementedError(
+                    "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
+                )
+            parts.append(domain.boundary)
+        return parts
+
+    parts = collect(arena)
     if not parts:
         raise NotImplementedError(
             "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. Supply an asserted OpenArena or MaskArena(physical_footprint_known=True), or explicitly choose boundary_source='analysis'."
