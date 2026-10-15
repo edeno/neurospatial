@@ -20,36 +20,40 @@ The review's severity and introduction claims are hypotheses until checked here.
 
 | ID | Review priority | Finding / acceptance criterion | Owning PR or proposed home | Status / evidence |
 | --- | --- | --- | --- | --- |
-| R01 | High | Place-field components preserve actual diagonal connections after subset, arena filtering, new-size rebin and storage. | #68 graph-based field labeling; #77 cleanup | Confirmed: parent field extraction reconstructs lattice connectivity from build parameters. Repair in progress. |
-| R02 | High | Place fields cannot merge across graph connections removed by physical walls. | #68, carried through #73/#77 | Confirmed: same lattice shortcut ignores removed graph edges. Repair with R01. |
-| R03 | High | Polygon clipping behaves consistently in meters/centimeters and after rotation; overlay artifacts do not create invalid cells. | #68 | Reproduction and repair in progress in isolated worktree. |
-| R04 | High | Physical border scores and wall-hit maps distinguish unobserved wall coverage from measured zero activity, with stable geometry under rotation and useful setup guidance. | #73 border scoring / #74 wall ownership | Investigation in progress; scientific policy must be explicit. |
-| R05 | High | Polar factory creates exactly the requested angular partition when the step divides the span, including 61 bins. | Separate fix against main | Reported. |
-| R06 | Medium | Clipped and combined environments expose correct analysis boundary bins. | #68 / #71 | Reported: empty boundary arrays. |
-| R07 | Medium | Every successfully saved supported track loads with equivalent lookup; coincident embedded centers have consistent construction/storage validation. | #67 or earliest owning change | Reported. |
-| R08 | Medium | Clipping never silently replaces declared navigation path lengths with Euclidean lengths. | #68 / #70 explicit bins | Reported: 3.0 becomes 1.0. |
-| R09 | Medium | Automatic bridges cannot traverse an intervening third component. | #71 | Reported. |
-| R10 | Medium | Copies and pickle omit disposable analysis caches and start fresh caches on restore. | #70 / #77 | Reported: cached kernel inflates saved object from 2.3 MB to 56.8 MB. |
-| R11 | Medium | Track/maze containment rejects points arbitrarily far from the track. | Separate fix against main | Reported. |
-| R12 | Medium | Partial polar angle ranges do not wrap merely because circularity defaults to true. | Separate fix against main | Reported; review default/explicit circularity contract. |
-| R13 | Medium | Saving an extensionless session name containing dots preserves the full name and cannot overwrite another session. | Separate fix against main | Reported: `rat1.day1` writes `rat1.json`. |
-| R14 | Low | Long supported transform chains either save/load equivalently or refuse before writing an unreadable record. | #67 | Reported: 33 transforms fail on load. |
-| R15 | Low | Mesh logical grid shape remains stable across supported storage. | #67 / #77 | Reported. |
-| R16 | Low | User graph attributes named `id`/`source` survive storage or receive an explicit supported restriction. | #67 | Reported. |
-| R17 | Low | Clip mappings have one storage authority; legacy duplicate records remain readable if required. | #68 | Reported. |
-| R18 | Low | Malformed nested or archive input produces actionable public errors rather than raw `RecursionError`/`BadZipFile`. | #67 | Reported. |
-| R19 | Low | Explicit grid faces are validated against authoritative geometry. | #70 | Reported. |
-| R20 | Low | Explicit pairs crossing physical walls cannot disappear without an explicit construction decision. | #70 | Reported. |
-| R21 | Low | A drawing Outline cannot silently assert a physical arena footprint. | #70 | Reported. |
-| R22 | Low | A trajectory point exactly on a wall cannot bypass wall-crossing rules. | #68 | Reported. |
-| R23 | Low | Visibility of a cue on a slanted wall is stable under bounded floating-point rounding. | #74 | Reported. |
-| R24 | Low | Loaded Cartesian/polar environments have truthful static coordinate types. | #77 | Reported. |
-| R25 | Low | Shared operations accept polar values statically wherever they accept them at runtime. | #77 | Reported: unparameterized annotations default to Cartesian. |
-| R26 | Low | Read-only connectivity remains exportable through standard NetworkX node-link JSON. | #70 | Reported. |
+| R01 | High | Place-field components preserve actual diagonal connections after subset, arena filtering, new-size rebin and storage. | #68 graph-based field labeling; #77 cleanup | Fixed: graph-based labeling `0df50a01`; 18 regressions, 389 focused tests. Parent integration passes. |
+| R02 | High | Place fields cannot merge across graph connections removed by physical walls. | #68, carried through #73/#77 | Fixed with R01: components follow retained graph edges rather than reconstructed lattice adjacency. |
+| R03 | High | Polygon clipping behaves consistently in meters/centimeters and after rotation; overlay artifacts do not create invalid cells. | #68 | Fixed: `27241165` keeps per-parent overlay ownership and local precision; 883 tests and 4,051 unchanged probes. |
+| R04 | High | Physical border scores and wall-hit maps distinguish unobserved wall coverage from measured zero activity, with stable geometry under rotation and useful setup guidance. | #73 border scoring / #74 wall ownership | Fixed in source commits `ed3517fd`, `cf5b3092`, `a6531c59`: border coverage and selected positive-duration view exposure checked separately; independent review approved. |
+| R05 | High | Polar factory creates exactly the requested angular partition when the step divides the span, including 61 bins. | Separate fix against main | Fixed in PR #78: `f45e9619`; deterministic bin-count regressions pass. |
+| R06 | Medium | Clipped and combined environments expose correct analysis boundary bins. | #68 / #71 | Fixed: polygon boundary extraction `14f6460b`; combined regressions `44574f63` verify the inherited fix. |
+| R07 | Medium | Every successfully saved supported track loads with equivalent lookup; coincident embedded centers have consistent construction/storage validation. | #67 or earliest owning change | Fixed on #67: `fbde0b88`; coincident supported track centers round-trip; independent review approved. |
+| R08 | Medium | Clipping never silently replaces declared navigation path lengths with Euclidean lengths. | #68 / #70 explicit bins | Fixed: `6ba4ed4c` preserves unchanged declared path endpoints and refuses unsupported endpoint changes; 245 tests. |
+| R09 | Medium | Automatic bridges cannot traverse an intervening third component. | #71 | Fixed in `160dea5d` plus independently reviewed `dedc3efc`; tiny intervening balls and exact tangencies covered; 768 broader tests. |
+| R10 | Medium | Copies and pickle omit disposable analysis caches and start fresh caches on restore. | #70 / #77 | Fixed: `bbb086d5`; caches excluded before copy/pickle rather than discarded afterward; four failures reproduced, 154 tests pass. |
+| R11 | Medium | Track/maze containment rejects points arbitrarily far from the track. | #68 | Fixed on #68: `1219b6ff`; declared width required for containment, nearest projection retained; 35-case persistence/derivation matrix. |
+| R12 | Medium | Partial polar angle ranges do not wrap merely because circularity defaults to true. | Separate fix against main | Fixed in PR #78: `12b3d737`; approved automatic full-circle/partial-range policy. |
+| R13 | Medium | Saving an extensionless session name containing dots preserves the full name and cannot overwrite another session. | Separate fix against main | Fixed in PR #79: `4fcf4726`; independent dotted session prefixes retained. |
+| R14 | Low | Long supported transform chains either save/load equivalently or refuse before writing an unreadable record. | #71 | Fixed: `9a70a12b`; affine wrappers do not consume composite branching depth; 33 transforms round-trip; 79 tests. |
+| R15 | Low | Mesh logical grid shape remains stable across supported storage. | #67 / #77 | Fixed on #67: `e2b5ee73`; native simplex grid shape and mask retained, with inconsistent duplicate context rejected. |
+| R16 | Low | User graph attributes named `id`/`source` survive storage or receive an explicit supported restriction. | #67 | Fixed on #67: `3d8b642c`; optional reserved-attribute sidecars preserve user data and native node-link topology; independently reviewed. |
+| R17 | Low | Clip mappings have one storage authority; legacy duplicate records remain readable if required. | #70 | Fixed: `6e3c8da2`; equal immutable parent mappings share one record; legacy duplicate validation retained; 161 tests. |
+| R18 | Low | Malformed nested or archive input produces actionable public errors rather than raw `RecursionError`/`BadZipFile`. | #67 | Fixed on #67: `b892ddf2` and `45f7c403`; contextual malformed-input errors include UTF-8 and deflate failures; 442 IO tests, independent review approved. |
+| R19 | Low | Explicit grid faces are validated against authoritative geometry. | #70 | Fixed: `2cb663de` and `9c769517`; authoritative grid geometry checked with stable norms, including 1e±200 scales; 475 relevant tests. |
+| R20 | Low | Explicit pairs crossing physical walls cannot disappear without an explicit construction decision. | #70 | Fixed: `22e88747`; explicit neighbor pairs crossing walls raise with guidance instead of silently disappearing. |
+| R21 | Low | A drawing Outline cannot silently assert a physical arena footprint. | #70 | Fixed with R20: an Outline supplies drawing/domain geometry without asserting a physical footprint. |
+| R22 | Low | A trajectory point exactly on a wall cannot bypass wall-crossing rules. | #68 | Fixed on #68: `ea438c34` plus `c0522e98`; possible approach sides carried through sampled and unsampled wall contacts; independent review approved. |
+| R23 | Low | Visibility of a cue on a slanted wall is stable under bounded floating-point rounding. | #74 | Source repair `3fd2b948` plus cancellation follow-up `6ff0e34a`; 93 visibility tests and 3,000 deterministic cue probes pass. Follow-up independent review pending. |
+| R24 | Low | Loaded Cartesian/polar environments have truthful static coordinate types. | #77 | Fixed on #77: `d689394e`; loaded coordinate kind typed as unknown (`Any`), Cartesian factories remain specific. |
+| R25 | Low | Shared operations accept polar values statically wherever they accept them at runtime. | #77 | Fixed with R24: shared annotations accept both coordinate systems; five original static errors reproduced, 257-file typing gate passes; independent review approved. |
+| R26 | Low | Read-only connectivity remains exportable through standard NetworkX node-link JSON. | #70 | Fixed: `a33da946` and `f6fe3254`; detached read-only JSON metadata remains copyable/pickleable and cannot mutate owned graph state; independent review approved. |
 | R27 | Docs/CI | Replace removed serialization/smoothing API anchors; strict docs build passes. | #77 | Fixed: strict build passes; local check of 8,033 built fragments goes from two invalid links to zero. CI failure was the anchor-check step. |
 | R28 | Docs | Initialization examples match E1006 raised by direct `Environment()` construction. | #77 | Fixed: factory-only construction documented; new normal/raises examples execute. |
 | R29 | Docs | Contributor instructions describe the capability checks actually performed. | #77 | Fixed: guide now describes owned face inputs and actual grid/track extraction. |
 | R30 | Docs | Test descriptions explain current behavior rather than obsolete Phase 2/3/3.3 milestones. | #77 | Fixed: batch encoding, spike inputs and NWB test descriptions name their behavior; experimental trajectory phases are retained. |
+
+| R31 | Additional | Native grid diffusion faces remain valid in small coordinate units. | PR #80 against main | Fixed: `cacb3a73`; remove the absolute axis-displacement cutoff; physical published-face tests pass. |
+| R32 | Additional | Factor rebinning preserves independent named regions. | #67 | Fixed: `74a79a7b`; 18 failing ownership regressions reproduced, 166 tests pass. |
+| R33 | CI baseline | Generated UTF-8 animation HTML is read correctly on Windows. | PR #81 against main; merged into #78–#80 | Fixed: `b147b034`; two cp1252 failures reproduced; all 16 existing module tests pass normally and with cp1252 simulated. |
 
 ## Architecture recommendations
 
@@ -63,7 +67,7 @@ for repairing numerical defects.
 | A02 | Expose read-only `env.binning`; numerical functions consume data while Environment owns analysis caches. Remove external private-state reads/writes and casts where feasible. | User approved implementation after correctness repairs, in a new stacked PR. |
 | A03 | Behavior follows owned geometry/connectivity rather than descriptive type names or construction parameters. Includes segmentation, boundaries, circularity and rebin capability. | R01/R02/R06/R12 cover defects; audit remaining cases. |
 | A04 | Remove parallel/dead paths: duplicate rebin implementations, unused provider protocols/decorators/state versions/validators, inconsistent Cartesian guards and duplicate publication validation. | Reported; verify each path is actually dead before removal. |
-| A05 | Consolidate wrapper traversal and numerical tolerances where their contracts match; include clipped children in combined diffusion traversal. | Reported drift; avoid imposing one tolerance on different physical quantities. |
+| A05 | Consolidate traversal/tolerances only where contracts match. | Clipped traversal is intentionally a certificate boundary, not a defect: `45a19995` documents and tests 66 certified/uncertified cases. Unwrapping to parent diffusion geometry would be incorrect. Other consolidation remains scoped to matching contracts. |
 | A06a | Put subset/rebin in appropriately named derivation modules. | Design. |
 | A06b | Move shared time-support helpers from environment trajectory into `_intervals.py`. | Design. |
 | A06c | Remove the `ops.transforms` / `environment._affine` dependency cycle and import-linter exception. | Design. |
@@ -98,3 +102,14 @@ Their passing regressions remain part of the broader gate.
   raw wall intersections and unobserved gaze directions retain their own meaning.
 - Polar circularity will default to automatic: full 2π wraps, partial ranges
   remain open, and explicitly wrapping a partial range is rejected.
+
+- Track containment requires a declared physical width. Unknown width refuses
+  `contains()` with guidance; `bin_at()` continues nearest-track projection.
+
+## Integration progress
+
+- #67 repairs published through `45f7c403`; #68 repairs through `c0522e98`.
+- #77 documentation correction at `671961c7` passed 24 CI checks, with one skip.
+- The stack is being merged forward without rewriting published history. Source
+  repairs listed above still require downstream integration and final CI before
+  the overall task is complete.
