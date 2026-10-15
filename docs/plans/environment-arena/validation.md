@@ -136,3 +136,21 @@ likewise use the actual stored coordinates, including their rounding. Declare
 walls before derivation and recenter/rescale coordinates when necessary. These
 are explicit representability limits, not a general-mesh solver or an inference
 of unrounded geometry.
+
+
+## Cross-platform publication oracle follow-up (2026-10-15)
+
+Ubuntu and Windows exposed one shared-edge lookup mismatch in
+`test_locator_preserves_layout_lookup_and_input_arrays`. Arena gating removes
+rows before mesh lookup, while the old test masked an already evaluated full
+batch. Qhull may select either adjacent triangle at an exact shared edge based
+on the preceding queries. A deterministic two-triangle probe reproduced this:
+the same midpoint has owner 0 after the first centroid and owner 1 after the
+second. The oracle now evaluates the same arena-filtered batch as `bin_at`.
+No library lookup or boundary rule changes.
+
+The affected publication/state-version tests and environment validation checks
+were run with RuntimeWarning as an error; their results are recorded in
+`/private/tmp/stage-a-gated-oracle.log` and
+`/private/tmp/stage-a-gated-validation.log`. Remote matrix verification remains
+separate from these local checks.
