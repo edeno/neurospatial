@@ -333,14 +333,15 @@ class EnvironmentFields:
               for discrete probability *mass* (use 'transition').
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
-            with the same (bandwidth, mode) will return the cached result.
+            with the same (bandwidth, mode) reuse the computation and return
+            independent copies of the cached result.
             The environment keeps the most recently used kernels (eight by
             default); ``clear_cache(kernels=True)`` releases them.
 
         Returns
         -------
         kernel : NDArray[np.float64], shape (n_bins, n_bins)
-            Diffusion kernel matrix.
+            Independent, editable diffusion kernel matrix.
 
         Raises
         ------
@@ -374,6 +375,10 @@ class EnvironmentFields:
         bins and the kernel is then built regardless of size. The matrix
         exponential is also O(n³) in time, so large environments are slow as
         well as memory-hungry.
+
+        With ``cache=True``, another matrix of the same size remains in the
+        private cache. The public matrix is an independent, editable export;
+        use ``cache=False`` to avoid retaining this additional matrix.
 
         **To avoid this dense matrix entirely, use** :meth:`diffuse` (or
         :meth:`smooth`), which apply the same operator **matrix-free** via a
@@ -418,7 +423,7 @@ class EnvironmentFields:
         if cache:
             cached = lru_get(self._kernel_cache, cache_key)
             if cached is not None:
-                return cached
+                return cast("NDArray[np.float64]", cached.copy())
 
         # Compute kernel from the cached diffusion geometry, whose cell measures
         # (the layout's bin sizes) are the mass matrix M used by every mode.
@@ -433,7 +438,7 @@ class EnvironmentFields:
                 limit=_constants.MAX_CACHED_KERNELS,
             )
 
-        return kernel
+        return kernel.copy() if cache else kernel
 
     def smooth(
         self: SelfEnv,

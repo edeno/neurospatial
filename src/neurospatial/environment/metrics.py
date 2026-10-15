@@ -50,8 +50,9 @@ This class is not used directly. Instead, it's mixed into Environment:
 
 from __future__ import annotations
 
-from functools import cached_property
-from typing import Any
+import copy
+from collections.abc import Mapping
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -66,6 +67,31 @@ from neurospatial.layout._locators import (
     TransformedLocator,
 )
 from neurospatial.layout.helpers.utils import find_boundary_nodes
+
+
+def _copy_export(value: Any) -> Any:
+    """Copy nested export values, including immutable mapping snapshots."""
+    if isinstance(value, Mapping):
+        return {copy.deepcopy(key): _copy_export(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_copy_export(item) for item in value)
+    if isinstance(value, list):
+        return [_copy_export(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
+    """Detach frame buffers, labels and nested object-column values."""
+    result = frame.copy(deep=True)
+    result.index = frame.index.copy(deep=True)
+    result.columns = frame.columns.copy(deep=True)
+    for column in frame.select_dtypes(include="object"):
+        result[column] = pd.Series(
+            [_copy_export(value) for value in frame[column]],
+            index=result.index,
+            dtype=object,
+        )
+    return result
 
 
 class EnvironmentMetrics:
@@ -88,8 +114,8 @@ class EnvironmentMetrics:
 
     """
 
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
+    @property
+    @check_fitted
     def boundary_bins(self: SelfEnv) -> NDArray[np.intp]:
         """
         Identify boundary bins (bins on the edge of the active region).
@@ -105,7 +131,7 @@ class EnvironmentMetrics:
 
         Notes
         -----
-        - This is a **cached property** - computed once on first access, then cached
+        - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
         - Uses graph-based boundary detection (checks node degrees and connectivity)
 
@@ -124,6 +150,11 @@ class EnvironmentMetrics:
         Found 6 boundary bins
 
         """
+        cached = cast("NDArray[np.intp]", self._boundary_bins_cached)  # type: ignore[attr-defined]
+        return cast("NDArray[np.intp]", cached.copy())
+
+    @versioned_cached_property
+    def _boundary_bins_cached(self: SelfEnv) -> NDArray[np.intp]:
         grid_shape, active_mask = self.grid_shape, self.active_mask
         locator = self._binning.locator
         selections = []
@@ -156,8 +187,8 @@ class EnvironmentMetrics:
             layout_kind=self._layout_type_used,
         ).astype(np.intp, copy=False)
 
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
+    @property
+    @check_fitted
     def linearization_properties(
         self: SelfEnv,
     ) -> dict[str, Any]:
@@ -178,7 +209,7 @@ class EnvironmentMetrics:
 
         Notes
         -----
-        - This is a **cached property** - computed once on first access, then cached
+        - Metadata is cached; each access returns an independent dictionary.
         - Only 1D environments (created with `from_graph()`) have full linearization info
         - For N-D environments, returns `{'is_linearized_track': False}`
 
@@ -208,17 +239,26 @@ class EnvironmentMetrics:
         True
 
         """
+        return cast(
+            "dict[str, Any]",
+            _copy_export(self._linearization_properties_cached),  # type: ignore[attr-defined]
+        )
+
+    @versioned_cached_property
+    def _linearization_properties_cached(self: SelfEnv) -> dict[str, Any]:
         if not self._is_linearized_track_env:
             return {"is_linearized_track": False}
 
         # For 1D environments, extract linearization metadata from layout
         metadata: dict[str, Any] = {"is_linearized_track": True}
         if hasattr(self.layout, "linear_bin_edges"):
-            metadata["linear_bin_edges"] = self.layout.linear_bin_edges
+            metadata["linear_bin_edges"] = _copy_export(self.layout.linear_bin_edges)
         if hasattr(self.layout, "linear_bin_centers_1d"):
-            metadata["linear_bin_centers_1d"] = self.layout.linear_bin_centers_1d
+            metadata["linear_bin_centers_1d"] = _copy_export(
+                self.layout.linear_bin_centers_1d
+            )
         if hasattr(self.layout, "track_graph"):
-            metadata["track_graph"] = self.layout.track_graph
+            metadata["track_graph"] = _copy_export(self.layout.track_graph)
 
         return metadata
 
@@ -242,10 +282,9 @@ class EnvironmentMetrics:
         -----
         - Method (not property) since v0.4: the construction cost
           (one DataFrame allocation per bin) is now visible at the
-          call site. Repeated calls within one environment state
-          version are O(1) — the result is cached internally via
-          :class:`versioned_cached_property` and invalidates whenever
-          the environment is rebuilt.
+          call site. Attribute extraction is cached internally via
+          :class:`versioned_cached_property`; each call returns an independent
+          DataFrame, including nested object values.
         - For large environments (>100,000 bins), the first call may
           take a few seconds.
         - Memory usage: ~8 bytes per attribute per bin (e.g., 10
@@ -269,7 +308,7 @@ class EnvironmentMetrics:
         (30, 4)
 
         """
-        return self._bin_attributes_cached  # type: ignore[attr-defined]
+        return _copy_attributes(self._bin_attributes_cached)  # type: ignore[attr-defined]
 
     @versioned_cached_property
     def _bin_attributes_cached(self: SelfEnv) -> pd.DataFrame:
@@ -314,10 +353,9 @@ class EnvironmentMetrics:
         Notes
         -----
         - Method (not property) since v0.4: edge-DataFrame allocation is
-          O(n_edges) and visible at the call site. Repeated calls within
-          one environment state version are O(1) — the result is cached
-          internally via :class:`versioned_cached_property` and
-          invalidates whenever the environment is rebuilt.
+          O(n_edges) and visible at the call site. Attribute extraction is
+          cached internally via :class:`versioned_cached_property`; each call
+          returns an independent DataFrame, including nested object values.
         - For large environments (>100,000 edges), the first call may
           take a few seconds.
         - Memory usage: ~8 bytes per attribute per edge (e.g., 6
@@ -341,7 +379,7 @@ class EnvironmentMetrics:
         (100, 6)
 
         """
-        return self._edge_attributes_cached  # type: ignore[attr-defined]
+        return _copy_attributes(self._edge_attributes_cached)  # type: ignore[attr-defined]
 
     @versioned_cached_property
     def _edge_attributes_cached(self: SelfEnv) -> pd.DataFrame:

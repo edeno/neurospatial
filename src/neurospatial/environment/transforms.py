@@ -215,13 +215,9 @@ def _rebin(
         layout_params_used=new_layout._build_params_used,
         regions=Regions(),
         arena=env.arena,
+        units=env.units,
+        frame=env.frame,
     )
-
-    # Preserve metadata
-    if hasattr(env, "units") and env.units is not None:
-        coarse_env.units = env.units
-    if hasattr(env, "frame") and env.frame is not None:
-        coarse_env.frame = env.frame
 
     return coarse_env
 

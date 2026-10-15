@@ -1600,13 +1600,15 @@ def apply_transform_to_environment(
 
             transformed_regions.append(new_region)
 
-        new_env.regions = Regions(transformed_regions)
+        new_env = new_env.with_regions(Regions(transformed_regions))
 
     # Copy units and frame
     if hasattr(env, "units"):
-        new_env.units = env.units
+        new_env = new_env.with_metadata(units=env.units)
     if hasattr(env, "frame"):
-        new_env.frame = f"{env.frame}_transformed" if env.frame else "transformed"
+        new_env = new_env.with_metadata(
+            frame=f"{env.frame}_transformed" if env.frame else "transformed"
+        )
 
     return new_env
 

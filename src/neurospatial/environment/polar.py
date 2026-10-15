@@ -31,7 +31,6 @@ delegates to :meth:`EgocentricPolarEnvironment.create`.
 
 from __future__ import annotations
 
-from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 
 import numpy as np
@@ -193,6 +192,8 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         circular_angle: bool = True,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
     ) -> EgocentricPolarEnvironment:
         """Build an egocentric polar environment.
 
@@ -220,6 +221,11 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
             Optional name for the environment.
+        units : str, optional
+            Unit label for distance coordinates; angles remain in radians.
+            Declaring units does not scale either coordinate.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
 
         Returns
         -------
@@ -282,14 +288,22 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
                     "circular_angle": circular_angle,
                 },
                 name=name,
+                units=units,
+                frame=frame,
             ),
         )
 
         return env
 
-    @cached_property
+    @property
     @check_fitted
     def boundary_bins(self) -> NDArray[np.intp]:
+        """Boundary-bin indices, exported independently from the private cache."""
+        return cast("NDArray[np.intp]", self._boundary_bins_cached.copy())
+
+    @versioned_cached_property
+    @check_fitted
+    def _boundary_bins_cached(self) -> NDArray[np.intp]:
         """Bins on the edge of the active polar region.
 
         A bin is on the boundary when a radial or angular neighbor is outside
@@ -344,7 +358,7 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
             True if the angular axis is circular, False for an open axis.
         """
         if self.grid_shape is not None and self.grid_shape[1] <= 2:
-            return bool(self.layout._build_params_used.get("circular_angle", False))
+            return bool(self._layout_params_used.get("circular_angle", False))
 
         connectivity = self.connectivity
         if connectivity.number_of_edges() == 0:

@@ -270,6 +270,7 @@ class EnvironmentFactories:
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
@@ -306,6 +307,8 @@ class EnvironmentFactories:
         frame : str or None, default None
             Coordinate frame identifier for the environment (e.g. a session
             label). If provided, sets ``env.frame`` on the returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             Layout engine type to use. Can be a LayoutType enum member (recommended
             for IDE autocomplete) or a case-insensitive string. For RegularGrid and
@@ -547,14 +550,15 @@ class EnvironmentFactories:
                     UserWarning,
                     stacklevel=2,
                 )
-        env = cls.from_layout(
-            kind=layout_str, layout_params=layout_params, name=name, arena=arena
+        return cls.from_layout(
+            kind=layout_str,
+            layout_params=layout_params,
+            name=name,
+            units=units,
+            frame=frame,
+            regions=regions,
+            arena=arena,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     # ------------------------------------------------------------------
     # Experiment-shaped presets
@@ -797,18 +801,15 @@ class EnvironmentFactories:
                 f"{points}."
             )
 
-        env = cls.from_graph(
+        return cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            units=units,
+            frame=frame,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     @classmethod
     def maze(
@@ -997,18 +998,15 @@ class EnvironmentFactories:
                 f"Got node positions: {node_pos}."
             )
 
-        env = cls.from_graph(
+        return cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            units=units,
+            frame=frame,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     @classmethod
     def from_graph(
@@ -1019,6 +1017,8 @@ class EnvironmentFactories:
         bin_size: float,
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         track_width: float | None = None,
     ) -> Environment:
         """Create an Environment from a user-defined graph structure.
@@ -1048,6 +1048,10 @@ class EnvironmentFactories:
             centimeters, bin_size=2.0 creates 2cm bins along the track.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         track_width : float, optional
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
@@ -1163,6 +1167,8 @@ class EnvironmentFactories:
             kind="Graph",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=TrackArena(segments, width=track_width),
         )
 
@@ -1173,6 +1179,8 @@ class EnvironmentFactories:
         bin_size: float | Sequence[float],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1192,6 +1200,10 @@ class EnvironmentFactories:
             bin size per dimension.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -1253,6 +1265,8 @@ class EnvironmentFactories:
             kind="ShapelyPolygon",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=arena,
         )
 
@@ -1263,6 +1277,8 @@ class EnvironmentFactories:
         grid_edges: tuple[NDArray[np.float64], ...],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1287,6 +1303,10 @@ class EnvironmentFactories:
             axis; axes may differ.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -1338,6 +1358,8 @@ class EnvironmentFactories:
             kind="MaskedGrid",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=arena,
         )
 
@@ -1349,6 +1371,8 @@ class EnvironmentFactories:
         *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         arena: Arena | None = None,
     ) -> Environment:
         """Create a 2D Environment from a binary image / pixel mask.
@@ -1372,6 +1396,10 @@ class EnvironmentFactories:
             Defaults to True.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
@@ -1417,7 +1445,12 @@ class EnvironmentFactories:
         }
 
         return cls.from_layout(
-            kind="ImageMask", layout_params=layout_params, name=name, arena=arena
+            kind="ImageMask",
+            layout_params=layout_params,
+            name=name,
+            units=units,
+            frame=frame,
+            arena=arena,
         )
 
     @classmethod
@@ -1427,6 +1460,8 @@ class EnvironmentFactories:
         layout_params: dict[str, Any],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1443,6 +1478,10 @@ class EnvironmentFactories:
             method of the chosen `LayoutEngine`.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         regions : Optional[Regions], optional
             A Regions instance to manage symbolic spatial regions within the environment.
         arena : Arena, optional
@@ -1470,7 +1509,15 @@ class EnvironmentFactories:
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
-        env = env_cls(name, layout_instance, kind, layout_params, regions=regions)
+        env = env_cls(
+            name,
+            layout_instance,
+            kind,
+            layout_params,
+            regions=regions,
+            units=units,
+            frame=frame,
+        )
         if arena is not None and arena.domain_known and not env._POLAR:
             keep = arena.contains(env.bin_centers)
             # Whole-bin selection uses strict polygon-center inclusion in
@@ -1484,9 +1531,6 @@ class EnvironmentFactories:
                 )
             if not np.all(keep):
                 env = env.subset(bins=keep)
-                env.name = name
-                if regions is not None:
-                    env.regions = regions
         if arena is not None:
             env = env_cls(
                 name,
@@ -1495,6 +1539,8 @@ class EnvironmentFactories:
                 env._layout_params_used,
                 regions=regions,
                 arena=arena,
+                units=units,
+                frame=frame,
             )
         return env
 

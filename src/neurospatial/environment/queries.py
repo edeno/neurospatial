@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from functools import cached_property
 from typing import Literal
 
 import networkx as nx
@@ -27,7 +26,7 @@ from neurospatial._exceptions import (
     _format_error,
 )
 from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 
 
 def _resolve_point_or_index(
@@ -191,9 +190,7 @@ class EnvironmentQueries:
         bin_index = _resolve_point_or_index(self, bin_index, operation="neighbors()")
         return list(self.connectivity.neighbors(bin_index))
 
-    # Note: Decorator order matters - @cached_property must be on top
-    # so that @check_fitted can see the underlying method
-    @cached_property
+    @property
     @check_fitted
     def bin_sizes(self: SelfEnv) -> NDArray[np.float64]:
         """Calculate the area (for 2D) or volume (for 3D+) of each active bin.
@@ -218,10 +215,8 @@ class EnvironmentQueries:
 
         Notes
         -----
-        This property is cached after the first call for efficient repeated access.
-        The decorator order (@cached_property above @check_fitted) is intentional:
-        @cached_property caches the result, and @check_fitted ensures the environment
-        is fitted before computing.
+        Cell measures are cached internally. Each access returns an independent
+        read-only array, so changing an export's shape cannot alter the bins.
 
         For environments with >100,000 bins, this may consume significant memory.
 
@@ -236,6 +231,12 @@ class EnvironmentQueries:
         True
 
         """
+        sizes: NDArray[np.float64] = self._bin_sizes_cached.copy()  # type: ignore[attr-defined]
+        sizes.setflags(write=False)
+        return sizes
+
+    @versioned_cached_property
+    def _bin_sizes_cached(self: SelfEnv) -> NDArray[np.float64]:
         return self._binning.bins.sizes
 
     @check_fitted

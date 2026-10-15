@@ -31,6 +31,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.arena import Arena
     from neurospatial.environment._coordinates import CoordinateSystem
+    from neurospatial.environment._metadata import _Unset
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout._binning import Binning
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
@@ -74,11 +76,30 @@ class EnvironmentProtocol(Protocol):
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
     # Core attributes
-    name: str
-    layout: LayoutEngine
-    regions: Regions
-    units: str | None
-    frame: str | None
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def layout(self) -> LayoutEngine: ...
+
+    @property
+    def regions(self) -> Regions: ...
+
+    @property
+    def units(self) -> str | None: ...
+
+    @property
+    def frame(self) -> str | None: ...
+
+    def with_metadata(
+        self,
+        *,
+        name: str | _Unset = ...,
+        units: str | None | _Unset = ...,
+        frame: str | None | _Unset = ...,
+    ) -> Self: ...
+
+    def with_regions(self, regions: Regions) -> Self: ...
 
     @property
     def _coordinate_system(self) -> CoordinateSystem: ...

@@ -84,6 +84,7 @@ def _clip(
         layout._build_params_used,
         arena=env.arena,
         clip_mapping=mapping,
+        units=env.units,
+        frame=env.frame,
     )
-    result.units, result.frame = env.units, env.frame
     return result
