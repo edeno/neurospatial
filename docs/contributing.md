@@ -184,7 +184,7 @@ array views reject writes and its graph rejects topology and attribute edits.
 starts fresh caches. Readers decode binning and graph records directly through
 this path, without replaying build parameters. Readers validate the storage
 format; publication runs the shared geometry checks once.
-`layout/_validation.py` checks positions, ordered faces and distances, measures,
+`geometry/_validation.py` checks positions, ordered faces and distances, measures,
 locator/component agreement, frames and immediate clip mappings. Center lookup
 is checked on a detached locator so publication does not warm the saved value's
 lookup cache. Validated embedded tracks may revisit identical spatial centers; center
@@ -289,7 +289,7 @@ type.
 
 Geometry uses the [owned publication path](#diffusion-geometry-providers)
 described above. Derivations return new environments with fresh analysis caches.
-`layout/_graph.py` projects newly constructed binning into standard navigation
+`geometry/_graph.py` projects newly constructed binning into standard navigation
 graph attributes for explicit bins and clipping. It preserves bin IDs and pair
 row IDs. Derivations such as subsets retain their existing graph metadata and
 edge ordering rather than rebuilding those annotations from geometry alone.
@@ -335,14 +335,21 @@ must refuse instead of silently switching boundary sources.
 methods. Algorithms live in private module functions using narrow protocols;
 there are no environment mixins or broad host protocol.
 
-Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Geometry data
-cannot import the public environment, native builders, encoders or optional
-storage/UI libraries. Numerical operations cannot import concrete environment
-APIs or builders. Type-only imports are excluded. The public transform convenience
-function delegates through a narrow protocol to the environment's own affine
-adapter; the numerical package has no runtime dependency on environment
-construction. Add new geometry modules to the data
-contract and keep `import-linter` in the dev extra; CI runs it on Python 3.13.
+Owned geometry, validation, codecs and pure coordinate math live in `geometry/`;
+native builders and their construction adapters live in `layout/`. The public
+`neurospatial.binning` and `neurospatial.arena` imports remain stable. Former
+private geometry modules contain explicit aliases so trusted builder-free
+pickles written before this move can still resolve their classes. They contain
+no parallel implementation. Older layout-bearing pickles remain unsupported.
+
+Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Environment
+adapters sit above independent `layout` and `ops` packages, which consume
+`geometry`. The whole geometry package cannot import builders, environments,
+analysis, storage or rendering packages. Type-only imports are excluded. Affine
+convenience functions call the public environment method through a narrow
+consumer protocol; Environment retains construction and analysis caches. No
+import exceptions are needed. New geometry modules are covered automatically.
+Keep `import-linter` in the dev extra; CI runs it on Python 3.13.
 
 Check refactors with `scripts/environment_baseline.py`. Before changing code,
 run `uv run python scripts/environment_baseline.py record base.npz` on the

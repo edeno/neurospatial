@@ -14,9 +14,9 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import FramedGrid, RectilinearGrid
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._polygon import PolygonCells, materialize_cells
 from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._polygon import PolygonCells, materialize_cells
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 

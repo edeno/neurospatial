@@ -10,10 +10,10 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
     from scipy import sparse
 
-    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
-    from neurospatial.layout._binning import Binning
-    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import DiffusionEigenbasisCache
     from neurospatial.ops.transforms import Affine2D, AffineND
 

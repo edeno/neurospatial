@@ -15,7 +15,7 @@ from scipy.spatial import Delaunay, cKDTree
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
-from neurospatial.layout._locators import (
+from neurospatial.geometry._locators import (
     HexLocator,
     MeshLocator,
     NearestBinLocator,

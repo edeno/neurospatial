@@ -10,7 +10,7 @@ import pytest
 from scipy.spatial import cKDTree
 
 from neurospatial import Environment
-from neurospatial.layout._locators import SubsetLocator
+from neurospatial.geometry._locators import SubsetLocator
 
 
 @pytest.fixture
@@ -49,7 +49,9 @@ class TestSubsetKDTreeCaching:
         expected = child_of[parent.bin_at(pts)]
         assert np.any(expected == -1)
 
-        with patch("neurospatial.layout._locators.cKDTree", wraps=cKDTree) as mock_ckdt:
+        with patch(
+            "neurospatial.geometry._locators.cKDTree", wraps=cKDTree
+        ) as mock_ckdt:
             np.testing.assert_array_equal(child.bin_at(pts), expected)
             memo = locator.base._tree
             assert memo is not None

@@ -382,8 +382,8 @@ def _subset(
     mask = _subset_mask(
         env, bins=bins, region_names=region_names, polygon=polygon, invert=invert
     )
-    from neurospatial.layout._components import HexagonShapes, TriangleShapes
-    from neurospatial.layout._derive import subset_binning
+    from neurospatial.geometry._components import HexagonShapes, TriangleShapes
+    from neurospatial.geometry._derive import subset_binning
 
     binning = subset_binning(env._binning, mask)
     selected = np.flatnonzero(mask)
@@ -419,7 +419,7 @@ def _subset(
         elif isinstance(shapes, TriangleShapes):
             vertices = shapes.points[shapes.triangles].reshape(-1, 2)
         else:
-            from neurospatial.layout._polygon import PolygonCells
+            from neurospatial.geometry._polygon import PolygonCells
 
             if isinstance(shapes, PolygonCells):
                 import shapely

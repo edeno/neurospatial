@@ -34,6 +34,9 @@ _EXPECTED_SUBMODULES = (
 
 # Each headline export must load and cache its canonical owner on demand.
 _EXPECTED_LAZY_ATTRS = {
+    "Environment": ("neurospatial.environment", "Environment"),
+    "Region": ("neurospatial.regions", "Region"),
+    "Regions": ("neurospatial.regions", "Regions"),
     "compute_spatial_rate": ("neurospatial.encoding.spatial", "compute_spatial_rate"),
     "compute_spatial_rates": ("neurospatial.encoding.spatial", "compute_spatial_rates"),
     "SpatialRateResult": ("neurospatial.encoding.spatial", "SpatialRateResult"),
@@ -44,8 +47,8 @@ _EXPECTED_LAZY_ATTRS = {
     "PeriEventResult": ("neurospatial.events._core", "PeriEventResult"),
 }
 
-# Eager exports that must remain importable directly from the package.
-_EAGER_EXPORTS = (
+# Public classes that remain importable directly from the package.
+_CLASS_EXPORTS = (
     "Environment",
     "Region",
     "Regions",
@@ -61,13 +64,13 @@ def test_lazy_submodule_access(name: str) -> None:
 
 
 def test_dir_lists_submodules() -> None:
-    """``dir(ns)`` includes every lazy submodule and every eager export."""
+    """``dir(ns)`` includes every lazy submodule and public class."""
     listed = set(dir(ns))
     for name in _EXPECTED_SUBMODULES:
         assert name in listed, f"{name!r} missing from dir(neurospatial)"
     for name in _EXPECTED_LAZY_ATTRS:
         assert name in listed, f"{name!r} missing from dir(neurospatial)"
-    for name in _EAGER_EXPORTS:
+    for name in _CLASS_EXPORTS:
         assert name in listed, f"{name!r} missing from dir(neurospatial)"
 
 
@@ -78,9 +81,9 @@ def test_unknown_attr_raises() -> None:
         getattr(ns, name)
 
 
-@pytest.mark.parametrize("name", _EAGER_EXPORTS)
-def test_eager_exports_unchanged(name: str) -> None:
-    """Eager exports remain accessible directly from the package."""
+@pytest.mark.parametrize("name", _CLASS_EXPORTS)
+def test_class_exports_unchanged(name: str) -> None:
+    """Public classes remain accessible directly from the package."""
     assert hasattr(ns, name)
 
 

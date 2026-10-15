@@ -21,14 +21,16 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._coordinates import CellLengthConsumer as CellLengthConsumer
+
 if TYPE_CHECKING:
     import pandas as pd
     from scipy.spatial import cKDTree
 
-    from neurospatial.arena import Arena
-    from neurospatial.environment._coordinates import CoordinateSystem
-    from neurospatial.layout._binning import Binning
-    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._coordinates import CoordinateSystem
+    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -196,19 +198,6 @@ class InterpolationConsumer(Protocol):
     def layout_type(self) -> str | None: ...
 
     _kdtree_cache: cKDTree | None
-
-
-class CellLengthConsumer(Protocol):
-    """Cell measures, dimension count and radial edges for length-scale defaults."""
-
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
-
-    @property
-    def n_dims(self) -> int: ...
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
 
 
 class QueryConsumer(Protocol):

@@ -35,8 +35,8 @@ from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
-    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
+    from neurospatial.geometry._arena import Arena
 
 
 class SpatialRatesLike(Protocol):
@@ -56,7 +56,7 @@ def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     from shapely.ops import unary_union
 
-    from neurospatial.arena import encode_arena
+    from neurospatial.geometry._arena import encode_arena
 
     if first is second:
         return True
@@ -124,7 +124,7 @@ def _validate_encoding_environment(
         ):
             mismatch = "weighted connectivity"
     if mismatch is None:
-        from neurospatial.layout._polygon import PolygonCells, materialize_cells
+        from neurospatial.geometry._polygon import PolygonCells, materialize_cells
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"
@@ -141,7 +141,7 @@ def _validate_encoding_environment(
             ):
                 mismatch = "polygon cell geometry"
             else:
-                from neurospatial.layout._codecs import encode
+                from neurospatial.geometry._codecs import encode
 
                 try:
                     source_meta, source_arrays = encode(

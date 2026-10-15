@@ -101,7 +101,7 @@ class _PolarGridLayout(MaskedGridLayout):
         diagonal neighbors no face (``A = 0``). Only a radial face's arc length
         depends on radius. Polar sectors are K-orthogonal, so this is exact.
         """
-        from neurospatial.layout._face_builders import polar_geometry
+        from neurospatial.geometry._face_builders import polar_geometry
 
         assert self.connectivity is not None
         assert self.grid_shape is not None

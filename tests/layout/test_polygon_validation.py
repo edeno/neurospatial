@@ -11,17 +11,22 @@ import pytest
 from shapely.affinity import translate
 from shapely.geometry import Polygon, box
 
-from neurospatial.layout._binning import Binning, KnownFaces, MissingFaces, SpatialBins
-from neurospatial.layout._derive import subset_binning, transform_binning
-from neurospatial.layout._locators import RectilinearLocator
-from neurospatial.layout._polygon import (
+from neurospatial.geometry._binning import (
+    Binning,
+    KnownFaces,
+    MissingFaces,
+    SpatialBins,
+)
+from neurospatial.geometry._derive import subset_binning, transform_binning
+from neurospatial.geometry._locators import RectilinearLocator
+from neurospatial.geometry._polygon import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
     _representative,
     certify_faces,
 )
-from neurospatial.layout._validation import _validate_components, _validate_graph
+from neurospatial.geometry._validation import _validate_components, _validate_graph
 
 
 def _binning(polygons, *, pairs=(), known=False):

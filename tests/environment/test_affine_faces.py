@@ -179,7 +179,7 @@ def test_combined_normal_duplicates_must_match_children(derivation):
 
 
 def test_explicit_combined_normals_keep_zero_bridge_rows_through_derivation():
-    from neurospatial.layout._composition import bridge_values, combined_normals
+    from neurospatial.geometry._composition import bridge_values, combined_normals
 
     left = grid(diagonal=False)
     right = left.apply_transform(affine(np.eye(2), 10.0)).with_metadata(
@@ -219,7 +219,7 @@ def test_missing_faces_are_not_resurrected_by_inverse_shear():
 @pytest.mark.parametrize("dims", [2, 3])
 def test_area_vectors_match_seeded_edge_and_cross_product_oracles(dims):
     from neurospatial.binning import FaceNormals
-    from neurospatial.layout._face_transform import transform_normals
+    from neurospatial.geometry._face_transform import transform_normals
 
     rng = np.random.default_rng(417)
     for _ in range(100):

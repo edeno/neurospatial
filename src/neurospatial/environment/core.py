@@ -29,11 +29,6 @@ from typing_extensions import Self
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._coordinates import (
-    CartesianSystem,
-    EgocentricPolarSystem,
-    polar_circularity,
-)
 from neurospatial.environment._metadata import UNSET, _Metadata, _MetadataView, _Unset
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
@@ -50,7 +45,12 @@ from neurospatial.environment.trajectory import (
     _occupancy,
 )
 from neurospatial.environment.transforms import _rebin
-from neurospatial.layout._binning import Binning
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    polar_circularity,
+)
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import LayoutType
 from neurospatial.layout.validation import (
@@ -75,11 +75,11 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.arena import Arena
     from neurospatial.environment._protocols import CartesianLookupConsumer
     from neurospatial.environment.factories import PolygonType
-    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
-    from neurospatial.layout._polygon import ClipMapping
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -429,7 +429,7 @@ class Environment(Generic[_C]):
                 "Environment pickle is missing owned binning data; load a dictionary, file or NWB export instead."
             )
         if self._is_fitted:
-            from neurospatial.environment._ownership import own_arena
+            from neurospatial.geometry._ownership import own_arena
 
             assert self._geometry.arena is not None
             self._geometry = replace(
@@ -1663,7 +1663,7 @@ class Environment(Generic[_C]):
     def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
         self._require_cartesian("component_keys()")
-        from neurospatial.layout._composition import _component_keys
+        from neurospatial.geometry._composition import _component_keys
 
         return _component_keys(self._binning)
 
@@ -1677,7 +1677,7 @@ class Environment(Generic[_C]):
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
         self._require_cartesian("bin_sources()")
-        from neurospatial.layout._composition import _bin_sources
+        from neurospatial.geometry._composition import _bin_sources
 
         return _bin_sources(self._binning)
 
@@ -6906,9 +6906,9 @@ class Environment(Generic[_C]):
             infer_arena,
             validate_arena,
         )
-        from neurospatial.environment._ownership import own_arena, own_binning
-        from neurospatial.layout._context import GridIndex, grid_index
-        from neurospatial.layout._validation import (
+        from neurospatial.geometry._context import GridIndex, grid_index
+        from neurospatial.geometry._ownership import own_arena, own_binning
+        from neurospatial.geometry._validation import (
             _validate_clip_mapping,
             _validate_components,
             _validate_graph,

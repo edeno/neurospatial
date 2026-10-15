@@ -2,10 +2,11 @@
 paths:
   - "src/neurospatial/environment/**"
   - "src/neurospatial/layout/**"
+  - "src/neurospatial/geometry/**"
   - "src/neurospatial/ops/**"
 ---
 
-# Environment, layout and ops code
+# Environment, geometry, layout and ops code
 
 Before a structural change, read the "Environment architecture" and "Diffusion
 geometry providers" sections of `docs/contributing.md`. They define where new

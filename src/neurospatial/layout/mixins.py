@@ -6,10 +6,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._capabilities import RectilinearGrid
-from neurospatial.layout._locators import NearestBinLocator, RectilinearLocator
+from neurospatial.geometry._capabilities import RectilinearGrid
+from neurospatial.geometry._locators import NearestBinLocator, RectilinearLocator
+from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.layout._plotting import plot_grid
-from neurospatial.layout._rebin_spec import GridBinningSpec
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ class _GridMixin:
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.layout._face_builders import grid_geometry
+        from neurospatial.geometry._face_builders import grid_geometry
 
         assert self.bin_centers is not None
         return grid_geometry(

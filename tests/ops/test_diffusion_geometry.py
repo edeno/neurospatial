@@ -12,14 +12,14 @@ from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
-from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.layout._binning import Binning, KnownFaces, SpatialBins
-from neurospatial.layout._diffusion import (
+from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
+from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
-from neurospatial.layout._locators import NearestBinLocator
+from neurospatial.geometry._locators import NearestBinLocator
+from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.factories import _LAYOUT_MAP
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
@@ -318,7 +318,7 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
         return setup(cls, binning, **kwargs)
 
     monkeypatch.setattr(Environment, "_from_binning", classmethod(counting_setup))
-    from neurospatial.layout import _validation
+    from neurospatial.geometry import _validation
 
     with (
         patch.object(

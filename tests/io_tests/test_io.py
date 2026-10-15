@@ -10,8 +10,8 @@ import pytest
 
 import neurospatial
 from neurospatial import Environment, Regions
+from neurospatial.geometry._locators import HexLocator
 from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.layout._locators import HexLocator
 
 
 def test_source_install_hints_reference_real_extras() -> None:

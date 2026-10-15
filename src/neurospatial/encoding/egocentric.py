@@ -75,7 +75,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult

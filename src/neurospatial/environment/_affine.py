@@ -41,7 +41,7 @@ def _apply_transform_to_environment(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    from neurospatial.layout._derive import transform_binning
+    from neurospatial.geometry._derive import transform_binning
 
     binning = transform_binning(env._binning, transform)
     transformed_centers = binning.bins.centers

@@ -82,7 +82,7 @@ class SnapshotAdapter:
 
 
 def _arena_types() -> tuple[type[Any], ...]:
-    from neurospatial.arena import (
+    from neurospatial.geometry._arena import (
         EgocentricSurround,
         MaskArena,
         OpenArena,
@@ -106,7 +106,7 @@ def _arena_types() -> tuple[type[Any], ...]:
 @lru_cache(maxsize=1)
 def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
     """Discover installed objects once, rejecting ambiguous declarations."""
-    from neurospatial.layout._codecs import _CODECS
+    from neurospatial.geometry._codecs import _CODECS
 
     reserved = set(_CODECS) | {kind.__name__ for kind in _arena_types()}
     adapters: list[SnapshotAdapter] = []
@@ -152,15 +152,15 @@ def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
 def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
     """Validate an adapter result and rebuild owned canonical data records."""
     if role == "arena":
-        from neurospatial.arena import Arena, decode_arena, encode_arena
+        from neurospatial.geometry._arena import Arena, decode_arena, encode_arena
 
         if type(value) not in _arena_types():
             raise ValueError("snapshot adapters must return a built-in arena record.")
         meta, arrays = encode_arena(cast("Arena", value))
         return decode_arena(meta, arrays)
 
-    from neurospatial.layout._binning import Binning, TrackLinearization
-    from neurospatial.layout._codecs import _LOCATOR_TYPES, decode, encode
+    from neurospatial.geometry._binning import Binning, TrackLinearization
+    from neurospatial.geometry._codecs import _LOCATOR_TYPES, decode, encode
 
     expected = {
         "locator": _LOCATOR_TYPES,

@@ -14,15 +14,15 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.layout._capabilities import (
+from neurospatial.geometry._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
-from neurospatial.layout._construction import binning_from_layout
-from neurospatial.layout._diffusion import (
+from neurospatial.geometry._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._construction import binning_from_layout
 
 _BuiltEnvironment = Environment | Environment
 

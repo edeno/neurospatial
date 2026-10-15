@@ -12,10 +12,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from neurospatial import Environment
+from neurospatial.geometry._binning import MissingFaces
+from neurospatial.geometry._codecs import encode
+from neurospatial.geometry._components import TriangleShapes
 from neurospatial.io import from_dict, to_dict
-from neurospatial.layout._binning import MissingFaces
-from neurospatial.layout._codecs import encode
-from neurospatial.layout._components import TriangleShapes
 from neurospatial.ops.transforms import Affine2D
 
 _CARTESIAN_CASES = [

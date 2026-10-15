@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._components import Outline
+from neurospatial.geometry._components import Outline
 from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (

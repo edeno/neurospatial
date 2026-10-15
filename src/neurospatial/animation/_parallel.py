@@ -110,7 +110,7 @@ def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
     from matplotlib.collections import QuadMesh
 
     if isinstance(artist, QuadMesh):
-        from neurospatial.layout._grid_frame import require_grid_context
+        from neurospatial.geometry._grid_frame import require_grid_context
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
         grid, _ = require_grid_context(

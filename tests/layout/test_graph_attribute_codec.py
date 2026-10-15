@@ -6,7 +6,7 @@ import json
 import networkx as nx
 import pytest
 
-from neurospatial.layout._codecs import graph_from_node_link, graph_to_node_link
+from neurospatial.geometry._codecs import graph_from_node_link, graph_to_node_link
 
 _SIDECAR = "_neurospatial_reserved_attributes"
 

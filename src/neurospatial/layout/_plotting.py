@@ -12,11 +12,11 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
-    from neurospatial.layout._binning import TrackLinearization
-    from neurospatial.layout._capabilities import RectilinearGrid
-    from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
-    from neurospatial.layout._grid_frame import FramedGrid
-    from neurospatial.layout._polygon import PolygonCells
+    from neurospatial.geometry._binning import TrackLinearization
+    from neurospatial.geometry._capabilities import RectilinearGrid
+    from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
+    from neurospatial.geometry._grid_frame import FramedGrid
+    from neurospatial.geometry._polygon import PolygonCells
 
 
 def polygon_patches(shapes: PolygonCells) -> list[Any]:

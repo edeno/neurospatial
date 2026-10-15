@@ -12,11 +12,11 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
 from neurospatial import Environment
-from neurospatial.layout._binning import KnownFaces, MissingFaces
-from neurospatial.layout._derive import subset_binning, transform_binning
-from neurospatial.layout._diffusion import FaceGeometry
-from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
-from neurospatial.layout._polygon import (
+from neurospatial.geometry._binning import KnownFaces, MissingFaces
+from neurospatial.geometry._derive import subset_binning, transform_binning
+from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
+from neurospatial.geometry._polygon import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,

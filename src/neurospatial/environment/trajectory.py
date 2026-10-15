@@ -26,7 +26,7 @@ from neurospatial._intervals import (
     observed_runs as observed_runs,
 )
 from neurospatial._validation import validate_times_positions
-from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
 
 if TYPE_CHECKING:
     import scipy.sparse

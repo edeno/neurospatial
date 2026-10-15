@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from neurospatial.environment._coordinates import EgocentricPolarSystem
+from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 if TYPE_CHECKING:

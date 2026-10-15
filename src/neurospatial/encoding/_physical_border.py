@@ -30,9 +30,9 @@ def _prepare_physical_border(
     walls: shapely.Geometry,
 ) -> _PhysicalBorderContact:
     """Require represented, observed wall coverage before interpreting activity."""
-    from neurospatial.layout._composition import CombinedLocator, composition_view
-    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
-    from neurospatial.layout._polygon import ClippedLocator, materialize_cells
+    from neurospatial.geometry._composition import CombinedLocator, composition_view
+    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+    from neurospatial.geometry._polygon import ClippedLocator, materialize_cells
 
     def independent_frame(locator: object) -> bool:
         if isinstance(locator, TransformedLocator):
@@ -106,7 +106,7 @@ def _physical_border_score(
         unary_union([geometry.cells[index] for index in field_bins])
     )
     if geometry.forward is not None:
-        from neurospatial.arena import _mapped_geometry
+        from neurospatial.geometry._arena import _mapped_geometry
 
         contact = _mapped_geometry(contact, geometry.forward)
     coverage = contact.length / walls.length

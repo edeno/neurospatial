@@ -6,7 +6,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._capabilities import (
+from neurospatial.geometry._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
@@ -77,8 +77,8 @@ def test_non_grid_capabilities(layout_type):
 
 def test_saved_layout_facade_keeps_capabilities_in_the_binning():
     """The facade exposes data components without claiming provider methods."""
+    from neurospatial.geometry._diffusion import FiniteVolumeGeometryProvider
     from neurospatial.io import from_dict, to_dict
-    from neurospatial.layout._diffusion import FiniteVolumeGeometryProvider
 
     original = Environment.linear_track(
         endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0

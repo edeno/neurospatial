@@ -11,11 +11,6 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import (
-        CartesianSystem,
-        CoordinateSystem,
-        EgocentricPolarSystem,
-    )
     from neurospatial.environment._protocols import (
         CartesianLookupConsumer,
         CellLengthConsumer,
@@ -25,6 +20,11 @@ if TYPE_CHECKING:
         SubsetConsumer,
         TrajectoryBinningConsumer,
         TransitionsConsumer,
+    )
+    from neurospatial.geometry._coordinates import (
+        CartesianSystem,
+        CoordinateSystem,
+        EgocentricPolarSystem,
     )
 
     def _environment(env: FieldConsumer) -> None: ...

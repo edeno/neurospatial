@@ -12,16 +12,16 @@ from neurospatial._lru import lru_get, lru_put
 from neurospatial.environment._protocols import (
     FieldConsumer,
 )
-from neurospatial.layout._diffusion import (
+from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
 )
-from neurospatial.layout._grid_frame import require_grid_context
+from neurospatial.geometry._grid_frame import require_grid_context
 
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import InterpolationConsumer
-    from neurospatial.layout._binning import Binning
+    from neurospatial.geometry._binning import Binning
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -457,7 +457,7 @@ def _require_face_geometry(env: FieldConsumer, operation: str) -> FaceGeometry:
 
 def _diffusion_geometry(env: FieldConsumer) -> DiffusionGeometry:
     """Implement Environment._diffusion_geometry using explicit fields inputs."""
-    from neurospatial.layout._composition import combined_diffusion
+    from neurospatial.geometry._composition import combined_diffusion
 
     combined = combined_diffusion(env._binning)
     if combined is not None:

@@ -24,7 +24,7 @@ from neurospatial.binning import (
     RectilinearLocator,
     SpatialBins,
 )
-from neurospatial.layout._components import Outline
+from neurospatial.geometry._components import Outline
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.regions import Regions
 
@@ -840,7 +840,7 @@ def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_
 
 
 def test_three_dimensional_affine_grid_faces_follow_physical_planes():
-    from neurospatial.layout._locators import TransformedLocator
+    from neurospatial.geometry._locators import TransformedLocator
 
     source = _variable_grid_faces(3)
     angle = 0.3

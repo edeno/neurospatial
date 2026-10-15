@@ -9,8 +9,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._components import HexagonShapes
-from neurospatial.layout._locators import HexLocator
+from neurospatial.geometry._components import HexagonShapes
+from neurospatial.geometry._locators import HexLocator
 from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
@@ -350,6 +350,6 @@ class HexagonalLayout:
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.layout._face_builders import hex_geometry
+        from neurospatial.geometry._face_builders import hex_geometry
 
         return hex_geometry(self.connectivity, self.bin_sizes())

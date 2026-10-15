@@ -22,19 +22,19 @@ from neurospatial.extensions import (
     _snapshot_adapters,
     _snapshot_provider,
 )
-from neurospatial.layout._binning import (
+from neurospatial.geometry._binning import (
     Binning,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
 )
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._locators import (
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._locators import (
     NearestBinLocator,
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClippedLocator
+from neurospatial.geometry._polygon import ClippedLocator
 from neurospatial.ops.transforms import translate
 
 

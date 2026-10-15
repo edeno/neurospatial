@@ -66,7 +66,7 @@ from neurospatial.ops.egocentric import _wrap_angle, compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 

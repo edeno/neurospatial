@@ -8,6 +8,20 @@ from typing import Any, cast
 import networkx as nx
 import numpy as np
 
+from neurospatial.geometry._binning import (
+    Binning,
+    FacesSource,
+    Locator,
+    SpatialBins,
+)
+from neurospatial.geometry._capabilities import (
+    RectilinearGridProvider,
+    TrackLinearizationProvider,
+)
+from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.geometry._context import GridIndex
+from neurospatial.geometry._face_normals import FaceNormals, geometric_normals
+from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.layout import (
     GraphLayout,
     HexagonalLayout,
@@ -17,20 +31,6 @@ from neurospatial.layout import (
     ShapelyPolygonLayout,
     TriangularMeshLayout,
 )
-from neurospatial.layout._binning import (
-    Binning,
-    FacesSource,
-    Locator,
-    SpatialBins,
-)
-from neurospatial.layout._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
-)
-from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.layout._context import GridIndex
-from neurospatial.layout._face_normals import FaceNormals, geometric_normals
-from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
@@ -148,8 +148,8 @@ def _outline_of(layout: LayoutEngine) -> Outline | None:
 
 def _native_faces_of(layout: object, bins: SpatialBins, graph: nx.Graph) -> FacesSource:
     """Extract minimal native numerical data without materializing faces."""
-    from neurospatial.layout._face_builders import track_junctions
-    from neurospatial.layout._native_faces import NativeFaces
+    from neurospatial.geometry._face_builders import track_junctions
+    from neurospatial.geometry._native_faces import NativeFaces
     from neurospatial.layout.engines._polar import _PolarGridLayout
     from neurospatial.layout.engines.graph import GraphLayout
     from neurospatial.layout.engines.hexagonal import HexagonalLayout
@@ -205,11 +205,11 @@ def built_layout_data(
     GridIndex | None,
 ]:
     """Extract native component data once; retain no builder or callback."""
-    from neurospatial.layout._context import GridIndex
+    from neurospatial.geometry._context import GridIndex
 
     if type(layout) not in _NATIVE_LAYOUTS:
-        from neurospatial.environment._from_bins import prepare_bins
         from neurospatial.extensions import _snapshot_provider
+        from neurospatial.geometry._explicit import prepare_bins
 
         binning, graph, ranges, category = prepare_bins(
             _snapshot_provider(layout, "binning")

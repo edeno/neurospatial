@@ -12,16 +12,16 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 
 from neurospatial._exceptions import IncompatibleEnvironmentError
-from neurospatial.arena import _CombinedArena
-from neurospatial.layout._binning import Binning, KnownFaces, MissingFaces
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._combine_geometry import (
+from neurospatial.geometry._arena import _CombinedArena
+from neurospatial.geometry._binning import Binning, KnownFaces, MissingFaces
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._combine_geometry import (
     certify_components,
     segment_enters_component,
 )
-from neurospatial.layout._composition import CombinedLocator
-from neurospatial.layout._diffusion import FaceGeometry
-from neurospatial.layout._polygon import (
+from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._polygon import (
     PolygonCells,
     cells_from_locator,
 )
@@ -239,7 +239,7 @@ def _combine(
     from neurospatial._logging import log_environment_combine
 
     log_environment_combine(len(children), bins.n_bins, len(pairs))
-    from neurospatial.layout._composition import combined_normals
+    from neurospatial.geometry._composition import combined_normals
 
     normals = combined_normals(locator) if not len(pairs) else None
     return Environment.from_bins(
