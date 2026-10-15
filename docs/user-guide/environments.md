@@ -362,6 +362,97 @@ Other common queries are `env.neighbors(bin_index)`,
 `env.distance_between(point_a, point_b)`. See the
 [API reference](../api/index.md) for their coordinate and distance conventions.
 
+## Choose physical walls or analysis boundaries
+
+Physical border scores use asserted footprint rings (including holes) and
+explicit internal walls. A crop or a missing position sample does not create a
+wall. If only tracking-derived support or an analysis mask is available, request
+`boundary_source="analysis"` to use the legacy boundary-bin approximation.
+Physical mode is the default. It requires measured wall geometry and retained
+cells with finite firing rates along every measured wall segment. Missing wall
+observations cannot establish that firing was zero near the wall. Supplying
+`OpenArena` establishes wall locations; it does not add bins or observations.
+Physical scoring refuses when either geometry or this observation support is
+missing. A valid zero rate near the wall still contributes to a negative score
+for a field away from the wall.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.encoding import border_score
+
+env = Environment.from_grid_mask(
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
+    arena=OpenArena(box(0, 0, 10, 10)), units="cm",
+)
+field = (env.bin_centers[:, 0] < 1).astype(float)
+score = border_score(env, field, metric="euclidean")
+assert 0 < score < 1
+approximation = border_score(env, field, boundary_source="analysis")
+assert approximation == 1.0
+```
+
+Physical coverage is the fraction of declared wall length covered by field
+cells. Distance is mean field-center distance to actual walls, normalized by
+the wall diameter (maximum point separation). Geodesic mode includes center-to-wall lengths
+and paths through retained graph bins. An unavailable route makes the score
+NaN; crops can restrict represented routes. Euclidean mode avoids that graph
+restriction. This is a generalized screening metric; existing fixed thresholds
+are not a calibrated significance test for this geometry.
+
+For a rotated rectangular arena, construct bins in coordinates aligned with the
+measured rectangle, then transform the bins and arena together. Transform the
+recorded positions into the same frame before computing rates. A change of
+frame then preserves the represented wall coverage:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+from neurospatial import Environment
+from neurospatial.encoding import border_score
+from neurospatial.ops.transforms import Affine2D
+
+env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
+field = (env.bin_centers[:, 0] < 1).astype(float)
+score = border_score(env, field, metric="euclidean")
+angle = np.pi / 4
+transform = Affine2D(np.array([
+    [np.cos(angle), -np.sin(angle), 20.0],
+    [np.sin(angle), np.cos(angle), 10.0],
+    [0.0, 0.0, 1.0],
+]))
+rotated = env.apply_transform(transform)
+np.testing.assert_allclose(border_score(rotated, field, metric="euclidean"), score)
+recorded_positions = np.array([[0.5, 0.5], [0.5, 1.5]])
+rotated_positions = transform(recorded_positions)
+assert np.all(rotated.bin_at(rotated_positions) >= 0)
+```
+
+Rebuilding an axis-aligned grid from a rotated polygon can leave slanted wall
+segments outside the selected bins. For other arena shapes, use exact cells
+that cover the measured walls and collect observations in their wall-adjacent
+cells. `clip()` only cuts existing cells; it cannot restore missing bins.
+
+The same choice is available on `result.border_score()`, population
+`border_scores()` and `label_cell_types()`, and `summary_table()`. Tables retain
+other metrics when wall geometry is unavailable: border scores are NaN, with a
+reason in `table.attrs["unavailable_metrics"]` and the chosen source in
+`table.attrs["border_boundary_source"]`. A spatially tuned cell that is not a
+grid cell is then labeled `"undetermined"` rather than `"place"`, because it may
+be a border cell. No analysis approximation is selected
+implicitly. Physical border coverage currently requires exact planar cells and
+polygonal walls; curved track footprints require a separate representation.
+Independently transformed combined components also refuse physical contact
+until a shared-frame contact certificate is available; combine before applying
+one shared transform, or explicitly choose the analysis approximation.
+A combined environment also needs declared walls for every component: a field
+in a component without them would otherwise be scored against walls in other
+components, so physical scoring refuses and names the component.
+
 ## Change bin size while retaining the arena
 
 `env.rebin(bin_size=...)` builds a new rectangular lattice over the retained

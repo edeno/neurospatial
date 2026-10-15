@@ -9,6 +9,17 @@
   each face length must equal the shared cell edge (zero when cells share no
   edge) and each face distance the center-to-center distance. Inconsistent
   faces previously passed silently and changed smoothing and diffusion results.
+- Physical border scores require complete represented and observed wall
+  coverage, distinguishing missing measurements from measured zero firing.
+  Unsupported scores and batch summaries provide setup guidance rather than
+  treating an unobserved wall as zero activity.
+  When the border score is unavailable, `summary_table()` labels a spatially
+  tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
+  border cell; single-unit and population tables agree.
+  Physical border scores refuse combined environments in which a component has
+  no declared walls, naming the component, instead of scoring its fields
+  against walls in other components (euclidean returned -1 for a wall-hugging
+  field). Declare walls for each component or use `boundary_source="analysis"`.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
@@ -52,6 +63,14 @@
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
+
+- Border scores now use declared physical footprint rings and internal walls
+  by default, with wall-length coverage and distances to actual walls.
+  **Breaking:** explicitly choose `boundary_source="analysis"` for the legacy
+  boundary-bin approximation when only analysis geometry is available. Result,
+  population and classification methods propagate the choice. Summary tables
+  explain unavailable wall metrics without dropping other metrics. Physical
+  coverage requires exact planar cells and polygonal wall geometry.
 
 - Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
   the retained arena with an owned `GridBinningSpec` separate from provenance.
@@ -326,6 +345,9 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- Preserve each component’s declared physical walls when environments are combined,
+  including shared room boundaries and measured walls alongside unknown domains.
 
 - Subsets retain exact bin measures, selected finite-volume faces, cell shapes
   and absolute track coordinates. Derived environments can be saved and loaded.

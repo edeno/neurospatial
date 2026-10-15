@@ -105,7 +105,13 @@ def test_thresholds_attrs_match_resolved_defaults(rate_family_results, family):
     assert result.summary_table().attrs["classification_thresholds"] == defaults
     assert result[0].summary_table().attrs["classification_thresholds"] == defaults
     classifier = result.label_cell_types if family == "spatial" else result.classify
-    np.testing.assert_array_equal(classifier(), classifier(**defaults))
+    if family == "spatial":
+        np.testing.assert_array_equal(
+            classifier(boundary_source="analysis"),
+            classifier(boundary_source="analysis", **defaults),
+        )
+    else:
+        np.testing.assert_array_equal(classifier(), classifier(**defaults))
 
 
 @pytest.mark.parametrize("family", FAMILIES)

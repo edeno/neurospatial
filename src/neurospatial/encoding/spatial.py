@@ -574,6 +574,7 @@ def _spatial_summary_frame(
     *,
     index: Sequence[Hashable],
     include_classification: bool,
+    boundary_source: Literal["physical", "analysis"],
 ) -> pd.DataFrame:
     """Build spatial metric columns for single and population results."""
     import pandas as pd
@@ -590,7 +591,14 @@ def _spatial_summary_frame(
     peaks = np.atleast_2d(result.peak_location())
     info = np.asarray(batch_spatial_information(rates, occupancy))
     grid = batch_grid_scores(result.env, rates).scores
-    border = batch_border_scores(result.env, rates).scores
+    border_unavailable = None
+    try:
+        border = batch_border_scores(
+            result.env, rates, boundary_source=boundary_source
+        ).scores
+    except NotImplementedError as exc:
+        border = np.full(len(rates), np.nan)
+        border_unavailable = str(exc)
     columns: dict[str, Any] = {
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_info": info,
@@ -602,10 +610,16 @@ def _spatial_summary_frame(
         **_glm_summary_columns(result),
     }
     if include_classification:
-        columns["cell_type"] = _label_from_scores(
-            info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS
-        )
+        labels = _label_from_scores(info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS)
+        if border_unavailable is not None:
+            # Without a border score, a tuned non-grid cell may be a border
+            # cell; do not report it as a place cell.
+            labels[labels == "place"] = "undetermined"
+        columns["cell_type"] = labels
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
+    df.attrs["border_boundary_source"] = boundary_source
+    if border_unavailable is not None:
+        df.attrs["unavailable_metrics"] = {"border_score": border_unavailable}
     df.attrs["method"] = result.method
     df.attrs["units"] = {
         "peak_rate": "Hz",
@@ -772,7 +786,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=None, kw_only=True, compare=False, repr=False
     )
 
-    def summary_table(self, include_classification: bool = True) -> pd.DataFrame:
+    def summary_table(
+        self,
+        include_classification: bool = True,
+        *,
+        boundary_source: Literal["physical", "analysis"] = "physical",
+    ) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
 
         Parameters
@@ -780,10 +799,20 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         include_classification : bool, default=True
             Include the fixed-threshold cell-type label.
 
+        boundary_source : {'physical', 'analysis'}, default='physical'
+            Border geometry source. Unsupported physical metrics are NaN and
+            explained in ``df.attrs['unavailable_metrics']``; other metrics
+            remain available. The source is recorded in table attributes.
+            When the border score is unavailable, a cell that passes the
+            information gate but not the grid threshold is labeled
+            ``"undetermined"``: it could be a place or a border cell.
+
         Returns
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+            ``cell_type`` is ``"grid"``, ``"border"``, ``"place"``,
+            ``"unclassified"`` or ``"undetermined"``.
 
         Notes
         -----
@@ -815,6 +844,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             self,
             index=self._row_unit_ids().tolist(),
             include_classification=include_classification,
+            boundary_source=boundary_source,
         )
 
     def _headline_metrics(self) -> dict[str, float]:
@@ -1161,6 +1191,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         threshold: float = 0.3,
         min_area: float = 0.0,
         metric: Literal["geodesic", "euclidean"] = "geodesic",
+        *,
+        boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> float:
         """Border score (boundary proximity tuning).
 
@@ -1181,6 +1213,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
+
+        boundary_source : {'physical', 'analysis'}, default='physical'
+            Use declared walls, or explicitly request the legacy boundary-bin
+            approximation. Physical mode requires supported wall geometry.
 
         Returns
         -------
@@ -1225,7 +1261,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> score = result.border_score()
+        >>> score = result.border_score(boundary_source="analysis")
         >>> bool(-1.0 <= score <= 1.0)
         True
         """
@@ -1239,6 +1275,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             threshold=threshold,
             min_area=min_area,
             metric=metric,
+            boundary_source=boundary_source,
         )
 
     def region_coverage(
@@ -2101,6 +2138,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         threshold: float = 0.3,
         min_area: float = 0.0,
         metric: Literal["geodesic", "euclidean"] = "geodesic",
+        *,
+        boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> BatchScoresResult:
         """Border scores (boundary proximity tuning) for all neurons.
 
@@ -2120,6 +2159,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
+
+        boundary_source : {'physical', 'analysis'}, default='physical'
+            Use declared walls, or explicitly request the legacy boundary-bin
+            approximation. Physical mode requires supported wall geometry.
 
         Returns
         -------
@@ -2165,6 +2208,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             threshold=threshold,
             min_area=min_area,
             metric=metric,
+            boundary_source=boundary_source,
         )
 
     def label_cell_types(
@@ -2175,6 +2219,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         min_border_score: float | None = None,
         grid_scores: NDArray[np.float64] | None = None,
         border_scores: NDArray[np.float64] | None = None,
+        boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> NDArray[np.str_]:
         """Label neurons with multi-class spatial cell types.
 
@@ -2208,6 +2253,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             used directly instead of recomputing via :meth:`border_scores`. Must
             be 1-D with length equal to the number of neurons. When ``None``
             (the default), border scores are recomputed.
+
+        boundary_source : {'physical', 'analysis'}, default='physical'
+            Source used when recomputing border scores. Supply measured walls
+            or explicitly request the analysis-boundary approximation.
 
         Returns
         -------
@@ -2277,7 +2326,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> labels = result.label_cell_types()
+        >>> labels = result.label_cell_types(boundary_source="analysis")
         >>> labels.shape
         (3,)
         >>> valid = {"grid", "border", "place", "unclassified"}
@@ -2310,7 +2359,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                     f"grid_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {grid_scores_arr.shape}"
                 )
         if border_scores is None:
-            border_scores_arr = self.border_scores().scores
+            border_scores_arr = self.border_scores(
+                boundary_source=boundary_source
+            ).scores
         else:
             border_scores_arr = np.asarray(border_scores, dtype=np.float64)
             if border_scores_arr.ndim != 1 or border_scores_arr.shape[0] != n_neurons:
@@ -2401,6 +2452,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         self,
         unit_ids: Sequence[str | int] | None = None,
         include_classification: bool = True,
+        *,
+        boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> pd.DataFrame:
         """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
@@ -2423,6 +2476,14 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Whether to include the ``cell_type`` column with classification
             labels from ``label_cell_types()``.
 
+        boundary_source : {'physical', 'analysis'}, default='physical'
+            Border geometry source. Unsupported physical metrics are NaN and
+            explained in ``df.attrs['unavailable_metrics']``; other metrics
+            remain available. The source is recorded in table attributes.
+            When the border score is unavailable, a cell that passes the
+            information gate but not the grid threshold is labeled
+            ``"undetermined"``: it could be a place or a border cell.
+
         Returns
         -------
         pd.DataFrame
@@ -2435,7 +2496,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             - sparsity: sparsity measure (0-1)
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)
-            - cell_type: classification label (if include_classification=True)
+            - cell_type: classification label (if include_classification=True):
+              a ``label_cell_types()`` label, or ``"undetermined"`` when the
+              border score needed to decide place versus border is unavailable
             - method: estimator used to compute the rate map
 
         Notes
@@ -2514,7 +2577,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             )
 
         return _spatial_summary_frame(
-            self, index=index_ids, include_classification=include_classification
+            self,
+            index=index_ids,
+            include_classification=include_classification,
+            boundary_source=boundary_source,
         )
 
 

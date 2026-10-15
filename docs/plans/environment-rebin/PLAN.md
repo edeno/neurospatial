@@ -1,7 +1,8 @@
 # Stage D — Re-binning and physical-wall consumers
 
 **Status:** D0/D1 complete and validated on 2026-10-15.
-D2/D3 remain to be implemented.
+D2 is complete and validated on `feature/environment-border-walls`,
+stacked on rebin commit `bf5121e5`. D3 remains to be implemented.
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
@@ -124,3 +125,48 @@ Local evidence: `/private/tmp/stage-d1-accepted.log`,
 `/private/tmp/stage-d1-compare.log`. The new-size family scope is rectangular;
 other families refuse until a reviewed specification is implemented. Native
 integer coarsening remains unchanged.
+
+## D2 estimator contract
+
+Physical mode uses exact planar declared footprint rings and explicit internal
+walls. Position/mask inference never asserts a wall. It measures the length of
+wall covered by the union of thresholded field cells, divided by total wall
+length. Mean field-center distance is normalized by the diameter of the declared walls,
+so an analysis crop cannot become a new wall or change the distance scale.
+Geodesic mode includes physical center-to-wall seed lengths, then paths on the
+retained graph. Missing represented routes return NaN; they are not discarded.
+This is the documented generalized screen, not the exact original Solstad
+estimator or a calibrated null test. Analysis mode preserves the existing
+boundary-bin formula and normalization exactly.
+
+Direct metric and label calls require their chosen geometry. General summary
+tables retain other metrics and record unavailable physical-border geometry in
+attributes alongside NaN scores; they do not fall back to analysis mode. The
+initial physical-wall implementation requires polygonal planar walls. Curved
+measured tracks refuse with an actionable explanation.
+
+Rotation regression exposed loss of contact from separately rounded transformed
+polygons, plus frame-dependent normalization. Contact now uses the retained
+source frame and normalization uses the wall diameter, invariant to rigid frame
+changes. Independently transformed combined children lack one certified contact
+frame and explicitly refuse physical scores; the uniform-field witness lost
+wall coverage (0.9654349 instead of 1) in a world-frame intersection. Analysis
+mode remains an explicit available approximation, not a hidden repair.
+
+## D2 validation
+
+The initial physical-wall tests failed before implementation. The accepted
+border/result/API gate passed **347 tests** (4 unrelated slow cases deselected),
+with runtime warnings treated as errors. The source/contract mypy gate passed
+(244 files). Border, shared-metric and spatial-result doctests passed **48 cases**
+with 2 explicit skips. The runnable environment guide passed. Legacy scientific
+controls now request analysis mode explicitly, including population and result
+wrappers, rather than asserting physical walls from samples.
+
+Permanent regressions include hand-calculated coverage/distance, crop invariance
+of Euclidean scores, internal walls, mask holes, unavailable paths, summaries,
+copy/storage, frame changes and refusal of uncertified independent frames.
+The API snapshot changes only the intended `boundary_source` argument.
+Logs: `/private/tmp/stage-d2-release.log`,
+`/private/tmp/stage-d2-release-types.log`, `/private/tmp/stage-d2-doctests.log`,
+`/private/tmp/stage-d2-guide.log`.

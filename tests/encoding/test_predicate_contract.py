@@ -186,7 +186,8 @@ def test_label_constants_and_removed_aliases(significance_recording):
         "border_scores": np.array([0.6, 0.1, 0.2]),
     }
     np.testing.assert_array_equal(
-        rates.label_cell_types(**scores), rates.label_cell_types(**constant, **scores)
+        rates.label_cell_types(**scores, boundary_source="analysis"),
+        rates.label_cell_types(**constant, **scores, boundary_source="analysis"),
     )
     for name in constant:
         param = inspect.signature(rates.label_cell_types).parameters[name]
