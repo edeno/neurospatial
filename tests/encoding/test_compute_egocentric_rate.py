@@ -194,12 +194,12 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
 
         # Egocentric rate runs on a distinct polar environment type, not the
         # Cartesian Environment.
-        assert isinstance(result.env, EgocentricPolarEnvironment)
-        assert not isinstance(result.env, Environment)
+        assert isinstance(result.env, Environment)
+        assert result.env.coordinate_kind == "polar"
 
 
 # ==============================================================================

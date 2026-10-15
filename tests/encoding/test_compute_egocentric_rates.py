@@ -25,6 +25,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
+from neurospatial import Environment
+
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -175,7 +177,6 @@ class TestComputeEgocentricRatesReturnsResult:
     def test_env_is_environment(self, trajectory_data, spike_times_list):
         """Test that env is an Environment."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
-        from neurospatial.environment import Environment
 
         result = compute_egocentric_rates(
             None,
@@ -186,11 +187,11 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
 
-        # Egocentric rates run on a distinct polar environment type.
-        assert isinstance(result.env, EgocentricPolarEnvironment)
-        assert not isinstance(result.env, Environment)
+        # Egocentric rates retain radius/angle semantics in the common class.
+        assert isinstance(result.env, Environment)
+        assert result.env.coordinate_kind == "polar"
 
     def test_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
         """Test env.n_bins matches occupancy length."""
@@ -759,7 +760,6 @@ class TestComputeEgocentricRatesGeodesic:
     def test_geodesic_with_env_works(self, trajectory_data, spike_times_list):
         """Test that geodesic with env parameter works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
-        from neurospatial.environment import Environment
 
         # Create environment
         env = Environment.from_samples(trajectory_data["positions"], bin_size=5.0)

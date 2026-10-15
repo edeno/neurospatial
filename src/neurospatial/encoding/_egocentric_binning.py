@@ -66,7 +66,9 @@ from neurospatial.ops.egocentric import _wrap_angle, compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.environment._coordinates import EgocentricPolarSystem
+
+    PolarEnvironment = Environment[EgocentricPolarSystem]
 
 __all__ = [
     "bin_egocentric_spike_train",
@@ -287,7 +289,7 @@ def _create_egocentric_environment(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-) -> EgocentricPolarEnvironment:
+) -> PolarEnvironment:
     """Create egocentric polar coordinate environment.
 
     Parameters
@@ -399,7 +401,7 @@ def compute_egocentric_occupancy(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
+) -> tuple[NDArray[np.float64], PolarEnvironment]:
     """Compute egocentric occupancy (time at each distance/direction bin).
 
     Computes the total time spent at each egocentric bin by computing
@@ -578,7 +580,7 @@ def bin_egocentric_spike_train(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
+) -> tuple[NDArray[np.float64], PolarEnvironment]:
     """Bin spike train by egocentric coordinates.
 
     Converts continuous spike times to spike counts per egocentric bin based on
@@ -738,8 +740,8 @@ def prepare_egocentric_binning(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     frame_bins: NDArray[np.int64] | None = None,
-    polar_env: EgocentricPolarEnvironment | None = None,
-) -> tuple[FrameBinning, EgocentricPolarEnvironment]:
+    polar_env: PolarEnvironment | None = None,
+) -> tuple[FrameBinning, PolarEnvironment]:
     """Prepare geometry and exact temporal support before counting spikes."""
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
@@ -821,8 +823,8 @@ def bin_egocentric_spike_trains(
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
     frame_bins: NDArray[np.int64] | None = None,
-    polar_env: EgocentricPolarEnvironment | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], EgocentricPolarEnvironment]:
+    polar_env: PolarEnvironment | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], PolarEnvironment]:
     """Bin multiple spike trains by egocentric coordinates.
 
     Batch version of bin_egocentric_spike_train that efficiently processes
@@ -878,7 +880,7 @@ def bin_egocentric_spike_trains(
     frame_bins : ndarray of int, shape (n_samples,), optional
         Polar bin per sample for exactly these samples and binning settings.
         Passing it skips the egocentric coordinate computation.
-    polar_env : EgocentricPolarEnvironment, optional
+    polar_env : PolarEnvironment, optional
         The polar environment for these binning settings, reused instead of
         rebuilt. Callers that bin many spike sets on one trajectory pass both.
 

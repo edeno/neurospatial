@@ -190,6 +190,14 @@
 
 ### Changed
 
+- **Breaking:** Cartesian and egocentric polar factories now return one public
+  `Environment` class. Use `env.coordinate_kind` for coordinate meaning and
+  `Environment.from_polar_egocentric(...)` instead of the removed
+  `EgocentricPolarEnvironment.create(...)`. Radius remains in length units and
+  angle in radians; polar Cartesian-only calls still refuse, including unbound
+  calls. Factory-inferred static types preserve those restrictions. Supported
+  dictionary, file and NWB records retain their coordinate semantics.
+
 - Points in discarded subset bins map to `-1` rather than a nearby retained bin.
   Non-uniform scaling of hexagonal or mesh environments and general affine maps
   disable finite-volume smoothing with an explanation. Tracks refuse

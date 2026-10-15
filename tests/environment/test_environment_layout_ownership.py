@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
+from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena, _TransformedArena
 from neurospatial.encoding.grid import _detect_grid_method
 from neurospatial.environment._ownership import own_arena, own_layout
@@ -130,9 +131,7 @@ def test_bridge_refuses_rebinding(attribute):
 
 def test_bridge_preserves_native_context_and_capabilities(built_environment):
     # Compare against an independently rebuilt native oracle.
-    source = type(built_environment)._create_layout(
-        built_environment.layout_type, built_environment.layout_parameters
-    )
+    source = _native_oracle(built_environment)
     bridge = own_layout(source)
     assert bridge.layout_type == source.layout_type
     assert bridge._layout_type_tag == source._layout_type_tag
@@ -317,3 +316,13 @@ def test_custom_arena_is_refused_even_under_native_transform():
     for value in (source, _TransformedArena(source, np.eye(3))):
         with pytest.raises(TypeError, match="snapshot"):
             own_arena(value)
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

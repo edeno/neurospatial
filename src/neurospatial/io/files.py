@@ -35,7 +35,6 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment.core import _BaseEnvironment
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -438,7 +437,7 @@ def _environment_payload(
         "grid_shape": env.grid_shape,
         "graph": nx.node_link_data(env.connectivity, edges="links"),
         "regions": [region.to_dict() for region in env.regions.values()],
-        "coordinate_kind": "polar" if getattr(env, "_POLAR", False) else "cartesian",
+        "coordinate_kind": "polar" if env._is_polar else "cartesian",
     }
     for attribute in ("units", "frame"):
         value = getattr(env, attribute)
@@ -483,6 +482,10 @@ def _restore_environment(
     """Decode authoritative binning and Arena data without a layout builder."""
     from neurospatial.arena import Arena, UnknownArena, decode_arena
     from neurospatial.environment import Environment
+    from neurospatial.environment._coordinates import (
+        CartesianSystem,
+        EgocentricPolarSystem,
+    )
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._codecs import decode
@@ -574,23 +577,21 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        env_cls: type[_BaseEnvironment] = Environment
-        if coordinate_kind == "polar":
-            from neurospatial.environment.polar import EgocentricPolarEnvironment
-
-            env_cls = EgocentricPolarEnvironment
-        env = env_cls(
+        env = Environment(
             metadata["name"],
             layout,
             metadata["layout_type"],
             params,
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
+            _coordinates=EgocentricPolarSystem(False)
+            if coordinate_kind == "polar"
+            else CartesianSystem(),
             restored_from=source,
             arena=arena,
             units=metadata.get("units"),
             frame=metadata.get("frame"),
         )
-        return cast("Environment", env)
+        return env
     except (ValueError, TypeError, KeyError, IndexError, OverflowError) as error:
         raise ValueError(
             _format_error(

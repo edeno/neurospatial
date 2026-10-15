@@ -58,7 +58,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.layout._locators import (
     HexLocator,
@@ -405,3 +405,38 @@ class EnvironmentMetrics:
             # Keep original vector column for backward compatibility
 
         return df
+
+
+def _cartesian_boundary_bins(env: EnvironmentProtocol) -> NDArray[np.intp]:
+    """Boundary IDs from retained logical indexing, including transformed subsets."""
+    grid_shape, active_mask = env.grid_shape, env.active_mask
+    locator = env._binning.locator
+    selections = []
+    while isinstance(locator, (SubsetLocator, TransformedLocator)):
+        if isinstance(locator, SubsetLocator):
+            selections.append(locator.parent_to_child)
+        locator = locator.base
+    if isinstance(locator, HexLocator):
+        grid_shape = locator.centers_shape
+        mapping = locator.flat_to_active.copy()
+    elif isinstance(locator, RectilinearLocator):
+        grid_shape = locator.shape
+        mask = locator.active_mask
+        mask = np.ones(grid_shape, dtype=bool) if mask is None else mask
+        mapping = np.full(mask.size, -1, dtype=np.intp)
+        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
+    else:
+        mapping = None
+    if mapping is not None:
+        # Cell adjacency survives coordinate transforms. Compose subset
+        # maps before deriving support, without indexing the -1 sentinel.
+        for selection in reversed(selections):
+            inside = mapping >= 0
+            mapping[inside] = selection[mapping[inside]]
+        active_mask = (mapping >= 0).reshape(grid_shape)
+    return find_boundary_nodes(
+        graph=env.connectivity,
+        grid_shape=grid_shape,
+        active_mask=active_mask,
+        layout_kind=env._layout_type_used,
+    ).astype(np.intp, copy=False)

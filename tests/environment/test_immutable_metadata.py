@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 
 def _environment():
@@ -115,7 +114,7 @@ def test_restoration_preserves_readonly_metadata_and_geometry(restore):
 
 
 def test_polar_replacement_preserves_concrete_type_and_circularity():
-    env = EgocentricPolarEnvironment.create(
+    env = Environment.from_polar_egocentric(
         (1.0, 3.0),
         (-np.pi, np.pi),
         1.0,
@@ -125,7 +124,7 @@ def test_polar_replacement_preserves_concrete_type_and_circularity():
         frame="animal",
     )
     updated = env.with_metadata(name="polar copy")
-    assert type(updated) is EgocentricPolarEnvironment
+    assert type(updated) is Environment
     assert updated._geometry is env._geometry
     assert updated._angular_is_circular == env._angular_is_circular
     assert (updated.units, updated.frame) == ("cm", "animal")

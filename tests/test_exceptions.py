@@ -245,7 +245,7 @@ def test_incompatible_environment_site():
         lambda e: e.BinIndexOutOfRangeError(99, n_bins=4),
         lambda e: e.IncompatibleEnvironmentError("dims differ", fix="match them."),
         lambda e: e.CartesianOnlyError(
-            "EgocentricPolarEnvironment",
+            "Environment",
             "bin_at()",
             reason="Cartesian-coordinate operation",
             explanation="x",

@@ -2129,18 +2129,17 @@ class TestCoordinateKindRoundTrip:
     def test_nwb_roundtrip_preserves_coordinate_kind(
         self, empty_nwb, sample_polar_environment
     ):
-        """A polar environment reads back as EgocentricPolarEnvironment."""
+        """A polar environment reads back as Environment."""
         from neurospatial import Environment
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
         from neurospatial.io.nwb import read_environment, write_environment
 
-        assert isinstance(sample_polar_environment, EgocentricPolarEnvironment)
+        assert isinstance(sample_polar_environment, Environment)
 
         write_environment(empty_nwb, sample_polar_environment, name="polar_env")
         loaded = read_environment(empty_nwb, name="polar_env")
 
-        assert isinstance(loaded, EgocentricPolarEnvironment)
-        assert not isinstance(loaded, Environment)
+        assert isinstance(loaded, Environment)
+        assert loaded.coordinate_kind == "polar"
         assert (
             loaded.is_linearized_track == sample_polar_environment.is_linearized_track
         )
@@ -2148,7 +2147,6 @@ class TestCoordinateKindRoundTrip:
     def test_nwb_roundtrip_cartesian_unaffected(self, empty_nwb, sample_environment):
         """A Cartesian environment round-trips as a (non-polar) Environment."""
         from neurospatial import Environment
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
         from neurospatial.io.nwb import read_environment, write_environment
 
         assert isinstance(sample_environment, Environment)
@@ -2157,7 +2155,7 @@ class TestCoordinateKindRoundTrip:
         loaded = read_environment(empty_nwb, name="cart_env")
 
         assert isinstance(loaded, Environment)
-        assert not isinstance(loaded, EgocentricPolarEnvironment)
+        assert loaded.coordinate_kind == "cartesian"
 
     def test_read_environment_missing_polar_coordinate_kind_is_rejected(
         self, empty_nwb, sample_polar_environment
@@ -2192,13 +2190,12 @@ class TestCoordinateKindRoundTrip:
         """A polar env survives a real NWB file round-trip as the polar type.
 
         Writes to disk via NWBHDF5IO and reads back, asserting the restored
-        object is an EgocentricPolarEnvironment (not a Cartesian Environment)
+        object is an Environment (not a Cartesian Environment)
         and that the physical polar edge geometry is preserved.
         """
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
         from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "polar_roundtrip.nwb"
@@ -2212,8 +2209,8 @@ class TestCoordinateKindRoundTrip:
             nwbfile = io.read()
             loaded = read_environment(nwbfile, name="polar_env")
 
-            assert isinstance(loaded, EgocentricPolarEnvironment)
-            assert not isinstance(loaded, Environment)
+            assert isinstance(loaded, Environment)
+            assert loaded.coordinate_kind == "polar"
             assert loaded.n_bins == sample_polar_environment.n_bins
             # The corrected physical polar edge distances survive the round-trip.
             orig_weights = sorted(

@@ -182,8 +182,8 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
 
     Typical examples: composing a 2D environment with a 3D one,
     requiring matching ``bin_size`` between source and target, requiring
-    the same environment type (Cartesian ``Environment`` vs egocentric
-    ``EgocentricPolarEnvironment``), etc.
+    compatible coordinate meanings (Cartesian positions or egocentric
+    radius/angle), etc.
 
     Inherits from :class:`ValueError` so existing ``except ValueError``
     blocks keep working.
@@ -215,7 +215,7 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
 class CartesianOnlyError(AttributeError, NotImplementedError, NeurospatialError):
     """Raised when an operation needs Cartesian bin centers the environment lacks.
 
-    An ``EgocentricPolarEnvironment`` stores ``(distance, angle)`` bins, so an
+    A polar ``Environment`` stores ``(distance, angle)`` bins, so an
     operation that reads bin centers as Cartesian ``(x, y[, z])`` coordinates
     would return geometric nonsense. Inherits :class:`AttributeError`, so
     ``hasattr(polar_env, "bin_at")`` is ``False``, and
@@ -224,7 +224,7 @@ class CartesianOnlyError(AttributeError, NotImplementedError, NeurospatialError)
     Parameters
     ----------
     environment_type : str
-        Name of the environment class, e.g. ``"EgocentricPolarEnvironment"``.
+        Name of the environment class, e.g. ``"Environment"``.
     operation : str
         The refused call, e.g. ``"bin_at()"`` or
         ``"distance_to(metric='euclidean')"``.

@@ -10,7 +10,6 @@ from shapely.geometry import box
 
 from neurospatial import Environment, Region, Regions
 from neurospatial.arena import OpenArena
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 
 def _create(kind, **metadata):
@@ -59,11 +58,7 @@ def _create(kind, **metadata):
             },
             **metadata,
         )
-    factory = (
-        EgocentricPolarEnvironment.create
-        if kind == "polar_create"
-        else Environment.from_polar_egocentric
-    )
+    factory = Environment.from_polar_egocentric
     return factory((1, 3), (-np.pi, np.pi), 1.0, np.pi, **metadata)
 
 
@@ -77,7 +72,6 @@ _FACTORIES = [
     "grid_mask",
     "pixel_mask",
     "layout",
-    "polar_create",
     "polar_public",
 ]
 

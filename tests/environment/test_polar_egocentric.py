@@ -418,9 +418,9 @@ class TestPolarStateVersionFreshness:
 
     def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
         """Initial setup already sees physical distances and circular faces."""
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
 
-        setup = EgocentricPolarEnvironment._setup_from_layout
+        setup = Environment._setup_from_layout
         captured = []
 
         def capture_setup(env, **kwargs):
@@ -431,9 +431,7 @@ class TestPolarStateVersionFreshness:
             )
             captured.append(env._face_geometry)
 
-        monkeypatch.setattr(
-            EgocentricPolarEnvironment, "_setup_from_layout", capture_setup
-        )
+        monkeypatch.setattr(Environment, "_setup_from_layout", capture_setup)
 
         polar_env = Environment.from_polar_egocentric(
             distance_range=(0.0, 10.0),
@@ -730,7 +728,7 @@ class TestPolarCoordinateKindFlag:
     Downstream code that computes Euclidean distance on `bin_centers`
     would silently treat `(distance, angle)` pairs as `(x, y)` and produce
     meaningless numbers. Polar environments are now a separate type
-    (``EgocentricPolarEnvironment``, a sibling of ``Environment``, not a
+    (``Environment``, a sibling of ``Environment``, not a
     subclass) so the geometry is carried by the type itself and the
     Cartesian-only methods are simply unavailable.
     """
@@ -752,20 +750,20 @@ class TestPolarCoordinateKindFlag:
         return Environment.from_samples(positions, bin_size=2.0)
 
     def test_from_polar_egocentric_returns_polar_type(self, polar_env):
-        """from_polar_egocentric returns the distinct EgocentricPolarEnvironment."""
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        """from_polar_egocentric returns the distinct Environment."""
+        from neurospatial import Environment
 
-        assert isinstance(polar_env, EgocentricPolarEnvironment)
-        assert not isinstance(polar_env, Environment)
-        assert polar_env._POLAR is True
+        assert isinstance(polar_env, Environment)
+        assert polar_env.coordinate_kind == "polar"
+        assert polar_env._is_polar is True
 
     def test_cartesian_factories_default_to_cartesian(self, cartesian_env):
         """from_samples / from_polygon / from_grid_mask / etc. produce Cartesian envs."""
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
 
         assert isinstance(cartesian_env, Environment)
-        assert not isinstance(cartesian_env, EgocentricPolarEnvironment)
-        assert cartesian_env._POLAR is False
+        assert cartesian_env.coordinate_kind == "cartesian"
+        assert cartesian_env._is_polar is False
 
 
 class TestPolarRaisesOnCartesianAssumingMethods:
@@ -903,7 +901,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
     def test_repr_shows_polar_class_name(self, polar_env):
         """repr must identify the concrete polar type, not 'Environment'."""
-        assert "EgocentricPolarEnvironment" in repr(polar_env)
+        assert "Environment" in repr(polar_env)
 
     @pytest.mark.parametrize("mode", ["deepcopy", "pickle"])
     def test_copy_and_pickle_preserve_polar_refusals(self, polar_env, mode):
@@ -934,9 +932,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         with pytest.raises(CartesianOnlyError) as caught:
             getattr(polar_env, name)
         message = str(caught.value)
-        assert message.startswith(
-            f"EgocentricPolarEnvironment.{name}() is not available"
-        )
+        assert message.startswith(f"Environment.{name}() is not available")
         reason = (
             "Cartesian-grid operation"
             if name in CARTESIAN_GRID_OPERATIONS
@@ -978,9 +974,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         polar_env = polar_env.with_regions(region_builder)
         with pytest.raises(CartesianOnlyError) as caught:
             call(polar_env)
-        assert str(caught.value).startswith(
-            f"EgocentricPolarEnvironment.{operation} is not available"
-        )
+        assert str(caught.value).startswith(f"Environment.{operation} is not available")
         assert "()()" not in str(caught.value)
 
 
@@ -988,7 +982,7 @@ class TestPolarSerializationRoundTrip:
     """The polar type must survive copy and to_file/from_file round-trips."""
 
     def test_copy_preserves_coordinate_kind(self):
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
 
         env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
@@ -997,11 +991,11 @@ class TestPolarSerializationRoundTrip:
             angle_bin_size=np.pi / 2,
         )
         env_copy = env.copy()
-        assert isinstance(env_copy, EgocentricPolarEnvironment)
-        assert env_copy._POLAR is True
+        assert isinstance(env_copy, Environment)
+        assert env_copy._is_polar is True
 
     def test_to_file_from_file_preserves_coordinate_kind(self, tmp_path):
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
         from neurospatial.io.files import from_file, to_file
 
         env = Environment.from_polar_egocentric(
@@ -1013,8 +1007,8 @@ class TestPolarSerializationRoundTrip:
         path = tmp_path / "polar_env"
         to_file(env, path)
         loaded = from_file(path)
-        assert isinstance(loaded, EgocentricPolarEnvironment)
-        assert loaded._POLAR is True
+        assert isinstance(loaded, Environment)
+        assert loaded._is_polar is True
 
 
 class TestPolarBoundaryGuardsExtended:
@@ -1102,13 +1096,13 @@ class TestPolarBoundaryGuardsExtended:
         so an in-memory dict round-trip silently flipped polar envs to
         Cartesian even though to_file/from_file round-tripped correctly.
         """
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        from neurospatial import Environment
         from neurospatial.io.files import from_dict, to_dict
 
         data = to_dict(polar_env)
         loaded = from_dict(data)
-        assert isinstance(loaded, EgocentricPolarEnvironment)
-        assert loaded._POLAR is True
+        assert isinstance(loaded, Environment)
+        assert loaded._is_polar is True
 
 
 class TestSubsetPreservesGraphLayout:
@@ -1247,11 +1241,11 @@ class TestPolarTypeAndGeometry:
         )
 
     def test_polar_env_is_distinct_type(self, polar_env):
-        """from_polar_egocentric returns EgocentricPolarEnvironment, not Environment."""
-        from neurospatial.environment.polar import EgocentricPolarEnvironment
+        """from_polar_egocentric returns Environment, not Environment."""
+        from neurospatial import Environment
 
-        assert type(polar_env) is EgocentricPolarEnvironment
-        assert not isinstance(polar_env, Environment)
+        assert type(polar_env) is Environment
+        assert isinstance(polar_env, Environment)
 
         # Cartesian-only methods are absent/clearly errored, not silently disabled.
         with pytest.raises(NotImplementedError):
@@ -1354,6 +1348,7 @@ _POLAR_INHERITED_MEMBERS = {
         "units",
     },
     "serialization, which restores the polar type": {
+        "boundary_bins",
         "from_dict",
         "from_file",
         "from_nwb",
@@ -1390,7 +1385,7 @@ _POLAR_INHERITED_MEMBERS = {
 
 def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
     """Value replacements and graph copies do not interpret angles as lengths."""
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial import Environment
 
     env = Environment.from_polar_egocentric((0, 4), (-np.pi, np.pi), 1, np.pi / 2)
     regions = Regions()
@@ -1398,7 +1393,7 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
     changed = env.with_metadata(
         name="polar", units="cm", frame="egocentric"
     ).with_regions(regions)
-    assert isinstance(changed, EgocentricPolarEnvironment)
+    assert isinstance(changed, Environment)
     assert (changed.name, changed.units, changed.frame) == ("polar", "cm", "egocentric")
     assert len(env.regions) == 0 and "goal" in changed.regions
     np.testing.assert_array_equal(changed.bin_centers, env.bin_centers)
@@ -1407,17 +1402,23 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
     assert list(graph.edges) == list(changed.connectivity.edges)
     graph.remove_node(0)
     assert changed.connectivity.number_of_nodes() == env.n_bins
-    with pytest.raises(TypeError, match=r"Cartesian data.*polar factory"):
-        EgocentricPolarEnvironment.from_bins(env._binning)
+    from dataclasses import replace
+
+    from neurospatial.binning import KnownFaces
+
+    with pytest.raises(ValueError, match="cartesian cell measures"):
+        Environment.from_bins(
+            replace(env._binning, faces=KnownFaces(env._face_geometry))
+        )
 
 
 def test_every_inherited_member_is_classified_for_polar():
     """A new shared-base member must be checked on polar bins before polar inherits it."""
+    from neurospatial import Environment
     from neurospatial.environment.core import _BaseEnvironment
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
 
     public = {name for name in dir(_BaseEnvironment) if not name.startswith("_")}
-    inherited = public - set(EgocentricPolarEnvironment.__dict__)
+    inherited = public - set(Environment.__dict__)
     classified = set().union(*_POLAR_INHERITED_MEMBERS.values())
     assert not inherited - classified, (
         f"Check {sorted(inherited - classified)} on a polar (distance, angle) "
@@ -1441,11 +1442,12 @@ def test_every_inherited_member_is_classified_for_polar():
     ],
     ids=["from_samples", "open_field", "from_pixel_mask", "linear_track"],
 )
-def test_cartesian_factories_refuse_to_build_polar_environments(build):
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+def test_factories_choose_coordinates_independently_of_runtime_class(build):
+    from neurospatial import Environment
 
-    with pytest.raises(ValueError, match=r"'MaskedGrid'.*from_polar_egocentric"):
-        build(EgocentricPolarEnvironment)
+    result = build(Environment)
+    assert type(result) is Environment
+    assert not result._is_polar
 
 
 @pytest.mark.parametrize("circular", [True, False])

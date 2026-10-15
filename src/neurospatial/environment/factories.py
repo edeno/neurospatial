@@ -302,10 +302,6 @@ class EnvironmentFactories:
         """
         from neurospatial.environment._combine import _combine
 
-        if getattr(cls, "_POLAR", False):
-            raise TypeError(
-                "combine requires Cartesian components; polar charts cannot be combined."
-            )
         return _combine(
             components,
             auto_bridge=auto_bridge,
@@ -353,10 +349,6 @@ class EnvironmentFactories:
         """
         from neurospatial.environment._from_bins import layout_from_bins
 
-        if getattr(cls, "_POLAR", False):
-            raise TypeError(
-                "from_bins accepts Cartesian data; use the polar factory for polar coordinates."
-            )
         layout = layout_from_bins(binning)
         env_cls = cast("type[Environment]", cls)
         return env_cls(
@@ -1631,7 +1623,7 @@ class EnvironmentFactories:
             units=units,
             frame=frame,
         )
-        if arena is not None and arena.domain_known and not env._POLAR:
+        if arena is not None and arena.domain_known and not env._is_polar:
             keep = arena.contains(env.bin_centers)
             # Whole-bin selection uses strict polygon-center inclusion in
             # native and transformed arena frames alike.

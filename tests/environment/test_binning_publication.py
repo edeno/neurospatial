@@ -14,7 +14,6 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial._exceptions import EnvironmentNotFittedError
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout._binning import LayoutFaces
 from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
@@ -27,12 +26,12 @@ from neurospatial.layout._diffusion import (
 )
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-_BuiltEnvironment = Environment | EgocentricPolarEnvironment
+_BuiltEnvironment = Environment | Environment
 
 
 def _source_layout(env: _BuiltEnvironment):
     """Build an independent native oracle for the published snapshot."""
-    return type(env)._create_layout(env.layout_type, env.layout_parameters)
+    return _native_oracle(env)
 
 
 def _query_points(env: _BuiltEnvironment) -> np.ndarray:
@@ -148,7 +147,7 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     actual, actual_warnings = _lookup_with_warnings(env._binning.locator.locate, points)
     np.testing.assert_array_equal(actual, expected)
     assert actual_warnings == expected_warnings
-    if isinstance(env, Environment):
+    if not env._is_polar:
         if env.arena.domain_known:
             inside = env.arena.contains(points)
             # Qhull can choose either triangle at a shared edge, depending
@@ -271,7 +270,7 @@ def test_legacy_environment_pickle_rebuilds_publication(
     assert "_versioned_cache___diffusion_geometry" not in vars(restored)
     np.testing.assert_array_equal(restored.bin_sizes, expected_sizes)
     assert not restored.bin_sizes.flags.writeable
-    if isinstance(restored, Environment):
+    if not restored._is_polar:
         np.testing.assert_array_equal(
             restored.bin_at(restored.bin_centers), expected_bins
         )
@@ -421,3 +420,13 @@ def test_require_rectilinear_message_unchanged() -> None:
         "Why: it reads the cell edges along each axis, which grids built by from_samples, from_grid_mask, from_pixel_mask and from_polygon provide.\n"
         "Fix: use mode='nearest', which works on every layout"
     )
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

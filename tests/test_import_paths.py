@@ -19,7 +19,6 @@ def test_mixins_are_not_dataclasses():
     silently-wrong field inheritance. This is the architectural invariant
     that lets the mixin pattern work.
     """
-    from neurospatial.environment.cartesian import CartesianCoordinates
     from neurospatial.environment.factories import EnvironmentFactories
     from neurospatial.environment.fields import EnvironmentFields
     from neurospatial.environment.metrics import EnvironmentMetrics
@@ -38,7 +37,6 @@ def test_mixins_are_not_dataclasses():
         EnvironmentMetrics,
         EnvironmentFields,
         EnvironmentTrajectory,
-        CartesianCoordinates,
     ]
 
     for mixin in mixins:

@@ -505,9 +505,9 @@ def dead_dominant_env() -> Environment:
 @pytest.fixture
 def polar_env() -> Any:
     """Egocentric polar env: strongly non-uniform bin volumes, one component."""
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial import Environment
 
-    return EgocentricPolarEnvironment.create(
+    return Environment.from_polar_egocentric(
         distance_range=(0.0, 20.0),
         angle_range=(-np.pi, np.pi),
         distance_bin_size=5.0,

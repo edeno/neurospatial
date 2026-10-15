@@ -474,7 +474,7 @@ class TestGraphLinearization:
         stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
         samples = starts * (1 - t) + stops * t
 
-        layout = type(env)._create_layout(env.layout_type, env.layout_parameters)
+        layout = _native_oracle(env)
         via_linear = layout.linear_point_to_bin_ind(env.to_linear(samples))
         assert np.mean(via_linear != env.bin_at(samples)) == 0.0
 
@@ -528,3 +528,15 @@ class TestGraphLinearization:
         np.testing.assert_allclose(
             env.to_linear(np.asarray(query, float)), expected, atol=1e-9
         )
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

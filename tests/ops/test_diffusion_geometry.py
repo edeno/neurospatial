@@ -10,7 +10,6 @@ from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout._binning import Binning, KnownFaces, LayoutFaces, SpatialBins
 from neurospatial.layout._binning_layout import BinningLayout
@@ -442,21 +441,23 @@ def test_polar_layout_supplies_annular_sector_geometry():
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
     np.testing.assert_allclose(env.layout.bin_sizes(), sectors)
     np.testing.assert_allclose(env.bin_sizes, sectors)
-    graph, volumes = (
-        type(env)
-        ._create_layout(env.layout_type, env.layout_parameters)
-        .finite_volume_geometry()
-    )
+    graph, volumes = _native_oracle(env).finite_volume_geometry()
     np.testing.assert_allclose(volumes, sectors)
     geometry = DiffusionGeometry.from_graph(graph, volumes)
     assert (geometry.W != env._diffusion_geometry.W).nnz == 0
 
 
-def test_polar_from_layout_requires_the_masked_grid():
-    with pytest.raises(ValueError, match=r"'MaskedGrid'.*from_polar_egocentric"):
-        EgocentricPolarEnvironment.from_layout(
-            "RegularGrid", {"positions": np.zeros((4, 2)), "bin_size": 1.0}
-        )
+def test_common_class_from_layout_builds_cartesian_geometry():
+    env = Environment.from_layout(
+        "RegularGrid",
+        {
+            "bin_size": 1.0,
+            "dimension_ranges": [(0.0, 2.0)] * 2,
+            "infer_active_bins": False,
+        },
+    )
+    assert env.coordinate_kind == "cartesian"
+    np.testing.assert_array_equal(env.bin_sizes, np.ones(env.n_bins))
 
 
 @pytest.mark.parametrize("circular", [False, True])
@@ -471,11 +472,7 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
         circular_angle=circular,
         connect_diagonal_neighbors=diagonal,
     )
-    graph, _ = (
-        type(env)
-        ._create_layout(env.layout_type, env.layout_parameters)
-        .finite_volume_geometry()
-    )
+    graph, _ = _native_oracle(env).finite_volume_geometry()
     for ring in range(3):
         assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
     for u, v, data in graph.edges(data=True):
@@ -715,3 +712,15 @@ def test_invalid_layout_faces_fail_before_publication(volumes, scale, match):
         graph.edges[u, v]["A"] = area * scale
     with pytest.raises(ValueError, match=match):
         FaceGeometry.from_graph(graph, volumes)
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

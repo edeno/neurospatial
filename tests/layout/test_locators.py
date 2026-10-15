@@ -14,6 +14,7 @@ from hypothesis import strategies as st
 from scipy.spatial import Delaunay, cKDTree
 from shapely.geometry import Point, Polygon
 
+from neurospatial import Environment
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -348,7 +349,7 @@ def test_legacy_layout_rebuilds_missing_locator(
 ):
     """Saved layout data can recreate a missing memoized locator."""
     env = copy.deepcopy(built_environment)
-    layout = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    layout = _native_oracle(env)
     previous = layout.locator()
     del layout._locator
     restored = layout.locator()
@@ -362,3 +363,13 @@ def test_legacy_layout_rebuilds_missing_locator(
         if case.startswith("mesh")
         else locator_parity[f"{case}/lookup/random/values"],
     )
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

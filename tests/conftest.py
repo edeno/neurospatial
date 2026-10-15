@@ -46,7 +46,6 @@ from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment, Regions
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 
 # =============================================================================
@@ -1008,7 +1007,7 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
         "mesh_boundary",
     ],
 )
-def built_environment(request) -> Environment | EgocentricPolarEnvironment:
+def built_environment(request) -> Environment | Environment:
     """Small deterministic environments covering every built-in geometry."""
     kind = request.param
     if kind in {"grid8", "grid4"}:
@@ -1111,6 +1110,7 @@ def environment_round_trip(built_environment, request, tmp_path):
         units=original.units,
         frame=original.frame,
         arena=original.arena,
+        _coordinates=original._coordinate_system,
     )
 
     if request.param == "file":

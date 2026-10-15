@@ -34,12 +34,10 @@ directly on Environment instances.
 
 from neurospatial.environment.core import Environment
 from neurospatial.environment.decorators import EnvironmentNotFittedError, check_fitted
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.environment.regions import _HAS_SHAPELY
 
 __all__ = [
     "_HAS_SHAPELY",
-    "EgocentricPolarEnvironment",
     "Environment",
     "EnvironmentNotFittedError",
     "check_fitted",

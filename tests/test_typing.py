@@ -25,7 +25,6 @@ from neurospatial._typing import (
     is_environment_like,
 )
 from neurospatial.environment._protocols import EnvironmentProtocol
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 
 @pytest.fixture
@@ -36,14 +35,14 @@ def env() -> Environment:
 
 
 @pytest.fixture
-def polar_env() -> EgocentricPolarEnvironment:
-    return EgocentricPolarEnvironment.create(
+def polar_env() -> Environment:
+    return Environment.from_polar_egocentric(
         (0.0, 50.0), (-np.pi, np.pi), 10.0, np.pi / 6
     )
 
 
 def test_environmentlike_is_narrow_protocol(
-    env: Environment, polar_env: EgocentricPolarEnvironment
+    env: Environment, polar_env: Environment
 ) -> None:
     # EnvironmentLike is now a purpose-built NARROW Protocol, no longer the
     # internal mixin ``EnvironmentProtocol`` re-export (which published ~14
@@ -67,12 +66,11 @@ def test_is_environment_like_accepts_environment(env: Environment) -> None:
 
 
 def test_is_environment_like_accepts_polar_regression(
-    polar_env: EgocentricPolarEnvironment,
+    polar_env: Environment,
 ) -> None:
-    # Regression: the polar sibling is NOT an Environment subclass, so the old
-    # ``isinstance(env, Environment)`` check was False for it. ``is_environment_like``
-    # accepts it via the shared structural surface.
-    assert isinstance(polar_env, Environment) is False
+    # Both coordinate choices use Environment. The structural check also
+    # accepts compatible providers that do not inherit this class.
+    assert isinstance(polar_env, Environment) is True
     assert is_environment_like(polar_env)
 
 
@@ -81,12 +79,10 @@ def test_is_environment_like_rejects_non_environment(obj: object) -> None:
     assert is_environment_like(obj) is False
 
 
-def test_combine_refuses_polar_charts(polar_env: EgocentricPolarEnvironment) -> None:
+def test_combine_refuses_polar_charts(polar_env: Environment) -> None:
     """A Cartesian union cannot interpret polar columns as Cartesian axes."""
     with pytest.raises(TypeError, match="Cartesian"):
         Environment.combine({"polar": polar_env})
-    with pytest.raises(TypeError, match="Cartesian"):
-        EgocentricPolarEnvironment.combine({"polar": polar_env})
 
 
 def test_combine_rejects_non_environment() -> None:
