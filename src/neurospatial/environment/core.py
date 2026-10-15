@@ -642,6 +642,21 @@ class _BaseEnvironment(
             # Initialize with an empty Regions instance if not provided
             self._regions = Regions()._snapshot()
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Export owned state without copying or serializing transient analyses."""
+        state = self.__dict__.copy()
+        for name in ("_kernel_cache", "_kdtree_cache"):
+            state.pop(name, None)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, cached_property):
+                    state.pop(name, None)
+                elif isinstance(descriptor, versioned_cached_property):
+                    key = f"_versioned_cache__{name}"
+                    state.pop(key, None)
+                    state.pop(f"{key}__version", None)
+        return state
+
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore published geometry from pickles predating binning snapshots."""
         self.__dict__.update(state)
