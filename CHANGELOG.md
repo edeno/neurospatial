@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Ray-cast view rates no longer refuse when cells clipped to a curved or
+  slanted wall reach it: a hit is owned by the cell within that cell's
+  coordinate rounding of the hit, instead of an overlay of nearly coincident
+  edges. Cells that stop short of the wall still refuse, and the message names
+  the route that builds wall-reaching cells:
+  `Environment.from_bins(grid.clip(polygon).layout.binning(), arena=OpenArena(polygon))`.
+
 - Observers tracked exactly on a wall no longer view their own position. A ray
   or cue sight line that leaves the wall into the room reaches the next wall;
   only facing out through the wall or exactly along it gives a zero-distance

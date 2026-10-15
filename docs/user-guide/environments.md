@@ -511,8 +511,12 @@ recording windows, long gaps or zero-duration intervals cannot change the map.
 Supplying wall geometry cannot add missing bins, and
 assigning a distant wall to a nearby bin would change the measured location.
 Build cells that reach the wall, or explicitly request the analysis-boundary
-approximation. The geometry-only `compute_viewed_location()` still returns the
-known physical hit even when its location has no analysis bin.
+approximation. `from_polygon()` keeps whole cells whose centers lie inside, so
+its cells stop short of a curved or slanted wall. To reach such a wall, clip a
+grid that covers the arena to the measured polygon and attach its walls:
+`Environment.from_bins(grid.clip(polygon).layout.binning(), arena=OpenArena(polygon))`.
+The geometry-only `compute_viewed_location()` still returns the known physical
+hit even when its location has no analysis bin.
 
 View encoding requires a retained bin for each observed finite hit; it does not
 require gaze observations at every wall. Unviewed bins remain missing, and rays

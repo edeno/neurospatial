@@ -2,7 +2,8 @@
 
 import numpy as np
 import pytest
-from shapely.geometry import LineString, box
+import shapely
+from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -435,6 +436,77 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
         ),
         [-1],
     )
+
+
+def wall_reaching_cells(polygon, bin_size):
+    """Clip a covering grid to the measured polygon and attach its walls."""
+    edges = tuple(
+        np.arange(low - bin_size, high + 2 * bin_size, bin_size)
+        for low, high in zip(polygon.bounds[:2], polygon.bounds[2:], strict=True)
+    )
+    grid = Environment.from_grid_mask(
+        np.ones(tuple(len(edge) - 1 for edge in edges), dtype=bool),
+        grid_edges=edges,
+    )
+    return Environment.from_bins(
+        grid.clip(polygon).layout.binning(), arena=OpenArena(polygon)
+    )
+
+
+CURVED_AND_SLANTED_ARENAS = {
+    "circle": Point(50, 50).buffer(45),
+    "quadrilateral": Polygon([(10, 0), (100, 30), (70, 100), (0, 60)]),
+}
+
+
+@pytest.mark.parametrize("name", list(CURVED_AND_SLANTED_ARENAS))
+def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding.view import compute_view_rate
+
+    polygon = CURVED_AND_SLANTED_ARENAS[name]
+    env = wall_reaching_cells(polygon, 5.0)
+    rng = np.random.default_rng(7)
+    candidates = rng.uniform(polygon.bounds[:2], polygon.bounds[2:], (1500, 2))
+    origins = candidates[env.arena.contains(candidates)][:600]
+    headings = rng.uniform(-np.pi, np.pi, len(origins))
+    hits = compute_viewed_location(
+        origins, headings, env=env, method="ray_cast", max_distance=300
+    )
+    np.testing.assert_allclose(
+        shapely.distance(shapely.points(hits), polygon.exterior), 0, atol=1e-12
+    )
+    bins = _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
+    # Each hit belongs to the cell just inside the wall on the observer's side.
+    direction = np.column_stack((np.cos(headings), np.sin(headings)))
+    np.testing.assert_array_equal(bins, env.bin_at(hits - 1e-6 * direction))
+    # Every exposure interval is assigned, so view rates do not refuse.
+    times = np.arange(len(origins), dtype=float)
+    rates = compute_view_rate(
+        env,
+        times[::7] + 0.5,
+        times,
+        origins,
+        headings,
+        gaze_model="ray_cast",
+        method="binned",
+        bandwidth=0.0,
+        max_gap=None,
+    )
+    assert rates.occupancy.sum() == len(origins) - 1
+    # Cells built by centre inclusion stop short of the wall and still refuse.
+    with pytest.raises(NotImplementedError, match=r"grid\.clip\(polygon\)"):
+        compute_view_rate(
+            Environment.from_polygon(polygon, bin_size=5.0),
+            times[::7] + 0.5,
+            times,
+            origins,
+            headings,
+            gaze_model="ray_cast",
+            method="binned",
+            bandwidth=0.0,
+            max_gap=None,
+        )
 
 
 @pytest.mark.parametrize("gap", [1e-7, 1e-12])
