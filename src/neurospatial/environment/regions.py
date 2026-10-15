@@ -96,7 +96,7 @@ class EnvironmentRegions:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
->>> data = np.array([[0.0, 0.0], [10.0, 10.0]])
+        >>> data = np.array([[0.0, 0.0], [10.0, 10.0]])
         >>> env = Environment.from_samples(
         ...     data, bin_size=2.0, infer_active_bins=False
         ... )
