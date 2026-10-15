@@ -1110,7 +1110,13 @@ class CartesianCoordinates:
         )
         env_cls = cast("type[Environment]", self.__class__)
         result = env_cls(
-            "", layout, tag, params, arena=self.arena, units=self.units, frame=self.frame
+            "",
+            layout,
+            tag,
+            params,
+            arena=self.arena,
+            units=self.units,
+            frame=self.frame,
         )
         return result
 
