@@ -39,6 +39,56 @@ def nearest(center, *, radius=None):
     )
 
 
+@pytest.mark.parametrize("shift,expected", [(3.0, 14), (5.0, 16)])
+@pytest.mark.parametrize("auto_bridge", [False, True])
+def test_combined_boundary_uses_exposed_cells_independently_of_bridges(
+    shift, expected, auto_bridge
+):
+    def square(offset):
+        return Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool),
+            grid_edges=(np.arange(4.0) + offset, np.arange(4.0)),
+        )
+
+    env = Environment.combine(
+        {"left": square(0.0), "right": square(shift)}, auto_bridge=auto_bridge
+    )
+    assert len(env.boundary_bins) == expected
+    if shift == 3.0:
+        assert 7 not in env.boundary_bins
+        assert 10 not in env.boundary_bins
+    restored = Environment.from_dict(env.to_dict())
+    np.testing.assert_array_equal(restored.boundary_bins, env.boundary_bins)
+
+
+def test_combined_planar_boundary_survives_subset_and_rotation():
+    from neurospatial.ops.transforms import Affine2D
+
+    children = {
+        key: Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool),
+            grid_edges=(np.arange(4.0) + offset, np.arange(4.0)),
+        )
+        for key, offset in (("left", 0.0), ("right", 3.0))
+    }
+    combined = Environment.combine(children)
+    subset = combined.subset(bins=combined.bin_centers[:, 0] < 4.0)
+    assert len(subset.boundary_bins) == 10
+    angle = 0.3
+    rotated = subset.apply_transform(
+        Affine2D(
+            np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 0.0],
+                    [np.sin(angle), np.cos(angle), 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+        )
+    )
+    np.testing.assert_array_equal(rotated.boundary_bins, subset.boundary_bins)
+
+
 @pytest.mark.parametrize(
     "restore",
     [
