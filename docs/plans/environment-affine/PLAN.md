@@ -5,7 +5,8 @@ gate: 13,727 passed, 31 skipped. See [validation.md](validation.md) for evidence
 and validation limits.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
 `feature/environment-wall-visibility` at `98bf9790` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
-This is a local implementation branch; opening another PR is a separate action.
+Implementation is complete. Publication was requested on 2026-10-15; review and
+remote CI remain separate from the completed local validation gate.
 
 ## Entry status
 
