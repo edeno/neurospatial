@@ -40,3 +40,24 @@ def test_tiny_axis_does_not_turn_diagonal_contacts_into_physical_faces():
     assert areas[frozenset((0, 1))] == 1e-12  # y-neighbor: face length in x
     assert areas[frozenset((0, 2))] == 1.0  # x-neighbor: face length in y
     assert areas[frozenset((0, 3))] == 0.0  # a corner has no physical interface
+
+
+
+
+def test_tiny_native_grid_keeps_faces_and_diffusion_under_uniform_scaling():
+    from neurospatial.ops.transforms import Affine2D
+
+    width, scale = 1e-10, 1000.0
+    env = Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.arange(3.0) * width, np.arange(2.0) * width),
+    )
+    transformed = env.apply_transform(Affine2D(np.diag([scale, scale, 1.0])))
+    faces = transformed._face_geometry
+    assert faces.A[0] == pytest.approx(width * scale, rel=1e-14, abs=0)
+    np.testing.assert_allclose(
+        transformed.compute_kernel(0.5 * width * scale, mode="average"),
+        env.compute_kernel(0.5 * width, mode="average"),
+        rtol=1e-13,
+        atol=1e-14,
+    )

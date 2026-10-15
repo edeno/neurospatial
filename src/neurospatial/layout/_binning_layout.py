@@ -270,6 +270,30 @@ class _LocatorGeometry:
     computed: bool = False
     shapes_supported: bool = True
     polygons: tuple[Polygon, ...] | None = None
+    grid_indices: NDArray[np.intp] | None = None
+    grid_linear: NDArray[np.float64] | None = None
+    grid_linear_error: NDArray[np.float64] | None = None
+
+
+def _grid_width_errors(
+    edges: tuple[NDArray[np.float64], ...],
+) -> list[NDArray[np.float64]]:
+    """Bound subtraction of stored edge planes independently on each axis."""
+    return [
+        8 * (np.spacing(np.abs(edge[:-1])) + np.spacing(np.abs(edge[1:])))
+        for edge in edges
+    ]
+
+
+def _uniform_grid_widths(
+    edges: tuple[NDArray[np.float64], ...], widths: list[NDArray[np.float64]]
+) -> bool:
+    """Use the existing saved-grid uniformity condition for quantized edges."""
+    return all(
+        np.max(np.abs(axis - axis[0]))
+        <= 1e-7 * axis[0] + 4 * np.spacing(np.max(np.abs(edge)))
+        for edge, axis in zip(edges, widths, strict=True)
+    )
 
 
 def _stored_cells(locator: Locator) -> tuple[Polygon, ...]:
@@ -324,10 +348,7 @@ def _rectilinear_geometry(
     # shift, subtraction and midpoint operations, including cancellation.
     eps = np.finfo(np.float64).eps
     widths = [np.diff(edge) for edge in edges]
-    width_errors = [
-        8 * (np.spacing(np.abs(edge[:-1])) + np.spacing(np.abs(edge[1:])))
-        for edge in edges
-    ]
+    width_errors = _grid_width_errors(edges)
     center_error = np.column_stack(
         [error[index] for error, index in zip(width_errors, coordinates, strict=True)]
     )
@@ -363,17 +384,22 @@ def _rectilinear_geometry(
     )
     # Native grids use first spacings. Preserve that candidate only under
     # their existing uniformity rule, including quantized large-offset edges.
-    uniform = all(
-        np.max(np.abs(axis - axis[0]))
-        <= 1e-7 * axis[0] + 4 * np.spacing(np.max(np.abs(edge)))
-        for edge, axis in zip(edges, widths, strict=True)
-    )
+    uniform = _uniform_grid_widths(edges, widths)
     if uniform:
         add_measure(
             np.tile([axis[0] for axis in widths], (len(active), 1)),
             np.tile([axis[0] for axis in width_errors], (len(active), 1)),
         )
-    return _LocatorGeometry(locator, centers, center_error, measures, cell_gap)
+    return _LocatorGeometry(
+        locator,
+        centers,
+        center_error,
+        measures,
+        cell_gap,
+        grid_indices=np.column_stack(coordinates),
+        grid_linear=np.eye(len(edges)),
+        grid_linear_error=np.zeros((len(edges), len(edges))),
+    )
 
 
 def _primitive_geometry(
@@ -581,6 +607,8 @@ def _locator_geometry(
         geometry.measures = [
             (value[active], error[active]) for value, error in geometry.measures
         ]
+        if geometry.grid_indices is not None:
+            geometry.grid_indices = geometry.grid_indices[active]
         if geometry.triangles is not None:
             geometry.triangles = geometry.triangles[active]
         if geometry.polygons is not None:
@@ -631,6 +659,15 @@ def _locator_geometry(
     geometry.centers, geometry.center_error = _mapped_geometry(
         geometry.centers, geometry.center_error, matrix, linear_error, shift_error
     )
+    if geometry.grid_linear is not None:
+        assert geometry.grid_linear_error is not None
+        source = geometry.grid_linear
+        geometry.grid_linear_error = (
+            np.abs(linear) @ geometry.grid_linear_error
+            + linear_error @ (np.abs(source) + geometry.grid_linear_error)
+            + rounding * (np.abs(linear) @ np.abs(source))
+        )
+        geometry.grid_linear = linear @ source
     geometry.measures = [
         (value * factor, (error + arithmetic * (value + error)) * factor)
         for value, error in geometry.measures
@@ -680,6 +717,126 @@ def _locator_geometry(
     return geometry
 
 
+def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
+    """Check Cartesian grid face measures separately from navigation weights."""
+    if not isinstance(binning.faces, KnownFaces) or not isinstance(
+        geometry.leaf, RectilinearLocator
+    ):
+        return
+    locator = geometry.leaf
+    indices = geometry.grid_indices
+    linear, linear_error = geometry.grid_linear, geometry.grid_linear_error
+    assert indices is not None and linear is not None and linear_error is not None
+    pairs = binning.bins.pairs
+    n_dims = len(locator.edges)
+    widths = [np.diff(edge) for edge in locator.edges]
+    width_errors = _grid_width_errors(locator.edges)
+    offsets = np.abs(indices[pairs[:, 1]] - indices[pairs[:, 0]])
+    axes = np.argmax(offsets, axis=1)
+    adjacent = (np.sum(offsets > 0, axis=1) == 1) & (np.max(offsets, axis=1) == 1)
+    area = np.zeros(len(pairs))
+    area_error = np.zeros(len(pairs))
+    native_area, native_error = area.copy(), area_error.copy()
+    eps = np.finfo(float).eps
+
+    for axis in range(n_dims):
+        other = [index for index in range(n_dims) if index != axis]
+        basis, basis_error = linear[:, other], linear_error[:, other]
+        # The product of singular values is the affine face-area stretch.
+        # A matrix perturbation bounds each singular-value perturbation, so
+        # source-frame projection errors stay independent of the world origin.
+        singular = np.linalg.svd(basis, compute_uv=False)
+        perturbation = float(np.linalg.norm(basis_error))
+        stretch = float(np.prod(singular))
+        stretch_error = (
+            max(
+                float(np.prod(singular + perturbation)) - stretch,
+                stretch - float(np.prod(np.maximum(singular - perturbation, 0))),
+            )
+            + 256 * eps * stretch
+        )
+        selected = np.flatnonzero(adjacent & (axes == axis))
+        if len(selected):
+            # A two-point flux needs its center link normal to the shared face.
+            vector = linear[:, axis]
+            normal_error = (
+                np.abs(vector) @ basis_error
+                + linear_error[:, axis] @ np.abs(basis)
+                + linear_error[:, axis] @ basis_error
+                + 256 * eps * (np.abs(vector) @ np.abs(basis))
+            )
+            if np.any(
+                np.abs(vector @ basis)
+                > normal_error
+                + 1e-12 * np.linalg.norm(vector) * np.linalg.norm(basis, axis=0)
+            ):
+                raise ValueError(
+                    "grid faces need center links normal to shared cell faces."
+                )
+            local_widths = (
+                np.column_stack(
+                    [widths[d][indices[pairs[selected, 0], d]] for d in other]
+                )
+                if other
+                else np.empty((len(selected), 0))
+            )
+            local_errors = (
+                np.column_stack(
+                    [width_errors[d][indices[pairs[selected, 0], d]] for d in other]
+                )
+                if other
+                else np.empty((len(selected), 0))
+            )
+            values = np.prod(local_widths, axis=1) * stretch
+            upper = np.prod(local_widths + local_errors, axis=1) * (
+                stretch + stretch_error
+            )
+            lower = np.prod(np.maximum(local_widths - local_errors, 0), axis=1) * max(
+                stretch - stretch_error, 0
+            )
+            area[selected] = values
+            area_error[selected] = np.maximum(upper - values, values - lower)
+        value = float(np.prod([widths[d][0] for d in other])) * stretch
+        upper = float(np.prod([widths[d][0] + width_errors[d][0] for d in other])) * (
+            stretch + stretch_error
+        )
+        lower = float(
+            np.prod([max(widths[d][0] - width_errors[d][0], 0) for d in other])
+        ) * max(stretch - stretch_error, 0)
+        native_area[selected] = value
+        native_error[selected] = max(upper - value, value - lower)
+
+    faces = binning.faces.faces
+    candidates = [(area, area_error)]
+    if _uniform_grid_widths(locator.edges, widths):
+        candidates.append((native_area, native_error))
+    if not any(
+        np.all(np.abs(faces.A - expected) <= np.minimum(error, expected / 4))
+        for expected, error in candidates
+    ):
+        raise ValueError(
+            "grid faces.A does not match shared cell-face measures. Supply physical "
+            "shared-face areas, using zero only for pairs without a face, or rebuild "
+            "the environment from its source geometry. Older tiny-grid records with "
+            "incorrect zero-area faces must be regenerated."
+        )
+    vectors = geometry.centers[pairs[:, 1]] - geometry.centers[pairs[:, 0]]
+    distances = np.linalg.norm(vectors, axis=1)
+    distance_error = (
+        np.linalg.norm(
+            geometry.center_error[pairs[:, 0]] + geometry.center_error[pairs[:, 1]],
+            axis=1,
+        )
+        + 256 * eps * distances
+    )
+    _computed_equal(
+        faces.distance,
+        distances,
+        np.minimum(distance_error, distances / 4),
+        "grid faces.distance",
+    )
+
+
 def _validate_components(
     binning: Binning,
     is_track: bool,
@@ -712,6 +869,8 @@ def _validate_components(
         raise ValueError(
             f"bins.sizes do not match {coordinate_kind} cell measures from locator geometry."
         )
+    if coordinate_kind == "cartesian":
+        _validate_rectilinear_faces(binning, geometry)
     if grid is not None:
         if isinstance(locator, RectilinearLocator):
             grid_locator = locator

@@ -668,3 +668,209 @@ def test_explicit_outline_is_drawing_geometry_without_physical_wall_evidence():
     np.testing.assert_array_equal(env.bin_centers, source.bins.centers)
     asserted = Environment.from_bins(source, arena=OpenArena(box(0, 0, 2, 2)))
     assert asserted.arena.physical_footprint_known
+
+
+@pytest.mark.parametrize("field", ["A", "distance"])
+def test_explicit_grid_faces_must_match_cell_geometry(field):
+    source = _rectilinear()
+    faces = source.faces.build()
+    invalid = replace(
+        source, faces=KnownFaces(faces._replace(**{field: getattr(faces, field) * 7.0}))
+    )
+    with pytest.raises(ValueError, match=r"grid faces"):
+        Environment.from_bins(invalid)
+
+
+def _variable_grid_faces(n_dims):
+    from itertools import combinations, product
+
+    edges = tuple(
+        np.array([0.0, float(d + 1), float(2 * d + 3)]) for d in range(n_dims)
+    )
+    coordinates = np.array(list(product(range(2), repeat=n_dims)), dtype=np.intp)
+    centers = np.column_stack(
+        [
+            ((edge[:-1] + edge[1:]) / 2)[coordinates[:, d]]
+            for d, edge in enumerate(edges)
+        ]
+    )
+    widths = np.column_stack(
+        [np.diff(edge)[coordinates[:, d]] for d, edge in enumerate(edges)]
+    )
+    sizes = np.prod(widths, axis=1)
+    pairs = np.array(list(combinations(range(len(centers)), 2)), dtype=np.intp)
+    areas = []
+    for u, v in pairs:
+        moved = np.flatnonzero(coordinates[u] != coordinates[v])
+        areas.append(
+            np.prod(np.delete(widths[u], moved[0])) if len(moved) == 1 else 0.0
+        )
+    distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
+    bins = SpatialBins.from_arrays(centers, sizes, n_dims, pairs, distances * 3 + 1)
+    mask = np.ones((2,) * n_dims, dtype=bool)
+    return Binning(
+        "variable_grid",
+        bins,
+        RectilinearLocator(edges, mask.shape, mask, None),
+        KnownFaces(FaceGeometry(pairs, np.array(areas), distances, sizes)),
+        rectilinear=RectilinearGrid(edges, mask.shape, mask),
+    )
+
+
+@pytest.mark.parametrize("n_dims", [1, 2, 3])
+@pytest.mark.parametrize("history", ["native", "subset", "load"])
+def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
+    n_dims, history
+):
+    source = _variable_grid_faces(n_dims)
+    env = Environment.from_bins(source)
+    if history == "subset":
+        env = env.subset(bins=np.arange(env.n_bins) != env.n_bins - 1)
+    elif history == "load":
+        env = Environment.from_dict(env.to_dict())
+    exported = env.layout.binning()
+    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    assert np.all(exported.bins.pair_distances > exported.faces.build().distance)
+
+
+@pytest.mark.parametrize("n_dims", [1, 2, 3])
+@pytest.mark.parametrize("field", ["A", "distance"])
+def test_variable_grid_faces_reject_inconsistent_physical_values(n_dims, field):
+    source = _variable_grid_faces(n_dims)
+    faces = source.faces.build()
+    wrong = getattr(faces, field).copy()
+    wrong[0] *= 2.0
+    with pytest.raises(ValueError, match=r"grid faces"):
+        Environment.from_bins(
+            replace(source, faces=KnownFaces(faces._replace(**{field: wrong})))
+        )
+
+
+@pytest.mark.parametrize("kind", ["missing_face", "invented_diagonal_face"])
+def test_explicit_grid_cannot_omit_a_shared_face_or_invent_a_diagonal_one(kind):
+    source = _variable_grid_faces(2)
+    faces = source.faces.build()
+    areas = faces.A.copy()
+    areas[
+        np.flatnonzero(areas > 0)[0]
+        if kind == "missing_face"
+        else np.flatnonzero(areas == 0)[0]
+    ] = 0.0 if kind == "missing_face" else 1.0
+    with pytest.raises(ValueError, match=r"grid faces.A"):
+        Environment.from_bins(
+            replace(source, faces=KnownFaces(faces._replace(A=areas)))
+        )
+
+
+@pytest.mark.parametrize("history", ["similarity", "axis_scale", "subset_similarity"])
+def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(history):
+    from neurospatial.ops.transforms import Affine2D
+
+    source = _variable_grid_faces(2)
+    if history == "axis_scale":
+        source = replace(
+            source,
+            bins=replace(source.bins, pair_distances=source.faces.build().distance),
+        )
+    env = Environment.from_bins(source)
+    if history == "axis_scale":
+        matrix = np.array([[2.0, 0.0, 100.0], [0.0, 3.0, -100.0], [0.0, 0.0, 1.0]])
+    else:
+        angle = 0.3
+        matrix = np.array(
+            [
+                [2 * np.cos(angle), -2 * np.sin(angle), 100.0],
+                [2 * np.sin(angle), 2 * np.cos(angle), -100.0],
+                [0, 0, 1],
+            ]
+        )
+    if history == "subset_similarity":
+        env = env.subset(bins=np.arange(env.n_bins) != 3)
+    derived = env.apply_transform(Affine2D(matrix))
+    source = derived.layout.binning()
+    Environment.from_bins(source)
+    faces = source.faces.build()
+    with pytest.raises(ValueError, match=r"grid faces"):
+        Environment.from_bins(
+            replace(source, faces=KnownFaces(faces._replace(A=faces.A * 7)))
+        )
+
+
+@pytest.mark.parametrize("field", ["A", "distance"])
+def test_stored_grid_faces_cannot_bypass_publication_geometry_checks(field):
+    env = Environment.from_bins(_variable_grid_faces(2))
+    payload = env.to_dict()
+    key = f"binning/faces/{field}"
+    payload["arrays"][key] = (np.asarray(payload["arrays"][key]) * 7.0).tolist()
+    with pytest.raises(ValueError, match=r"grid faces"):
+        Environment.from_dict(payload)
+
+
+def test_legacy_tiny_grid_zero_faces_require_rebuilding():
+    env = Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.arange(3.0) * 1e-10, np.arange(2.0) * 1e-10),
+    )
+    source = env.layout.binning()
+    faces = source.faces.build()
+    with pytest.raises(ValueError, match="Older tiny-grid records"):
+        Environment.from_bins(
+            replace(source, faces=KnownFaces(faces._replace(A=np.zeros_like(faces.A))))
+        )
+
+
+@pytest.mark.parametrize("n_dims", [2, 3])
+def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_dims):
+    edges = tuple(1e6 + 0.1 + np.arange(4.0) * 0.1 for _ in range(n_dims))
+    env = Environment.from_grid_mask(
+        np.ones((3,) * n_dims, dtype=bool), grid_edges=edges
+    )
+    source = env.layout.binning()
+    explicit = Environment.from_bins(
+        replace(source, faces=KnownFaces(source.faces.build()))
+    )
+    np.testing.assert_array_equal(explicit._face_geometry.A, env._face_geometry.A)
+    np.testing.assert_array_equal(
+        explicit._face_geometry.distance, env._face_geometry.distance
+    )
+
+
+def test_three_dimensional_affine_grid_faces_follow_physical_planes():
+    from neurospatial.layout._locators import TransformedLocator
+
+    source = _variable_grid_faces(3)
+    angle = 0.3
+    rotation = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 0],
+            [np.sin(angle), np.cos(angle), 0],
+            [0, 0, 1],
+        ]
+    )
+    scales = np.array([2.0, 3.0, 4.0])
+    linear = rotation @ np.diag(scales)
+    matrix = np.eye(4)
+    matrix[:3, :3] = linear
+    matrix[:3, 3] = [100, -50, 25]
+    centers = source.bins.centers @ linear.T + matrix[:3, 3]
+    pairs = source.bins.pairs
+    distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
+    source_vectors = source.bins.centers[pairs[:, 1]] - source.bins.centers[pairs[:, 0]]
+    axes = np.argmax(np.abs(source_vectors), axis=1)
+    sizes = source.bins.sizes * np.prod(scales)
+    faces = FaceGeometry(
+        pairs, source.faces.build().A * np.prod(scales) / scales[axes], distances, sizes
+    )
+    transformed = replace(
+        source,
+        bins=replace(source.bins, centers=centers, sizes=sizes),
+        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        faces=KnownFaces(faces),
+        rectilinear=None,
+    )
+    env = Environment.from_bins(transformed)
+    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    with pytest.raises(ValueError, match=r"grid faces"):
+        Environment.from_bins(
+            replace(transformed, faces=KnownFaces(faces._replace(A=faces.A * 7)))
+        )
