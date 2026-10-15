@@ -269,3 +269,19 @@ Compared with `baseline-after-derive.npz`, only the approved
 `api/Environment.apply_transform` docstring differs; its signature and all
 scientific probe values remain unchanged. The retained triangle drawing
 behavior is checked by the dedicated artist and geometry regressions.
+
+## PR handoff: graph-validation fixture
+
+PR #67's macOS/Python 3.11 CI run reproduced the graph-validation test failure
+excluded from the historical broad runs above: the test tried deleting a node
+attribute from published read-only connectivity before reaching the validator.
+The fixture now copies the graph, corrupts that detached copy and installs it
+as simulated corrupted published state, matching the neighboring consistency
+test. The original `GraphValidationError`/missing-attributes assertion remains.
+No library behavior changed and this test no longer needs deselection.
+
+The failure was reproduced first. After the test repair, all 150 focused
+environment-validation, state-version and binning-publication tests pass with
+numerical RuntimeWarnings treated as errors. Ruff, formatting and whitespace
+checks pass. GitHub CI will rerun on the updated PR head; these local checks do
+not claim completion of that remote run.
