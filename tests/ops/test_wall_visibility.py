@@ -267,6 +267,15 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
     point = np.array([2.5, 4.5]) @ matrix[:2, :2].T + matrix[:2, 2]
     for env, expected in [(cropped, -1), (clipped, 0)]:
         for restored in (env, Environment.from_dict(env.to_dict())):
+            if expected == -1:
+                with pytest.raises(NotImplementedError, match="Physical wall hit"):
+                    _precompute_view_bins(
+                        restored,
+                        point.reshape(1, 2),
+                        np.array([a]),
+                        gaze_model="ray_cast",
+                    )
+                continue
             np.testing.assert_array_equal(
                 _precompute_view_bins(
                     restored, point.reshape(1, 2), np.array([a]), gaze_model="ray_cast"
@@ -313,12 +322,10 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
         0
     ]
     selected = env.subset(bins=np.arange(env.n_bins) != one)
-    assert (
+    with pytest.raises(NotImplementedError, match="Physical wall hit"):
         _precompute_view_bins(
             selected, origins[:1], headings[:1], gaze_model="ray_cast"
-        )[0]
-        == -1
-    )
+        )
 
 
 @pytest.mark.parametrize("gap", [1e-7, 1e-12])
@@ -336,8 +343,8 @@ def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
     env = Environment.from_bins(clipped._binning, arena=OpenArena(polygon))
     headings = np.linspace(-np.pi, np.pi, 100, endpoint=False)
     origins = np.tile([2.5, 2.5], (len(headings), 1))
-    bins = _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
-    np.testing.assert_array_equal(bins, -1)
+    with pytest.raises(NotImplementedError, match="Physical wall hit"):
+        _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
 
 
 @pytest.mark.parametrize("offset", [1e-14, 1e-13, 1e-12, 1e-7])
@@ -354,10 +361,8 @@ def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
     target = np.array([10.0, 4.0 + offset])
     delta = target - observer[0]
     heading = np.array([np.arctan2(delta[1], delta[0])])
-    assert (
-        _precompute_view_bins(selected, observer, heading, gaze_model="ray_cast")[0]
-        == -1
-    )
+    with pytest.raises(NotImplementedError, match="Physical wall hit"):
+        _precompute_view_bins(selected, observer, heading, gaze_model="ray_cast")
 
 
 @pytest.mark.parametrize("restore", [False, True])
@@ -443,3 +448,53 @@ def test_visible_cues_accepts_cues_on_a_slanted_measured_arena_wall():
     np.testing.assert_array_equal(visible, True)
     assert np.all(np.isfinite(distances))
     assert np.all(np.isfinite(bearings))
+
+
+def test_unowned_physical_wall_hit_refuses_view_encoding_without_fabricating_rates():
+    from neurospatial.encoding.view import compute_view_rate
+
+    x, y = np.meshgrid(np.arange(3.0, 98.0), np.arange(3.0, 98.0))
+    env = Environment.from_samples(
+        np.column_stack((x.ravel(), y.ravel())),
+        bin_size=2.0,
+        arena=OpenArena(box(0, 0, 100, 100)),
+    )
+    positions = np.tile([50.0, 50.0], (3, 1))
+    # The physical hit is known even though the rate map has no cells there.
+    np.testing.assert_allclose(
+        compute_viewed_location(positions, np.zeros(3), env=env, method="ray_cast"),
+        np.tile([100.0, 50.0], (3, 1)),
+    )
+    args = (
+        env,
+        np.array([0.25, 1.25]),
+        np.array([0.0, 1.0, 2.0]),
+        positions,
+        np.zeros(3),
+    )
+    with pytest.raises(NotImplementedError, match=r"Physical wall hit.*retained bin"):
+        compute_view_rate(
+            *args, gaze_model="ray_cast", method="binned", bandwidth=0.0, max_gap=None
+        )
+    approximate = compute_view_rate(
+        *args,
+        gaze_model="ray_cast",
+        method="binned",
+        bandwidth=0.0,
+        max_gap=None,
+        boundary_source="analysis",
+    )
+    assert approximate.occupancy.sum() == 2.0
+    assert np.any(np.isfinite(approximate.firing_rate))
+
+
+def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+
+    full = room(wall=False)
+    cropped = full.subset(bins=full.bin_centers[:, 0] < 4)
+    positions = np.tile([2.5, 4.5], (2, 1))
+    with pytest.raises(NotImplementedError, match=r"Physical wall hit.*retained bin"):
+        _precompute_view_bins(
+            cropped, positions, np.array([np.pi, 0.0]), gaze_model="ray_cast"
+        )

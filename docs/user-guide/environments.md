@@ -501,7 +501,16 @@ coverage depends on `n_rays`.
 The source choice is forwarded by the single/population view encoders, shuffle
 tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
-outside the retained analysis support remains invalid. Spike counts and exposure
+outside the retained analysis support makes physical view encoding unavailable
+and raises with guidance. Supplying wall geometry cannot add missing bins, and
+assigning a distant wall to a nearby bin would change the measured location.
+Build cells that reach the wall, or explicitly request the analysis-boundary
+approximation. The geometry-only `compute_viewed_location()` still returns the
+known physical hit even when its location has no analysis bin.
+
+View encoding requires a retained bin for each observed finite hit; it does not
+require gaze observations at every wall. Unviewed bins remain missing, and rays
+with no hit or invalid observations remain missing. Spike counts and exposure
 share that assignment, and results record the source in `analysis_settings`.
 Encoder/model searches cover the known geometry rather than imposing a fixed
 100-unit range. Fixed-distance gaze keeps its existing behavior.

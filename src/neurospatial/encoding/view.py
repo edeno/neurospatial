@@ -1277,7 +1277,10 @@ def compute_view_rate(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -1633,7 +1636,10 @@ def compute_view_rates(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -2106,7 +2112,10 @@ def is_spatial_view_cell(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -2345,7 +2354,10 @@ def spatial_view_cell_significance(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------

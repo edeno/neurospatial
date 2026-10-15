@@ -294,7 +294,10 @@ def _precompute_view_bins(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -334,6 +337,16 @@ def _precompute_view_bins(
             valid_bins = _wall_view_bins(
                 env, valid_viewed, positions[valid_view_mask], boundary_source
             )
+            if boundary_source == "physical" and np.any(valid_bins < 0):
+                raise NotImplementedError(
+                    "Physical wall hit has no retained bin on the observer's side. "
+                    "Build bins that reach the measured wall before computing view rates; "
+                    "adding OpenArena or clipping existing cells cannot add missing bins. "
+                    "For rotated rectangular arenas, construct bins in the arena-aligned frame "
+                    "and transform bins, arena and observations together. Alternatively, explicitly "
+                    "choose boundary_source='analysis' to encode the retained analysis boundary. "
+                    "compute_viewed_location(...) remains available for geometry-only wall contacts."
+                )
         else:
             valid_bins = env.bin_at(valid_viewed)
         view_bins[valid_view_mask] = valid_bins
@@ -408,7 +421,10 @@ def compute_occupancy(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -577,7 +593,10 @@ def bin_view_spike_train(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -780,7 +799,10 @@ def bin_view_spike_trains(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. For ray-based rate maps, a finite
+        physical hit without a retained bin raises NotImplementedError; provide
+        bins at the wall or explicitly select the analysis approximation.
+        Fixed-distance gaze ignores this.
 
     Returns
     -------
