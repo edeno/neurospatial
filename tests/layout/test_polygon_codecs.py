@@ -102,7 +102,11 @@ def test_present_polygon_snapshot_is_distinct_from_historical_locator_frame(oper
     assert len(meta["snapshots"]["polygon_cells"]) == 2
     restored = decode(meta, arrays, "binning")
     assert restored.shapes is not restored.locator.base.cells
-    assert restored.clip_mapping is not restored.locator.base.mapping
+    if operation == "subset":
+        assert restored.clip_mapping is not restored.locator.base.mapping
+    else:
+        # Equal immutable mapping data can be shared across coordinate frames.
+        assert restored.clip_mapping is restored.locator.base.mapping
     np.testing.assert_array_equal(
         restored.locator.locate(centers), np.arange(len(centers))
     )

@@ -163,6 +163,8 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
 
     Return None for ordinary geometry. Missing child faces remain a whole-value
     refusal; navigation bridges never acquire a fabricated physical face.
+    Clipped cells must supply their own certified faces. Do not unwrap a
+    ClippedLocator here: its parent's weights describe different cell geometry.
     """
     from scipy.sparse.csgraph import connected_components
 

@@ -132,12 +132,49 @@ class _ReadOnlyGraphAttributes(Mapping[str, Any]):
         return type(self), (self.copy(),)
 
 
+class _ReadOnlyGraphMetadata(dict[str, Any]):
+    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
+
+    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    clear = _ReadOnlyGraphAttributes._refuse_edit
+    pop = _ReadOnlyGraphAttributes._refuse_edit
+    popitem = _ReadOnlyGraphAttributes._refuse_edit
+    setdefault = _ReadOnlyGraphAttributes._refuse_edit
+    update = _ReadOnlyGraphAttributes._refuse_edit
+    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
+        return copy_module.deepcopy(dict(self), memo)
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return dict, (dict(self),)
+
+
 class _PublishedGraph(nx.Graph):
     """Freeze public graph bindings as well as topology and attribute values.
 
     NetworkX's cached views remain lazy. Copies construct an ordinary editable
     instance of this subclass; only environment publication seals its bindings.
     """
+
+    @property
+    def graph(self) -> dict[str, Any]:
+        # node_link_data retains this object directly, unlike node/edge
+        # attributes. Return a detached dict so standard JSON encoding works
+        # without exposing the authoritative metadata to base-dict mutation.
+        attributes = self.__dict__["graph"]
+        if not self.__dict__.get("_published", False):
+            return cast("dict[str, Any]", attributes)
+        return _ReadOnlyGraphMetadata(attributes.copy())
+
+    @graph.setter
+    def graph(self, attributes: dict[str, Any]) -> None:
+        if self.__dict__.get("_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        self.__dict__["graph"] = attributes
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
@@ -641,6 +678,21 @@ class _BaseEnvironment(
         else:
             # Initialize with an empty Regions instance if not provided
             self._regions = Regions()._snapshot()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Export owned state without copying or serializing transient analyses."""
+        state = self.__dict__.copy()
+        for name in ("_kernel_cache", "_kdtree_cache"):
+            state.pop(name, None)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, cached_property):
+                    state.pop(name, None)
+                elif isinstance(descriptor, versioned_cached_property):
+                    key = f"_versioned_cache__{name}"
+                    state.pop(key, None)
+                    state.pop(f"{key}__version", None)
+        return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore published geometry from pickles predating binning snapshots."""
@@ -1978,7 +2030,7 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
         distance_bin_size: float,
         angle_bin_size: float,
         *,
-        circular_angle: bool = True,
+        circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
         units: str | None = None,
@@ -2005,10 +2057,11 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
             Must be positive.
         angle_bin_size : float
             Size of each angle bin in radians. Must be positive.
-        circular_angle : bool, default=True
-            If True, the angle dimension wraps circularly, connecting the
-            first and last angle bins at each distance ring. Appropriate
-            when ``angle_range`` spans a full circle.
+        circular_angle : bool or None, default=None
+            Whether to join the first and last angle bins at each distance
+            ring. None wraps a full-circle range (2π radians) and leaves a
+            partial range open. True requires a full circle; False leaves
+            the angular axis open even for a full-circle range.
         connect_diagonal_neighbors : bool, default=True
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
