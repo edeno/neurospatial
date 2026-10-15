@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Prevent automatic combined-environment bridges from crossing a third
+  component, including tiny and nearly collinear footprints. Long affine
+  histories retain their arena through storage without using the composite
+  nesting budget. Clipped diffusion keeps its own certification boundary.
+
 - Omit transient analysis caches before copy/pickle; retain JSON-compatible
   protected graph metadata. Explicit bins now reject wall-crossing supplied
   pairs, keep drawing outlines separate from physical evidence, and validate
