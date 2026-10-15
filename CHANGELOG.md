@@ -295,6 +295,9 @@
 
 ### Fixed
 
+- Keep valid gaze hits on slanted physical walls during view encoding, using
+  retained wall contact and parent-bin ownership to avoid crossing missing bins.
+
 - Preserve each component’s declared physical walls when environments are combined,
   including shared room boundaries and measured walls alongside unknown domains.
 

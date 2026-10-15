@@ -269,3 +269,41 @@ also passed with `RuntimeWarning` treated as an error, as recorded above.
 `git diff --check` passes, and each local branch is an ancestor of the next.
 The user guide describes construction, migration to explicit analysis mode,
 wall-aware view encoding, and the supported geometry limits.
+
+
+## Independent review and repairs (2026-10-15)
+
+Independent review found two defects after the original passing gate:
+
+1. Combining adjacent asserted rooms took the boundary of their union and lost
+   the separating wall. Wall extraction now retains each component's declared
+   outline and internal walls, including partial measured evidence alongside
+   children whose physical footprint is unknown. Five border regressions and
+   two ray/cue regressions cover the repair and dictionary restoration.
+2. A single representable step toward the observer could leave a slanted-wall
+   hit outside an exact clipped cell. Fallback assignment now intersects the
+   approach with retained cells that reach declared wall contact. It queries a
+   terminal interior segment, bounded by stored coordinate precision, and
+   preserves resolvable parent-cell ownership. The reviewer caught and verified
+   a further near-corner safeguard: a hit in a dropped grid cell cannot move
+   along the wall into its retained neighbor.
+
+Before the repairs, all five shared-wall cases and both initial slanted-wall
+cases failed. The corner safeguard failed at a 1e-14 offset before the parent
+check. Afterwards, **67 dedicated Stage D tests** passed with RuntimeWarning
+as an error. The independent reviewer also reran 5,000-heading geometry sweeps,
+rotations and translations through offsets 0, 100 and 1e9, missing strips down
+through 1e-14, dropped-parent corners and partial wall evidence. No confirmed
+review findings remain.
+
+The combined locator/plot/HTML/view/model/API gate passed **543 tests** (including
+slow plot snapshots), with RuntimeWarning as an error. Source and typing-contract
+mypy passed **245 files**. Repository-wide Ruff and formatting checks passed
+(779 Python files). The broad CPU rerun and remote matrix status are tracked
+separately; these focused results do not establish that remote CI is green.
+
+Local evidence: `/private/tmp/stage-d-wall-review-before.log`,
+`/private/tmp/stage-d-slanted-review-before.log`,
+`/private/tmp/stage-d-owner-guard-before.log`,
+`/private/tmp/stage-d-review-fixes.log`, `/private/tmp/stage-d-review-gate.log`,
+`/private/tmp/stage-d-review-mypy-final.log`.

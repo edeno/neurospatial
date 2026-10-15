@@ -273,3 +273,111 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
                 ),
                 [expected],
             )
+
+
+@pytest.mark.parametrize("restore", [False, True])
+@pytest.mark.parametrize("transform", [False, True])
+def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
+    from shapely.geometry import Polygon
+
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+
+    polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
+    grid = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool),
+        grid_edges=(np.arange(11.0),) * 2,
+    )
+    clipped = grid.clip(polygon)
+    env = Environment.from_bins(clipped._binning, arena=OpenArena(polygon))
+    headings = np.linspace(-np.pi, np.pi, 500, endpoint=False)
+    origins = np.tile([2.5, 2.5], (len(headings), 1))
+    if transform:
+        angle = 0.31
+        rotation = np.array(
+            [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+        )
+        matrix = np.eye(3)
+        matrix[:2, :2] = rotation
+        matrix[:2, 2] = [100, 200]
+        from neurospatial.ops.transforms import Affine2D
+
+        env = env.apply_transform(Affine2D(matrix))
+        origins = origins @ rotation.T + [100, 200]
+        headings += angle
+    if restore:
+        env = Environment.from_dict(env.to_dict())
+    bins = _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
+    assert np.all(bins >= 0)
+    # Removing support at the hit must not assign it to a nearby retained cell.
+    one = _precompute_view_bins(env, origins[:1], headings[:1], gaze_model="ray_cast")[
+        0
+    ]
+    selected = env.subset(bins=np.arange(env.n_bins) != one)
+    assert (
+        _precompute_view_bins(
+            selected, origins[:1], headings[:1], gaze_model="ray_cast"
+        )[0]
+        == -1
+    )
+
+
+@pytest.mark.parametrize("gap", [1e-7, 1e-12])
+def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
+    from shapely.geometry import Polygon
+
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+
+    polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
+    grid = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool),
+        grid_edges=(np.arange(11.0),) * 2,
+    )
+    clipped = grid.clip(polygon.buffer(-gap))
+    env = Environment.from_bins(clipped._binning, arena=OpenArena(polygon))
+    headings = np.linspace(-np.pi, np.pi, 100, endpoint=False)
+    origins = np.tile([2.5, 2.5], (len(headings), 1))
+    bins = _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
+    np.testing.assert_array_equal(bins, -1)
+
+
+@pytest.mark.parametrize("offset", [1e-14, 1e-13, 1e-12, 1e-7])
+def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+
+    full = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool),
+        grid_edges=(np.arange(11.0),) * 2,
+        arena=OpenArena(box(0, 0, 10, 10)),
+    )
+    selected = full.subset(bins=np.arange(full.n_bins) != 94)
+    observer = np.array([[2.5, 2.5]])
+    target = np.array([10.0, 4.0 + offset])
+    delta = target - observer[0]
+    heading = np.array([np.arctan2(delta[1], delta[0])])
+    assert (
+        _precompute_view_bins(selected, observer, heading, gaze_model="ray_cast")[0]
+        == -1
+    )
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_joined_rooms_keep_their_separating_wall_for_rays_and_cues(restore):
+    rooms = [
+        Environment.from_grid_mask(
+            np.ones((5, 5), dtype=bool),
+            grid_edges=(np.arange(start, start + 6.0), np.arange(6.0)),
+            arena=OpenArena(box(start, 0, start + 5, 5)),
+        )
+        for start in [0, 5]
+    ]
+    env = Environment.combine(
+        dict(zip(["left", "right"], rooms, strict=True)), auto_bridge=False
+    )
+    if restore:
+        env = Environment.from_dict(env.to_dict())
+    np.testing.assert_allclose(
+        compute_viewed_location([[2.5, 2.5]], [0.0], env=env, method="ray_cast"),
+        [[5.0, 2.5]],
+    )
+    visible, _, _ = visible_cues(env, np.array([2.5, 2.5]), 0.0, np.array([[7.5, 2.5]]))
+    assert not visible[0]

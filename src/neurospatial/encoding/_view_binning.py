@@ -45,6 +45,8 @@ from neurospatial.environment.trajectory import (
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
+    import shapely
+
     from neurospatial.arena import Arena
     from neurospatial.environment import Environment
     from neurospatial.layout._binning import Locator
@@ -54,6 +56,96 @@ __all__ = [
     "bin_view_spike_trains",
     "compute_occupancy",
 ]
+
+
+def _resolve_wall_contacts(
+    locator: Locator,
+    arena: Arena,
+    cells: Sequence[shapely.Geometry],
+    walls: shapely.Geometry,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    bins: NDArray[np.intp],
+) -> NDArray[np.intp]:
+    """Resolve rounded boundary hits using cells that actually touch the wall.
+
+    A single representable step can remain outside a slanted polygon. For a
+    failed hit, intersect its approach segment with a retained wall-touching
+    cell, and query an interior point of the terminal segment. Contact must be
+    within the cell's bounded coordinate uncertainty; a missing strip between
+    a cell and the wall is never bridged by an inward search.
+    """
+    import shapely
+
+    from neurospatial.arena import _feature_cap
+    from neurospatial.layout._binning_layout import _polygon_coordinate_errors
+    from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
+    from neurospatial.layout._polygon import ClippedLocator
+
+    def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
+        parent = locator
+        while True:
+            if isinstance(parent, RectilinearLocator):
+                # Optimized grid subsets retain inactive cells in their grid
+                # mask, rather than a SubsetLocator wrapper. Preserve that
+                # full-grid owner even when its active-bin index is -1.
+                return all(
+                    np.searchsorted(edge, target[0, axis], side="right")
+                    == np.searchsorted(edge, query[0, axis], side="right")
+                    for axis, edge in enumerate(parent.edges)
+                )
+            original = parent.locate(target)[0]
+            if original >= 0 and parent.locate(query)[0] != original:
+                return False
+            if not isinstance(parent, (SubsetLocator, ClippedLocator)):
+                return True
+            parent = parent.base
+
+    missing = np.flatnonzero((bins < 0) & np.all(np.isfinite(hits), axis=1))
+    if not len(missing):
+        return bins
+    polygons = np.asarray(cells, dtype=object)
+    # Union first: adjacent clipped cells can carry independently rounded
+    # fragments of the same wall. Their shared edges cancel in the union.
+    contact = shapely.union_all(polygons).intersection(walls)
+    if contact.is_empty:
+        return bins
+    budgets = np.array(
+        [
+            np.hypot.reduce(
+                np.minimum(_polygon_coordinate_errors(cell), _feature_cap(arena))
+            )
+            for cell in cells
+        ]
+    )
+    for row in missing:
+        point = shapely.Point(hits[row])
+        distances = shapely.distance(polygons, point)
+        candidates = np.flatnonzero(
+            (distances <= budgets) & (contact.distance(point) <= budgets)
+        )
+        end = shapely.get_point(shapely.shortest_line(point, contact), -1)
+        segment = shapely.LineString([origins[row], [end.x, end.y]])
+        for index in candidates:
+            pieces = shapely.get_parts(segment.intersection(cells[index]))
+            for piece in pieces:
+                if piece.geom_type != "LineString" or piece.length == 0:
+                    continue
+                # Only the terminal approach interval establishes ownership.
+                if piece.distance(end) > budgets[index]:
+                    continue
+                middle = piece.interpolate(0.5, normalized=True)
+                query = np.array([[middle.x, middle.y]])
+                if arena.domain_known and not arena.contains(query)[0]:
+                    continue
+                original = np.nextafter(hits[row : row + 1], origins[row : row + 1])
+                if locator.locate(query)[0] == index and same_parent(original, query):
+                    bins[row] = index
+                    break
+            if bins[row] >= 0:
+                break
+
+    return bins
 
 
 def _wall_view_bins(
@@ -70,7 +162,11 @@ def _wall_view_bins(
     from neurospatial.environment._arena import _wall_source_frame
     from neurospatial.layout._composition import CombinedLocator
     from neurospatial.layout._locators import SubsetLocator, TransformedLocator
-    from neurospatial.layout._polygon import ClippedLocator, PolygonCells
+    from neurospatial.layout._polygon import (
+        ClippedLocator,
+        PolygonCells,
+        materialize_cells,
+    )
     from neurospatial.ops._boundaries import physical_walls
 
     def source_locator(
@@ -116,7 +212,22 @@ def _wall_view_bins(
     locator = source_locator(env._binning.locator, env.arena, env.bin_centers)
     frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)
     if frame is None:
-        return env.bin_at(np.nextafter(hits, origins))
+        bins = env.bin_at(np.nextafter(hits, origins))
+        if source == "physical":
+            walls = physical_walls(env.arena)
+        else:
+            from neurospatial.ops._boundaries import boundary_geometry
+
+            walls = boundary_geometry(env, source)
+        return _resolve_wall_contacts(
+            locator,
+            env.arena,
+            materialize_cells(env._binning),
+            walls,
+            hits,
+            origins,
+            bins,
+        )
     cells, _walls, _centers, _inverse, frames = frame
     query = np.vstack((hits, origins))
     error = None
@@ -145,7 +256,9 @@ def _wall_view_bins(
     bins = locator.locate(inside)
     if base.domain_known:
         bins[~base.contains(inside)] = -1
-    return bins
+    return _resolve_wall_contacts(
+        locator, base, cells, walls, query[: len(hits)], query[len(hits) :], bins
+    )
 
 
 def _precompute_view_bins(
