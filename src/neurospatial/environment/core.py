@@ -276,6 +276,26 @@ class Environment(Generic[_C]):
 
     @property
     @check_fitted
+    def binning(self) -> Binning:
+        """Return a detached snapshot of bins, lookup and geometry components.
+
+        The returned records and NumPy array headers are independently owned.
+        Editing their shapes or writable flags cannot change this environment.
+        Native face recipes remain lazy; reading this property does not build
+        numerical geometry. To pass a native Cartesian snapshot to from_bins(),
+        explicitly replace its faces with KnownFaces(snapshot.faces.build()).
+        MissingFaces is already explicit and retains its refusal reason.
+
+        Polar snapshots retain radius/angle coordinates and are not inputs to
+        the Cartesian from_bins() factory. Use environment storage to restore
+        an unchanged polar environment.
+        """
+        from neurospatial.environment._ownership import own_binning
+
+        return own_binning(self._binning)
+
+    @property
+    @check_fitted
     def arena(self) -> Arena:
         """Continuous domain, distinguished from the active analysis bins."""
         arena = self._geometry.arena

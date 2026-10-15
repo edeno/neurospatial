@@ -164,6 +164,31 @@ factor. Unequal axis scaling and shear raise because scalar path lengths do not
 determine how those paths stretch. See [snapshot adapters](interoperability.md#installed-snapshot-adapters)
 to convert an external provider into these built-in records.
 
+`env.binning` returns an independent snapshot for inspecting or preparing geometry.
+Changing its array shapes, writable flags or values cannot change the environment.
+Reading it keeps native face recipes lazy. `from_bins()` requires explicit faces;
+materialize them when rebuilding a native Cartesian snapshot:
+
+<!-- docs-test: run -->
+```python
+from dataclasses import replace
+import numpy as np
+from neurospatial import Environment
+from neurospatial.binning import KnownFaces
+
+original = Environment.from_grid_mask(
+    np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+)
+snapshot = original.binning
+explicit = replace(snapshot, faces=KnownFaces(snapshot.faces.build()))
+rebuilt = Environment.from_bins(explicit, arena=original.arena)
+np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
+```
+
+`MissingFaces` already states that numerical geometry is unavailable and needs
+no conversion. Polar snapshots retain radius/angle coordinates; use environment
+storage to restore those, because `from_bins()` constructs Cartesian geometry.
+
 ## Add known geometry when available
 
 `env.arena` describes continuous support; `env.bin_at(positions)` and

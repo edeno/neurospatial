@@ -1318,6 +1318,7 @@ _POLAR_INHERITED_MEMBERS = {
         "transitions",
     },
     "read-only geometry views in (distance, angle) coordinates": {
+        "binning",
         "active_mask",
         "arena",
         "clip_mapping",
