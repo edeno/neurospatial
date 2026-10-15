@@ -61,6 +61,13 @@
 
 ### Added
 
+- Expose detached, read-only `env.binning` snapshots and public coordinate,
+  diffusion-geometry, diffusion-accuracy, MRF-basis and Gaussian-kernel
+  operations. Environment owns analysis caches; numerical consumers use public
+  operations or explicit geometry. Existing public geometry imports remain
+  stable while owned data and codecs move into an independent `geometry/`
+  package with enforced dependency rules.
+
 - Preserve linear interpolation and movement time fractions after rotating,
   reflecting or shearing Cartesian 2-D/3-D grids. Planar grids use exact QuadMesh
   plots/animation updates. Planar linear spike counts and dwell share bounded
