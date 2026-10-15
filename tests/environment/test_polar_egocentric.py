@@ -413,7 +413,7 @@ class TestAngularCircularDerivedFromGraph:
             assert self._env(circular).copy()._angular_is_circular is circular
 
 
-class TestPolarStateVersionFreshness:
+class TestPolarCacheFreshness:
     """Polar geometry is complete before construction-time caches are populated."""
 
     def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
@@ -446,9 +446,9 @@ class TestPolarStateVersionFreshness:
         assert polar_env._face_geometry is captured[0]
 
     def test_differential_operator_reflects_circular_edges(self):
-        """A versioned cached property sees the wrap edges, not a stale graph.
+        """The cached operator includes circular wrap edges from the owned graph.
 
-        ``get_differential_operator`` is a ``versioned_cached_property`` of
+        ``get_differential_operator`` returns a cached operator from
         shape ``(n_bins, n_edges)``. Its edge (column) dimension must match the
         connectivity graph's edge count including the circular wrap edges.
         """

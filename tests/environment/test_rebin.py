@@ -242,16 +242,8 @@ class TestRebinBasic:
         assert isinstance(coarse, Environment)
         assert coarse._is_fitted
 
-    def test_rebin_runs_setup_through_constructor(self):
-        """rebin builds the coarse env via the normal constructor path.
-
-        Previously rebin constructed an intermediate unfitted Environment and
-        manually called ``_setup_from_layout()`` afterward. The constructor now
-        runs setup itself (``layout_type_used="RegularGrid"``). The resulting
-        env must be fully fitted, carry the RegularGrid metadata, and have a
-        ``_state_version`` reflecting exactly one setup bump -- not a stale or
-        double-counted value.
-        """
+    def test_rebin_publishes_fitted_geometry(self):
+        """Rebin publishes complete coarse geometry with independent caches."""
         env = Environment.from_samples(
             positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
@@ -262,9 +254,10 @@ class TestRebinBasic:
 
         assert coarse._is_fitted
         assert coarse._layout_type_used == "RegularGrid"
-        # A factory-built grid env bumps the version once in _setup_from_layout.
-        assert coarse._state_version == 1
-        # Versioned caches must work against the rebinned graph. The
+        assert coarse._geometry is not env._geometry
+        assert coarse._kernel_cache == {}
+        assert coarse._kdtree_cache is None
+        # Cached operators must use the rebinned graph. The
         # differential operator has shape (n_bins, n_edges).
         D = coarse.get_differential_operator()
         assert D.shape == (coarse.n_bins, coarse.connectivity.number_of_edges())

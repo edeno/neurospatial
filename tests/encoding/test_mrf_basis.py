@@ -468,12 +468,12 @@ def test_reuses_cached_diffusion_geometry(open_field_env):
     env = open_field_env
     occ = np.ones(env.n_bins)
     geom_before = env._diffusion_geometry
-    version_before = env._state_version
+    geometry_before = env._geometry
 
     env._mrf_basis(occ, rank=10)
     env._mrf_basis(occ, rank=10)
 
-    assert env._state_version == version_before
+    assert env._geometry is geometry_before
     assert env._diffusion_geometry is geom_before  # same cached object
 
 
@@ -506,7 +506,7 @@ def test_reuses_eigensolve(sparse_regime_env, monkeypatch):
 
 def test_holder_resets_on_clear_cache(sparse_regime_env):
     """The grown eigenbasis holder is dropped wholesale on clear_cache (the
-    versioned-cache invalidation promise), so it never outlives a geometry."""
+    explicit cache-clearing contract), so it never outlives a geometry."""
     env = sparse_regime_env
     occ = np.ones(env.n_bins)
     env._mrf_basis(occ, rank=50)

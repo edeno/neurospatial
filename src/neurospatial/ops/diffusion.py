@@ -933,10 +933,10 @@ def _resolve_basis(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Return ``(Q, Lam)`` for ``sigma`` from the growable single-basis cache.
 
-    ``holder`` is a per-geometry mutable dict (owned by a
-    ``versioned_cached_property`` on the Environment, so it is dropped wholesale
-    on any geometry change). It holds ONE truncated basis -- the max rank
-    requested so far, strictly below ``dense_fraction * n`` -- grown by
+    ``holder`` is a per-geometry mutable dict owned by a private cached property
+    on the Environment. Clearing cached properties drops it wholesale; derived
+    environments start with fresh caches. It holds ONE truncated basis -- the
+    max rank requested so far, strictly below ``dense_fraction * n`` -- grown by
     **replace**, plus a memo of the resolved rank per ``(sigma, tol)`` so repeat
     calls at a bandwidth (every neuron) skip the adaptive probe.
 

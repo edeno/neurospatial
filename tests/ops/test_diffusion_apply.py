@@ -537,7 +537,7 @@ def test_cache_grows_with_smaller_sigma():
 
 def test_eigenbasis_single_basis_and_invalidated():
     """One max-rank basis is reused/sliced across sigma/mode (not an accumulating
-    dict); replaced on growth; dropped wholesale on a _state_version bump."""
+    dict); replaced on growth; dropped wholesale when cached analyses are cleared."""
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
@@ -551,8 +551,10 @@ def test_eigenbasis_single_basis_and_invalidated():
     assert isinstance(holder["basis"], tuple) and len(holder["basis"]) == 2
     basis_id = id(holder["basis"][0])
 
-    # A geometry change (state bump) drops the holder wholesale.
-    env._state_version += 1
+    # Explicit cache clearing drops the holder without changing geometry.
+    geometry = env._geometry
+    env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+    assert env._geometry is geometry
     holder2 = env._diffusion_eigenbasis
     assert holder2 == {} and id(holder2) != id(holder)
     env.diffuse(fields["nonneg"], 10.0, mode="density")

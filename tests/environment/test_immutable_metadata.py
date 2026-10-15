@@ -54,7 +54,7 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     assert not updated._kernel_cache
     assert env._kernel_cache.keys() == source_cache.keys()
     assert all(env._kernel_cache[key] is value for key, value in source_cache.items())
-    assert not any(key.startswith("_versioned_cache__") for key in vars(updated))
+    assert "_differential_operator_cached" not in vars(updated)
     np.testing.assert_array_equal(updated.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(updated.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
