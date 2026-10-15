@@ -559,6 +559,10 @@ class _BaseEnvironment(
 
         regions : Regions or None, optional
             Initial named regions; an empty container is created when omitted.
+        units : str or None, optional
+            Label for the supplied coordinate units; never scales coordinates.
+        frame : str or None, optional
+            Coordinate frame label for the supplied coordinates.
         restored_from : str, optional
             Where a read-back environment's saved geometry came from; an invalid
             saved graph is then reported against that data.
@@ -577,6 +581,19 @@ class _BaseEnvironment(
                     why="Why: a factory builds the geometry and connectivity required by Environment.",
                 )
             )
+
+        if layout_type_used is not None:
+            from neurospatial.environment._ownership import (
+                _NATIVE_LAYOUTS,
+                _OwnedLayout,
+                own_layout,
+            )
+            from neurospatial.layout._binning_layout import BinningLayout
+
+            if type(layout) not in (*_NATIVE_LAYOUTS, BinningLayout, _OwnedLayout):
+                layout = own_layout(layout)
+                layout_type_used = layout._layout_type_tag
+                layout_params_used = layout._build_params_used
 
         self._metadata = _Metadata(name, units, frame)
         type(self)._validate_units(units)
@@ -718,6 +735,33 @@ class _BaseEnvironment(
         """Most recent clip's source-bin mapping, or None before clipping."""
         return copy_module.deepcopy(self._geometry.clip_mapping)
 
+    @property
+    @check_fitted
+    def edge_pairs(self) -> NDArray[np.intp]:
+        """Oriented neighbor pairs in gradient and flux order, shape (n_edges, 2).
+
+        This order preserves explicit bin input, and can differ from NetworkX
+        edge iteration. The returned array is independent and read-only.
+        """
+        pairs: NDArray[np.intp] = self._binning.bins.pairs.copy()
+        pairs.setflags(write=False)
+        return pairs
+
+    @check_fitted
+    def to_networkx(self) -> nx.Graph:
+        """Return a detached editable graph with bin IDs and weighted edges.
+
+        Nested graph, node and edge attributes are independently owned. Node
+        identities are the bin IDs; ``edge_pairs`` defines numerical edge order.
+        Standard NetworkX drawing, editing and JSON conversion can use this graph.
+
+        Returns
+        -------
+        networkx.Graph
+            Editable navigation graph, independent of the environment.
+        """
+        return nx.Graph(self.connectivity)
+
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
         arena = self._geometry.arena
@@ -774,6 +818,8 @@ class _BaseEnvironment(
 
     def _reset_analysis_caches(self) -> None:
         """Discard this instance's memoized analyses without clearing shared values."""
+        for legacy_name in ("bin_sizes", "boundary_bins", "linearization_properties"):
+            self.__dict__.pop(legacy_name, None)
         if self._is_fitted:
             self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
         self._kernel_cache = {}
@@ -1353,6 +1399,7 @@ class _BaseEnvironment(
         from neurospatial.environment._ownership import own_arena, own_layout
 
         self._layout = own_layout(self._layout)
+        self._is_linearized_track_env = self._layout.is_linearized_track
         binning = self._layout._binning
         connectivity = self._layout._owned_connectivity  # type: ignore[attr-defined]
         bin_centers = binning.bins.centers
@@ -1639,7 +1686,7 @@ class _BaseEnvironment(
         """Return the cached finite-volume divergence operator.
 
         The divergence operator maps a flux on each oriented edge (in
-        ``connectivity.edges()`` order) to the net outward flux per cell volume:
+        ``edge_pairs`` order) to the net outward flux per cell volume:
         ``-M**-1 D diag(A * d)``, the negative volume-weighted adjoint of
         :meth:`get_differential_operator`. ``divergence(env, edge_field)``
         applies it.

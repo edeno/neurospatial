@@ -75,6 +75,11 @@ class EnvironmentProtocol(Protocol):
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
+    @property
+    def edge_pairs(self) -> NDArray[np.intp]: ...
+
+    def to_networkx(self) -> nx.Graph: ...
+
     # Core attributes
     @property
     def name(self) -> str: ...
@@ -419,6 +424,9 @@ class TransitionsConsumer(Protocol):
 
 class RebinConsumer(Protocol):
     """Layout, connectivity and metadata for coarsening a regular grid."""
+
+    @property
+    def _binning(self) -> Binning: ...
 
     @property
     def connectivity(self) -> nx.Graph: ...

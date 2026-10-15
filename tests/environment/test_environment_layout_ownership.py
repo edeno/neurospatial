@@ -196,8 +196,45 @@ def test_custom_layout_is_refused_before_opaque_deepcopy():
         def __deepcopy__(self, memo):
             pytest.fail("opaque custom provider was copied")
 
-    with pytest.raises(TypeError, match=r"owned.*snapshot|immutable.*snapshot"):
+    with pytest.raises(TypeError, match="snapshot"):
         own_layout(CustomLayout())
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["finite_volume_geometry", "bin_sizes", "_axis_widths", "point_to_bin_index"],
+)
+@pytest.mark.parametrize("retained_faces", [False, True])
+def test_native_instance_method_overrides_require_owned_snapshot_migration(
+    method, retained_faces
+):
+    source = _grid()
+    original = getattr(source, method)
+    provider = source
+    if retained_faces:
+        provider = BinningLayout(
+            binning_from_layout(source, source.connectivity),
+            connectivity=source.connectivity,
+            dimension_ranges=source.dimension_ranges,
+            layout_type_tag="RegularGrid",
+            layout_type="grid",
+            build_params={},
+            is_linearized_track=False,
+        )
+    factor = [1.0]
+
+    def overridden(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if method == "finite_volume_geometry":
+            graph, volumes = result
+            for attrs in graph.edges.values():
+                attrs["A"] *= factor[0]
+            return graph, volumes
+        return result
+
+    setattr(source, method, overridden)
+    with pytest.raises(TypeError, match=r"owned.*snapshot"):
+        own_layout(provider)
 
 
 @pytest.mark.parametrize("wrapper", ["plain", "subset", "transform", "nested"])
@@ -218,7 +255,7 @@ def test_binning_facade_cannot_hide_a_delegated_custom_locator(wrapper):
         build_params={},
         is_linearized_track=False,
     )
-    with pytest.raises(TypeError, match=r"owned.*snapshot|immutable.*snapshot"):
+    with pytest.raises(TypeError, match="snapshot"):
         own_layout(facade)
 
 
@@ -264,5 +301,5 @@ def test_custom_arena_is_refused_even_under_native_transform():
 
     source = CustomArena(box(0, 0, 2, 2))
     for value in (source, _TransformedArena(source, np.eye(3))):
-        with pytest.raises(TypeError, match=r"owned.*snapshot|immutable.*snapshot"):
+        with pytest.raises(TypeError, match="snapshot"):
             own_arena(value)

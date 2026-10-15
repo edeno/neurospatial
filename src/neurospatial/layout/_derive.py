@@ -346,7 +346,9 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     ------
     ValueError
         If the map is invalid, measures are not representable, or a track is
-        transformed by a map other than a translation or similarity.
+        transformed by a map other than a translation or similarity. Declared
+        non-Euclidean navigation distances also require a similarity: their
+        paths cannot be reconstructed from scalar lengths.
     """
     try:
         # Subnormal rotation entries can underflow in otherwise valid Gram or
@@ -405,9 +407,37 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin centers and strictly positive measures must remain finite and representable",
             "rescale the coordinate units before applying the transform",
         )
-    distances = np.linalg.norm(
-        centers[parent.pairs[:, 1]] - centers[parent.pairs[:, 0]], axis=1
+    original_distances = np.linalg.norm(
+        parent.centers[parent.pairs[:, 1]] - parent.centers[parent.pairs[:, 0]],
+        axis=1,
     )
+    declared_paths = not np.allclose(
+        parent.pair_distances,
+        original_distances,
+        rtol=64 * np.finfo(np.float64).eps,
+        atol=0.0,
+    )
+    if declared_paths:
+        if not similarity:
+            raise _refusal(
+                f"Cannot apply {kind} to declared navigation path distances.",
+                "scalar path lengths do not specify the paths needed for this transform",
+                "use a translation, rotation, reflection or uniform scaling, or rebuild "
+                "the bins with transformed path distances",
+            )
+        distances = parent.pair_distances * scale
+        if np.any((parent.pair_distances > 0) & (distances == 0)):
+            raise _refusal(
+                "Transformed navigation path distances are outside floating-point range.",
+                "positive path lengths must remain positive after scaling",
+                "rescale the coordinate units before applying the transform",
+            )
+    else:
+        # Keep the existing center-based calculation, including its rounding,
+        # for native Euclidean connectivity.
+        distances = np.linalg.norm(
+            centers[parent.pairs[:, 1]] - centers[parent.pairs[:, 0]], axis=1
+        )
     bins = SpatialBins.from_arrays(
         centers, sizes, parent.measure_dim, parent.pairs, distances
     )

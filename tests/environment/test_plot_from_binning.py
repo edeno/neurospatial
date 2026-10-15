@@ -20,6 +20,7 @@ from matplotlib.patches import RegularPolygon
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
+from neurospatial.layout._binning import LayoutFaces
 
 
 def record_path(data, prefix, path):
@@ -129,22 +130,28 @@ def record_figure(figure):
 
 
 def render_case(env, operation):
-    figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        if operation == "plot":
-            env.plot(ax=axes)
-        elif operation == "plot_field":
-            field = np.linspace(-1, 1, env.n_bins)
-            field[len(field) // 2] = np.nan
-            env.plot_field(
-                field, ax=axes, cmap="viridis", vmin=-1, vmax=1, colorbar=True
-            )
-        elif operation == "plot_1d":
-            env.plot_1d(ax=axes)
-        else:
-            raise ValueError(operation)
-        data = record_figure(figure)
+    # The recordings use default margins; serial animation rendering can change
+    # these process-wide settings in an earlier test on the same pytest worker.
+    margins = {
+        key: matplotlib.rcParamsDefault[key] for key in ("axes.xmargin", "axes.ymargin")
+    }
+    with matplotlib.rc_context(margins):
+        figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            if operation == "plot":
+                env.plot(ax=axes)
+            elif operation == "plot_field":
+                field = np.linspace(-1, 1, env.n_bins)
+                field[len(field) // 2] = np.nan
+                env.plot_field(
+                    field, ax=axes, cmap="viridis", vmin=-1, vmax=1, colorbar=True
+                )
+            elif operation == "plot_1d":
+                env.plot_1d(ax=axes)
+            else:
+                raise ValueError(operation)
+            data = record_figure(figure)
     data["warnings"] = np.asarray(
         [f"{warning.category.__name__}: {warning.message}" for warning in caught],
         dtype=str,
@@ -191,6 +198,14 @@ def test_plot_artists_unchanged(built_environment, request, plot_artists, operat
         plt.close(figure)
 
 
+def _detached_native_layout(env, monkeypatch):
+    """Inject a detached builder for tests deliberately corrupting layout data."""
+    faces = env.layout.binning().faces
+    assert isinstance(faces, LayoutFaces)
+    monkeypatch.setattr(env, "_layout", faces.layout)
+    return faces.layout
+
+
 def test_plot_field_renderer_by_component(built_environment, request, monkeypatch):
     """Unknown descriptive tags must retain the same geometric renderer."""
     expected_classes = {
@@ -207,7 +222,8 @@ def test_plot_field_renderer_by_component(built_environment, request, monkeypatc
         "track": "FillBetweenPolyCollection",
     }
     case = request.node.callspec.params["built_environment"]
-    monkeypatch.setattr(built_environment.layout, "_layout_type_tag", "unknown_layout")
+    layout = _detached_native_layout(built_environment, monkeypatch)
+    layout._layout_type_tag = "unknown_layout"
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
     try:
         built_environment.plot_field(
@@ -241,7 +257,8 @@ def test_plot_field_reads_binning_shapes(built_environment, monkeypatch):
         "_geometry",
         replace(env._geometry, binning=replace(env._binning, shapes=shapes)),
     )
-    monkeypatch.setattr(env.layout, "hex_radius_", 999.0)
+    layout = _detached_native_layout(env, monkeypatch)
+    layout.hex_radius_ = 999.0
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
     try:
         env.plot_field(np.ones(env.n_bins), ax=axes, colorbar=False)
@@ -267,8 +284,9 @@ def test_plot_field_does_not_read_private_layout_geometry(
         "mesh": ("_full_delaunay_tri", "_active_original_simplex_indices"),
     }
     case = request.node.callspec.params["built_environment"]
+    layout = _detached_native_layout(built_environment, monkeypatch)
     for name in attrs[case]:
-        monkeypatch.setattr(built_environment.layout, name, None)
+        setattr(layout, name, None)
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
     try:
         built_environment.plot_field(

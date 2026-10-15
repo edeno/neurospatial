@@ -793,7 +793,7 @@ class EnvironmentFields:
         Returns
         -------
         FaceGeometry
-            Validated faces and cell measures in connectivity edge order.
+            Validated faces and cell measures in authoritative bin-pair order.
         """
         if not self._binning.faces.available:
             raise self._binning.faces.missing_error(operation)

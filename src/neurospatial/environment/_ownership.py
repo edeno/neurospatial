@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, NoReturn
+from dataclasses import replace
+from typing import Any, NoReturn, cast
 
 import networkx as nx
 import numpy as np
@@ -49,7 +50,7 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClippedLocator, PolygonCells
+from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 _NATIVE_LAYOUTS = (
@@ -77,6 +78,11 @@ def _check_locator(locator: Locator) -> None:
     if isinstance(
         locator, (SubsetLocator, TransformedLocator, ClippedLocator)
     ) and type(locator) in (SubsetLocator, TransformedLocator, ClippedLocator):
+        if isinstance(locator, ClippedLocator):
+            if type(locator.cells) is not PolygonCells:
+                _migration(locator.cells)
+            if type(locator.mapping) is not ClipMapping:
+                _migration(locator.mapping)
         _check_locator(locator.base)
     elif type(locator) not in (
         RectilinearLocator,
@@ -87,15 +93,27 @@ def _check_locator(locator: Locator) -> None:
         _migration(locator)
 
 
+def _check_native_layout(layout: LayoutEngine) -> None:
+    """Admit native data, not instance-level replacements of geometry methods."""
+    if type(layout) not in _NATIVE_LAYOUTS:
+        _migration(layout)
+    if any(callable(getattr(type(layout), name, None)) for name in vars(layout)):
+        _migration(layout)
+
+
 def _check_binning(binning: Binning) -> None:
     """Refuse opaque callbacks before any provider can be deep-copied."""
     if type(binning) is not Binning or type(binning.bins) is not SpatialBins:
         _migration(binning)
+    if (
+        binning.clip_mapping is not None
+        and type(binning.clip_mapping) is not ClipMapping
+    ):
+        _migration(binning.clip_mapping)
     _check_locator(binning.locator)
     faces = binning.faces
     if type(faces) is LayoutFaces:
-        if type(faces.layout) not in _NATIVE_LAYOUTS:
-            _migration(faces.layout)
+        _check_native_layout(faces.layout)
     elif type(faces) not in (KnownFaces, MissingFaces):
         _migration(faces)
     for component, allowed in (
@@ -106,6 +124,38 @@ def _check_binning(binning: Binning) -> None:
     ):
         if component is not None and type(component) not in allowed:
             _migration(component)
+
+
+def _snapshot_locator(locator: Locator) -> Locator:
+    """Adapt external lookup data, including bases of built-in wrappers."""
+    if isinstance(
+        locator, (SubsetLocator, TransformedLocator, ClippedLocator)
+    ) and type(locator) in (SubsetLocator, TransformedLocator, ClippedLocator):
+        base = _snapshot_locator(locator.base)
+        return locator if base is locator.base else replace(locator, base=base)
+    if type(locator) in (
+        RectilinearLocator,
+        HexLocator,
+        MeshLocator,
+        NearestBinLocator,
+    ):
+        return locator
+    from neurospatial.extensions import _snapshot_provider
+
+    return cast("Locator", _snapshot_provider(locator, "locator"))
+
+
+def _snapshot_binning(binning: Binning) -> Binning:
+    """Normalize external component data before cross-component validation."""
+    locator = _snapshot_locator(binning.locator)
+    track = binning.linearization
+    if track is not None and type(track) is not TrackLinearization:
+        from neurospatial.extensions import _snapshot_provider
+
+        track = cast("TrackLinearization", _snapshot_provider(track, "track"))
+    if locator is binning.locator and track is binning.linearization:
+        return binning
+    return replace(binning, locator=locator, linearization=track)
 
 
 def _array_export(array: NDArray[Any]) -> NDArray[Any]:
@@ -222,9 +272,29 @@ def own_layout(layout: LayoutEngine) -> BinningLayout:
     if type(layout) is _OwnedLayout:
         return layout
     if type(layout) is BinningLayout:
-        _check_binning(layout._binning)
+        if any(callable(getattr(type(layout), name, None)) for name in vars(layout)):
+            _migration(layout)
+        binning = _snapshot_binning(layout._binning)
+        _check_binning(binning)
+        if binning is not layout._binning:
+            layout = BinningLayout(
+                binning,
+                connectivity=layout.connectivity,
+                dimension_ranges=layout.dimension_ranges,
+                layout_type_tag=layout._layout_type_tag,
+                layout_type=layout.layout_type,
+                build_params=layout._build_params_used,
+                is_linearized_track=layout.is_linearized_track,
+            )
     elif type(layout) not in _NATIVE_LAYOUTS:
-        _migration(layout)
+        from neurospatial.environment._from_bins import layout_from_bins
+        from neurospatial.extensions import _snapshot_provider
+
+        return own_layout(
+            layout_from_bins(cast("Binning", _snapshot_provider(layout, "binning")))
+        )
+    else:
+        _check_native_layout(layout)
     private = copy.deepcopy(layout)
     if private.connectivity is None:
         raise ValueError("Build the layout before publishing its owned snapshot.")
@@ -244,9 +314,10 @@ def own_arena(arena: Arena) -> Arena:
     separately detach it so mutable NumPy headers cannot reach its authority.
     """
 
-    def check(value: Arena) -> None:
+    def snapshot(value: Arena) -> Arena:
         if type(value) is _TransformedArena:
-            check(value.base)
+            base = snapshot(value.base)
+            return value if base is value.base else replace(value, base=base)
         elif type(value) not in (
             UnknownArena,
             OpenArena,
@@ -254,7 +325,9 @@ def own_arena(arena: Arena) -> Arena:
             TrackArena,
             EgocentricSurround,
         ):
-            _migration(value)
+            from neurospatial.extensions import _snapshot_provider
 
-    check(arena)
-    return copy.deepcopy(arena)
+            return cast("Arena", _snapshot_provider(value, "arena"))
+        return value
+
+    return copy.deepcopy(snapshot(arena))

@@ -77,7 +77,7 @@ def _active_indices(
 
 
 def _validate_graph(binning: Binning, graph: nx.Graph) -> None:
-    """Check graph identities and navigation geometry in stored edge order."""
+    """Check graph equivalence while keeping bin-pair order authoritative."""
     bins = binning.bins
     nodes = list(graph.nodes)
     if (
@@ -93,9 +93,11 @@ def _validate_graph(binning: Binning, graph: nx.Graph) -> None:
         raise ValueError("connectivity nodes must be integer labels 0..n_bins-1.")
     for node in range(bins.n_bins):
         _equal(graph.nodes[node].get("pos"), bins.centers[node], f"node {node} pos")
-    pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
-    _equal(pairs, bins.pairs, "connectivity pairs (edge order and orientation)")
-    for index, (u, v) in enumerate(graph.edges()):
+    expected = {frozenset((int(u), int(v))) for u, v in bins.pairs}
+    actual = {frozenset((int(u), int(v))) for u, v in graph.edges()}
+    if actual != expected:
+        raise ValueError("connectivity pairs do not match the binning geometry.")
+    for index, (u, v) in enumerate(bins.pairs):
         _equal(
             graph.edges[u, v].get("distance"),
             bins.pair_distances[index],
@@ -1076,6 +1078,8 @@ class BinningLayout:
         track = self._binning.linearization
         if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
             return track.active_mask.shape
+        if isinstance(self._binning.locator, HexLocator):
+            return self._binning.locator.centers_shape
         return (self._binning.bins.n_bins,)
 
     @property
@@ -1086,6 +1090,13 @@ class BinningLayout:
         track = self._binning.linearization
         if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
             return track.active_mask
+        if isinstance(self._binning.locator, HexLocator):
+            locator = self._binning.locator
+            hex_mask: NDArray[np.bool_] = (locator.flat_to_active >= 0).reshape(
+                locator.centers_shape
+            )
+            hex_mask.setflags(write=False)
+            return hex_mask
         mask = np.ones(self._binning.bins.n_bins, dtype=bool)
         mask.setflags(write=False)
         return mask

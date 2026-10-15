@@ -25,6 +25,9 @@ NAMESPACES = (
     "neurospatial.annotation",
     "neurospatial.regions",
     "neurospatial.layout",
+    "neurospatial.binning",
+    "neurospatial.extensions",
+    "neurospatial.testing",
 )
 SNAPSHOT = Path(__file__).parent / "data" / "public_api.txt"
 UPDATE_ENV = "NEUROSPATIAL_UPDATE_API_SNAPSHOT"

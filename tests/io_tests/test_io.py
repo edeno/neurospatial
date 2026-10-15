@@ -9,8 +9,9 @@ import numpy as np
 import pytest
 
 import neurospatial
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout._locators import HexLocator
 
 
 def test_source_install_hints_reference_real_extras() -> None:
@@ -54,14 +55,16 @@ class TestSerialization:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
-        env.units = "cm"
-        env.frame = "world"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="world")
         return env
 
     @pytest.fixture
     def env_with_regions(self, simple_env):
         """Add regions to environment."""
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
         return simple_env
 
     def test_to_file_creates_both_files(self, simple_env, tmp_path):
@@ -249,7 +252,7 @@ class TestPathlibSupport:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         return env
 
     @pytest.mark.parametrize("save_as_str", [True, False])
@@ -283,8 +286,8 @@ class TestAtomicWriteAndDtypes:
         rng = np.random.default_rng(0)
         data = rng.standard_normal((300, 2)) * 8
         env = Environment.from_samples(data, bin_size=3.0, name="atomic_env")
-        env.units = "cm"
-        env.frame = "world"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="world")
         return env
 
     def test_npz_write_failure_leaves_no_partial_json(
@@ -458,11 +461,13 @@ class TestAllLayoutRoundTrip:
         if (
             env._binning.rectilinear is not None
             or env._binning.linearization is not None
+            or isinstance(env._binning.locator, HexLocator)
         ):
             assert loaded.active_mask is not None
+            assert loaded.grid_shape == env.grid_shape
             np.testing.assert_array_equal(
-                np.sort(loaded.active_mask.ravel()),
-                np.sort(env.active_mask.ravel()),
+                loaded.active_mask,
+                env.active_mask,
             )
         else:
             np.testing.assert_array_equal(

@@ -1438,7 +1438,10 @@ def apply_transform_to_environment(
     - graph node 'pos' attributes
     - regions (points and polygons)
 
-    Edge distances and vectors are recomputed after transformation.
+    Edge vectors and Euclidean distances are recomputed after transformation.
+    Declared navigation path lengths are preserved by rigid maps and scaled
+    by uniform scaling. Other affine maps require known paths and are refused
+    when only their scalar lengths are supplied.
 
     For 2D environments, edge 'angle_2d' attributes are also recomputed.
 
@@ -1498,19 +1501,22 @@ def apply_transform_to_environment(
         new_graph.nodes[node_id]["pos"] = tuple(transformed_centers[node_id])
 
     # Recompute edge attributes (distance, vector, and angle_2d for 2D)
-    for index, (u, v) in enumerate(new_graph.edges):
+    for u, v in new_graph.edges:
         pos_u = np.array(new_graph.nodes[u]["pos"])
         pos_v = np.array(new_graph.nodes[v]["pos"])
         vec = pos_v - pos_u
-        dist = float(binning.bins.pair_distances[index])
 
         new_graph.edges[u, v]["vector"] = tuple(vec)
-        new_graph.edges[u, v]["distance"] = dist
 
         # Recompute angle_2d for 2D environments only
         if env.n_dims == 2 and "angle_2d" in new_graph.edges[u, v]:
             angle = float(np.arctan2(vec[1], vec[0]))
             new_graph.edges[u, v]["angle_2d"] = angle
+
+    for (u, v), distance in zip(
+        binning.bins.pairs, binning.bins.pair_distances, strict=True
+    ):
+        new_graph.edges[u, v]["distance"] = float(distance)
 
     # Transform dimension_ranges (N-dimensional)
     transformed_dim_ranges = None

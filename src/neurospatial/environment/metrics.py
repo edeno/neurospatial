@@ -345,7 +345,7 @@ class EnvironmentMetrics:
             DataFrame with edge attributes. Always includes:
             - `'source'`: Source bin ID
             - `'target'`: Target bin ID
-            - `'distance'`: Euclidean distance between bin centers
+            - `'distance'`: Stored navigation distance between bins
             - `'vector'`: Displacement vector tuple
             - `'edge_id'`: Unique edge ID
             - `'angle_2d'`: Angle for 2D layouts (optional)
@@ -385,8 +385,22 @@ class EnvironmentMetrics:
     def _edge_attributes_cached(self: SelfEnv) -> pd.DataFrame:
         # Extract edge attributes from connectivity graph
         edge_attrs = []
-        for source, target in self.connectivity.edges():
+        centers = self.bin_centers
+        graph_orientation = {
+            frozenset((source, target)): (source, target)
+            for source, target in self.connectivity.edges()
+        }
+        for source, target in self._binning.bins.pairs:
             attrs = self.connectivity.edges[source, target].copy()
+            if graph_orientation[frozenset((source, target))] != (source, target):
+                # Undirected graph insertion order does not establish the
+                # orientation of retained attributes. Derive it from the pair
+                # instead of blindly negating a possibly already aligned vector.
+                vector = centers[target] - centers[source]
+                vector[vector == 0.0] = 0.0
+                attrs["vector"] = tuple(vector)
+                if "angle_2d" in attrs:
+                    attrs["angle_2d"] = float(np.arctan2(vector[1], vector[0]))
             attrs["source"] = source
             attrs["target"] = target
             edge_attrs.append(attrs)

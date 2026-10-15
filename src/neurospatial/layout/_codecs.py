@@ -119,6 +119,10 @@ def decode(
     name = meta.get("codec")
     codec = _CODECS.get(name) if isinstance(name, str) else None
     if codec is None:
+        if isinstance(name, str):
+            from neurospatial.extensions import _decode_snapshot
+
+            return _decode_snapshot(meta, arrays, prefix)
         raise ValueError(
             f"cannot load {name!r}: no codec is registered for it.\n"
             "Fix: use a neurospatial version supporting this geometry codec."

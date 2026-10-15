@@ -262,6 +262,62 @@ class EnvironmentFactories:
     """
 
     @classmethod
+    def from_bins(
+        cls,
+        binning: object,
+        *,
+        name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
+        regions: Regions | None = None,
+        arena: Arena | None = None,
+    ) -> Environment:
+        """Construct an environment from explicit Cartesian binning data.
+
+        Parameters
+        ----------
+        binning : neurospatial.binning.Binning or registered provider
+            Bin centers, measures and ordered neighbor pairs, with an explicit
+            supported locator. KnownFaces enables finite-volume operations;
+            MissingFaces explicitly refuses them. Shapes are required for exact
+            clipping. Centers and sizes alone cannot establish these capabilities.
+        name : str, default=""
+            Environment name.
+        units, frame : str or None, optional
+            Coordinate declarations; they do not convert coordinates.
+        regions : Regions or None, optional
+            Named regions to snapshot at construction.
+        arena : Arena or None, optional
+            Continuous domain. Omission infers only what the supplied geometry
+            establishes, without inventing physical walls.
+
+        Returns
+        -------
+        Environment
+            Owned environment preserving bin IDs and supplied pair order.
+            ``edge_pairs`` defines gradient and flux order; NetworkX iteration
+            may use a different order.
+        """
+        from neurospatial.environment._from_bins import layout_from_bins
+
+        if getattr(cls, "_POLAR", False):
+            raise TypeError(
+                "from_bins accepts Cartesian data; use the polar factory for polar coordinates."
+            )
+        layout = layout_from_bins(binning)
+        env_cls = cast("type[Environment]", cls)
+        return env_cls(
+            name=name,
+            layout=layout,
+            layout_type_used=layout._layout_type_tag,
+            layout_params_used={},
+            units=units,
+            frame=frame,
+            regions=regions,
+            arena=arena,
+        )
+
+    @classmethod
     def from_samples(
         cls,
         positions: NDArray[np.float64],
@@ -1505,6 +1561,10 @@ class EnvironmentFactories:
         # and the saved layout parameters must not change if the caller edits
         # their arrays (or the base of a view) afterwards.
         layout_params = _owned_copy(layout_params)
+        if arena is not None:
+            from neurospatial.environment._ownership import own_arena
+
+            arena = own_arena(arena)
         layout_instance = cls._create_layout(kind, layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
