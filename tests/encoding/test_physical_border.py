@@ -207,3 +207,14 @@ def test_combined_partial_wall_evidence_does_not_assert_unknown_child_outline():
     )
     env = Environment.combine({"known": known, "unknown": unknown}, auto_bridge=False)
     assert physical_walls(env.arena).equals(physical_walls(known.arena))
+
+
+def test_unknown_wall_error_distinguishes_geometry_from_map_support():
+    env = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 2
+    )
+    with pytest.raises(NotImplementedError) as error:
+        border_score(env, np.ones(env.n_bins))
+    assert "measured" in str(error.value)
+    assert "bin support" in str(error.value)
+    assert "boundary_source='analysis'" in str(error.value)
