@@ -195,8 +195,8 @@ def test_fields_dimension_error_message(test_env):
 
 def test_pickle_failure_error_message(test_env, test_fields, tmp_path, monkeypatch):
     """Verify pickle failure provides actionable solutions."""
-    # Create environment with unpicklable cache
-    test_env._kdtree_cache = {"unpicklable": lambda: None}  # Functions can't pickle
+    # Transient caches are omitted from pickle; persistent caller state is not.
+    test_env.user_annotation = {"unpicklable": lambda: None}
 
     # Skip ffmpeg check for this test
     monkeypatch.setattr(
