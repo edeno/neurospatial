@@ -132,12 +132,46 @@ class _ReadOnlyGraphAttributes(Mapping[str, Any]):
         return type(self), (self.copy(),)
 
 
+class _ReadOnlyGraphMetadata(dict[str, Any]):
+    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
+
+    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    clear = _ReadOnlyGraphAttributes._refuse_edit
+    pop = _ReadOnlyGraphAttributes._refuse_edit
+    popitem = _ReadOnlyGraphAttributes._refuse_edit
+    setdefault = _ReadOnlyGraphAttributes._refuse_edit
+    update = _ReadOnlyGraphAttributes._refuse_edit
+    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
+        return copy_module.deepcopy(dict(self), memo)
+
+
 class _PublishedGraph(nx.Graph):
     """Freeze public graph bindings as well as topology and attribute values.
 
     NetworkX's cached views remain lazy. Copies construct an ordinary editable
     instance of this subclass; only environment publication seals its bindings.
     """
+
+    @property
+    def graph(self) -> dict[str, Any]:
+        # node_link_data retains this object directly, unlike node/edge
+        # attributes. Return a detached dict so standard JSON encoding works
+        # without exposing the authoritative metadata to base-dict mutation.
+        attributes = self.__dict__["graph"]
+        if not self.__dict__.get("_published", False):
+            return cast("dict[str, Any]", attributes)
+        return _ReadOnlyGraphMetadata(attributes.copy())
+
+    @graph.setter
+    def graph(self, attributes: dict[str, Any]) -> None:
+        if self.__dict__.get("_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        self.__dict__["graph"] = attributes
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
