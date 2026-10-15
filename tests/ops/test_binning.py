@@ -82,22 +82,33 @@ class TestMapPointsToBins:
 
     def test_lowest_index_tie_break_handles_more_than_ten_ties(self):
         """lowest_index should consider all equidistant bins, not only KDTree k."""
+        from neurospatial import Environment
+        from neurospatial.binning import (
+            Binning,
+            MissingFaces,
+            NearestBinLocator,
+            SpatialBins,
+        )
         from neurospatial.ops.binning import map_points_to_bins
-
-        class MinimalEnvironment:
-            def __init__(self, bin_centers):
-                self.bin_centers = bin_centers
-                self._kdtree_cache = None
 
         n_bins = 20
         angles = np.linspace(0.0, 2.0 * np.pi, n_bins, endpoint=False)
         bin_centers = np.column_stack([np.cos(angles), np.sin(angles)])
-        env = MinimalEnvironment(bin_centers)
+        env = Environment.from_bins(
+            Binning(
+                "sites",
+                SpatialBins.from_arrays(
+                    bin_centers, np.ones(n_bins), 2, np.empty((0, 2), dtype=int), []
+                ),
+                NearestBinLocator(bin_centers),
+                MissingFaces("Only point sites were measured."),
+            )
+        )
         points = np.array([[0.0, 0.0]])
 
         bins = map_points_to_bins(
             env,
-            points,  # type: ignore[arg-type]
+            points,
             tie_break="lowest_index",
             max_distance=2.0,
         )

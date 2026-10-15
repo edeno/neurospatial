@@ -21,6 +21,7 @@ from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.ops._protocols import CacheClearConsumer, NearestBinConsumer
 
 
 class TieBreakStrategy(Enum):
@@ -246,6 +247,22 @@ def map_points_to_bins(
       processing.
 
     """
+    consumer: NearestBinConsumer = env
+    return consumer.nearest_bin(
+        points,
+        tie_break=tie_break,
+        return_dist=return_dist,
+        max_distance=max_distance,
+        max_distance_factor=max_distance_factor,
+    )
+
+
+def _validate_nearest_options(
+    tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"],
+    max_distance: float | None,
+    max_distance_factor: float | None,
+) -> TieBreakStrategy:
+    """Validate distance controls and normalize the supported tie-break strings."""
     # Validate parameters
     if max_distance is not None and max_distance_factor is not None:
         raise ValueError(
@@ -271,12 +288,20 @@ def map_points_to_bins(
                 f"Must be one of: {[e.value for e in TieBreakStrategy]}"
             ) from None
 
-    # Build or retrieve cached KD-tree
-    if not hasattr(env, "_kdtree_cache") or env._kdtree_cache is None:
-        env._kdtree_cache = cKDTree(env.bin_centers)
+    return tie_break
 
-    kdtree: cKDTree = env._kdtree_cache
 
+def _nearest_bin_query(
+    bin_centers: NDArray[np.float64],
+    kdtree: cKDTree,
+    points: NDArray[np.float64],
+    *,
+    tie_break: TieBreakStrategy = TieBreakStrategy.LOWEST_INDEX,
+    return_dist: bool = False,
+    max_distance: float | None = None,
+    max_distance_factor: float | None = None,
+) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
+    """Query explicit centers and their tree using validated distance controls."""
     # Query KD-tree
     if tie_break == TieBreakStrategy.CLOSEST_CENTER:
         # Fast path: just use nearest neighbor
@@ -292,7 +317,7 @@ def map_points_to_bins(
         # rows, so >10 equidistant bins are still resolved correctly. The k=10
         # cap only bounds the cheap first pass; it is not an upper bound on the
         # number of ties that can be resolved exactly.
-        max_neighbors = min(10, len(env.bin_centers))
+        max_neighbors = min(10, len(bin_centers))
         distances_kn, indices_kn = kdtree.query(points, k=max_neighbors, workers=-1)
 
         # Handle k=1 case (single bin environment)
@@ -317,7 +342,7 @@ def map_points_to_bins(
             tied_rows = np.count_nonzero(is_tied, axis=1) > 1
             if np.any(tied_rows):
                 all_distances = np.linalg.norm(
-                    env.bin_centers[None, :, :] - points[tied_rows, None, :],
+                    bin_centers[None, :, :] - points[tied_rows, None, :],
                     axis=2,
                 )
                 min_distances = np.min(all_distances, axis=1, keepdims=True)
@@ -339,14 +364,14 @@ def map_points_to_bins(
             # Estimate typical bin spacing and apply factor
             # assert: max_distance_factor is not None (checked above)
             assert max_distance_factor is not None  # for mypy
-            typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, env.bin_centers)
+            typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, bin_centers)
             threshold = max_distance_factor * typical_bin_spacing
 
         # Mark points beyond threshold as outside
         bin_indices[distances > threshold] = -1
-    elif len(env.bin_centers) > 1:
+    elif len(bin_centers) > 1:
         # Backward compatibility: use old heuristic (10× typical spacing)
-        typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, env.bin_centers)
+        typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, bin_centers)
 
         # Mark points that are suspiciously far as outside
         threshold = 10 * typical_bin_spacing
@@ -388,8 +413,8 @@ def clear_kdtree_cache(env: Environment) -> None:
     >>> clear_kdtree_cache(env)  # doctest: +SKIP
 
     """
-    if hasattr(env, "_kdtree_cache"):
-        env._kdtree_cache = None
+    consumer: CacheClearConsumer = env
+    consumer.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
 
 def regions_to_mask(

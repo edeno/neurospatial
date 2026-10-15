@@ -77,6 +77,7 @@ from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
 )
+from neurospatial.ops.binning import TieBreakStrategy
 from neurospatial.ops.calculus import (
     _compute_divergence_operator,
     compute_differential_operator,
@@ -1352,6 +1353,73 @@ class Environment(Generic[_C]):
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
         self._require_cartesian("bin_at()")
         return self._locate(points_nd)
+
+    @check_fitted
+    def nearest_bin(
+        self,
+        points: NDArray[np.float64],
+        *,
+        tie_break: TieBreakStrategy
+        | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
+        return_dist: bool = False,
+        max_distance: float | None = None,
+        max_distance_factor: float | None = None,
+    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
+        """Find the nearest bin center for every point in stored coordinates.
+
+        Parameters
+        ----------
+        points : ndarray, shape (n_points, n_dims)
+            Coordinates to compare with bin centers.
+        tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
+            Select the lowest bin ID among ties, or use "closest_center" for
+            the tree's nearest candidate.
+        return_dist : bool, default=False
+            Also return Euclidean distances to the selected centers.
+        max_distance : float or None, optional
+            Maximum Euclidean distance; rejected points return bin ID -1.
+        max_distance_factor : float or None, optional
+            Maximum distance as a multiple of typical center spacing. Cannot
+            be combined with max_distance. Without either limit, the existing
+            ten-times-typical-spacing rule rejects distant points.
+
+        Returns
+        -------
+        ndarray or tuple of ndarray
+            Bin IDs, shape (n_points,). When return_dist=True, also return
+            distances with infinity for rejected points.
+
+        Notes
+        -----
+        This compares Euclidean distance in stored coordinate columns and
+        reuses an environment-owned KD-tree. It does not test containment;
+        use bin_at() for Cartesian occupancy and trajectory assignment.
+        On polar environments, radius and angle are compared as raw columns
+        with mixed coordinate units. That preserves map_points_to_bins()
+        behavior and is neither physical polar distance nor containment.
+        """
+        from scipy.spatial import cKDTree
+
+        from neurospatial.ops.binning import (
+            _nearest_bin_query,
+            _validate_nearest_options,
+        )
+
+        resolved = _validate_nearest_options(
+            tie_break, max_distance, max_distance_factor
+        )
+        centers = self._binning.bins.centers
+        if self._kdtree_cache is None:
+            self._kdtree_cache = cKDTree(centers)
+        return _nearest_bin_query(
+            centers,
+            self._kdtree_cache,
+            points,
+            tie_break=resolved,
+            return_dist=return_dist,
+            max_distance=max_distance,
+            max_distance_factor=max_distance_factor,
+        )
 
     @check_fitted
     def contains(

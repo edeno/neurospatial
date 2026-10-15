@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import DiffusionEigenbasisCache
+    from neurospatial.ops.binning import TieBreakStrategy
     from neurospatial.ops.transforms import Affine2D, AffineND
 
 
@@ -27,6 +28,32 @@ class AffineTransformConsumer(Protocol):
     def apply_transform(
         self, transform: AffineND | Affine2D, *, name: str | None = None
     ) -> Environment: ...
+
+
+class NearestBinConsumer(Protocol):
+    """Nearest-bin assignment with environment-owned query caching."""
+
+    def nearest_bin(
+        self,
+        points: NDArray[np.float64],
+        *,
+        tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"] = ...,
+        return_dist: bool = False,
+        max_distance: float | None = None,
+        max_distance_factor: float | None = None,
+    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
+
+
+class CacheClearConsumer(Protocol):
+    """Public control over which environment-owned analyses are discarded."""
+
+    def clear_cache(
+        self,
+        *,
+        kdtree: bool = True,
+        kernels: bool = True,
+        cached_properties: bool = True,
+    ) -> None: ...
 
 
 class DiffusionGeometryConsumer(Protocol):
