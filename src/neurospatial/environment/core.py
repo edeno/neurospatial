@@ -6435,8 +6435,9 @@ class Environment(Generic[_C]):
         Notes
         -----
         The environment owns and reuses the expensive geometry and global
-        eigenbasis. Repeated requests at the same or smaller rank reuse that
-        work. Returned arrays cannot change the cache. Unoccupied components
+        truncated eigenbasis. Requests reuse a cached basis when it is
+        sufficient; near-full bases are rebuilt per call rather than retained.
+        Returned arrays cannot change the cache. Unoccupied components
         contribute no basis rows; every occupied component has one unpenalized
         constant mode, followed by modes with positive smoothness penalties.
         """
