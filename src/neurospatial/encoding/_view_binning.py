@@ -69,11 +69,14 @@ def _resolve_wall_contacts(
 ) -> NDArray[np.intp]:
     """Resolve rounded boundary hits using cells that actually touch the wall.
 
-    A single representable step can remain outside a slanted polygon. For a
-    failed hit, intersect its approach segment with a retained wall-touching
-    cell, and query an interior point of the terminal segment. Contact must be
-    within the cell's bounded coordinate uncertainty; a missing strip between
-    a cell and the wall is never bridged by an inward search.
+    A single representable step can remain outside a slanted or curved
+    polygon, and clipped cell edges only nearly coincide with such a wall. For
+    a failed hit, a retained cell reaches the wall there when the hit lies
+    within the cell's bounded coordinate uncertainty of both the cell and the
+    wall. Intersect the approach segment ending at the hit with that cell, and
+    query an interior point of the terminal piece. A missing strip between a
+    cell and the wall is wider than that uncertainty and is never bridged by
+    an inward search.
     """
     import shapely
 
@@ -105,11 +108,9 @@ def _resolve_wall_contacts(
     if not len(missing):
         return bins
     polygons = np.asarray(cells, dtype=object)
-    # Union first: adjacent clipped cells can carry independently rounded
-    # fragments of the same wall. Their shared edges cancel in the union.
-    contact = shapely.union_all(polygons).intersection(walls)
-    if contact.is_empty:
-        return bins
+    # Distance to the hit, not an overlay of cells with the wall: near-
+    # coincident clipped edges intersect a curved wall only in scattered
+    # rounded fragments, which can lie far from the hit.
     budgets = np.array(
         [
             np.hypot.reduce(
@@ -122,17 +123,16 @@ def _resolve_wall_contacts(
         point = shapely.Point(hits[row])
         distances = shapely.distance(polygons, point)
         candidates = np.flatnonzero(
-            (distances <= budgets) & (contact.distance(point) <= budgets)
+            (distances <= budgets) & (walls.distance(point) <= budgets)
         )
-        end = shapely.get_point(shapely.shortest_line(point, contact), -1)
-        segment = shapely.LineString([origins[row], [end.x, end.y]])
+        segment = shapely.LineString([origins[row], hits[row]])
         for index in candidates:
             pieces = shapely.get_parts(segment.intersection(cells[index]))
             for piece in pieces:
                 if piece.geom_type != "LineString" or piece.length == 0:
                     continue
                 # Only the terminal approach interval establishes ownership.
-                if piece.distance(end) > budgets[index]:
+                if piece.distance(point) > budgets[index]:
                     continue
                 middle = piece.interpolate(0.5, normalized=True)
                 query = np.array([[middle.x, middle.y]])
@@ -370,6 +370,9 @@ def _precompute_view_bins(
                     "Physical wall hit has no retained bin on the observer's side. "
                     "Build bins that reach the measured wall before computing view rates; "
                     "adding OpenArena or clipping existing cells cannot add missing bins. "
+                    "For curved or slanted walls, clip a grid that covers the arena with "
+                    "grid.clip(polygon) and pass those cells to Environment.from_bins(..., "
+                    "arena=OpenArena(polygon)). "
                     "For rotated rectangular arenas, construct bins in the arena-aligned frame "
                     "and transform bins, arena and observations together. Alternatively, explicitly "
                     "choose boundary_source='analysis' to encode the retained analysis boundary. "

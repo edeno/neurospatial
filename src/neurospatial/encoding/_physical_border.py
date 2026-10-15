@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
+    from neurospatial.arena import Arena
     from neurospatial.environment._protocols import BorderConsumer
 
 
@@ -30,6 +31,7 @@ def _prepare_physical_border(
     walls: shapely.Geometry,
 ) -> _PhysicalBorderContact:
     """Require represented, observed wall coverage before interpreting activity."""
+    from neurospatial.arena import _CombinedArena, _TransformedArena
     from neurospatial.layout._composition import CombinedLocator, composition_view
     from neurospatial.layout._locators import SubsetLocator, TransformedLocator
     from neurospatial.layout._polygon import ClippedLocator, materialize_cells
@@ -43,7 +45,37 @@ def _prepare_physical_border(
             return any(independent_frame(child.locator) for child in locator.children)
         return False
 
+    def declares_walls(arena: Arena) -> bool:
+        if isinstance(arena, _TransformedArena):
+            return declares_walls(arena.base)
+        if isinstance(arena, _CombinedArena):
+            return all(declares_walls(child) for child in arena.children)
+        return bool(arena.walls) or arena.physical_footprint_known
+
+    # A field in a component without declared walls would otherwise be
+    # scored against the walls of other components.
     composition = composition_view(env._binning.locator)
+    arena = env.arena
+    while isinstance(arena, _TransformedArena):
+        arena = arena.base
+    if isinstance(arena, _CombinedArena) and not declares_walls(arena):
+        missing = [
+            index
+            for index, child in enumerate(arena.children)
+            if not declares_walls(child)
+        ]
+        keys = composition[0].keys if composition is not None else ()
+        named = (
+            ", ".join(repr(keys[index]) for index in missing)
+            if len(keys) == len(arena.children)
+            else f"{len(missing)} of {len(arena.children)}"
+        )
+        raise NotImplementedError(
+            f"Physical border scores need declared walls for every combined component; component(s) {named} have none, "
+            "so fields there would be scored against walls in other components. Build each component with "
+            "measured walls (Environment.from_polygon(...), OpenArena or MaskArena(physical_footprint_known=True)) "
+            "before combining, or explicitly use boundary_source='analysis'."
+        )
     if composition is not None and any(
         independent_frame(child.locator) for child in composition[0].children
     ):

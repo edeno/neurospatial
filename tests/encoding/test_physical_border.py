@@ -296,3 +296,78 @@ def test_observed_internal_wall_side_does_not_supply_the_other_sides_missing_rat
     rates[env.bin_centers[:, 0] == 4.5] = np.nan
     with pytest.raises(NotImplementedError, match="finite firing rates"):
         border_score(env, rates)
+
+
+def _wall_cell_with_unobserved_wall():
+    """A west-wall field in a room whose east-wall cells were never observed."""
+    env = physical()
+    rates = np.where(env.bin_centers[:, 0] < 1, 10.0, 0.1)
+    rates[env.bin_centers[:, 0] > 9] = np.nan
+    return env, rates
+
+
+def test_summary_does_not_call_a_wall_cell_place_when_border_is_unavailable():
+    from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
+
+    env, rates = _wall_cell_with_unobserved_wall()
+    untuned = np.where(np.isnan(rates), np.nan, 1.0)
+    occupancy = np.ones(env.n_bins)
+    single = SpatialRateResult(rates, occupancy, env, method="binned", bandwidth=0.0)
+    population = SpatialRatesResult(
+        np.stack([rates, untuned]), occupancy, env, method="binned", bandwidth=0.0
+    )
+    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        single.border_score()
+    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        population.label_cell_types()
+
+    single_table = single.summary_table()
+    population_table = population.summary_table()
+    # Place versus border cannot be decided without the border score, but the
+    # information gate still rules out every type for an untuned cell.
+    assert single_table["cell_type"].tolist() == ["undetermined"]
+    assert population_table["cell_type"].tolist() == ["undetermined", "unclassified"]
+    for table in (single_table, population_table):
+        assert np.isnan(table["border_score"]).all()
+        assert "border_score" in table.attrs["unavailable_metrics"]
+    # The cell's field is on the observed west wall; the analysis boundary
+    # scores it and the label follows the score.
+    assert population.summary_table(boundary_source="analysis")[
+        "cell_type"
+    ].tolist() == ["border", "unclassified"]
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_combined_component_without_walls_is_not_scored_against_other_walls(metric):
+    known = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(6.0),) * 2,
+        arena=OpenArena(box(0, 0, 5, 5)),
+    )
+    unknown = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+    )
+    env = Environment.combine({"known": known, "unknown": unknown}, auto_bridge=False)
+    # This field hugs the unknown room's west edge, which is not a declared wall.
+    field = ((env.bin_centers[:, 0] > 10) & (env.bin_centers[:, 0] < 11)).astype(float)
+    with pytest.raises(NotImplementedError) as error:
+        border_score(env, field, metric=metric)
+    message = str(error.value)
+    assert "'unknown'" in message
+    assert "'known'" not in message
+    assert "boundary_source='analysis'" in message
+    assert border_score(env, field, boundary_source="analysis", metric=metric) == 1.0
+
+    walled = Environment.combine(
+        {
+            "known": known,
+            "walled": Environment.from_grid_mask(
+                np.ones((5, 5), dtype=bool),
+                grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+                arena=OpenArena(box(10, 0, 15, 5)),
+            ),
+        },
+        auto_bridge=False,
+    )
+    assert border_score(walled, field, metric=metric) > 0.5

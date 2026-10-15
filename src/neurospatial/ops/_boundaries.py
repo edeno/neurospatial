@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
     from neurospatial.ops._protocols import BoundaryConsumer, ObserverConsumer
 
 BoundarySource = Literal["physical", "analysis"]
+Interior = Callable[[NDArray[np.float64]], NDArray[np.bool_]]
 
 
 def boundary_geometry(
@@ -49,28 +51,58 @@ def boundary_geometry(
     return physical_walls(env.arena)
 
 
-def physical_walls(arena: Arena) -> shapely.Geometry:
-    """Read asserted planar wall evidence independently of analysis bins."""
+def _physical_evidence(
+    arena: Arena,
+) -> tuple[list[shapely.Geometry], list[shapely.Geometry]]:
+    """Explicit wall lines and asserted footprint polygons in the arena frame."""
     from neurospatial.arena import _CombinedArena, _mapped_geometry, _TransformedArena
 
-    def collect(value: Arena) -> list[shapely.Geometry]:
-        if isinstance(value, _CombinedArena):
-            return [part for child in value.children for part in collect(child)]
-        if isinstance(value, _TransformedArena):
-            return [
-                _mapped_geometry(part, value.forward) for part in collect(value.base)
-            ]
-        parts: list[shapely.Geometry] = list(value.walls)
-        if value.physical_footprint_known:
-            domain = value.polygonal_domain()
-            if domain is None:
-                raise NotImplementedError(
-                    "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
-                )
-            parts.append(domain.boundary)
-        return parts
+    if isinstance(arena, _CombinedArena):
+        lines: list[shapely.Geometry] = []
+        footprints: list[shapely.Geometry] = []
+        for child in arena.children:
+            child_lines, child_footprints = _physical_evidence(child)
+            lines += child_lines
+            footprints += child_footprints
+        return lines, footprints
+    if isinstance(arena, _TransformedArena):
+        lines, footprints = _physical_evidence(arena.base)
+        return (
+            [_mapped_geometry(part, arena.forward) for part in lines],
+            [_mapped_geometry(part, arena.forward) for part in footprints],
+        )
+    lines = list(arena.walls)
+    footprints = []
+    if arena.physical_footprint_known:
+        domain = arena.polygonal_domain()
+        if domain is None:
+            raise NotImplementedError(
+                "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
+            )
+        footprints.append(domain)
+    return lines, footprints
 
-    parts = collect(arena)
+
+def physical_footprint_interior(arena: Arena) -> Interior | None:
+    """Closed asserted footprints, or None when only wall lines are known."""
+    footprints = _physical_evidence(arena)[1]
+    if not footprints:
+        return None
+    footprint = unary_union(footprints)
+    return lambda points: np.asarray(
+        shapely.covers(footprint, shapely.points(points)), dtype=np.bool_
+    )
+
+
+def analysis_interior(env: ObserverConsumer) -> Interior:
+    """Retained analysis support, matching analysis-mode observer validity."""
+    return lambda points: np.asarray(env.bin_at(points) >= 0, dtype=np.bool_)
+
+
+def physical_walls(arena: Arena) -> shapely.Geometry:
+    """Read asserted planar wall evidence independently of analysis bins."""
+    lines, footprints = _physical_evidence(arena)
+    parts = lines + [footprint.boundary for footprint in footprints]
     if not parts:
         raise NotImplementedError(
             "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
@@ -123,16 +155,106 @@ def _ray_segments(
     return valid, selected, end
 
 
+def _start_allowance(starts: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Eight ULPs of each start coordinate, as a distance, shape (n_segments,)."""
+    return np.asarray(np.hypot.reduce(8 * np.spacing(np.abs(starts)), axis=1))
+
+
+def _start_departures(
+    contacts: shapely.Geometry | NDArray[np.object_],
+    starts: NDArray[np.float64],
+    ends: NDArray[np.float64],
+    interior: Interior | None,
+) -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
+    """Find segments that start on a wall and leave it into the domain.
+
+    A segment starting on a wall meets it at zero distance. That contact is the
+    observer's own position, not a viewed wall, when the segment departs from
+    the wall into the domain: every start contact is a point (the segment does
+    not run along a wall), and the open interval up to the next contact, or to
+    the segment end, lies in ``interior``. Testing that interval's midpoint
+    decides the side from the wall arrangement alone, without a length scale.
+    Zero-thickness walls inside the domain are therefore left on either side.
+    ``interior=None`` means only wall lines are known, so any departure counts.
+    Start contacts allow the same eight ULPs of the start coordinates as
+    terminal cue contacts allow at the cue.
+
+    Parameters
+    ----------
+    contacts : shapely geometry array, shape (n_segments,)
+        Intersection of each segment with the walls.
+    starts, ends : ndarray, shape (n_segments, 2)
+        Oriented segment endpoints.
+    interior : callable or None
+        Maps points of shape (n_points, 2) to closed-domain membership.
+
+    Returns
+    -------
+    departs : ndarray of bool, shape (n_segments,)
+        Whether the start contact should be ignored.
+    later : ndarray, shape (n_segments, 2)
+        First contact after the start contacts, or NaN when there is none.
+    """
+    n_segments = len(starts)
+    departs = np.zeros(n_segments, dtype=bool)
+    later = np.full((n_segments, 2), np.nan)
+    parts, owners = shapely.get_parts(contacts, return_index=True)
+    if not len(parts):
+        return departs, later
+    origins = shapely.points(starts)
+    distance = shapely.distance(parts, origins[owners])
+    at_start = distance <= _start_allowance(starts)[owners]
+    touches = np.zeros(n_segments, dtype=bool)
+    touches[owners[at_start]] = True
+    along = np.zeros(n_segments, dtype=bool)
+    along[owners[at_start & (shapely.get_dimensions(parts) > 0)]] = True
+    rest = np.flatnonzero(~at_start)
+    if len(rest):
+        ordered = rest[np.lexsort((distance[rest], owners[rest]))]
+        first = ordered[np.r_[True, owners[ordered][1:] != owners[ordered][:-1]]]
+        nearest = shapely.get_point(
+            shapely.shortest_line(origins[owners[first]], parts[first]), -1
+        )
+        later[owners[first]] = np.column_stack(
+            (shapely.get_x(nearest), shapely.get_y(nearest))
+        )
+    candidates = np.flatnonzero(touches & ~along)
+    if len(candidates):
+        probe = np.where(
+            np.isfinite(later[candidates]), later[candidates], ends[candidates]
+        )
+        middle = (starts[candidates] + probe) / 2
+        departs[candidates] = True if interior is None else interior(middle)
+    return departs, later
+
+
 def _segment_hits(
-    walls: shapely.Geometry, starts: NDArray[np.float64], ends: NDArray[np.float64]
+    walls: shapely.Geometry,
+    starts: NDArray[np.float64],
+    ends: NDArray[np.float64],
+    interior: Interior | None,
 ) -> NDArray[np.float64]:
-    """Nearest wall contact along each oriented finite segment, or NaN."""
+    """First viewed wall contact along each oriented finite segment, or NaN.
+
+    A zero-distance contact counts only when the segment points into or along
+    the observer's wall; leaving that wall into the domain views the next wall.
+    """
     segments = shapely.linestrings(np.stack((starts, ends), axis=1))
     intersections = shapely.intersection(segments, walls)
     nearest = shapely.get_point(
         shapely.shortest_line(shapely.points(starts), intersections), -1
     )
-    return np.column_stack((shapely.get_x(nearest), shapely.get_y(nearest)))
+    hits = np.column_stack((shapely.get_x(nearest), shapely.get_y(nearest)))
+    with np.errstate(invalid="ignore"):
+        rows = np.flatnonzero(
+            np.hypot.reduce(hits - starts, axis=1) <= _start_allowance(starts)
+        )
+    if len(rows):
+        departs, later = _start_departures(
+            intersections[rows], starts[rows], ends[rows], interior
+        )
+        hits[rows[departs]] = later[departs]
+    return hits
 
 
 def ray_hits(
@@ -140,6 +262,7 @@ def ray_hits(
     origins: NDArray[np.float64],
     angles: NDArray[np.float64],
     max_distance: float,
+    interior: Interior | None = None,
 ) -> NDArray[np.float64]:
     """First exact wall point on each finite forward ray, or NaN when absent.
 
@@ -153,12 +276,15 @@ def ray_hits(
         Directions in radians, zero east and positive counterclockwise.
     max_distance : float
         Finite positive physical search length. A search endpoint is not a hit.
+    interior : callable or None, optional
+        Domain membership deciding whether a ray starting on a wall leaves it
+        into the domain; None treats both sides of every wall as open.
     """
     origins = np.asarray(origins, dtype=np.float64)
     angles = np.asarray(angles, dtype=np.float64)
     valid, starts, ends = _ray_segments(origins, angles, max_distance)
     result = np.full(origins.shape, np.nan)
-    result[valid] = _segment_hits(walls, starts, ends)
+    result[valid] = _segment_hits(walls, starts, ends, interior)
     return result
 
 
@@ -207,7 +333,10 @@ def physical_ray_hits(
             "Ray projection exceeds coordinate precision; recenter or rescale positions."
         )
     hits = _segment_hits(
-        physical_walls(base), query[: len(starts)], query[len(starts) :]
+        physical_walls(base),
+        query[: len(starts)],
+        query[len(starts) :],
+        physical_footprint_interior(base),
     )
     finite = np.all(np.isfinite(hits), axis=1)
     for frame in reversed(frames):
@@ -222,13 +351,22 @@ def physical_clear_segments(
 ) -> NDArray[np.bool_]:
     """Keep on-wall cues visible under shared-frame inverse rounding."""
     base, query, _frames = _wall_frame(arena, np.vstack((observer, targets)))
-    return clear_segments(physical_walls(base), query[0], query[1:])
+    return clear_segments(
+        physical_walls(base), query[0], query[1:], physical_footprint_interior(base)
+    )
 
 
 def clear_segments(
-    walls: shapely.Geometry, observer: NDArray[np.float64], targets: NDArray[np.float64]
+    walls: shapely.Geometry,
+    observer: NDArray[np.float64],
+    targets: NDArray[np.float64],
+    interior: Interior | None = None,
 ) -> NDArray[np.bool_]:
-    """Keep terminal contact within coordinate rounding; earlier contact blocks."""
+    """Keep terminal contact within coordinate rounding; earlier contact blocks.
+
+    An observer standing on a wall does not block its own view when the
+    segment leaves that wall into ``interior`` (see ``_start_departures``).
+    """
     targets = np.asarray(targets, dtype=np.float64)
     valid = np.all(np.isfinite(targets), axis=1) & np.all(np.isfinite(observer))
     result = np.zeros(len(targets), dtype=bool)
@@ -267,6 +405,21 @@ def clear_segments(
         at_terminal = np.all(
             np.abs(coordinates - terminal[owners]) <= allowance, axis=1
         )
+        own_wall = (
+            np.hypot.reduce(coordinates - observer, axis=1)
+            <= _start_allowance(observer.reshape(1, 2))[0]
+        )
+        rows = np.unique(owners[own_wall])
+        if len(rows):
+            departs, _later = _start_departures(
+                contact[rows],
+                np.broadcast_to(observer, (len(rows), 2)),
+                terminal[rows],
+                interior,
+            )
+            departing = np.zeros(len(terminal), dtype=bool)
+            departing[rows[departs]] = True
+            at_terminal |= departing[owners] & own_wall
         clear = np.ones(len(terminal), dtype=bool)
         np.logical_and.at(clear, owners, at_terminal)
         clear &= shapely.is_empty(contact) | (shapely.get_dimensions(contact) <= 0)

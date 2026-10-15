@@ -2,7 +2,8 @@
 
 import numpy as np
 import pytest
-from shapely.geometry import LineString, box
+import shapely
+from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -75,10 +76,124 @@ def test_no_hit_outside_nonfinite_and_origin_on_wall():
             [[np.nan, 4.5], [2.5, 4.5]], [0.0, np.inf], env=env, method="ray_cast"
         )
     ).all()
+    # On the internal wall: looking along it is a zero-distance contact;
+    # looking away from it sees the room on that side.
     np.testing.assert_allclose(
-        compute_viewed_location([[5, 4.5]], [0.0], env=env, method="ray_cast"),
-        [[5, 4.5]],
+        compute_viewed_location(
+            [[5, 4.5], [5, 4.5], [5, 4.5]],
+            [np.pi / 2, 0.0, np.pi],
+            env=env,
+            method="ray_cast",
+        ),
+        [[5, 4.5], [10, 4.5], [0, 4.5]],
     )
+
+
+def wall_observer_rays():
+    """Observers on the outer wall or a corner, with their expected first hits.
+
+    A ray leaving the wall into the room reports the opposite wall; a ray
+    pointing out through the wall, or exactly along it, reports the
+    observer's own zero-distance contact. The last two rows run exactly along
+    a wall (heading 0 has no rounded cross-wall component).
+    """
+    rays = [
+        # (origin, heading, first hit, bin centre on the observer's side)
+        ((0, 4.5), 0.0, (10, 4.5), (9.5, 4.5)),
+        ((0, 4.5), np.pi, (0, 4.5), (0.5, 4.5)),
+        ((4.5, 0), np.pi / 2, (4.5, 10), (4.5, 9.5)),
+        ((0, 0), np.pi / 4, (10, 10), (9.5, 9.5)),
+        ((0, 0), 5 * np.pi / 4, (0, 0), (0.5, 0.5)),
+        ((0, 0), -np.pi / 2, (0, 0), (0.5, 0.5)),
+        ((4.5, 0), 0.0, (4.5, 0), (4.5, 0.5)),
+        ((0, 0), 0.0, (0, 0), (0.5, 0.5)),
+    ]
+    origins, headings, hits, sides = (
+        np.array(column) for column in zip(*rays, strict=True)
+    )
+    return origins.astype(float), headings, hits.astype(float), sides
+
+
+@pytest.mark.parametrize("source", ["physical", "analysis"])
+@pytest.mark.parametrize("restore", [False, True])
+def test_observer_on_outer_wall_sees_the_room_it_faces(source, restore):
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+
+    env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
+    if restore:
+        env = Environment.from_dict(env.to_dict())
+    origins, headings, expected, observer_side = wall_observer_rays()
+    hits = compute_viewed_location(
+        origins, headings, env=env, method="ray_cast", boundary_source=source
+    )
+    np.testing.assert_allclose(hits, expected, atol=1e-12)
+    # View binning assigns each hit to the bin on the observer's side of the
+    # wall it reaches: the far wall bin, or the observer's own bin.
+    bins = _precompute_view_bins(
+        env, origins, headings, gaze_model="ray_cast", boundary_source=source
+    )
+    np.testing.assert_array_equal(bins, env.bin_at(observer_side))
+
+
+def test_rotated_observer_on_wall_sees_the_opposite_wall():
+    from neurospatial.ops.transforms import Affine2D
+
+    a = 0.3
+    matrix = np.array(
+        [
+            [1.3 * np.cos(a), -1.3 * np.sin(a), 100.0],
+            [1.3 * np.sin(a), 1.3 * np.cos(a), -100.0],
+            [0, 0, 1],
+        ]
+    )
+    env = room(wall=False).apply_transform(Affine2D(matrix))
+    # Rotation rounds exact along-wall rays to either side of the wall.
+    origins, headings, expected, _ = (values[:-2] for values in wall_observer_rays())
+    mapped = origins @ matrix[:2, :2].T + matrix[:2, 2]
+    hits = compute_viewed_location(mapped, headings + a, env=env, method="ray_cast")
+    np.testing.assert_allclose(
+        hits, expected @ matrix[:2, :2].T + matrix[:2, 2], atol=1e-9
+    )
+
+
+@pytest.mark.parametrize("source", ["physical", "analysis"])
+def test_viewshed_and_cues_from_an_observer_on_the_wall(source):
+    env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
+    on_wall = compute_viewshed(
+        env, np.array([0.0, 4.5]), 0.0, fov=np.pi, boundary_source=source
+    )
+    near_wall = compute_viewshed(
+        env, np.array([1e-9, 4.5]), 0.0, fov=np.pi, boundary_source=source
+    )
+    assert on_wall.n_visible_bins > 50
+    np.testing.assert_array_equal(on_wall.visible_bins, near_wall.visible_bins)
+    # Facing out through the wall exposes no cell.
+    outward = compute_viewshed(
+        env, np.array([0.0, 4.5]), np.pi, fov=np.pi / 2, boundary_source=source
+    )
+    assert outward.n_visible_bins == 0
+    visible, distances, _ = visible_cues(
+        env,
+        np.array([0.0, 4.5]),
+        0.0,
+        np.array([[10.0, 4.5], [5.0, 4.5], [5.0, 9.0], [0.0, 8.0], [-1.0, 4.5]]),
+        boundary_source=source,
+    )
+    # Cues in the room, including the far wall, are visible; a cue along the
+    # observer's own wall or outside the room is not.
+    np.testing.assert_array_equal(visible, [True, True, True, False, False])
+    np.testing.assert_allclose(distances[:3], [10.0, 5.0, np.hypot(5.0, 4.5)])
+
+
+def test_observer_on_internal_wall_sees_both_sides():
+    env = room()
+    visible, _, _ = visible_cues(
+        env,
+        np.array([5.0, 4.5]),
+        0.0,
+        np.array([[7.5, 4.5], [2.5, 4.5], [5.0, 8.0]]),
+    )
+    np.testing.assert_array_equal(visible, [True, True, False])
 
 
 def test_cues_and_viewed_bins_are_occluded_by_internal_wall():
@@ -219,10 +334,12 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
     )
     visible, _, _ = visible_cues(env, points[0], a, points[1:])
     np.testing.assert_array_equal(visible, [True, False])
-    np.testing.assert_allclose(
-        compute_viewed_location(points[1:2], np.array([a]), env=env, method="ray_cast"),
-        points[1:2],
+    # Standing on the internal wall and facing away from it views the far wall.
+    hits = compute_viewed_location(
+        points[[1, 1]], np.array([a, a + np.pi]), env=env, method="ray_cast"
     )
+    source = (hits - matrix[:2, 2]) @ np.linalg.inv(matrix[:2, :2]).T
+    np.testing.assert_allclose(source, [[10, 4.5], [0, 4.5]], rtol=0, atol=1e-5)
 
 
 def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
@@ -319,6 +436,77 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
         ),
         [-1],
     )
+
+
+def wall_reaching_cells(polygon, bin_size):
+    """Clip a covering grid to the measured polygon and attach its walls."""
+    edges = tuple(
+        np.arange(low - bin_size, high + 2 * bin_size, bin_size)
+        for low, high in zip(polygon.bounds[:2], polygon.bounds[2:], strict=True)
+    )
+    grid = Environment.from_grid_mask(
+        np.ones(tuple(len(edge) - 1 for edge in edges), dtype=bool),
+        grid_edges=edges,
+    )
+    return Environment.from_bins(
+        grid.clip(polygon)._binning, arena=OpenArena(polygon)
+    )
+
+
+CURVED_AND_SLANTED_ARENAS = {
+    "circle": Point(50, 50).buffer(45),
+    "quadrilateral": Polygon([(10, 0), (100, 30), (70, 100), (0, 60)]),
+}
+
+
+@pytest.mark.parametrize("name", list(CURVED_AND_SLANTED_ARENAS))
+def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
+    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding.view import compute_view_rate
+
+    polygon = CURVED_AND_SLANTED_ARENAS[name]
+    env = wall_reaching_cells(polygon, 5.0)
+    rng = np.random.default_rng(7)
+    candidates = rng.uniform(polygon.bounds[:2], polygon.bounds[2:], (1500, 2))
+    origins = candidates[env.arena.contains(candidates)][:600]
+    headings = rng.uniform(-np.pi, np.pi, len(origins))
+    hits = compute_viewed_location(
+        origins, headings, env=env, method="ray_cast", max_distance=300
+    )
+    np.testing.assert_allclose(
+        shapely.distance(shapely.points(hits), polygon.exterior), 0, atol=1e-12
+    )
+    bins = _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
+    # Each hit belongs to the cell just inside the wall on the observer's side.
+    direction = np.column_stack((np.cos(headings), np.sin(headings)))
+    np.testing.assert_array_equal(bins, env.bin_at(hits - 1e-6 * direction))
+    # Every exposure interval is assigned, so view rates do not refuse.
+    times = np.arange(len(origins), dtype=float)
+    rates = compute_view_rate(
+        env,
+        times[::7] + 0.5,
+        times,
+        origins,
+        headings,
+        gaze_model="ray_cast",
+        method="binned",
+        bandwidth=0.0,
+        max_gap=None,
+    )
+    assert rates.occupancy.sum() == len(origins) - 1
+    # Cells built by centre inclusion stop short of the wall and still refuse.
+    with pytest.raises(NotImplementedError, match=r"grid\.clip\(polygon\)"):
+        compute_view_rate(
+            Environment.from_polygon(polygon, bin_size=5.0),
+            times[::7] + 0.5,
+            times,
+            origins,
+            headings,
+            gaze_model="ray_cast",
+            method="binned",
+            bandwidth=0.0,
+            max_gap=None,
+        )
 
 
 @pytest.mark.parametrize("gap", [1e-7, 1e-12])
