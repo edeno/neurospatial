@@ -139,6 +139,12 @@ class SubsetConsumer(Protocol):
     """Published geometry, regions and metadata for selecting spatial bins."""
 
     @property
+    def _binning(self) -> Binning: ...
+
+    @property
+    def arena(self) -> Arena: ...
+
+    @property
     def active_mask(self) -> NDArray[np.bool_] | None: ...
 
     @property

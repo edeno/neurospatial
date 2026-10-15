@@ -11,6 +11,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import MetricsConsumer
+from neurospatial.layout._binning import Binning
 from neurospatial.layout._locators import (
     HexLocator,
     RectilinearLocator,
@@ -166,3 +167,51 @@ def _edge_attributes_cached(env: MetricsConsumer) -> pd.DataFrame:
         # Keep original vector column for backward compatibility
 
     return df
+
+
+def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
+    """Export retained navigation bridge data as an independent table."""
+
+    from neurospatial.layout._composition import composition_view
+
+    columns = [
+        "source_component",
+        "source_local_bin",
+        "target_component",
+        "target_local_bin",
+        "source",
+        "target",
+        "distance",
+        "conductance",
+    ]
+    result = composition_view(binning.locator)
+    if result is None:
+        return pd.DataFrame(columns=columns)
+    root, indices, _scale = result
+    from neurospatial.layout._composition import bridge_values
+
+    by_pair = bridge_values(binning)
+    offsets = root.offsets
+    records = []
+    for (source, target), distance in zip(
+        binning.bins.pairs, binning.bins.pair_distances, strict=True
+    ):
+        pair = frozenset((int(source), int(target)))
+        if pair not in by_pair:
+            continue
+        owners = np.searchsorted(
+            offsets[1:], [indices[source], indices[target]], side="right"
+        )
+        records.append(
+            (
+                root.keys[owners[0]],
+                int(indices[source] - offsets[owners[0]]),
+                root.keys[owners[1]],
+                int(indices[target] - offsets[owners[1]]),
+                int(source),
+                int(target),
+                float(distance),
+                float(by_pair[pair]),
+            )
+        )
+    return pd.DataFrame(records, columns=columns)

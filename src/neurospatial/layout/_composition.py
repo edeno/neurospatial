@@ -404,3 +404,25 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
                 binning.bins.measure_dim - 2
             )
     return result
+
+
+def _component_keys(binning: Binning) -> tuple[str, ...]:
+    """Return stable component keys from retained composition data."""
+
+    result = composition_view(binning.locator)
+    return () if result is None else result[0].keys
+
+
+def _bin_sources(binning: Binning) -> tuple[tuple[str, int], ...] | None:
+    """Resolve retained component and local bin IDs in current bin order."""
+
+    result = composition_view(binning.locator)
+    if result is None:
+        return None
+    root, indices, _scale = result
+    offsets = root.offsets
+    owners = np.searchsorted(offsets[1:], indices, side="right")
+    return tuple(
+        (root.keys[owner], int(index - offsets[owner]))
+        for index, owner in zip(indices, owners, strict=True)
+    )

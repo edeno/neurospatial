@@ -49,7 +49,7 @@ from neurospatial.environment.trajectory import (
     _bin_sequence,
     _occupancy,
 )
-from neurospatial.environment.transforms import _rebin, _subset_mask
+from neurospatial.environment.transforms import _rebin
 from neurospatial.layout._binning import Binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import LayoutType
@@ -1621,10 +1621,9 @@ class Environment(Generic[_C]):
     def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
         self._require_cartesian("component_keys()")
-        from neurospatial.layout._composition import composition_view
+        from neurospatial.layout._composition import _component_keys
 
-        result = composition_view(self._binning.locator)
-        return () if result is None else result[0].keys
+        return _component_keys(self._binning)
 
     @property
     @check_fitted
@@ -1636,18 +1635,9 @@ class Environment(Generic[_C]):
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
         self._require_cartesian("bin_sources()")
-        from neurospatial.layout._composition import composition_view
+        from neurospatial.layout._composition import _bin_sources
 
-        result = composition_view(self._binning.locator)
-        if result is None:
-            return None
-        root, indices, _scale = result
-        offsets = root.offsets
-        owners = np.searchsorted(offsets[1:], indices, side="right")
-        return tuple(
-            (root.keys[owner], int(index - offsets[owner]))
-            for index, owner in zip(indices, owners, strict=True)
-        )
+        return _bin_sources(self._binning)
 
     @check_fitted
     def get_bridge_attributes(self: Environment[CartesianSystem]) -> pd.DataFrame:
@@ -1658,51 +1648,9 @@ class Environment(Generic[_C]):
         Conductance units are length ** (measure_dim - 2).
         """
         self._require_cartesian("get_bridge_attributes()")
-        import pandas as pd
+        from neurospatial.environment.metrics import _get_bridge_attributes
 
-        from neurospatial.layout._composition import composition_view
-
-        columns = [
-            "source_component",
-            "source_local_bin",
-            "target_component",
-            "target_local_bin",
-            "source",
-            "target",
-            "distance",
-            "conductance",
-        ]
-        result = composition_view(self._binning.locator)
-        if result is None:
-            return pd.DataFrame(columns=columns)
-        root, indices, _scale = result
-        from neurospatial.layout._composition import bridge_values
-
-        by_pair = bridge_values(self._binning)
-        offsets = root.offsets
-        records = []
-        for (source, target), distance in zip(
-            self._binning.bins.pairs, self._binning.bins.pair_distances, strict=True
-        ):
-            pair = frozenset((int(source), int(target)))
-            if pair not in by_pair:
-                continue
-            owners = np.searchsorted(
-                offsets[1:], [indices[source], indices[target]], side="right"
-            )
-            records.append(
-                (
-                    root.keys[owners[0]],
-                    int(indices[source] - offsets[owners[0]]),
-                    root.keys[owners[1]],
-                    int(indices[target] - offsets[owners[1]]),
-                    int(source),
-                    int(target),
-                    float(distance),
-                    float(by_pair[pair]),
-                )
-            )
-        return pd.DataFrame(records, columns=columns)
+        return _get_bridge_attributes(self._binning)
 
     @check_fitted
     def bin_at(
@@ -2733,74 +2681,11 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("subset()")
-        mask = _subset_mask(
+        from neurospatial.environment.transforms import _subset
+
+        return _subset(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
         )
-        from neurospatial.layout._components import HexagonShapes, TriangleShapes
-        from neurospatial.layout._derive import subset_binning
-
-        binning = subset_binning(self._binning, mask)
-        selected = np.flatnonzero(mask)
-        child_of = {int(old): new for new, old in enumerate(selected)}
-        graph = nx.Graph()
-        graph.graph.update(self.connectivity.graph)
-        # Retain the parent's node iteration order as well as edge order and
-        # orientation; edge fields index that order even on loaded graphs.
-        for old, data in self.connectivity.nodes(data=True):
-            if old in child_of:
-                graph.add_node(child_of[old], **data)
-        for index, (u, v) in enumerate(binning.bins.pairs):
-            old_u, old_v = selected[u], selected[v]
-            data = dict(self.connectivity.edges[old_u, old_v])
-            if binning.rectilinear is not None:
-                data["edge_id"] = index
-            graph.add_edge(int(u), int(v), **data)
-        params = {"source": "subset", "original_n_bins": self.n_bins}
-        tag = "MaskedGrid" if binning.rectilinear is not None else "subset"
-        if binning.rectilinear is not None:
-            ranges = [
-                (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
-            ]
-        else:
-            shapes = binning.shapes
-            vertices = binning.bins.centers
-            if binning.grid_frame is not None:
-                vertices = binning.grid_frame.corners()
-            elif isinstance(shapes, HexagonShapes):
-                angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
-                offsets = shapes.radius * np.column_stack(
-                    (np.cos(angles), np.sin(angles))
-                )
-                vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
-            elif isinstance(shapes, TriangleShapes):
-                vertices = shapes.points[shapes.triangles].reshape(-1, 2)
-            else:
-                from neurospatial.layout._polygon import PolygonCells
-
-                if isinstance(shapes, PolygonCells):
-                    import shapely
-
-                    vertices = np.concatenate(
-                        [shapely.get_coordinates(cell) for cell in shapes.polygons]
-                    )
-            ranges = []
-            for axis in vertices.T:
-                low, high = float(axis.min()), float(axis.max())
-                margin = 0.05 * (high - low) if shapes is not None else 0.0
-                ranges.append((low - margin, high + margin))
-        result = self.__class__._from_binning(
-            binning,
-            connectivity=graph,
-            dimension_ranges=ranges,
-            layout_type_tag=tag,
-            layout_type="mask" if binning.rectilinear is not None else "subset",
-            build_params=params,
-            is_linearized_track=self.is_linearized_track,
-            arena=self.arena,
-            units=self.units,
-            frame=self.frame,
-        )
-        return result
 
     @check_fitted
     def clip(
