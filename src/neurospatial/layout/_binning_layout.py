@@ -710,6 +710,17 @@ def _validate_components(
 ) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     bins, locator = binning.bins, binning.locator
+    if binning.grid_spec is not None:
+        from neurospatial.layout._rebin_spec import GridBinningSpec
+
+        spec = binning.grid_spec
+        if type(spec) is not GridBinningSpec:
+            raise TypeError("grid_spec must be an owned GridBinningSpec.")
+        GridBinningSpec(spec.origin, spec.forward, spec.connect_diagonal)
+        if len(spec.origin) != bins.n_dims or coordinate_kind != "cartesian":
+            raise ValueError(
+                "Grid specification must match Cartesian coordinate dimensions."
+            )
     if isinstance(binning.faces, KnownFaces):
         _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
         _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")

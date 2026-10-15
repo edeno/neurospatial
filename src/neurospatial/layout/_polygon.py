@@ -631,4 +631,5 @@ def clip_binning(
         faces,
         shapes=cells,
         clip_mapping=mapping,
+        grid_spec=binning.grid_spec,
     ), mapping

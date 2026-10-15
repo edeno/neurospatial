@@ -1,6 +1,7 @@
 # Stage D — Re-binning and physical-wall consumers
 
-**Status:** D0 baseline captured on 2026-10-14; consumer design in progress.
+**Status:** D0/D1 complete and validated on 2026-10-15.
+D2/D3 remain to be implemented.
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
@@ -27,13 +28,16 @@ Stage D PRs requires a later publication instruction.
 - Native behavior outside the intentional consumer changes must match the
   recorded Stage C baseline.
 
-## Decisions pending
+## Approved decisions
 
-1. Require physical geometry for physical-wall consumers, or additionally expose
-   an explicit analysis-boundary approximation mode? No implicit fallback is
-   proposed.
-2. Should new-resolution re-binning preserve the supported binning family and
-   frame, or always build a world-aligned rectangular grid?
+1. Physical-wall operations also offer an explicitly requested analysis-boundary
+   approximation. There is no silent fallback to analysis boundaries.
+2. New-size re-binning preserves supported binning families and grid frames;
+   unsupported families or missing specifications refuse. The first supported
+   family is rectangular grids from samples, masks, images and polygon grids.
+   The grid origin, affine frame and diagonal-navigation choice are typed owned
+   data; the known arena supplies the domain. New sizes are physical lengths
+   along the retained axes, including after unequal scaling.
 
 ## Implementation sequence
 
@@ -99,3 +103,24 @@ source doctests, typing, API/convention checks, Ruff and the behavior comparison
 at consumer boundaries. Real recordings are downloaded separately; no recording
 is currently cached under `data/`. GUI/GPU coverage must not be inferred from CPU
 checks.
+
+## D1 validation
+
+New-size regressions failed before implementation (`stage-d1-before.log`). The
+accepted gate passed **779 tests**, including the 22 new rebin/specification
+cases, existing factor/arena tests, polar classification, binning/codecs,
+JSON and NWB round trips, API and argument conventions. Runtime warnings were
+errors; the 70 warnings were existing user/dependency warnings. Source/contract
+mypy passed (242 files). The Cartesian doctests and runnable environment guide
+passed **10 cases**, with 4 explicit skips and 20 unrelated cases deselected.
+
+The Stage C baseline comparison reports only the intended `Environment.rebin`
+signature/docstring change; all other probes match. `GridBinningSpec` is the
+intentional public export snapshot addition. No performance improvement is
+claimed. No real recording was cached, and GUI/GPU checks were not run.
+
+Local evidence: `/private/tmp/stage-d1-accepted.log`,
+`/private/tmp/stage-d1-docs.log`, `/private/tmp/stage-d1-types.log`,
+`/private/tmp/stage-d1-compare.log`. The new-size family scope is rectangular;
+other families refuse until a reviewed specification is implemented. Native
+integer coarsening remains unchanged.

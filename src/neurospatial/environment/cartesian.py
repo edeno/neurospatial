@@ -927,27 +927,39 @@ class CartesianCoordinates:
     @check_fitted
     def rebin(
         self: SelfCartesianEnv,
-        factor: int | tuple[int, ...],
+        factor: int | tuple[int, ...] | None = None,
+        *,
+        bin_size: float | tuple[float, ...] | None = None,
     ) -> Environment:
-        """Coarsen regular grid by integer factor (geometry-only operation).
+        """Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
         Creates a new environment with coarser spatial resolution by reducing
         the number of bins. This method only modifies the grid geometry and
         connectivity; it does not aggregate any field values.
 
-        Only supported for RegularGridLayout environments.
+        Pass exactly one of ``factor`` or ``bin_size``. The new-size mode
+        reconstructs over the retained arena using stored rectangular-lattice
+        data; analysis crops do not change the arena. It preserves the grid
+        frame and lattice anchor, independently of descriptive provenance.
 
         Parameters
         ----------
-        factor : int or tuple of int
+        factor : int or tuple of int, optional
             Coarsening factor per dimension. If int, applied uniformly to all
             dimensions. If tuple, must match the number of dimensions.
-            Each factor must be a positive integer.
+            Each factor must be a positive integer. Only supported for the
+            existing uniform RegularGrid family; retains truncation behavior.
+        bin_size : float or tuple of float, optional
+            New positive physical bin lengths along the retained grid axes,
+            in environment units. May refine or coarsen a rectangular grid.
+            Needs a known arena and a supported stored GridBinningSpec.
+            Center selection can leave portions of the arena without a bin;
+            use ``clip`` separately when exact clipped cells are needed.
 
         Returns
         -------
         coarse_env : Environment
-            New environment with reduced resolution. The new grid shape is
+            New environment at the requested resolution. With ``factor``, the grid shape is
             ``original_shape // factor`` in each dimension. Keep coarse bins
             whose centers lie inside the original arena.
 
@@ -982,8 +994,9 @@ class CartesianCoordinates:
             ...     minlength=coarse.n_bins,
             ... )
 
-        **Grid-only operation**: This method only works for environments with
-        RegularGridLayout. Other layout types will raise NotImplementedError.
+        **Factor mode**: Integer coarsening requires the uniform RegularGrid
+        family. New-size mode uses the stored GridBinningSpec instead of a
+        descriptive layout name.
 
         **Non-divisible dimensions**: If the grid shape is not evenly divisible
         by the factor in any dimension, the grid is truncated to the largest
@@ -1002,6 +1015,10 @@ class CartesianCoordinates:
         coarse grid. Rebinning preserves the arena rather than filling its holes.
 
         **Metadata preservation**: The arena, units and frame are preserved.
+        New-size re-binning also retains regions. It supports rectangular
+        grids from samples, masks, images and polygon grids, including their
+        derived grid frames. Other families and older records without a stored
+        specification refuse this mode. It never transfers fields or models.
 
         Examples
         --------
@@ -1038,6 +1055,13 @@ class CartesianCoordinates:
         True
 
         """
+        if (factor is None) == (bin_size is None):
+            raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+        if bin_size is not None:
+            from neurospatial.environment._rebin import _rebin_resolution
+
+            return _rebin_resolution(self, bin_size)
+        assert factor is not None
         return _rebin(self, factor)
 
     @check_fitted

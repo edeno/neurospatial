@@ -36,6 +36,7 @@ from neurospatial.layout._locators import (
     TransformedLocator,
 )
 from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.layout._rebin_spec import GridBinningSpec
 
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
@@ -637,6 +638,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "shapes",
         "outline",
         "clip_mapping",
+        "grid_spec",
     ):
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
@@ -856,10 +858,11 @@ def _decode_binning(
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
         "clip_mapping": ClipMapping,
+        "grid_spec": GridBinningSpec,
     }
     part: object | None
     for name, kind in expected.items():
-        value = meta.get(name) if name == "clip_mapping" else meta[name]
+        value = meta.get(name) if name in {"clip_mapping", "grid_spec"} else meta[name]
         if value is None:
             part = None
         elif (
@@ -962,7 +965,24 @@ _LOCATOR_TYPES = (
 )
 
 
+def _encode_grid_spec(obj: GridBinningSpec, prefix: str) -> Payload:
+    return {"connect_diagonal": obj.connect_diagonal}, _arrays(
+        prefix, origin=obj.origin, forward=obj.forward
+    )
+
+
+def _decode_grid_spec(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> GridBinningSpec:
+    return GridBinningSpec(
+        _array(arrays, prefix, "origin", np.float64),
+        _array(arrays, prefix, "forward", np.float64),
+        _flag(meta, "connect_diagonal"),
+    )
+
+
 _CODECS: dict[str, Codec] = {
+    "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
     "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins),
     "KnownFaces": Codec(KnownFaces, _encode_faces, _decode_faces),
