@@ -42,7 +42,7 @@ The review's severity and introduction claims are hypotheses until checked here.
 | R20 | Low | Explicit pairs crossing physical walls cannot disappear without an explicit construction decision. | #70 | Fixed: `22e88747`; explicit neighbor pairs crossing walls raise with guidance instead of silently disappearing. |
 | R21 | Low | A drawing Outline cannot silently assert a physical arena footprint. | #70 | Fixed with R20: an Outline supplies drawing/domain geometry without asserting a physical footprint. |
 | R22 | Low | A trajectory point exactly on a wall cannot bypass wall-crossing rules. | #68 | Fixed on #68: `ea438c34` plus `c0522e98`; possible approach sides carried through sampled and unsampled wall contacts; independent review approved. |
-| R23 | Low | Visibility of a cue on a slanted wall is stable under bounded floating-point rounding. | #74 | Source repair `3fd2b948` plus cancellation follow-up `6ff0e34a`; 93 visibility tests and 3,000 deterministic cue probes pass. Follow-up independent review pending. |
+| R23 | Low | Visibility of a cue on a slanted wall is stable under bounded floating-point rounding. | #74 | Fixed on #74 through `4735deec`: local cue rounding and cancellation handled without accepting earlier crossings or wall overlap; 105 strict tests and 3,000 deterministic cue probes pass; independent review approved. |
 | R24 | Low | Loaded Cartesian/polar environments have truthful static coordinate types. | #77 | Fixed on #77: `d689394e`; loaded coordinate kind typed as unknown (`Any`), Cartesian factories remain specific. |
 | R25 | Low | Shared operations accept polar values statically wherever they accept them at runtime. | #77 | Fixed with R24: shared annotations accept both coordinate systems; five original static errors reproduced, 257-file typing gate passes; independent review approved. |
 | R26 | Low | Read-only connectivity remains exportable through standard NetworkX node-link JSON. | #70 | Fixed: `a33da946` and `f6fe3254`; detached read-only JSON metadata remains copyable/pickleable and cannot mutate owned graph state; independent review approved. |
@@ -53,6 +53,19 @@ The review's severity and introduction claims are hypotheses until checked here.
 | R31 | Additional | Native grid diffusion faces remain valid in small coordinate units. | PR #80 against main | Fixed: `cacb3a73`; remove the absolute axis-displacement cutoff; physical published-face tests pass. |
 | R32 | Additional | Factor rebinning preserves independent named regions. | #67 | Fixed: `74a79a7b`; 18 failing ownership regressions reproduced, 166 tests pass. |
 | R33 | CI baseline | Generated UTF-8 animation HTML is read correctly on Windows. | PR #81 against main; merged into #78–#80 | Fixed: `b147b034`; two cp1252 failures reproduced; all 16 existing module tests pass normally and with cp1252 simulated. |
+
+## Additional verification findings
+
+- R34 (#76): identical arena vertices could round differently in matrix batches,
+  breaking polygon ring closure after chained affine maps. Fixed in `47f0b077`
+  by mapping each identical source vertex once, without changing tolerances;
+  three reproduced failures and two new regressions pass, with 235 owner-module
+  checks and independent tiny-geometry probes.
+- R35 (#67): Windows/Python 3.10 can exhaust the C stack before cyclic metadata
+  raises `RecursionError`. An iterative preflight now rejects container cycles
+  before decoding while allowing shared acyclic records and long valid affine
+  histories. Verification: 478 IO tests and 15 Python 3.10 ingress tests pass;
+  independent review and publication are in progress.
 
 ## Architecture recommendations
 
@@ -101,7 +114,6 @@ Their passing regressions remain part of the broader gate.
   raw wall intersections and unobserved gaze directions retain their own meaning.
 - Polar circularity will default to automatic: full 2π wraps, partial ranges
   remain open, and explicitly wrapping a partial range is rejected.
-
 - Track containment requires a declared physical width. Unknown width refuses
   `contains()` with guidance; `bin_at()` continues nearest-track projection.
 
