@@ -369,7 +369,9 @@ class _GridMixin:
         widths = self._axis_widths()
         for u, v, data in g.edges(data=True):
             offset = centers[u] - centers[v]
-            moved = np.abs(offset) > 1e-9
+            # Native grid centers share exactly stored coordinates along every
+            # unchanged axis. An absolute threshold would depend on units.
+            moved = offset != 0.0
             if moved.sum() != 1:  # diagonal / Moore edge -> shares only a corner
                 data["A"] = 0.0
                 continue

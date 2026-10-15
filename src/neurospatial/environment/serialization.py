@@ -94,8 +94,10 @@ class EnvironmentSerialization:
         Parameters
         ----------
         path : str or Path
-            Base path for output files (without extension).
-            Will create `{path}.json` and `{path}.npz`.
+            Prefix for output files. Creates ``{path}.json`` and ``{path}.npz``.
+            A trailing ``.json`` or ``.npz`` may be supplied; other dots are
+            retained, so ``rat1.day1`` creates ``rat1.day1.json`` and
+            ``rat1.day1.npz``.
         overwrite : bool, default=False
             If ``False`` (the default), raise :class:`FileExistsError` rather
             than overwrite an existing ``{path}.json`` / ``{path}.npz``, so an
@@ -139,8 +141,9 @@ class EnvironmentSerialization:
         Parameters
         ----------
         path : str or Path
-            Base path to load from (without extension).
-            Will read `{path}.json` and `{path}.npz`.
+            Prefix to load from. Reads ``{path}.json`` and ``{path}.npz``.
+            A trailing ``.json`` or ``.npz`` may be supplied; other dots are
+            retained as part of the prefix.
 
         Returns
         -------

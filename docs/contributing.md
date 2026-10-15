@@ -143,6 +143,15 @@ writes, and both graph topology and its attribute dictionaries reject edits.
 Node positions, original grid indices and edge vectors are owned tuples, so
 restoration cannot leave mutable coordinate lists aliased by graph copies.
 `env.connectivity.copy()` supplies an editable graph for separate analyses.
+
+Stored node-link graphs use an optional `_neurospatial_reserved_attributes`
+sidecar to preserve user attributes named `id`, `source`, `target`, or multigraph
+`key`, which NetworkX otherwise overwrites with graph identities. Its rows must
+match the graph's identities and contain only these reserved attributes. Records
+without the sidecar retain their existing format. Older readers can still read
+the topology of new records, but retain their previous limitation of dropping
+these reserved user attributes; use a current reader to recover them.
+
 `_setup_from_layout` swaps that object whole and advances `_state_version`,
 which keys every derived cache, in one step. Factories build native layouts;
 readers decode the saved binning and node-link graph into `BinningLayout`, a

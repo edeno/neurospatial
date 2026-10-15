@@ -16,7 +16,6 @@ from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 import numpy as np
 import shapely
 from numpy.typing import NDArray
-from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
@@ -168,18 +167,11 @@ def _mapped(
 
 
 def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
-    _mapped(shapely.get_coordinates(geometry), matrix)
-    return affine_transform(
-        geometry,
-        [
-            matrix[0, 0],
-            matrix[0, 1],
-            matrix[1, 0],
-            matrix[1, 1],
-            matrix[0, -1],
-            matrix[1, -1],
-        ],
-    )
+    # Cell vertices use this same array arithmetic. A different affine
+    # implementation can round their common vertices differently, inventing
+    # slivers where a transformed arena boundary meets its cells.
+    coordinates = _mapped(shapely.get_coordinates(geometry), matrix)
+    return shapely.set_coordinates(geometry, coordinates)
 
 
 class _ArrayState:
