@@ -26,6 +26,8 @@
   bins. Wall-crossing checks also handle exact on-wall trajectory samples.
 - Require declared track width for containment; nearest-track projection stays
   available through `bin_at`. Track and maze presets accept `track_width`.
+- Reject cyclic environment metadata before recursive decoding, avoiding a
+  Windows/Python 3.10 stack crash while retaining shared acyclic records.
 
 - Preserve coincident track centers, native mesh indexing and reserved user
   graph attributes through environment storage. Malformed JSON/NWB/NPZ records
