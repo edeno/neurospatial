@@ -2709,6 +2709,7 @@ def compute_spatial_rate(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2845,6 +2846,21 @@ default="diffusion_kde"
         Longer intervals (dropped frames, pauses between sessions) are excluded
         from occupancy and their spikes are not counted. ``None`` disables the
         gap check.
+    time_allocation : {"start", "linear"}, default="start"
+        How trajectory intervals contribute dwell time. ``"start"`` assigns
+        each eligible interval to its starting bin and requires both endpoints
+        inside the environment. ``"linear"`` follows the straight segment
+        between finite endpoints and retains its exact portions inside the
+        effective planar cells and arena, including entry and re-entry. Spike
+        counts and occupancy use the same retained half-open time spans;
+        span entries are included, exits and the final trajectory timestamp
+        are excluded. Spatial boundaries retain ``env.bin_at`` ownership. Linear
+        allocation supports Cartesian 2-D area geometry; other dimensions
+        raise ``NotImplementedError``. Gap, speed and recording-window gates
+        still apply to each complete observation interval. Linear allocation
+        raises ``ValueError`` if a boundary-owned spike has zero dwell or if
+        absolute timestamps cannot represent a retained span. Adjust spatial
+        resolution or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2905,11 +2921,11 @@ default="diffusion_kde"
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The bounds check
-    requires both of the interval's samples to be tracked inside the
-    environment, so an interval ending in a tracking dropout is left out.
-    The same intervals are removed from the spike counts and the occupancy.
+    An interval is analyzed only if it passes the gap and speed checks and
+    lies inside ``epochs ∩ spike_window``. Both endpoints must be tracked.
+    With ``time_allocation="start"``, both must also be inside the environment.
+    Linear allocation instead retains the portions crossing effective cells.
+    Counts and occupancy always share the same retained temporal support.
 
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
@@ -2963,6 +2979,14 @@ default="diffusion_kde"
     True
     >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
     True
+
+    >>> # Follow straight segments through cells for both spikes and dwell.
+    >>> linear = compute_spatial_rate(
+    ...     env, spike_times, times, positions, method="binned",
+    ...     time_allocation="linear",
+    ... )
+    >>> linear.analysis_settings["time_allocation"]
+    'linear'
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -2973,6 +2997,7 @@ default="diffusion_kde"
         _resolve_spatial_time_support,
         bin_spike_train,
         compute_occupancy,
+        prepare_linear_spatial_intervals,
         resolve_speed,
     )
     from neurospatial.encoding._smoothing import (
@@ -2988,6 +3013,8 @@ default="diffusion_kde"
     validate_env_fitted(
         env, context="compute_spatial_rate", arguments="spike_times, times, positions"
     )
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3045,6 +3072,21 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
+    linear_intervals = (
+        prepare_linear_spatial_intervals(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+        if time_allocation == "linear"
+        else None
+    )
+
     time_support = _resolve_spatial_time_support(
         env,
         times,
@@ -3055,6 +3097,8 @@ default="diffusion_kde"
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     interval_mask = time_support.mask
@@ -3073,6 +3117,7 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
         pooled=pooled,
+        time_allocation=time_allocation,
     )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
@@ -3087,6 +3132,8 @@ default="diffusion_kde"
         interval_mask=interval_mask,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # Compute occupancy (always NumPy) using the SAME resolved speed gate and
@@ -3101,6 +3148,8 @@ default="diffusion_kde"
         max_gap=max_gap,
         interval_mask=interval_mask,
         context="compute_spatial_rate",
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset) and
@@ -3209,6 +3258,7 @@ def compute_spatial_rates(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     spike_window: Any = None,
     n_jobs: int = 1,
@@ -3323,6 +3373,21 @@ default="diffusion_kde"
         Longer intervals (dropped frames, pauses between sessions) are excluded
         from occupancy and their spikes are not counted. ``None`` disables the
         gap check.
+    time_allocation : {"start", "linear"}, default="start"
+        How trajectory intervals contribute dwell time. ``"start"`` assigns
+        each eligible interval to its starting bin and requires both endpoints
+        inside the environment. ``"linear"`` follows the straight segment
+        between finite endpoints and retains its exact portions inside the
+        effective planar cells and arena, including entry and re-entry. All
+        units and the shared occupancy use the same retained half-open spans;
+        span entries are included, exits and the final trajectory timestamp
+        are excluded. Spatial boundaries retain ``env.bin_at`` ownership.
+        Linear allocation supports Cartesian 2-D area geometry; other dimensions raise
+        ``NotImplementedError``. Gap, speed and recording-window gates still
+        apply to each complete observation interval. Linear allocation raises
+        ``ValueError`` if a boundary-owned spike has zero dwell or if absolute
+        timestamps cannot represent a retained span. Adjust spatial resolution
+        or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3414,11 +3479,11 @@ default="diffusion_kde"
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The bounds check
-    requires both of the interval's samples to be tracked inside the
-    environment, so an interval ending in a tracking dropout is left out.
-    The same intervals are removed from the spike counts and the occupancy.
+    An interval is analyzed only if it passes the gap and speed checks and
+    lies inside ``epochs ∩ spike_window``. Both endpoints must be tracked.
+    With ``time_allocation="start"``, both must also be inside the environment.
+    Linear allocation instead retains the portions crossing effective cells.
+    Counts and occupancy always share the same retained temporal support.
 
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
@@ -3506,6 +3571,14 @@ default="diffusion_kde"
     >>> result2 = compute_spatial_rates(env, spike_times_2d, times, positions)
     >>> len(result2)
     2
+
+    >>> # A decoder can consume rates fitted on retained linear support.
+    >>> linear = compute_spatial_rates(
+    ...     env, spike_times, times, positions, method="binned",
+    ...     time_allocation="linear",
+    ... )
+    >>> linear.analysis_settings["time_allocation"]
+    'linear'
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -3516,6 +3589,7 @@ default="diffusion_kde"
         _resolve_spatial_time_support,
         _warn_if_population_silent,
         bin_spike_trains,
+        prepare_linear_spatial_intervals,
         resolve_speed,
     )
     from neurospatial.encoding._smoothing import (
@@ -3532,6 +3606,8 @@ default="diffusion_kde"
     validate_env_fitted(
         env, context="compute_spatial_rates", arguments="spike_times, times, positions"
     )
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3628,6 +3704,21 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
+    linear_intervals = (
+        prepare_linear_spatial_intervals(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+        if time_allocation == "linear"
+        else None
+    )
+
     time_support = _resolve_spatial_time_support(
         env,
         times,
@@ -3638,6 +3729,8 @@ default="diffusion_kde"
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     interval_mask = time_support.mask
@@ -3659,6 +3752,7 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
         pooled=pooled,
+        time_allocation=time_allocation,
     )
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
@@ -3693,6 +3787,8 @@ default="diffusion_kde"
                 max_gap=max_gap,
                 interval_mask=interval_mask,
                 context="compute_spatial_rates",
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
             )
         else:
             spike_counts, occupancy = _bin_spike_trains(
@@ -3706,6 +3802,8 @@ default="diffusion_kde"
                 interval_mask=interval_mask,
                 n_jobs=n_jobs,
                 warn_on_drop=warn_on_drop,
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
             )
 
         glm_firing_rates, fit = _compute_glm_spatial_rates(
@@ -3773,6 +3871,8 @@ default="diffusion_kde"
             max_gap=max_gap,
             interval_mask=interval_mask,
             context="compute_spatial_rates",
+            time_allocation=time_allocation,
+            linear_intervals=linear_intervals,
         )
 
         # Convert to JAX if needed
@@ -3810,6 +3910,8 @@ default="diffusion_kde"
         interval_mask=interval_mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # Apply batch smoothing to compute firing rates

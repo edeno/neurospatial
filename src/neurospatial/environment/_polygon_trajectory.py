@@ -29,12 +29,13 @@ class RetainedLinearInterval:
 
 
 def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
-    """Keep the native mask-grid allocator and use exact polygons elsewhere."""
+    """Use exact planar cells, retaining the native allocator for matching N-D masks."""
     polygon_cells = isinstance(env._binning.shapes, PolygonCells)
+    planar_cells = env.n_dims == 2 and env._binning.bins.measure_dim == 2
     arena = env.arena
     if not arena.domain_known:
-        return polygon_cells
-    if isinstance(arena, MaskArena) and not polygon_cells:
+        return polygon_cells or planar_cells
+    if isinstance(arena, MaskArena) and not polygon_cells and not planar_cells:
         grid = env._binning.rectilinear
         if (
             grid is not None

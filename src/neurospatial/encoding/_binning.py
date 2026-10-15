@@ -24,13 +24,18 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import TimeSupport, resolve_time_windows, run_time_bounds
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.environment._polygon_trajectory import (
+    RetainedLinearInterval,
+    retained_linear_intervals,
+    uses_polygon_allocation,
+)
 from neurospatial.environment.trajectory import (
     interval_valid_mask,
     start_allocated_occupancy,
@@ -51,6 +56,147 @@ __all__ = [
 # _DROP_WARN_THRESHOLD is always < 1.0, so 100%-dropped (fraction == 1.0)
 # always satisfies `frac > threshold` and never needs a separate == check.
 _DROP_WARN_THRESHOLD = 0.5  # warn when fraction dropped exceeds this
+
+
+@dataclass(frozen=True)
+class LinearSpatialIntervals:
+    """Owned fractional support prepared once for a spatial encoding call."""
+
+    support: TimeSupport
+    pieces: tuple[RetainedLinearInterval, ...]
+    occupancy: NDArray[np.float64]
+
+
+def _validate_time_allocation(time_allocation: str) -> None:
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
+
+
+def prepare_linear_spatial_intervals(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
+    interval_mask: NDArray[np.bool_] | None = None,
+) -> LinearSpatialIntervals:
+    """Resolve exact planar dwell and half-open spike support once.
+
+    Complete observation intervals pass the gap, speed and recording-window
+    gates before their straight paths are subdivided by cells and Arena
+    support. Finite endpoints may lie outside the environment. Retained
+    fractions preserve the original clock and are never renormalized.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment publishing exact planar Cartesian area cells.
+    times : ndarray, shape (n_samples,)
+        Observation timestamps in seconds, sorted and finite.
+    positions : ndarray, shape (n_samples, 2)
+        Straight segment endpoints, which may lie outside the environment.
+    speed : ndarray, shape (n_samples,), or None
+        Resolved speed used with ``min_speed`` to gate complete intervals.
+    min_speed, max_gap : float or None
+        Speed and duration gates applied before geometric subdivision.
+    epochs, spike_window : array-like of shape (n_windows, 2), or None
+        Windows that must contain each complete observation interval.
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        Optional precomputed observation validity, before geometric bounds.
+
+    Returns
+    -------
+    LinearSpatialIntervals
+        Immutable pieces, owned read-only occupancy, and temporal support
+        whose runs describe the exact retained fractional intervals.
+
+    Raises
+    ------
+    NotImplementedError
+        If the environment cannot publish exact planar cell and Arena support.
+    """
+    if (
+        env.n_dims != 2
+        or env._binning.bins.measure_dim != 2
+        or env.arena.coordinate_kind != "cartesian"
+    ):
+        raise NotImplementedError(
+            "time_allocation='linear' spatial encoding requires exact planar "
+            "Cartesian area cells. Use time_allocation='start' for this environment."
+        )
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.shape != (len(times), 2):
+        raise ValueError("linear spatial encoding needs (n_samples, 2) positions.")
+    # This checks known nonmaterializable Arena support before any cell work.
+    uses_polygon_allocation(env)
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    if interval_mask is None:
+        mask = interval_valid_mask(
+            times,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+        )
+    else:
+        mask = np.array(interval_mask, dtype=bool, copy=True)
+        if mask.shape != (max(len(times) - 1, 0),):
+            raise ValueError(
+                "interval_mask must contain one value per observation interval."
+            )
+    finite = np.all(np.isfinite(positions), axis=1)
+    mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
+    pieces = retained_linear_intervals(env, times, positions, mask)
+    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    runs: list[list[float]] = []
+    for piece in pieces:
+        index = piece.sample_index
+        start, stop = times[index], times[index + 1]
+        duration = stop - start
+        occupancy[piece.bin_index] += duration * (
+            piece.stop_fraction - piece.start_fraction
+        )
+        left = (
+            float(start)
+            if piece.start_fraction == 0
+            else float(start + duration * piece.start_fraction)
+        )
+        right = (
+            float(stop)
+            if piece.stop_fraction == 1
+            else float(start + duration * piece.stop_fraction)
+        )
+        if right <= left:
+            raise ValueError(
+                "Linear spatial support is shorter than this timestamp clock "
+                "can represent. Use elapsed timestamps (subtract the recording "
+                "origin from both trajectory and spike times) or coarser "
+                "spatial binning."
+            )
+        if runs and left <= runs[-1][1]:
+            runs[-1][1] = max(runs[-1][1], right)
+        else:
+            runs.append([left, right])
+    run_array = np.asarray(runs, dtype=np.float64).reshape(-1, 2)
+    run_array.setflags(write=False)
+    occupancy.setflags(write=False)
+    support = TimeSupport.from_mask(
+        times,
+        mask,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        max_gap=max_gap,
+    )
+    support = TimeSupport(
+        support.mask, run_array, support.epochs, support.spike_window, support.max_gap
+    )
+    return LinearSpatialIntervals(support, pieces, occupancy)
 
 
 def resolve_speed(
@@ -186,6 +332,7 @@ def _bin_spike_train_with_stats(
     positions: NDArray[np.float64],
     *,
     interval_mask: NDArray[np.bool_],
+    linear_intervals: LinearSpatialIntervals | None = None,
 ) -> tuple[
     NDArray[np.float64],  # spike_counts, shape (n_bins,)
     int,  # n_time_dropped
@@ -240,6 +387,14 @@ def _bin_spike_train_with_stats(
     if len(spike_times_valid) > 0:
         spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
         spike_times_valid = spike_times_valid[interval_mask[spike_interval]]
+    if linear_intervals is not None and len(spike_times_valid) > 0:
+        runs = linear_intervals.support.runs
+        if len(runs) == 0:
+            spike_times_valid = spike_times_valid[:0]
+        else:
+            run = np.searchsorted(runs[:, 0], spike_times_valid, side="right") - 1
+            keep = (run >= 0) & (spike_times_valid < runs[np.maximum(run, 0), 1])
+            spike_times_valid = spike_times_valid[keep]
 
     n_after_time = len(spike_times_valid)
 
@@ -261,6 +416,15 @@ def _bin_spike_train_with_stats(
 
     if len(valid_bins) > 0:
         spike_counts = np.bincount(valid_bins, minlength=n_bins).astype(np.float64)
+        if linear_intervals is not None and np.any(
+            (spike_counts > 0) & (linear_intervals.occupancy == 0)
+        ):
+            raise ValueError(
+                "Linear spatial encoding assigns spikes by boundary ownership "
+                "to a bin with zero dwell time, so its firing rate is undefined. "
+                "Adjust the spatial binning or tracking/time resolution to "
+                "provide positive exposure for that bin."
+            )
 
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
 
@@ -468,8 +632,43 @@ def _resolve_spatial_time_support(
     epochs: Any,
     spike_window: Any,
     warn_on_drop: bool,
+    time_allocation: Literal["start", "linear"] = "start",
+    linear_intervals: LinearSpatialIntervals | None = None,
 ) -> TimeSupport:
     """Resolve training support shared by counting, occupancy and provenance."""
+    _validate_time_allocation(time_allocation)
+    if time_allocation == "linear":
+        if linear_intervals is None:
+            linear_intervals = prepare_linear_spatial_intervals(
+                env,
+                times,
+                positions,
+                speed=speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                epochs=epochs,
+                spike_window=spike_window,
+            )
+        support = linear_intervals.support
+        if warn_on_drop:
+            if support.mask.any() and not len(support.runs):
+                warnings.warn(
+                    "Linear spatial encoding retained no spatial support: "
+                    "the observation-valid paths do not enter the active cells "
+                    "and Arena domain. Check trajectory coordinates and env.arena. "
+                    + _WARN_ON_DROP_HINT,
+                    UserWarning,
+                    stacklevel=_external_stacklevel(),
+                )
+            else:
+                _emit_all_excluded_intervals_warning(
+                    support.mask,
+                    max_gap=max_gap,
+                    min_speed=min_speed,
+                    epochs=support.epochs,
+                    spike_window=support.spike_window,
+                )
+        return support
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     interval_mask = _spatial_interval_mask(
         env,
@@ -741,6 +940,8 @@ def bin_spike_train(
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
+    time_allocation: Literal["start", "linear"] = "start",
+    linear_intervals: LinearSpatialIntervals | None = None,
     context: str = "bin_spike_train",
     warn_on_drop: bool = True,
 ) -> NDArray[np.float64]:
@@ -798,6 +999,11 @@ def bin_spike_train(
         Optional precomputed validity shared by counts and occupancy. When
         supplied, it already includes all requested gates and windows, so
         these helpers do not recalculate or renormalize them.
+    time_allocation : {"start", "linear"}, default="start"
+        Start allocation keeps complete intervals with both endpoints inside.
+        Linear allocation uses exact retained planar segment support.
+    linear_intervals : LinearSpatialIntervals or None
+        Prepared linear support shared with occupancy and other units.
 
     Returns
     -------
@@ -842,6 +1048,7 @@ def bin_spike_train(
     True
     """
     spike_times = np.asarray(spike_times, dtype=np.float64)
+    _validate_time_allocation(time_allocation)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
@@ -854,7 +1061,21 @@ def bin_spike_train(
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
 
-    if interval_mask is None:
+    if time_allocation == "linear":
+        if linear_intervals is None:
+            linear_intervals = prepare_linear_spatial_intervals(
+                env,
+                times,
+                positions,
+                speed=speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                epochs=epochs,
+                spike_window=spike_window,
+                interval_mask=interval_mask,
+            )
+        interval_mask = linear_intervals.support.mask
+    elif interval_mask is None:
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
@@ -876,6 +1097,7 @@ def bin_spike_train(
             times,
             positions,
             interval_mask=interval_mask,
+            linear_intervals=linear_intervals,
         )
     )
 
@@ -907,6 +1129,8 @@ def compute_occupancy(
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
+    time_allocation: Literal["start", "linear"] = "start",
+    linear_intervals: LinearSpatialIntervals | None = None,
     context: str = "compute_occupancy",
 ) -> NDArray[np.float64]:
     """Compute occupancy (time spent in each bin).
@@ -944,6 +1168,11 @@ def compute_occupancy(
         Optional precomputed validity shared by counts and occupancy. When
         supplied, it already includes all requested gates and windows, so
         these helpers do not recalculate or renormalize them.
+    time_allocation : {"start", "linear"}, default="start"
+        Assign complete intervals to their start bins or split their straight
+        paths by exact planar support, using the same clock as spike counts.
+    linear_intervals : LinearSpatialIntervals or None
+        Prepared linear support shared with spike counting.
 
     Returns
     -------
@@ -958,8 +1187,8 @@ def compute_occupancy(
 
     Notes
     -----
-    Uses start-sample allocation with the same interval mask as spike counts.
-    Every excluded interval contributes neither duration nor spikes.
+    Counts and dwell share the same temporal support. Linear allocation keeps
+    original fractional durations without renormalizing excluded support.
 
     Examples
     --------
@@ -980,6 +1209,7 @@ def compute_occupancy(
     >>> occupancy.shape[0] == env.n_bins
     True
     """
+    _validate_time_allocation(time_allocation)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
@@ -1001,6 +1231,23 @@ def compute_occupancy(
             f"but environment has {env.n_dims} dimensions"
         )
 
+    if time_allocation == "linear":
+        if linear_intervals is None:
+            linear_intervals = prepare_linear_spatial_intervals(
+                env,
+                times,
+                positions,
+                speed=speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                epochs=epochs,
+                spike_window=spike_window,
+                interval_mask=interval_mask,
+            )
+        occupancy: NDArray[np.float64] = np.array(
+            linear_intervals.occupancy, dtype=np.float64, copy=True
+        )
+        return occupancy
     if interval_mask is None:
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
@@ -1035,6 +1282,8 @@ def bin_spike_trains(
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
+    time_allocation: Literal["start", "linear"] = "start",
+    linear_intervals: LinearSpatialIntervals | None = None,
     n_jobs: int = 1,
     warn_on_drop: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -1094,6 +1343,12 @@ def bin_spike_trains(
         Optional precomputed validity shared by counts and occupancy. When
         supplied, it already includes all requested gates and windows, so
         these helpers do not recalculate or renormalize them.
+    time_allocation : {"start", "linear"}, default="start"
+        Start allocation or exact planar segment allocation, applied equally
+        to all units and their shared dwell time.
+    linear_intervals : LinearSpatialIntervals or None
+        Prepared linear support. If absent, linear geometry is resolved once
+        for this batch, including an empty batch.
 
     Returns
     -------
@@ -1140,6 +1395,7 @@ def bin_spike_trains(
     """
     from neurospatial.encoding._spikes import as_spike_trains
 
+    _validate_time_allocation(time_allocation)
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
@@ -1155,7 +1411,21 @@ def bin_spike_trains(
     # This is what guarantees numerator/denominator alignment by construction.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    if interval_mask is None:
+    if time_allocation == "linear":
+        if linear_intervals is None:
+            linear_intervals = prepare_linear_spatial_intervals(
+                env,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                epochs=epochs,
+                spike_window=spike_window,
+                interval_mask=interval_mask,
+            )
+        interval_mask = linear_intervals.support.mask
+    elif interval_mask is None:
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
@@ -1174,6 +1444,8 @@ def bin_spike_trains(
         times,
         positions,
         interval_mask=interval_mask,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # Spike-counting pass.  We use the private kernel _bin_spike_train_with_stats
@@ -1200,6 +1472,7 @@ def bin_spike_trains(
                 times,
                 positions,
                 interval_mask=interval_mask,
+                linear_intervals=linear_intervals,
             )
             spike_counts[i] = counts
             total_spikes += n_tot
@@ -1219,6 +1492,7 @@ def bin_spike_trains(
                 times,
                 positions,
                 interval_mask=interval_mask,
+                linear_intervals=linear_intervals,
             )
 
         results = Parallel(n_jobs=n_jobs)(
