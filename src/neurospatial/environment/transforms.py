@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -20,8 +21,6 @@ if TYPE_CHECKING:
 
     from neurospatial.environment._protocols import RebinConsumer, SubsetConsumer
     from neurospatial.environment.core import Environment
-
-from neurospatial.regions import Regions
 
 
 def _rebin(
@@ -233,7 +232,7 @@ def _rebin(
         layout=cast("LayoutEngine", new_layout),
         layout_type_used="RegularGrid",
         layout_params_used=new_layout._build_params_used,
-        regions=Regions(),
+        regions=deepcopy(env.regions),
         arena=env.arena,
         units=env.units,
         frame=env.frame,

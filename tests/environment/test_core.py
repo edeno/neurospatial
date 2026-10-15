@@ -84,12 +84,11 @@ class TestEnvironmentFromGraph:
         assert bin_indices[2] != -1
 
     def test_contains(self, graph_env: Environment):
-        """Test checking if points are active."""
-        point_on_track1 = np.array([[-1.0, 0.0]])
-        assert graph_env.contains(point_on_track1)[0]
-
-        point_off_track = np.array([[10.0, 10.0]])
-        assert graph_env.contains(point_off_track)[0]
+        """A centerline alone supports projection but cannot assert containment."""
+        points = np.array([[-1.0, 0.0], [10.0, 10.0]])
+        assert (graph_env.bin_at(points) >= 0).all()
+        with pytest.raises(NotImplementedError, match="track_width"):
+            graph_env.contains(points)
 
     def test_neighbors(self, graph_env: Environment):
         """Test getting neighbors of a bin."""

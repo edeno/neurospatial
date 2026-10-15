@@ -420,3 +420,122 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
             arena=UnitDiskArena(),
         )
     np.testing.assert_array_equal(base.bin_at(base.bin_centers), [0])
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+@pytest.mark.parametrize("operation", ["occupancy", "encoding"])
+def test_sample_exactly_on_wall_does_not_split_a_physical_crossing(
+    duplicate, operation
+):
+    from neurospatial import compute_spatial_rates
+
+    env = _wall_environment()
+    positions = [[0.5, 0.75], [1.0, 0.75]]
+    if duplicate:
+        positions.append([1.0, 0.75])
+    positions.append([1.5, 0.75])
+    positions = np.asarray(positions)
+    times = np.arange(len(positions), dtype=float)
+    with pytest.raises(ValueError, match="wall"):
+        if operation == "occupancy":
+            env.occupancy(times, positions, time_allocation="linear", max_gap=None)
+        else:
+            compute_spatial_rates(
+                env,
+                [np.array([0.25])],
+                times,
+                positions,
+                method="binned",
+                bandwidth=0.0,
+                time_allocation="linear",
+                max_gap=None,
+            )
+
+
+@pytest.mark.parametrize("junction", ["straight", "split", "bend", "T", "X"])
+def test_sample_at_a_wall_junction_does_not_open_a_route(junction):
+    walls = [LineString([(2, 0), (2, 4)])]
+    if junction == "split":
+        walls = [LineString([(2, 0), (2, 2)]), LineString([(2, 2), (2, 4)])]
+    elif junction == "bend":
+        walls = [LineString([(2, 2), (2, 4)]), LineString([(2, 2), (4, 2)])]
+    elif junction == "T":
+        walls.append(LineString([(2, 2), (4, 2)]))
+    elif junction == "X":
+        walls.append(LineString([(0, 2), (4, 2)]))
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=tuple(walls)),
+    )
+    # The bend separates its small northeast sector from the large southwest one.
+    positions = np.array([[0.5, 0.5], [2.0, 2.0], [3.5, 3.5]])
+    with pytest.raises(ValueError, match="wall"):
+        env.occupancy(np.arange(3.0), positions, time_allocation="linear", max_gap=None)
+
+
+@pytest.mark.parametrize(
+    "positions",
+    [
+        [[0.5, 0.5], [1.0, 0.75], [0.5, 1.5]],  # touch and turn back
+        [[0.5, 0.5], [1.0, 0.75], [1.0, 0.75], [0.5, 1.5]],
+        [[1.0, 0.25], [1.0, 0.75], [1.0, 1.75]],  # collinear wall motion
+    ],
+)
+def test_sampled_wall_contact_without_a_crossing_remains_allowed(positions):
+    env = _wall_environment()
+    times = np.arange(len(positions), dtype=float)
+    occupancy = env.occupancy(
+        times, np.asarray(positions), time_allocation="linear", max_gap=None
+    )
+    assert occupancy.sum() == pytest.approx(times[-1])
+
+
+@pytest.mark.parametrize("contact", ["tip", "graze_bend"])
+def test_a_sample_at_a_wall_tip_or_grazing_corner_remains_allowed(contact):
+    walls = (LineString([(2, 0), (2, 2)]),)
+    positions = np.array([[0.5, 0.5], [2.0, 2.0], [3.5, 3.5]])
+    if contact == "graze_bend":
+        walls = (LineString([(2, 2), (2, 4)]), LineString([(2, 2), (4, 2)]))
+        positions = np.array([[0.5, 3.5], [2.0, 2.0], [3.5, 0.5]])
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=walls),
+    )
+    occupancy = env.occupancy(
+        np.arange(3.0), positions, time_allocation="linear", max_gap=None
+    )
+    assert occupancy.sum() == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("excluded", ["gap", "epoch", "nonfinite"])
+def test_sampled_wall_crossing_check_does_not_join_filtered_intervals(excluded):
+    env = _wall_environment()
+    positions = np.array([[0.5, 0.75], [1.0, 0.75], [1.5, 0.75]])
+    times = np.arange(3.0)
+    kwargs = {"max_gap": None}
+    if excluded == "gap":
+        times[-1] = 10.0
+        kwargs = {"max_gap": 2.0}
+    elif excluded == "epoch":
+        kwargs["epochs"] = np.array([[1.0, 2.0]])
+    else:
+        positions[0] = np.nan
+    occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
+    assert occupancy.sum() == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("excluded", ["gap", "epoch"])
+def test_filtered_wall_dwell_does_not_join_separate_valid_motion(excluded):
+    env = _wall_environment()
+    positions = np.array([[0.5, 0.75], [1.0, 0.75], [1.0, 0.75], [1.5, 0.75]])
+    times = np.arange(4.0)
+    kwargs = {"max_gap": None}
+    if excluded == "gap":
+        times = np.array([0.0, 1.0, 10.0, 11.0])
+        kwargs = {"max_gap": 2.0}
+    else:
+        kwargs["epochs"] = np.array([[0.0, 1.0], [2.0, 3.0]])
+    occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
+    assert occupancy.sum() == pytest.approx(2.0)

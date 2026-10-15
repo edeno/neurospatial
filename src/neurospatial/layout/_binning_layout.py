@@ -127,9 +127,16 @@ def _polygon_coordinate_errors(polygon: Polygon | MultiPolygon) -> NDArray[np.fl
             np.spacing(np.abs(coordinates)), axis=0
         ) + 64 * np.finfo(float).eps * np.ptp(coordinates, axis=0)
         normalized = (coordinates - coordinates[0]) / uncertainty
+    # Overlay can insert consecutive vertices separated by less than the
+    # coordinate uncertainty at an otherwise well-resolved corner. Those
+    # redundant vertices are not the cell's width. Simplify only this temporary
+    # normalized clearance probe; retain the original geometry and every cell.
     if (
         not np.all(np.isfinite(normalized))
-        or shapely.set_coordinates(polygon, normalized).minimum_clearance < 1e4
+        or shapely.set_coordinates(polygon, normalized)
+        .simplify(1.0, preserve_topology=True)
+        .minimum_clearance
+        < 1e4
     ):
         raise ValueError(
             "Polygon features are not resolvable at the stored coordinate precision. "
@@ -962,11 +969,20 @@ def _validate_components(
         )
         if bins.measure_dim != 1:
             raise ValueError("linearization bins.measure_dim must be 1.")
-    _equal(
-        locator.locate(bins.centers),
-        np.arange(bins.n_bins),
-        "locator bin-center lookup",
-    )
+    located = locator.locate(bins.centers)
+    if track is not None:
+        # An embedded track can revisit an identical spatial point at a
+        # different linear coordinate. Nearest-point lookup may choose either
+        # coincident bin; the validated track component owns path identity.
+        if located.shape != (bins.n_bins,) or np.any(
+            (located < 0) | (located >= bins.n_bins)
+        ):
+            raise ValueError("Track locator does not locate its bin centers.")
+        _equal(
+            bins.centers[located], bins.centers, "track locator bin-center coordinates"
+        )
+    else:
+        _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
 
 
 class BinningLayout:
@@ -1080,6 +1096,9 @@ class BinningLayout:
             return track.active_mask.shape
         if isinstance(self._binning.locator, HexLocator):
             return self._binning.locator.centers_shape
+        locator = self._binning.locator
+        if isinstance(locator, MeshLocator):
+            return (len(locator.simplices),)
         return (self._binning.bins.n_bins,)
 
     @property
@@ -1097,7 +1116,12 @@ class BinningLayout:
             )
             hex_mask.setflags(write=False)
             return hex_mask
-        mask = np.ones(self._binning.bins.n_bins, dtype=bool)
+        locator = self._binning.locator
+        mask = (
+            locator.simplex_to_active >= 0
+            if isinstance(locator, MeshLocator)
+            else np.ones(self._binning.bins.n_bins, dtype=bool)
+        )
         mask.setflags(write=False)
         return mask
 
