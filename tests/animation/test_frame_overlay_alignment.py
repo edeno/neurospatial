@@ -74,7 +74,9 @@ def _html_frames(path, embed):
         return [
             mpimg.imread(frame) for frame in sorted(path.with_suffix("").glob("*.png"))
         ]
-    match = re.search(r"const frames = (\[.*?\]);", path.read_text(), re.DOTALL)
+    match = re.search(
+        r"const frames = (\[.*?\]);", path.read_text(encoding="utf-8"), re.DOTALL
+    )
     assert match is not None
     return [
         mpimg.imread(io.BytesIO(base64.b64decode(encoded)), format="png")
@@ -134,7 +136,7 @@ def test_html_exports_visible_overlays_in_both_modes(
     # Frame 2 is after the event at frame 1: it also verifies decay support.
     changed = np.any(base_images[2] != overlay_images[2], axis=-1)
     assert np.count_nonzero(changed) > 10
-    assert "const overlayData = null;" in overlay_path.read_text()
+    assert "const overlayData = null;" in overlay_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("embed", [True, False])
