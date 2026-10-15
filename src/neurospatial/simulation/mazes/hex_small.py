@@ -38,7 +38,7 @@ import numpy as np
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 
 # Calibration: pixels to cm conversion for Frank Lab hex maze
@@ -804,13 +804,15 @@ def make_small_hex_maze(
         name="small_hex_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add reward well regions
     reward_well_names = ["reward_well_0", "reward_well_1", "reward_well_2"]
+    region_builder = Regions()
     for name, poly in zip(reward_well_names, reward_well_polygons, strict=True):
         # Use centroid as point region (polygon may be outside navigable area)
-        env_2d.regions.add(name, point=(poly.centroid.x, poly.centroid.y))
+        region_builder.add(name, point=(poly.centroid.x, poly.centroid.y))
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -909,6 +911,6 @@ def _create_hex_track_graph(
         bin_size=bin_size,
         name="small_hex_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

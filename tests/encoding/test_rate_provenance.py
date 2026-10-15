@@ -22,7 +22,7 @@ def rate_family(request):
     env = Environment.from_grid_mask(
         np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7) * 5.0,) * 2
     )
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     trains = [np.array([0.3, 1.1, 1.6, 3.1, 4.1]), np.array([0.4, 1.8, 3.4])]
     kwargs = {"epochs": [[0, 2], [3, 6]], "spike_window": (0.25, 5.5), "max_gap": 0.3}
     if family == "directional":
@@ -150,7 +150,7 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
         env = Environment.from_grid_mask(
             np.ones((8, 8), dtype=bool), grid_edges=(np.arange(9) * 5.0 * scale,) * 2
         )
-        env.units = units if declared_units else None
+        env = env.with_metadata(units=units if declared_units else None)
         # Object-vector analyses also work without a Cartesian environment.
         input_env = env if declared_units or family == "view" else None
         args = (input_env, trains, times, positions * scale)

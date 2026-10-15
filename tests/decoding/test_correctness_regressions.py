@@ -34,7 +34,9 @@ def test_rate_result_environment_mismatch_raises(tiny_env, decode, validate, mis
         other = Environment.from_samples(env.bin_centers + 100, bin_size=5.0)
     else:
         other = env.copy()
-        setattr(other, mismatch, "cm" if mismatch == "units" else "camera")
+        other = other.with_metadata(
+            **{mismatch: "cm" if mismatch == "units" else "camera"}
+        )
     assert other.n_bins == env.n_bins
     rates = SpatialRatesResult(
         np.ones((1, env.n_bins)), np.ones(env.n_bins), env, "binned", 5.0

@@ -159,7 +159,7 @@ def open_field_session(
 
     # Create environment from data
     env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Simulate session with place cells and OU trajectory
     session = simulate_session(
@@ -329,7 +329,7 @@ def linear_track_session(
 
     # Create environment from 1D data
     env = Environment.from_samples(track_data, bin_size=bin_size)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Simulate session with place cells and lap trajectory
     session = simulate_session(
@@ -531,7 +531,7 @@ def tmaze_alternation_session(
         edge_spacing=edge_spacing,
         bin_size=2.0,
     )
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Generate trial choices (perfect alternation pattern)
     # Use seed to determine first choice, then alternate
@@ -738,7 +738,7 @@ def boundary_cell_session(
 
     # Create environment from data
     env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Generate trajectory using OU process
     positions, times = simulate_trajectory_ou(
@@ -978,7 +978,7 @@ def grid_cell_session(
 
     # Create environment from data
     env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Generate trajectory using OU process
     positions, times = simulate_trajectory_ou(

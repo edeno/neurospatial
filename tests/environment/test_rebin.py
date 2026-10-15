@@ -8,6 +8,13 @@ import pytest
 from shapely.geometry import Point
 
 from neurospatial import Environment
+from neurospatial.arena import encode_arena
+
+
+def _arena_record(arena):
+    """Compare domain values independently of detached public export identity."""
+    metadata, arrays = encode_arena(arena)
+    return metadata, {name: array.tolist() for name, array in arrays.items()}
 
 
 def _coarse_oracle(env, factor):
@@ -36,7 +43,7 @@ def _assert_coarse_oracle(env, coarse, factor):
     np.testing.assert_array_equal(coarse.active_mask, active)
     for actual, expected in zip(coarse.grid_edges, edges, strict=True):
         np.testing.assert_array_equal(actual, expected)
-    assert coarse.arena is env.arena
+    assert _arena_record(coarse.arena) == _arena_record(env.arena)
 
 
 def _assert_masked_connectivity(env, coarse, *, diagonal):
@@ -474,8 +481,8 @@ class TestRebinEdgeCases:
         rng = np.random.default_rng(42)
         data = rng.random((200, 2)) * 100
         env = Environment.from_samples(data, bin_size=10.0)
-        env.units = "cm"
-        env.frame = "session1"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session1")
 
         coarse = env.rebin(factor=2)
 

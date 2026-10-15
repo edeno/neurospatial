@@ -23,7 +23,14 @@ from numpy.testing import assert_allclose
 from shapely.geometry import box
 
 from neurospatial import Environment
+from neurospatial.arena import encode_arena
 from neurospatial.regions import Regions
+
+
+def _arena_record(arena):
+    """Compare domain values independently of detached public export identity."""
+    metadata, arrays = encode_arena(arena)
+    return metadata, {name: array.tolist() for name, array in arrays.items()}
 
 
 class TestRebin:
@@ -155,8 +162,8 @@ class TestRebin:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.units = "cm"
-        env_copy.frame = "arena1"
+        env_copy = env_copy.with_metadata(units="cm")
+        env_copy = env_copy.with_metadata(frame="arena1")
 
         rebinned = env_copy.rebin(factor=2)
 
@@ -169,7 +176,7 @@ class TestRebin:
         """A fully supported domain retains every coarse cell center."""
         rebinned = medium_2d_env.rebin(factor=2)
 
-        assert rebinned.arena is medium_2d_env.arena
+        assert _arena_record(rebinned.arena) == _arena_record(medium_2d_env.arena)
         assert rebinned.active_mask is not None
         assert np.all(rebinned.active_mask)
         assert np.all(rebinned.arena.contains(rebinned.bin_centers))
@@ -219,7 +226,7 @@ class TestRebin:
         """Test that rebinned environment has updated name."""
         # Set original name
         env = medium_2d_env.copy()
-        env.name = "OriginalEnv"
+        env = env.with_metadata(name="OriginalEnv")
 
         rebinned = env.rebin(factor=2)
 
@@ -342,7 +349,9 @@ class TestSubset:
             center[1] + half_size,
         )
 
-        env.regions.add("center_region", polygon=region_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center_region", polygon=region_poly)
+        env = env.with_regions(region_builder)
 
         # Subset by region name
         subset_env = env.subset(region_names=["center_region"])
@@ -363,7 +372,9 @@ class TestSubset:
         env = medium_2d_env.copy()
 
         # Add a point region to the copy
-        env.regions.add("goal", point=np.array([0.0, 0.0]))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=np.array([0.0, 0.0]))
+        env = env.with_regions(region_builder)
 
         with pytest.raises(ValueError, match="point-type region"):
             env.subset(region_names=["goal"])
@@ -405,8 +416,8 @@ class TestSubset:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.units = "cm"
-        env_copy.frame = "arena1"
+        env_copy = env_copy.with_metadata(units="cm")
+        env_copy = env_copy.with_metadata(frame="arena1")
 
         # Select subset
         bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
@@ -421,8 +432,10 @@ class TestSubset:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.regions = Regions()  # Fresh regions
-        env_copy.regions.add("goal", point=np.array([0.0, 0.0]))
+        env_copy = env_copy.with_regions(Regions())  # Fresh regions
+        region_builder = Regions(env_copy.regions.values())
+        region_builder.add("goal", point=np.array([0.0, 0.0]))
+        env_copy = env_copy.with_regions(region_builder)
 
         # Select subset
         bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
@@ -889,7 +902,7 @@ class TestApplyTransform:
 
         # Set original name
         env = medium_2d_env.copy()
-        env.name = "OriginalEnv"
+        env = env.with_metadata(name="OriginalEnv")
 
         transform = translate(5, 5)
         transformed = env.apply_transform(transform)
@@ -902,7 +915,7 @@ class TestApplyTransform:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.units = "cm"
+        env_copy = env_copy.with_metadata(units="cm")
 
         from neurospatial.ops.transforms import translate
 
@@ -917,7 +930,7 @@ class TestApplyTransform:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.frame = "session1"
+        env_copy = env_copy.with_metadata(frame="session1")
 
         from neurospatial.ops.transforms import translate
 
@@ -932,10 +945,12 @@ class TestApplyTransform:
         import copy
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.regions = Regions()  # Fresh regions
+        env_copy = env_copy.with_regions(Regions())  # Fresh regions
 
         # Add a point region
-        env_copy.regions.add("goal", point=np.array([10.0, 20.0]))
+        region_builder = Regions(env_copy.regions.values())
+        region_builder.add("goal", point=np.array([10.0, 20.0]))
+        env_copy = env_copy.with_regions(region_builder)
 
         from neurospatial.ops.transforms import translate
 
@@ -961,11 +976,13 @@ class TestApplyTransform:
         from shapely.geometry import box
 
         env_copy = copy.copy(medium_2d_env)
-        env_copy.regions = Regions()  # Fresh regions
+        env_copy = env_copy.with_regions(Regions())  # Fresh regions
 
         # Add a polygon region
         poly = box(0, 0, 10, 10)
-        env_copy.regions.add("area", polygon=poly)
+        region_builder = Regions(env_copy.regions.values())
+        region_builder.add("area", polygon=poly)
+        env_copy = env_copy.with_regions(region_builder)
 
         from neurospatial.ops.transforms import translate
 

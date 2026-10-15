@@ -54,7 +54,9 @@ class TestRegionsToMaskBasic:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add region to environment
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         # Rasterize using region name
         mask = regions_to_mask(env, "center")
@@ -68,8 +70,10 @@ class TestRegionsToMaskBasic:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("left", polygon=box(0, 0, 4, 10))
-        env.regions.add("right", polygon=box(6, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(0, 0, 4, 10))
+        region_builder.add("right", polygon=box(6, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         # Rasterize union of both regions
         mask = regions_to_mask(env, ["left", "right"])
@@ -261,8 +265,10 @@ class TestRegionsToMaskDuality:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
-        env.regions.add("corner", polygon=box(0, 0, 3, 3))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        region_builder.add("corner", polygon=box(0, 0, 3, 3))
+        env = env.with_regions(region_builder)
 
         # Using regions_to_mask with all env.regions
         mask = regions_to_mask(env, env.regions)

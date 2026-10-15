@@ -29,7 +29,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -209,18 +209,20 @@ def make_hamlet_maze(
         name="hamlet_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add region for center
-    env_2d.regions.add("center", point=center_pos)
+    region_builder = Regions()
+    region_builder.add("center", point=center_pos)
 
     # Add regions for inner boxes
     for i, inner_pos in enumerate(inner_positions):
-        env_2d.regions.add(f"inner_{i}", point=inner_pos)
+        region_builder.add(f"inner_{i}", point=inner_pos)
 
     # Add regions for outer boxes
     for i, outer_pos in enumerate(outer_positions):
-        env_2d.regions.add(f"outer_{i}", point=outer_pos)
+        region_builder.add(f"outer_{i}", point=outer_pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -323,6 +325,6 @@ def _create_hamlet_track_graph(
         bin_size=bin_size,
         name="hamlet_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

@@ -167,7 +167,7 @@ def test_region_not_found_prints_fix_unquoted():
 def test_region_not_found_names_the_argument():
     exc = RegionNotFoundError("home", available=[], argument="start_region")
     assert "This environment has no regions" in str(exc)
-    assert "env.regions.add('home'" in str(exc)
+    assert "regions.add('home'" in str(exc)
     assert "start_region='home'" in str(exc)
 
 

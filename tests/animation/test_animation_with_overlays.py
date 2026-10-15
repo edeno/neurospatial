@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, Mock, patch
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
@@ -54,8 +54,8 @@ def simple_env():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 100, (200, 2))
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
-    env.frame = "test"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="test")
     return env
 
 
@@ -130,8 +130,10 @@ def head_direction_overlay_data():
 @pytest.fixture
 def env_with_regions(simple_env):
     """Add regions to simple environment."""
-    simple_env.regions.add("goal", point=np.array([75.0, 75.0]))
-    simple_env.regions.add("start", point=np.array([25.0, 25.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([75.0, 75.0]))
+    region_builder.add("start", point=np.array([25.0, 25.0]))
+    simple_env = simple_env.with_regions(region_builder)
     return simple_env
 
 

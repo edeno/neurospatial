@@ -50,7 +50,9 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("center", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -72,9 +74,11 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("left", polygon=box(-10, -10, 0, 10))
-        env.regions.add("right", polygon=box(0, -10, 10, 10))
-        env.regions.add("center", polygon=box(-3, -3, 3, 3))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(-10, -10, 0, 10))
+        region_builder.add("right", polygon=box(0, -10, 10, 10))
+        region_builder.add("center", polygon=box(-3, -3, 3, 3))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -138,7 +142,9 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("rect", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         membership_with_boundary = env.region_membership(include_boundary=True)
 
@@ -159,7 +165,9 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("rect", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         membership_without_boundary = env.region_membership(include_boundary=False)
 
@@ -181,7 +189,9 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("rect", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         with_boundary = env.region_membership(include_boundary=True)
         without_boundary = env.region_membership(include_boundary=False)
@@ -198,8 +208,10 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("point1", point=(0.0, 0.0))
-        env.regions.add("point2", point=(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("point1", point=(0.0, 0.0))
+        region_builder.add("point2", point=(5.0, 5.0))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -217,8 +229,10 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("point", point=(0.0, 0.0))
-        env.regions.add("polygon", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("point", point=(0.0, 0.0))
+        region_builder.add("polygon", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -256,7 +270,9 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("rect", polygon=box(-5, -5, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
+        env = env.with_regions(region_builder)
 
         with pytest.raises(TypeError, match="include_boundary must be a bool"):
             env.region_membership(include_boundary="True")
@@ -264,8 +280,8 @@ class TestRegionMembership:
         with pytest.raises(TypeError, match="include_boundary must be a bool"):
             env.region_membership(include_boundary=1)
 
-    def test_region_membership_3d_raises_not_implemented(self, simple_3d_env):
-        """Test region_membership raises NotImplementedError for 3D.
+    def test_polygon_region_rejects_3d_publication(self, simple_3d_env):
+        """Test polygon dimensions are checked before publication.
 
         Parameters
         ----------
@@ -274,17 +290,17 @@ class TestRegionMembership:
 
         Notes
         -----
-        Tests that polygon regions in 3D environments raise NotImplementedError.
+        Polygon regions cannot be published in a 3D environment.
         """
         env = copy.copy(simple_3d_env)
-        env.regions = Regions()
+        env = env.with_regions(Regions())
 
         # Add polygon region (only valid in 2D)
-        # Note: This will succeed in adding, but fail when querying
-        env.regions.add("poly", polygon=box(0, 0, 5, 5))
-
-        with pytest.raises(NotImplementedError, match="only supports 2D"):
-            env.region_membership()
+        region_builder = Regions(env.regions.values())
+        region_builder.add("poly", polygon=box(0, 0, 5, 5))
+        with pytest.raises(ValueError, match="dimensions must match"):
+            env.with_regions(region_builder)
+        assert len(env.regions) == 0
 
     def test_region_membership_overlapping_regions(self):
         """Test region_membership with overlapping regions.
@@ -295,8 +311,10 @@ class TestRegionMembership:
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("left", polygon=box(-10, -10, 5, 10))
-        env.regions.add("right", polygon=box(-5, -10, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(-10, -10, 5, 10))
+        region_builder.add("right", polygon=box(-5, -10, 10, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -332,7 +350,9 @@ class TestComplexPolygonGeometries:
         hole = [(3, 3), (7, 3), (7, 7), (3, 7)]
         donut = Polygon(exterior, [hole])
 
-        env.regions.add("donut", polygon=donut)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("donut", polygon=donut)
+        env = env.with_regions(region_builder)
 
         # Test bins_in_region
         bins = env.bins_in_region("donut")
@@ -367,7 +387,9 @@ class TestComplexPolygonGeometries:
 
         # Bowtie shape (self-intersecting)
         bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-        env.regions.add("bowtie", polygon=bowtie)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("bowtie", polygon=bowtie)
+        env = env.with_regions(region_builder)
 
         # Should not crash
         bins = env.bins_in_region("bowtie")
@@ -389,7 +411,9 @@ class TestComplexPolygonGeometries:
 
         # Degenerate polygon (line segment)
         line = Polygon([(0, 0), (10, 0), (10, 0), (0, 0)])
-        env.regions.add("line", polygon=line)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("line", polygon=line)
+        env = env.with_regions(region_builder)
 
         # Should handle gracefully (may return 0 bins)
         bins = env.bins_in_region("line")
@@ -415,7 +439,9 @@ class TestComplexPolygonGeometries:
         hole2 = [(10, 10), (15, 10), (15, 15), (10, 15)]
         swiss_cheese = Polygon(exterior, [hole1, hole2])
 
-        env.regions.add("swiss", polygon=swiss_cheese)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("swiss", polygon=swiss_cheese)
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("swiss")
         assert len(bins) > 0
@@ -442,7 +468,9 @@ class TestComplexPolygonGeometries:
         y = 10 + radii * np.sin(angles)
         star = Polygon(list(zip(x, y, strict=False)))
 
-        env.regions.add("star", polygon=star)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("star", polygon=star)
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("star")
         assert isinstance(bins, np.ndarray)
@@ -473,7 +501,9 @@ class TestRegionQueriesComplex:
         hole = [(8, 8), (12, 8), (12, 12), (8, 12)]
         donut = Polygon(exterior, [hole])
 
-        env.regions.add("donut", polygon=donut)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("donut", polygon=donut)
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("donut")
 
@@ -498,7 +528,9 @@ class TestRegionQueriesComplex:
         hole = [(8, 8), (12, 8), (12, 12), (8, 12)]
         donut = Polygon(exterior, [hole])
 
-        env.regions.add("donut", polygon=donut)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("donut", polygon=donut)
+        env = env.with_regions(region_builder)
 
         mask = env.region_mask("donut")
 
@@ -524,7 +556,9 @@ class TestRegionQueriesComplex:
 
         # Polygon with edges exactly on potential bin centers
         rect = box(2.0, 2.0, 8.0, 8.0)
-        env.regions.add("rect", polygon=rect)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=rect)
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("rect")
 
@@ -544,7 +578,9 @@ class TestRegionQueriesComplex:
 
         # Tiny polygon (much smaller than bin size)
         tiny = box(5.0, 5.0, 5.01, 5.01)
-        env.regions.add("tiny", polygon=tiny)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("tiny", polygon=tiny)
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("tiny")
 
@@ -637,10 +673,16 @@ class TestRegionBufferingAdvanced:
         hole = [(8, 8), (12, 8), (12, 12), (8, 12)]
         donut = Polygon(exterior, [hole])
 
-        env.regions.add("donut", polygon=donut)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("donut", polygon=donut)
+        env = env.with_regions(region_builder)
 
         # Buffer outward
-        buffered = env.regions.buffer("donut", distance=1.0, new_name="buffered_donut")
+        region_builder = Regions(env.regions.values())
+        buffered = region_builder.buffer(
+            "donut", distance=1.0, new_name="buffered_donut"
+        )
+        env = env.with_regions(region_builder)
 
         # Should still be a polygon
         assert buffered.kind == "polygon"
@@ -658,10 +700,14 @@ class TestRegionBufferingAdvanced:
         env = Environment.from_samples(data, bin_size=2.0)
 
         original = box(0, 0, 10, 10)
-        env.regions.add("rect", polygon=original)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("rect", polygon=original)
+        env = env.with_regions(region_builder)
 
         # Erode by negative buffer
-        eroded = env.regions.buffer("rect", distance=-1.0, new_name="eroded")
+        region_builder = Regions(env.regions.values())
+        eroded = region_builder.buffer("rect", distance=-1.0, new_name="eroded")
+        env = env.with_regions(region_builder)
 
         # Area should decrease
         assert eroded.data.area < original.area
@@ -680,10 +726,14 @@ class TestRegionBufferingAdvanced:
 
         # Thin elongated polygon
         thin = Polygon([(0, 0), (20, 0), (20, 1), (0, 1)])
-        env.regions.add("thin", polygon=thin)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("thin", polygon=thin)
+        env = env.with_regions(region_builder)
 
         # Large negative buffer should erode completely or create fragments
-        eroded = env.regions.buffer("thin", distance=-0.6, new_name="eroded_thin")
+        region_builder = Regions(env.regions.values())
+        eroded = region_builder.buffer("thin", distance=-0.6, new_name="eroded_thin")
+        env = env.with_regions(region_builder)
 
         # May be empty or smaller polygon (depends on Shapely)
         # Just verify it doesn't crash
@@ -700,10 +750,14 @@ class TestRegionBufferingAdvanced:
         env = Environment.from_samples(data, bin_size=2.0)
 
         small_poly = box(20, 20, 25, 25)
-        env.regions.add("small", polygon=small_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("small", polygon=small_poly)
+        env = env.with_regions(region_builder)
 
         # Very large buffer
-        buffered = env.regions.buffer("small", distance=10.0, new_name="huge")
+        region_builder = Regions(env.regions.values())
+        buffered = region_builder.buffer("small", distance=10.0, new_name="huge")
+        env = env.with_regions(region_builder)
 
         # Should be much larger
         assert buffered.data.area > small_poly.area * 5
@@ -728,7 +782,9 @@ class TestRegionIntegrationAdvanced:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add large region
-        env.regions.add("large", polygon=box(0, 0, 20, 20))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("large", polygon=box(0, 0, 20, 20))
+        env = env.with_regions(region_builder)
 
         # Create subset that only covers part of region
         subset_bins_idx = env.bins_in_region("large")[:10]  # First 10 bins
@@ -757,7 +813,9 @@ class TestRegionIntegrationAdvanced:
         exterior = [(0, 0), (20, 0), (20, 20), (0, 20)]
         hole = [(8, 8), (12, 8), (12, 12), (8, 12)]
         donut = Polygon(exterior, [hole])
-        env.regions.add("donut", polygon=donut)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("donut", polygon=donut)
+        env = env.with_regions(region_builder)
 
         # Save and load
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -791,14 +849,20 @@ class TestRegionIntegrationAdvanced:
             env.region_mask("nonexistent")
 
         # Test 2: Wrong dimension point
-        env.regions.add("wrong_dim", point=(1.0, 2.0, 3.0))
-        with pytest.raises(ValueError, match=r"dimension.*does not match"):
-            env.bins_in_region("wrong_dim")
+        region_builder = Regions(env.regions.values())
+        region_builder.add("wrong_dim", point=(1.0, 2.0, 3.0))
+        with pytest.raises(ValueError, match="dimensions must match"):
+            env.with_regions(region_builder)
+        assert "wrong_dim" not in env.regions
 
         # Test 3: Duplicate region name
-        env.regions.add("test", point=(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", point=(5.0, 5.0))
+        env = env.with_regions(region_builder)
         with pytest.raises(KeyError, match="Duplicate"):
-            env.regions.add("test", point=(7.0, 7.0))
+            region_builder = Regions(env.regions.values())
+            region_builder.add("test", point=(7.0, 7.0))
+            env = env.with_regions(region_builder)
 
 
 class TestRegionErrorHandling:
@@ -817,11 +881,15 @@ class TestRegionErrorHandling:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("region1", point=(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region1", point=(5.0, 5.0))
+        env = env.with_regions(region_builder)
 
         # Duplicate name should raise error
         with pytest.raises(KeyError, match="Duplicate region name"):
-            env.regions.add("region1", polygon=box(0, 0, 10, 10))
+            region_builder = Regions(env.regions.values())
+            region_builder.add("region1", polygon=box(0, 0, 10, 10))
+            env = env.with_regions(region_builder)
 
     def test_region_queries_nonexistent_region(self):
         """Test queries for non-existent regions.
@@ -853,7 +921,9 @@ class TestRegionErrorHandling:
         env = Environment.from_samples(data, bin_size=2.0)
 
         with pytest.raises(KeyError):
-            env.regions.update_region("does_not_exist", point=(5.0, 5.0))
+            region_builder = Regions(env.regions.values())
+            region_builder.update_region("does_not_exist", point=(5.0, 5.0))
+            env = env.with_regions(region_builder)
 
     def test_region_remove_nonexistent_raises(self):
         """``regions.remove(...)`` on a missing name raises.
@@ -868,11 +938,14 @@ class TestRegionErrorHandling:
         env = Environment.from_samples(data, bin_size=2.0)
 
         with pytest.raises(KeyError):
-            env.regions.remove("does_not_exist")
+            region_builder = Regions(env.regions.values())
+            region_builder.remove("does_not_exist")
+            env = env.with_regions(region_builder)
 
         # ``del regions[name]`` continues to raise as well.
         with pytest.raises(KeyError):
-            del env.regions["does_not_exist"]
+            builder = Regions(env.regions.values())
+            del builder["does_not_exist"]
 
     def test_empty_polygon_region(self):
         """Test handling of empty polygon geometry.
@@ -886,7 +959,9 @@ class TestRegionErrorHandling:
 
         # Empty polygon
         empty_poly = Polygon()
-        env.regions.add("empty", polygon=empty_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("empty", polygon=empty_poly)
+        env = env.with_regions(region_builder)
 
         # Should return no bins
         bins = env.bins_in_region("empty")
@@ -905,7 +980,9 @@ class TestRegionErrorHandling:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("far_away", point=(1000.0, 1000.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("far_away", point=(1000.0, 1000.0))
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("far_away")
         assert len(bins) == 0
@@ -923,7 +1000,9 @@ class TestRegionErrorHandling:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("far_away", polygon=box(1000, 1000, 1010, 1010))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("far_away", polygon=box(1000, 1000, 1010, 1010))
+        env = env.with_regions(region_builder)
 
         bins = env.bins_in_region("far_away")
         assert len(bins) == 0
@@ -960,7 +1039,9 @@ class TestRegionMembershipPerformance:
         for i in range(n_regions):
             x = -20 + i * 2
             y = -20 + i * 2
-            env.regions.add(f"region_{i}", polygon=box(x, y, x + 3, y + 3))
+            region_builder = Regions(env.regions.values())
+            region_builder.add(f"region_{i}", polygon=box(x, y, x + 3, y + 3))
+            env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -985,8 +1066,10 @@ class TestRegionMembershipPerformance:
         )
 
         # Add several regions
-        env.regions.add("region1", polygon=box(-50, -50, 0, 0))
-        env.regions.add("region2", polygon=box(0, 0, 50, 50))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region1", polygon=box(-50, -50, 0, 0))
+        region_builder.add("region2", polygon=box(0, 0, 50, 50))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 

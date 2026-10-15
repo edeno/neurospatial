@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.backends.video_backend import render_video
 from neurospatial.animation.overlays import (
     BodypartData,
@@ -148,7 +148,9 @@ def multi_overlay_data() -> OverlayData:
 @pytest.fixture
 def env_with_regions(simple_env: Environment) -> Environment:
     """Create environment with regions."""
-    simple_env.regions.add("goal", point=np.array([50.0, 50.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([50.0, 50.0]))
+    simple_env = simple_env.with_regions(region_builder)
     return simple_env
 
 
@@ -528,8 +530,10 @@ def test_region_overlay_renders_with_alpha(
 
 def test_region_overlay_filters_by_name(env_with_regions: Environment, tmp_path: Path):
     """Test that show_regions can filter by region names."""
-    env_with_regions.regions.add("start", point=np.array([10.0, 10.0]))
-    env_with_regions.regions.add("end", point=np.array([90.0, 90.0]))
+    region_builder = Regions(env_with_regions.regions.values())
+    region_builder.add("start", point=np.array([10.0, 10.0]))
+    region_builder.add("end", point=np.array([90.0, 90.0]))
+    env_with_regions = env_with_regions.with_regions(region_builder)
 
     rng = np.random.default_rng(42)
     n_frames = 5

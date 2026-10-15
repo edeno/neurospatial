@@ -291,12 +291,14 @@ class TestBinSizes:
         assert np.all(sizes > 0)
 
     def test_bin_sizes_cached(self, small_2d_env):
-        """Test that bin_sizes is cached (same object on repeated access)."""
+        """Measures are cached internally and exported independently."""
         sizes1 = small_2d_env.bin_sizes
+        cached = small_2d_env._bin_sizes_cached
         sizes2 = small_2d_env.bin_sizes
 
-        # Should be the same object (cached)
-        assert sizes1 is sizes2
+        assert small_2d_env._bin_sizes_cached is cached
+        assert sizes1 is not sizes2
+        np.testing.assert_array_equal(sizes1, sizes2)
 
     def test_bin_sizes_reasonable_magnitude(self, small_2d_env):
         """Test that bin sizes have reasonable values."""
@@ -565,7 +567,7 @@ class TestDistanceTo:
         regions = Regions()
         polygon = box(0.0, 0.0, 2.0, 2.0)
         regions.add("goal", polygon=polygon)
-        env.regions = regions
+        env = env.with_regions(regions)
 
         # 1. Raises the specific RegionNotFoundError subtype.
         with pytest.raises(RegionNotFoundError, match="nonexistent_region"):

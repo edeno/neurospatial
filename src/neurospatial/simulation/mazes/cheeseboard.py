@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
@@ -167,7 +167,7 @@ def make_cheeseboard_maze(
         name="cheeseboard_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Create regular grid of reward locations across entire surface
     # Grid extends from -radius to +radius in both dimensions
@@ -180,12 +180,14 @@ def make_cheeseboard_maze(
     ys = np.linspace(-half_extent, half_extent, n_locations_per_side)
 
     # Add reward locations that fall within circular boundary
+    region_builder = Regions()
     for i, x in enumerate(xs):
         for j, y in enumerate(ys):
             # Check if within circular boundary (with reward_radius buffer)
             distance_from_center = np.sqrt(x**2 + y**2)
             if distance_from_center <= radius - dims.reward_radius:
-                env_2d.regions.add(f"reward_{i}_{j}", point=(x, y))
+                region_builder.add(f"reward_{i}_{j}", point=(x, y))
+    env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field
     env_track = None

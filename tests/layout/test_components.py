@@ -19,8 +19,9 @@ def test_hexagon_shapes_match_layout(built_environment):
     env = built_environment
     shapes = env._binning.shapes
     assert isinstance(shapes, HexagonShapes)
-    assert shapes.radius == env.layout.hex_radius_
-    assert shapes.orientation == env.layout.hex_orientation_
+    source = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    assert shapes.radius == source.hex_radius_
+    assert shapes.orientation == source.hex_orientation_
     np.testing.assert_array_equal(shapes.centers, env.bin_centers)
     assert not shapes.centers.flags.writeable
 
@@ -31,12 +32,11 @@ def test_triangle_shapes_cover_active_bins(built_environment):
     shapes = env._binning.shapes
     assert isinstance(shapes, TriangleShapes)
     assert shapes.triangles.shape == (env.n_bins, 3)
-    np.testing.assert_array_equal(shapes.points, env.layout._full_delaunay_tri.points)
+    source = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    np.testing.assert_array_equal(shapes.points, source._full_delaunay_tri.points)
     np.testing.assert_array_equal(
         shapes.triangles,
-        env.layout._full_delaunay_tri.simplices[
-            env.layout._active_original_simplex_indices
-        ],
+        source._full_delaunay_tri.simplices[source._active_original_simplex_indices],
     )
     np.testing.assert_array_equal(
         shapes.points[shapes.triangles].mean(axis=1), env.bin_centers

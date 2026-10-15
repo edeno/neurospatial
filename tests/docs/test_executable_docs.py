@@ -75,7 +75,10 @@ positions = np.column_stack([
     np.full(80, 50.0),
 ])
 env = Environment.from_samples(positions, bin_size=5.0)
-env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+from neurospatial import Regions
+region_builder = Regions()
+region_builder.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+env = env.with_regions(region_builder)
 
 trajectory = np.array([
     [10.0, 50.0],
@@ -100,7 +103,7 @@ from neurospatial.simulation import (
 env = Environment.from_samples(
     np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
 )
@@ -124,7 +127,7 @@ from neurospatial.simulation import (
 env = Environment.from_samples(
     np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
 )
@@ -297,7 +300,10 @@ def test_unseeded_blocks_share_reader_state(example_document):
 
 def test_seeded_blocks_have_fresh_arrays_and_regions(example_document):
     example_document.write_text(
-        "```python\ntimes[:] = 0\nenv.regions.add('temporary', point=(50., 50.))\n```\n"
+        "```python\nfrom neurospatial import Regions\ntimes[:] = 0\n"
+        "region_builder = Regions(env.regions.values())\n"
+        "region_builder.add('temporary', point=(50., 50.))\n"
+        "env = env.with_regions(region_builder)\n```\n"
         "```python\nassert np.all(np.diff(times) > 0)\nassert 'temporary' not in env.regions\n```\n"
     )
     assert _run_document("example.md", opt_in=False, seeded=True) == 2

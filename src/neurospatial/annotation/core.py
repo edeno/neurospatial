@@ -788,12 +788,7 @@ def _process_annotation_results(
             len(regions),
         )
         # Attach regions to environment
-        for name, region in regions.items():
-            environment.regions.add(
-                name,
-                polygon=region.data,
-                metadata=dict(region.metadata),
-            )
+        environment = environment.with_regions(regions)
 
     logger.debug(
         "Annotation complete: environment=%s, regions=%d",

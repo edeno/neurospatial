@@ -35,7 +35,7 @@ import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 
 # Calibration: pixels to cm conversion for Sungod maze
@@ -273,15 +273,17 @@ def make_sungod_maze(
         name="sungod_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add center region at box centroid
     box_center = (box_polygon.centroid.x, box_polygon.centroid.y)
-    env_2d.regions.add("center", point=box_center)
+    region_builder = Regions()
+    region_builder.add("center", point=box_center)
 
     # Add reward well regions
     for i, pos in enumerate(reward_wells):
-        env_2d.regions.add(f"reward_well_{i}", point=pos)
+        region_builder.add(f"reward_well_{i}", point=pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -364,6 +366,6 @@ def _create_sungod_track_graph(
         bin_size=bin_size,
         name="sungod_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

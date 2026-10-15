@@ -143,7 +143,7 @@ def simulate_trajectory_ou(
     Raises
     ------
     ValueError
-        If env.units is not set. Call env.units = "cm" before simulation.
+        If env.units is not set. Pass units="cm" when constructing the environment.
     ValueError
         If speed_units are incompatible with env.units.
 
@@ -209,7 +209,7 @@ def simulate_trajectory_ou(
     >>> # Create environment
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Simulate trajectory (speed_units must match env.units exactly).
     >>> positions, times = simulate_trajectory_ou(env, duration=60.0, speed_units="cm")
@@ -251,7 +251,7 @@ def simulate_trajectory_ou(
     if env.units is None:
         msg = (
             "Environment units must be set before simulation. "
-            "Set env.units = 'cm' (or 'm', 'mm', etc.)"
+            "Pass units='cm' (or 'm', 'mm', etc.) when constructing the environment"
         )
         raise ValueError(msg)
 
@@ -523,7 +523,7 @@ def simulate_trajectory_sinusoidal(
 
         # Create 1D track using from_graph()
         env_1d = Environment.from_graph(...)  # See from_graph() docs
-        env_1d.units = "cm"
+        env_1d = env_1d.with_metadata(units="cm")
 
         # Generate sinusoidal motion
         positions, times = simulate_trajectory_sinusoidal(
@@ -677,7 +677,7 @@ def simulate_trajectory_laps(
     >>> # Create environment
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Simulate laps
     >>> positions, times = simulate_trajectory_laps(env, n_laps=5)

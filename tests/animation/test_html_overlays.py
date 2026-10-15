@@ -14,6 +14,7 @@ import pytest
 
 from neurospatial import (
     Environment,
+    Regions,
 )
 from neurospatial.animation.backends.html_backend import render_html
 from neurospatial.animation.overlays import (
@@ -184,7 +185,9 @@ class TestRegionOverlayRendering:
     ):
         """Test regions are rendered when show_regions=True."""
         # Add a region to environment
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         save_path = tmp_path / "test.html"
         path = render_html(
@@ -199,8 +202,10 @@ class TestRegionOverlayRendering:
 
     def test_show_regions_list_filtering(self, simple_env, simple_fields, tmp_path):
         """Test show_regions can filter specific regions."""
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
-        simple_env.regions.add("start", point=np.array([1.0, 1.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        region_builder.add("start", point=np.array([1.0, 1.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         save_path = tmp_path / "test.html"
         path = render_html(
@@ -216,7 +221,9 @@ class TestRegionOverlayRendering:
         self, simple_env, simple_fields, tmp_path
     ):
         """Test show_regions=False still produces valid output."""
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         save_path = tmp_path / "test.html"
         path = render_html(
@@ -367,7 +374,9 @@ class TestNonEmbeddedModeWithOverlays:
 
     def test_non_embedded_mode_with_regions(self, simple_env, simple_fields, tmp_path):
         """Test non-embedded mode supports regions."""
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         save_path = tmp_path / "test.html"
 

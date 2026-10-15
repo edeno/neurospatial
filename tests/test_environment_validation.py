@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.layout.validation import GraphValidationError, validate_environment
 
 
@@ -16,8 +16,8 @@ class TestValidateEnvironment:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((200, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="valid")
-        env.units = "cm"
-        env.frame = "world"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="world")
         return env
 
     def test_valid_environment_passes(self, valid_env):
@@ -43,7 +43,7 @@ class TestValidateEnvironment:
         data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_units")
         # Don't set units
-        env.frame = "world"
+        env = env.with_metadata(frame="world")
 
         with pytest.warns(UserWarning, match="no units specified"):
             validate_environment(env, strict=True)
@@ -53,7 +53,7 @@ class TestValidateEnvironment:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_frame")
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         # Don't set frame
 
         with pytest.warns(UserWarning, match="no coordinate frame"):
@@ -103,7 +103,10 @@ class TestValidateEnvironment:
         import dataclasses
 
         valid_env._geometry = dataclasses.replace(
-            valid_env._geometry, bin_centers=valid_env.bin_centers[:10]
+            valid_env._geometry,
+            bin_centers=np.frombuffer(
+                valid_env.bin_centers[:10].tobytes(), dtype=np.float64
+            ).reshape(10, valid_env.n_dims),
         )
 
         with pytest.raises(ValueError, match="inconsistent"):
@@ -111,7 +114,9 @@ class TestValidateEnvironment:
 
     def test_environment_with_regions(self, valid_env):
         """Test validation works with regions."""
-        valid_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(valid_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        valid_env = valid_env.with_regions(region_builder)
 
         # Should pass validation
         validate_environment(valid_env)

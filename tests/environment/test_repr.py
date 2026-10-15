@@ -5,13 +5,15 @@ name, dimensions, bin count, layout type. Cosmetic formatting (single-line,
 must-start-with-class-name, length caps, exact HTML tags) is not a contract
 and has been deliberately left untested.
 
-The empty-string-vs-None distinction is tested explicitly because the v0.3
-``__repr__`` collapsed both to ``name=None`` and this is the regression anchor.
+Empty names remain explicit, and invalid replacement names cannot change the
+representation of an existing environment.
 """
 
 import numpy as np
+import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
+from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 
 class TestEnvironmentRepr:
@@ -45,17 +47,14 @@ class TestEnvironmentRepr:
         assert "name=''" in result
         assert "name=None" not in result
 
-    def test_repr_handles_none_name(self):
-        """``repr`` shows ``name=None`` when the env truly carries None.
-
-        ``from_samples(name=None)`` collapses to the empty-string default,
-        so to exercise the None branch we set the attribute directly.
-        """
+    def test_invalid_name_replacement_preserves_repr(self):
+        """A name must be a string; failed replacement preserves the source."""
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="x")
-        env.name = None  # type: ignore[assignment]
-        assert "name=None" in repr(env)
+        with pytest.raises(TypeError, match="name"):
+            env.with_metadata(name=None)  # type: ignore[arg-type]
+        assert "name='x'" in repr(env)
 
     def test_repr_works_for_1d_environment(self, graph_env):
         """__repr__ should work for Graph environments."""
@@ -70,9 +69,7 @@ class TestEnvironmentRepr:
 
     def test_str_falls_back_to_repr_for_unfitted(self):
         """``str(env)`` for an unfitted env mirrors ``repr(env)`` (no info())."""
-        env = Environment.__new__(Environment)
-        env.name = ""
-        env._is_fitted = False
+        env = Environment(name="", layout=RegularGridLayout())
         assert str(env) == repr(env)
 
 
@@ -108,7 +105,9 @@ class TestEnvironmentReprHtml:
         from shapely.geometry import Point
 
         env = grid_env_from_samples.copy()
-        env.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        env = env.with_regions(region_builder)
         result = env._repr_html_()
         assert "1" in result
         assert "region" in result.lower()

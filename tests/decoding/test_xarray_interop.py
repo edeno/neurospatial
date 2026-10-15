@@ -121,7 +121,7 @@ class TestToXarrayDims:
         import copy
 
         env = copy.copy(small_2d_env)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         n_time = 3
         posterior = np.ones((n_time, env.n_bins)) / env.n_bins
         result = DecodingResult(posterior=posterior, env=env)

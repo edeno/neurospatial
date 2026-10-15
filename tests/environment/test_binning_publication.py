@@ -15,7 +15,7 @@ import pytest
 from neurospatial import Environment
 from neurospatial._exceptions import EnvironmentNotFittedError
 from neurospatial.environment.polar import EgocentricPolarEnvironment
-from neurospatial.layout._binning import binning_from_layout
+from neurospatial.layout._binning import LayoutFaces, binning_from_layout
 from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
@@ -27,6 +27,11 @@ from neurospatial.layout._diffusion import (
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 _BuiltEnvironment = Environment | EgocentricPolarEnvironment
+
+
+def _source_layout(env: _BuiltEnvironment):
+    """Build an independent native oracle for the published snapshot."""
+    return type(env)._create_layout(env.layout_type, env.layout_parameters)
 
 
 def _query_points(env: _BuiltEnvironment) -> np.ndarray:
@@ -67,7 +72,7 @@ def test_binning_matches_layout(built_environment: _BuiltEnvironment) -> None:
     )
     assert (bins.n_bins, bins.n_dims) == (env.n_bins, env.n_dims)
     assert bins.measure_dim == (1 if env.is_linearized_track else env.n_dims)
-    assert env.bin_sizes is bins.sizes
+    assert env.bin_sizes is not bins.sizes
     for array in (bins.centers, bins.sizes, bins.pairs, bins.pair_distances):
         assert not array.flags.writeable
 
@@ -77,23 +82,22 @@ def test_binning_capabilities_match_layout_protocols(
 ) -> None:
     """Optional components describe actual grid, track and face capabilities."""
     env = built_environment
+    layout = _source_layout(env)
     binning = env._binning
     assert (binning.rectilinear is not None) == isinstance(
-        env.layout, RectilinearGridProvider
+        layout, RectilinearGridProvider
     )
     assert (binning.linearization is not None) == isinstance(
-        env.layout, TrackLinearizationProvider
+        layout, TrackLinearizationProvider
     )
-    assert binning.faces.available == isinstance(
-        env.layout, FiniteVolumeGeometryProvider
-    )
-    if not hasattr(env.layout, "bin_shapes"):
+    assert binning.faces.available == isinstance(layout, FiniteVolumeGeometryProvider)
+    if not hasattr(layout, "bin_shapes"):
         assert binning.shapes is None
-    if not hasattr(env.layout, "outline"):
+    if not hasattr(layout, "outline"):
         assert binning.outline is None
     assert binning.kind == env.layout._layout_type_tag
     if binning.rectilinear is not None:
-        expected = env.layout.rectilinear_grid()
+        expected = layout.rectilinear_grid()
         assert binning.rectilinear.shape == expected.shape
         for actual, edge in zip(binning.rectilinear.edges, expected.edges, strict=True):
             np.testing.assert_array_equal(actual, edge)
@@ -104,11 +108,11 @@ def test_binning_capabilities_match_layout_protocols(
         assert not binning.rectilinear.active_mask.flags.writeable
     if binning.linearization is not None:
         np.testing.assert_array_equal(
-            env.to_linear(env.bin_centers), env.layout.to_linear(env.bin_centers)
+            env.to_linear(env.bin_centers), layout.to_linear(env.bin_centers)
         )
         linear = env.to_linear(env.bin_centers)
         np.testing.assert_array_equal(
-            env.linear_to_nd(linear), env.layout.linear_to_nd(linear)
+            env.linear_to_nd(linear), layout.linear_to_nd(linear)
         )
 
 
@@ -120,7 +124,7 @@ def test_binning_published_once(built_environment: _BuiltEnvironment) -> None:
     assert env._geometry.binning is published
     env.clear_cache()
     assert env._binning is published
-    assert env.bin_sizes is published.bins.sizes
+    np.testing.assert_array_equal(env.bin_sizes, published.bins.sizes)
     with pytest.raises(AttributeError):
         env._binning = published
     with pytest.raises(FrozenInstanceError):
@@ -190,7 +194,7 @@ def test_faces_match_layout_and_cache_lifetime(
 ) -> None:
     """Faces share pair order and measures while caching stays on the environment."""
     env = built_environment
-    graph, sizes = env.layout.finite_volume_geometry()
+    graph, sizes = _source_layout(env).finite_volume_geometry()
     expected = FaceGeometry.from_graph(graph, sizes)
     faces = env._face_geometry
     assert faces is env._face_geometry
@@ -291,8 +295,8 @@ def test_legacy_unfitted_pickle_restores_an_unpublished_placeholder() -> None:
         restored.bin_at(np.zeros((1, 2)))
 
 
-def test_republishing_geometry_replaces_binning_and_cached_faces() -> None:
-    """Restoring a different saved graph invalidates the matching publication."""
+def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
+    """A restored graph has fresh state without modifying an existing value."""
     mask = np.ones((3, 3), dtype=bool)
     edges = (np.arange(4.0),) * 2
     env = Environment.from_grid_mask(mask, grid_edges=edges)
@@ -304,15 +308,16 @@ def test_republishing_geometry_replaces_binning_and_cached_faces() -> None:
         env._face_geometry,
         env._state_version,
     )
-    env.layout.connectivity = replacement.connectivity
-    env._setup_from_layout()
-    assert env._binning is not old_binning
-    assert env._face_geometry is not old_faces
-    assert env._state_version == version + 1
+    restored = Environment.from_dict(replacement.to_dict())
+    assert restored._binning is not old_binning
+    assert restored._face_geometry is not old_faces
+    assert env._binning is old_binning
+    assert env._face_geometry is old_faces
+    assert env._state_version == version
     np.testing.assert_array_equal(
-        env._binning.bins.pairs, list(replacement.connectivity.edges())
+        restored._binning.bins.pairs, list(replacement.connectivity.edges())
     )
-    assert len(env._binning.bins.pairs) < len(old_binning.bins.pairs)
+    assert len(restored._binning.bins.pairs) < len(old_binning.bins.pairs)
 
 
 def test_invalid_binning_is_not_published(monkeypatch) -> None:
@@ -322,13 +327,18 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     )
     geometry, published, version = env._geometry, env._binning, env._state_version
     kernel = env.compute_kernel(1.0)
-    monkeypatch.setattr(env.layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
+    cached_kernel = env._kernel_cache[(1.0, "density")]
+    layout = _source_layout(env)
+    monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
     with pytest.raises(ValueError, match="sizes"):
-        env._setup_from_layout()
+        binning_from_layout(layout, layout.connectivity)
+    with pytest.raises(TypeError, match=r"owned immutable snapshot|Migrate custom"):
+        Environment(layout=layout, layout_type_used=layout._layout_type_tag)
     assert env._geometry is geometry
     assert env._binning is published
     assert env._state_version == version
-    assert env.compute_kernel(1.0) is kernel
+    assert env._kernel_cache[(1.0, "density")] is cached_kernel
+    np.testing.assert_array_equal(env.compute_kernel(1.0), kernel)
 
 
 def test_faces_reject_changed_pair_order() -> None:
@@ -343,7 +353,7 @@ def test_faces_reject_changed_pair_order() -> None:
         map(frozenset, env.connectivity.edges)
     )
     assert list(reordered.edges) != list(env.connectivity.edges)
-    binning = binning_from_layout(env.layout, reordered)
+    binning = binning_from_layout(_source_layout(env), reordered)
     with pytest.raises(ValueError, match=r"out of sync with env\.connectivity"):
         binning.faces.build()
 
@@ -353,7 +363,7 @@ def test_faces_reject_isolated_graph_nodes_without_centers(monkeypatch) -> None:
     original = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    layout = original.layout
+    layout = _source_layout(original)
     graph, _ = layout.finite_volume_geometry()
     graph.add_node(
         4,
@@ -363,11 +373,11 @@ def test_faces_reject_isolated_graph_nodes_without_centers(monkeypatch) -> None:
     )
     layout.connectivity = graph
     monkeypatch.setattr(layout, "finite_volume_geometry", lambda: (graph, np.ones(5)))
-    env = Environment(layout=layout, layout_type_used=layout._layout_type_tag)
-    assert env.n_bins == 4
-    assert env.connectivity.number_of_nodes() == 5
+    faces = LayoutFaces(layout, graph)
+    assert layout.bin_centers.shape[0] == 4
+    assert graph.number_of_nodes() == 5
     with pytest.raises(ValueError, match="does not match the environment's 4 bins"):
-        _ = env._face_geometry
+        faces.build()
 
 
 @pytest.mark.nwb

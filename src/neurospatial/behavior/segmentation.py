@@ -406,7 +406,10 @@ def detect_region_crossings(
     >>> y = np.linspace(0, 100, 100)
     >>> positions = np.column_stack([x, y])
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> _ = env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+    >>> env = env.with_regions(regions)
     >>> # Create trajectory that crosses region
     >>> traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
     >>> traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
@@ -622,8 +625,11 @@ def detect_runs_between_regions(
     >>> y = np.full(200, 50.0)
     >>> positions = np.column_stack([x, y])
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> _ = env.regions.add("start", polygon=Point(10.0, 50.0).buffer(5.0))
-    >>> _ = env.regions.add("goal", polygon=Point(90.0, 50.0).buffer(5.0))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("start", polygon=Point(10.0, 50.0).buffer(5.0))
+    >>> _ = regions.add("goal", polygon=Point(90.0, 50.0).buffer(5.0))
+    >>> env = env.with_regions(regions)
     >>> traj_x = np.linspace(10.0, 90.0, 100)
     >>> traj_y = np.ones(100) * 50.0
     >>> trajectory = np.column_stack([traj_x, traj_y])
@@ -1280,7 +1286,10 @@ def detect_laps(
     >>> y = 50 + 30 * np.sin(theta)
     >>> positions = np.column_stack([x, y])
     >>> env = Environment.from_samples(positions, bin_size=3.0)
-    >>> _ = env.regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
+    >>> env = env.with_regions(regions)
     >>> position_bins = env.bin_at(positions)
     >>> times = np.linspace(0, 60, 300)
     >>> laps = detect_laps(
@@ -1764,8 +1773,11 @@ def running_direction_labels(
     >>> x = np.linspace(0.0, 100.0, 200)
     >>> samples = np.column_stack([x, np.zeros_like(x)])
     >>> env = Environment.from_samples(samples, bin_size=5.0)
-    >>> _ = env.regions.add("home", polygon=Point(0.0, 0.0).buffer(8.0))
-    >>> _ = env.regions.add("reward", polygon=Point(100.0, 0.0).buffer(8.0))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("home", polygon=Point(0.0, 0.0).buffer(8.0))
+    >>> _ = regions.add("reward", polygon=Point(100.0, 0.0).buffer(8.0))
+    >>> env = env.with_regions(regions)
     >>> # Out-and-back trajectory: home -> reward -> home.
     >>> xt = np.concatenate([np.linspace(0.0, 100.0, 50), np.linspace(100.0, 0.0, 50)])
     >>> trajectory = np.column_stack([xt, np.zeros_like(xt)])
@@ -1962,9 +1974,12 @@ def segment_trials(
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
     >>> env = Environment.from_samples(positions, bin_size=3.0)
     >>> # Define regions: start at bottom, left/right at top
-    >>> _ = env.regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
-    >>> _ = env.regions.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
-    >>> _ = env.regions.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
+    >>> _ = regions.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
+    >>> _ = regions.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
+    >>> env = env.with_regions(regions)
     >>> # Create trajectory with 2 trials: start→left, start→right
     >>> x_traj = np.concatenate(
     ...     [
@@ -2534,7 +2549,10 @@ def detect_goal_directed_runs(
     >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
     >>> goal_center = env.bin_centers[-1]  # doctest: +SKIP
     >>> goal_polygon = Point(float(goal_center[0]), 0.0).buffer(5.0)  # doctest: +SKIP
-    >>> env.regions.add("goal", polygon=goal_polygon)  # doctest: +SKIP
+    >>> from neurospatial.regions import Regions  # doctest: +SKIP
+    >>> regions = Regions(env.regions.values())  # doctest: +SKIP
+    >>> regions.add("goal", polygon=goal_polygon)  # doctest: +SKIP
+    >>> env = env.with_regions(regions)  # doctest: +SKIP
     >>> position_bins = np.arange(0, 40, dtype=np.int64)  # doctest: +SKIP
     >>> times = np.linspace(0, 10, len(position_bins))  # doctest: +SKIP
     >>> runs = detect_goal_directed_runs(  # doctest: +SKIP

@@ -12,7 +12,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout._binning import KnownFaces, MissingFaces
 from neurospatial.layout._binning_layout import BinningLayout
@@ -166,7 +166,9 @@ def test_copy_of_loaded_environment(environment_round_trip, forbid_layout_builds
     )
     field = np.arange(original.n_bins, dtype=float)
     np.testing.assert_array_equal(copied.smooth(field, 2.0), loaded.smooth(field, 2.0))
-    copied.regions.add("copy_only", point=tuple(original.bin_centers[-1]))
+    region_builder = Regions(copied.regions.values())
+    region_builder.add("copy_only", point=tuple(original.bin_centers[-1]))
+    copied = copied.with_regions(region_builder)
     if deep:
         assert "copy_only" not in loaded.regions
 

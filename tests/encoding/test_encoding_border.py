@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 # =============================================================================
 # Import Tests - encoding.border module
@@ -196,8 +196,10 @@ class TestBorderFunctionality:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add wall regions
-        env.regions.add("north", polygon=box(0, 30, 40, 40))
-        env.regions.add("south", polygon=box(0, 0, 40, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("north", polygon=box(0, 30, 40, 40))
+        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        env = env.with_regions(region_builder)
 
         # Create field along north wall
         firing_rate = np.zeros(env.n_bins)
@@ -223,7 +225,9 @@ class TestBorderFunctionality:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        env.regions.add("test", polygon=box(0, 0, 20, 20))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(0, 0, 20, 20))
+        env = env.with_regions(region_builder)
 
         field_bins = np.array([0, 1, 2])
 
@@ -243,9 +247,11 @@ class TestBorderFunctionality:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        env.regions.add("region1", polygon=box(0, 0, 20, 20))
-        env.regions.add("region2", polygon=box(20, 20, 40, 40))
-        env.regions.add("region3", polygon=box(0, 20, 20, 40))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region1", polygon=box(0, 0, 20, 20))
+        region_builder.add("region2", polygon=box(20, 20, 40, 40))
+        region_builder.add("region3", polygon=box(0, 20, 20, 40))
+        env = env.with_regions(region_builder)
 
         field_bins = np.array([0, 1, 2])
 

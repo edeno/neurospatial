@@ -17,7 +17,7 @@ import pytest
 from numpy.testing import assert_allclose
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     detect_boundary_crossings,
@@ -82,8 +82,12 @@ class TestSafeGatherRegions:
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
         last_bin = env.n_bins - 1
-        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
+            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
+        )
+        env = env.with_regions(region_builder)
 
         # Start inside source, exit, then a single out-of-env (-1) sample.
         # A wrapped -1 -> last_bin would be inside 'target', wrongly marking
@@ -130,8 +134,12 @@ class TestSafeGatherRegions:
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
         last_bin = env.n_bins - 1
-        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
+            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
+        )
+        env = env.with_regions(region_builder)
 
         # Source bin, then a single neutral bin held constant (zero true speed),
         # with one off-env (-1) sample. The wrapped -1 -> last_bin sits near the
@@ -180,8 +188,12 @@ class TestSafeGatherRegions:
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
         last_bin = env.n_bins - 1
-        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
+            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
+        )
+        env = env.with_regions(region_builder)
 
         neutral_bin = 100
         from neurospatial.ops.binning import regions_to_mask
@@ -219,8 +231,12 @@ class TestSafeGatherRegions:
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
         last_bin = env.n_bins - 1
-        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
+            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
+        )
+        env = env.with_regions(region_builder)
 
         # Exit source at the first step, then traverse distinct neutral bins
         # (a steady move each frame) so the run has a well-defined mean speed.
@@ -278,8 +294,12 @@ class TestSafeGatherRegions:
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
         last_bin = env.n_bins - 1
-        env.regions.add("start", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add("goal", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
+            "goal", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
+        )
+        env = env.with_regions(region_builder)
 
         start_bin = 0
         neutral_bin = 100
@@ -381,9 +401,11 @@ class TestSafeGatherVoronoiLabels:
             ]
         )
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.regions.add("center", point=(50.0, 55.0))
-        env.regions.add("left", point=(10.0, 55.0))
-        env.regions.add("right", point=(90.0, 55.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", point=(50.0, 55.0))
+        region_builder.add("left", point=(10.0, 55.0))
+        region_builder.add("right", point=(90.0, 55.0))
+        env = env.with_regions(region_builder)
 
         # Trajectory: up the stem, into the center, with one sample that is
         # genuinely outside the environment (maps to -1).
@@ -439,11 +461,13 @@ class TestDtGuards:
         env = Environment.from_samples(
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
-        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        env.regions.add(
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        region_builder.add(
             "target",
             polygon=Point(*env.bin_centers[env.n_bins - 1]).buffer(6.0),
         )
+        env = env.with_regions(region_builder)
 
         source_bin = 0
         mid_bin = 100

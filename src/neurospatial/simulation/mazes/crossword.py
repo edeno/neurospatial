@@ -33,7 +33,7 @@ from dataclasses import dataclass
 import networkx as nx
 from shapely.geometry import box as shapely_box
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -250,13 +250,14 @@ def make_crossword_maze(
         name="crossword_maze",
         connect_diagonal_neighbors=False,  # Manhattan grid only
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add box regions as polygons (the actual square rooms)
-    env_2d.regions.add("box_top_left", polygon=box_tl)
-    env_2d.regions.add("box_top_right", polygon=box_tr)
-    env_2d.regions.add("box_bottom_left", polygon=box_bl)
-    env_2d.regions.add("box_bottom_right", polygon=box_br)
+    region_builder = Regions()
+    region_builder.add("box_top_left", polygon=box_tl)
+    region_builder.add("box_top_right", polygon=box_tr)
+    region_builder.add("box_bottom_left", polygon=box_bl)
+    region_builder.add("box_bottom_right", polygon=box_br)
 
     # Add junction regions at key intersections
     junctions = [
@@ -272,7 +273,8 @@ def make_crossword_maze(
         ("junction_2_3", (3 * s, 2 * s)),
     ]
     for name, pos in junctions:
-        env_2d.regions.add(name, point=pos)
+        region_builder.add(name, point=pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -391,6 +393,6 @@ def _create_crossword_track_graph(
         bin_size=bin_size,
         name="crossword_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

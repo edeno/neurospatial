@@ -22,8 +22,8 @@ def simple_2d_env():
     samples = np.column_stack([xx.ravel(), yy.ravel()])
 
     env = Environment.from_samples(samples, bin_size=2.0)
-    env.units = "cm"
-    env.frame = "test_arena"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="test_arena")
     return env
 
 
@@ -42,8 +42,8 @@ def simple_1d_env():
     # Note: 1D environments require GraphLayout, which we'll implement later
     # For now, this will create a regular 1D grid
     env = Environment.from_samples(samples, bin_size=2.0)
-    env.units = "cm"
-    env.frame = "linear_track"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="linear_track")
     return env
 
 

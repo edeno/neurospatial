@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -206,14 +206,16 @@ def make_plus_maze(
         name="plus_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations
-    env_2d.regions.add("center", point=center_pos)
-    env_2d.regions.add("north_end", point=north_end_pos)
-    env_2d.regions.add("south_end", point=south_end_pos)
-    env_2d.regions.add("east_end", point=east_end_pos)
-    env_2d.regions.add("west_end", point=west_end_pos)
+    region_builder = Regions()
+    region_builder.add("center", point=center_pos)
+    region_builder.add("north_end", point=north_end_pos)
+    region_builder.add("south_end", point=south_end_pos)
+    region_builder.add("east_end", point=east_end_pos)
+    region_builder.add("west_end", point=west_end_pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -288,6 +290,6 @@ def _create_plus_maze_track_graph(
         bin_size=bin_size,
         name="plus_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

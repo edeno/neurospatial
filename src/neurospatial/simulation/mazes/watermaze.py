@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
@@ -166,18 +166,20 @@ def make_watermaze(
         name="watermaze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add platform region
-    env_2d.regions.add("platform", point=platform_position)
+    region_builder = Regions()
+    region_builder.add("platform", point=platform_position)
 
     # Add quadrant regions at quadrant centers
     # Quadrant centers are at radius/2 from origin
     half_radius = radius / 2.0
-    env_2d.regions.add("NE", point=(half_radius, half_radius))
-    env_2d.regions.add("NW", point=(-half_radius, half_radius))
-    env_2d.regions.add("SE", point=(half_radius, -half_radius))
-    env_2d.regions.add("SW", point=(-half_radius, -half_radius))
+    region_builder.add("NE", point=(half_radius, half_radius))
+    region_builder.add("NW", point=(-half_radius, half_radius))
+    region_builder.add("SE", point=(half_radius, -half_radius))
+    region_builder.add("SW", point=(-half_radius, -half_radius))
+    env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field
     env_track = None

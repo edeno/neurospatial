@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.backends.html_backend import render_html
 
 
@@ -539,8 +539,10 @@ class TestOverlayJSONSchema:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Add point and polygon regions
-        env.regions.add("goal", point=(10.0, 10.0))
-        env.regions.add("start", point=(0.0, 0.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=(10.0, 10.0))
+        region_builder.add("start", point=(0.0, 0.0))
+        env = env.with_regions(region_builder)
 
         return env
 

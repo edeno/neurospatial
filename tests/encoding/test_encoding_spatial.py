@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.encoding._metrics import BatchScoresResult
 
 # ==============================================================================
@@ -1136,9 +1136,11 @@ class TestSpatialRateResultRegionCoverage:
 
         # Add wall regions to the environment
         # The simple_env is 40x40 centered around (20, 20)
-        simple_env.regions.add("north", polygon=box(0, 30, 40, 40))
-        simple_env.regions.add("south", polygon=box(0, 0, 40, 10))
-        simple_env.regions.add("center", polygon=box(15, 15, 25, 25))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("north", polygon=box(0, 30, 40, 40))
+        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        region_builder.add("center", polygon=box(15, 15, 25, 25))
+        simple_env = simple_env.with_regions(region_builder)
         return simple_env
 
     def test_has_region_coverage_method(
@@ -4678,7 +4680,7 @@ class TestSpatialRateRecovery:
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
         env = Environment.from_samples(samples, bin_size=2.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
             env, duration=1800.0, speed_units="cm", seed=42
         )
@@ -4748,7 +4750,7 @@ class TestSpatialRateNaNPositionHandling:
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
         env = Environment.from_samples(samples, bin_size=self.BIN_SIZE)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
             env, duration=900.0, speed_units="cm", seed=42
         )

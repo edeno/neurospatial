@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.segmentation import (
     Lap,
     Trial,
@@ -56,9 +56,11 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 1: Detect laps
         # Create circular start region at x=16, y=10 (radius point)
-        env.regions.add(
+        region_builder = Regions(env.regions.values())
+        region_builder.add(
             "start", polygon=Point(center[0] + radius, center[1]).buffer(1.5)
         )
+        env = env.with_regions(region_builder)
         laps = detect_laps(
             position_bins,
             times,
@@ -124,9 +126,13 @@ class TestFullTrajectoryAnalysisWorkflow:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Define T-maze regions
-        env.regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))  # Bottom center
-        env.regions.add("left", polygon=Point(20.0, 90.0).buffer(8.0))  # Top left
-        env.regions.add("right", polygon=Point(80.0, 90.0).buffer(8.0))  # Top right
+        region_builder = Regions(env.regions.values())
+        region_builder.add(
+            "start", polygon=Point(50.0, 10.0).buffer(8.0)
+        )  # Bottom center
+        region_builder.add("left", polygon=Point(20.0, 90.0).buffer(8.0))  # Top left
+        region_builder.add("right", polygon=Point(80.0, 90.0).buffer(8.0))
+        env = env.with_regions(region_builder)  # Top right
 
         # Generate synthetic trajectory: 3 trials (left, right, left)
         trial_trajs = []
@@ -247,7 +253,9 @@ class TestFullTrajectoryAnalysisWorkflow:
         env = Environment.from_samples(positions, bin_size=3.0)
 
         # Define goal region
-        env.regions.add("goal", polygon=Point(40.0, 40.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=Point(40.0, 40.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Phase 1: Random exploration (first 100 samples)
         rng = np.random.default_rng(42)

@@ -64,7 +64,7 @@ def _make_linear_track_sim(
         ]
     )
     env = Environment.from_samples(track_positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # --- trajectory (OU random walk in x, y fixed at 0) ---
     positions, times = simulate_trajectory_ou(
@@ -1110,7 +1110,7 @@ class TestDecodeSessionSummaryStreaming:
         env = Environment.from_samples(
             np.linspace(0.0, 100.0, 201).reshape(-1, 1), bin_size=5.0
         )
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         dt = 0.1
         t0, t1 = 0.0, 10.0
         n_frames = 200

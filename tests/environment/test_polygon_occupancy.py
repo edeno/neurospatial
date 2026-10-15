@@ -382,7 +382,9 @@ def test_restricted_nd_mask_refuses_unimplemented_linear_subdivision():
 
 
 @pytest.mark.parametrize("polygon_cells", [False, True])
-def test_analytic_domain_without_polygon_refuses_linear_approximation(polygon_cells):
+def test_analytic_domain_requires_owned_materialization_before_publication(
+    polygon_cells,
+):
     class UnitDiskArena:
         n_dims = 2
         coordinate_kind = "cartesian"
@@ -406,19 +408,15 @@ def test_analytic_domain_without_polygon_refuses_linear_approximation(polygon_ce
     )
     if polygon_cells:
         base = base.clip(box(-1, -1, 1, 1))
-    env = Environment(
-        base.name,
-        base.layout,
-        base.layout_type,
-        base.layout_parameters,
-        arena=UnitDiskArena(),
-    )
-    positions = np.array([[0.0, 0.0], [1.0, 1.0]])
-    np.testing.assert_array_equal(env.bin_at(positions), [0, -1])
-    with pytest.raises(NotImplementedError, match="polygon support"):
-        env.occupancy(
-            np.array([0.0, 1.0]),
-            positions,
-            max_gap=None,
-            time_allocation="linear",
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment(
+            base.name,
+            base.layout,
+            base.layout_type,
+            base.layout_parameters,
+            arena=UnitDiskArena(),
         )
+    np.testing.assert_array_equal(base.bin_at(base.bin_centers), [0])

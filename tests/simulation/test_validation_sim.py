@@ -75,7 +75,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_with_session(self, simple_2d_env):
         """validate_simulation() should accept SimulationSession."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         # Create session with place cells
         session = simulate_session(
@@ -99,7 +99,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_returns_all_fields(self, simple_2d_env):
         """validate_simulation() should return all required fields."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -126,7 +126,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_center_errors(self, simple_2d_env):
         """validate_simulation() should compute center errors for each cell."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -158,7 +158,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_correlations(self, simple_2d_env):
         """validate_simulation() should compute correlations between true and detected fields."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -196,7 +196,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_summary_string(self, simple_2d_env):
         """validate_simulation() should generate summary string."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -216,7 +216,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_pass_fail(self, simple_2d_env):
         """validate_simulation() should determine pass/fail."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -234,7 +234,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_with_thresholds(self, simple_2d_env):
         """validate_simulation() should accept custom thresholds."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -257,7 +257,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_with_unit_ids(self, simple_2d_env):
         """validate_simulation() should validate only specific cells."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -277,7 +277,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_empty_spike_trains(self, simple_2d_env):
         """validate_simulation() should handle cells with no spikes."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -296,7 +296,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_show_plots_false(self, simple_2d_env):
         """validate_simulation() with show_plots=False should not return plots."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -314,7 +314,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_show_plots_true(self, simple_2d_env):
         """validate_simulation() with show_plots=True should return matplotlib figure."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -336,7 +336,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_place_field_method(self, simple_2d_env):
         """validate_simulation() should accept place field computation method."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -354,7 +354,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_reproducible(self, simple_2d_env):
         """validate_simulation() should produce same results on same session."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -381,7 +381,7 @@ class TestValidateSimulation:
 
     def test_validate_simulation_missing_ground_truth(self, simple_2d_env):
         """validate_simulation() should raise error if ground_truth missing."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -488,7 +488,7 @@ class TestPlotSessionSummary:
 
     def test_plot_session_summary_returns_tuple(self, simple_2d_env):
         """plot_session_summary() should return (fig, axes) tuple."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -512,7 +512,7 @@ class TestPlotSessionSummary:
         import matplotlib.figure
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -536,7 +536,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should default to first 6 cells."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -559,7 +559,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should accept custom unit_ids."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -582,7 +582,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should accept custom figsize."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -606,7 +606,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should handle cells with no spikes."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -627,7 +627,7 @@ class TestPlotSessionSummary:
 
     def test_plot_session_summary_invalid_unit_ids(self, simple_2d_env):
         """plot_session_summary() should raise error for invalid unit_ids."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -654,7 +654,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should include trajectory visualization."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -677,7 +677,7 @@ class TestPlotSessionSummary:
         """plot_session_summary() should produce consistent plots for same session."""
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -706,7 +706,7 @@ class TestPlotSessionSummary:
 
         import matplotlib.pyplot as plt
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,

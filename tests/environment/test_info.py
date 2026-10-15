@@ -9,7 +9,7 @@ separator audits) are not contracts and have been deliberately omitted.
 
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestEnvironmentInfo:
@@ -66,7 +66,9 @@ class TestEnvironmentInfo:
 
         from shapely.geometry import Point
 
-        env.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        env = env.with_regions(region_builder)
         result_after = env.info()
         assert "1" in result_after or "TestRegion" in result_after
 

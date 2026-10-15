@@ -29,7 +29,9 @@ class TestRegionMembershipBasic:
 
         # Add a region covering the center of the grid
         # Region from (3, 3) to (7, 7)
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         # Get membership
         membership = env.region_membership()
@@ -50,8 +52,10 @@ class TestRegionMembershipBasic:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add two non-overlapping regions
-        env.regions.add("left", polygon=box(0, 0, 4, 10))
-        env.regions.add("right", polygon=box(6, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(0, 0, 4, 10))
+        region_builder.add("right", polygon=box(6, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -72,8 +76,10 @@ class TestRegionMembershipBasic:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add overlapping regions
-        env.regions.add("region_a", polygon=box(0, 0, 6, 6))
-        env.regions.add("region_b", polygon=box(4, 4, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region_a", polygon=box(0, 0, 6, 6))
+        region_builder.add("region_b", polygon=box(4, 4, 10, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -111,7 +117,9 @@ class TestRegionMembershipBoundaryBehavior:
         # Find a bin center that we know is exactly on the boundary
         # Grid centers are at 1, 3, 5, 7, 9 (with bin_size=2, starting from 0)
         # Create region with edge at x=5.0
-        env.regions.add("test", polygon=box(0, 0, 5.0, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(0, 0, 5.0, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership(include_boundary=True)
 
@@ -130,7 +138,9 @@ class TestRegionMembershipBoundaryBehavior:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Region with edge that might exactly hit bin centers
-        env.regions.add("test", polygon=box(0, 0, 5.0, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(0, 0, 5.0, 10))
+        env = env.with_regions(region_builder)
 
         membership_with = env.region_membership(include_boundary=True)
         membership_without = env.region_membership(include_boundary=False)
@@ -142,7 +152,9 @@ class TestRegionMembershipBoundaryBehavior:
         """Test that boundary parameter is consistent across multiple calls."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("test", polygon=box(2, 2, 8, 8))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(2, 2, 8, 8))
+        env = env.with_regions(region_builder)
 
         # Multiple calls with same parameter should give same result
         m1 = env.region_membership(include_boundary=True)
@@ -163,7 +175,9 @@ class TestRegionMembershipRegionTypes:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add a point region
-        env.regions.add("point", point=[5.0, 5.0])
+        region_builder = Regions(env.regions.values())
+        region_builder.add("point", point=[5.0, 5.0])
+        env = env.with_regions(region_builder)
 
         # Point regions should either raise an error or return all False
         # (a point has no area, so no bin centers can be "inside" it)
@@ -181,8 +195,10 @@ class TestRegionMembershipRegionTypes:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add both types
-        env.regions.add("poly", polygon=box(2, 2, 8, 8))
-        env.regions.add("point", point=[5.0, 5.0])
+        region_builder = Regions(env.regions.values())
+        region_builder.add("poly", polygon=box(2, 2, 8, 8))
+        region_builder.add("point", point=[5.0, 5.0])
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -200,7 +216,9 @@ class TestRegionMembershipRegionTypes:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create a degenerate polygon (line)
-        env.regions.add("line", polygon=Polygon([(0, 0), (10, 0), (10, 0), (0, 0)]))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("line", polygon=Polygon([(0, 0), (10, 0), (10, 0), (0, 0)]))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -235,7 +253,9 @@ class TestRegionMembershipExternalRegions:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add region to environment
-        env.regions.add("internal", polygon=box(0, 0, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("internal", polygon=box(0, 0, 5, 5))
+        env = env.with_regions(region_builder)
 
         # Create different external regions
         external_regions = Regions()
@@ -264,7 +284,9 @@ class TestRegionMembershipEdgeCases:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add region that contains the single bin
-        env.regions.add("contains", polygon=box(0, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("contains", polygon=box(0, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -277,7 +299,9 @@ class TestRegionMembershipEdgeCases:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Large region covering everything
-        env.regions.add("all", polygon=box(-10, -10, 20, 20))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("all", polygon=box(-10, -10, 20, 20))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -290,7 +314,9 @@ class TestRegionMembershipEdgeCases:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Region far away from all bins
-        env.regions.add("far", polygon=box(100, 100, 110, 110))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("far", polygon=box(100, 100, 110, 110))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -304,7 +330,9 @@ class TestRegionMembershipEdgeCases:
 
         # Triangle
         triangle = Polygon([(0, 0), (10, 0), (5, 10)])
-        env.regions.add("triangle", polygon=triangle)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("triangle", polygon=triangle)
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -343,7 +371,9 @@ class TestRegionMembershipValidation:
         """Test that include_boundary parameter is validated."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("test", polygon=box(0, 0, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(0, 0, 5, 5))
+        env = env.with_regions(region_builder)
 
         # Invalid type
         with pytest.raises(TypeError, match=r"[Bb]ool"):
@@ -365,9 +395,11 @@ class TestRegionMembershipPerformance:
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Add multiple regions (r3 overlaps both r1 and r2)
-        env.regions.add("r1", polygon=box(0, 0, 20, 20))
-        env.regions.add("r2", polygon=box(20, 20, 40, 40))
-        env.regions.add("r3", polygon=box(10, 10, 30, 30))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("r1", polygon=box(0, 0, 20, 20))
+        region_builder.add("r2", polygon=box(20, 20, 40, 40))
+        region_builder.add("r3", polygon=box(10, 10, 30, 30))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -398,7 +430,9 @@ class TestRegionMembershipDifferentLayouts:
         """Test on regular grid layout."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
         assert membership.shape == (env.n_bins, 1)
@@ -411,7 +445,9 @@ class TestRegionMembershipDifferentLayouts:
         boundary = shapely_box(0, 0, 10, 10)
         env = Environment.from_polygon(boundary, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(2, 2, 8, 8))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(2, 2, 8, 8))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
         assert membership.shape == (env.n_bins, 1)
@@ -430,7 +466,9 @@ class TestRegionMembershipReturnFormat:
         """Test that return type is boolean array."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 
@@ -447,12 +485,16 @@ class TestRegionMembershipReturnFormat:
         assert m0.shape == (env.n_bins, 0)
 
         # One region
-        env.regions.add("r1", polygon=box(0, 0, 5, 5))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("r1", polygon=box(0, 0, 5, 5))
+        env = env.with_regions(region_builder)
         m1 = env.region_membership()
         assert m1.shape == (env.n_bins, 1)
 
         # Two regions
-        env.regions.add("r2", polygon=box(5, 5, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("r2", polygon=box(5, 5, 10, 10))
+        env = env.with_regions(region_builder)
         m2 = env.region_membership()
         assert m2.shape == (env.n_bins, 2)
 
@@ -462,8 +504,10 @@ class TestRegionMembershipReturnFormat:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add regions in specific order
-        env.regions.add("left", polygon=box(0, 0, 4, 10))
-        env.regions.add("right", polygon=box(6, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(0, 0, 4, 10))
+        region_builder.add("right", polygon=box(6, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         membership = env.region_membership()
 

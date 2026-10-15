@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from neurospatial import Regions
+
 
 def load_kinematic_recording(recording):
     """Load the original recording's exact numeric inputs across platforms."""
@@ -15,7 +17,7 @@ def load_kinematic_recording(recording):
     with np.load(file, allow_pickle=False) as archive:
         arrays = {name: archive[name] for name in archive.files}
     env = Environment.from_samples(arrays["positions"], bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return replace(recording, **arrays, env=env)
 
 
@@ -55,7 +57,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     home_times = r.times[: len(home_bins)]
     # Avoid changing the session-scoped fixture's regions.
     env = r.env.copy()
-    env.regions.add("decision", point=tuple(env.bin_centers[bins[4000]]))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("decision", point=tuple(env.bin_centers[bins[4000]]))
+    env = env.with_regions(region_builder)
     trials = [
         Trial(0.0, 99.98, "source", "target", True),
         Trial(100.0, r.times[-1], "source", "target", True),

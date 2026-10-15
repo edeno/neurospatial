@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.ops import map_points_to_bins
 
 
@@ -55,7 +55,9 @@ class TestRegionMembershipPerformance:
         for n_regions in region_counts:
             # Clear existing regions
             for name in list(env.regions.keys()):
-                env.regions.remove(name)
+                region_builder = Regions(env.regions.values())
+                region_builder.remove(name)
+                env = env.with_regions(region_builder)
 
             # Add N non-overlapping regions in a grid pattern
             grid_size = int(np.ceil(np.sqrt(n_regions)))
@@ -66,7 +68,9 @@ class TestRegionMembershipPerformance:
                 y0 = row * 10
                 x1 = x0 + 8
                 y1 = y0 + 8
-                env.regions.add(f"region_{i}", polygon=box(x0, y0, x1, y1))
+                region_builder = Regions(env.regions.values())
+                region_builder.add(f"region_{i}", polygon=box(x0, y0, x1, y1))
+                env = env.with_regions(region_builder)
 
             # Benchmark
             start = time.perf_counter()
@@ -129,7 +133,9 @@ class TestRegionMembershipPerformance:
             y0 = 0
             x1 = x0 + 20
             y1 = 20
-            env.regions.add(f"region_{i}", polygon=box(x0, y0, x1, y1))
+            region_builder = Regions(env.regions.values())
+            region_builder.add(f"region_{i}", polygon=box(x0, y0, x1, y1))
+            env = env.with_regions(region_builder)
 
         # Benchmark single call
         start = time.perf_counter()

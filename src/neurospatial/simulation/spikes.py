@@ -105,7 +105,7 @@ def generate_poisson_spikes(
     >>> # Create environment and place cell at center for reliable firing
     >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>
@@ -277,7 +277,7 @@ def generate_population_spikes(
     >>> # Create environment
     >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Create population of place cells
     >>> rng = np.random.default_rng(42)
@@ -532,7 +532,7 @@ def add_modulation(
     >>> # Create environment and place cell
     >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
     Affine2D,
     AffineND,
@@ -212,8 +212,8 @@ class TestApplyTransformToEnvironment:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((200, 2)) * 5
         env = Environment.from_samples(data, bin_size=2.0, name="test")
-        env.units = "cm"
-        env.frame = "session1"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session1")
         return env
 
     def test_apply_identity_transform(self, simple_2d_env):
@@ -302,7 +302,9 @@ class TestApplyTransformToEnvironment:
                 [(3, 1), (3.5, 1), (3.5, 2), (3, 2)],
             ],
         )
-        env.regions.add("arena", polygon=polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("arena", polygon=polygon)
+        env = env.with_regions(region_builder)
         transform = Affine2D(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
         transformed = env.apply_transform(transform)
         region = transformed.regions["arena"].data
@@ -385,7 +387,9 @@ class TestApplyTransformToEnvironment:
 
     def test_transform_with_regions(self, simple_2d_env):
         """Test that regions are transformed."""
-        simple_2d_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_2d_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_2d_env = simple_2d_env.with_regions(region_builder)
 
         transform = translate(10, 20)
         transformed_env = apply_transform_to_environment(simple_2d_env, transform)

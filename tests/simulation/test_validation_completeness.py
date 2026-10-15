@@ -16,7 +16,7 @@ def _session(n_bins=4):
     env = Environment.from_grid_mask(
         np.ones(n_bins, dtype=bool), grid_edges=(np.arange(n_bins + 1.0),)
     )
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     times = np.arange(n_bins * 50) * 0.1
     positions = np.repeat(env.bin_centers, 50, axis=0)
     spikes = np.concatenate(

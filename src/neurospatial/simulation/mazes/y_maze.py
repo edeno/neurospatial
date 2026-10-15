@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
@@ -185,13 +185,15 @@ def make_y_maze(
         name="y_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations
-    env_2d.regions.add("center", point=center_pos)
-    env_2d.regions.add("arm1_end", point=arm_endpoints[0])
-    env_2d.regions.add("arm2_end", point=arm_endpoints[1])
-    env_2d.regions.add("arm3_end", point=arm_endpoints[2])
+    region_builder = Regions()
+    region_builder.add("center", point=center_pos)
+    region_builder.add("arm1_end", point=arm_endpoints[0])
+    region_builder.add("arm2_end", point=arm_endpoints[1])
+    region_builder.add("arm3_end", point=arm_endpoints[2])
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -261,6 +263,6 @@ def _create_y_maze_track_graph(
         bin_size=bin_size,
         name="y_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

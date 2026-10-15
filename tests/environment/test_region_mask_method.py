@@ -31,7 +31,9 @@ class TestRegionMaskBasic:
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Add region to environment
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         # Get mask using method
         mask = env.region_mask("center")
@@ -49,8 +51,10 @@ class TestRegionMaskBasic:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("left", polygon=box(0, 0, 4, 10))
-        env.regions.add("right", polygon=box(6, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(0, 0, 4, 10))
+        region_builder.add("right", polygon=box(6, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         # Get union of both regions
         mask = env.region_mask(["left", "right"])
@@ -107,8 +111,10 @@ class TestRegionMaskBasic:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
-        env.regions.add("corner", polygon=box(0, 0, 3, 3))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        region_builder.add("corner", polygon=box(0, 0, 3, 3))
+        env = env.with_regions(region_builder)
 
         # Get mask for all env.regions
         mask = env.region_mask(env.regions)
@@ -131,7 +137,9 @@ class TestRegionMaskBoundary:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         mask_include = env.region_mask("test", include_boundary=True)
 
@@ -144,7 +152,9 @@ class TestRegionMaskBoundary:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         mask_exclude = env.region_mask("test", include_boundary=False)
         mask_include = env.region_mask("test", include_boundary=True)
@@ -157,7 +167,9 @@ class TestRegionMaskBoundary:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         mask_default = env.region_mask("test")
         mask_explicit = env.region_mask("test", include_boundary=True)
@@ -209,7 +221,9 @@ class TestRegionMaskEdgeCases:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("point", point=(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("point", point=(5.0, 5.0))
+        env = env.with_regions(region_builder)
 
         mask = env.region_mask("point")
         assert int(mask.sum()) == 1
@@ -219,8 +233,10 @@ class TestRegionMaskEdgeCases:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("point", point=(5.0, 5.0))
-        env.regions.add("poly", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("point", point=(5.0, 5.0))
+        region_builder.add("poly", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         mask = env.region_mask(["point", "poly"])
 
@@ -244,7 +260,9 @@ class TestRegionMaskInputValidation:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("valid", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("valid", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         with pytest.raises(KeyError, match="invalid"):
             env.region_mask(["valid", "invalid"])
@@ -262,7 +280,9 @@ class TestRegionMaskInputValidation:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         with pytest.raises(TypeError):
             env.region_mask("test", include_boundary="yes")  # Should be bool
@@ -276,7 +296,9 @@ class TestRegionMaskFeatureParity:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         # Method version
         mask_method = env.region_mask("center")
@@ -292,8 +314,10 @@ class TestRegionMaskFeatureParity:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("left", polygon=box(0, 0, 4, 10))
-        env.regions.add("right", polygon=box(6, 0, 10, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left", polygon=box(0, 0, 4, 10))
+        region_builder.add("right", polygon=box(6, 0, 10, 10))
+        env = env.with_regions(region_builder)
 
         # Method version
         mask_method = env.region_mask(["left", "right"])
@@ -343,7 +367,9 @@ class TestRegionMaskFeatureParity:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        env.regions.add("test", polygon=box(3, 3, 7, 7))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        env = env.with_regions(region_builder)
 
         # Method version
         mask_method = env.region_mask("test", include_boundary=False)

@@ -7,7 +7,7 @@ particularly for methods like path_between() and bins_in_region().
 import numpy as np
 import pytest
 
-from neurospatial import BinIndexOutOfRangeError
+from neurospatial import BinIndexOutOfRangeError, Regions
 from neurospatial.environment import Environment
 
 # Test data for creating environments
@@ -113,11 +113,11 @@ class TestBinsInRegionErrorPaths:
         # Add polygon region (only valid for 2D)
         polygon_coords = [(0, 0), (10, 0), (10, 10), (0, 10)]
         shapely_poly = ShapelyPolygon(polygon_coords)
-        env.regions.add("test_poly", polygon=shapely_poly)
-
-        # Should raise ValueError for 3D environment
-        with pytest.raises(ValueError, match=r"Polygon regions.*only supported.*2D"):
-            env.bins_in_region("test_poly")
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test_poly", polygon=shapely_poly)
+        with pytest.raises(ValueError, match="dimensions must match"):
+            env.with_regions(region_builder)
+        assert "test_poly" not in env.regions
 
     def test_bins_in_region_polygon_without_shapely(self, monkeypatch):
         """Test polygon region query when shapely not available."""
@@ -129,7 +129,9 @@ class TestBinsInRegionErrorPaths:
         # Add polygon region
         polygon_coords = [(0, 0), (10, 0), (10, 10), (0, 10)]
         shapely_poly = ShapelyPolygon(polygon_coords)
-        env.regions.add("test_poly", polygon=shapely_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test_poly", polygon=shapely_poly)
+        env = env.with_regions(region_builder)
 
         # Mock shapely as unavailable
         import neurospatial.environment as env_module
@@ -153,7 +155,9 @@ class TestBinsInRegionErrorPaths:
 
         # Use a point that's definitely in an active bin (first bin center)
         point_in_bin = env.bin_centers[0]
-        env.regions.add("center", point=point_in_bin.tolist())
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", point=point_in_bin.tolist())
+        env = env.with_regions(region_builder)
 
         # Should return bins near the point
         bins = env.bins_in_region("center")
@@ -171,7 +175,9 @@ class TestBinsInRegionErrorPaths:
         # Add polygon region
         polygon_coords = [(-5, -5), (5, -5), (5, 5), (-5, 5)]
         shapely_poly = ShapelyPolygon(polygon_coords)
-        env.regions.add("center_box", polygon=shapely_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center_box", polygon=shapely_poly)
+        env = env.with_regions(region_builder)
 
         # Should return bins within the polygon
         bins = env.bins_in_region("center_box")
@@ -196,7 +202,9 @@ class TestMaskForRegionErrorPaths:
 
         # Use a point that's definitely in an active bin
         point_in_bin = env.bin_centers[0]
-        env.regions.add("test_point", point=point_in_bin.tolist())
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test_point", point=point_in_bin.tolist())
+        env = env.with_regions(region_builder)
 
         mask = env.region_mask("test_point")
         assert isinstance(mask, np.ndarray)
@@ -212,7 +220,9 @@ class TestMaskForRegionErrorPaths:
 
         polygon_coords = [(-5, -5), (5, -5), (5, 5), (-5, 5)]
         shapely_poly = ShapelyPolygon(polygon_coords)
-        env.regions.add("box", polygon=shapely_poly)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("box", polygon=shapely_poly)
+        env = env.with_regions(region_builder)
 
         mask = env.region_mask("box")
         assert isinstance(mask, np.ndarray)

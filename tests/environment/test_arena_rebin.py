@@ -8,8 +8,14 @@ import pytest
 from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
-from neurospatial.arena import MaskArena, OpenArena, UnknownArena
+from neurospatial.arena import MaskArena, OpenArena, UnknownArena, encode_arena
 from neurospatial.io import from_dict, to_dict
+
+
+def _arena_record(arena):
+    """Compare domain values independently of detached public export identity."""
+    metadata, arrays = encode_arena(arena)
+    return metadata, {name: array.tolist() for name, array in arrays.items()}
 
 
 def _regular(*, arena=None, holes=False, n_dims=2):
@@ -40,9 +46,9 @@ def _walled():
 @pytest.mark.parametrize("factor", [1, 2])
 def test_rebin_preserves_walls_in_the_layout_facade(factor):
     parent = _walled()
-    parent.units, parent.frame, parent.name = "cm", "camera", "arena"
+    parent = parent.with_metadata(units="cm", frame="camera", name="arena")
     child = parent.rebin(factor)
-    assert child.arena is parent.arena
+    assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert child.units == "cm" and child.frame == "camera"
     assert child.name == "arena_rebinned"
     assert nx.number_connected_components(child.connectivity) == 2
@@ -70,7 +76,7 @@ def test_rebin_selects_strict_polygon_centers_and_preserves_holes(physical):
     parent = _regular(arena=arena, holes=True)
     assert parent.layout._layout_type_tag == "RegularGrid"
     child = parent.rebin(2)
-    assert child.arena is parent.arena
+    assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert child.arena.physical_footprint_known is physical
     np.testing.assert_array_equal(
         child.bin_centers, [[1, 5], [3, 5], [5, 1], [5, 3], [5, 5]]
@@ -82,7 +88,7 @@ def test_rebin_selects_strict_polygon_centers_and_preserves_holes(physical):
 def test_rebin_preserves_unknown_arena_without_inventing_a_domain():
     arena = UnknownArena(2)
     child = _regular(arena=arena).rebin(2)
-    assert child.arena is arena
+    assert _arena_record(child.arena) == _arena_record(arena)
     assert not child.arena.domain_known
     assert child.n_bins == 9
 
@@ -92,7 +98,7 @@ def test_rebin_nonpolygon_arena_uses_its_containment_contract():
     assert isinstance(parent.arena, MaskArena)
     assert parent.arena.polygonal_domain() is None
     child = parent.rebin(2)
-    assert child.arena is parent.arena
+    assert _arena_record(child.arena) == _arena_record(parent.arena)
     # The nonpolygon closed-cell union includes the retained boundary at1.
     np.testing.assert_array_equal(child.bin_centers, [[1.0], [3.0], [5.0]])
     assert not child.contains(np.array([[2.0]]))[0]
@@ -129,7 +135,7 @@ def test_sparse_rebin_result_remains_in_the_regular_grid_family():
         np.testing.assert_array_equal(sequential.bin_centers, [[5.0, 2.0]])
         np.testing.assert_array_equal(sequential.bin_centers, direct.bin_centers)
         np.testing.assert_array_equal(sequential.bin_sizes, direct.bin_sizes)
-        assert sequential.arena is variant.arena
+        assert _arena_record(sequential.arena) == _arena_record(variant.arena)
 
 
 @pytest.mark.parametrize("holes", [False, True])

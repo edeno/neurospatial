@@ -239,7 +239,7 @@ class TestPlotField:
         """Test that axes labels are set for 2D plots."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()

@@ -98,7 +98,10 @@ class EnvironmentRegions:
         >>> from neurospatial import Environment
         >>> data = np.random.rand(100, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> _ = env.regions.add("center", point=(5.0, 5.0))
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> _ = regions.add("center", point=(5.0, 5.0))
+        >>> env = env.with_regions(regions)
         >>> bins = env.bins_in_region("center")
         >>> bins.shape
         (1,)
@@ -106,7 +109,10 @@ class EnvironmentRegions:
         For polygon regions (requires shapely):
 
         >>> from shapely.geometry import box  # doctest: +SKIP
-        >>> env.regions.add("roi", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> regions.add("roi", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
+        >>> env = env.with_regions(regions)
         >>> bins = env.bins_in_region("roi")  # doctest: +SKIP
         >>> len(bins)  # Number of bins in the 6x6 square  # doctest: +SKIP
         9  # doctest: +SKIP
@@ -234,8 +240,11 @@ class EnvironmentRegions:
         >>> from shapely.geometry import box
         >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> _ = env.regions.add("left", polygon=box(0, 0, 5, 10))
-        >>> _ = env.regions.add("right", polygon=box(5, 0, 10, 10))
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> _ = regions.add("left", polygon=box(0, 0, 5, 10))
+        >>> _ = regions.add("right", polygon=box(5, 0, 10, 10))
+        >>> env = env.with_regions(regions)
         >>> membership = env.region_membership()
         >>> membership.shape[1]
         2
@@ -407,9 +416,12 @@ class EnvironmentRegions:
 
         >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> _ = env.regions.add("center", polygon=box(3, 3, 7, 7))
-        >>> _ = env.regions.add("left", polygon=box(0, 0, 4, 10))
-        >>> _ = env.regions.add("right", polygon=box(6, 0, 10, 10))
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> _ = regions.add("center", polygon=box(3, 3, 7, 7))
+        >>> _ = regions.add("left", polygon=box(0, 0, 4, 10))
+        >>> _ = regions.add("right", polygon=box(6, 0, 10, 10))
+        >>> env = env.with_regions(regions)
 
         Single region by name:
 

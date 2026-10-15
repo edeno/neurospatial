@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.decisions import extract_pre_decision_window
 from neurospatial.behavior.navigation import goal_bias
 from neurospatial.behavior.segmentation import (
@@ -31,8 +31,12 @@ def coarse_track():
     env = Environment.from_samples(
         np.vstack([positions, positions + np.array([0.0, 5.0])]), bin_size=2.0
     )
-    env.regions.add("mid", point=(45.0, 5.0))
-    env.regions.buffer("mid", distance=6.0, new_name="mid_area")
+    region_builder = Regions(env.regions.values())
+    region_builder.add("mid", point=(45.0, 5.0))
+    env = env.with_regions(region_builder)
+    region_builder = Regions(env.regions.values())
+    region_builder.buffer("mid", distance=6.0, new_name="mid_area")
+    env = env.with_regions(region_builder)
     return env, times, positions
 
 

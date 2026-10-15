@@ -36,7 +36,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
@@ -182,16 +182,17 @@ def make_rat_hexmaze(
         name="rat_hexmaze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add module regions (as point regions at module centers)
     module_names = ["module_A", "module_B", "module_C"]
+    region_builder = Regions()
     for name, center in zip(
         module_names[: dims.n_modules], module_centers, strict=True
     ):
         # Create circular region for module
         module_region = Point(center).buffer(dims.module_width / 3)
-        env_2d.regions.add(name, polygon=module_region)
+        region_builder.add(name, polygon=module_region)
 
     # Add corridor bridge regions (as point regions at bridge centers)
     bridge_names = ["corridor_AB", "corridor_BC"]
@@ -201,7 +202,8 @@ def make_rat_hexmaze(
         # Create rectangular region for bridge
         bridge_length = dims.module_width * 0.5
         bridge_region = Point(center).buffer(bridge_length / 2)
-        env_2d.regions.add(name, polygon=bridge_region)
+        region_builder.add(name, polygon=bridge_region)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -407,7 +409,7 @@ def _create_hexmaze_track_graph(
         bin_size=bin_size,
         name="rat_hexmaze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track
 

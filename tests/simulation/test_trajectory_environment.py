@@ -17,7 +17,7 @@ def test_ou_trajectory_explores_sparse_environment_fails():
     arena_size = 80.0
     sparse_data = np.array([[0, 0], [arena_size, arena_size]])  # Only 2 points!
     sparse_env = Environment.from_samples(sparse_data, bin_size=5.0)
-    sparse_env.units = "cm"
+    sparse_env = sparse_env.with_metadata(units="cm")
 
     # Try to simulate trajectory
     positions, _ = simulate_trajectory_ou(
@@ -51,7 +51,7 @@ def test_ou_trajectory_explores_grid_environment_succeeds():
     grid_data = np.column_stack([xx.ravel(), yy.ravel()])  # 289 grid points
 
     grid_env = Environment.from_samples(grid_data, bin_size=5.0)
-    grid_env.units = "cm"
+    grid_env = grid_env.with_metadata(units="cm")
 
     # Simulate trajectory
     positions, times = simulate_trajectory_ou(

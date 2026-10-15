@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestDetectLaps:
@@ -147,7 +147,9 @@ class TestDetectLaps:
         # Add start region at theta=0 position
         start_x = 50 + radius
         start_y = 50
-        env.regions.add("start", polygon=Point(start_x, start_y).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(start_x, start_y).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         from neurospatial.behavior.segmentation import detect_laps
 
@@ -281,7 +283,9 @@ class TestDetectLaps:
         times = np.linspace(0, 120, n_samples)
 
         # Add start region
-        env.regions.add("start", polygon=Point(50 + radius, 50).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(50 + radius, 50).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         from neurospatial.behavior.segmentation import detect_laps
 

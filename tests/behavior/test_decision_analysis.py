@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 # =============================================================================
 # Test Fixtures
@@ -56,10 +56,12 @@ def t_maze_environment():
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Add regions (point regions - the bin containing each point)
-    env.regions.add("start", point=(50.0, 5.0))
-    env.regions.add("center", point=(50.0, 55.0))
-    env.regions.add("left", point=(10.0, 55.0))
-    env.regions.add("right", point=(90.0, 55.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(50.0, 5.0))
+    region_builder.add("center", point=(50.0, 55.0))
+    region_builder.add("left", point=(10.0, 55.0))
+    region_builder.add("right", point=(90.0, 55.0))
+    env = env.with_regions(region_builder)
 
     return env
 

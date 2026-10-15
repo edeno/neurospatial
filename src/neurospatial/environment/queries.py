@@ -403,7 +403,10 @@ class EnvironmentQueries:
         >>> from shapely.geometry import box
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> _ = env.regions.add("goal", polygon=box(8.0, 8.0, 10.0, 10.0))
+        >>> from neurospatial import Regions
+        >>> regions = Regions()
+        >>> _ = regions.add("goal", polygon=box(8.0, 8.0, 10.0, 10.0))
+        >>> env = env.with_regions(regions)
         >>> dist = env.distance_to("goal", metric="geodesic")
         >>> dist.shape
         (100,)

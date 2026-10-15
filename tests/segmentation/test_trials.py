@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestSegmentTrials:
@@ -34,9 +34,11 @@ class TestSegmentTrials:
         env = Environment.from_samples(positions, bin_size=3.0)
 
         # Define regions
-        env.regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
-        env.regions.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
-        env.regions.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
+        region_builder.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
+        region_builder.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Create trajectory with 3 trials
         # Trial 1: Start (50, 10) → Stem (50, 50) → Left (20, 80)
@@ -116,8 +118,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Create very short trial (only 5 timepoints, duration = 4 seconds)
         x_traj = np.linspace(20, 80, 5)
@@ -150,8 +154,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Create long meandering trial (100 timepoints, never reaches goal)
         # Start in start region, meander but don't reach goal
@@ -193,8 +199,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Create successful trial: Start → Goal
         x_traj = np.linspace(20, 80, 30)
@@ -231,8 +239,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         position_bins = np.array([], dtype=int)
         times = np.array([], dtype=float)
@@ -257,8 +267,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Trajectory that stays in middle, never reaching goal
         x_traj = np.linspace(20, 50, 50)
@@ -292,8 +304,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         position_bins = np.arange(10)
         times = np.arange(10, dtype=float)
@@ -399,8 +413,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Trial 1: enter start, leave toward middle (never reach goal),
         #          then re-enter start -> aborts trial 1.
@@ -459,8 +475,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Very brief excursion (< min_duration) then re-entry, then a real trial.
         x_traj = np.concatenate(
@@ -515,8 +533,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Enter start, head toward goal but recording ends before reaching it.
         x_traj = np.concatenate(
@@ -563,8 +583,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Enter start near the very end of recording; trial only ~3s long.
         x_traj = np.concatenate(
@@ -607,8 +629,10 @@ class TestSegmentTrials:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+        env = env.with_regions(region_builder)
 
         # Enter start region twice, reach goal after second entry
         # Start 1 → leave → Start 2 → Goal

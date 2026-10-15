@@ -72,16 +72,18 @@ def env_2d():
         ]
     )
     env = Environment.from_samples(positions, bin_size=10.0)
-    env.units = "cm"
-    env.frame = "test"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="test")
 
     # Add regions for testing
-    env.regions = Regions()
-    env.regions.add("goal", point=np.array([80, 80]))
-    env.regions.add(
+    env = env.with_regions(Regions())
+    region_builder = Regions(env.regions.values())
+    region_builder.add("goal", point=np.array([80, 80]))
+    region_builder.add(
         "arena",
         polygon=Polygon([[10, 10], [90, 10], [90, 90], [10, 90]]),
     )
+    env = env.with_regions(region_builder)
 
     return env
 

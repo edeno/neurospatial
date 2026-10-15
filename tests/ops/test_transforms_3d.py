@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
     AffineND,
     apply_transform_to_environment,
@@ -440,7 +440,9 @@ class TestApplyTransformToEnvironment3D:
         )
 
         # Add region (modifies environment)
-        env.regions.add("goal", point=np.array([5.0, 5.0, 5.0]))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0, 5.0]))
+        env = env.with_regions(region_builder)
 
         transform = translate_3d(10, 20, 30)
         transformed_env = apply_transform_to_environment(env, transform)

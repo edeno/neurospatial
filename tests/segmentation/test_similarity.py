@@ -10,7 +10,7 @@ import itertools
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     trajectory_similarity,
@@ -177,7 +177,9 @@ class TestDetectGoalDirectedRuns:
         goal_bin_idx = int(np.argmax(distances_from_origin))
         goal_location = env.bin_centers[goal_bin_idx]
         goal_polygon = Point(goal_location).buffer(15.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Create trajectory moving toward goal
         # Start from opposite corner
@@ -237,7 +239,9 @@ class TestDetectGoalDirectedRuns:
 
         goal_location = env.bin_centers[env.n_bins // 2]
         goal_polygon = Point(goal_location).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Random walk (inefficient path) with local RNG
         rng = np.random.default_rng(123)
@@ -271,7 +275,9 @@ class TestDetectGoalDirectedRuns:
 
         goal_location = env.bin_centers[-1]
         goal_polygon = Point(goal_location).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Very short trajectory (minimal progress)
         position_bins = np.array([0, 1, 2], dtype=np.int64)
@@ -316,7 +322,9 @@ class TestDetectGoalDirectedRuns:
         from shapely.geometry import Point
 
         goal_polygon = Point(env.bin_centers[0]).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         with pytest.raises(
             ValueError, match=r"directedness_threshold must be in \[0, 1\]"
@@ -352,7 +360,9 @@ class TestDetectGoalDirectedRuns:
         from shapely.geometry import Point
 
         goal_polygon = Point(env.bin_centers[-1]).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         empty_bins = np.array([], dtype=np.int64)
         empty_times = np.array([])
@@ -424,7 +434,9 @@ class TestGoalDirectedRunsEquivalence:
         env = Environment.from_samples(positions, bin_size=6.0)
 
         goal_polygon = Point(env.bin_centers[-1]).buffer(8.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
         goal_bin_indices = np.where(regions_to_mask(env, ["goal"]))[0]
 
         reference = self._reference_distances_to_goal(env, goal_bin_indices)
@@ -445,7 +457,9 @@ class TestGoalDirectedRunsEquivalence:
         env = Environment.from_samples(positions, bin_size=6.0)
 
         goal_polygon = Point(env.bin_centers[-1]).buffer(8.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Walk a connected path through neighbors so each step is a graph edge.
         path = [0]
@@ -507,7 +521,9 @@ class TestSimilarityIntegration:
 
         goal_location = env.bin_centers[-1]
         goal_polygon = Point(goal_location).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Two trajectories toward goal
         traj1_bins = np.arange(0, 30, dtype=np.int64)

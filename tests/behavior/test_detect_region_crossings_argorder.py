@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.segmentation import detect_region_crossings
 
 
@@ -18,7 +18,9 @@ def _make_env_and_trajectory() -> tuple[Environment, np.ndarray, np.ndarray]:
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+    env = env.with_regions(region_builder)
 
     traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
     traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])

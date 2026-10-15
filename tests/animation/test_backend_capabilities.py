@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.overlays import (
     BodypartData,
     HeadDirectionData,
@@ -68,7 +68,7 @@ def simple_env() -> Environment:
         [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [5.0, 5.0]]
     )
     env = Environment.from_samples(positions, bin_size=2.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return env
 
 
@@ -273,7 +273,9 @@ class TestNapariCapabilities:
     def test_supports_regions(self, simple_env, simple_fields):
         """Test Napari renders regions without errors."""
 
-        simple_env.regions.add("test_region", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("test_region", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         with patch(
             "neurospatial.animation.backends.napari_backend.napari"
@@ -388,7 +390,9 @@ class TestVideoCapabilities:
     def test_supports_regions(self, simple_env, simple_fields, tmp_path):
         """Test Video renders regions without errors."""
 
-        simple_env.regions.add("test_region", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("test_region", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
         save_path = tmp_path / "test.mp4"
 
         # Should not raise any warnings or errors
@@ -459,7 +463,9 @@ class TestHTMLCapabilities:
     def test_supports_regions(self, simple_env, simple_fields, tmp_path):
         """Test HTML renders regions without errors."""
 
-        simple_env.regions.add("test_region", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("test_region", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
         save_path = tmp_path / "test.html"
 
         # Should not raise any warnings or errors for regions
@@ -584,7 +590,9 @@ class TestWidgetCapabilities:
     def test_supports_regions(self, simple_env, simple_fields):
         """Test Widget renders regions without errors."""
 
-        simple_env.regions.add("test_region", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("test_region", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         with patch(
             "neurospatial.animation.backends.widget_backend.display"

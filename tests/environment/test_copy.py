@@ -75,7 +75,9 @@ class TestCopyBasic:
         from shapely.geometry import Point
 
         # Add a region
-        env.regions.add("test", point=Point(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("test", point=Point(5.0, 5.0))
+        env = env.with_regions(region_builder)
 
         env_copy = env.copy()
 
@@ -118,11 +120,15 @@ class TestCopyDeepVsShallow:
         env = sample_2d_grid
         from shapely.geometry import Point
 
-        env.regions.add("original", point=Point(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("original", point=Point(5.0, 5.0))
+        env = env.with_regions(region_builder)
         env_copy = env.copy(deep=True)
 
         # Add region to copy
-        env_copy.regions.add("copy_only", point=Point(10.0, 10.0))
+        region_builder = Regions(env_copy.regions.values())
+        region_builder.add("copy_only", point=Point(10.0, 10.0))
+        env_copy = env_copy.with_regions(region_builder)
 
         # Original regions unchanged
         assert "copy_only" not in env.regions
@@ -134,7 +140,10 @@ class TestCopyDeepVsShallow:
         env = sample_2d_grid
         env_copy = env.copy(deep=False)
 
-        assert env_copy.bin_centers is env.bin_centers
+        assert env_copy._geometry is env._geometry
+        assert np.shares_memory(env_copy.bin_centers, env.bin_centers)
+        assert env_copy.bin_centers is not env.bin_centers
+        assert_array_equal(env_copy.bin_centers, env.bin_centers)
 
     def test_shallow_copy_shares_graph(self, sample_2d_grid):
         """Shallow copy: graph is shared."""
@@ -216,7 +225,7 @@ class TestCopyEdgeCases:
         """copy() with no regions works correctly."""
         env = sample_2d_grid
         # Ensure no regions
-        env.regions = Regions()
+        env = env.with_regions(Regions())
 
         env_copy = env.copy()
 
@@ -225,8 +234,8 @@ class TestCopyEdgeCases:
     def test_copy_with_custom_units_and_frame(self, sample_2d_grid):
         """copy() preserves custom units and frame."""
         env = sample_2d_grid
-        env.units = "cm"
-        env.frame = "session1"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session1")
 
         env_copy = env.copy()
 
@@ -282,10 +291,14 @@ class TestCopyIntegration:
         env = sample_2d_grid
         from shapely.geometry import Point
 
-        env.regions.add("original", point=Point(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("original", point=Point(5.0, 5.0))
+        env = env.with_regions(region_builder)
 
         env_copy = env.copy(deep=True)
-        env_copy.regions.add("new", point=Point(10.0, 10.0))
+        region_builder = Regions(env_copy.regions.values())
+        region_builder.add("new", point=Point(10.0, 10.0))
+        env_copy = env_copy.with_regions(region_builder)
 
         # Original unchanged
         assert "new" not in env.regions

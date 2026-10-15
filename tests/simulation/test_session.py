@@ -178,7 +178,7 @@ class TestSimulateSession:
 
     def test_simulate_session_returns_simulation_session(self, simple_2d_env):
         """simulate_session() should return SimulationSession instance."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env, duration=1.0, n_cells=3, seed=42, show_progress=False
         )
@@ -190,7 +190,7 @@ class TestSimulateSession:
 
     def test_simulate_session_place_cells(self, simple_2d_env):
         """simulate_session() with cell_type='place' should create place cells."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -207,7 +207,7 @@ class TestSimulateSession:
 
     def test_simulate_session_boundary_cells(self, simple_2d_env):
         """simulate_session() with cell_type='boundary' should create boundary cells."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -222,7 +222,7 @@ class TestSimulateSession:
 
     def test_simulate_session_grid_cells(self, simple_2d_env):
         """simulate_session() with cell_type='grid' should create grid cells."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -237,7 +237,7 @@ class TestSimulateSession:
 
     def test_simulate_session_mixed_cells(self, simple_2d_env):
         """simulate_session() with cell_type='mixed' should create 60% place, 20% boundary, 20% grid."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         n_cells = 10
         session = simulate_session(
             simple_2d_env,
@@ -260,7 +260,7 @@ class TestSimulateSession:
 
     def test_simulate_session_trajectory_ou(self, simple_2d_env):
         """simulate_session() with trajectory_method='ou' should create OU trajectory."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -280,7 +280,7 @@ class TestSimulateSession:
 
     def test_simulate_session_coverage_uniform(self, simple_2d_env):
         """simulate_session() with coverage='uniform' should evenly space field centers."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=1.0,
@@ -303,7 +303,7 @@ class TestSimulateSession:
 
     def test_simulate_session_coverage_random(self, simple_2d_env):
         """simulate_session() with coverage='random' should randomly sample field centers."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=1.0,
@@ -325,7 +325,7 @@ class TestSimulateSession:
 
     def test_simulate_session_seed_reproducibility(self, simple_2d_env):
         """simulate_session() with same seed should produce identical results."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         seed = 42
 
         session1 = simulate_session(
@@ -361,7 +361,7 @@ class TestSimulateSession:
         loops read them, so boundary/grid cells silently fell back to their
         defaults. The shared kwargs must now reach all three model types.
         """
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         custom_max_rate = 37.0  # not equal to any model's default
 
         session = simulate_session(
@@ -413,7 +413,7 @@ class TestSimulateSession:
         """
         from neurospatial.simulation.spikes import generate_population_spikes
 
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         seed = 7
 
         session = simulate_session(
@@ -453,7 +453,7 @@ class TestSimulateSession:
 
     def test_simulate_session_ground_truth_structure(self, simple_2d_env):
         """simulate_session() ground_truth should have proper structure."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=1.0,
@@ -478,7 +478,7 @@ class TestSimulateSession:
 
     def test_simulate_session_metadata(self, simple_2d_env):
         """simulate_session() metadata should contain session parameters."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=1.5,
@@ -503,7 +503,7 @@ class TestSimulateSession:
 
     def test_simulate_session_invalid_cell_type(self, simple_2d_env):
         """simulate_session() should raise ValueError for invalid cell_type."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="cell_type must be one of"):
             simulate_session(
                 simple_2d_env,
@@ -515,7 +515,7 @@ class TestSimulateSession:
 
     def test_simulate_session_invalid_trajectory_method(self, simple_2d_env):
         """simulate_session() should raise ValueError for invalid trajectory_method."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="trajectory_method must be one of"):
             simulate_session(
                 simple_2d_env,
@@ -527,7 +527,7 @@ class TestSimulateSession:
 
     def test_simulate_session_invalid_coverage(self, simple_2d_env):
         """simulate_session() should raise ValueError for invalid coverage."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="coverage must be one of"):
             simulate_session(
                 simple_2d_env,
@@ -539,7 +539,7 @@ class TestSimulateSession:
 
     def test_simulate_session_grid_cells_require_2d(self, simple_1d_env):
         """simulate_session() with grid cells should require 2D environment."""
-        simple_1d_env.units = "cm"
+        simple_1d_env = simple_1d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="2D environment"):
             simulate_session(
                 simple_1d_env,
@@ -551,7 +551,7 @@ class TestSimulateSession:
 
     def test_simulate_session_kwargs_passed_to_trajectory(self, simple_2d_env):
         """simulate_session() should pass kwargs to trajectory function."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         # Pass custom speed_mean and coherence_time
         session = simulate_session(
             simple_2d_env,
@@ -569,7 +569,7 @@ class TestSimulateSession:
 
     def test_simulate_session_positions_within_bounds(self, simple_2d_env):
         """simulate_session() positions should all be within environment bounds."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -584,7 +584,7 @@ class TestSimulateSession:
 
     def test_simulate_session_trajectory_laps(self, simple_2d_env):
         """simulate_session() with trajectory_method='laps' should work."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_2d_env,
             duration=2.0,
@@ -602,7 +602,7 @@ class TestSimulateSession:
     @pytest.mark.skip(reason="Requires proper 1D environment with GraphLayout")
     def test_simulate_session_trajectory_sinusoidal(self, simple_1d_env):
         """simulate_session() with trajectory_method='sinusoidal' should work for 1D."""
-        simple_1d_env.units = "cm"
+        simple_1d_env = simple_1d_env.with_metadata(units="cm")
         session = simulate_session(
             simple_1d_env,
             duration=2.0,
@@ -618,7 +618,7 @@ class TestSimulateSession:
 
     def test_simulate_session_zero_cells(self, simple_2d_env):
         """simulate_session() with n_cells=0 should raise ValueError."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="n_cells must be positive"):
             simulate_session(
                 simple_2d_env,
@@ -629,7 +629,7 @@ class TestSimulateSession:
 
     def test_simulate_session_negative_cells(self, simple_2d_env):
         """simulate_session() with negative n_cells should raise ValueError."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="n_cells must be positive"):
             simulate_session(
                 simple_2d_env,
@@ -640,7 +640,7 @@ class TestSimulateSession:
 
     def test_simulate_session_zero_duration(self, simple_2d_env):
         """simulate_session() with duration=0 should raise ValueError."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="duration must be positive"):
             simulate_session(
                 simple_2d_env,
@@ -651,7 +651,7 @@ class TestSimulateSession:
 
     def test_simulate_session_negative_duration(self, simple_2d_env):
         """simulate_session() with negative duration should raise ValueError."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         with pytest.raises(ValueError, match="duration must be positive"):
             simulate_session(
                 simple_2d_env,

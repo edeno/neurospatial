@@ -16,12 +16,6 @@ from shapely.geometry import Polygon as ShapelyPoly
 from neurospatial import BinIndexOutOfRangeError
 from neurospatial.environment import Environment
 from neurospatial.layout.engines.graph import GraphLayout
-from neurospatial.layout.engines.hexagonal import HexagonalLayout
-from neurospatial.layout.engines.image_mask import ImageMaskLayout
-from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.layout.engines.shapely_polygon import (
-    ShapelyPolygonLayout,
-)
 
 
 class TestEnvironmentFromGraph:
@@ -30,7 +24,7 @@ class TestEnvironmentFromGraph:
     def test_creation(self, graph_env: Environment, plus_maze_graph: nx.Graph):
         """Test basic attributes after creation."""
         assert graph_env.name == "PlusMazeGraph"
-        assert isinstance(graph_env.layout, GraphLayout)
+        assert graph_env._binning.linearization is not None
         assert graph_env._is_fitted
         assert graph_env.is_linearized_track
         assert graph_env.n_dims == 2
@@ -441,7 +435,7 @@ def test_from_mask():
             name="NDMaskTest",
         )
         assert env.name == "NDMaskTest"
-        assert isinstance(env.layout, MaskedGridLayout)
+        assert env._binning.rectilinear is not None
         assert env._is_fitted
         assert env.n_dims == 2
         assert env.bin_centers.shape[0] == np.sum(active_mask_np)
@@ -463,7 +457,7 @@ def test_from_image():
         image_mask=image_mask_np, pixel_size=1.0, name="ImageMaskTest"
     )
     assert env.name == "ImageMaskTest"
-    assert isinstance(env.layout, ImageMaskLayout)
+    assert env._binning.rectilinear is not None
     assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == np.sum(image_mask_np)
@@ -480,7 +474,8 @@ def test_from_polygon():
     polygon = ShapelyPoly([(0, 0), (0, 2), (2, 2), (2, 0)])
     env = Environment.from_polygon(polygon=polygon, bin_size=1.0, name="ShapelyTest")
     assert env.name == "ShapelyTest"
-    assert isinstance(env.layout, ShapelyPolygonLayout)
+    assert env._binning.outline is not None
+    assert env._binning.outline.geometry.equals(polygon)
     assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == 4
@@ -676,9 +671,9 @@ class TestHexagonalLayout:
 
     def test_creation_hex(self, env_hexagonal: Environment):
         assert env_hexagonal.name == "HexTestEnv"
-        assert isinstance(env_hexagonal.layout, HexagonalLayout)
+        assert env_hexagonal._binning.shapes is not None
         assert env_hexagonal.n_dims == 2
-        assert env_hexagonal.layout.hexagon_width == 1.0
+        assert env_hexagonal._binning.shapes.radius * np.sqrt(3.0) == pytest.approx(1.0)
         assert env_hexagonal.bin_centers.shape[0] > 0  # Some bins should be active
 
     def test_point_to_bin_index_hex(self, env_hexagonal: Environment):
@@ -702,19 +697,9 @@ class TestHexagonalLayout:
         areas = env_hexagonal.bin_sizes
         assert areas.ndim == 1
         assert areas.shape[0] == env_hexagonal.bin_centers.shape[0]
-        # Area of hexagon = (3 * sqrt(3) / 2) * radius^2. Radius = width / sqrt(3).
-        # Side length = radius.
-        # Area = (3 * sqrt(3) / 2) * (side_length)^2
-        # Hexagon width w (distance between parallel sides). Radius R (center to vertex). s = side_length
-        # w = 2 * s * sqrt(3)/2 = s * sqrt(3). So s = w / sqrt(3).
-        # R = s. So R = w / sqrt(3).
-        # Area = (3 * np.sqrt(3) / 2.0) * (env_hexagonal.layout.hex_radius_)**2
-        # Layout stores hex_radius_
-        assert hasattr(env_hexagonal.layout, "hexagon_width")
-        (3 * np.sqrt(3) / 2.0) * (env_hexagonal.layout.hexagon_width / np.sqrt(3)) ** 2
-        expected_area_simplified = (
-            np.sqrt(3) / 2.0
-        ) * env_hexagonal.layout.hexagon_width**2
+        shapes = env_hexagonal._binning.shapes
+        assert shapes is not None
+        expected_area_simplified = (3 * np.sqrt(3) / 2.0) * shapes.radius**2
 
         assert np.allclose(areas, expected_area_simplified)
 
@@ -732,8 +717,9 @@ class TestHexagonalLayout:
         if len(neighbors) > 0:
             assert len(set(neighbors)) == len(neighbors)  # Unique neighbors
             center_node = env_hexagonal.bin_centers[some_bin_idx]
-            assert hasattr(env_hexagonal.layout, "hexagon_width")
-            hexagon_width = env_hexagonal.layout.hexagon_width
+            shapes = env_hexagonal._binning.shapes
+            assert shapes is not None
+            hexagon_width = shapes.radius * np.sqrt(3)
 
             # For pointy-top hexagonal grids, the distance between adjacent
             # hex centers equals hexagon_width
@@ -1320,8 +1306,12 @@ class TestCacheManagement:
 
         monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
         first = cache_test_env.compute_kernel(1.0, mode="density")
+        cached = cache_test_env._kernel_cache[(1.0, "density")]
         cache_test_env.compute_kernel(2.0, mode="density")
-        assert cache_test_env.compute_kernel(1.0, mode="density") is first
+        np.testing.assert_array_equal(
+            cache_test_env.compute_kernel(1.0, mode="density"), first
+        )
+        assert cache_test_env._kernel_cache[(1.0, "density")] is cached
         cache_test_env.compute_kernel(3.0, mode="density")
 
         assert list(cache_test_env._kernel_cache) == [
@@ -1350,19 +1340,19 @@ class TestCacheManagement:
     def test_clear_cache_clears_cached_properties(self, cache_test_env):
         """Test that clear_cache() clears @cached_property values."""
         # Access several cached properties to trigger computation
-        _ = cache_test_env.boundary_bins  # cached_property in metrics.py
-        _ = cache_test_env.bin_sizes  # cached_property in queries.py
+        _ = cache_test_env.boundary_bins
+        _ = cache_test_env.bin_sizes
 
         # Verify they're in __dict__ (cached)
-        assert "boundary_bins" in cache_test_env.__dict__
-        assert "bin_sizes" in cache_test_env.__dict__
+        assert "_versioned_cache___boundary_bins_cached" in cache_test_env.__dict__
+        assert "_versioned_cache___bin_sizes_cached" in cache_test_env.__dict__
 
         # Clear all caches
         cache_test_env.clear_cache()
 
         # Verify cached properties are cleared from __dict__
-        assert "boundary_bins" not in cache_test_env.__dict__
-        assert "bin_sizes" not in cache_test_env.__dict__
+        assert "_versioned_cache___boundary_bins_cached" not in cache_test_env.__dict__
+        assert "_versioned_cache___bin_sizes_cached" not in cache_test_env.__dict__
 
     def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
@@ -1373,8 +1363,12 @@ class TestCacheManagement:
         cache_key = "_versioned_cache___differential_operator_cached"
 
         diff_op_original = cache_test_env.get_differential_operator()
+        cached = cache_test_env._differential_operator_cached
         assert cache_key in cache_test_env.__dict__
-        assert cache_test_env.get_differential_operator() is diff_op_original
+        second = cache_test_env.get_differential_operator()
+        assert cache_test_env._differential_operator_cached is cached
+        assert second is not diff_op_original
+        np.testing.assert_array_equal(second.toarray(), diff_op_original.toarray())
 
         cache_test_env.clear_cache()
         assert cache_key not in cache_test_env.__dict__
@@ -1420,8 +1414,8 @@ class TestCacheManagement:
 
         # Verify all are cached.
         assert cache_test_env._kdtree_cache is not None
-        assert "boundary_bins" in cache_test_env.__dict__
-        assert "bin_sizes" in cache_test_env.__dict__
+        assert "_versioned_cache___boundary_bins_cached" in cache_test_env.__dict__
+        assert "_versioned_cache___bin_sizes_cached" in cache_test_env.__dict__
         assert diff_key in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
         assert bin_key in cache_test_env.__dict__
@@ -1431,8 +1425,8 @@ class TestCacheManagement:
 
         # Verify ALL are cleared.
         assert cache_test_env._kdtree_cache is None
-        assert "boundary_bins" not in cache_test_env.__dict__
-        assert "bin_sizes" not in cache_test_env.__dict__
+        assert "_versioned_cache___boundary_bins_cached" not in cache_test_env.__dict__
+        assert "_versioned_cache___bin_sizes_cached" not in cache_test_env.__dict__
         assert diff_key not in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
         assert bin_key not in cache_test_env.__dict__
@@ -1446,10 +1440,11 @@ class TestCacheManagement:
 
         # Access linearization properties (triggers caching)
         _ = cache_test_graph_env.linearization_properties
-        assert "linearization_properties" in cache_test_graph_env.__dict__
+        cache_key = "_versioned_cache___linearization_properties_cached"
+        assert cache_key in cache_test_graph_env.__dict__
 
         # Clear cache
         cache_test_graph_env.clear_cache()
 
         # Verify cleared
-        assert "linearization_properties" not in cache_test_graph_env.__dict__
+        assert cache_key not in cache_test_graph_env.__dict__

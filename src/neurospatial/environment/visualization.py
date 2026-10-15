@@ -193,7 +193,10 @@ class EnvironmentVisualization:
 
         Plot with regions:
 
-        >>> env.regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
+        >>> env = env.with_regions(regions)
         >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
 
         """
@@ -834,7 +837,10 @@ class EnvironmentVisualization:
         >>> heading_overlay = HeadDirectionOverlay(
         ...     headings=np.linspace(0.0, np.pi, len(fields)), color="yellow"
         ... )
-        >>> _ = env.regions.add("goal", point=(18.0, 10.0))
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> _ = regions.add("goal", point=(18.0, 10.0))
+        >>> env = env.with_regions(regions)
         >>> path = env.animate_fields(
         ...     fields,
         ...     frame_times=frame_times,

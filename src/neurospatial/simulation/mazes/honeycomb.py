@@ -38,7 +38,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Polygon
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import union_polygons
 
@@ -188,11 +188,13 @@ def make_honeycomb_maze(
         name="honeycomb_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for each platform (numbered 0 through n_platforms-1)
+    region_builder = Regions()
     for i, pos in enumerate(positions):
-        env_2d.regions.add(f"platform_{i}", point=pos)
+        region_builder.add(f"platform_{i}", point=pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -384,6 +386,6 @@ def _create_honeycomb_track_graph(
         bin_size=bin_size,
         name="honeycomb_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

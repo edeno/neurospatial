@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestBorderScore:
@@ -406,10 +406,12 @@ class TestComputeRegionCoverage:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add wall regions
-        env.regions.add("north", polygon=box(0, 30, 40, 40))
-        env.regions.add("south", polygon=box(0, 0, 40, 10))
-        env.regions.add("east", polygon=box(30, 0, 40, 40))
-        env.regions.add("west", polygon=box(0, 0, 10, 40))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("north", polygon=box(0, 30, 40, 40))
+        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        region_builder.add("east", polygon=box(30, 0, 40, 40))
+        region_builder.add("west", polygon=box(0, 0, 10, 40))
+        env = env.with_regions(region_builder)
 
         # Create field along north wall
         firing_rate = np.zeros(env.n_bins)
@@ -444,9 +446,11 @@ class TestComputeRegionCoverage:
         positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        env.regions.add("region1", polygon=box(-20, -20, 0, 0))
-        env.regions.add("region2", polygon=box(0, 0, 20, 20))
-        env.regions.add("region3", polygon=box(-20, 0, 0, 20))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region1", polygon=box(-20, -20, 0, 0))
+        region_builder.add("region2", polygon=box(0, 0, 20, 20))
+        region_builder.add("region3", polygon=box(-20, 0, 0, 20))
+        env = env.with_regions(region_builder)
 
         # Create field in region1
         firing_rate = np.zeros(env.n_bins)
@@ -474,8 +478,10 @@ class TestComputeRegionCoverage:
         positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        env.regions.add("region1", polygon=box(-20, -20, 0, 0))
-        env.regions.add("region2", polygon=box(0, 0, 20, 20))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("region1", polygon=box(-20, -20, 0, 0))
+        region_builder.add("region2", polygon=box(0, 0, 20, 20))
+        env = env.with_regions(region_builder)
 
         firing_rate = np.zeros(env.n_bins)
         region1_bins = np.where(env.region_mask("region1"))[0]
@@ -498,7 +504,9 @@ class TestComputeRegionCoverage:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add region that doesn't overlap with any bins
-        env.regions.add("far_away", polygon=box(1000, 1000, 1100, 1100))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("far_away", polygon=box(1000, 1000, 1100, 1100))
+        env = env.with_regions(region_builder)
 
         firing_rate = np.zeros(env.n_bins)
         firing_rate[0] = 5.0
@@ -539,7 +547,9 @@ class TestComputeRegionCoverage:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add region
-        env.regions.add("center", polygon=box(15, 15, 25, 25))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(15, 15, 25, 25))
+        env = env.with_regions(region_builder)
 
         # Create field that covers all of center region
         center_bins = np.where(env.region_mask("center"))[0]
@@ -565,8 +575,10 @@ class TestComputeRegionCoverage:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add two disjoint regions
-        env.regions.add("north", polygon=box(0, 30, 40, 40))
-        env.regions.add("south", polygon=box(0, 0, 40, 10))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("north", polygon=box(0, 30, 40, 40))
+        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        env = env.with_regions(region_builder)
 
         # Create field only in north
         north_bins = np.where(env.region_mask("north"))[0]
