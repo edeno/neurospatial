@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Preserve static attribute and protocol checking for the common Environment;
+  runtime Cartesian/polar capability filtering no longer admits missing methods.
+
 - Reject circular region metadata before exhausting the interpreter stack,
   avoiding a test-worker crash on Windows/Python 3.10.
 

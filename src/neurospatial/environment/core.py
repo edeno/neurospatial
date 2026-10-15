@@ -1488,24 +1488,28 @@ class Environment(Generic[_C]):
             )
         return cast("CartesianLookupConsumer", self)
 
-    def __getattribute__(self, name: str) -> Any:
-        if name in CARTESIAN_OPERATIONS:
-            geometry = object.__getattribute__(self, "__dict__").get("_geometry")
-            if geometry is not None and isinstance(
-                geometry.coordinates, EgocentricPolarSystem
-            ):
-                from neurospatial._exceptions import CartesianOnlyError
-                from neurospatial.environment.polar import _POLAR_EXPLANATION
+    # Runtime capability filtering must not make unknown attributes appear as
+    # Any to type checkers, which would also admit missing protocol members.
+    if not TYPE_CHECKING:
 
-                raise CartesianOnlyError(
-                    type(self).__name__,
-                    f"{name}()",
-                    reason="Cartesian-grid operation"
-                    if name in CARTESIAN_GRID_OPERATIONS
-                    else "Cartesian-coordinate operation",
-                    explanation=_POLAR_EXPLANATION,
-                )
-        return super().__getattribute__(name)
+        def __getattribute__(self, name: str) -> Any:
+            if name in CARTESIAN_OPERATIONS:
+                geometry = object.__getattribute__(self, "__dict__").get("_geometry")
+                if geometry is not None and isinstance(
+                    geometry.coordinates, EgocentricPolarSystem
+                ):
+                    from neurospatial._exceptions import CartesianOnlyError
+                    from neurospatial.environment.polar import _POLAR_EXPLANATION
+
+                    raise CartesianOnlyError(
+                        type(self).__name__,
+                        f"{name}()",
+                        reason="Cartesian-grid operation"
+                        if name in CARTESIAN_GRID_OPERATIONS
+                        else "Cartesian-coordinate operation",
+                        explanation=_POLAR_EXPLANATION,
+                    )
+            return super().__getattribute__(name)
 
     @property
     def _angular_is_circular(self) -> bool:
