@@ -882,8 +882,7 @@ def heading_from_velocity(
     times, positions = validate_times_positions(
         times, positions, call="heading_from_velocity"
     )
-    from neurospatial._intervals import run_sample_bounds
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask, run_sample_bounds
 
     positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))

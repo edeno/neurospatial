@@ -32,17 +32,17 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import TimeSupport
+from neurospatial._intervals import (
+    TimeSupport,
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
-)
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:

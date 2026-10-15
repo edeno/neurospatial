@@ -29,16 +29,18 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import TimeSupport, resolve_time_windows, run_time_bounds
+from neurospatial._intervals import (
+    TimeSupport,
+    interval_valid_mask,
+    resolve_time_windows,
+    run_time_bounds,
+    start_allocated_occupancy,
+)
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._polygon_trajectory import (
     RetainedLinearInterval,
     retained_linear_intervals,
     uses_polygon_allocation,
-)
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
 )
 
 if TYPE_CHECKING:
@@ -611,7 +613,7 @@ def _spatial_interval_mask(
     ndarray of bool, shape (n_samples - 1,)
         Shared validity; empty when fewer than two samples form an interval.
     """
-    from neurospatial.environment.trajectory import interval_valid_mask
+    from neurospatial._intervals import interval_valid_mask
 
     sample_bins = env.bin_at(positions)
     mask = interval_valid_mask(

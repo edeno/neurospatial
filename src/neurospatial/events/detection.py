@@ -18,8 +18,11 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial._intervals import as_intervals, run_time_bounds
-from neurospatial.environment.trajectory import observed_interval_mask
+from neurospatial._intervals import (
+    as_intervals,
+    observed_interval_mask,
+    run_time_bounds,
+)
 
 
 def add_positions(

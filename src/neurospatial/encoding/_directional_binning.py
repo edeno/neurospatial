@@ -34,14 +34,14 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
-)
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
 )
 
 __all__ = [

@@ -84,7 +84,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial._intervals import (
+    interval_valid_mask,
+    resolve_time_windows,
+    run_time_bounds,
+)
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
@@ -96,7 +100,6 @@ from neurospatial.encoding._significance import (
     check_mode_keywords,
     resolve_shuffle_settings,
 )
-from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd

@@ -444,9 +444,8 @@ def _prepare_session_decode(
     if warn_on_drop:
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
-    from neurospatial._intervals import TimeSupport
+    from neurospatial._intervals import TimeSupport, interval_valid_mask
     from neurospatial.decoding._binning import time_bins_in_windows
-    from neurospatial.environment.trajectory import interval_valid_mask
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
     # spike_window gates. The speed and out-of-bounds gates restrict only the

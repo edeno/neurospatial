@@ -72,9 +72,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.segmentation import _safe_gather
-from neurospatial.environment.trajectory import observed_runs
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -507,7 +507,7 @@ def pre_decision_heading_stats(
     times, positions = validate_times_positions(
         times, positions, call="pre_decision_heading_stats"
     )
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
@@ -592,8 +592,8 @@ def pre_decision_speed_stats(
         times, positions, call="pre_decision_speed_stats"
     )
 
+    from neurospatial._intervals import observed_interval_mask
     from neurospatial.behavior._kinematics import interval_velocity
-    from neurospatial.environment.trajectory import observed_interval_mask
 
     mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if not mask.any():

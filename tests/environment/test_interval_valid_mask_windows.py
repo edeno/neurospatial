@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial.environment.trajectory import interval_valid_mask
+from neurospatial._intervals import interval_valid_mask
 
 
 @pytest.mark.parametrize(
