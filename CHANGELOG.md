@@ -4,12 +4,17 @@
 
 ### Fixed
 
+- Posterior means on polar environments are the probability-weighted centroid
+  in the animal's egocentric plane, reported as `(distance, angle)` with the
+  angle in the environment's range. A posterior split across the angle seam
+  behind the animal now has a `mean_position` behind it, not straight ahead.
+  This covers `mean_position`, `DecodingResult.mean_position` and
+  `to_dataframe()`, and `decode_position_summary`; a centroid at the animal has
+  a NaN angle.
+
 - Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
   raise `CartesianOnlyError` on polar environments instead of returning wrong
-  numbers. For example, a posterior split across the angle seam behind the
-  animal no longer has a `mean_position` of straight ahead. The refusals cover
-  `mean_position` (including `DecodingResult.mean_position` and
-  `to_dataframe()`), `decode_position_summary`, `field_shape_metrics`,
+  numbers. The refusals cover `field_shape_metrics`,
   `field_shift_distance`, `spatial_autocorrelation`, `map_points_to_bins`,
   `resample_field`, `map_probabilities`, `spatial_basis`,
   `graph_turn_sequence` and `detect_laps`. Type checkers reject polar

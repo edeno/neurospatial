@@ -41,13 +41,50 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
 
-_POLAR_MEAN_INSTEAD = (
-    "A posterior mean needs Cartesian bin centers. Use map_position(env, "
-    "posterior) for the most probable (distance, angle) bin, or decode on a "
-    "Cartesian environment."
-)
+
+def _is_polar(env: object) -> bool:
+    from neurospatial.environment._coordinates import EgocentricPolarSystem
+
+    return isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem)
+
+
+def _posterior_mean_basis(env: Environment) -> NDArray[np.float64]:
+    """Bin coordinates that may be averaged, shape ``(n_bins, n_dims)``.
+
+    Cartesian bin centers are returned unchanged. Polar ``(distance, angle)``
+    centers are mapped to the egocentric plane, ``(distance * cos(angle),
+    distance * sin(angle))`` with x ahead and y to the left.
+    """
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    if not _is_polar(env):
+        return centers
+    distance, angle = centers[:, 0], centers[:, 1]
+    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
+
+
+def _finish_posterior_mean(
+    env: Environment, weighted: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Report ``posterior @ _posterior_mean_basis(env)`` in environment coordinates.
+
+    Polar centroids return as ``(distance, angle)`` with the angle in the
+    environment's angular range. A centroid within the rounding error of the
+    animal's position, shape ``(n_time, 2)`` input, has no direction: NaN angle.
+    """
+    if not _is_polar(env):
+        return weighted
+    x, y = weighted[:, 0], weighted[:, 1]
+    distance = np.hypot(x, y)
+    ranges = env.dimension_ranges
+    assert ranges is not None  # Polar environments always record their ranges.
+    low = float(ranges[1][0])
+    angle = low + np.mod(np.arctan2(y, x) - low, 2 * np.pi)
+    # Each centroid sums n_bins terms bounded by the largest bin distance.
+    max_distance = float(np.max(np.abs(env.bin_centers[:, 0])))
+    rounding = env.n_bins * np.finfo(np.float64).eps * max_distance
+    angle = np.where(distance <= rounding, np.nan, angle)
+    return np.column_stack([distance, angle])
 
 
 def posterior_mode(
@@ -152,7 +189,7 @@ def map_position(
 
 
 def mean_position(
-    env: Environment[CartesianSystem],
+    env: Environment,
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Posterior mean position (expected value).
@@ -172,16 +209,18 @@ def mean_position(
     NDArray[np.float64], shape (n_time_bins, n_dims)
         Mean positions in environment coordinates.
 
-    Raises
-    ------
-    CartesianOnlyError
-        If ``env`` is polar: averaging ``(distance, angle)`` bin centers is
-        not a position (bins on either side of the angle seam average to
-        angle 0). Use :func:`map_position` instead.
-
     Notes
     -----
-    Computed as: ``posterior @ env.bin_centers``
+    On Cartesian environments this is ``posterior @ env.bin_centers``.
+
+    On egocentric polar environments the mean is the probability-weighted
+    centroid in the animal's egocentric plane (x ahead, y left), returned as
+    ``(distance, angle)`` with the angle in the environment's angular range.
+    Averaging the raw ``(distance, angle)`` columns would be wrong: two bins
+    just either side of the angle seam behind the animal would average to
+    straight ahead. Mass spread around the animal pulls the centroid distance
+    toward zero, exactly as a Cartesian centroid falls between modes; when it
+    reaches the animal (within rounding error) the angle is NaN.
 
     For unimodal posteriors, this is similar to the MAP position.
     For multimodal posteriors, this may fall between modes.
@@ -208,10 +247,7 @@ def mean_position(
     >>> mean_pos.shape
     (1, 2)
     """
-    from neurospatial.environment._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(env, "mean_position()", instead=_POLAR_MEAN_INSTEAD)
-    return posterior @ env.bin_centers
+    return _finish_posterior_mean(env, posterior @ _posterior_mean_basis(env))
 
 
 def posterior_entropy(

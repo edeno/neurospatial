@@ -22,12 +22,6 @@ from neurospatial.behavior import (
     path_progress,
     trajectory_similarity,
 )
-from neurospatial.decoding import (
-    DecodingResult,
-    decode_position_summary,
-    map_position,
-    mean_position,
-)
 from neurospatial.encoding import (
     compute_field_emd,
     field_shape_metrics,
@@ -57,40 +51,6 @@ def polar() -> Environment:
     )
 
 
-def _behind_bins(env: Environment) -> np.ndarray:
-    """Outer-ring bins on either side of the angle seam (theta = +/- 7 pi / 8)."""
-    centers = env.bin_centers
-    return np.flatnonzero(
-        np.isclose(centers[:, 0], 22.5)
-        & np.isclose(np.abs(centers[:, 1]), 7 * np.pi / 8)
-    )
-
-
-def test_mean_position_refuses_polar_seam_instead_of_reporting_ahead(polar):
-    behind = _behind_bins(polar)
-    assert len(behind) == 2
-    posterior = np.zeros((1, polar.n_bins))
-    posterior[0, behind] = 0.5
-    # Averaging (distance, angle) as (x, y) would report angle 0: straight ahead.
-    with pytest.raises(CartesianOnlyError, match=r"mean_position\(\)") as info:
-        mean_position(polar, posterior)
-    message = str(info.value)
-    assert "polar environment" in message
-    assert "map_position" in message
-    # The most probable bin is still well defined in polar coordinates.
-    assert np.isclose(abs(map_position(polar, posterior)[0, 1]), 7 * np.pi / 8)
-
-
-def test_decoding_result_mean_position_refuses_polar(polar):
-    posterior = np.full((2, polar.n_bins), 1.0 / polar.n_bins)
-    result = DecodingResult(posterior=posterior, env=polar)
-    with pytest.raises(CartesianOnlyError, match="mean_position"):
-        _ = result.mean_position
-    with pytest.raises(CartesianOnlyError, match="mean_position"):
-        result.to_dataframe()
-    assert result.map_position.shape == (2, 2)
-
-
 def _rates(env: Environment) -> np.ndarray:
     return np.random.default_rng(0).random(env.n_bins) + 0.1
 
@@ -105,12 +65,6 @@ def _polar_regions_env(env: Environment) -> Environment:
 @pytest.mark.parametrize(
     ("call", "operation"),
     [
-        (
-            lambda env: decode_position_summary(
-                env, np.ones((3, 2)), np.ones((2, env.n_bins)), 0.02
-            ),
-            "decode_position_summary()",
-        ),
         (
             lambda env: field_shape_metrics(env, _rates(env), np.arange(4)),
             "field_shape_metrics()",
