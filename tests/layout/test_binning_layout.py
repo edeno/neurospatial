@@ -23,7 +23,7 @@ from neurospatial.layout._capabilities import (
     TrackLinearizationProvider,
 )
 from neurospatial.layout._diffusion import FaceGeometry, FiniteVolumeGeometryProvider
-from neurospatial.layout._locators import HexLocator, RectilinearLocator
+from neurospatial.layout._locators import HexLocator, MeshLocator, RectilinearLocator
 
 
 def _facade(env, *, binning=None, connectivity=None):
@@ -75,6 +75,9 @@ def test_facade_exposes_the_decoded_snapshot(built_environment):
         expected = (locator.flat_to_active >= 0).reshape(locator.centers_shape)
         np.testing.assert_array_equal(facade.active_mask, expected)
         assert np.count_nonzero(facade.active_mask) == env.n_bins
+    elif isinstance(binning.locator, MeshLocator):
+        assert facade.grid_shape == env.grid_shape
+        np.testing.assert_array_equal(facade.active_mask, env.active_mask)
     else:
         assert len(facade.grid_edges) == 0
         assert facade.grid_shape == (env.n_bins,)

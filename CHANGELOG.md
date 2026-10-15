@@ -4,11 +4,45 @@
 
 ### Fixed
 
+- Prevent automatic combined-environment bridges from crossing a third
+  component, including tiny and nearly collinear footprints. Long affine
+  histories retain their arena through storage without using the composite
+  nesting budget. Clipped diffusion keeps its own certification boundary.
+
+- Omit transient analysis caches before copy/pickle; retain JSON-compatible
+  protected graph metadata. Explicit bins now reject wall-crossing supplied
+  pairs, keep drawing outlines separate from physical evidence, and validate
+  finite-volume faces against their grid geometry across coordinate scales.
+  Clipping preserves declared navigation paths and stores equal parent maps once.
+
 - Reject circular region metadata before exhausting the interpreter stack,
   avoiding a test-worker crash on Windows/Python 3.10.
 
 - Compare point regions by coordinate values, avoiding ambiguous NumPy truth
   values on Python 3.10–3.12 and when comparing independent region copies.
+- Label place fields from actual graph connections, preserving diagonal links
+  and physical walls after derivation and storage. Polygon clipping now retains
+  per-parent ownership at floating-point precision and exposes analysis boundary
+  bins. Wall-crossing checks also handle exact on-wall trajectory samples.
+- Require declared track width for containment; nearest-track projection stays
+  available through `bin_at`. Track and maze presets accept `track_width`.
+
+- Preserve coincident track centers, native mesh indexing and reserved user
+  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
+  now report contextual recovery guidance.
+
+- Preserve intended radial/angular bin counts when a polar step divides its
+  range but floating-point division rounds above an integer. Polar circularity
+  now defaults to automatic: full circles wrap, partial angle ranges remain
+  open, and explicitly wrapping a partial range is rejected.
+
+- Preserve dotted recording names in environment file prefixes, so saving
+  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
+  and `.npz` paths remain accepted.
+
+- Preserve physical diffusion faces on grids with small coordinate units;
+  exactly nonzero axis displacements no longer disappear below an absolute
+  `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
 

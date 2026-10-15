@@ -279,7 +279,9 @@ class EnvironmentFactories:
         components : mapping of str to Environment
             Ordered, uniquely keyed Cartesian components in matching units and frame.
         auto_bridge : bool, default=True
-            Infer mutual-nearest-neighbor navigation bridges. These do not carry diffusion.
+            Infer mutual-nearest-neighbor navigation bridges that avoid physical
+            walls and third-component interiors. Boundary-only contact is allowed
+            unless it meets a physical wall. Bridges do not carry diffusion.
         max_mnn_distance : float or None, optional
             Inclusive maximum inferred bridge length, in coordinate units.
         bridge_conductances : mapping or None, optional
@@ -358,8 +360,14 @@ class EnvironmentFactories:
                 "from_bins accepts Cartesian data; use the polar factory for polar coordinates."
             )
         layout = layout_from_bins(binning)
+        if arena is None and layout._binning.outline is not None:
+            from neurospatial.arena import OpenArena
+
+            arena = OpenArena(
+                layout._binning.outline.geometry, physical_footprint_known=False
+            )
         env_cls = cast("type[Environment]", cls)
-        return env_cls(
+        result = env_cls(
             name=name,
             layout=layout,
             layout_type_used=layout._layout_type_tag,
@@ -369,6 +377,12 @@ class EnvironmentFactories:
             regions=regions,
             arena=arena,
         )
+        if not np.array_equal(result.edge_pairs, layout._binning.bins.pairs):
+            raise ValueError(
+                "Supplied neighbor pairs cross physical walls. Remove those pairs "
+                "and their aligned face data explicitly before calling from_bins."
+            )
+        return result
 
     @classmethod
     def from_samples(
@@ -789,6 +803,7 @@ class EnvironmentFactories:
         node_positions: Sequence[Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -818,6 +833,10 @@ class EnvironmentFactories:
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
             For a single contiguous track this is typically 0.0.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -918,6 +937,7 @@ class EnvironmentFactories:
             name=name,
             units=units,
             frame=frame,
+            track_width=track_width,
         )
 
     @classmethod
@@ -929,6 +949,7 @@ class EnvironmentFactories:
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -1004,6 +1025,10 @@ class EnvironmentFactories:
             Length of each bin along the linearized track.
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -1115,6 +1140,7 @@ class EnvironmentFactories:
             name=name,
             units=units,
             frame=frame,
+            track_width=track_width,
         )
 
     @classmethod
@@ -1165,7 +1191,9 @@ class EnvironmentFactories:
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
             corridors. When omitted, the physical footprint stays unknown
-            and the existing nearest-track lookup remains available.
+            and nearest-track projection through ``bin_at`` remains available.
+            ``contains`` requires a known footprint and raises when width is
+            omitted.
 
         Returns
         -------

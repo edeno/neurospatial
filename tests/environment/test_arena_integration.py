@@ -76,7 +76,9 @@ def test_known_track_width_rejects_distant_points():
     probes = np.array([[50.0, 2.0], [50.0, 2.1], [1000.0, 1000.0]])
     np.testing.assert_array_equal(known.contains(probes), [True, False, False])
     assert not abstract.arena.domain_known
-    assert abstract.contains(probes).all()
+    assert (abstract.bin_at(probes) >= 0).all()
+    with pytest.raises(NotImplementedError, match="track_width"):
+        abstract.contains(probes)
 
 
 def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():

@@ -66,6 +66,7 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.layout._polygon import PolygonCells, _boundary_cell_indices
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -120,9 +121,9 @@ class EnvironmentMetrics:
         """
         Identify boundary bins (bins on the edge of the active region).
 
-        Boundary bins are active bins that have at least one inactive neighbor
-        or are on the edge of the grid. Useful for identifying walls, barriers,
-        or the perimeter of an arena.
+        Boundary bins touch the perimeter or a hole in the represented active
+        bins. Polygon cells use their exposed edges; grids use active-cell
+        adjacency. This analysis boundary does not assert physical walls.
 
         Returns
         -------
@@ -133,7 +134,7 @@ class EnvironmentMetrics:
         -----
         - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
-        - Uses graph-based boundary detection (checks node degrees and connectivity)
+        - Other graph layouts use node degrees and connectivity as a heuristic.
 
         See Also
         --------
@@ -155,6 +156,9 @@ class EnvironmentMetrics:
 
     @versioned_cached_property
     def _boundary_bins_cached(self: SelfEnv) -> NDArray[np.intp]:
+        shapes = self._binning.shapes
+        if isinstance(shapes, PolygonCells):
+            return _boundary_cell_indices(shapes.polygons)
         grid_shape, active_mask = self.grid_shape, self.active_mask
         locator = self._binning.locator
         selections = []

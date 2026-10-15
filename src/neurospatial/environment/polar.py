@@ -62,6 +62,14 @@ _POLAR_EXPLANATION = (
 )
 
 
+def _bin_count(span: float, bin_size: float) -> int:
+    """Cover a range without adding a bin for one-ULP division round-off."""
+    # span / (span / n) can round one representable float above n. Move
+    # toward the lower neighbor before ceil so an exact division keeps n bins.
+    quotient = np.nextafter(span / bin_size, -np.inf)
+    return max(1, int(np.ceil(quotient)))
+
+
 class EgocentricPolarEnvironment(_BaseEnvironment):
     """A discretized egocentric polar environment.
 
@@ -189,7 +197,7 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         distance_bin_size: float,
         angle_bin_size: float,
         *,
-        circular_angle: bool = True,
+        circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
         units: str | None = None,
@@ -213,10 +221,11 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
             Must be positive.
         angle_bin_size : float
             Size of each angle bin in radians. Must be positive.
-        circular_angle : bool, default=True
-            If True, the angle dimension wraps circularly, connecting the
-            first and last angle bins at each distance ring. Appropriate
-            when ``angle_range`` spans a full circle.
+        circular_angle : bool or None, default=None
+            Whether to join the first and last angle bins at each distance
+            ring. None wraps a full-circle range (2π radians) and leaves a
+            partial range open. True requires a full circle; False leaves
+            the angular axis open even for a full-circle range.
         connect_diagonal_neighbors : bool, default=True
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
@@ -239,6 +248,8 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         ValueError
             If ``distance_bin_size`` or ``angle_bin_size`` is not positive,
             or if ``distance_range`` / ``angle_range`` has min >= max.
+            Also raised when ``circular_angle=True`` is used without a
+            full-circle angular range.
 
         Notes
         -----
@@ -259,14 +270,23 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         if angle_range[0] >= angle_range[1]:
             raise ValueError(f"angle_range must have min < max, got {angle_range}")
 
+        angle_span = angle_range[1] - angle_range[0]
+        full_circle = bool(
+            np.isclose(angle_span, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
+        )
+        if circular_angle is None:
+            circular_angle = full_circle
+        elif circular_angle and not full_circle:
+            raise ValueError(
+                "circular_angle=True requires a full circle (2π radians). "
+                "Use circular_angle=False or None for a partial angular range."
+            )
+
         # Calculate number of bins in each dimension
-        n_distance = max(
-            1,
-            int(np.ceil((distance_range[1] - distance_range[0]) / distance_bin_size)),
+        n_distance = _bin_count(
+            distance_range[1] - distance_range[0], distance_bin_size
         )
-        n_angle = max(
-            1, int(np.ceil((angle_range[1] - angle_range[0]) / angle_bin_size))
-        )
+        n_angle = _bin_count(angle_range[1] - angle_range[0], angle_bin_size)
 
         # Create grid edges and an all-active mask
         distance_edges = np.linspace(
