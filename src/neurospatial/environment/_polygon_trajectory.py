@@ -13,20 +13,20 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from neurospatial.arena import MaskArena
-from neurospatial.layout._polygon import PolygonCells, materialize_cells
+from neurospatial.geometry._arena import MaskArena
+from neurospatial.geometry._polygon import PolygonCells, materialize_cells
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import TrajectoryBinningConsumer
-    from neurospatial.layout._grid_frame import FramedGrid
-    from neurospatial.layout._locators import RectilinearLocator
+    from neurospatial.geometry._grid_frame import FramedGrid
+    from neurospatial.geometry._locators import RectilinearLocator
 
 
 def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
-    from neurospatial.layout._locators import RectilinearLocator
+    from neurospatial.geometry._locators import RectilinearLocator
 
     grid = frame.source
     original = frame._project_to_planes(
@@ -211,10 +211,10 @@ def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
     if env._binning.grid_frame is not None:
         return True
     if env.n_dims != 2:
-        from neurospatial.layout._composition import composition_view
+        from neurospatial.geometry._composition import composition_view
 
         if composition_view(env._binning.locator) is not None:
-            from neurospatial.layout._combine_geometry import _boxes
+            from neurospatial.geometry._combine_geometry import _boxes
 
             try:
                 _boxes(env._binning.locator)
@@ -311,7 +311,7 @@ def retained_linear_intervals(
     walls = arena.walls
     if frame is not None:
         from neurospatial.environment._arena import _wall_source_frame
-        from neurospatial.layout._polygon import cells_from_locator
+        from neurospatial.geometry._polygon import cells_from_locator
 
         source_locator, positions = _source_grid(frame, positions)
         cells = cells_from_locator(source_locator)
@@ -421,8 +421,12 @@ def _retained_box_intervals(
     valid_mask: NDArray[np.bool_],
 ) -> tuple[RetainedLinearInterval, ...]:
     """Partition N-D combined box trajectories at cell and domain planes."""
-    from neurospatial.arena import UnknownArena, _CombinedArena, _TransformedArena
-    from neurospatial.layout._combine_geometry import _arena_pieces, _boxes
+    from neurospatial.geometry._arena import (
+        UnknownArena,
+        _CombinedArena,
+        _TransformedArena,
+    )
+    from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
 
     frame = env._binning.grid_frame
     if frame is None:

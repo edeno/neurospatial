@@ -371,7 +371,7 @@ def head_sweep_from_positions(
     times, positions = validate_times_positions(
         times, positions, call="head_sweep_from_positions"
     )
-    from neurospatial.environment.trajectory import observed_runs
+    from neurospatial._intervals import observed_runs
     from neurospatial.ops.egocentric import heading_from_velocity
 
     runs = observed_runs(times, max_gap=max_gap, epochs=epochs)

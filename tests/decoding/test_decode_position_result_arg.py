@@ -61,8 +61,8 @@ def test_rate_result_rejects_different_environment(
     elif mismatch == "measures":
         from dataclasses import replace
 
-        from neurospatial.layout._binning import KnownFaces
-        from neurospatial.layout._locators import NearestBinLocator
+        from neurospatial.geometry._binning import KnownFaces
+        from neurospatial.geometry._locators import NearestBinLocator
 
         bins = replace(env._binning.bins, sizes=env.bin_sizes * 2)
         faces = env._face_geometry._replace(volumes=bins.sizes)

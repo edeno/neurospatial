@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.arena import (
+from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
     TrackArena,
@@ -70,11 +70,11 @@ def _rebin_resolution(
     env: RebinConsumer, bin_size: float | tuple[float, ...]
 ) -> Environment:
     """Construct new bins over the retained arena, preserving lattice frame."""
-    from neurospatial.environment._from_bins import prepare_bins
     from neurospatial.environment.core import Environment
-    from neurospatial.layout._binning import KnownFaces
+    from neurospatial.geometry._binning import KnownFaces
+    from neurospatial.geometry._derive import transform_binning
+    from neurospatial.geometry._explicit import prepare_bins
     from neurospatial.layout._construction import binning_from_layout
-    from neurospatial.layout._derive import transform_binning
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.layout.engines.masked_grid import MaskedGridLayout
     from neurospatial.layout.helpers.utils import check_grid_size_safety

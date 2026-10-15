@@ -13,12 +13,12 @@ from shapely.geometry import LineString, Point, Polygon, box
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.decoding.posterior import _validate_encoding_environment
-from neurospatial.layout._locators import (
+from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClippedLocator, materialize_cells
+from neurospatial.geometry._polygon import ClippedLocator, materialize_cells
 from neurospatial.ops.transforms import AffineND
 
 

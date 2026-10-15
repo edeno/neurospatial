@@ -81,9 +81,9 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
-from neurospatial.environment.trajectory import observed_runs
 
 if TYPE_CHECKING:
     from neurospatial import Environment

@@ -12,8 +12,8 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._components import Outline, TriangleShapes
-from neurospatial.layout._locators import MeshLocator
+from neurospatial.geometry._components import Outline, TriangleShapes
+from neurospatial.geometry._locators import MeshLocator
 from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
@@ -471,7 +471,7 @@ class TriangularMeshLayout:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
         if self._full_delaunay_tri is None:
             raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
-        from neurospatial.layout._face_builders import mesh_geometry
+        from neurospatial.geometry._face_builders import mesh_geometry
 
         tri = self._full_delaunay_tri
         return mesh_geometry(

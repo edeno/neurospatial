@@ -160,7 +160,7 @@ def test_rejects_nonuniform_at_large_offset(offsets):
 def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
     """Rounded but uniform grids far from the origin still build and subset."""
     from neurospatial import Environment
-    from neurospatial.layout._capabilities import RectilinearGrid
+    from neurospatial.geometry._capabilities import RectilinearGrid
 
     rng = np.random.default_rng(0)
     positions = offset + rng.uniform(0, 45 * bin_size, (20_000, 2))

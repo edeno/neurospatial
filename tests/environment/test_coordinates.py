@@ -5,7 +5,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _get_gaussian_kernel
-from neurospatial.environment._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 
 @pytest.fixture

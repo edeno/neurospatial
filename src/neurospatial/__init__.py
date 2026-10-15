@@ -237,8 +237,6 @@ from neurospatial._exceptions import (
     NeurospatialError,
     RegionNotFoundError,
 )
-from neurospatial.environment import Environment
-from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
     # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
@@ -252,10 +250,13 @@ if TYPE_CHECKING:
     from neurospatial.encoding.spatial import (
         compute_spatial_rates as compute_spatial_rates,
     )
+    from neurospatial.environment import Environment as Environment
     from neurospatial.events._core import PeriEventResult as PeriEventResult
     from neurospatial.events.alignment import (
         peri_event_histogram as peri_event_histogram,
     )
+    from neurospatial.regions import Region as Region
+    from neurospatial.regions import Regions as Regions
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -289,6 +290,9 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 # stays cheap.)
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "Environment": ("environment", "Environment"),
+    "Region": ("regions", "Region"),
+    "Regions": ("regions", "Regions"),
     "compute_spatial_rate": ("encoding.spatial", "compute_spatial_rate"),
     "compute_spatial_rates": ("encoding.spatial", "compute_spatial_rates"),
     "SpatialRateResult": ("encoding.spatial", "SpatialRateResult"),

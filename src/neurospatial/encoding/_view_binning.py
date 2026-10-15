@@ -32,25 +32,25 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import TimeSupport
+from neurospatial._intervals import (
+    TimeSupport,
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
-)
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
     import shapely
 
-    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
-    from neurospatial.layout._binning import Locator
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._binning import Locator
 
 __all__ = [
     "bin_view_spike_train",
@@ -78,10 +78,10 @@ def _resolve_wall_contacts(
     """
     import shapely
 
-    from neurospatial.arena import _feature_cap
-    from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
-    from neurospatial.layout._polygon import ClippedLocator
-    from neurospatial.layout._validation import _polygon_coordinate_errors
+    from neurospatial.geometry._arena import _feature_cap
+    from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
+    from neurospatial.geometry._polygon import ClippedLocator
+    from neurospatial.geometry._validation import _polygon_coordinate_errors
 
     def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
         parent = locator
@@ -159,11 +159,11 @@ def _wall_view_bins(
     import shapely
     from shapely.ops import unary_union
 
-    from neurospatial.arena import _feature_cap, _TransformedArena
     from neurospatial.environment._arena import _wall_source_frame
-    from neurospatial.layout._composition import CombinedLocator
-    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
-    from neurospatial.layout._polygon import (
+    from neurospatial.geometry._arena import _feature_cap, _TransformedArena
+    from neurospatial.geometry._composition import CombinedLocator
+    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+    from neurospatial.geometry._polygon import (
         ClippedLocator,
         PolygonCells,
         materialize_cells,

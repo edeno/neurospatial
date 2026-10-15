@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.layout._binning import KnownFaces
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._composition import CombinedLocator
+from neurospatial.geometry._binning import KnownFaces
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._composition import CombinedLocator
 
 
 def snapshot():
@@ -76,7 +76,7 @@ def test_malformed_composition_refuses(change):
 def test_combined_snapshot_publishes_and_round_trips(tmp_path):
     from neurospatial.arena import _CombinedArena
     from neurospatial.binning import Binning, MissingFaces
-    from neurospatial.layout._polygon import PolygonCells, cells_from_locator
+    from neurospatial.geometry._polygon import PolygonCells, cells_from_locator
     from neurospatial.testing import assert_environment_contract
 
     source = snapshot()

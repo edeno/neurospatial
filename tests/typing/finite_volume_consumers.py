@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import (
+    from neurospatial.geometry._coordinates import (
         CartesianSystem,
         EgocentricPolarSystem,
     )

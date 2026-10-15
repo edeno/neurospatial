@@ -10,18 +10,18 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.layout._binning import (
+from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
     MissingFaces,
     SpatialBins,
 )
-from neurospatial.layout._capabilities import (
+from neurospatial.geometry._capabilities import (
     RectilinearGrid,
     RectilinearGridProvider,
 )
-from neurospatial.layout._diffusion import FaceGeometry, FiniteVolumeGeometryProvider
-from neurospatial.layout._locators import HexLocator, MeshLocator, RectilinearLocator
+from neurospatial.geometry._diffusion import FaceGeometry, FiniteVolumeGeometryProvider
+from neurospatial.geometry._locators import HexLocator, MeshLocator, RectilinearLocator
 
 
 def _facade(env, *, binning=None, connectivity=None):

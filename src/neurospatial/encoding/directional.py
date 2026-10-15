@@ -63,7 +63,11 @@ if TYPE_CHECKING:
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.stats.shuffle import ShuffleTestResult
 
-from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial._intervals import (
+    interval_valid_mask,
+    resolve_time_windows,
+    run_time_bounds,
+)
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
@@ -74,7 +78,6 @@ from neurospatial.encoding._significance import (
     check_mode_keywords,
     resolve_shuffle_settings,
 )
-from neurospatial.environment.trajectory import interval_valid_mask
 
 __all__ = [
     # Result classes

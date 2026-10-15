@@ -12,9 +12,9 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import FaceNormals, KnownFaces
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._polygon import materialize_cells
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 

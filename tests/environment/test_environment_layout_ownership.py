@@ -13,11 +13,11 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena, _TransformedArena
-from neurospatial.environment._coordinates import EgocentricPolarSystem
-from neurospatial.environment._ownership import own_arena
+from neurospatial.geometry._coordinates import EgocentricPolarSystem
+from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+from neurospatial.geometry._ownership import own_arena
 from neurospatial.layout import RegularGridLayout, create_layout
 from neurospatial.layout._construction import binning_from_layout
-from neurospatial.layout._locators import SubsetLocator, TransformedLocator
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 
@@ -93,7 +93,7 @@ def test_publication_preserves_native_grid_context(built_environment):
 
 
 def test_face_building_stays_lazy_without_native_builder(monkeypatch):
-    from neurospatial.layout._native_faces import NativeFaces
+    from neurospatial.geometry._native_faces import NativeFaces
 
     source = _grid()
     original = NativeFaces.build

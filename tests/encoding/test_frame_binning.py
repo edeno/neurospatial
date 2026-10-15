@@ -38,8 +38,8 @@ def test_family_kernel_shares_window_mask(
     frame_family, short_frame_recording, monkeypatch, n_units, n_jobs
 ):
     f, r = frame_family, short_frame_recording
+    from neurospatial import _intervals as trajectory
     from neurospatial.encoding import _binning as encoding_binning
-    from neurospatial.environment import trajectory
 
     original = trajectory.interval_valid_mask
     masks = []

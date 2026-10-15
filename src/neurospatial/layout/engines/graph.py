@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._binning import TrackLinearization
+from neurospatial.geometry._binning import TrackLinearization
 from neurospatial.layout._plotting import plot_track, plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
@@ -402,7 +402,7 @@ class GraphLayout(_KDTreeMixin):
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.layout._face_builders import track_geometry, track_junctions
+        from neurospatial.geometry._face_builders import track_geometry, track_junctions
 
         junctions = track_junctions(
             self.connectivity,

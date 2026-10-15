@@ -1219,8 +1219,8 @@ def heading_direction_labels(
         )
         n_samples = len(times_arr)
 
+        from neurospatial._intervals import observed_interval_mask
         from neurospatial.behavior._kinematics import interval_velocity
-        from neurospatial.environment.trajectory import observed_interval_mask
 
         interval_mask = observed_interval_mask(
             times_arr, max_gap=max_gap, epochs=epochs
@@ -1688,7 +1688,7 @@ def compute_path_efficiency(
         times, positions, call="compute_path_efficiency"
     )
 
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask
 
     complete_path = observed_interval_mask(times, max_gap=max_gap, epochs=epochs).all()
     goal = np.asarray(goal)
@@ -1872,7 +1872,7 @@ def instantaneous_goal_alignment(
 
     goal = np.asarray(goal)
 
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
@@ -2053,8 +2053,8 @@ def approach_rate(
             position_bins, env, target_bins=goal_bin, metric="geodesic"
         )
 
+    from neurospatial._intervals import observed_interval_mask
     from neurospatial.behavior._kinematics import interval_velocity
-    from neurospatial.environment.trajectory import observed_interval_mask
 
     _positive_dt(times, name="times")
     mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)

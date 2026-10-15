@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.environment._coordinates import EgocentricPolarSystem
-from neurospatial.layout._native_faces import NativeFaces
+from neurospatial.geometry._coordinates import EgocentricPolarSystem
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.layout.base import LayoutEngine
 
 

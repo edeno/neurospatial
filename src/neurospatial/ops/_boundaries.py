@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
-    from neurospatial.arena import Arena, _TransformedArena
+    from neurospatial.geometry._arena import Arena, _TransformedArena
     from neurospatial.ops._protocols import BoundaryConsumer, ObserverConsumer
 
 BoundarySource = Literal["physical", "analysis"]
@@ -32,7 +32,7 @@ def boundary_geometry(
             "Wall geometry requires planar Cartesian coordinates."
         )
     if source == "analysis":
-        from neurospatial.layout._polygon import materialize_cells
+        from neurospatial.geometry._polygon import materialize_cells
 
         try:
             domain = unary_union(materialize_cells(env._binning))
@@ -51,7 +51,11 @@ def boundary_geometry(
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
     """Read asserted planar wall evidence independently of analysis bins."""
-    from neurospatial.arena import _CombinedArena, _mapped_geometry, _TransformedArena
+    from neurospatial.geometry._arena import (
+        _CombinedArena,
+        _mapped_geometry,
+        _TransformedArena,
+    )
 
     def collect(value: Arena) -> list[shapely.Geometry]:
         if isinstance(value, _CombinedArena):
@@ -166,7 +170,7 @@ def _wall_frame(
     arena: Arena, query: NDArray[np.float64]
 ) -> tuple[Arena, NDArray[np.float64], list[_TransformedArena]]:
     """Use stored projection errors for contact in a shared physical-wall frame."""
-    from neurospatial.arena import _feature_cap, _TransformedArena
+    from neurospatial.geometry._arena import _feature_cap, _TransformedArena
 
     frames = []
     error = None

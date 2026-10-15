@@ -169,8 +169,8 @@ def test_frame_analysis_mask_is_shared_once(
     frame_family, continuous_recording, monkeypatch, n_units
 ):
     f, r = frame_family, continuous_recording
+    from neurospatial import _intervals as trajectory
     from neurospatial.encoding import _binning as encoding_binning
-    from neurospatial.environment import trajectory
 
     original = trajectory.interval_valid_mask
     seen = []
@@ -408,7 +408,7 @@ def test_all_excluded_warning_names_epochs(continuous_recording):
 def test_spatial_analysis_mask_is_shared_once(
     continuous_recording, monkeypatch, method, n_units, warn_on_drop
 ):
-    import neurospatial.environment.trajectory as trajectory
+    import neurospatial._intervals as trajectory
 
     r = continuous_recording
     original = trajectory.interval_valid_mask
@@ -436,7 +436,7 @@ def test_spatial_analysis_mask_is_shared_once(
 
 
 def test_single_spatial_mask_is_shared_once(continuous_recording, monkeypatch):
-    import neurospatial.environment.trajectory as trajectory
+    import neurospatial._intervals as trajectory
 
     r = continuous_recording
     original = trajectory.interval_valid_mask

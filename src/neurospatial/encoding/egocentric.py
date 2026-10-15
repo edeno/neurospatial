@@ -50,7 +50,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import resolve_time_windows, run_time_bounds
+from neurospatial._intervals import (
+    interval_valid_mask,
+    resolve_time_windows,
+    run_time_bounds,
+)
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._binning import (
@@ -63,7 +67,6 @@ from neurospatial.encoding._significance import (
     resolve_shuffle_settings,
 )
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
-from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -72,7 +75,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult

@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.layout._binning import KnownFaces, MissingFaces
-from neurospatial.layout._components import TriangleShapes
-from neurospatial.layout._derive import subset_binning, transform_binning
-from neurospatial.layout._locators import (
+from neurospatial.geometry._binning import KnownFaces, MissingFaces
+from neurospatial.geometry._components import TriangleShapes
+from neurospatial.geometry._derive import subset_binning, transform_binning
+from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,

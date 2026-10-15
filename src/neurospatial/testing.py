@@ -16,8 +16,8 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 

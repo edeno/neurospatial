@@ -13,16 +13,16 @@ import pytest
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
-from neurospatial.layout._binning import (
+from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
     MissingFaces,
     TrackLinearization,
 )
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._components import Outline, TriangleShapes
-from neurospatial.layout._diffusion import FaceGeometry
-from neurospatial.layout._locators import MeshLocator, NearestBinLocator
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._components import Outline, TriangleShapes
+from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._locators import MeshLocator, NearestBinLocator
 
 
 @pytest.fixture(

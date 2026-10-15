@@ -16,9 +16,9 @@ from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._protocols import VisualizationConsumer
-from neurospatial.layout._binning import TrackLinearization
-from neurospatial.layout._components import HexagonShapes, TriangleShapes
-from neurospatial.layout._polygon import PolygonCells
+from neurospatial.geometry._binning import TrackLinearization
+from neurospatial.geometry._components import HexagonShapes, TriangleShapes
+from neurospatial.geometry._polygon import PolygonCells
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -101,7 +101,7 @@ def _plot_grid_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
-    from neurospatial.layout._grid_frame import require_grid_context
+    from neurospatial.geometry._grid_frame import require_grid_context
     from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
     grid, frame = require_grid_context(

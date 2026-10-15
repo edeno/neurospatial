@@ -11,7 +11,7 @@ import pytest
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
-from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
