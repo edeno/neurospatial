@@ -8,10 +8,8 @@ on:
     branches:
       - main
       - feat/researcher-first
+  # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
-    branches:
-      - main
-      - feat/researcher-first
 
 jobs:
   xarray:
