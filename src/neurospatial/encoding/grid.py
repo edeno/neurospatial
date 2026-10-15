@@ -78,6 +78,7 @@ from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
 
 __all__ = [
     # Dataclass
@@ -172,7 +173,7 @@ class GridProperties(ResultMixin):
 
 
 def spatial_autocorrelation(
-    env: Environment,
+    env: Environment[CartesianSystem],
     firing_rate: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
@@ -206,6 +207,9 @@ def spatial_autocorrelation(
         If ``env`` is not a regular 2D grid (use
         :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
+    CartesianOnlyError
+        If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
+        lattice, so its 2D autocorrelogram and grid score are meaningless.
 
     Notes
     -----
@@ -269,6 +273,16 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
+    from neurospatial.environment.polar import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "spatial_autocorrelation()",
+        instead=(
+            "A 2D autocorrelogram needs a Cartesian grid; compute it on an "
+            "allocentric Cartesian environment."
+        ),
+    )
     _validate_autocorr_input(env, firing_rate)
 
     if _detect_grid_method(env) != "fft":

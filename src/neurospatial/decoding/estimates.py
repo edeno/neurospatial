@@ -41,6 +41,13 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
+
+_POLAR_MEAN_INSTEAD = (
+    "A posterior mean needs Cartesian bin centers. Use map_position(env, "
+    "posterior) for the most probable (distance, angle) bin, or decode on a "
+    "Cartesian environment."
+)
 
 
 def posterior_mode(
@@ -145,7 +152,7 @@ def map_position(
 
 
 def mean_position(
-    env: Environment,
+    env: Environment[CartesianSystem],
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Posterior mean position (expected value).
@@ -164,6 +171,13 @@ def mean_position(
     -------
     NDArray[np.float64], shape (n_time_bins, n_dims)
         Mean positions in environment coordinates.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar: averaging ``(distance, angle)`` bin centers is
+        not a position (bins on either side of the angle seam average to
+        angle 0). Use :func:`map_position` instead.
 
     Notes
     -----
@@ -194,6 +208,9 @@ def mean_position(
     >>> mean_pos.shape
     (1, 2)
     """
+    from neurospatial.environment.polar import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(env, "mean_position()", instead=_POLAR_MEAN_INSTEAD)
     return posterior @ env.bin_centers
 
 
