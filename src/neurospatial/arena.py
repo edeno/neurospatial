@@ -35,7 +35,11 @@ _CoordinateKind = Literal["cartesian", "polar"]
 
 @runtime_checkable
 class Arena(Protocol):
-    """Continuous coordinates and known domain geometry, without a binning."""
+    """Continuous coordinates and known domain geometry, without a binning.
+
+    Implementations must own immutable geometry and keep containment queries
+    independent of mutable caller data.
+    """
 
     @property
     def n_dims(self) -> int: ...

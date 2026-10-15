@@ -1,10 +1,10 @@
 # Stage A — Continuous arena representation
 
-**Status:** Design expansion. Center-based whole-bin selection and physical
-walls that block connectivity are approved. General polygon clipping is in
-Stage A; the user requested an expanded design before implementation. The new
-clipped-bin identity and numerical-capability proposals await review. No
-production implementation has begun.
+**Status:** Complete. All scientific choices below are approved. The design and
+implementation received independent geometry, numerical, persistence and API
+reviews; confirmed findings were repaired and verified. The
+[validation record](validation.md) documents behavior changes, performance,
+scientific workflows and remaining limits.
 
 **Branch:** `feature/environment-arena`, stacked on
 `feature/environment-representation` at `944c818d`.
@@ -31,14 +31,33 @@ geometry and updates every quantity that depends on it.
 | Whole-bin selection at a boundary | Keep bins whose centers are inside the arena. | Preserve strict center-interior selection, independently of clipping. |
 | Physical internal walls | Walls block connections between bins. | Remove blocked navigation pairs and matching face records. |
 | Clipping scope | Include general polygon clipping in Stage A; expand the design first. | Support valid planar polygons, multipolygons, holes and disconnected cell intersections; rectangular-only clipping does not complete this stage. |
+| Disconnected pieces | Split pieces into separate bins and expose the parent mapping. | `clip` returns an Environment with immutable source-bin indices; no implicit field/model transfer. |
+| Numerical methods | Keep exact clipping; enable numerical operations only when certified. | Unsupported finite-volume operations refuse with a reason; no general-mesh solver in Stage A. |
+| Rebinning | Preserve every arena and select coarse bins by center. | Rebinning cannot fill arena holes or reopen walls; refuse coarse cells that cannot represent a wall. |
+| Linear spatial encoding | Add an explicit linear-allocation option. | Spike counts and dwell time share retained entry, exit and re-entry intervals; start allocation remains the default. |
 
 The [polygon clipping design](polygon-clipping.md) makes the larger scope
-concrete. It proposes splitting disconnected cell pieces into new bins with an
-explicit parent mapping, and retaining finite-volume capabilities only when
-their geometry is certified. Those proposals and the remaining API/schema
-choices are not approved merely by accepting general clipping.
+concrete. Its split-bin and conditional numerical-capability choices are now
+accepted. Implementation uses the reviewed environment-returning API and
+shared versioned persistence design.
 
-## Current evidence
+### Inputs scientists already have
+
+No polygon is required for the common workflow. Position data, image masks,
+grid masks and explicit geometry are first-class inputs. Inferred domains are
+usable computational domains; unvisited patches do not establish physical walls.
+
+| Factory input | Continuous domain | Physical knowledge |
+| --- | --- | --- |
+| Position samples on a grid | Active-cell mask, with the existing threshold/cleanup controls | Estimated from sampling; no asserted physical walls. |
+| Position samples on hexagons | Union of canonical active hexagonal cells | Estimated from sampling; no asserted physical walls. |
+| Image mask plus scale / grid mask plus edges | Mask domain preserving axis orientation, holes and physical scale | Provided domain; wall assertions remain explicit. |
+| Polygon or mesh boundary | Supplied polygonal domain | Declared footprint. |
+| Track graph | Centerline and optional full width | Width gives a footprint with round caps; otherwise footprint remains unknown. |
+| Polar factory | Native radial/angular domain and seam rules | Computational limits do not assert walls. |
+| Legacy v2 / undeclared custom geometry | Explicit unknown domain | Existing bin operations remain usable; no guessed footprint. |
+
+## Baseline evidence
 
 At the branch base, deterministic probes reproduce these mismatches:
 
@@ -50,7 +69,7 @@ At the branch base, deterministic probes reproduce these mismatches:
   `(1000, 1000)` to bin 49 and reports containment. Its nearest-bin locator
   has no distance limit, and the factory has no track-width argument.
 
-Relevant implementation points:
+Relevant implementation points at the branch base:
 
 - [Polygon construction](../../../src/neurospatial/layout/engines/shapely_polygon.py):
   `ShapelyPolygonLayout.build` selects centers with `shapely.contains`.
@@ -73,7 +92,7 @@ The existing baseline script recorded **4,046 probes** at `944c818d`, including
 `/private/tmp/environment-arena-base-944c818d.npz`. It is not a portable fixture;
 recreate it from that commit when repeating the comparison.
 
-## Proposed contracts
+## Accepted contracts
 
 ### Arena and coordinate metadata
 
@@ -91,7 +110,7 @@ recreate it from that commit when repeating the comparison.
   footprint. Preserve its current abstract graph operations; a query requiring
   physical containment must report that the footprint is unknown. Known-width
   tracks use distance to the actual centerline segments, not bin centers.
-  Proposed initial footprint: constant full width, with round end caps and the
+  The footprint uses constant full width, with round end caps and the
   union of incident segment footprints at junctions. Use exact point-to-segment
   distance for containment rather than an approximate polygon buffer.
 - An egocentric distance cutoff or angular window is an analysis boundary,
@@ -111,7 +130,7 @@ recreate it from that commit when repeating the comparison.
   the stored locator. Locate only valid finite rows; preserve `-1`, dimensions,
   bin identity and existing ownership of boundaries between bins.
 - Specify physical-boundary inclusion separately from whole-bin selection.
-  Proposed physical containment includes the boundary; the locator still
+  Physical containment includes the boundary; the locator still
   determines whether it belongs to an active bin. This does not change
   half-open grid-cell ownership.
 - State the coverage guarantee precisely: whole-bin approximation can leave
@@ -133,7 +152,7 @@ recreate it from that commit when repeating the comparison.
   Copy, deepcopy and pickle preserve ownership and geometry.
 - Walls block connections: preserve ordered pair/face consistency and
   rebuild connectivity before publishing the geometry once.
-- Proposed initial wall restriction: accept walls supported by cell boundaries;
+- Accept walls supported by cell boundaries;
   refuse a wall cutting through a cell interior until splitting or rebuilding
   can represent both sides. Pruning neighboring edges cannot repair one bin
   spanning an impenetrable wall. Define corner and endpoint contact explicitly.
@@ -173,10 +192,10 @@ recreate it from that commit when repeating the comparison.
 
 ### Persistence
 
-- Proposed format change: write `Environment-v3` and NWB `3.0`, with one shared
+- Write `Environment-v3` and NWB `3.0`, with one shared
   arena codec representation used by dictionaries, files and NWB. Old readers
   must not silently discard arena-gated lookup or walls.
-- Proposed compatibility: read existing `Environment-v2` / NWB `2.0` binnings
+- Read existing `Environment-v2` / NWB `2.0` binnings
   without rebuilding, with an explicitly unknown physical footprint. Do not
   guess walls from the stored bins or descriptive build parameters.
 - Validate geometry, coordinate dimension, effective center lookup and
@@ -187,14 +206,21 @@ recreate it from that commit when repeating the comparison.
 - Persist derived arenas as data; no layout factory or provenance replay on
   loading. Missing physical geometry remains unknown after every round trip.
 
-The public signatures and persistence-version proposal require review with the
-final plan before implementation. They are not approved by this draft.
+The public surface and persistence design have received independent review.
+New major scientific or compatibility choices discovered during implementation
+must be returned to the user before dependent changes proceed.
 
-## Proposed implementation sequence
+## Implementation sequence
 
-Each phase gets a logical commit, focused validation, and independent review.
-Fix confirmed review findings before advancing. Every phase remains **not
-started** until the decisions above are resolved and its contract is concrete.
+Each phase gets focused validation and independent review. Fix confirmed review
+findings before accepting a phase. Logical commits separate owned Arena data,
+shared polygon foundations, environment integration, spatial encoding and docs.
+All five phases and the approved rebin/linear-encoding extensions are complete
+and independently reviewed. Implementation commits separate Arena data
+(`aaa64e14`), polygon foundations (`4e3f5768`), integration (`8e5eb767`),
+arena-preserving rebinning (`956db4a9`), linear encoding (`cee68470`), wall-frame
+checks (`f41820cf`) and wall-junction checks (`f489dc07`). Documentation and the
+validation record form the final commit.
 
 1. **Arena data, codecs and contract fixtures.** Finalize the public surface,
    factory matrix, unknown-footprint behavior and boundary rules. Add the shared

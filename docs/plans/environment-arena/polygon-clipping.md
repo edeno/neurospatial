@@ -1,12 +1,13 @@
-# General polygon clipping — proposed Stage A design
+# General polygon clipping — Stage A design
 
 [Stage A plan](PLAN.md)
 
-**Status:** Design proposal, not production implementation. The user approved
-general polygon clipping in Stage A and asked to expand the design first.
-Center-based whole-bin selection and connectivity-blocking physical walls are
-already accepted. Splitting bin identity and the numerical-capability policy
-below remain major decisions to review before coding.
+**Status:** Implemented and independently reviewed. The user approved
+general polygon clipping, splitting disconnected pieces with a parent mapping,
+and numerical operations only on certified geometry. Center-based whole-bin
+selection and connectivity-blocking walls are accepted too. The design and
+implementation passed independent geometry, numerical and persistence reviews;
+see the [validation record](validation.md).
 
 ## What clipping means
 
@@ -15,8 +16,11 @@ accounting for the true amount of space in every retained bin. Selection by
 center is a different operation: it keeps entire bins and their old measures.
 
 Let `C_i` be a stored parent cell, `P` the requested clip, and `D` the known
-polygonal arena domain. The retained geometry is `C_i ∩ P ∩ D`. If physical
-geometry is unknown, use `C_i ∩ P` and preserve that unknown status. A request
+polygonal arena domain. The retained geometry is `C_i ∩ P ∩ D`, including a
+known computational domain without claiming a measured footprint. When no
+polygonal domain is available and the arena domain is unknown, use `C_i ∩ P`
+and preserve that unknown status. A known domain lacking the materialization
+needed for exact clipping is explicitly refused. A request
 cannot reconstruct inactive bins that are absent from the parent.
 
 The output covers exactly the represented parent support intersected with this
@@ -103,8 +107,8 @@ build parameters.
   counts duplicates events. Recompute from the recording for the new support
   where possible. A generic field-transfer API is outside Stage A.
 
-The public name and mapping placement require API review before implementation.
-This proposal preserves the usual environment-returning operation and gives
+The reviewed public name and mapping placement preserve the usual
+environment-returning operation and give
 the mapping one persistent authority, without a second result-loading API.
 
 ## Geometry and publication algorithm
@@ -213,7 +217,7 @@ All closed physical interfaces remove navigation pairs and matching face
 records. Missing source neighbor permissions remain missing. No geometric
 overlay may restore a blocked parent edge.
 
-Stage A's proposed initial wall-insertion restriction remains full supported
+Stage A's wall-insertion restriction remains full supported
 cell faces, with aligned doorway endpoints. General polygon clipping does not
 implicitly authorize a new algorithm for walls cutting through a cell or
 ending halfway along a face. Refuse those unresolved wall geometries until
@@ -308,6 +312,16 @@ geometric subdivision.
 
 Use the same retained time intervals for spike/event counting and occupancy,
 including entry, exit, re-entry and the existing final-endpoint convention.
+Spatial rate estimators expose this through `time_allocation="linear"`;
+their default remains `"start"`. Retained time windows are half-open: entry
+is included subject to spatial bin ownership, exit is excluded, and adjacent
+retained windows merge. Events
+at an internal shared cell boundary use the locator's bin owner. Preserve
+these choices in analysis settings and observed time intervals. Explicit
+linear spatial encoding initially requires exact planar cell geometry.
+If an owned boundary spike falls in a bin with zero retained dwell time,
+refuse the undefined rate explicitly; do not reassign its owner or silently
+discard the spike from the estimated rates.
 Spikes outside retained intervals do not contribute to a numerator whose
 occupancy denominator excludes them. A known physical wall crossing cannot be
 made valid by its zero area; linear allocation must refuse an unresolved
@@ -336,7 +350,7 @@ from zero activity, and expose the mapping for deliberate downstream work.
 
 ## Persistence and validation
 
-Use the proposed Stage A versioned environment payload for all transports.
+Use the Stage A versioned environment payload for all transports.
 Encode per-cell WKB as concatenated `uint8` bytes plus integer offsets, keeping
 holes and stored cell order. Keep small typed record tables for polygon-cell
 and clip-map snapshots only; top-level geometry and each `ClippedLocator`
@@ -398,7 +412,7 @@ local-feature tolerance contract.
 
 ## Phase-4 expansion and completion gate
 
-Implement general clipping in reviewable parts within Stage A phase 4:
+General clipping was implemented in reviewable parts within Stage A phase 4:
 
 1. Shared cell geometry and persistent boundary ownership, with analytic source
    topology tests before any clipping behavior changes.
@@ -409,7 +423,10 @@ Implement general clipping in reviewable parts within Stage A phase 4:
    record before/after construction and lookup cost and reconcile baseline
    changes.
 
-Each part gets independent review. Rectangular clipping alone cannot mark
-phase 4 or Stage A complete. Production implementation waits for the major
-choices above and a concrete review of the remaining public API, boundary
-ownership codec, transport schema and numerical tolerances.
+Each part received independent review. General polygon clipping, including
+disconnected pieces and holes, now satisfies the reviewed API, boundary
+ownership, transport and numerical contracts. The
+[completed validation record](validation.md) includes analytic regression
+suites, simulated and recorded-tracking workflows, classified baseline changes
+and measured construction/lookup costs. A general-mesh numerical solver remains
+outside Stage A.

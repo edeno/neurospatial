@@ -4,6 +4,19 @@
 
 ### Added
 
+- Add continuous Arena domains alongside spatial bins. Tracked positions,
+  grid masks and image masks remain direct inputs and infer computational
+  support without asserting physical walls. Optional polygons, explicit
+  internal walls and measured track widths describe known physical geometry.
+- Add `Environment.clip(polygon)` for exact planar cell intersections,
+  including holes and split bins, with a read-only immediate-parent
+  `clip_mapping`. Plotting and containment work without numerical certification;
+  smoothing and spatial operators require certified finite-volume geometry.
+  Clipping does not transfer fields or fitted models automatically.
+- Add explicit `time_allocation="linear"` to single-unit and population spatial
+  rate estimation. Spike counts and dwell time share exact retained entry,
+  exit and re-entry intervals; the default remains start allocation.
+
 - Plot actual positions directly on decoded posteriors with
   `DecodingResult.plot(true_times=..., true_positions=..., max_gap=...)`.
   Ground-truth alignment is shared with `error_against`, preserving tracking
@@ -95,10 +108,18 @@
   disable finite-volume smoothing with an explanation. Tracks refuse
   non-similarity transforms; rebuild them from transformed graph nodes instead.
 
-- Environment files and dictionaries now use `Environment-v2`; NWB environment
-  records use schema `2.0`. They store the complete binning and restore it
-  without rebuilding layouts. Older versions are refused: recreate the
-  environment with a factory and save it again.
+- Environment files and dictionaries now use `Environment-v3`; NWB environment
+  records use schema `3.0`. They preserve Arena, walls, exact cells and clip
+  mappings without rebuilding layouts. Version 2/`2.0` remains readable with an
+  explicitly unknown Arena. Version 1/`1.x` must be recreated with a factory.
+- Polygon-aware lookup excludes points outside the declared domain and in its
+  holes. Linear occupancy subdivides entry, exit and re-entry intervals on
+  exact polygon support, and refuses unresolved physical-wall crossings.
+  Default encoding and occupancy retain their existing interval-allocation
+  conventions.
+- Rebinning preserves the original arena and selects coarse bins by center,
+  including inferred mask holes. Physical walls remain closed; coarse cells
+  that cannot represent them are refused.
 
 - Point lookup consistently rejects incorrect coordinate widths, including
   hexagonal inputs with extra columns and empty or non-finite grid queries.
