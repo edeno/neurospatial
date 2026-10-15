@@ -7,7 +7,7 @@ Covers:
 - Property-based tests with Hypothesis
 
 Test Plan Reference: TEST_PLAN2.md Priority 1.1
-Target Coverage: 4% → 90% for src/neurospatial/environment/transforms.py
+Exercises grid construction and bin selection through the public Environment API.
 """
 
 from __future__ import annotations
@@ -201,12 +201,9 @@ class TestRebin:
                 assert len(w) > 0
                 assert "not evenly divisible" in str(w[0].message)
 
-    def test_rebin_only_regular_grid(self, graph_env: Environment) -> None:
-        """Test that rebin only works for RegularGridLayout."""
-        # graph_env is a GraphLayout, not RegularGridLayout
-        with pytest.raises(
-            NotImplementedError, match="only supported for RegularGridLayout"
-        ):
+    def test_rebin_requires_uniform_grid_cells(self, graph_env: Environment) -> None:
+        """A track graph cannot establish rectangular cells for factor rebinning."""
+        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
             graph_env.rebin(factor=2)
 
     def test_rebin_factor_wrong_dimensions(self, medium_2d_env: Environment) -> None:

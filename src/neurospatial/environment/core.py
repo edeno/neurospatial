@@ -50,6 +50,7 @@ from neurospatial.environment._publication import (
 from neurospatial.environment._publication import (
     _ReadOnlyGraphMetadata as _ReadOnlyGraphMetadata,
 )
+from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
@@ -64,7 +65,6 @@ from neurospatial.environment.trajectory import (
     _bin_sequence,
     _occupancy,
 )
-from neurospatial.environment.transforms import _rebin
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import (
     CartesianSystem,
@@ -2306,11 +2306,9 @@ class Environment(Generic[_C]):
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
         if bin_size is not None:
-            from neurospatial.environment._rebin import _rebin_resolution
-
             return _rebin_resolution(self, bin_size)
         assert factor is not None
-        return _rebin(self, factor)
+        return _rebin_factor(self, factor)
 
     @check_fitted
     def subset(
@@ -2402,7 +2400,7 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("subset()")
-        from neurospatial.environment.transforms import _subset
+        from neurospatial.environment._subset import _subset
 
         return _subset(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert

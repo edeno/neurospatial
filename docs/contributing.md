@@ -323,6 +323,13 @@ alternative. Integer-factor `rebin` requires uniform rectangular cells and
 native grid navigation, allowing physical walls to remove connections. It
 refuses custom path lengths or topology that cell geometry cannot reconstruct,
 and retains truncation warnings and complete-face wall constraints.
+Both rebin modes live in `environment/_rebin.py`; selection of existing bins
+lives in `environment/_subset.py`. Rebin construction policies remain distinct:
+factor mode retains native lazy faces and its recorded grid parameters, while
+resolution mode prepares faces for the retained affine frame. Both use the
+same atomic `Environment._from_binning` publisher for owned data, walls and
+fresh analysis caches. The old `environment.transforms` path only re-exports
+private implementation functions for compatibility.
 `rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
 provenance. It re-bins the retained known arena, preserving the grid anchor and
 affine frame; requested sizes are physical lengths along those axes. Subset and
