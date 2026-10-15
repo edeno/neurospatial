@@ -503,33 +503,9 @@ class Environment(Generic[_C]):
         "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        # Use ``repr(self.name)`` so the empty-string case ``name=""``
-        # is visibly distinct from the unset case ``name=None``.
-        # The previous ``f"'{name}'" if name else 'None'`` collapsed the
-        # two into the same string and hid the difference from users
-        # debugging an Environment they thought they had named.
-        cls_name = type(self).__name__
-        if not self._is_fitted:
-            return f"{cls_name}(name={self.name!r}, not fitted)"
+        from neurospatial.environment._summary import _repr
 
-        # Fitted environments: show name, dims, bins, layout. Truncate
-        # very long names but keep ``None`` distinct from ``""``.
-        name = self.name
-        if isinstance(name, str) and len(name) > 40:
-            name = name[:37] + "..."
-
-        try:
-            dims_str = f"{self.n_dims}D"
-        except (RuntimeError, AttributeError):
-            dims_str = "?D"
-
-        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
-
-        layout_type = self._layout_type_used or "Unknown"
-        if layout_type.endswith("Layout"):
-            layout_type = layout_type[:-6]  # Remove 'Layout' suffix
-
-        return f"{cls_name}(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
+        return _repr(self)
 
     def __str__(self) -> str:
         """Human-readable summary, equivalent to :meth:`info`.
@@ -539,61 +515,9 @@ class Environment(Generic[_C]):
         ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
         interactive debugging and logs.
         """
-        if not self._is_fitted:
-            return self.__repr__()
-        return self.info()
+        from neurospatial.environment._summary import _str
 
-    @staticmethod
-    def _html_table_row(label: str, value: str, highlight: bool = False) -> str:
-        """Generate a single HTML table row.
-
-        Parameters
-        ----------
-        label : str
-            Row label (left column).
-        value : str
-            Row value (right column).
-        highlight : bool, default=False
-            If True, use highlighted background color.
-
-        Returns
-        -------
-        str
-            HTML string for the table row.
-
-        """
-        bg_color = "#fffacd" if highlight else "#fff"
-        return (
-            f'<tr style="background-color: {bg_color};">'
-            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-            f'font-weight: bold; color: #555;">{label}</td>'
-            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-            f'color: #000;">{value}</td>'
-            "</tr>"
-        )
-
-    @staticmethod
-    def _html_table_header(title: str) -> str:
-        """Generate HTML table header row.
-
-        Parameters
-        ----------
-        title : str
-            Title text for the header (already HTML-escaped).
-
-        Returns
-        -------
-        str
-            HTML string for the header row.
-
-        """
-        return (
-            '<tr style="background-color: #f0f0f0; border-bottom: 2px solid #999;">'
-            '<th colspan="2" style="padding: 8px; text-align: left; '
-            'font-weight: bold; font-size: 14px;">'
-            f"{title}"
-            "</th></tr>"
-        )
+        return _str(self)
 
     def _repr_html_(self) -> str:
         """Generate rich HTML representation for Jupyter notebooks.
@@ -638,77 +562,9 @@ class Environment(Generic[_C]):
         This will display a formatted table with environment details.
 
         """
-        import html
+        from neurospatial.environment._summary import _repr_html
 
-        # Escape HTML special characters in name
-        name = html.escape(str(self.name) if self.name else "None")
-
-        # Build table rows
-        rows = []
-        rows.append(self._html_table_header(f"Environment: {name}"))
-
-        # Check if fitted
-        if not self._is_fitted:
-            rows.append(self._html_table_row("Status", "Not fitted", highlight=True))
-            rows.append(
-                self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
-            )
-            return (
-                '<div style="margin: 10px;">'
-                '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-                'font-family: monospace; font-size: 12px;">'
-                f"{''.join(rows)}"
-                "</table></div>"
-            )
-
-        # Fitted environment - show full details
-        rows.append(
-            self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
-        )
-
-        # Dimensions and bins
-        try:
-            n_dims = self.n_dims
-            rows.append(self._html_table_row("Dimensions", str(n_dims)))
-        except (RuntimeError, AttributeError):
-            rows.append(self._html_table_row("Dimensions", "Unknown"))
-            n_dims = None
-
-        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
-        rows.append(self._html_table_row("Number of Bins", str(n_bins)))
-
-        # Spatial extent
-        if hasattr(self, "dimension_ranges") and self.dimension_ranges:
-            extent_parts = []
-            for dim_idx, (min_val, max_val) in enumerate(self.dimension_ranges):
-                extent_parts.append(f"dim{dim_idx}: [{min_val:.2f}, {max_val:.2f}]")
-            extent_str = "<br>".join(extent_parts)
-            rows.append(self._html_table_row("Spatial Extent", extent_str))
-
-        # Regions
-        n_regions = len(self.regions) if hasattr(self, "regions") else 0
-        if n_regions > 0:
-            rows.append(self._html_table_row("Regions", f"{n_regions} defined"))
-        else:
-            rows.append(self._html_table_row("Regions", "None"))
-
-        # 1D-specific info
-        if (
-            n_dims == 1
-            and hasattr(self, "is_linearized_track")
-            and self.is_linearized_track
-        ):
-            rows.append(
-                self._html_table_row("Linearization", "Available (1D environment)")
-            )
-
-        return (
-            '<div style="margin: 10px;">'
-            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-            'font-family: monospace; font-size: 12px;">'
-            f"{''.join(rows)}"
-            "</table></div>"
-        )
+        return _repr_html(self)
 
     @check_fitted
     def info(self) -> str:
@@ -772,96 +628,9 @@ class Environment(Generic[_C]):
         Regions: 0
 
         """
-        # Build output line by line
-        lines = []
+        from neurospatial.environment._summary import _info
 
-        # Header
-        lines.append("Environment Information")
-        lines.append("=" * 23)
-        lines.append("")
-
-        # Basic information
-        name_display = self.name if self.name else "(unnamed)"
-        lines.append(f"Name: {name_display}")
-        lines.append(f"Layout Type: {self.layout_type}")
-        lines.append(f"Dimensions: {self.n_dims}")
-        lines.append(f"Number of Bins: {self.n_bins}")
-        lines.append("")
-
-        # Spatial extent
-        if self.dimension_ranges is not None:
-            lines.append("Spatial Extent:")
-            for dim_idx, (dim_min, dim_max) in enumerate(self.dimension_ranges):
-                dim_range = dim_max - dim_min
-                lines.append(
-                    f"  Dimension {dim_idx}: [{dim_min:.2f}, {dim_max:.2f}] "
-                    f"(range: {dim_range:.2f})"
-                )
-            lines.append("")
-        else:
-            lines.append("Spatial Extent: Not available")
-            lines.append("")
-
-        # Bin sizes
-        lines.append("Bin Sizes:")
-        try:
-            bin_sizes_array = self.bin_sizes
-
-            # Check if all bins have the same size (uniform)
-            if np.allclose(bin_sizes_array, bin_sizes_array[0]):
-                # Uniform bin size - for grids, extract per-dimension from grid_edges
-                if self.grid_edges and all(len(e) > 1 for e in self.grid_edges):
-                    for dim_idx, edges in enumerate(self.grid_edges):
-                        dim_sizes = np.diff(edges)
-                        if np.allclose(dim_sizes, dim_sizes[0]):
-                            lines.append(f"  Dimension {dim_idx}: {dim_sizes[0]:.2f}")
-                        else:
-                            lines.append(
-                                f"  Dimension {dim_idx}: variable "
-                                f"(mean: {np.mean(dim_sizes):.2f}, "
-                                f"std: {np.std(dim_sizes):.2f})"
-                            )
-                else:
-                    # Non-grid layout or 1D - show the uniform measure
-                    measure_name = (
-                        "Size"
-                        if self.n_dims == 1
-                        else "Area"
-                        if self.n_dims == 2
-                        else "Volume"
-                    )
-                    lines.append(f"  {measure_name}: {bin_sizes_array[0]:.2f}")
-            else:
-                # Variable bin sizes
-                lines.append(
-                    f"  Variable (mean: {np.mean(bin_sizes_array):.2f}, "
-                    f"std: {np.std(bin_sizes_array):.2f}, "
-                    f"range: [{np.min(bin_sizes_array):.2f}, {np.max(bin_sizes_array):.2f}])"
-                )
-        except (AttributeError, RuntimeError, ValueError):
-            lines.append("  (not available)")
-        lines.append("")
-
-        # Regions
-        n_regions = len(self.regions) if self.regions else 0
-        if n_regions > 0:
-            lines.append(f"Regions: {n_regions} defined")
-            # Show region names if not too many
-            if n_regions <= 5:
-                for region_name in self.regions:
-                    lines.append(f"  - {region_name}")
-            else:
-                lines.append("  (use env.regions to inspect all regions)")
-        else:
-            lines.append("Regions: None")
-        lines.append("")
-
-        # 1D-specific information
-        if hasattr(self, "is_linearized_track") and self.is_linearized_track:
-            lines.append("Linearization: Available (1D environment)")
-            lines.append("")
-
-        return "\n".join(lines)
+        return _info(self)
 
     @cached_property
     @check_fitted
