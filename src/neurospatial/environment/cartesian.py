@@ -914,8 +914,9 @@ class CartesianCoordinates:
         **Active bins**: All bins in the coarsened environment are marked as
         active, even if the original grid had inactive regions.
 
-        **Metadata preservation**: The units and frame attributes are copied
-        from the original environment to the coarsened environment.
+        **Metadata preservation**: Units, frame and named regions are copied
+        from the original environment. Region coordinates and metadata are
+        preserved even when truncation removes the bins near a region.
 
         Examples
         --------
