@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import TimeSupport
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
@@ -262,21 +261,19 @@ def _wall_view_bins(
     )
 
 
-def _view_observation_support(
+def _view_observation_mask(
     times: NDArray[np.float64],
     *,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
-) -> TimeSupport:
+) -> NDArray[np.bool_]:
     """Resolve selected exposure before requiring bins at physical wall hits."""
     mask = interval_valid_mask(
         times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
     )
     mask &= np.diff(times) > 0
-    return TimeSupport.from_mask(
-        times, mask, epochs=epochs, spike_window=spike_window, max_gap=max_gap
-    )
+    return mask
 
 
 def _precompute_view_bins(
@@ -288,7 +285,7 @@ def _precompute_view_bins(
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
-    support: TimeSupport | None = None,
+    interval_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.intp]:
     """Precompute view bin indices for all trajectory samples.
 
@@ -325,7 +322,7 @@ def _precompute_view_bins(
 
     Notes
     -----
-    Without ``support``, this is a geometry-only lookup and unowned hits stay
+    Without ``interval_mask``, this is a geometry-only lookup and unowned hits stay
     -1. Allocation callers provide canonical observation support; only finite
     physical hits at starts of selected positive-duration intervals require
     retained bins. Final samples and excluded intervals supply no exposure.
@@ -364,8 +361,8 @@ def _precompute_view_bins(
                 env, valid_viewed, positions[valid_view_mask], boundary_source
             )
             required = np.zeros(n_samples, dtype=bool)
-            if support is not None:
-                required[:-1] = support.mask
+            if interval_mask is not None:
+                required[:-1] = interval_mask
             if boundary_source == "physical" and np.any(
                 (valid_bins < 0) & required[valid_view_mask]
             ):
@@ -542,6 +539,9 @@ def compute_occupancy(
                 f"times length ({n_samples})"
             )
 
+    mask = _view_observation_mask(
+        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    )
     view_bins = _precompute_view_bins(
         env,
         positions,
@@ -550,17 +550,9 @@ def compute_occupancy(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         boundary_source=boundary_source,
-        support=_view_observation_support(
-            times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
-        ),
+        interval_mask=mask,
     )
-    mask = interval_valid_mask(
-        times,
-        start_bin=view_bins,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-    )
+    mask &= view_bins[:-1] >= 0
     return start_allocated_occupancy(view_bins, np.diff(times), mask, env.n_bins)
 
 
@@ -691,6 +683,9 @@ def bin_view_spike_train(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="bin_view_spike_train")
 
+    mask = _view_observation_mask(
+        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    )
     view_bins = _precompute_view_bins(
         env,
         positions,
@@ -699,17 +694,9 @@ def bin_view_spike_train(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         boundary_source=boundary_source,
-        support=_view_observation_support(
-            times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
-        ),
+        interval_mask=mask,
     )
-    mask = interval_valid_mask(
-        times,
-        start_bin=view_bins,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-    )
+    mask &= view_bins[:-1] >= 0
     return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
 
@@ -739,6 +726,9 @@ def prepare_view_binning(
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
+    mask = _view_observation_mask(
+        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    )
     if view_bins is None:
         view_bins = _precompute_view_bins(
             env,
@@ -748,11 +738,10 @@ def prepare_view_binning(
             view_distance=view_distance,
             gaze_offsets=gaze_offsets,
             boundary_source=boundary_source,
-            support=_view_observation_support(
-                times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
-            ),
+            interval_mask=mask,
         )
 
+    mask &= view_bins[:-1] >= 0
     n_bins = env.n_bins
     prepared = prepare_frame_binning(
         times,
@@ -761,6 +750,7 @@ def prepare_view_binning(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        interval_mask=mask,
     )
     return prepared
 
