@@ -402,8 +402,9 @@ The same choice is available on `result.border_score()`, population
 other metrics when wall geometry is unavailable: border scores are NaN, with a
 reason in `table.attrs["unavailable_metrics"]` and the chosen source in
 `table.attrs["border_boundary_source"]`. No analysis approximation is selected
-implicitly. Physical border coverage currently requires exact planar cells and
-polygonal walls; curved track footprints require a separate representation.
+implicitly. With an unavailable border metric, cell-type labels reflect the
+remaining scores and do not rule out border tuning. Physical border coverage
+currently requires exact planar cells and polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.

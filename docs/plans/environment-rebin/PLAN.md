@@ -1,9 +1,9 @@
 # Stage D — Re-binning and physical-wall consumers
 
-**Status:** D0/D1 complete and validated on 2026-10-15.
-D2 is complete and validated on `feature/environment-border-walls`,
-stacked on rebin commit `bf5121e5`. D3 is implemented and under final validation on
-`feature/environment-wall-visibility`, stacked on border commit `8a8693d5`.
+**Status:** D0–D3 complete and validated on 2026-10-15.
+Three local stacked branches separate rebinning, border scoring and visibility;
+the current branch is `feature/environment-wall-visibility`. Stage D is not
+pushed and has no PRs.
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
@@ -198,3 +198,71 @@ gate: a cue on a rotated wall became occluded, and an angular sweep encoded two
 bins beyond a closed wall. Source-frame contacts and owner lookup now resolve
 both; the suite covers offsets 0, 100 and 1e9, a clearly behind-wall cue,
 transformed subsets/clips and dict restoration.
+
+## Final construction-choice correction
+
+A one-row grid has no diagonal edge even when diagonal neighbors were requested.
+Inferring its construction specification from current edges lost that choice
+when refining to multiple rows. The native grid builders now capture the actual
+choice with their locator snapshot; legacy identity coarsening retains it too.
+No descriptive provenance is replayed. Four regressions cover mask/regular
+families and true/false choices, including refinement after identity coarsening.
+They failed before the fix for both true cases.
+
+The correction was made on `feature/environment-rebin` in an isolated checkout,
+with its import path verified. **202 tests passed**, source mypy passed (238
+files), and Ruff/formatting passed. Commit `6534db5f` follows `bf5121e5`. Border
+and visibility branches were then restacked locally; no published branch was
+rewritten. The final stack is rebin → border → visibility.
+
+The first broad CPU run had **13,534 passed, 31 skipped and one failed** legacy
+threshold comparison. That fixture now explicitly requests analysis boundaries;
+its full summary-test module passed **34 tests**. The final broad rerun below
+also includes the construction-choice correction.
+
+
+## Final validation scope
+
+All final checks use the restacked source at `3b32c9ea`; the completion commit
+only updates documentation. The branch sequence is:
+
+1. `feature/environment-rebin` at `6534db5f`, based on Stage C `1699ff1e`.
+2. `feature/environment-border-walls` at `bb7df1ce`, based on rebinning.
+3. `feature/environment-wall-visibility`, based on border scoring.
+
+The broad CPU gate runs:
+
+```bash
+MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache \
+UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache \
+uv run --no-sync pytest tests -p no:napari -n 4 -q \
+  -m 'not slow and not napari and not gui and not wallclock' --tb=short
+```
+
+It additionally deselects the same 51 GUI-dependent node IDs used by the prior
+immutable-environment validation: their Napari cache operations require access
+outside this sandbox. The exact list is recorded locally in
+`/private/tmp/immutable-gui-exclusions.json`. This is a CPU validation result;
+GUI, GPU, slow and wallclock checks were not run. No real recording is cached,
+so the new functionality is validated with deterministic synthetic geometry,
+not a new real-data experiment. No speed or memory improvement is claimed.
+
+
+## Final accepted results
+
+| Check | Result | Local evidence |
+| --- | --- | --- |
+| Broad CPU suite, final restacked source | **13,539 passed, 31 skipped**, no failures; 430.03 s | `/private/tmp/stage-d-cpu-final.log` |
+| Full source doctests | **596 passed, 126 skipped**; 276.06 s | `/private/tmp/stage-d-doctests-final.log` |
+| Source/contract typing | **244 files passed** | `/private/tmp/stage-d-types-restacked.log` |
+| Environment baseline | **4,071 probes identical**; only the intended `Environment.rebin` signature/docstring differs out of 4,072 | `/private/tmp/environment-stage-d-restacked.npz` |
+| Ruff lint and format | **54 changed Python files passed** | Final scoped invocation, `1699ff1e...HEAD` |
+| Documentation examples | **2 passed**, 20 unrelated examples deselected | `/private/tmp/stage-d-guide-final.log` |
+| Relative documentation links | **40 resolved** across the four completion documents | Local path check |
+
+The broad suite reports 6,551 warnings and the doctests report 203 warnings;
+these runs do not establish warning-free execution. Focused new-feature gates
+also passed with `RuntimeWarning` treated as an error, as recorded above.
+`git diff --check` passes, and each local branch is an ancestor of the next.
+The user guide describes construction, migration to explicit analysis mode,
+wall-aware view encoding, and the supported geometry limits.
