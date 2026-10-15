@@ -71,7 +71,8 @@ def _rebin_resolution(
 ) -> Environment:
     """Construct new bins over the retained arena, preserving lattice frame."""
     from neurospatial.environment.core import Environment
-    from neurospatial.layout._binning import KnownFaces, binning_from_layout
+    from neurospatial.layout._binning import KnownFaces
+    from neurospatial.layout._construction import binning_from_layout
     from neurospatial.layout._derive import transform_binning
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.layout.engines.masked_grid import MaskedGridLayout

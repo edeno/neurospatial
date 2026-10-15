@@ -402,28 +402,16 @@ class GraphLayout(_KDTreeMixin):
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        g = self.connectivity.copy()
-        build_params = self._build_params_used
-        track_graph = build_params["graph_definition"]
-        track_edges = list(track_graph.edges())
-        node_pos = nx.get_node_attributes(track_graph, "pos")
-        centers = self.bin_centers
+        from neurospatial.layout._face_builders import track_geometry, track_junctions
 
-        for u, v, data in g.edges(data=True):
-            seg_u = g.nodes[u].get("source_edge_id")
-            seg_v = g.nodes[v].get("source_edge_id")
-            data["A"] = 1.0
-            if seg_u is None or seg_v is None or seg_u == seg_v:
-                continue  # intra-segment edge: existing along-track distance is correct
-            junction = _shared_track_node(track_edges, int(seg_u), int(seg_v))
-            if junction is None:
-                continue  # no identifiable junction: leave the chord distance as-is
-            j_pos = np.asarray(node_pos[junction], dtype=float)
-            d = float(np.linalg.norm(centers[u] - j_pos)) + float(
-                np.linalg.norm(centers[v] - j_pos)
-            )
-            data["distance"] = d
-        return g, self.bin_sizes()
+        junctions = track_junctions(
+            self.connectivity,
+            self._build_params_used["graph_definition"],
+            self.bin_centers.shape[1],
+        )
+        return track_geometry(
+            self.connectivity, self.bin_centers, self.bin_sizes(), junctions
+        )
 
 
 def _shared_track_node(

@@ -14,7 +14,6 @@ from neurospatial.layout._binning import (
     KnownFaces,
     MissingFaces,
     SpatialBins,
-    binning_from_layout,
 )
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._capabilities import (
@@ -22,6 +21,7 @@ from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
+from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout._diffusion import FaceGeometry, FiniteVolumeGeometryProvider
 from neurospatial.layout._locators import HexLocator, RectilinearLocator
 

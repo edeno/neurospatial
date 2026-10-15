@@ -38,12 +38,12 @@ from neurospatial.layout._binning import (
     MissingFaces,
     SpatialBins,
     TrackLinearization,
-    binning_from_layout,
 )
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._composition import CombinedLocator
+from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout._face_normals import FaceNormals
 from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
@@ -54,6 +54,7 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.layout._native_faces import NativeFaces
 from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
 from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.engines._polar import _PolarGridLayout
@@ -125,7 +126,7 @@ def _check_binning(binning: Binning) -> None:
     faces = binning.faces
     if type(faces) is LayoutFaces:
         _check_native_layout(faces.layout)
-    elif type(faces) not in (KnownFaces, MissingFaces):
+    elif type(faces) not in (KnownFaces, MissingFaces, NativeFaces):
         _migration(faces)
     for component, allowed in (
         (binning.rectilinear, (RectilinearGrid,)),

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import pickle
-import warnings
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -17,12 +16,13 @@ from neurospatial.arena import MaskArena, OpenArena, _TransformedArena
 from neurospatial.encoding.grid import _detect_grid_method
 from neurospatial.environment._ownership import own_arena, own_layout
 from neurospatial.layout import RegularGridLayout, create_layout
-from neurospatial.layout._binning import LayoutLocator, binning_from_layout
+from neurospatial.layout._binning import LayoutLocator
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
+from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout._diffusion import FiniteVolumeGeometryProvider
 from neurospatial.layout._locators import SubsetLocator, TransformedLocator
 from neurospatial.layout.engines._polar import _PolarGridLayout
@@ -84,7 +84,9 @@ def test_bridge_detaches_buffers_headers_graphs_and_provenance(method):
     exported = bridge.binning()
     exported.bins.centers.setflags(write=True)
     exported.bins.centers[:] = 123
-    exported.faces.layout.grid_edges[0][:] = 123
+    assert not hasattr(exported.faces, "layout")
+    exported.faces.arrays[0].setflags(write=True)
+    exported.faces.arrays[0][:] = 123
 
     np.testing.assert_array_equal(bridge.bin_centers, expected)
     np.testing.assert_array_equal(bridge.bin_sizes(), np.ones(9))
@@ -127,8 +129,10 @@ def test_bridge_refuses_rebinding(attribute):
 
 
 def test_bridge_preserves_native_context_and_capabilities(built_environment):
-    # Public binning exports detach the native lazy face builder as well.
-    source = built_environment.layout.binning().faces.layout
+    # Compare against an independently rebuilt native oracle.
+    source = type(built_environment)._create_layout(
+        built_environment.layout_type, built_environment.layout_parameters
+    )
     bridge = own_layout(source)
     assert bridge.layout_type == source.layout_type
     assert bridge._layout_type_tag == source._layout_type_tag
@@ -153,25 +157,29 @@ def test_bridge_preserves_native_context_and_capabilities(built_environment):
     )
 
 
-def test_face_building_stays_lazy_and_owns_native_builder(monkeypatch):
+def test_face_building_stays_lazy_without_native_builder(monkeypatch):
+    from neurospatial.layout._native_faces import NativeFaces
+
     source = _grid()
-    original = RegularGridLayout.finite_volume_geometry
+    original = NativeFaces.build
     calls = []
 
-    def record(layout):
-        calls.append(layout)
-        warnings.warn("lazy face construction", UserWarning, stacklevel=2)
-        return original(layout)
+    def record(recipe):
+        calls.append(recipe)
+        return original(recipe)
 
-    monkeypatch.setattr(RegularGridLayout, "finite_volume_geometry", record)
-    with warnings.catch_warnings(record=True) as emitted:
-        bridge = own_layout(source)
+    monkeypatch.setattr(NativeFaces, "build", record)
+    bridge = own_layout(source)
     assert not calls
-    assert not emitted
+    monkeypatch.setattr(
+        RegularGridLayout,
+        "finite_volume_geometry",
+        lambda _: pytest.fail("retained builder"),
+    )
     source.grid_edges[0][:] = -99
-    with pytest.warns(UserWarning, match="lazy face construction"):
-        faces = bridge._binning.faces.build()
-    assert calls[0] is not source
+    faces = bridge._binning.faces.build()
+    assert len(calls) == 1
+    assert not hasattr(calls[0], "layout")
     np.testing.assert_array_equal(faces.volumes, np.ones(9))
 
 
@@ -187,7 +195,7 @@ def test_polar_build_parameters_cannot_change_published_faces():
     expected = bridge._binning.faces.build().A.copy()
     source._build_params_used["circular_angle"] = False
     bridge._build_params_used["circular_angle"] = False
-    bridge.binning().faces.layout._build_params_used["circular_angle"] = False
+    assert not hasattr(bridge.binning().faces, "layout")
     np.testing.assert_array_equal(bridge._binning.faces.build().A, expected)
 
 
@@ -233,8 +241,14 @@ def test_native_instance_method_overrides_require_owned_snapshot_migration(
         return result
 
     setattr(source, method, overridden)
-    with pytest.raises(TypeError, match=r"owned.*snapshot"):
-        own_layout(provider)
+    if retained_faces:
+        # The already captured data no longer delegates to the mutated source.
+        owned = own_layout(provider)
+        assert not hasattr(owned._binning.faces, "layout")
+        np.testing.assert_array_equal(owned._binning.faces.build().volumes, np.ones(9))
+    else:
+        with pytest.raises(TypeError, match=r"owned.*snapshot"):
+            own_layout(provider)
 
 
 @pytest.mark.parametrize("wrapper", ["plain", "subset", "transform", "nested"])

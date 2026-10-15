@@ -45,6 +45,11 @@ from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created, log_graph_validation
+from neurospatial.environment._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    polar_circularity,
+)
 from neurospatial.environment._metadata import UNSET, _Metadata, _MetadataView, _Unset
 from neurospatial.environment.cartesian import CartesianCoordinates
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
@@ -196,6 +201,7 @@ class _PublishedGeometry:
     active_mask: NDArray[np.bool_] | None
     arena: Arena | None = None
     clip_mapping: ClipMapping | None = None
+    coordinates: CartesianSystem | EgocentricPolarSystem | None = None
 
 
 class _GeometryView(Generic[_T]):
@@ -688,6 +694,21 @@ class _BaseEnvironment(
             )
             _freeze_graph_attributes(self._geometry.connectivity)
             self._reset_analysis_caches()
+        if getattr(self._geometry, "coordinates", None) is None:
+            self._geometry = replace(
+                self._geometry,
+                coordinates=(
+                    EgocentricPolarSystem(
+                        polar_circularity(
+                            self._geometry.grid_shape,
+                            self._geometry.connectivity,
+                            self._layout_params_used,
+                        )
+                    )
+                    if self._POLAR
+                    else CartesianSystem()
+                ),
+            )
         self._freeze_geometry_arrays()
 
     def _freeze_geometry_arrays(self) -> None:
@@ -1474,6 +1495,15 @@ class _BaseEnvironment(
             active_mask=active_mask,
             arena=arena,
             clip_mapping=clip_mapping,
+            coordinates=(
+                EgocentricPolarSystem(
+                    polar_circularity(
+                        grid_shape, connectivity, self._layout_params_used
+                    )
+                )
+                if self._POLAR
+                else CartesianSystem()
+            ),
         )
 
         self._freeze_geometry_arrays()

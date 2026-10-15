@@ -15,11 +15,12 @@ import pytest
 from neurospatial import Environment
 from neurospatial._exceptions import EnvironmentNotFittedError
 from neurospatial.environment.polar import EgocentricPolarEnvironment
-from neurospatial.layout._binning import LayoutFaces, binning_from_layout
+from neurospatial.layout._binning import LayoutFaces
 from neurospatial.layout._capabilities import (
     RectilinearGridProvider,
     TrackLinearizationProvider,
 )
+from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
@@ -343,7 +344,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
 
 
 def test_faces_reject_changed_pair_order() -> None:
-    """Equal undirected edge sets cannot silently reorder a gradient's values."""
+    """Native recipes retain the supplied authoritative pair order."""
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
@@ -355,8 +356,12 @@ def test_faces_reject_changed_pair_order() -> None:
     )
     assert list(reordered.edges) != list(env.connectivity.edges)
     binning = binning_from_layout(_source_layout(env), reordered)
-    with pytest.raises(ValueError, match=r"out of sync with env\.connectivity"):
-        binning.faces.build()
+    faces = binning.faces.build()
+    np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
+    expected = env._face_geometry
+    by_pair = {frozenset(pair): i for i, pair in enumerate(expected.edges)}
+    for i, pair in enumerate(faces.edges):
+        assert faces.A[i] == expected.A[by_pair[frozenset(pair)]]
 
 
 def test_faces_reject_isolated_graph_nodes_without_centers(monkeypatch) -> None:

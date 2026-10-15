@@ -101,17 +101,18 @@ class _PolarGridLayout(MaskedGridLayout):
         diagonal neighbors no face (``A = 0``). Only a radial face's arc length
         depends on radius. Polar sectors are K-orthogonal, so this is exact.
         """
-        graph, volumes = super().finite_volume_geometry()
-        r = self.bin_centers[:, 0]
+        from neurospatial.layout._face_builders import polar_geometry
+
+        assert self.connectivity is not None
         assert self.grid_shape is not None
-        for u, v, data in graph.edges(data=True):
-            if abs(r[u] - r[v]) > 1e-9:  # radial step (diagonals keep A = 0)
-                data["A"] *= 0.5 * (r[u] + r[v])
-            elif self.grid_shape[1] == 2 and self._build_params_used["circular_angle"]:
-                # Two half-annuli share both angular interfaces. The simple
-                # graph stores their node pair once, so sum both face measures.
-                data["A"] *= 2.0
-        return graph, volumes
+        return polar_geometry(
+            self.connectivity,
+            self.bin_centers,
+            self.bin_sizes(),
+            self._axis_widths(),
+            self.grid_shape[1],
+            bool(self._build_params_used["circular_angle"]),
+        )
 
 
 def _add_circular_connectivity(

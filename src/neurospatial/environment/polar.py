@@ -119,7 +119,7 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     @property
     def _coordinate_system(self) -> EgocentricPolarSystem:
         """Polar distance and axis semantics, with the graph's circularity."""
-        return EgocentricPolarSystem(circular=self._angular_is_circular)
+        return cast("EgocentricPolarSystem", self._geometry.coordinates)
 
     def _require_cartesian(self, operation: str) -> NoReturn:
         """Refuse ``operation``: polar bin centers are ``(distance, angle)``."""
@@ -357,34 +357,4 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         bool
             True if the angular axis is circular, False for an open axis.
         """
-        if self.grid_shape is not None and self.grid_shape[1] <= 2:
-            return bool(self._layout_params_used.get("circular_angle", False))
-
-        connectivity = self.connectivity
-        if connectivity.number_of_edges() == 0:
-            return False
-
-        # Collect per-edge (Δr, |Δθ|) using node "pos" attributes
-        # (pos[0]=distance, pos[1]=angle). Same-ring edges have Δr ~ 0.
-        same_ring_dtheta: list[float] = []
-        min_step = np.inf
-        for u, v in connectivity.edges():
-            pos_u = connectivity.nodes[u]["pos"]
-            pos_v = connectivity.nodes[v]["pos"]
-            d_r = abs(float(pos_v[0]) - float(pos_u[0]))
-            d_theta = abs(float(pos_v[1]) - float(pos_u[1]))
-            if d_theta > 0:
-                min_step = min(min_step, d_theta)
-            # Same-ring edge: distance unchanged (radial component ~ 0).
-            if d_r <= 1e-9 and d_theta > 0:
-                same_ring_dtheta.append(d_theta)
-
-        if not np.isfinite(min_step) or not same_ring_dtheta:
-            return False
-
-        # A seam edge spans many regular steps; a regular angular edge spans
-        # one. Use a threshold of 1.5x the smallest step: seam edges (which
-        # span (n_angle - 1) steps for n_angle >= 3) clear it comfortably,
-        # while regular angular edges do not.
-        threshold = 1.5 * min_step
-        return any(dt > threshold for dt in same_ring_dtheta)
+        return self._coordinate_system.circular

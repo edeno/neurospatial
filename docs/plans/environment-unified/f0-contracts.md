@@ -34,6 +34,9 @@ remain lazy; serialization can still materialize KnownFaces.
   bound and unbound calls, including absence via hasattr on polar instances.
 - Normalize polar circularity once: preserve the current one/two-bin saved
   option and three-or-more-bin graph seam rule. Do not reinterpret old files.
+- On legacy reads, known EgocentricSurround.circular does not override saved
+  one/two-bin settings or larger-grid graph seams. Coordinate-kind metadata is
+  authoritative and conflicting arena coordinate kinds remain rejected.
 - Existing dictionary/file/NWB coordinate_kind and circular_angle fields can
   express the owned descriptor; retain their wire versions and normalize at the
   reader boundary. A new authority would require a new version.

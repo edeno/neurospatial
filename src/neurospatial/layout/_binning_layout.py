@@ -24,11 +24,10 @@ from neurospatial.layout._binning import (
     Locator,
     SpatialBins,
     TrackLinearization,
-    _outline_of,
-    _shapes_of,
 )
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
 from neurospatial.layout._composition import CombinedLocator
+from neurospatial.layout._construction import _outline_of, _shapes_of
 from neurospatial.layout._derive import _LegacyTrackLinearization
 from neurospatial.layout._locators import (
     HexLocator,
