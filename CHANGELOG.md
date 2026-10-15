@@ -7,6 +7,16 @@
 - Preserve static attribute and protocol checking for the common Environment;
   runtime Cartesian/polar capability filtering no longer admits missing methods.
 
+- Check physical view-map ownership only for samples with selected exposure.
+  Missing wall bins raise actionable guidance; excluded/final samples and raw
+  geometric hits retain their meanings. Slanted wall cues tolerate local cue
+  rounding while earlier crossings and wall overlaps remain blocked.
+
+- Physical border scores require complete represented and observed wall
+  coverage, distinguishing missing measurements from measured zero firing.
+  Unsupported scores and batch summaries provide setup guidance rather than
+  treating an unobserved wall as zero activity.
+
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite

@@ -782,7 +782,9 @@ def batch_border_scores(
 
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared walls, or the explicitly requested legacy boundary-bin
-        approximation. Missing physical geometry raises before the unit loop.
+        approximation. Missing physical geometry, retained wall cells or finite
+        wall firing rates raise NotImplementedError rather than being converted
+        to per-unit computation failures.
 
     Returns
     -------
@@ -802,6 +804,8 @@ def batch_border_scores(
     ValueError
         If firing_rates is not 2D.
         If firing_rates.shape[1] != env.n_bins.
+    NotImplementedError
+        If physical wall coverage or observations are unavailable for any unit.
 
     Notes
     -----
@@ -897,6 +901,10 @@ def batch_border_scores(
                 metric=metric,  # type: ignore[arg-type]
                 boundary_source=boundary_source,
             )
+        except NotImplementedError:
+            # Missing scientific support is an unavailable measurement, not a
+            # numerical failure that can be hidden in the batch failure mask.
+            raise
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so
             # the caller can distinguish this from a legitimate-NaN.

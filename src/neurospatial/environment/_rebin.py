@@ -70,6 +70,7 @@ def _rebin_resolution(
     env: RebinConsumer, bin_size: float | tuple[float, ...]
 ) -> Environment:
     """Construct new bins over the retained arena, preserving lattice frame."""
+    from neurospatial.environment._from_bins import prepare_bins
     from neurospatial.environment.core import Environment
     from neurospatial.layout._binning import KnownFaces
     from neurospatial.layout._construction import binning_from_layout
@@ -166,8 +167,17 @@ def _rebin_resolution(
     if not np.array_equal(spec.forward, np.eye(dims + 1)):
         binning = transform_binning(binning, SimpleNamespace(A=spec.forward))
     binning = replace(binning, grid_spec=spec)
-    return Environment.from_bins(
-        binning,
+    # This native construction deliberately lets the arena remove new wall-
+    # crossing connections. Public from_bins must preserve supplied topology.
+    snapshot, graph, ranges, category = prepare_bins(binning)
+    return Environment._from_binning(
+        snapshot,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        layout_type_tag=snapshot.kind,
+        layout_type=category,
+        build_params={},
+        is_linearized_track=snapshot.linearization is not None,
         name=f"{env.name}_rebinned" if env.name else "",
         units=env.units,
         frame=env.frame,

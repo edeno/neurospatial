@@ -2590,8 +2590,9 @@ class Environment(Generic[_C]):
         contained by another known arena. Unknown domains retain the full
         coarse grid. Rebinning preserves the arena rather than filling its holes.
 
-        **Metadata preservation**: The arena, units and frame are preserved.
-        New-size re-binning also retains regions. It supports rectangular
+        **Metadata preservation**: The arena, units, frame and named regions
+        are preserved. Region coordinates and metadata remain intact even when
+        truncation removes the bins near a region. New-size re-binning It supports rectangular
         grids from samples, masks, images and polygon grids, including their
         derived grid frames. Other families and older records without a stored
         specification refuse this mode. It never transfers fields or models.
