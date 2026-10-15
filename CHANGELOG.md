@@ -4,6 +4,14 @@
 
 ### Added
 
+- Border scores now use declared physical footprint rings and internal walls
+  by default, with wall-length coverage and distances to actual walls.
+  **Breaking:** explicitly choose `boundary_source="analysis"` for the legacy
+  boundary-bin approximation when only analysis geometry is available. Result,
+  population and classification methods propagate the choice. Summary tables
+  explain unavailable wall metrics without dropping other metrics. Physical
+  coverage requires exact planar cells and polygonal wall geometry.
+
 - Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
   the retained arena with an owned `GridBinningSpec` separate from provenance.
   Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB

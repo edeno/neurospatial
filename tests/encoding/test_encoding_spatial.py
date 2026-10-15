@@ -988,7 +988,7 @@ class TestSpatialRateResultBorderScore:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        score = result.border_score()
+        score = result.border_score(boundary_source="analysis")
         assert isinstance(score, float) or np.isnan(score)
 
     def test_border_score_accepts_threshold_parameter(
@@ -1008,7 +1008,7 @@ class TestSpatialRateResultBorderScore:
             bandwidth=5.0,
         )
         # Should not raise
-        score = result.border_score(threshold=0.5)
+        score = result.border_score(threshold=0.5, boundary_source="analysis")
         assert isinstance(score, float) or np.isnan(score)
 
     def test_border_score_accepts_metric_parameter(
@@ -1028,8 +1028,12 @@ class TestSpatialRateResultBorderScore:
             bandwidth=5.0,
         )
         # Should not raise with either metric
-        score_geodesic = result.border_score(metric="geodesic")
-        score_euclidean = result.border_score(metric="euclidean")
+        score_geodesic = result.border_score(
+            metric="geodesic", boundary_source="analysis"
+        )
+        score_euclidean = result.border_score(
+            metric="euclidean", boundary_source="analysis"
+        )
         assert isinstance(score_geodesic, float) or np.isnan(score_geodesic)
         assert isinstance(score_euclidean, float) or np.isnan(score_euclidean)
 
@@ -1050,11 +1054,11 @@ class TestSpatialRateResultBorderScore:
             bandwidth=5.0,
         )
         # Should not raise with min_area parameter
-        score = result.border_score(min_area=0.0)
+        score = result.border_score(min_area=0.0, boundary_source="analysis")
         assert isinstance(score, float) or np.isnan(score)
 
         # With very high min_area, should return NaN (field too small)
-        score_large_min = result.border_score(min_area=1e10)
+        score_large_min = result.border_score(min_area=1e10, boundary_source="analysis")
         assert np.isnan(score_large_min)
 
     def test_border_score_zero_firing_returns_nan(
@@ -1075,7 +1079,7 @@ class TestSpatialRateResultBorderScore:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        score = result.border_score()
+        score = result.border_score(boundary_source="analysis")
         assert np.isnan(score)
 
     def test_border_score_delegates_to_border_module(
@@ -1097,9 +1101,11 @@ class TestSpatialRateResultBorderScore:
         )
 
         # Compute expected value using direct call to border module
-        expected = bs_func(simple_env, border_cell_firing_rate)
+        expected = bs_func(
+            simple_env, border_cell_firing_rate, boundary_source="analysis"
+        )
 
-        score = result.border_score()
+        score = result.border_score(boundary_source="analysis")
         if np.isnan(expected):
             assert np.isnan(score)
         else:
@@ -1121,7 +1127,7 @@ class TestSpatialRateResultBorderScore:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        score = result.border_score()
+        score = result.border_score(boundary_source="analysis")
         if not np.isnan(score):
             assert -1.0 <= score <= 1.0
 
@@ -1860,7 +1866,7 @@ class TestSpatialRatesResultBorderScores:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        scores = result.border_scores()
+        scores = result.border_scores(boundary_source="analysis")
         assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_correct_shape(
@@ -1879,7 +1885,7 @@ class TestSpatialRatesResultBorderScores:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        scores = result.border_scores()
+        scores = result.border_scores(boundary_source="analysis")
         n_neurons = firing_rates_batch.shape[0]
         assert scores.shape == (n_neurons,)
 
@@ -1900,7 +1906,7 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
         # Should not raise
-        scores = result.border_scores(threshold=0.5)
+        scores = result.border_scores(threshold=0.5, boundary_source="analysis")
         assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_accepts_metric_parameter(
@@ -1920,8 +1926,12 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
         # Should not raise with either metric
-        scores_geodesic = result.border_scores(metric="geodesic")
-        scores_euclidean = result.border_scores(metric="euclidean")
+        scores_geodesic = result.border_scores(
+            metric="geodesic", boundary_source="analysis"
+        )
+        scores_euclidean = result.border_scores(
+            metric="euclidean", boundary_source="analysis"
+        )
         assert isinstance(scores_geodesic, BatchScoresResult)
         assert isinstance(scores_euclidean, BatchScoresResult)
 
@@ -1942,7 +1952,7 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
         # Should not raise with min_area parameter
-        scores = result.border_scores(min_area=10.0)
+        scores = result.border_scores(min_area=10.0, boundary_source="analysis")
         assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_delegates_to_batch_border_scores(
@@ -1963,8 +1973,10 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
 
-        expected = batch_border_scores(simple_env, firing_rates_batch)
-        scores = result.border_scores()
+        expected = batch_border_scores(
+            simple_env, firing_rates_batch, boundary_source="analysis"
+        )
+        scores = result.border_scores(boundary_source="analysis")
 
         # Handle NaN comparison properly
         for i in range(len(expected)):
@@ -1989,7 +2001,7 @@ class TestSpatialRatesResultBorderScores:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        scores = result.border_scores()
+        scores = result.border_scores(boundary_source="analysis")
         for score in scores:
             if not np.isnan(score):
                 assert -1.0 <= score <= 1.0
@@ -2038,7 +2050,7 @@ class TestSpatialRatesResultClassify:
             bandwidth=5.0,
         )
 
-        labels = result.label_cell_types()
+        labels = result.label_cell_types(boundary_source="analysis")
         assert isinstance(labels, np.ndarray)
         assert labels.shape == (firing_rates_batch.shape[0],)
         valid = {"place", "grid", "border", "unclassified"}
@@ -2065,7 +2077,7 @@ class TestSpatialRatesResultClassify:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.label_cell_types()
+        labels = result.label_cell_types(boundary_source="analysis")
         assert isinstance(labels, np.ndarray)
         assert labels.dtype.kind in ("U", "S", "O")  # Unicode, byte string, or object
 
@@ -2085,7 +2097,7 @@ class TestSpatialRatesResultClassify:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.label_cell_types()
+        labels = result.label_cell_types(boundary_source="analysis")
         n_neurons = firing_rates_batch.shape[0]
         assert labels.shape == (n_neurons,)
 
@@ -2110,6 +2122,7 @@ class TestSpatialRatesResultClassify:
             min_spatial_info=0.3,
             min_grid_score=0.5,
             min_border_score=0.4,
+            boundary_source="analysis",
         )
         assert isinstance(labels, np.ndarray)
 
@@ -2129,7 +2142,7 @@ class TestSpatialRatesResultClassify:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.label_cell_types()
+        labels = result.label_cell_types(boundary_source="analysis")
         valid_labels = {"place", "grid", "border", "unclassified"}
         for label in labels:
             assert label in valid_labels, f"Unexpected label: {label}"
@@ -2156,7 +2169,10 @@ class TestSpatialRatesResultClassify:
 
         # With high spatial info and no grid/border preference, should be place cells
         labels = result.label_cell_types(
-            min_spatial_info=0.1, min_grid_score=2.0, min_border_score=2.0
+            min_spatial_info=0.1,
+            min_grid_score=2.0,
+            min_border_score=2.0,
+            boundary_source="analysis",
         )
         # All should be labeled as place cells (high spatial info, no grid/border)
         assert all(label == "place" for label in labels)
@@ -2185,7 +2201,8 @@ class TestSpatialRatesResultClassify:
         labels = result.label_cell_types(
             min_spatial_info=0.5,
             min_grid_score=2.0,  # Unreachable (max is ~2.0)
-            min_border_score=2.0,  # Unreachable (max is 1.0)
+            min_border_score=2.0,
+            boundary_source="analysis",  # Unreachable (max is 1.0)
         )
         # All should be unclassified (uniform firing = no spatial info, and we
         # disabled grid/border classification with unreachable thresholds)
@@ -2216,13 +2233,14 @@ class TestSpatialRatesResultClassify:
         )
 
         # Get the actual border score to set appropriate threshold
-        border_score = result.border_scores()[0]
+        border_score = result.border_scores(boundary_source="analysis")[0]
         if not np.isnan(border_score) and border_score > 0.0:
             # Set threshold just below the actual score
             labels = result.label_cell_types(
                 min_spatial_info=0.0,  # Don't require spatial info
                 min_grid_score=2.0,  # Effectively disable grid classification
-                min_border_score=border_score - 0.1,  # Just below actual score
+                min_border_score=border_score - 0.1,
+                boundary_source="analysis",  # Just below actual score
             )
             assert labels[0] == "border"
 
@@ -2251,7 +2269,8 @@ class TestSpatialRatesResultClassify:
         labels = result.label_cell_types(
             min_spatial_info=0.0,  # Low threshold
             min_grid_score=2.0,  # Unreachable threshold
-            min_border_score=2.0,  # Unreachable threshold
+            min_border_score=2.0,
+            boundary_source="analysis",  # Unreachable threshold
         )
         assert labels[0] == "place"
 
@@ -2654,8 +2673,8 @@ class TestSpatialRatesResultSummaryTable:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.summary_table()
-        expected_scores = result.border_scores()
+        df = result.summary_table(boundary_source="analysis")
+        expected_scores = result.border_scores(boundary_source="analysis")
         # Use allclose with nan handling
         assert np.allclose(
             df["border_score"].values, expected_scores, equal_nan=True
@@ -2679,8 +2698,8 @@ class TestSpatialRatesResultSummaryTable:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.summary_table()
-        expected_labels = result.label_cell_types()
+        df = result.summary_table(boundary_source="analysis")
+        expected_labels = result.label_cell_types(boundary_source="analysis")
         assert list(df["cell_type"]) == list(expected_labels)
 
     def test_summary_table_peak_locations_match_peak_locations_method(
@@ -2855,10 +2874,12 @@ class TestLabelCellTypesPrecomputedScores:
         )
 
         gs = result.grid_scores().scores
-        bs = result.border_scores().scores
+        bs = result.border_scores(boundary_source="analysis").scores
 
-        labels_recompute = result.label_cell_types()
-        labels_precomputed = result.label_cell_types(grid_scores=gs, border_scores=bs)
+        labels_recompute = result.label_cell_types(boundary_source="analysis")
+        labels_precomputed = result.label_cell_types(
+            grid_scores=gs, border_scores=bs, boundary_source="analysis"
+        )
 
         np.testing.assert_array_equal(labels_recompute, labels_precomputed)
 
@@ -2880,10 +2901,13 @@ class TestLabelCellTypesPrecomputedScores:
         )
 
         gs = result.grid_scores().scores
-        bs = result.border_scores().scores
+        bs = result.border_scores(boundary_source="analysis").scores
 
         labels_recompute = result.label_cell_types(
-            min_spatial_info=0.3, min_grid_score=0.5, min_border_score=0.4
+            min_spatial_info=0.3,
+            min_grid_score=0.5,
+            min_border_score=0.4,
+            boundary_source="analysis",
         )
         labels_precomputed = result.label_cell_types(
             min_spatial_info=0.3,
@@ -2891,6 +2915,7 @@ class TestLabelCellTypesPrecomputedScores:
             min_border_score=0.4,
             grid_scores=gs,
             border_scores=bs,
+            boundary_source="analysis",
         )
 
         np.testing.assert_array_equal(labels_recompute, labels_precomputed)
@@ -2915,7 +2940,7 @@ class TestLabelCellTypesPrecomputedScores:
         bad = np.zeros(n_neurons + 1, dtype=np.float64)
 
         with pytest.raises(ValueError, match="grid_scores"):
-            result.label_cell_types(grid_scores=bad)
+            result.label_cell_types(grid_scores=bad, boundary_source="analysis")
 
     def test_wrong_length_border_scores_raises(
         self,
@@ -2937,7 +2962,7 @@ class TestLabelCellTypesPrecomputedScores:
         bad = np.zeros(n_neurons + 1, dtype=np.float64)
 
         with pytest.raises(ValueError, match="border_scores"):
-            result.label_cell_types(border_scores=bad)
+            result.label_cell_types(border_scores=bad, boundary_source="analysis")
 
     def test_2d_grid_scores_raises(
         self,
@@ -2959,7 +2984,7 @@ class TestLabelCellTypesPrecomputedScores:
         bad = np.zeros((n_neurons, 1), dtype=np.float64)
 
         with pytest.raises(ValueError, match="grid_scores"):
-            result.label_cell_types(grid_scores=bad)
+            result.label_cell_types(grid_scores=bad, boundary_source="analysis")
 
     def test_integer_dtype_scores_coerced(
         self,
@@ -2982,7 +3007,9 @@ class TestLabelCellTypesPrecomputedScores:
         bs = np.zeros(n_neurons, dtype=np.int64)
 
         # Should not raise a TypeError from np.isnan on integer dtype.
-        labels = result.label_cell_types(grid_scores=gs, border_scores=bs)
+        labels = result.label_cell_types(
+            grid_scores=gs, border_scores=bs, boundary_source="analysis"
+        )
         assert labels.shape == (n_neurons,)
 
 
@@ -4591,7 +4618,7 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        scores = result.border_scores()
+        scores = result.border_scores(boundary_source="analysis")
         assert scores.shape == (len(multiple_place_cell_spikes),)
 
     def test_result_has_label_cell_types_method(
@@ -4610,7 +4637,7 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        labels = result.label_cell_types()
+        labels = result.label_cell_types(boundary_source="analysis")
         assert labels.shape == (len(multiple_place_cell_spikes),)
         assert labels.dtype.kind == "U"  # String dtype
 

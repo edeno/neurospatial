@@ -15,7 +15,7 @@ def noise_rates(ou_env, ou_10min, noise_trains):
 
 
 def test_label_cell_types_noise_is_unclassified(noise_rates):
-    labels = noise_rates.label_cell_types()
+    labels = noise_rates.label_cell_types(boundary_source="analysis")
     assert np.all(noise_rates.spatial_information() < 0.5)
     assert np.all(labels == "unclassified"), labels
 
@@ -35,7 +35,8 @@ def test_label_cell_types_border_requires_information(
     scores = {"grid_scores": np.zeros(2), "border_scores": np.zeros(2)}
     scores[f"{score_kind}_scores"] = np.full(2, 0.9)
     np.testing.assert_array_equal(
-        rates.label_cell_types(**scores), [score_kind, "unclassified"]
+        rates.label_cell_types(**scores, boundary_source="analysis"),
+        [score_kind, "unclassified"],
     )
 
 
@@ -44,7 +45,7 @@ def test_label_cell_types_short_recording_bias(ou_2min_env, ou_2min, noise_train
     rates = compute_spatial_rates(
         ou_2min_env, noise_trains(120), times, positions, bandwidth=5
     )
-    labels = rates.label_cell_types()
+    labels = rates.label_cell_types(boundary_source="analysis")
     tuned = rates.spatial_information() >= 0.5
     np.testing.assert_array_equal(labels == "border", tuned)
     assert np.all(labels[~tuned] == "unclassified")

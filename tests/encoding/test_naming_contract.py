@@ -62,7 +62,7 @@ def test_label_cell_types_distinct_from_classify(trajectory) -> None:
     env, times, positions, _headings, spike_times = trajectory
     result = compute_spatial_rates(env, spike_times, times, positions, bandwidth=10.0)
 
-    labels = result.label_cell_types()
+    labels = result.label_cell_types(boundary_source="analysis")
     is_place = result.classify()
     assert labels.dtype.kind == "U"
     assert is_place.dtype == np.bool_

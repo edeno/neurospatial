@@ -362,6 +362,52 @@ Other common queries are `env.neighbors(bin_index)`,
 `env.distance_between(point_a, point_b)`. See the
 [API reference](../api/index.md) for their coordinate and distance conventions.
 
+## Choose physical walls or analysis boundaries
+
+Physical border scores use asserted footprint rings (including holes) and
+explicit internal walls. A crop or a missing position sample does not create a
+wall. If only tracking-derived support or an analysis mask is available, request
+`boundary_source="analysis"` to use the legacy boundary-bin approximation.
+Physical mode is the default and refuses when wall geometry is unknown.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.encoding import border_score
+
+env = Environment.from_grid_mask(
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
+    arena=OpenArena(box(0, 0, 10, 10)), units="cm",
+)
+field = (env.bin_centers[:, 0] < 1).astype(float)
+score = border_score(env, field, metric="euclidean")
+assert 0 < score < 1
+approximation = border_score(env, field, boundary_source="analysis")
+assert approximation == 1.0
+```
+
+Physical coverage is the fraction of declared wall length covered by field
+cells. Distance is mean field-center distance to actual walls, normalized by
+the wall diameter (maximum point separation). Geodesic mode includes center-to-wall lengths
+and paths through retained graph bins. An unavailable route makes the score
+NaN; crops can restrict represented routes. Euclidean mode avoids that graph
+restriction. This is a generalized screening metric; existing fixed thresholds
+are not a calibrated significance test for this geometry.
+
+The same choice is available on `result.border_score()`, population
+`border_scores()` and `label_cell_types()`, and `summary_table()`. Tables retain
+other metrics when wall geometry is unavailable: border scores are NaN, with a
+reason in `table.attrs["unavailable_metrics"]` and the chosen source in
+`table.attrs["border_boundary_source"]`. No analysis approximation is selected
+implicitly. Physical border coverage currently requires exact planar cells and
+polygonal walls; curved track footprints require a separate representation.
+Independently transformed combined components also refuse physical contact
+until a shared-frame contact certificate is available; combine before applying
+one shared transform, or explicitly choose the analysis approximation.
+
 ## Change bin size while retaining the arena
 
 `env.rebin(bin_size=...)` builds a new rectangular lattice over the retained

@@ -852,7 +852,9 @@ class TestBatchAPIValidation:
 
         env, firing_rates = regular_env_and_rates
         with pytest.raises(ValueError, match=r"metric must be"):
-            batch_border_scores(env, firing_rates, metric="manhattan")  # type: ignore[arg-type]
+            batch_border_scores(
+                env, firing_rates, metric="manhattan", boundary_source="analysis"
+            )  # type: ignore[arg-type]
 
     def test_batch_border_scores_rejects_threshold_out_of_range(
         self, regular_env_and_rates
@@ -861,14 +863,18 @@ class TestBatchAPIValidation:
 
         env, firing_rates = regular_env_and_rates
         with pytest.raises(ValueError, match=r"threshold must be in"):
-            batch_border_scores(env, firing_rates, threshold=2.0)
+            batch_border_scores(
+                env, firing_rates, threshold=2.0, boundary_source="analysis"
+            )
 
     def test_batch_border_scores_rejects_negative_min_area(self, regular_env_and_rates):
         from neurospatial.encoding._metrics import batch_border_scores
 
         env, firing_rates = regular_env_and_rates
         with pytest.raises(ValueError, match=r"min_area must be non-negative"):
-            batch_border_scores(env, firing_rates, min_area=-5.0)
+            batch_border_scores(
+                env, firing_rates, min_area=-5.0, boundary_source="analysis"
+            )
 
 
 class TestBatchGridScoresNonRegularGrid:
@@ -1058,7 +1064,9 @@ class TestBatchScoresFailuresMask:
             with pytest.warns(
                 UserWarning, match=r"raised an exception for 1 of 3 neurons"
             ):
-                result = _metrics.batch_border_scores(env, firing_rates)
+                result = _metrics.batch_border_scores(
+                    env, firing_rates, boundary_source="analysis"
+                )
         finally:
             border_mod.border_score = original
 
@@ -1138,7 +1146,7 @@ class TestBatchBorderScores:
         from neurospatial.encoding._metrics import batch_border_scores
 
         firing_rates, env = batch_firing_rates_for_border
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.shape == (4,)
 
@@ -1147,7 +1155,7 @@ class TestBatchBorderScores:
         from neurospatial.encoding._metrics import batch_border_scores
 
         firing_rates, env = batch_firing_rates_for_border
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.dtype == np.float64
 
@@ -1156,7 +1164,7 @@ class TestBatchBorderScores:
         from neurospatial.encoding._metrics import batch_border_scores
 
         firing_rates, env = batch_firing_rates_for_border
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         # Scores should be in range [-1, 1] or NaN
         valid_scores = scores[~np.isnan(scores)]
@@ -1171,7 +1179,7 @@ class TestBatchBorderScores:
         rng = np.random.default_rng(42)
         firing_rates = rng.random((1, env.n_bins)) * 5.0
 
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.shape == (1,)
 
@@ -1185,13 +1193,15 @@ class TestBatchBorderScores:
         firing_rates = rng.random((3, env.n_bins)) * 5.0
 
         # Batch computation
-        batch_scores = batch_border_scores(env, firing_rates)
+        batch_scores = batch_border_scores(
+            env, firing_rates, boundary_source="analysis"
+        )
 
         # Single neuron computation for comparison
         single_scores = []
         for i in range(firing_rates.shape[0]):
             try:
-                score = border_score(env, firing_rates[i])
+                score = border_score(env, firing_rates[i], boundary_source="analysis")
             except Exception:
                 score = np.nan
             single_scores.append(score)
@@ -1217,12 +1227,12 @@ class TestBatchBorderScores:
         # 1D array should raise
         firing_rate_1d = np.random.rand(env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            batch_border_scores(env, firing_rate_1d)
+            batch_border_scores(env, firing_rate_1d, boundary_source="analysis")
 
         # Wrong n_bins should raise
         firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
         with pytest.raises(ValueError, match="bins"):
-            batch_border_scores(env, firing_rates_wrong)
+            batch_border_scores(env, firing_rates_wrong, boundary_source="analysis")
 
     def test_batch_border_scores_boundary_neuron_high_score(
         self, batch_firing_rates_for_border
@@ -1231,7 +1241,7 @@ class TestBatchBorderScores:
         from neurospatial.encoding._metrics import batch_border_scores
 
         firing_rates, env = batch_firing_rates_for_border
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         # Neuron 1 fires on boundary - should have positive score
         # (if not NaN)
@@ -1245,7 +1255,7 @@ class TestBatchBorderScores:
         from neurospatial.encoding._metrics import batch_border_scores
 
         firing_rates, env = batch_firing_rates_for_border
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         # Neuron 1 fires on boundary, Neuron 2 fires in center
         # Boundary neuron should have higher score than center neuron
@@ -1261,7 +1271,7 @@ class TestBatchBorderScores:
         # This is an edge case that may return NaN
         firing_rates = np.ones((2, env.n_bins)) * 5.0
 
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.shape == (2,)
         # Implementation may handle this differently, but shape should be correct
@@ -1278,7 +1288,7 @@ class TestBatchBorderScores:
         firing_rates[0, 10:15] = np.nan
 
         # Should not raise
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.shape == (2,)
 
@@ -1289,7 +1299,7 @@ class TestBatchBorderScores:
         env = env_2d_grid
         firing_rates = np.zeros((2, env.n_bins))
 
-        scores = batch_border_scores(env, firing_rates)
+        scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
 
         assert scores.shape == (2,)
         # Zero firing rate → NaN expected
@@ -1304,8 +1314,12 @@ class TestBatchBorderScores:
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
         # Test with different thresholds
-        scores_03 = batch_border_scores(env, firing_rates, threshold=0.3)
-        scores_05 = batch_border_scores(env, firing_rates, threshold=0.5)
+        scores_03 = batch_border_scores(
+            env, firing_rates, threshold=0.3, boundary_source="analysis"
+        )
+        scores_05 = batch_border_scores(
+            env, firing_rates, threshold=0.5, boundary_source="analysis"
+        )
 
         assert scores_03.shape == (2,)
         assert scores_05.shape == (2,)
@@ -1319,8 +1333,12 @@ class TestBatchBorderScores:
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
         # Test both distance metrics
-        scores_geo = batch_border_scores(env, firing_rates, metric="geodesic")
-        scores_euc = batch_border_scores(env, firing_rates, metric="euclidean")
+        scores_geo = batch_border_scores(
+            env, firing_rates, metric="geodesic", boundary_source="analysis"
+        )
+        scores_euc = batch_border_scores(
+            env, firing_rates, metric="euclidean", boundary_source="analysis"
+        )
 
         assert scores_geo.shape == (2,)
         assert scores_euc.shape == (2,)
@@ -1334,8 +1352,12 @@ class TestBatchBorderScores:
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
         # Test with different min_area values
-        scores_no_filter = batch_border_scores(env, firing_rates, min_area=0.0)
-        scores_high_filter = batch_border_scores(env, firing_rates, min_area=10000.0)
+        scores_no_filter = batch_border_scores(
+            env, firing_rates, min_area=0.0, boundary_source="analysis"
+        )
+        scores_high_filter = batch_border_scores(
+            env, firing_rates, min_area=10000.0, boundary_source="analysis"
+        )
 
         assert scores_no_filter.shape == (2,)
         assert scores_high_filter.shape == (2,)
@@ -1381,7 +1403,9 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         firing_rate[0] = 10.0
 
         with pytest.raises(RuntimeError, match=r"geodesic distance"):
-            border_score(env, firing_rate, metric="geodesic")
+            border_score(
+                env, firing_rate, metric="geodesic", boundary_source="analysis"
+            )
 
     def test_batch_border_scores_failures_mask_catches_dijkstra_failure(
         self, monkeypatch
@@ -1406,7 +1430,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         firing_rates[1, 5] = 10.0
 
         with pytest.warns(UserWarning, match=r"raised an exception for 2 of 2"):
-            result = batch_border_scores(env, firing_rates)
+            result = batch_border_scores(env, firing_rates, boundary_source="analysis")
         assert result.n_failures == 2
         assert bool(result.failures.all())
         assert np.isnan(result.scores).all()

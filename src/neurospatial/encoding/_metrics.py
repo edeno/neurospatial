@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -751,6 +751,7 @@ def batch_border_scores(
     threshold: float = 0.3,
     min_area: float = 0.0,
     metric: str = "geodesic",
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 
@@ -778,6 +779,10 @@ def batch_border_scores(
           connectivity, appropriate for irregular environments or those with obstacles.
         - "euclidean": Straight-line distance in physical space. Generally faster
           for large environments.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared walls, or the explicitly requested legacy boundary-bin
+        approximation. Missing physical geometry raises before the unit loop.
 
     Returns
     -------
@@ -830,7 +835,7 @@ def batch_border_scores(
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
     >>> firing_rates = rng.random((5, env.n_bins)) * 10
-    >>> scores = batch_border_scores(env, firing_rates)
+    >>> scores = batch_border_scores(env, firing_rates, boundary_source="analysis")
     >>> scores.shape
     (5,)
 
@@ -869,6 +874,13 @@ def batch_border_scores(
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
+    from neurospatial.ops._boundaries import boundary_geometry
+
+    if boundary_source not in ("physical", "analysis"):
+        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+    if boundary_source == "physical":
+        boundary_geometry(env, "physical")
+
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
@@ -883,6 +895,7 @@ def batch_border_scores(
                 threshold=threshold,
                 min_area=min_area,
                 metric=metric,  # type: ignore[arg-type]
+                boundary_source=boundary_source,
             )
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so

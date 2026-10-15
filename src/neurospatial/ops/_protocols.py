@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
     from scipy import sparse
 
+    from neurospatial.arena import Arena
+    from neurospatial.layout._binning import Binning
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import DiffusionEigenbasisCache
 
@@ -67,3 +69,13 @@ class WaveletGeometryConsumer(DiffusionGeometryConsumer, Protocol):
     def bin_centers(self) -> NDArray[np.float64]: ...
 
     def _require_face_geometry(self, operation: str) -> FaceGeometry: ...
+
+
+class BoundaryConsumer(Protocol):
+    """Continuous domain and explicit cells for physical/analysis boundaries."""
+
+    @property
+    def arena(self) -> Arena: ...
+
+    @property
+    def _binning(self) -> Binning: ...

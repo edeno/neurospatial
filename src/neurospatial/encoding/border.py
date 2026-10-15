@@ -29,13 +29,15 @@ def border_score(
     threshold: float = 0.3,
     min_area: float = 0.0,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.
 
     The border score quantifies how much a cell's firing field is aligned with
     environmental boundaries (walls). It ranges from -1 (no boundary coverage
-    with positive boundary distance) to +1 (field bins lie on the boundary).
+    with positive wall distance) to +1 (zero mean wall distance). Physical mode
+    uses declared walls; analysis mode keeps the legacy boundary-bin formula.
     Adapts the algorithm from Solstad et al. (2008) to general graphs.
 
     Parameters
@@ -62,6 +64,15 @@ def border_score(
         Default is 'geodesic' to match the original implementation and ensure
         compatibility with irregular graph structures.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Physical mode requires asserted planar footprint rings or explicit
+        internal walls. Coverage is the fraction of their total length covered
+        by field cells; distance is mean center-to-wall distance normalized by
+        the wall diameter (maximum point separation). Geodesic mode adds center-to-wall seed
+        lengths to paths on the retained graph; unavailable routes return NaN.
+        Analysis mode explicitly retains the legacy boundary-bin formula below.
+        It treats analysis edges as an approximation, not measured walls.
+
     Returns
     -------
     float
@@ -73,7 +84,7 @@ def border_score(
 
     Notes
     -----
-    **Algorithm** (adapted for irregular graphs):
+    **Analysis-mode algorithm** (adapted for irregular graphs):
 
     1. Segment field at threshold: bins where `firing_rate >= threshold * peak`
     2. Compute boundary coverage (cM): fraction of boundary bins in field
@@ -81,7 +92,18 @@ def border_score(
        nearest boundary bin, normalized by the bin-center bounding-box diagonal
     4. Border score: `(cM - d) / (cM + d)`
 
-    **Interpretation**:
+    **Physical-mode algorithm**: replace boundary-bin coverage with the
+    fraction of declared wall length covered by the union of field cells.
+    Measure mean distance from field centers to actual walls, rather than to
+    boundary-bin centers. Normalize by the wall diameter (maximum point separation). Geodesic
+    distances use wall-adjacent seeds with their nonzero wall distances and
+    paths on the retained graph. If any field bin lacks a represented route,
+    return NaN; do not silently discard that bin. This remains a generalized
+    border screen, not the original rectangular-arena estimator or a calibrated
+    significance test. A crop can limit represented geodesic routes; Euclidean
+    distance remains independent of the active navigation graph.
+
+    **Interpretation of the analysis-mode formula**:
 
     - **+1**: Field covers boundary bins with zero mean boundary distance
     - **0**: Boundary coverage equals the normalized mean boundary distance
@@ -176,7 +198,7 @@ def border_score(
     >>> boundary_bins = env.boundary_bins
     >>> firing_rate[boundary_bins] = 5.0
     >>>
-    >>> score = border_score(env, firing_rate)
+    >>> score = border_score(env, firing_rate, boundary_source="analysis")
     >>> print(f"Border score: {score:.3f}")  # doctest: +SKIP
     Border score: 0.850
 
@@ -203,6 +225,14 @@ def border_score(
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
+    from neurospatial.ops._boundaries import boundary_geometry
+
+    if boundary_source not in ("physical", "analysis"):
+        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+    walls = (
+        boundary_geometry(env, "physical") if boundary_source == "physical" else None
+    )
+
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
         return np.nan
@@ -226,7 +256,12 @@ def border_score(
     if area < min_area:
         return np.nan
 
-    # Get boundary bins
+    if walls is not None:
+        from neurospatial.encoding._physical_border import _physical_border_score
+
+        return _physical_border_score(env, field_bins, walls, metric)
+
+    # Explicit legacy approximation: analysis-boundary bins.
     boundary_bins = env.boundary_bins
 
     if len(boundary_bins) == 0:
