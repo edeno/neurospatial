@@ -485,7 +485,6 @@ def _restore_environment(
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._codecs import decode
     from neurospatial.layout._context import grid_index
-    from neurospatial.layout._validation import _validate_components, _validate_graph
     from neurospatial.regions import Region, Regions
 
     try:
@@ -540,8 +539,6 @@ def _restore_environment(
         )
         ranges = metadata.get("dimension_ranges")
         graph = nx.node_link_graph(metadata["graph"], edges="links")
-        _validate_graph(binning, graph)
-        _validate_components(binning, metadata["is_linearized_track"], coordinate_kind)
         context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays

@@ -6992,7 +6992,7 @@ class Environment(Generic[_C]):
         )
         if clip_mapping is not None:
             binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
-        _validate_clip_mapping(binning)
+            _validate_clip_mapping(binning)
         polar = coordinate_kind == "polar"
         index = (
             _grid_index if isinstance(_grid_index, GridIndex) else grid_index(binning)

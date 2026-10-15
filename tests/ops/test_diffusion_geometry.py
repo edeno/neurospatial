@@ -2,6 +2,7 @@
 
 import warnings
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import networkx as nx
 import numpy as np
@@ -317,7 +318,18 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
         return setup(cls, binning, **kwargs)
 
     monkeypatch.setattr(Environment, "_from_binning", classmethod(counting_setup))
-    restored = _round_trip(original, how, tmp_path)
+    from neurospatial.layout import _validation
+
+    with (
+        patch.object(
+            _validation, "_validate_graph", wraps=_validation._validate_graph
+        ) as graph_check,
+        patch.object(
+            _validation, "_validate_components", wraps=_validation._validate_components
+        ) as component_check,
+    ):
+        restored = _round_trip(original, how, tmp_path)
+    assert graph_check.call_count == component_check.call_count == 1
     assert len(calls) == 1 and calls[0] is not None
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
 
