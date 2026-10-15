@@ -128,6 +128,57 @@ def test_arbitrary_pair_order_and_orientation_define_calculus(restore):
         )
 
 
+@pytest.mark.parametrize("region", [box(0, 0, 2, 2), box(0, 0, 2, 1)])
+def test_clip_preserves_declared_navigation_paths_at_unchanged_endpoints(region):
+    env = Environment.from_bins(_rectilinear())
+    child = env.clip(region)
+    parent_bins = child.clip_mapping.parent_bin_indices
+    for u, v, attrs in child.connectivity.edges(data=True):
+        assert (
+            attrs["distance"]
+            == env.connectivity.edges[parent_bins[u], parent_bins[v]]["distance"]
+        )
+    restored = Environment.from_dict(child.to_dict())
+    np.testing.assert_array_equal(
+        restored._binning.bins.pair_distances, child._binning.bins.pair_distances
+    )
+
+
+def test_clip_refuses_to_guess_navigation_paths_after_moving_endpoints():
+    env = Environment.from_bins(_rectilinear())
+    with pytest.raises(
+        ValueError, match=r"navigation path.*endpoint|endpoint.*navigation path"
+    ):
+        env.clip(box(0.25, 0, 2, 2))
+    np.testing.assert_array_equal(env._binning.bins.pair_distances, [2.0, 3.0, 4.0])
+
+
+def test_clip_can_remove_declared_paths_without_guessing_new_lengths():
+    env = Environment.from_bins(_rectilinear())
+    child = env.clip(box(0.3, 0, 0.9, 0.75))
+    assert child.n_bins == 1
+    assert child.connectivity.number_of_edges() == 0
+    np.testing.assert_allclose(child.bin_centers, [[0.6, 0.375]])
+
+
+def test_clip_updates_euclidean_edges_without_changing_unaffected_declared_paths():
+    native = Environment.from_grid_mask(
+        np.ones((3, 1), dtype=bool),
+        grid_edges=(np.arange(4.0), np.arange(2.0)),
+    )
+    bins = replace(native._binning.bins, pair_distances=np.array([3.0, 1.0]))
+    env = Environment.from_bins(
+        replace(
+            native._binning, bins=bins, faces=KnownFaces(native._binning.faces.build())
+        )
+    )
+    child = env.clip(box(0, 0, 2.8, 1))
+    assert child.connectivity.edges[0, 1]["distance"] == 3.0
+    assert child.connectivity.edges[1, 2]["distance"] == pytest.approx(0.9)
+    # Finite-volume distances still describe center-to-face flux geometry.
+    np.testing.assert_allclose(child._binning.faces.build().distance, [1.0, 0.9])
+
+
 def test_ingress_and_exports_do_not_alias_explicit_bin_records():
     source = _rectilinear()
     env = Environment.from_bins(source)
