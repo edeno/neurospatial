@@ -676,6 +676,7 @@ class EnvironmentFactories:
         node_positions: Sequence[Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -705,6 +706,10 @@ class EnvironmentFactories:
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
             For a single contiguous track this is typically 0.0.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -803,6 +808,7 @@ class EnvironmentFactories:
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            track_width=track_width,
         )
         if units is not None:
             env.units = units
@@ -819,6 +825,7 @@ class EnvironmentFactories:
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -894,6 +901,10 @@ class EnvironmentFactories:
             Length of each bin along the linearized track.
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -1003,6 +1014,7 @@ class EnvironmentFactories:
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            track_width=track_width,
         )
         if units is not None:
             env.units = units
@@ -1052,7 +1064,9 @@ class EnvironmentFactories:
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
             corridors. When omitted, the physical footprint stays unknown
-            and the existing nearest-track lookup remains available.
+            and nearest-track projection through ``bin_at`` remains available.
+            ``contains`` requires a known footprint and raises when width is
+            omitted.
 
         Returns
         -------

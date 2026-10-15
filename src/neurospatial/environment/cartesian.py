@@ -69,6 +69,10 @@ class CartesianCoordinates:
         For nearest-neighbor mapping with caching and tie-breaking, see
         `neurospatial.ops.map_points_to_bins()`.
 
+        A track without a declared width retains nearest-track projection:
+        a finite point can map to a bin even when far from the centerline.
+        Use ``contains`` with a declared ``track_width`` to check its footprint.
+
         Parameters
         ----------
         points_nd : NDArray[np.float64], shape (n_points, n_dims)
@@ -148,11 +152,16 @@ class CartesianCoordinates:
         ValueError
             If ``points_nd`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
+        NotImplementedError
+            If a linearized track has no declared physical footprint.
+            Supply ``track_width`` when constructing the track, or use
+            ``bin_at`` to project points without asserting containment.
 
         Notes
         -----
-        This method is optimized to avoid redundant KDTree queries by reusing
-        the bin index computation from `bin_at()` and checking for the -1 sentinel.
+        Tracks require a declared width: a centerline and topology alone do
+        not establish which off-track points are inside. For other layouts,
+        containment reuses the bin lookup and checks for the -1 sentinel.
 
         Examples
         --------
@@ -166,8 +175,14 @@ class CartesianCoordinates:
         [ True False]  # First point in environment, second outside
 
         """
-        # Optimized: compute indices once and check for -1 sentinel
-        # This avoids redundant KDTree queries compared to calling bin_at() separately
+        if self.is_linearized_track and not self.arena.domain_known:
+            raise NotImplementedError(
+                _format_error(
+                    "contains() requires a known track footprint.",
+                    why="A centerline and bin size do not determine the physical track width.",
+                    fix="supply track_width when constructing the track, or use bin_at() for nearest-track projection",
+                )
+            )
         indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
