@@ -1557,7 +1557,7 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
         distance_bin_size: float,
         angle_bin_size: float,
         *,
-        circular_angle: bool = True,
+        circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> EgocentricPolarEnvironment:
@@ -1582,10 +1582,11 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
             Must be positive.
         angle_bin_size : float
             Size of each angle bin in radians. Must be positive.
-        circular_angle : bool, default=True
-            If True, the angle dimension wraps circularly, connecting the
-            first and last angle bins at each distance ring. Appropriate
-            when ``angle_range`` spans a full circle.
+        circular_angle : bool or None, default=None
+            Whether to join the first and last angle bins at each distance
+            ring. None wraps a full-circle range (2π radians) and leaves a
+            partial range open. True requires a full circle; False leaves
+            the angular axis open even for a full-circle range.
         connect_diagonal_neighbors : bool, default=True
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
