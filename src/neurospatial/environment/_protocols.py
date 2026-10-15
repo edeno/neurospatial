@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._coordinates import CoordinateSystem
     from neurospatial.environment.trajectory import BinSequenceWithRuns
+    from neurospatial.layout._binning import Binning
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import (
@@ -58,6 +59,9 @@ class EnvironmentProtocol(Protocol):
     ``tests/typing/environment_protocol.py`` checks both concrete types.
     Read-only members are properties so cached descriptors match the protocol.
     """
+
+    @property
+    def _binning(self) -> Binning: ...
 
     # Core attributes
     name: str
@@ -340,6 +344,9 @@ class TrajectoryBinningConsumer(Protocol):
     """Point lookup, bin counts and layout for binning a trajectory."""
 
     @property
+    def _binning(self) -> Binning: ...
+
+    @property
     def n_bins(self) -> int: ...
 
     @property
@@ -394,6 +401,9 @@ class RebinConsumer(Protocol):
     @property
     def units(self) -> str | None: ...
 
+    @property
+    def regions(self) -> Regions: ...
+
 
 class SubsetConsumer(Protocol):
     """Published geometry, regions and metadata for selecting spatial bins."""
@@ -434,6 +444,9 @@ class SubsetConsumer(Protocol):
 
 class InterpolationConsumer(Protocol):
     """Bin geometry and cached point lookup for interpolating a scalar field."""
+
+    @property
+    def _binning(self) -> Binning: ...
 
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...

@@ -2,20 +2,23 @@
 
 **Committed**: 2026-10-13
 
-**Status:** Not started.
+**Status:** Complete on `feature/environment-representation`.
 **Status reviewed:** 2026-10-14.
 
-The representation phases remain planned. Current
-[environment construction](../../../src/neurospatial/environment/core.py) still
-publishes layout-backed geometry,
-[subsets](../../../src/neurospatial/environment/transforms.py) still use
-`_SubsetLayout`, and [file loading](../../../src/neurospatial/io/files.py) still
-rebuilds layouts. The proposed `Binning`/`SpatialBins` representation has not
-landed. [Baseline tooling](../../../scripts/environment_baseline.py) is present;
-it does not establish completion of the representation phases. Continuous
-behavior's geometry follow-ons and dependent correspondence/snapshot slices
-need this work; initial observation and signal work can proceed independently.
-The continuous behavior plan does not supersede this refactor.
+| Phase | Status |
+| --- | --- |
+| 1 — Binning snapshot | Complete |
+| 2a — Data locators | Complete |
+| 2b — Shapes and plots | Complete |
+| 3 — Save binnings | Complete |
+| 4 — Derived environments | Complete |
+
+Validation evidence: [validation.md](validation.md).
+
+These phases provide the foundation for continuous behavior's geometry
+follow-ons and dependent correspondence/snapshot slices. Initial observation
+and signal work can proceed independently. The continuous behavior plan does
+not supersede this refactor; its additional contracts remain separate work.
 
 Environments will store their bins, point lookup and optional structure as data,
 built once by a layout and then kept. An environment made by subsetting,

@@ -13,9 +13,75 @@ from typing import Any
 import numpy as np
 import pytest
 
-from neurospatial import Environment
-from neurospatial.decoding.posterior import decode_position
-from neurospatial.encoding.spatial import compute_spatial_rates
+from neurospatial import Environment, IncompatibleEnvironmentError
+from neurospatial.decoding.posterior import decode_position, decode_position_summary
+from neurospatial.encoding.spatial import SpatialRatesResult, compute_spatial_rates
+
+
+@pytest.fixture
+def small_rates() -> SpatialRatesResult:
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0) * 10,) * 2
+    )
+    env.units = "cm"
+    env.frame = "world"
+    return SpatialRatesResult(
+        firing_rates=np.array([[1.0, 2.0, 3.0, 4.0]]),
+        occupancy=np.ones(4),
+        env=env,
+        method="binned",
+        bandwidth=5.0,
+    )
+
+
+@pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
+@pytest.mark.parametrize("validate", [True, False])
+@pytest.mark.parametrize(
+    "mismatch", ["coordinates", "units", "frame", "topology", "measures"]
+)
+def test_rate_result_rejects_different_environment(
+    small_rates, decode, validate, mismatch, monkeypatch
+) -> None:
+    """Equal bin counts cannot establish spatial or coordinate compatibility."""
+    env = small_rates.env.copy()
+    if mismatch == "coordinates":
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            grid_edges=(1000 + np.arange(3.0) * 10,) * 2,
+        )
+        env.units, env.frame = "cm", "world"
+    elif mismatch == "topology":
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            grid_edges=(np.arange(3.0) * 10,) * 2,
+            connect_diagonal_neighbors=False,
+        )
+        env.units, env.frame = "cm", "world"
+    elif mismatch == "measures":
+        monkeypatch.setattr(
+            env.layout, "bin_sizes", lambda: small_rates.env.bin_sizes * 2
+        )
+        # Measures are snapshotted at publication, rather than read lazily.
+        env = Environment(
+            layout=env.layout, layout_type_used=env.layout._layout_type_tag
+        )
+        env.units, env.frame = "cm", "world"
+    else:
+        setattr(env, mismatch, "m" if mismatch == "units" else "camera")
+
+    with pytest.raises(
+        IncompatibleEnvironmentError, match=r"encoding result.*environment"
+    ):
+        decode(env, np.array([[0], [1]]), small_rates, 0.1, validate=validate)
+
+
+@pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
+def test_rate_result_accepts_equivalent_copied_environment(small_rates, decode) -> None:
+    counts = np.array([[0], [1]])
+    reference = decode(small_rates.env, counts, small_rates, 0.1)
+    copied = decode(small_rates.env.copy(), counts, small_rates, 0.1)
+    np.testing.assert_array_equal(copied.map_position, reference.map_position)
+    np.testing.assert_array_equal(copied.posterior_entropy, reference.posterior_entropy)
 
 
 def _setup() -> tuple[Environment, np.ndarray, object, float]:

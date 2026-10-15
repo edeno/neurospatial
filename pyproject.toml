@@ -150,6 +150,7 @@ python_functions = "test_*"
 addopts = "-v --strict-markers -n auto --dist=loadscope -m \"not slow and not napari\""
 # Register custom markers to enable --strict-markers
 markers = [
+    "hypothesis: property tests driven by Hypothesis",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: integration tests with external dependencies",
     "napari: napari GUI tests (require single-threaded execution)",

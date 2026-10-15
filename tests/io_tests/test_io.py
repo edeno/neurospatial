@@ -81,7 +81,7 @@ class TestSerialization:
             data = json.load(f)
 
         assert "schema_version" in data
-        assert data["schema_version"] == "Environment-v1"
+        assert data["schema_version"] == "Environment-v2"
         assert "library_version" in data
         assert "created_at" in data
         assert data["name"] == "test_env"
@@ -131,8 +131,8 @@ class TestSerialization:
 
         assert isinstance(data, dict)
         assert "schema_version" in data
-        assert "bin_centers" in data
-        assert isinstance(data["bin_centers"], list)
+        assert "binning/bins/centers" in data["arrays"]
+        assert isinstance(data["arrays"]["binning/bins/centers"], list)
 
         # Ensure it's JSON serializable
         json_str = json.dumps(data)
@@ -315,12 +315,8 @@ class TestAtomicWriteAndDtypes:
         leftovers = list(tmp_path.iterdir())
         assert leftovers == [], f"Unexpected leftover files: {leftovers}"
 
-    def test_from_file_forces_bin_centers_float64(self, simple_env, tmp_path):
-        """from_file must coerce bin_centers to float64 even if stored float32.
-
-        The in-memory from_dict path enforces float64; from_file used to load
-        whatever dtype was in the .npz, bypassing that guarantee.
-        """
+    def test_from_file_rejects_array_dtype_disagreement(self, simple_env, tmp_path):
+        """Stored dtype metadata catches an independently rewritten array."""
         import json
 
         import networkx as nx
@@ -345,8 +341,8 @@ class TestAtomicWriteAndDtypes:
         assert "graph" in meta
         nx.node_link_graph(meta["graph"], edges="links")  # validates structure
 
-        loaded = from_file(output_path)
-        assert loaded.bin_centers.dtype == np.float64
+        with pytest.raises(ValueError, match=r"bin_centers.*dtype"):
+            from_file(output_path)
 
     def test_string_list_layout_param_survives_round_trip(self, simple_env, tmp_path):
         """A list-of-strings layout parameter must not be coerced to an object array.
@@ -459,11 +455,18 @@ class TestAllLayoutRoundTrip:
         orig_edges = {frozenset(e) for e in env.connectivity.edges()}
         loaded_edges = {frozenset(e) for e in loaded.connectivity.edges()}
         assert loaded_edges == orig_edges
-        if env.active_mask is not None:
+        if (
+            env._binning.rectilinear is not None
+            or env._binning.linearization is not None
+        ):
             assert loaded.active_mask is not None
             np.testing.assert_array_equal(
                 np.sort(loaded.active_mask.ravel()),
                 np.sort(env.active_mask.ravel()),
+            )
+        else:
+            np.testing.assert_array_equal(
+                loaded.active_mask, np.ones(env.n_bins, dtype=bool)
             )
 
     def test_to_dict_roundtrip_graph_layout(self):

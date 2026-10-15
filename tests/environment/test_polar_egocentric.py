@@ -222,7 +222,9 @@ class TestCircularConnectivity:
 
         # Verify types
         assert isinstance(edge_data["distance"], float)
-        assert isinstance(edge_data["vector"], list)
+        assert isinstance(edge_data["vector"], tuple)
+        with pytest.raises(TypeError):
+            edge_data["vector"][0] = 99.0
         assert isinstance(edge_data["angle_2d"], float)
         assert isinstance(edge_data["edge_id"], int)
 

@@ -111,10 +111,10 @@ layout capability, defined in `neurospatial.layout._diffusion`:
   so zero-area (corner-touching) edges and isolated bins form separate
   components.
 
-A layout has the capability only when it defines the method, so `isinstance`
-against the protocol is a truthful capability check. A layout that cannot
-supply geometry may define `_explain_missing_geometry(operation)` to tailor the
-error, as layouts read from non-grid NWB records do.
+The layout-to-binning factory checks these protocols once when publishing
+`env._binning`. Environment operations read the resulting components. A layout that cannot
+supply geometry is represented by a `MissingFaces` reason. Saved binnings use
+`KnownFaces` for validated geometry and retain that reason when geometry is absent.
 
 Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
 Polar environments are built on `_PolarGridLayout`, a masked grid over
@@ -129,20 +129,56 @@ seam edges before the environment is initialized. Its masked-grid build records
 
 Layouts own `connectivity`, `bin_centers` and the grid geometry, and an
 environment publishes them read-only: its geometry attributes are views of one
-frozen `_PublishedGeometry` that cannot be reassigned, the arrays reject
-writes, and the graph is frozen. `_setup_from_layout` swaps that object whole
-and advances `_state_version`, which keys every derived cache, in one step. Factories and readers share one construction path: the file and NWB
-readers call `_from_saved_layout`, which rebuilds the layout from its saved
-parameters (and with it every derived lookup), checks the saved bin centers
-against it, replaces the rebuilt graph with the saved one (authoritative for
-4-connected grids, open angular axes and physical polar distances), and
-constructs the environment once. `_setup_from_layout` validates the graph before
-changing anything, synchronizes the environment's views, advances its state
-version and clears all analysis caches; `copy()` rebuilds from the layout too.
-Swapping in a different layout object, or changing a layout's bins, and calling
-it again is not supported.
+frozen `_PublishedGeometry` that cannot be reassigned. It includes one `Binning`
+snapshot with owned bin measures and ordered neighbor pairs. The arrays reject
+writes, and both graph topology and its attribute dictionaries reject edits.
+Node positions, original grid indices and edge vectors are owned tuples, so
+restoration cannot leave mutable coordinate lists aliased by graph copies.
+`env.connectivity.copy()` supplies an editable graph for separate analyses.
 
-`Environment._face_geometry` caches the validated faces once per state version;
+Stored node-link graphs use an optional `_neurospatial_reserved_attributes`
+sidecar to preserve user attributes named `id`, `source`, `target`, or multigraph
+`key`, which NetworkX otherwise overwrites with graph identities. Its rows must
+match the graph's identities and contain only these reserved attributes. Records
+without the sidecar retain their existing format. Older readers can still read
+the topology of new records, but retain their previous limitation of dropping
+these reserved user attributes; use a current reader to recover them.
+
+`_setup_from_layout` swaps that object whole and advances `_state_version`,
+which keys every derived cache, in one step. Factories build native layouts;
+readers decode the saved binning and node-link graph into `BinningLayout`, a
+protocol-compatible facade. Neither loading nor copying a loaded environment
+runs a layout builder. The facade checks graph positions, ordered edges and
+distances, face measures, and agreement between locators and their grid, shape
+or track components before publication. Its legacy grid fields derive from
+those components. Descriptive build parameters are retained for inspection.
+`_setup_from_layout` validates the graph, publishes the geometry and clears
+analysis caches through the normal constructor. Changing a layout's bins and
+calling it again is not supported.
+
+`subset` and `apply_transform` derive a binning through `layout/_derive.py` and
+publish it through the same facade. Subsets select whole bins and restrict
+ordered faces, locators and components. Translations and similarities preserve
+finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
+Other affine maps retain inverse lookup and cell measures, with a `MissingFaces`
+reason where right angles are lost; tracks refuse non-similarities. New
+derivations follow these rules and never rebuild through a factory.
+Triangle drawing vertices are retained under all invertible affine maps,
+independently of whether finite-volume faces remain valid for smoothing.
+Custom layout lookup and track conversions retain their delegated in-memory
+behavior through private adapters; saving them still requires a supported codec.
+
+Files and dictionaries use `Environment-v2`; NWB environment records use `2.0`.
+Older records are refused with instructions to recreate and re-save the
+environment. Pure codecs in `layout/_codecs.py` store typed arrays and JSON
+metadata; bounded KD-tree and Delaunay memos are rebuilt from saved data.
+Standard NWB containers reject slash-containing names, so a one-row ragged
+DynamicTable stores arrays under safe column names. Its description holds the
+JSON metadata and canonical-key/shape/dtype mapping, without padding or a
+custom extension.
+
+`Environment._face_geometry` builds from `env._binning.faces` and caches the
+validated faces once per state version;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
 operators all derive from it. Consumers read it through
 `_require_face_geometry(operation)`, which names the analysis when the layout
@@ -200,11 +236,12 @@ measures distance, chooses length scales or names axes asks
 `CoordinateSystem` class with those rules; analysis code does not test the
 persistence type tag `_POLAR`.
 
-Layout-specific operations check a capability protocol on the layout, as
-smoothing does with `FiniteVolumeGeometryProvider`. Linear interpolation and
-time allocation use `RectilinearGridProvider`; track coordinate conversions
-use `TrackLinearizationProvider`. A layout has the capability
-when it defines the method. Do not dispatch new behavior by comparing
+Layout-specific operations read components from `env._binning`: faces for
+smoothing, a rectilinear grid for linear interpolation and time allocation,
+and linearization for track coordinate conversions. Only the layout-to-binning
+factory checks `FiniteVolumeGeometryProvider`, `RectilinearGridProvider` and
+`TrackLinearizationProvider` on layouts. A layout supplies a capability when it
+defines the corresponding method. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
 alternative. Only `rebin` still uses a layout tag: its documented activity rule marks
 every coarse cell active, so widening it to masked arenas would change

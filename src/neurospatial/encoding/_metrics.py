@@ -40,12 +40,12 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.encoding._base import _is_jax_array
 
 
 @dataclass(frozen=True, repr=False)
-class BatchScoresResult(ResultMixin):
+class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for per-neuron batch metric scores plus a per-neuron failure mask.
 
     Returned by :func:`batch_grid_scores` and :func:`batch_border_scores` so a
@@ -76,6 +76,10 @@ class BatchScoresResult(ResultMixin):
 
     scores: NDArray[np.float64]
     failures: NDArray[np.bool_]
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of the scores and failure mask."""
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

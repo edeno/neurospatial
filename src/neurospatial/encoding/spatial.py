@@ -54,7 +54,14 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin, UnitSelectionMixin, label_at
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    UnitSelectionMixin,
+    _copy_analysis_settings,
+    label_at,
+    read_only_copy,
+)
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
@@ -611,6 +618,7 @@ def _spatial_summary_frame(
     return df
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
@@ -1435,6 +1443,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         return self.spatial_information() >= min_info
 
 
+@_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
 class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of spatial rate computation for multiple neurons.
@@ -3860,7 +3869,7 @@ default="diffusion_kde"
 
 
 @dataclass(frozen=True, repr=False)
-class DirectionalPlaceFields(ResultMixin):
+class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     """Container for direction-conditioned place field results.
 
     Stores firing rate maps computed separately for different movement
@@ -3919,6 +3928,31 @@ class DirectionalPlaceFields(ResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+
+    def __post_init__(self) -> None:
+        """Own each direction's arrays and prevent replacing map entries."""
+        for name in ("firing_rates", "occupancy"):
+            arrays = getattr(self, name)
+            object.__setattr__(
+                self,
+                name,
+                MappingProxyType(
+                    {label: read_only_copy(array) for label, array in arrays.items()}
+                ),
+            )
+        self._own_arrays()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Serialize read-only mappings as ordinary dictionaries."""
+        state = vars(self).copy()
+        for name in ("firing_rates", "occupancy"):
+            state[name] = dict(state[name])
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore owned arrays and read-only mappings after copying."""
+        super().__setstate__(state)
+        self.__post_init__()
 
     @property
     def spike_window_assumed(self) -> bool:

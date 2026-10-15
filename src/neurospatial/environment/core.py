@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, NoReturn, TypeVar, overload
 
@@ -44,6 +44,7 @@ from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
 from neurospatial.environment.trajectory import EnvironmentTrajectory
 from neurospatial.environment.visualization import EnvironmentVisualization
+from neurospatial.layout._binning import Binning, binning_from_layout
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.validation import (
     GraphValidationError,
@@ -68,6 +69,52 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
+class _ReadOnlyGraphAttributes(dict[str, Any]):
+    """Published graph attributes, with pickle and editable-copy support."""
+
+    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise TypeError(
+            _format_error(
+                "Environment.connectivity attributes are read-only.",
+                why="Why: editing geometry would leave cached kernels and operators stale.",
+                fix="build a new environment; use env.connectivity.copy() for an editable graph for separate analyses",
+            )
+        )
+
+    __setitem__ = _refuse_edit
+    __delitem__ = _refuse_edit
+    clear = _refuse_edit
+    pop = _refuse_edit
+    popitem = _refuse_edit
+    setdefault = _refuse_edit
+    update = _refuse_edit
+    __ior__ = _refuse_edit
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return type(self), (dict(self),)
+
+
+def _freeze_graph_attributes(graph: nx.Graph) -> None:
+    """Protect node, edge and graph attributes when publishing connectivity."""
+    # NetworkX's freeze protects topology only. Replace its attribute mappings
+    # in place so the layout and environment keep sharing the same graph.
+    for node, attrs in graph.nodes(data=True):
+        graph._node[node] = _ReadOnlyGraphAttributes(
+            attrs,
+            pos=tuple(float(value) for value in attrs["pos"]),
+            original_grid_nd_index=tuple(
+                int(value) for value in attrs["original_grid_nd_index"]
+            ),
+        )
+    for u, v, attrs in graph.edges(data=True):
+        frozen = _ReadOnlyGraphAttributes(
+            attrs, vector=tuple(float(value) for value in attrs["vector"])
+        )
+        graph._adj[u][v] = graph._adj[v][u] = frozen
+    graph.graph = _ReadOnlyGraphAttributes(graph.graph)
+    nx.freeze(graph)
+
+
 @dataclass(frozen=True)
 class _PublishedGeometry:
     """The geometry an environment publishes, replaced whole and never edited.
@@ -77,6 +124,7 @@ class _PublishedGeometry:
     cache, in the same step.
     """
 
+    binning: Binning | None
     bin_centers: NDArray[np.float64]
     connectivity: nx.Graph
     dimension_ranges: Sequence[tuple[float, float]] | None
@@ -437,6 +485,7 @@ class _BaseEnvironment(
         # Initialize attributes that will be populated by _setup_from_layout
         # Placeholder geometry until _setup_from_layout publishes the layout's
         self._geometry = _PublishedGeometry(
+            binning=None,
             bin_centers=np.empty((0, 0)),
             connectivity=nx.Graph(),
             dimension_ranges=None,
@@ -457,6 +506,21 @@ class _BaseEnvironment(
         else:
             # Initialize with an empty Regions instance if not provided
             self.regions = Regions()
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore published geometry from pickles predating binning snapshots."""
+        self.__dict__.update(state)
+        if not hasattr(self._geometry, "binning"):
+            self._geometry = replace(self._geometry, binning=None)
+            if self._is_fitted:
+                self._setup_from_layout()
+
+    @property
+    def _binning(self) -> Binning:
+        """The binning snapshot published with the current geometry."""
+        binning = self._geometry.binning
+        assert binning is not None
+        return binning
 
     # ------------------------------------------------------------------
     # Units validation
@@ -927,11 +991,10 @@ class _BaseEnvironment(
         It also applies fallbacks for certain grid-specific attributes if the
         layout is point-based to ensure consistency. It also advances the state
         version, clears all analysis caches and publishes the geometry
-        read-only. Readers restore a saved graph onto the rebuilt layout before
-        the environment is constructed (``_from_saved_layout``), so this runs
-        once per environment. Lookups a layout derives at build time are not
-        rebuilt, so swapping in a different layout or changing a layout's bins
-        and calling this again is not supported.
+        read-only. Readers decode bins, lookup and graph data into a layout
+        facade before the normal constructor, so this runs once per environment
+        without rebuilding a layout. Swapping in a different layout or changing
+        its bins and calling this again is not supported.
 
         Parameters
         ----------
@@ -992,6 +1055,7 @@ class _BaseEnvironment(
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
+        binning = binning_from_layout(self.layout, connectivity)
         grid_edges = getattr(self.layout, "grid_edges", ())
         grid_shape = getattr(self.layout, "grid_shape", None)
         active_mask = getattr(self.layout, "active_mask", None)
@@ -1014,8 +1078,9 @@ class _BaseEnvironment(
         for array in (bin_centers, active_mask, *(grid_edges or ())):
             if isinstance(array, np.ndarray):
                 array.setflags(write=False)
-        nx.freeze(connectivity)
+        _freeze_graph_attributes(connectivity)
         self._geometry = _PublishedGeometry(
+            binning=binning,
             bin_centers=bin_centers,
             connectivity=connectivity,
             dimension_ranges=self.layout.dimension_ranges,

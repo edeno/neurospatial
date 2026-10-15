@@ -5,10 +5,13 @@ on:
     branches:
       - main
       - feat/researcher-first
+  # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
-    branches:
-      - main
-      - feat/researcher-first
+
+# Only the latest commit of each PR needs to finish its checks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -39,7 +42,7 @@ jobs:
         # because napari[all] doesn't install cleanly on Windows runners.
         # napari itself is exercised by the dedicated "napari" job below.
         run: |
-          uv sync --extra dev
+          uv sync --extra dev --extra xarray
           uv pip install "ipywidgets>=8.0,<9.0" qtpy
         env:
           UV_PYTHON: python${{ matrix.python-version }}
@@ -100,6 +103,7 @@ jobs:
           uv run mypy tests/typing/top_level_lazy_exports.py
           tests/typing/finite_volume_consumers.py
           tests/typing/environment_protocol.py
+          tests/typing/binning_layout.py
           tests/typing/spike_inputs.py
         env:
           UV_PYTHON: python${{ matrix.python-version }}

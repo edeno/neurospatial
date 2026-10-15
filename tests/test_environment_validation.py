@@ -82,9 +82,16 @@ class TestValidateEnvironment:
 
     def test_validates_graph_structure(self, valid_env):
         """Test that graph validation is called."""
-        # Corrupt the graph by removing required attribute
-        node_id = next(iter(valid_env.connectivity.nodes))
-        del valid_env.connectivity.nodes[node_id]["pos"]
+        import dataclasses
+
+        # Simulate corrupted published geometry using a detached graph;
+        # the public connectivity graph rejects attribute edits.
+        malformed_graph = valid_env.connectivity.copy()
+        node_id = next(iter(malformed_graph.nodes))
+        del malformed_graph.nodes[node_id]["pos"]
+        valid_env._geometry = dataclasses.replace(
+            valid_env._geometry, connectivity=malformed_graph
+        )
 
         with pytest.raises(GraphValidationError, match="missing required attributes"):
             validate_environment(valid_env)

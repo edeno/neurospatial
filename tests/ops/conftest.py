@@ -1,5 +1,6 @@
 """Geometry fixtures shared by finite-volume operator and basis tests."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import networkx as nx
@@ -39,8 +40,8 @@ def fv_env(request, uniform_grid):
 
 
 @pytest.fixture
-def reloaded_graph_env(tmp_path):
-    """An NWB-reconstructed layout without a finite-volume geometry builder."""
+def graph_environment_round_trip(tmp_path):
+    """A native branching track and its NWB read-back with stored cell faces."""
     pynwb = pytest.importorskip("pynwb")
     from neurospatial.io.nwb import read_environment, write_environment
 
@@ -60,10 +61,33 @@ def reloaded_graph_env(tmp_path):
     env = Environment.from_graph(
         graph, edge_order=[(0, 1), (1, 2), (1, 3)], edge_spacing=10.0, bin_size=3.0
     )
-    nwbfile = pynwb.NWBFile("geometry test", "geometry", datetime.now(timezone.utc))
+    nwbfile = pynwb.NWBFile(
+        "geometry test", "geometry", datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
     write_environment(nwbfile, env)
     path = tmp_path / "environment.nwb"
     with pynwb.NWBHDF5IO(path, "w") as io:
         io.write(nwbfile)
     with pynwb.NWBHDF5IO(path, "r") as io:
-        return read_environment(io.read())
+        return env, read_environment(io.read())
+
+
+@pytest.fixture
+def reloaded_graph_env(graph_environment_round_trip):
+    return graph_environment_round_trip[1]
+
+
+@pytest.fixture
+def missing_faces_env():
+    """A data-backed refusal independent of any layout class or file format."""
+    from neurospatial.layout._binning import MissingFaces
+
+    env = Environment.linear_track(endpoints=[[0.0, 0.0], [4.0, 0.0]], bin_size=1.0)
+    env._geometry = replace(
+        env._geometry,
+        binning=replace(
+            env._binning,
+            faces=MissingFaces("Cell faces were not supplied with these bins."),
+        ),
+    )
+    return env

@@ -100,7 +100,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import linalg, stats
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -121,7 +121,7 @@ __all__ = [
 
 
 @dataclass(frozen=True, repr=False)
-class AssemblyPattern(ResultMixin):
+class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     """
     A detected cell assembly pattern.
 
@@ -170,6 +170,10 @@ class AssemblyPattern(ResultMixin):
     member_indices: NDArray[np.int64]
     explained_variance_ratio: float
 
+    def __post_init__(self) -> None:
+        """Own read-only copies of assembly weights and member indices."""
+        self._own_arrays()
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
@@ -179,7 +183,7 @@ class AssemblyPattern(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class AssemblyDetectionResult(ResultMixin):
+class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     """
     Results from cell assembly detection.
 
@@ -239,6 +243,10 @@ class AssemblyDetectionResult(ResultMixin):
     n_significant: int
     eigenvalues: NDArray[np.float64]
     threshold: float
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of activations and eigenvalues."""
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

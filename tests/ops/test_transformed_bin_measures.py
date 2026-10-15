@@ -43,8 +43,8 @@ def test_transformed_rectangular_cells_keep_physical_measures(n_dims, n_cells, k
     np.testing.assert_allclose(transformed.copy().bin_sizes, expected)
 
 
-def test_transformed_bent_track_scales_lengths_by_segment_direction():
-    """Anisotropic scaling stretches horizontal and vertical track bins differently."""
+def test_transformed_bent_track_keeps_similarity_lengths_and_refuses_anisotropy():
+    """Uniform scales preserve lengths; directional scales require rebuilding."""
     graph = nx.Graph()
     graph.add_nodes_from(
         [(0, {"pos": (0, 0)}), (1, {"pos": (6, 0)}), (2, {"pos": (6, 6)})]
@@ -53,23 +53,20 @@ def test_transformed_bent_track_scales_lengths_by_segment_direction():
     env = Environment.from_graph(
         graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
     )
-    transformed = env.apply_transform(scale_2d(2, 3))
-    expected = (
-        np.array(
-            [
-                2 if env.connectivity.nodes[i]["source_edge_id"] == 0 else 3
-                for i in range(env.n_bins)
-            ]
-        )
-        * env.bin_sizes
-    )
+    transformed = env.apply_transform(scale_2d(2))
+    expected = env.bin_sizes * 2
     np.testing.assert_allclose(transformed.bin_sizes, expected)
-    # Subsequent transforms read directions in the current coordinate frame.
     rotation = AffineND(np.array([[0.0, -1, 0], [1, 0, 0], [0, 0, 1]]))
     rotated = transformed.apply_transform(rotation)
     np.testing.assert_allclose(rotated.bin_sizes, expected)
-    twice = rotated.apply_transform(scale_2d(2, 3))
+    twice = rotated.apply_transform(scale_2d(3))
     np.testing.assert_allclose(twice.bin_sizes, env.bin_sizes * 6)
+    for candidate in (env, rotated):
+        with pytest.raises(ValueError) as caught:
+            candidate.apply_transform(scale_2d(2, 3))
+        assert "Environment.from_graph" in str(caught.value)
+        assert "Why:" in str(caught.value)
+        assert "Fix:" in str(caught.value)
 
 
 def test_transformed_bin_measures_stay_read_only_after_copy_and_cache_clear():

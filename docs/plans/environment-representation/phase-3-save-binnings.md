@@ -58,7 +58,7 @@ tracks can call `to_linear`.
   layout defines it.
 - **Rewrite files and dicts** (`io/files.py`) to the
   [v2 format](designs.md#file-format):
-  - Add `"layout_category"` (`env.layout_type`) and `"binning"` to the metadata.
+  - Add `"layout_category"` (`env.layout.layout_type`) and `"binning"` to the metadata.
   - Faces are built at save time.
   - `_restore_environment` decodes, builds `BinningLayout`, and constructs the
     environment once through the normal constructor, so `_setup_from_layout`
@@ -122,6 +122,11 @@ tracks can call `to_linear`.
     `EgocentricPolarEnvironment` member whose docstring this phase edits
     (`to_file`, `from_file`, `to_dict`, `from_dict`, `to_nwb`, `from_nwb`). The
     baseline script records them.
+
+  Loaded nonrectilinear/nontrack binnings expose the facade fallback grid
+  fields (`grid_shape=(n_bins,)`, all-active mask), as specified by the shared
+  contract. Any probes of those legacy fields may differ from native mesh or
+  hexagonal builder internals.
 
   List every differing probe in the PR, with the original-environment
   comparison that verifies it. Any other difference is a bug.

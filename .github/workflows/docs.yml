@@ -5,20 +5,18 @@ on:
     branches:
       - main
       - feat/researcher-first
+  # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
-    branches:
-      - main
-      - feat/researcher-first
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
+# Isolate PR builds; keep main deployments serial and never cancel them.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

@@ -41,15 +41,13 @@ Notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.layout.base import LayoutEngine
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
@@ -1371,14 +1369,19 @@ def apply_transform_to_environment(
     Environment
         New Environment instance with transformed coordinates and physical bin
         measures. Areas and volumes scale by the absolute determinant of the
-        linear transform; embedded track lengths scale along each segment.
+        linear transform; embedded track lengths scale uniformly under a
+        similarity transform. Finite-volume geometry is retained for
+        similarities and axis-aligned grid scaling. General affine maps retain
+        lookup but refuse smoothing when right angles between faces and center
+        links are lost. Triangle drawing vertices are retained under every
+        invertible affine map.
 
     Raises
     ------
     ValueError
         If transform dimensionality doesn't match environment dimensionality,
-        the transform is not invertible, or an anisotropic track transform
-        requires segment directions absent from a reconstructed layout.
+        the transform is not invertible, or a track transform is not a
+        similarity. Rebuild such tracks with ``Environment.from_graph``.
     RuntimeError
         If environment is not fitted.
 
@@ -1474,7 +1477,7 @@ def apply_transform_to_environment(
     # Containment is evaluated in the original layout's coordinate frame.
     # A singular transform collapses cells, so there is no unambiguous inverse.
     try:
-        inverse_transform = transform.inverse()
+        transform.inverse()
     except np.linalg.LinAlgError as exc:
         raise ValueError(
             "Environment transform must be invertible.\n"
@@ -1482,81 +1485,24 @@ def apply_transform_to_environment(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    # Transform bin centers
-    transformed_centers = transform(env.bin_centers)
+    from neurospatial.layout._binning_layout import BinningLayout
+    from neurospatial.layout._derive import transform_binning
 
-    # Cell measures transform with their physical dimension. In particular,
-    # an embedded track carries lengths, even when its coordinates are 2-D.
-    linear = transform.A[: env.n_dims, : env.n_dims]
-    bin_directions = getattr(env.layout, "_bin_directions", None)
-    measure_scale: NDArray[np.float64] | float
-    if env.is_linearized_track:
-        if bin_directions is None:
-            track_graph = env.layout._build_params_used.get("graph_definition")
-            if track_graph is not None:
-                segment_vectors = np.array(
-                    [
-                        np.asarray(track_graph.nodes[v]["pos"])
-                        - np.asarray(track_graph.nodes[u]["pos"])
-                        for u, v in track_graph.edges()
-                    ],
-                    dtype=np.float64,
-                )
-                segment_ids = np.array(
-                    [
-                        env.connectivity.nodes[i]["source_edge_id"]
-                        for i in range(env.n_bins)
-                    ],
-                    dtype=np.intp,
-                )
-                bin_directions = segment_vectors[segment_ids]
-                bin_directions /= np.linalg.norm(bin_directions, axis=1)[:, None]
-        if bin_directions is not None:
-            mapped_directions = bin_directions @ linear.T
-            directional_scale = np.linalg.norm(mapped_directions, axis=1)
-            bin_directions = mapped_directions / directional_scale[:, None]
-            measure_scale = directional_scale
-        else:
-            # A restored track may retain its lengths without its substrate.
-            # Similarity transforms still have one unambiguous length scale.
-            gram = linear.T @ linear
-            length_scale = float(np.sqrt(np.trace(gram) / env.n_dims))
-            if not np.isfinite(length_scale) or length_scale <= 0:
-                raise ValueError(
-                    "The track transform's length scale must be finite and positive. "
-                    "Use finite scale factors whose lengths can be represented in float64."
-                )
-            # Compare dimensionless geometry: an absolute tolerance on the
-            # unnormalized Gram matrix would accept any sufficiently small
-            # anisotropic transform as a uniform scale.
-            normalized_linear = linear / length_scale
-            if not np.allclose(
-                normalized_linear.T @ normalized_linear, np.eye(env.n_dims)
-            ):
-                raise ValueError(
-                    "An anisotropic transform of a track needs its segment directions. "
-                    "Rebuild the track with Environment.from_graph before transforming it, "
-                    "or use a rotation, translation or uniform scale."
-                )
-            measure_scale = length_scale
-    else:
-        measure_scale = abs(float(np.linalg.det(linear)))
-    transformed_bin_sizes = np.asarray(env.bin_sizes, dtype=np.float64) * measure_scale
+    binning = transform_binning(env._binning, transform)
+    transformed_centers = binning.bins.centers
 
     # Create new connectivity graph with updated node positions
 
     new_graph = env.connectivity.copy()
     for node_id in new_graph.nodes:
-        old_pos = new_graph.nodes[node_id]["pos"]
-        new_pos = transform(np.array([old_pos]))[0]
-        new_graph.nodes[node_id]["pos"] = tuple(new_pos)
+        new_graph.nodes[node_id]["pos"] = tuple(transformed_centers[node_id])
 
     # Recompute edge attributes (distance, vector, and angle_2d for 2D)
-    for u, v in new_graph.edges:
+    for index, (u, v) in enumerate(new_graph.edges):
         pos_u = np.array(new_graph.nodes[u]["pos"])
         pos_v = np.array(new_graph.nodes[v]["pos"])
         vec = pos_v - pos_u
-        dist = float(np.linalg.norm(vec))
+        dist = float(binning.bins.pair_distances[index])
 
         new_graph.edges[u, v]["vector"] = tuple(vec)
         new_graph.edges[u, v]["distance"] = dist
@@ -1594,75 +1540,19 @@ def apply_transform_to_environment(
             for dim in range(n_dims)
         ]
 
-    # Create new Environment using from_layout pattern
-    # We'll create a minimal layout wrapper
-
-    class TransformedLayout:
-        """Minimal layout wrapper for transformed environment."""
-
-        def __init__(
-            self,
-            centers: NDArray[np.float64],
-            graph: nx.Graph,
-            dim_ranges: list[tuple[float, float]] | None,
-            original_layout: Any,
-        ) -> None:
-            self.bin_centers = centers
-            self.connectivity = graph
-            self.dimension_ranges = dim_ranges
-            self._original_layout = original_layout
-            self._inverse_transform = inverse_transform
-            self._bin_sizes = transformed_bin_sizes
-            self._bin_directions = bin_directions
-            self.is_linearized_track = original_layout.is_linearized_track
-            self._layout_type_tag = f"{original_layout._layout_type_tag}_transformed"
-            self._build_params_used = {
-                **getattr(original_layout, "_build_params_used", {}),
-                "transformed": True,
-            }
-
-            # Copy grid attributes if present
-            for attr in ("grid_edges", "grid_shape", "active_mask"):
-                if hasattr(original_layout, attr):
-                    setattr(self, attr, getattr(original_layout, attr))
-
-        def build(self) -> None:
-            pass  # Already built
-
-        def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-            # Preserve cell boundaries and inactive bins, including under shear
-            # where the nearest transformed center need not own the point.
-            return np.asarray(
-                self._original_layout.point_to_bin_index(
-                    self._inverse_transform(points)
-                ),
-                dtype=np.intp,
-            )
-
-        def bin_sizes(self) -> NDArray[np.float64]:
-            """Original bin measures scaled by the affine map's physical Jacobian."""
-            # Deepcopy may restore writeable ndarray storage. Freeze on access
-            # too, so neither copied layouts nor the environment's cached view
-            # permit edits that permanently change physical bin measures.
-            self._bin_sizes.setflags(write=False)
-            return self._bin_sizes
-
-        def plot(self, *args: Any, **kwargs: Any) -> None:
-            raise NotImplementedError(
-                "Plotting not implemented for transformed layouts"
-            )
-
-    transformed_layout = TransformedLayout(
-        transformed_centers, new_graph, transformed_dim_ranges, env.layout
+    tag = f"{env.layout._layout_type_tag}_transformed"
+    params = {**env.layout_parameters, "transformed": True}
+    transformed_layout = BinningLayout(
+        binning,
+        connectivity=new_graph,
+        dimension_ranges=transformed_dim_ranges,
+        layout_type_tag=tag,
+        layout_type=env.layout.layout_type,
+        build_params=params,
+        is_linearized_track=env.is_linearized_track,
     )
-
-    # Create new environment
     new_name = name if name is not None else f"{env.name}_transformed"
-    # Cast to LayoutEngine since TransformedLayout satisfies the protocol structurally
-    new_env = Environment(
-        name=new_name, layout=cast("LayoutEngine", transformed_layout)
-    )
-    new_env._setup_from_layout()
+    new_env = Environment(new_name, transformed_layout, tag, params)
 
     # Transform and copy regions
     if env.regions and len(env.regions) > 0:

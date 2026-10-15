@@ -43,9 +43,9 @@ reason. This fixes four problems:
     `TransformedLayout` uses today (`ops/transforms.py:1566-1574`).
   - Add `RectilinearLocator.subset(keep)` (a new mask) and
     `RectilinearLocator.transformed(t)`. The `transformed` method is defined
-    only for a diagonal `A`: it returns a locator with edges `a_k e + t_k`,
-    reversed where `a_k < 0`. For any other `A` it returns `None`, and the
-    caller wraps the locator instead.
+    only for a diagonal `A` with every entry positive: it returns a locator
+    with edges `a_k e + t_k` in the original order. For reflections or any
+    other `A` it returns `None`, and the caller wraps the locator instead.
   - Register codecs for both wrappers. A `TransformedLocator` stores the
     inverse matrix as an `(n+1, n+1)` array.
 - **Create `src/neurospatial/layout/_derive.py`** with `subset_binning` and
@@ -61,8 +61,10 @@ reason. This fixes four problems:
   - Compute the mask with `_subset_mask` and call `subset_binning`.
   - Build the facade's legacy fields: the renumbered connectivity from the
     existing code (`transforms.py:599-632`); the grid fields from the kept
-    `rectilinear`, or the point-based fallback; and the extent from the kept
-    centers.
+    `rectilinear`, or the point-based fallback. Drawing limits encompass full
+    retained cells: grid edge bounds for rectilinear subsets, active shape
+    bounds for hexagons/triangles, and kept centers as the fallback. Center-only
+    bounds clip outer cell geometry and collapse a one-cell grid's limits.
   - Construct the environment, and copy the units and frame.
   - Regions are still dropped, as documented.
   - Delete `_grid_subset` (`:350-396`), `_SubsetLayout` (`:438-593`) and
@@ -115,8 +117,10 @@ reason. This fixes four problems:
   stage A. `subset` selects whole bins only.
 - **Exact faces under general affine maps**, which need face normals and
   Nanson's formula, are roadmap stage E. Here those faces are `MissingFaces`.
-- **Shapes under non-similarity transforms.** They're dropped, and `plot` uses
-  the center-scatter fallback. Making them exact is roadmap stage E.
+- **Regular hexagon shapes under non-similarity transforms.** They're dropped,
+  and `plot` uses the center-scatter fallback. Triangle vertices transform
+  exactly under every invertible affine map and are retained for drawing;
+  this does not supply the missing finite-volume faces needed for smoothing.
 - **Units changes from calibration transforms** (pixels to cm) belong to the
   coordinate-system work in roadmap stage B. Units are copied unchanged, as
   today.

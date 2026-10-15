@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.segmentation import _safe_gather
 from neurospatial.environment.trajectory import observed_runs
 
@@ -183,7 +183,7 @@ class PreDecisionMetrics:
 
 
 @dataclass(frozen=True, repr=False)
-class DecisionBoundaryMetrics(ResultMixin):
+class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
     """Metrics related to decision boundaries between goals.
 
     Decision boundaries are the geodesic Voronoi edges between goal regions.
@@ -220,6 +220,10 @@ class DecisionBoundaryMetrics(ResultMixin):
     distance_to_boundary: NDArray[np.float64]
     crossing_times: list[float]
     crossing_directions: list[tuple[int, int]]
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of goal labels and boundary distances."""
+        self._own_arrays()
 
     @property
     def n_crossings(self) -> int:

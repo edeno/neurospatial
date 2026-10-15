@@ -9,6 +9,7 @@ Following TDD approach: tests written before implementation.
 from __future__ import annotations
 
 import warnings
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -1351,7 +1352,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
     the score was NaN-due-to-failure.
     """
 
-    def test_border_score_raises_on_invalid_graph(self):
+    def test_border_score_raises_on_invalid_graph(self, monkeypatch):
         """Negative edge weight -> multi_source_dijkstra raises -> border_score raises.
 
         ``nx.multi_source_dijkstra_path_length`` rejects negative
@@ -1368,9 +1369,13 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # Inject negative weights to trigger Dijkstra failure.
-        for _, _, data in env.connectivity.edges(data=True):
+        # Inject an invalid test-only snapshot; published geometry is read-only.
+        graph = env.connectivity.copy()
+        for _, _, data in graph.edges(data=True):
             data["distance"] = -1.0
+        monkeypatch.setattr(
+            env, "_geometry", replace(env._geometry, connectivity=graph)
+        )
 
         firing_rate = np.zeros(env.n_bins)
         firing_rate[0] = 10.0
@@ -1378,7 +1383,9 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         with pytest.raises(RuntimeError, match=r"geodesic distance"):
             border_score(env, firing_rate, metric="geodesic")
 
-    def test_batch_border_scores_failures_mask_catches_dijkstra_failure(self):
+    def test_batch_border_scores_failures_mask_catches_dijkstra_failure(
+        self, monkeypatch
+    ):
         """The batch wrapper now sees the border_score RuntimeError and flags it."""
         from neurospatial import Environment
         from neurospatial.encoding._metrics import batch_border_scores
@@ -1387,8 +1394,12 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=2.0)
-        for _, _, data in env.connectivity.edges(data=True):
+        graph = env.connectivity.copy()
+        for _, _, data in graph.edges(data=True):
             data["distance"] = -1.0
+        monkeypatch.setattr(
+            env, "_geometry", replace(env._geometry, connectivity=graph)
+        )
 
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 0] = 10.0

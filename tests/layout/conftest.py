@@ -1,8 +1,17 @@
 """Shared fixtures for layout-engine tests."""
 
+from pathlib import Path
+
 import networkx as nx
 import numpy as np
 import pytest
+
+
+@pytest.fixture(scope="module")
+def locator_parity():
+    """Inputs and outputs recorded before lookup moved out of the layouts."""
+    with np.load(Path(__file__).parent / "data/locator_parity.npz") as recorded:
+        yield recorded
 
 
 @pytest.fixture

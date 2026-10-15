@@ -163,7 +163,7 @@ everything it needs as arrays plus scalars, except a rebuildable memo (see the
 | `MeshLocator` | phase 2a | Delaunay points, simplices, simplex-to-active map, and the boundary polygon (or `None`), applied with today's containment rule; Delaunay rebuilt as a memo | `TriangularMeshLayout.point_to_bin_index` (`layout/engines/triangular_mesh.py:192`) |
 | `NearestBinLocator` | phase 2a | centers, optional `max_distance`; KD-tree is a memo | `_KDTreeMixin.point_to_bin_index` (`layout/mixins.py:134`) |
 | `SubsetLocator(base, parent_to_child)` | phase 4 | base locator; `(n_parent_bins,)` map, -1 for dropped bins. `locate` masks the base's -1 results **before** indexing the map ([designs.md#subset](designs.md#subset)) | the subset KD-tree in `environment/transforms.py:493-531` |
-| `TransformedLocator(base, inverse)` | phase 4 | base locator; inverse `AffineND` | `TransformedLayout.point_to_bin_index` (`ops/transforms.py:1566-1574`) |
+| `TransformedLocator(base, inverse)` | phase 4 | base locator; owned inverse homogeneous matrix `(n_dims+1, n_dims+1)` | `TransformedLayout.point_to_bin_index` (`ops/transforms.py:1566-1574`) |
 
 A locator may define `subset(keep) -> Locator` or `transformed(t) -> Locator`
 for an exact, faster version, such as a `RectilinearLocator` with a new mask or
@@ -250,6 +250,7 @@ class BinningLayout:
         layout_type: str,                       # the category: "grid", "mask", "hexagonal", ...
         build_params: dict[str, Any],           # descriptive record; never re-run
         is_linearized_track: bool,
+        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     ) -> None: ...
 
     def binning(self) -> Binning: ...           # binning_from_layout returns this directly
@@ -278,7 +279,13 @@ would accept changed positions or distances.
    - `HexagonShapes.centers == bins.centers`;
    - `TriangleShapes.triangles.shape[0] == n_bins`;
    - the active bins of the linearization number `n_bins`.
-6. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
+6. A data locator and its optional grid, shape and track components agree
+   exactly on shared geometry, active masks and ordering. There is one authority
+   for grid edges and masks; changing a component without its locator is invalid.
+   Bin centers and sizes must agree with that geometry.
+   Polar grid measures include the radial bin center; the facade receives the
+   saved coordinate kind to distinguish these from Cartesian cell measures.
+7. `locator.locate(bins.centers) == arange(n_bins)`. Every bin center must
    locate to its own bin. This is one lookup of `n_bins` points.
 
 Derivations (phase 4) build the graph's `"pos"` and `"distance"` from the
@@ -327,7 +334,7 @@ Guaranteed-preservation classes:
 | Transform class | Test on the linear part `A` (n×n) | Faces kept? | Rectilinear kept? |
 | --- | --- | --- | --- |
 | translation | `A == I` exactly | yes, unchanged | yes, edges shifted |
-| similarity | `A @ A.T == s**2 I` (rtol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal with every entry positive |
+| similarity | `(A/s) @ (A/s).T == I` (rtol and atol `1e-12`), with `s > 0` | yes, scaled | only if `A` is diagonal with every entry positive |
 | axis-aligned scaling | `A` diagonal, unequal entries | only when the **parent** has `rectilinear` (every face is axis-aligned) | only if every entry is positive; edges scaled |
 | any other invertible `A` | — | no: `MissingFaces` naming the transform | no |
 
@@ -339,6 +346,16 @@ component, and keeps faces by the rules above.
 Track binnings (`measure_dim < n_dims`) accept translation and similarity only.
 Any other class raises `ValueError`, because the new bin lengths would depend on
 each bin's direction.
+
+Triangle drawing vertices are retained under every invertible affine map.
+This is independent of finite-volume face validity: a sheared or unequally
+scaled mesh still refuses smoothing when its faces lose the required right
+angles. Regular hexagon shapes remain limited to proper similarities.
+
+The normalized Gram check allows floating-point off-diagonal roundoff in a
+rotation. A zero absolute tolerance would reject ordinary rotations despite
+their unit diagonal. Normalization keeps the bound relative to scale, so a tiny
+anisotropic transform does not pass because of its absolute magnitude.
 
 `subset_binning` always keeps faces among the kept bins when the parent has
 them. Clipping bins to a region is **not** a subset; it's roadmap stage A.

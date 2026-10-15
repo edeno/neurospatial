@@ -6,20 +6,19 @@ import matplotlib
 import matplotlib.axes
 import networkx as nx
 import numpy as np
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.layout._components import HexagonShapes
+from neurospatial.layout._locators import HexLocator
+from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
     _create_hex_grid,
     _infer_active_bins_from_hex_grid,
-    _points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.utils import (
-    _generic_graph_plot,
     check_grid_size_safety,
 )
 from neurospatial.layout.validation import validate_connectivity_graph
@@ -51,6 +50,7 @@ class HexagonalLayout:
     grid_offset_x_: float | None = None
     grid_offset_y_: float | None = None
     _source_flat_to_active_id_map: dict[int, int] | None = None
+    _locator: HexLocator | None = None
 
     def __init__(self) -> None:
         """Initialize a HexagonalLayout engine."""
@@ -68,6 +68,7 @@ class HexagonalLayout:
         self.grid_offset_x_ = None
         self.grid_offset_y_ = None
         self._source_flat_to_active_id_map = None
+        self._locator = None
 
     @property
     def layout_type(self) -> str:
@@ -181,6 +182,36 @@ class HexagonalLayout:
             data["source_grid_flat_index"]: node_id
             for node_id, data in self.connectivity.nodes(data=True)
         }
+        self._build_locator()
+
+    def _build_locator(self) -> None:
+        """Snapshot hexagonal geometry and the active-bin mapping."""
+        if (
+            self.grid_offset_x_ is None
+            or self.grid_offset_y_ is None
+            or self.hex_radius_ is None
+            or self.grid_shape is None
+            or self._source_flat_to_active_id_map is None
+        ):
+            raise LayoutNotBuiltError(type(self).__name__, "hexagonal geometry")
+        assert len(self.grid_shape) == 2
+        flat_to_active = np.full(np.prod(self.grid_shape), -1, dtype=np.intp)
+        for source, active in self._source_flat_to_active_id_map.items():
+            flat_to_active[source] = active
+        self._locator = HexLocator(
+            self.grid_offset_x_,
+            self.grid_offset_y_,
+            self.hex_radius_,
+            (self.grid_shape[0], self.grid_shape[1]),
+            flat_to_active,
+        )
+
+    def locator(self) -> HexLocator:
+        """Return the owned locator, rebuilding it for older saved layouts."""
+        if self._locator is None:
+            self._build_locator()
+        assert self._locator is not None
+        return self._locator
 
     @property
     def is_linearized_track(self) -> bool:
@@ -219,79 +250,28 @@ class HexagonalLayout:
             The axes on which the layout is plotted.
 
         """
-        ax = _generic_graph_plot(
-            ax=ax,
-            graph=self.connectivity,
-            name=self._layout_type_tag,
+        return plot_hexagons(
+            ax,
+            title=self._layout_type_tag,
+            shapes=(
+                self.bin_shapes()
+                if self.hex_radius_ is not None and self.bin_centers is not None
+                else None
+            ),
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
             **kwargs,
         )
 
-        if (
-            kwargs.get("show_hexagons", True)
-            and self.hex_radius_ is not None
-            and self.bin_centers is not None
-            and self.bin_centers.shape[0] > 0
-        ):
-            hex_kws = kwargs.get(
-                "hexagon_kwargs",
-                {
-                    "edgecolor": "gray",
-                    "facecolor": "none",
-                    "alpha": 0.5,
-                    "linewidth": 0.5,
-                },
-            )
-            orientation = (
-                float(self.hex_orientation_)
-                if self.hex_orientation_ is not None
-                else 0.0
-            )
-
-            ax.scatter(
-                self.bin_centers[:, 0],
-                self.bin_centers[:, 1],
-                s=1,
-                label="hexagonal grid",
-            )
-            patches = [
-                RegularPolygon(
-                    (x, y),
-                    numVertices=6,
-                    radius=self.hex_radius_,
-                    orientation=orientation,
-                )
-                for x, y in self.bin_centers
-            ]
-
-            collection = PatchCollection(patches, **hex_kws)
-            ax.add_collection(collection)
-            ax.plot(
-                self.bin_centers[:, 0],
-                self.bin_centers[:, 1],
-                marker="o",
-                markersize=1,
-                color="blue",
-                linestyle="None",
-                label="midpoint",
-            )
-
-            ax.set_title(f"{self._layout_type_tag} Layout")
-            padding = 1.1 * self.hex_radius_
-            if self.dimension_ranges is not None:
-                ax.set_xlim(
-                    (
-                        self.dimension_ranges[0][0] - padding,
-                        self.dimension_ranges[0][1] + padding,
-                    ),
-                )
-                ax.set_ylim(
-                    (
-                        self.dimension_ranges[1][0] - padding,
-                        self.dimension_ranges[1][1] + padding,
-                    ),
-                )
-            ax.set_aspect("equal", adjustable="box")
-        return ax
+    def bin_shapes(self) -> HexagonShapes:
+        """Return the active hexagons in bin order with owned center coordinates."""
+        if self.hex_radius_ is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "hex_radius_")
+        return HexagonShapes(
+            self.bin_centers,
+            self.hex_radius_,
+            float(self.hex_orientation_) if self.hex_orientation_ is not None else 0.0,
+        )
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map 2D points to active hexagonal bin indices.
@@ -326,24 +306,7 @@ class HexagonalLayout:
             )
             return np.full(points.shape[0], -1, dtype=np.intp)
 
-        # grid_shape is guaranteed to be tuple[int, int] for hexagonal layouts
-        assert self.grid_shape is not None and len(self.grid_shape) == 2
-        centers_shape_2d: tuple[int, int] = (self.grid_shape[0], self.grid_shape[1])
-
-        original_flat_indices = _points_to_hex_bin_ind(
-            points=points,
-            grid_offset_x=self.grid_offset_x_,
-            grid_offset_y=self.grid_offset_y_,
-            hex_radius=self.hex_radius_,
-            centers_shape=centers_shape_2d,
-        )
-        return np.array(
-            [
-                self._source_flat_to_active_id_map.get(idx, -1)
-                for idx in original_flat_indices
-            ],
-            dtype=np.intp,
-        )
+        return self.locator().locate(points)
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate the area of each hexagonal bin.

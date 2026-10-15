@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -80,35 +82,30 @@ class TestPlotField:
         plt.close(fig)
 
     def test_scatter_fallback(self):
-        """Test scatter plot fallback for unrecognized layout types.
-
-        Creates an environment with an unrecognized layout tag to
-        trigger the scatter fallback path in plot_field().
-        """
+        """Use scatter when bin centers have no grid, shapes or track projection."""
         from matplotlib.collections import PathCollection
 
-        # Create environment then override layout type tag to trigger scatter fallback
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (500, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
         field = rng.random(env.n_bins)
 
-        # Force unrecognized layout type tag to trigger scatter fallback
-        # Store original for restoration
-        original_layout_tag = env.layout._layout_type_tag
-        env.layout._layout_type_tag = "UnknownCustomLayout"
+        env._geometry = replace(
+            env._geometry,
+            binning=replace(
+                env._binning, rectilinear=None, shapes=None, linearization=None
+            ),
+        )
 
         fig, ax = plt.subplots()
         result_ax = env.plot_field(field, ax=ax, colorbar=False)
 
         # Verify scatter was used (PathCollection from ax.scatter)
         assert any(isinstance(c, PathCollection) for c in ax.collections), (
-            "Unknown layout type should use scatter fallback (PathCollection)"
+            "Geometry without grid, shapes or track data should use scatter"
         )
         assert result_ax is ax
 
-        # Restore original layout type tag
-        env.layout._layout_type_tag = original_layout_tag
         plt.close(fig)
 
     def test_nan_handling_skip(self):

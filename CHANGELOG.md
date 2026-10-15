@@ -4,13 +4,22 @@
 
 ### Fixed
 
+- Reject cyclic environment metadata before recursive decoding, avoiding a
+  Windows/Python 3.10 stack crash while retaining shared acyclic records.
+
+- Preserve coincident track centers, native mesh indexing and reserved user
+  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
+  now report contextual recovery guidance.
+
 - Preserve intended radial/angular bin counts when a polar step divides its
   range but floating-point division rounds above an integer. Polar circularity
   now defaults to automatic: full circles wrap, partial angle ranges remain
   open, and explicitly wrapping a partial range is rejected.
+
 - Preserve dotted recording names in environment file prefixes, so saving
   `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
   and `.npz` paths remain accepted.
+
 - Preserve physical diffusion faces on grids with small coordinate units;
   exactly nonzero axis displacements no longer disappear below an absolute
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
@@ -61,6 +70,10 @@
   `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
   `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
   `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
+  Changing fitted encoding settings (`method`, `bandwidth`, `min_occupancy`,
+  `penalty`, `rank`) with `replace` now raises; construct and fit a new decoder.
+  Prediction defaults remain replaceable. `from_rates` uses the rate result's
+  method, bandwidth and recorded encoding settings.
 - Add `Environment.get_divergence_operator()`, the cached finite-volume
   divergence operator that `divergence(env, edge_field)` applies, alongside
   `get_differential_operator()`.
@@ -99,6 +112,22 @@
 
 ### Changed
 
+- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
+  Non-uniform scaling of hexagonal or mesh environments and general affine maps
+  disable finite-volume smoothing with an explanation. Tracks refuse
+  non-similarity transforms; rebuild them from transformed graph nodes instead.
+
+- Environment files and dictionaries now use `Environment-v2`; NWB environment
+  records use schema `2.0`. They store the complete binning and restore it
+  without rebuilding layouts. Older versions are refused: recreate the
+  environment with a factory and save it again.
+
+- Point lookup consistently rejects incorrect coordinate widths, including
+  hexagonal inputs with extra columns and empty or non-finite grid queries.
+
+- `Environment.bin_sizes` now returns an owned, read-only array, like
+  `bin_centers`.
+
 - Rewrite all nine tutorials around spatial neuroscience questions, using
   simple technical English, explanations of analysis choices, figure
   interpretation, and instructions for using recorded data. Update the shared
@@ -125,6 +154,11 @@
   preserve real-data transition endpoints/gaps, and make desktop viewers and
   long video exports opt-in. Refresh worked outputs and align prerequisite links.
 
+- Directional place fields, decode summaries, batch scores, behavior metrics
+  and run bins, assembly results and trajectory-fit results now own read-only
+  copies of their array fields, including after pickle/deepcopy. Directional
+  mappings also prevent replacing entries. **Behavior change:** copy arrays
+  before editing values. Decode-summary xarray exports remain editable copies.
 - Rate and peri-event results store read-only copies of their arrays. This
   covers spatial, directional, view and object-vector results (single-unit
   and population) and both peri-event results. Editing an array a result was
@@ -208,6 +242,18 @@
 
 ### Fixed
 
+- Subsets retain exact bin measures, selected finite-volume faces, cell shapes
+  and absolute track coordinates. Derived environments can be saved and loaded.
+- Translations and similarities retain smoothing, differential operators and
+  drawing components; positive diagonal grid scaling also keeps rectilinear
+  interpolation and updates the grid edges.
+- Triangle plots retain exact mapped vertices under every invertible affine
+  transform, including shear and unequal scaling. Smoothing still refuses maps
+  that lose the required finite-volume face geometry.
+
+- NWB environment read-back retains geometric lookup, smoothing, boundaries,
+  plotting and track linearization, with the original graph attributes.
+
 - Plot graph fields against physical linearized coordinates, preserving
   unsupported bins and inserted display gaps in both lines and shaded areas.
 - **Behavior change:** `DecodingResult.error_against` now returns NaN for truth
@@ -269,9 +315,7 @@
   spikes for stable field recovery with continuous Poisson event times.
   Documentation CI uses each job's declared Python version instead of running
   both version labels with the repository's default interpreter.
-- Decoding validates the ordered geometry, units and coordinate frame carried
-  by rate results, rejecting maps from another environment even when bin counts
-  match. Partial missing-rate masks retain the position-dependent Poisson
+- Partial missing-rate masks retain the position-dependent Poisson
   factorial terms, preventing incorrect posterior probabilities and MAP bins.
 - Decoder xarray exports contain independent writable arrays, coordinates and
   metadata, so editing an export cannot corrupt cached position estimates.
@@ -298,6 +342,25 @@
   geodesic pairs, and returns NaN for lags with no observed displacement pairs.
   Curvature retains the original sample timestamps through stationary periods
   before smoothing within each observed run.
+- Position decoding rejects rate results built on different bin coordinates,
+  measures, coordinate systems, units, frames or weighted connectivity, even
+  when bin counts match or `validate=False`. Equivalent copied environments
+  remain supported.
+- Rate results own their analysis settings and return independent copies,
+  including nested recording windows. Fitted decoders also return independent
+  settings. Editing settings can no longer change training support or reported
+  provenance. Previously saved rate-result pickles migrate their stored
+  settings on restoration; results predating provenance keep settings as `None`.
+- Published connectivity graphs reject node, edge and graph attribute edits,
+  in addition to topology changes, so edge-distance edits cannot bypass cache
+  invalidation. `env.connectivity.copy()` provides an editable graph for
+  separate analyses; protection survives pickling and deep copies. Coordinates,
+  grid indices and edge vectors are owned immutable tuples, including after
+  JSON/file restoration, so nested edits and graph copies cannot corrupt
+  boundary caches or transformed edge geometry.
+- The introductory decoding examples execute on partially observed space and
+  pass rate results directly, preserving support even after zero filling.
+
 - Editing arrays after handing them to neurospatial no longer changes stored
   state. `SpikeTrains` keeps read-only copies of its trains and labels, so
   editing the caller's labels can no longer create duplicate unit IDs. Every

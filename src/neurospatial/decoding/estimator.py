@@ -39,6 +39,9 @@ if TYPE_CHECKING:
 
 __all__ = ["BayesianDecoder"]
 
+_ENCODING_FIELDS = ("method", "bandwidth", "min_occupancy", "penalty", "rank")
+_EncodingConfig = tuple[str, float | None, float | None, float | None, int | None]
+
 
 @dataclass(frozen=True, eq=False)
 class _FittedState:
@@ -58,6 +61,7 @@ class _FittedState:
     spatial_support: NDArray[np.bool_] | None = None
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
+    encoding_config: _EncodingConfig = ("diffusion_kde", None, None, None, None)
 
     def __post_init__(self) -> None:
         """Snapshot the arrays and validate the models and their labels."""
@@ -148,15 +152,18 @@ class BayesianDecoder:
         ``method="glm"`` requested basis rank cap; ``None`` uses the encoder
         default.
     max_gap : float or None, default=0.5
-        Maximum trajectory time gap (seconds) forwarded to the encoding step.
+        Maximum trajectory time gap (seconds) forwarded to fitting and prediction.
         Intervals longer than ``max_gap`` are dropped from both the spike
         numerator and the occupancy denominator. Matches
         :func:`~neurospatial.decoding.decode_session`'s default. Pass ``None`` to
         count all intervals regardless of gap.
+        Replacing this on a fitted decoder changes prediction support only.
     dtype : {np.float32, np.float64}, default=np.float64
         Working dtype for the encoding models and the posterior. ``np.float32``
         halves the working set; ``np.float64`` (default) is byte-for-byte the
         reference decode.
+        Replacing this on a fitted decoder changes prediction precision;
+        the stored encoding models retain their fitted precision.
     warn_on_drop : bool, default=True
         Forwarded to the encode step (:meth:`fit`) and the decode step
         (:meth:`predict` / :meth:`predict_summary`). When ``True`` (default) a
@@ -171,6 +178,11 @@ class BayesianDecoder:
     env, dt, bandwidth, method, min_occupancy, penalty, rank, max_gap, dtype, \
 warn_on_drop
         The configuration passed at construction (immutable).
+        On a fitted decoder, ``method``, ``bandwidth``, ``min_occupancy``,
+        ``penalty`` and ``rank`` cannot change via ``dataclasses.replace``.
+        Construct a new unfitted decoder to fit with different encoding
+        settings. Prediction defaults (``dt``, ``max_gap``, ``dtype`` and
+        ``warn_on_drop``) can change; training provenance stays unchanged.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins), or None
         The fitted firing-rate maps (a read-only copy), or ``None`` when
         unfitted; :meth:`predict` / :meth:`predict_summary` / :meth:`score`
@@ -204,6 +216,7 @@ warn_on_drop
         params are invalid (an unknown ``method``; a ratio param with
         ``method="glm"`` or a glm param with a ratio method; an out-of-domain
         ``penalty`` / ``rank``) -- these mirror ``compute_spatial_rate``.
+        Also if encoding settings change on a fitted decoder via ``replace``.
     RuntimeError
         From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
         decoder is unfitted.
@@ -268,6 +281,21 @@ warn_on_drop
                 f"dtype must be np.float32 or np.float64, got {self.dtype!r}."
             )
 
+        if self._fit is not None:
+            for name, fitted_value, current_value in zip(
+                _ENCODING_FIELDS,
+                self._fit.encoding_config,
+                self._encoding_config(),
+                strict=True,
+            ):
+                if current_value != fitted_value:
+                    raise ValueError(
+                        f"{name} cannot change on a fitted decoder: changing "
+                        "encoding settings would not refit the stored models. "
+                        "Fix: construct a new BayesianDecoder with the desired "
+                        "encoding settings and call fit()."
+                    )
+
         # Method-specific validation, reusing the encoder's validator so the
         # mutual-exclusivity + value-domain errors are byte-identical to
         # compute_spatial_rate's. fill_value is not a decoder param (pass None).
@@ -293,6 +321,16 @@ warn_on_drop
 
             supported_prior(None, self._fit.spatial_support, self.env.n_bins, 0)
 
+    def _encoding_config(self) -> _EncodingConfig:
+        """Snapshot requested encoding settings, before defaults are resolved."""
+        return self.method, self.bandwidth, self.min_occupancy, self.penalty, self.rank
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore fitted configuration snapshots, including legacy pickles."""
+        self.__dict__.update(state)
+        if self._fit is not None and "encoding_config" not in vars(self._fit):
+            object.__setattr__(self._fit, "encoding_config", self._encoding_config())
+
     @property
     def encoding_models(self) -> NDArray[np.float64] | None:
         """Fitted ``(n_neurons, n_bins)`` rate maps, or ``None`` when unfitted."""
@@ -315,8 +353,8 @@ warn_on_drop
 
     @property
     def analysis_settings(self) -> dict[str, Any] | None:
-        """Recorded training settings, or ``None``."""
-        return None if self._fit is None else self._fit.analysis_settings
+        """An independent copy of recorded training settings, or ``None``."""
+        return None if self._fit is None else copy.deepcopy(self._fit.analysis_settings)
 
     @property
     def _unit_ids_generated(self) -> bool:
@@ -373,7 +411,11 @@ warn_on_drop
         explicitly when decoding. Observed occupancy, the recorded occupancy
         threshold and finite rates determine ``spatial_support``. Unsupported
         bins have zero posterior probability; maps are not recomputed.
-        ``analysis_settings`` retains the recorded training choices.
+        Encoding configuration comes from the rates' method, bandwidth and
+        recorded settings. ``analysis_settings`` retains the complete training
+        choices; unavailable legacy settings remain ``None``. For GLM rates,
+        ``penalty=None`` denotes automatic selection, whose fitted penalties
+        remain on the rate result.
 
         Examples
         --------
@@ -404,10 +446,23 @@ warn_on_drop
             )
         models = np.asarray(rates.firing_rates)
         dtype = np.float32 if models.dtype == np.float32 else np.float64
+        settings = rates.analysis_settings or {}
+        config: _EncodingConfig = (
+            rates.method,
+            rates.bandwidth,
+            settings.get("min_occupancy"),
+            settings.get("penalty"),
+            settings.get("rank", rates.rank),
+        )
         return cls(
             rates.env,
             dt=dt,
             dtype=dtype,
+            method=config[0],
+            bandwidth=config[1],
+            min_occupancy=config[2],
+            penalty=config[3],
+            rank=config[4],
             _fit=_FittedState(
                 models,
                 rates.unit_ids,
@@ -415,6 +470,7 @@ warn_on_drop
                 spatial_support=rates.spatial_support,
                 spike_window=rates.spike_window,
                 analysis_settings=rates.analysis_settings,
+                encoding_config=config,
             ),
         )
 
@@ -652,6 +708,7 @@ warn_on_drop
                 spatial_support=rates_result.spatial_support,
                 spike_window=resolved_spike_window,
                 analysis_settings=rates_result.analysis_settings,
+                encoding_config=self._encoding_config(),
             ),
         )
 

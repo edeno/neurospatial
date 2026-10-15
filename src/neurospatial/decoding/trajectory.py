@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -70,7 +70,7 @@ except ImportError:
 
 
 @dataclass(frozen=True, repr=False)
-class IsotonicFitResult(ResultMixin):
+class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for isotonic regression trajectory fit results.
 
     Isotonic regression fits a monotonic (either strictly increasing or
@@ -114,6 +114,10 @@ class IsotonicFitResult(ResultMixin):
     r_squared: float
     direction: Literal["increasing", "decreasing"]
     residuals: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of fitted positions and residuals."""
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -178,7 +182,7 @@ class LinearFitResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class RadonDetectionResult(ResultMixin):
+class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for Radon transform trajectory detection results.
 
     The Radon transform treats the posterior as a 2D image (time × position)
@@ -225,6 +229,10 @@ class RadonDetectionResult(ResultMixin):
     score: float
     offset: float
     sinogram: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        """Own a read-only copy of the Radon sinogram."""
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

@@ -13,7 +13,7 @@ work from historical checkboxes and remaining proposals.
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | **Not started; accepted scope.** Six workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Links the existing representation refactor; statistical/null-model frameworks remain outside scope. |
-| 2026-10-13 | Environment representation | [environment-representation/PLAN.md](environment-representation/PLAN.md) | Phase files in the same directory | **Not started.** Baseline tooling exists, but stored `Binning`/locators, save-without-rebuild, and derived-bin preservation have not landed. Five representation phases plus later roadmap stages A–F; required for geometry follow-ons and dependent correspondence/snapshot slices. Initial observation and signal work can proceed independently. |
+| 2026-10-13 | Environment representation | [environment-representation/PLAN.md](environment-representation/PLAN.md) | Phase files in the same directory | **Representation phases complete on `feature/environment-representation`.** Stored binning/locators, loading without rebuilding, and derived geometry preservation are implemented and validated. Roadmap stages A–F remain separate; this foundation supports continuous behavior's geometry and correspondence/snapshot slices. |
 
 ## Partially Implemented Plans
 
@@ -32,6 +32,10 @@ work from historical checkboxes and remaining proposals.
 | 2026-05-08 | v0.4 UX cleanup | [v0.4-ux-cleanup/PLAN.md](v0.4-ux-cleanup/PLAN.md) | [v0.4-ux-cleanup/TASKS.md](v0.4-ux-cleanup/TASKS.md) | **Superseded after the v0.4.0 release.** M0–M6 landed; local tag `v0.4.0` points to `55bc0851`. M7 was partial: migration page/checker never landed. Current API rules and tutorials replace the old release roadmap; do not mark the omitted migration work as completed. |
 
 ## Planning Backlog
+
+- [Encoder setup consolidation](encoder-setup/PLAN.md) — draft 2026-10-14;
+  preserves the eight entry points while sharing private setup. Implementation
+  has not started.
 
 | Document committed | Area | Document | Notes |
 | --- | --- | --- | --- |

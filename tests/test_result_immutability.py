@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -101,6 +102,79 @@ def test_result_is_isolated_from_constructor_arrays():
     occupancy[:] = 0.0
     np.testing.assert_array_equal(result.firing_rates, 1.0)
     np.testing.assert_array_equal(result.occupancy, 1.0)
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
+@pytest.mark.parametrize("level", ["population", "single"])
+def test_analysis_settings_are_independent_copies(populations, family, level):
+    """Editing provenance cannot change stored settings or effective support."""
+    settings = copy.deepcopy(_result(populations, family, level).analysis_settings)
+    result = replace(_result(populations, family, level), analysis_settings=settings)
+    expected = copy.deepcopy(settings)
+    support = result.spatial_support.copy()
+
+    settings["min_occupancy"] = 1000.0
+    settings["observed_intervals"][0][0] = -10.0
+    returned = result.analysis_settings
+    returned["min_occupancy"] = 1000.0
+    returned["observed_intervals"][0][0] = -20.0
+
+    assert result.analysis_settings == expected
+    np.testing.assert_array_equal(result.spatial_support, support)
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_restored_rate_settings_are_independent(populations, how):
+    result = populations["spatial"]
+    restored = (
+        pickle.loads(pickle.dumps(result)) if how == "pickle" else copy.deepcopy(result)
+    )
+    expected = copy.deepcopy(restored.analysis_settings)
+    restored.analysis_settings["min_occupancy"] = 1000.0
+    assert restored.analysis_settings == expected
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
+@pytest.mark.parametrize("level", ["population", "single"])
+@pytest.mark.parametrize("settings_kind", ["recorded", "none", "missing"])
+def test_legacy_rate_pickles_restore_settings_and_support(
+    populations, family, level, settings_kind
+) -> None:
+    """Old ordinary-field storage remains usable under the settings property."""
+    result = _result(populations, family, level)
+    state = vars(result).copy()
+    recorded = state.pop("_analysis_settings")
+    expected = recorded if settings_kind == "recorded" else None
+    if settings_kind != "missing":
+        state["analysis_settings"] = expected
+    legacy = object.__new__(type(result))
+    vars(legacy).update(state)
+
+    restored = pickle.loads(pickle.dumps(legacy))
+    assert restored.analysis_settings == expected
+    np.testing.assert_array_equal(restored.spatial_support, result.spatial_support)
+    assert "analysis_settings" not in vars(restored)
+    for array in _arrays(restored).values():
+        assert not array.flags.writeable
+    if level == "population":
+        assert restored[0].analysis_settings == expected
+        np.testing.assert_array_equal(
+            restored[0].spatial_support, result[0].spatial_support
+        )
+    if expected is not None:
+        restored.analysis_settings["observed_intervals"][0][0] = -10.0
+        assert restored.analysis_settings == expected
+    assert pickle.loads(pickle.dumps(restored)).analysis_settings == expected
+
+
+def test_decoder_settings_are_independent(populations):
+    from neurospatial.decoding import BayesianDecoder
+
+    decoder = BayesianDecoder.from_rates(populations["spatial"])
+    expected = copy.deepcopy(decoder.analysis_settings)
+    decoder.analysis_settings["min_occupancy"] = 1000.0
+    decoder.analysis_settings["observed_intervals"][0][0] = -10.0
+    assert decoder.analysis_settings == expected
 
 
 @pytest.mark.parametrize("family", FAMILIES)

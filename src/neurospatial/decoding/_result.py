@@ -16,7 +16,12 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin, _coord_dim_names, read_only_copy
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    _coord_dim_names,
+    read_only_copy,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -1061,7 +1066,7 @@ class DecodingResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
-class DecodingSummary(ResultMixin):
+class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     """Per-time decode reductions, without the full posterior.
 
     Memory-safe sibling of :class:`DecodingResult`. Produced by
@@ -1125,7 +1130,7 @@ class DecodingSummary(ResultMixin):
         """
         if self.spike_window is not None:
             object.__setattr__(
-                self, "spike_window", read_only_copy(self.spike_window, np.float64)
+                self, "spike_window", np.asarray(self.spike_window, dtype=np.float64)
             )
         n_time = self.map_bin.shape[0]
         n_dims = self.env.n_dims
@@ -1147,6 +1152,7 @@ class DecodingSummary(ResultMixin):
                     + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
                     + "). All per-time fields must share the same n_time."
                 )
+        self._own_arrays()
 
     @property
     def spike_window_assumed(self) -> bool:

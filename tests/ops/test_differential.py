@@ -113,10 +113,21 @@ def test_operator_edge_order_matches_connectivity(fv_env):
     np.testing.assert_allclose(gradient(fv_env, field), expected, atol=1e-12)
 
 
-def test_operators_raise_without_finite_volume_geometry(reloaded_graph_env):
+@pytest.mark.nwb
+def test_operators_keep_faces_after_nwb_round_trip(graph_environment_round_trip):
     from neurospatial.ops.calculus import divergence, gradient
 
-    env = reloaded_graph_env
+    original, loaded = graph_environment_round_trip
+    field = np.sin(np.arange(original.n_bins))
+    flux = np.cos(np.arange(original.connectivity.number_of_edges()))
+    np.testing.assert_array_equal(gradient(loaded, field), gradient(original, field))
+    np.testing.assert_array_equal(divergence(loaded, flux), divergence(original, flux))
+
+
+def test_operators_raise_without_finite_volume_geometry(missing_faces_env):
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = missing_faces_env
     for func, field in [
         (gradient, np.ones(env.n_bins)),
         (divergence, np.ones(env.connectivity.number_of_edges())),

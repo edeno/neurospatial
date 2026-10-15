@@ -244,3 +244,4 @@ class RegularGridLayout(_GridMixin):
         validate_connectivity_graph(
             self.connectivity, n_dims=len(self.dimension_ranges)
         )
+        self._build_locator()

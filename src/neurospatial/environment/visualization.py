@@ -32,6 +32,8 @@ from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
+from neurospatial.layout._binning import TrackLinearization
+from neurospatial.layout._components import HexagonShapes, TriangleShapes
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -278,7 +280,21 @@ class EnvironmentVisualization:
         l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
         if self.layout.is_linearized_track:
-            if hasattr(self.layout, "plot_linear_layout"):
+            linearization = self._binning.linearization
+            if isinstance(linearization, TrackLinearization):
+                from neurospatial.layout._plotting import plot_track_linear
+
+                ax = plot_track_linear(
+                    ax=ax,
+                    title=self.layout._layout_type_tag,
+                    linearization=linearization,
+                    grid_edges=linearization.grid_edges,
+                    **l_kwargs,
+                )
+            elif linearization is not None and hasattr(
+                self.layout, "plot_linear_layout"
+            ):
+                # Custom layouts can still supply the older linearization adapter.
                 ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)
             else:
                 warnings.warn(
@@ -454,59 +470,29 @@ class EnvironmentVisualization:
         if vmin >= vmax:
             vmax = vmin + 1.0
 
-        # Dispatch to layout-specific renderer
-        layout_tag = self.layout._layout_type_tag
+        # Choose rendering from the structure published with the bins.
+        binning = self._binning
         mappable = None
-
-        grid_layouts = ("RegularGrid", "MaskedGrid", "ImageMask", "ShapelyPolygon")
-
-        # Validate layout-specific requirements before dispatch
-        if self.n_dims == 1 and not self.layout.is_linearized_track:
+        if self.n_dims == 1 and not self.is_linearized_track:
             ax.plot(self.bin_centers[:, 0], field, **kwargs)
             unit_label = f" ({self.units})" if self.units else ""
             ax.set_xlabel(f"Position{unit_label}")
             ax.set_ylabel(colorbar_label or "Field Value")
-        elif layout_tag in grid_layouts:
-            if not (
-                hasattr(self.layout, "grid_shape")
-                and hasattr(self.layout, "grid_edges")
-                and hasattr(self.layout, "active_mask")
-            ):
-                raise RuntimeError(
-                    f"Layout '{layout_tag}' missing required grid attributes "
-                    "(grid_shape, grid_edges, active_mask). "
-                    "This indicates a malformed layout engine."
-                )
+        elif binning.rectilinear is not None:
             mappable = _plot_grid_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
-        elif layout_tag == "Hexagonal":
-            if not (
-                hasattr(self.layout, "hex_radius_")
-                and hasattr(self.layout, "hex_orientation_")
-            ):
-                raise RuntimeError(
-                    "Hexagonal layout missing required attributes "
-                    "(hex_radius_, hex_orientation_). "
-                    "This indicates a malformed layout engine."
-                )
+        elif isinstance(binning.shapes, HexagonShapes):
             mappable = _plot_hex_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
-        elif layout_tag == "TriangularMesh":
-            if not (
-                hasattr(self.layout, "_full_delaunay_tri")
-                and hasattr(self.layout, "_active_original_simplex_indices")
-            ):
-                raise RuntimeError(
-                    "TriangularMesh layout missing required attributes "
-                    "(_full_delaunay_tri, _active_original_simplex_indices). "
-                    "This indicates a malformed layout engine."
-                )
+        elif isinstance(binning.shapes, TriangleShapes):
             mappable = _plot_trimesh_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
-        elif self.layout.is_linearized_track:
+        elif binning.linearization is not None or self.is_linearized_track:
+            # Legacy saved tracks retain their previous missing-grid refusal
+            # until loading restores their full linearization data.
             mappable = _plot_1d_field(self, field, ax, colorbar_label, **kwargs)
         else:
             mappable = _plot_scatter_field(
@@ -954,22 +940,19 @@ def _plot_grid_field(
     """Plot field on grid layout using pcolormesh."""
     from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
-    # Validate grid attributes exist
-    if env.layout.grid_shape is None or env.layout.grid_edges is None:
-        raise RuntimeError("Grid layout missing grid_shape or grid_edges")
-
-    if env.layout.active_mask is None:
-        raise RuntimeError("Grid layout missing active_mask")
+    grid = env._binning.rectilinear
+    if grid is None:
+        raise RuntimeError("Grid field plotting requires rectangular cell geometry.")
 
     # Validate 2D grid
-    if len(env.layout.grid_shape) != 2:
+    if len(grid.shape) != 2:
         raise NotImplementedError(
-            f"pcolormesh requires 2D grids, got grid_shape={env.layout.grid_shape}"
+            f"pcolormesh requires 2D grids, got grid_shape={grid.shape}"
         )
 
     # Convert to grid
     grid_data = map_active_data_to_grid(
-        env.layout.grid_shape, env.layout.active_mask, field, fill_value=np.nan
+        grid.shape, grid.active_mask, field, fill_value=np.nan
     )
 
     # Setup colormap with NaN handling
@@ -979,8 +962,8 @@ def _plot_grid_field(
 
     # Plot
     mesh = ax.pcolormesh(
-        env.layout.grid_edges[0],
-        env.layout.grid_edges[1],
+        grid.edges[0],
+        grid.edges[1],
         grid_data.T,
         cmap=cmap_obj,
         vmin=vmin,
@@ -1005,13 +988,9 @@ def _plot_hex_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on hexagonal layout using PatchCollection."""
-    # Validate hexagonal layout attributes exist
-    if not hasattr(env.layout, "hex_radius_") or not hasattr(
-        env.layout, "hex_orientation_"
-    ):
-        raise RuntimeError(
-            "Hexagonal layout missing hex_radius_ or hex_orientation_ attributes"
-        )
+    shapes = env._binning.shapes
+    if not isinstance(shapes, HexagonShapes):
+        raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
 
     # Create hexagon patches
     # Note: Unlike grid layouts which use colormap's built-in NaN handling,
@@ -1020,7 +999,7 @@ def _plot_hex_field(
     patches = []
     colors = []
 
-    for center, value in zip(env.bin_centers, field, strict=True):
+    for center, value in zip(shapes.centers, field, strict=True):
         # Skip NaN bins if nan_color is None
         if np.isnan(value) and nan_color is None:
             continue
@@ -1028,8 +1007,8 @@ def _plot_hex_field(
         patch = RegularPolygon(
             xy=center,
             numVertices=6,
-            radius=env.layout.hex_radius_,
-            orientation=env.layout.hex_orientation_,
+            radius=shapes.radius,
+            orientation=shapes.orientation,
         )
         patches.append(patch)
         colors.append(value)
@@ -1059,22 +1038,11 @@ def _plot_trimesh_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on triangular mesh layout using tripcolor."""
-    # Validate triangular mesh layout attributes exist
-    if not hasattr(env.layout, "_full_delaunay_tri") or not hasattr(
-        env.layout, "_active_original_simplex_indices"
-    ):
-        raise RuntimeError(
-            "TriangularMesh layout missing _full_delaunay_tri or "
-            "_active_original_simplex_indices attributes"
-        )
-
-    # Get triangle vertex indices
-    triangles = env.layout._full_delaunay_tri.simplices[
-        env.layout._active_original_simplex_indices
-    ]
-
-    # Get mesh points
-    mesh_points = env.layout._full_delaunay_tri.points
+    shapes = env._binning.shapes
+    if not isinstance(shapes, TriangleShapes):
+        raise RuntimeError("Mesh field plotting requires triangular cell shapes.")
+    triangles = shapes.triangles
+    mesh_points = shapes.points
 
     # Setup colormap with NaN handling
     cmap_obj = plt.get_cmap(cmap).copy()
@@ -1105,8 +1073,13 @@ def _plot_1d_field(
     **kwargs: Any,
 ) -> Any:
     """Plot a track field in physical display coordinates without bridging gaps."""
-    edges = env.grid_edges
-    active_mask = env.active_mask
+    edges: tuple[NDArray[np.float64], ...] | None
+    active_mask: NDArray[np.bool_] | None
+    linearization = env._binning.linearization
+    if isinstance(linearization, TrackLinearization):
+        edges, active_mask = linearization.grid_edges, linearization.active_mask
+    else:
+        edges, active_mask = env.grid_edges, env.active_mask
     if edges is None or active_mask is None:
         raise RuntimeError("Track field plotting requires grid_edges and active_mask.")
     x_positions = (edges[0][:-1] + edges[0][1:]) / 2

@@ -3,21 +3,20 @@ from __future__ import annotations
 import math
 import warnings
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import shapely.vectorized
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import Polygon as MplPolygon
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.layout._components import Outline, TriangleShapes
+from neurospatial.layout._locators import MeshLocator
+from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
@@ -56,6 +55,7 @@ class TriangularMeshLayout:
         NDArray[np.int_] | None
     )  # Store original indices of active ones
     _boundary_polygon_stored: Polygon | None  # Store the actual polygon object
+    _locator: MeshLocator | None = None
 
     def __init__(self) -> None:
         self.bin_centers = np.empty((0, 2), dtype=float)
@@ -70,6 +70,7 @@ class TriangularMeshLayout:
         self._original_simplex_to_active_idx_map = None
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
+        self._locator = None
 
     @property
     def layout_type(self) -> str:
@@ -188,13 +189,48 @@ class TriangularMeshLayout:
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
         self.active_mask[active_original_indices] = True
         # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
+        self._build_locator()
+
+    def _build_locator(self) -> None:
+        """Snapshot triangulation, active-bin mapping and the boundary."""
+        if (
+            self._full_delaunay_tri is None
+            or self._original_simplex_to_active_idx_map is None
+        ):
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in (
+                        "_full_delaunay_tri",
+                        "_original_simplex_to_active_idx_map",
+                    )
+                    if getattr(self, name) is None
+                ),
+            )
+        simplex_to_active = np.full(
+            len(self._full_delaunay_tri.simplices), -1, dtype=np.intp
+        )
+        for original, active in self._original_simplex_to_active_idx_map.items():
+            simplex_to_active[original] = active
+        self._locator = MeshLocator(
+            self._full_delaunay_tri.points,
+            self._full_delaunay_tri.simplices,
+            simplex_to_active,
+            self._boundary_polygon_stored,
+        )
+
+    def locator(self) -> MeshLocator:
+        """Return the owned locator, rebuilding it for older saved layouts."""
+        if self._locator is None:
+            self._build_locator()
+        assert self._locator is not None
+        return self._locator
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map each 2D point to an active triangle index, or -1 if outside.
 
-        Uses Delaunay.find_simplex() → original-simplex index → active-triangle index via
-        a fast lookup array. Then enforces that the point itself must lie inside (or on)
-        the boundary polygon.
+        Query points must lie inside the boundary polygon.
 
         Parameters
         ----------
@@ -223,43 +259,7 @@ class TriangularMeshLayout:
                 ),
             )
 
-        pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
-        if pts2d.ndim != 2 or pts2d.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
-
-        # 1) Find which Delaunay simplex each point falls into (-1 if outside hull)
-        orig_simplices = self._full_delaunay_tri.find_simplex(pts2d)
-
-        # 2) Build a 1D lookup array once, mapping original simplex idx -> active idx
-        n_total = self._full_delaunay_tri.simplices.shape[0]
-        orig2active_arr = np.full(n_total, -1, dtype=int)
-        for orig_idx, active_idx in self._original_simplex_to_active_idx_map.items():
-            orig2active_arr[orig_idx] = active_idx
-
-        # 3) Initialize result array to -1
-        active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=int)
-
-        # 4) Wherever orig_simplices != -1, do a vectorized assignment
-        valid_mask = orig_simplices != -1
-        if np.any(valid_mask):
-            found_orig = orig_simplices[valid_mask]
-            active_triangle_idxs[valid_mask] = orig2active_arr[found_orig]
-
-            # 5) Now ensure each point is itself inside (or on) the boundary
-            if self._boundary_polygon_stored is not None:
-                xcoords = pts2d[valid_mask, 0]
-                ycoords = pts2d[valid_mask, 1]
-                on_or_inside = shapely.contains_xy(
-                    self._boundary_polygon_stored,
-                    xcoords,
-                    ycoords,
-                )
-                idxs = np.flatnonzero(valid_mask)
-                for local_i, keep in enumerate(on_or_inside):
-                    if not keep:
-                        active_triangle_idxs[idxs[local_i]] = -1
-
-        return active_triangle_idxs.astype(np.intp, copy=False)
+        return self.locator().locate(points)
 
     @property
     def is_linearized_track(self) -> bool:
@@ -336,101 +336,43 @@ class TriangularMeshLayout:
                 ),
             )
 
-        if ax is None:
-            _, ax = plt.subplots(figsize=(7, 7))  # Default figsize
+        return plot_triangles(
+            ax,
+            title=self._layout_type_tag,
+            shapes=self.bin_shapes(),
+            outline=self.outline(),
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            bin_centers=self.bin_centers,
+            show_triangles=show_triangles,
+            show_centroids=show_centroids,
+            show_connectivity=show_connectivity,
+            show_boundary=show_boundary,
+            triangle_kwargs=triangle_kwargs,
+            centroid_kwargs=centroid_kwargs,
+            connectivity_kwargs=connectivity_kwargs,
+            boundary_kwargs=boundary_kwargs,
+        )
 
-        # Default kwargs
-        _triangle_kwargs = {
-            "alpha": 0.4,
-            "facecolor": "lightblue",
-            "edgecolor": "gray",
-            "linewidth": 0.5,
-        }
-        if triangle_kwargs:
-            _triangle_kwargs.update(triangle_kwargs)
-
-        _centroid_kwargs = {"color": "blue", "s": 10, "zorder": 3}
-        if centroid_kwargs:
-            _centroid_kwargs.update(centroid_kwargs)
-
-        _connectivity_kwargs = {
-            "color": "black",
-            "alpha": 0.5,
-            "linewidth": 0.75,
-            "zorder": 2,
-        }
-        if connectivity_kwargs:
-            _connectivity_kwargs.update(connectivity_kwargs)
-
-        _boundary_kwargs = {
-            "color": "black",
-            "linewidth": 1.5,
-            "linestyle": "--",
-            "zorder": 4,
-        }
-        if boundary_kwargs:
-            _boundary_kwargs.update(boundary_kwargs)
-
-        # Plot boundary polygon
-        if show_boundary and self._boundary_polygon_stored:
-            xb, yb = self._boundary_polygon_stored.exterior.xy
-            # Use cast to work around matplotlib stub limitations
-            plot_func = cast("Any", ax.plot)
-            plot_func(xb, yb, label="Boundary", **_boundary_kwargs)
-            for interior in self._boundary_polygon_stored.interiors:
-                xbi, ybi = interior.xy
-                plot_func(xbi, ybi, **_boundary_kwargs)
-
-        # Plot active triangles
-        if show_triangles:
-            patches: list[MplPolygon] = []
-            mesh_points = self._full_delaunay_tri.points
-            active_simplices_vertices = mesh_points[
-                self._full_delaunay_tri.simplices[self._active_original_simplex_indices]
-            ]
-
-            for vertices in active_simplices_vertices:  # Iterate over (n_active, 3, 2)
-                patches.append(MplPolygon(vertices, closed=True))
-
-            # Use cast to work around matplotlib stub limitations
-            pc_constructor = cast("Any", PatchCollection)
-            pc = pc_constructor(patches, **_triangle_kwargs)
-            ax.add_collection(pc)
-
-        # Plot centroids (which are self.bin_centers)
-        if show_centroids and self.bin_centers.shape[0] > 0:
-            # Use cast to work around matplotlib stub limitations
-            scatter_func = cast("Any", ax.scatter)
-            scatter_func(
-                self.bin_centers[:, 0],
-                self.bin_centers[:, 1],
-                **_centroid_kwargs,
-            )
-
-        # Plot connectivity edges
-        if show_connectivity:
-            # Use cast to work around matplotlib stub limitations
-            plot_func2 = cast("Any", ax.plot)
-            for u, v in self.connectivity.edges():
-                pos_u = self.connectivity.nodes[u]["pos"]
-                pos_v = self.connectivity.nodes[v]["pos"]
-                plot_func2(
-                    [pos_u[0], pos_v[0]],
-                    [pos_u[1], pos_v[1]],
-                    **_connectivity_kwargs,
-                )
-
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlim(self.dimension_ranges[0])
-        ax.set_ylim(self.dimension_ranges[1])
-        ax.set_xlabel("X coordinate")
-        ax.set_ylabel("Y coordinate")
-        ax.set_title(self._layout_type_tag)
+    def bin_shapes(self) -> TriangleShapes:
+        """Return mesh points and the active triangles in bin order."""
         if (
-            show_boundary and self._boundary_polygon_stored
-        ):  # Add legend if boundary shown
-            ax.legend()
-        return ax
+            self._full_delaunay_tri is None
+            or self._active_original_simplex_indices is None
+        ):
+            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        return TriangleShapes(
+            self._full_delaunay_tri.points,
+            self._full_delaunay_tri.simplices[self._active_original_simplex_indices],
+        )
+
+    def outline(self) -> Outline | None:
+        """Return the mesh boundary, including its interior rings when present."""
+        return (
+            Outline(self._boundary_polygon_stored)
+            if self._boundary_polygon_stored is not None
+            else None
+        )
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Return the N-dimensional volume of each active N-simplex (bin).

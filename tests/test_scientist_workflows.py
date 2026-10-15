@@ -107,6 +107,25 @@ def test_low_occupancy_support_survives_zero_filling(partial_recording):
         BayesianDecoder.from_rates(unsupported)
 
 
+def test_editing_settings_cannot_change_supported_training_bins(partial_recording):
+    env, spikes, times, positions = partial_recording
+    positions = positions.copy()
+    positions[-2:] = 15.0
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, min_occupancy=0.5, fill_value=0.0
+    )
+    before = decode_position(env, np.zeros((1, 1)), rates, 0.1)
+    settings = rates.analysis_settings
+    settings["min_occupancy"] = 0.0
+    settings["observed_intervals"][0][0] = -10.0
+    after = decode_position(env, np.zeros((1, 1)), rates, 0.1)
+
+    assert rates.analysis_settings["min_occupancy"] == 0.5
+    assert not rates.spatial_support[1]
+    np.testing.assert_array_equal(after.posterior, before.posterior)
+    np.testing.assert_array_equal(after.posterior[:, 1:], 0.0)
+
+
 @pytest.mark.parametrize("missing", [100.0, np.nan])
 def test_geodesic_steps_preserve_missing_positions(missing):
     env = Environment.from_grid_mask(

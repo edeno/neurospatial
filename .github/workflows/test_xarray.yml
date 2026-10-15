@@ -1,18 +1,20 @@
 name: Tests (xarray interop)
 
-# xarray is an optional extra. The default test job does NOT install it, so the
-# labeled-Dataset to_xarray() exports would otherwise go untested in CI. This
-# job installs the xarray extra and runs only the xarray interop tests.
+# Keep a focused xarray interop check alongside the full test matrix, which
+# also installs the optional xarray extra.
 
 on:
   push:
     branches:
       - main
       - feat/researcher-first
+  # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
-    branches:
-      - main
-      - feat/researcher-first
+
+# Only the latest commit of each PR needs to finish its checks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   xarray:

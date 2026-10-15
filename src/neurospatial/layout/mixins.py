@@ -1,97 +1,51 @@
-import warnings
 from collections.abc import Sequence
 
 import matplotlib
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import KDTree
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout._capabilities import RectilinearGrid
-from neurospatial.layout.helpers.regular_grid import (
-    _points_to_regular_grid_bin_ind,
-)
+from neurospatial.layout._locators import NearestBinLocator, RectilinearLocator
+from neurospatial.layout._plotting import plot_grid
 
 
 # ---------------------------------------------------------------------------
 # KD-tree mixin (for point_to_bin_index)
 # ---------------------------------------------------------------------------
 class _KDTreeMixin:
-    """Mixin providing point-to-bin mapping and neighbor finding using a KD-tree.
+    """Mixin providing nearest-bin lookup through an owned data locator.
 
-    This mixin uses a KD-tree built on bin centers for nearest-neighbor
-    searches (`point_to_bin_index`) and a NetworkX graph for connectivity
-    to find neighbors (`neighbors`).
-
-    Assumes the inheriting class defines:
-    - `self.bin_centers`: NDArray of active bin center coordinates.
-    - `self.connectivity`: NetworkX graph of active bins.
-
-    The `_build_kdtree` method must be called by the inheriting layout's
-    `build` method after `bin_centers` is finalized.
-
-    Attributes
-    ----------
-    _kdtree : Optional[KDTree]
-        KDTree for fast nearest-neighbor search.
-    _kdtree_nodes_to_bin_indices_map : Optional[NDArray[np.int_]], shape (n_active_bins,)
-        Maps KDTree node index to original source_index.
-
+    Layouts call ``_build_kdtree`` after finalizing their bin centers. The
+    locator builds its KD-tree lazily and keeps the original bin-index mapping.
     """
 
-    _kdtree: KDTree | None = None
-    _kdtree_nodes_to_bin_indices_map: NDArray[np.int_] | None = None
+    _locator: NearestBinLocator | None = None
 
     def _build_kdtree(
         self,
         points_for_tree: NDArray[np.float64],
         mask_for_points_in_tree: NDArray[np.bool_] | None = None,
     ) -> None:
-        """Builds the KD-tree from `points_for_tree`.
-
-        If `mask_for_points_in_tree` is provided, it's used to select a subset
-        of `points_for_tree` to include in the KD-tree. The
-        `_kdtree_nodes_to_bin_indices_map` will then map the KD-tree's
-        internal node indices (0 to k-1) back to the original indices within
-        `points_for_tree` that were selected by the mask.
-
-        If `points_for_tree` are the layout's final `bin_centers` (which are
-        all active), `mask_for_points_in_tree` should be `None` or all `True`.
-        In this common case, `_kdtree_nodes_to_bin_indices_map` will effectively
-        be `np.arange(len(points_for_tree))`.
+        """Prepare nearest-bin geometry, preserving masked source indices.
 
         Parameters
         ----------
-        points_for_tree : NDArray[np.float64], shape (n_total_points, n_dims)
-            The set of points from which to build the KD-tree. Typically, these
-            are `self.bin_centers` of the layout.
-        mask_for_points_in_tree : Optional[NDArray[np.bool_]], shape (n_total_points,), optional
-            A boolean mask indicating which points from `points_for_tree`
-            to include in the KD-tree. If None, all points are used.
-            Defaults to None.
+        points_for_tree : ndarray of float64, shape (n_points, n_dims)
+            Bin coordinates from which the locator is built.
+        mask_for_points_in_tree : ndarray of bool, shape (n_points,), optional
+            Select centers while keeping their original bin indices.
 
         Raises
         ------
         ValueError
-            If `mask_for_points_in_tree` has an incompatible shape.
-
+            If the centers or optional mask have an incompatible shape.
         """
         if points_for_tree.ndim != 2:
             raise ValueError(
                 "points_for_tree must be a 2D array with shape (n_points, n_dims).",
             )
-        if points_for_tree.shape[0] == 0:
-            self._kdtree = None
-            self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
-
-        final_points_for_kdtree_construction: NDArray[np.float64]
-
-        # This map will store the indices from `points_for_tree` that correspond
-        # to the nodes (0 to k-1) in the `self._kdtree` object.
-        source_indices_of_kdtree_nodes: NDArray[np.int_]
-
         if mask_for_points_in_tree is not None:
             if (
                 mask_for_points_in_tree.ndim != 1
@@ -101,129 +55,43 @@ class _KDTreeMixin:
                     "mask_for_points_in_tree must be 1D and match the "
                     "number of rows in points_for_tree.",
                 )
-            final_points_for_kdtree_construction = points_for_tree[
-                mask_for_points_in_tree
-            ]
-            source_indices_of_kdtree_nodes = np.flatnonzero(
-                mask_for_points_in_tree,
-            ).astype(np.int32)
+            centers = points_for_tree[mask_for_points_in_tree]
+            bin_indices = np.flatnonzero(mask_for_points_in_tree).astype(np.intp)
         else:
-            # No mask provided, use all points from points_for_tree
-            final_points_for_kdtree_construction = points_for_tree
-            source_indices_of_kdtree_nodes = np.arange(
-                points_for_tree.shape[0],
-                dtype=np.int32,
-            )
+            centers = points_for_tree
+            bin_indices = None
+        self._locator = NearestBinLocator(centers, bin_indices=bin_indices)
 
-        if final_points_for_kdtree_construction.shape[0] > 0:
-            try:
-                self._kdtree = KDTree(final_points_for_kdtree_construction)
-                self._kdtree_nodes_to_bin_indices_map = source_indices_of_kdtree_nodes
-            except Exception as e:  # Catch potential errors from KDTree (e.g. QhullError for certain inputs)
-                warnings.warn(
-                    f"KDTree construction failed: {e}. point_to_bin_index may not work.",
-                    RuntimeWarning,
-                    stacklevel=2,
+    def locator(self) -> NearestBinLocator:
+        """Return the built layout's owned nearest-bin locator."""
+        if self._locator is None:
+            # Older pickles contain the tree and source mapping rather than a
+            # locator; their data is sufficient to construct the new record.
+            legacy_tree = getattr(self, "_kdtree", None)
+            if legacy_tree is not None:
+                self._locator = NearestBinLocator(
+                    legacy_tree.data,
+                    bin_indices=getattr(self, "_kdtree_nodes_to_bin_indices_map", None),
                 )
-                self._kdtree = None
-                self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
-        else:  # No points to build the tree (either initially or after masking)
-            self._kdtree = None
-            self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
+            else:
+                centers = getattr(self, "bin_centers", None)
+                if centers is None or len(centers) == 0:
+                    raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
+                self._build_kdtree(centers)
+        assert self._locator is not None
+        return self._locator
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map N-D points to active bin indices using nearest-neighbor search.
+        """Map points to their nearest bin, with -1 for non-finite rows.
 
-        Finds the nearest active bin center in `self.bin_centers` (on which
-        the KD-tree was built) to each query point.
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_query_points, n_dims)
-            N-D array of query points.
-
-        Returns
-        -------
-        NDArray[np.intp], shape (n_query_points,)
-            Array of active bin indices (0 to `n_active_bins - 1`). A point
-            whose coordinates are non-finite (NaN/inf) maps to the ``-1``
-            "outside" sentinel, matching the grid layouts. Returns -1 for all
-            points if the KD-tree is not built or is empty.
-
-        Raises
-        ------
-        ValueError
-            If the query points' dimensionality does not match the environment
-            (e.g. feeding 1-D ``to_linear()`` output into a 2-D track env).
-
+        An unbuilt or empty layout returns -1 for every query point. Built
+        layouts reject a coordinate width that differs from their bin centers.
         """
-        query_points = np.atleast_2d(points)
-        n_query_points = query_points.shape[0]
-
-        if (
-            self._kdtree is None
-            or self._kdtree_nodes_to_bin_indices_map is None
-            or self._kdtree_nodes_to_bin_indices_map.size == 0
-        ):
-            # This means no valid points were used to build the KD-tree.
-            return np.full(n_query_points, -1, dtype=np.intp)
-
-        # A dimension mismatch is a caller error, not a recoverable "no match":
-        # fail loud instead of swallowing it to a warning and returning -1 for
-        # every point (which reads downstream as a silent empty/all-zero field).
-        # The classic trigger is feeding 1-D ``to_linear()`` output / linearized
-        # positions into a graph/2-D track environment, whose bins are indexed by
-        # their original N-D coordinates.
-        expected_dims = int(self._kdtree.data.shape[1])
-        if query_points.shape[1] != expected_dims:
-            raise ValueError(
-                f"Query points have {query_points.shape[1]} dimension(s) but this "
-                f"environment bins in {expected_dims}-D; pass points of shape "
-                f"(n_points, {expected_dims}). Note: ``to_linear()`` output and "
-                f"other 1-D linearized positions are NOT bin coordinates -- bin "
-                f"with the original {expected_dims}-D positions instead."
-            )
-
-        # Non-finite rows cannot be queried: scipy's KDTree.query raises if ANY
-        # row is non-finite, which previously got swallowed below and collapsed
-        # EVERY point (including the finite ones) to -1 -- a silent empty/all-
-        # zero field. NaN/inf samples are routine in tracking data (dropped
-        # frames, occluded / low-confidence points), so map only the non-finite
-        # rows to the -1 "outside" sentinel -- matching the grid layouts -- and
-        # query just the finite subset.
-        final_bin_indices = np.full(n_query_points, -1, dtype=np.intp)
-        finite_rows = np.all(np.isfinite(query_points), axis=1)
-        if not np.any(finite_rows):
-            return np.asarray(final_bin_indices, dtype=np.intp)
-
-        try:
-            _, kdtree_internal_indices = self._kdtree.query(query_points[finite_rows])
-        except Exception as e:
-            # Catch genuinely unexpected query failures (dimension mismatch and
-            # non-finite coordinates are handled above).
-            warnings.warn(
-                f"KDTree query failed: {e}. Returning -1 for all points.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return np.full(n_query_points, -1, dtype=np.intp)
-
-        # kdtree_internal_indices index into the array used to build the KDTree
-        # (final_points_for_kdtree_construction in _build_kdtree). Clip into its
-        # valid range (guards an empty/single-point tree returning an out-of-
-        # bounds index), then map back to the original bin indices (0 to N-1,
-        # rows of self.bin_centers) and scatter into the finite rows.
-        max_valid_kdtree_idx = int(self._kdtree.data.shape[0] - 1)
-        kdtree_internal_indices = np.clip(
-            kdtree_internal_indices,
-            0,
-            max_valid_kdtree_idx,
-        )
-        final_bin_indices[finite_rows] = self._kdtree_nodes_to_bin_indices_map[
-            kdtree_internal_indices
-        ]
-
-        return np.asarray(final_bin_indices, dtype=np.intp)
+        if self._locator is None and getattr(self, "_kdtree", None) is None:
+            centers = getattr(self, "bin_centers", None)
+            if centers is None or len(centers) == 0:
+                return np.full(np.atleast_2d(points).shape[0], -1, dtype=np.intp)
+        return self.locator().locate(points)
 
 
 class _GridMixin:
@@ -246,6 +114,7 @@ class _GridMixin:
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     _layout_type_tag: str = "_Grid_Layout"
     _active_mask_inverse_map: NDArray[np.intp] | None = None
+    _locator: RectilinearLocator | None = None
 
     @property
     def active_mask_inverse_map(self) -> NDArray[np.intp] | None:
@@ -269,11 +138,34 @@ class _GridMixin:
 
         return self._active_mask_inverse_map
 
+    def _build_locator(self) -> None:
+        """Snapshot rectangular cells after their active bins are finalized."""
+        if self.grid_edges is None or self.grid_shape is None:
+            raise LayoutNotBuiltError(
+                type(self).__name__,
+                next(
+                    name
+                    for name in ("grid_edges", "grid_shape")
+                    if getattr(self, name) is None
+                ),
+            )
+        self._active_mask_inverse_map = None
+        self._locator = RectilinearLocator(
+            self.grid_edges,
+            self.grid_shape,
+            self.active_mask,
+            self.active_mask_inverse_map,
+        )
+
+    def locator(self) -> RectilinearLocator:
+        """Return the owned locator, rebuilding it for older saved layouts."""
+        if self._locator is None:
+            self._build_locator()
+        assert self._locator is not None
+        return self._locator
+
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-D points to active bin indices based on grid structure.
-
-        Uses the grid's `grid_edges`, `grid_shape`, and `active_mask`
-        to determine the corresponding active bin for each point.
 
         Parameters
         ----------
@@ -301,13 +193,7 @@ class _GridMixin:
                 ),
             )
 
-        return _points_to_regular_grid_bin_ind(
-            points=points,
-            grid_edges=self.grid_edges,
-            grid_shape=self.grid_shape,
-            active_mask=self.active_mask,
-            inverse_map=self.active_mask_inverse_map,
-        ).astype(np.intp, copy=False)
+        return self.locator().locate(points)
 
     def plot(
         self,
@@ -379,46 +265,19 @@ class _GridMixin:
                 ),
             )
 
-        is_2d_grid = len(self.grid_shape) == 2 and len(self.grid_edges) == 2
-
-        if is_2d_grid:
-            if ax is None:
-                _, ax = plt.subplots(figsize=figsize)
-            ax.pcolormesh(
-                self.grid_edges[0],
-                self.grid_edges[1],
-                self.active_mask.T,
-                cmap=cmap,
-                alpha=alpha,
-                shading="auto",
-            )
-            ax.set_xticks(self.grid_edges[0])
-            ax.set_yticks(self.grid_edges[1])
-            ax.grid(True, ls="-", lw=0.5, c="gray")
-            ax.set_aspect("equal")
-            ax.set_title(f"{self._layout_type_tag} (2D Grid)")
-            ax.set_xlabel("Dimension 0")
-            ax.set_ylabel("Dimension 1")
-            if self.dimension_ranges:
-                ax.set_xlim(self.dimension_ranges[0])
-                ax.set_ylim(self.dimension_ranges[1])
-
-            if show_connectivity:
-                node_position = nx.get_node_attributes(self.connectivity, "pos")
-                nx.draw_networkx_nodes(
-                    self.connectivity,
-                    node_position,
-                    ax=ax,
-                    node_size=node_size,
-                    node_color=node_color,
-                )
-                for node_id1, node_id2 in self.connectivity.edges:
-                    pos = np.stack((node_position[node_id1], node_position[node_id2]))
-                    ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
-
-            return ax
-        raise NotImplementedError(
-            "Plotting for non-2D grid layouts is not implemented yet.",
+        return plot_grid(
+            ax,
+            title=self._layout_type_tag,
+            bin_centers=self.bin_centers,
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            rectilinear=self.rectilinear_grid(),
+            figsize=figsize,
+            cmap=cmap,
+            alpha=alpha,
+            show_connectivity=show_connectivity,
+            node_size=node_size,
+            node_color=node_color,
         )
 
     @property

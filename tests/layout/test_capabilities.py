@@ -1,6 +1,5 @@
 """Layout capabilities describe usable cell and track geometry."""
 
-import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -76,17 +75,20 @@ def test_non_grid_capabilities(layout_type):
     )
 
 
-def test_reconstructed_layout_has_no_grid_or_track_capability():
-    """A restored track's bins cannot substitute for its original track graph."""
-    pytest.importorskip("pynwb")
-    from neurospatial.io.nwb._environment import _ReconstructedLayout
+def test_saved_layout_facade_keeps_capabilities_in_the_binning():
+    """The facade exposes data components without claiming provider methods."""
+    from neurospatial.io import from_dict, to_dict
+    from neurospatial.layout._diffusion import FiniteVolumeGeometryProvider
 
-    layout = _ReconstructedLayout(
-        bin_centers=np.array([[0.0, 0.0], [1.0, 0.0]]),
-        connectivity=nx.path_graph(2),
-        dimension_ranges=[(0.0, 1.0), (0.0, 0.0)],
-        layout_type="Graph",
-        is_linearized_track=True,
+    original = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
     )
+    loaded = from_dict(to_dict(original))
+    layout = loaded.layout
     assert not isinstance(layout, RectilinearGridProvider)
     assert not isinstance(layout, TrackLinearizationProvider)
+    assert not isinstance(layout, FiniteVolumeGeometryProvider)
+    assert loaded._binning.faces.available
+    assert loaded._binning.linearization is not None
+    points = np.array([[0.5, 0.0], [1.5, 0.0]])
+    np.testing.assert_array_equal(loaded.to_linear(points), original.to_linear(points))

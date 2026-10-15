@@ -101,34 +101,46 @@ locations.
 
 Examples
 --------
-One-call golden path (encode + time-bin + decode in a single call)::
+One-call golden path (encode + time-bin + decode in a single call). This
+recording visits only the first bin, so decoding excludes the other bins::
 
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.decoding import decode_session  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-    >>> result = decode_session(  # doctest: +SKIP
-    ...     env, spike_times, times, positions, dt=0.025
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding import decode_session
+    >>> times = np.arange(101) / 10
+    >>> positions = np.full((len(times), 1), 5.0)
+    >>> spike_times = [np.arange(0.05, 10.0, 0.2), np.arange(0.1, 10.0, 0.4)]
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones(4, dtype=bool), grid_edges=(np.arange(5.0) * 10,)
     ... )
-    >>> print(f"Decoded positions: {result.map_position[:5]}")  # doctest: +SKIP
-    >>> print(f"Uncertainty: {result.posterior_entropy.mean():.2f} bits")  # doctest: +SKIP
+    >>> env.units = "cm"
+    >>> result = decode_session(env, spike_times, times, positions, dt=0.1)
+    >>> result.map_position.shape
+    (100, 1)
+    >>> bool(np.all(result.posterior[:, 1:] == 0.0))
+    True
 
 Explicit two-step form (build batch encoding models, then decode)::
 
-    >>> from neurospatial.encoding import compute_spatial_rates  # doctest: +SKIP
-    >>> from neurospatial.decoding import (  # doctest: +SKIP
-    ...     bin_spikes_in_time,
-    ...     decode_position,
-    ... )
+    >>> from neurospatial.encoding import compute_spatial_rates
+    >>> from neurospatial.decoding import bin_spikes_in_time, decode_position
     >>> # Batch place fields for the whole population in one call
-    >>> encoding_models = compute_spatial_rates(  # doctest: +SKIP
+    >>> rates = compute_spatial_rates(
     ...     env, spike_times, times, positions, fill_value=0.0
-    ... ).firing_rates
-    >>> spike_counts, time_grid = bin_spikes_in_time(  # doctest: +SKIP
-    ...     spike_times, dt=0.025
     ... )
-    >>> result = decode_position(  # doctest: +SKIP
-    ...     env, spike_counts, encoding_models, dt=0.025
+    >>> spike_counts, time_grid = bin_spikes_in_time(
+    ...     spike_times, dt=0.1, t_start=times[0], t_stop=times[-1]
     ... )
+    >>> explicit = decode_position(
+    ...     env, spike_counts, rates, dt=0.1, times=time_grid
+    ... )
+    >>> np.array_equal(explicit.posterior, result.posterior)
+    True
+
+Pass the rate result itself to preserve training support. Extracting
+``rates.firing_rates`` after zero filling loses the distinction between
+unobserved space and measured silence; a bare array needs an explicit prior
+such as ``prior=rates.spatial_support.astype(float)``.
 
 See Also
 --------
