@@ -19,8 +19,9 @@ from neurospatial.arena import (
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
-    from shapely.geometry import LineString, Polygon
+    from shapely.geometry import LineString, MultiPolygon, Polygon
 
+    from neurospatial.arena import _TransformedArena
     from neurospatial.layout._binning import Binning, Locator
     from neurospatial.layout.base import LayoutEngine
 
@@ -109,7 +110,16 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
 
 def _wall_source_frame(
     locator: Locator, arena: Arena, centers: NDArray[np.float64]
-) -> tuple[tuple[Polygon, ...], tuple[LineString, ...], NDArray[np.float64]] | None:
+) -> (
+    tuple[
+        tuple[Polygon | MultiPolygon, ...],
+        tuple[LineString, ...],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        tuple[_TransformedArena, ...],
+    ]
+    | None
+):
     """Recover a shared stored frame through retained cell-owner mappings."""
     from neurospatial.arena import _TransformedArena
     from neurospatial.layout._locators import SubsetLocator, TransformedLocator
@@ -119,21 +129,122 @@ def _wall_source_frame(
         if np.array_equal(locator.inverse, arena.inverse):
             original = (centers - arena.forward[:-1, -1]) @ arena.inverse[:-1, :-1].T
             inner = _wall_source_frame(locator.base, arena.base, original)
-            return (
-                inner
-                if inner is not None
-                else (cells_from_locator(locator.base), arena.base.walls, original)
-            )
+            if inner is None:
+                return (
+                    cells_from_locator(locator.base),
+                    arena.base.walls,
+                    original,
+                    locator.inverse,
+                    (arena,),
+                )
+            cells, walls, original, inverse, frames = inner
+            return cells, walls, original, inverse @ locator.inverse, (arena, *frames)
     elif isinstance(locator, (SubsetLocator, ClippedLocator)):
         inner = _wall_source_frame(locator.base, arena, centers)
         if inner is not None:
-            cells, walls, original = inner
+            cells, walls, original, inverse, frames = inner
             if isinstance(locator, SubsetLocator):
                 selected = np.flatnonzero(locator.parent_to_child >= 0)
                 selected = selected[np.argsort(locator.parent_to_child[selected])]
+                return (
+                    tuple(cells[index] for index in selected),
+                    walls,
+                    original,
+                    inverse,
+                    frames,
+                )
             else:
-                selected = locator.mapping.parent_bin_indices
-            return tuple(cells[index] for index in selected), walls, original
+                import shapely
+                from shapely.geometry import MultiPolygon, Polygon
+
+                from neurospatial.layout._binning_layout import (
+                    _polygon_coordinate_errors,
+                )
+
+                # Retain the *current* clipped support in the exact wall frame.
+                # Project shared vertices once through the actual stored frames.
+                # Their existing forward-residual bounds include inverse and
+                # large-origin arithmetic without expanding physical support.
+                polygons = np.asarray(locator.cells.polygons, dtype=object)
+                coordinates = shapely.get_coordinates(polygons)
+                unique, indices = np.unique(coordinates, axis=0, return_inverse=True)
+                mapped = unique
+                projection_errors = np.zeros_like(unique)
+                for frame in frames:
+                    mapped, projection_errors = frame._project(
+                        mapped, projection_errors
+                    )
+                current_parents = cells_from_locator(locator.base)
+                current_errors = [
+                    _polygon_coordinate_errors(p) for p in current_parents
+                ]
+                source_errors = [_polygon_coordinate_errors(p) for p in cells]
+                projected = shapely.set_coordinates(polygons, mapped[indices])
+                clipped: list[Polygon | MultiPolygon] = []
+                signed_permutation = all(
+                    np.all(np.isin(frame.inverse[:2, :2], (-1.0, 0.0, 1.0)))
+                    and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=0) == 1)
+                    and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=1) == 1)
+                    for frame in frames
+                )
+                axis_aligned = all(
+                    np.all(
+                        np.any(
+                            np.diff(shapely.get_coordinates(ring), axis=0) == 0, axis=1
+                        )
+                    )
+                    for polygon in (*cells, *current_parents)
+                    for ring in shapely.get_rings(shapely.get_parts(polygon))
+                )
+                # Signed permutations recover the stored axis coordinates
+                # exactly on axis-aligned parent geometry. Other inverses or
+                # rounded diagonal boundaries may leave a parent-edge gap.
+                # Refuse uncertain wall clearance instead of expanding cells.
+                exact_axes = signed_permutation and axis_aligned
+                projection_error = float(
+                    np.max(np.linalg.norm(projection_errors, axis=1))
+                )
+                projection_error += float(
+                    np.max(
+                        np.linalg.norm(
+                            np.asarray(current_errors) @ np.abs(inverse[:2, :2]).T,
+                            axis=1,
+                        )
+                    )
+                )
+                for child, (polygon, parent) in enumerate(
+                    zip(projected, locator.mapping.parent_bin_indices, strict=True)
+                ):
+                    retained = polygon.intersection(cells[parent])
+                    if (
+                        not isinstance(retained, (Polygon, MultiPolygon))
+                        or retained.is_empty
+                    ):
+                        raise ValueError(
+                            "Current clipped cells lose their source-frame support."
+                        )
+                    if not exact_axes:
+                        error = projection_error + float(
+                            np.linalg.norm(source_errors[parent])
+                        )
+                        for wall in walls:
+                            interior = wall.intersection(cells[parent]).difference(
+                                cells[parent].boundary
+                            )
+                            if (
+                                interior.length > 0
+                                and interior.intersection(retained)
+                                .difference(retained.boundary)
+                                .length
+                                == 0
+                                and interior.distance(retained) <= error
+                            ):
+                                raise ValueError(
+                                    f"Physical wall clearance from clipped bin {child} is unresolved in the source frame. "
+                                    "Declare walls before clipping or transforming, or recenter coordinates."
+                                )
+                    clipped.append(retained)
+                return tuple(clipped), walls, original, inverse, frames
     return None
 
 
@@ -159,8 +270,8 @@ def apply_walls(
         )
     else:
         # Shared snapshots avoid independently rounded collinear vertices.
-        # Subset/clip descendants inherit the same source-cell wall decisions.
-        cells, wall_segments, centers = wall_frame
+        # Retained source-frame cells preserve current clipping and ownership.
+        cells, wall_segments, centers, _, _ = wall_frame
     walls = unary_union(wall_segments)
     for index, cell in enumerate(cells):
         interior_part = walls.intersection(cell).difference(cell.boundary)
@@ -169,6 +280,7 @@ def apply_walls(
                 f"Physical wall cuts through bin {index}. Refine or rebuild cells so walls follow complete cell faces."
             )
     keep = np.ones(len(binning.bins.pairs), dtype=bool)
+    current_cells = None
     for index, (u, v) in enumerate(binning.bins.pairs):
         contact = cells[u].boundary.intersection(cells[v].boundary)
         blocked = contact.intersection(walls)
@@ -180,9 +292,21 @@ def apply_walls(
             keep[index] = False
         elif contact.length == 0:
             link = LineString(centers[[u, v]])
-            keep[index] = contact.intersection(walls).is_empty and not link.crosses(
-                walls
-            )
+            crosses = link.crosses(walls)
+            if wall_frame is not None and crosses:
+                if current_cells is None:
+                    current_cells = materialize_cells(binning)
+                if (
+                    current_cells[u]
+                    .boundary.intersection(current_cells[v].boundary)
+                    .length
+                    > 0
+                ):
+                    raise ValueError(
+                        f"Physical wall face alignment for bins ({u}, {v}) is unresolved in the source frame. "
+                        "Declare walls before clipping or transforming, or recenter coordinates."
+                    )
+            keep[index] = contact.intersection(walls).is_empty and not crosses
     if np.all(keep):
         return binning, graph
     bins = binning.bins
