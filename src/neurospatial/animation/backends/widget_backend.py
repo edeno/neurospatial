@@ -370,6 +370,7 @@ class PersistentFigureRenderer:
         from matplotlib.collections import QuadMesh
 
         self._env = env
+        self._binning_snapshot = env.binning
         self._cmap = cmap
         self._vmin = vmin
         self._vmax = vmax
@@ -664,7 +665,7 @@ class PersistentFigureRenderer:
         shape (nrows * ncols,). The array is flattened in row-major order
         from the transposed grid (grid_data.T.ravel()).
         """
-        frame = self._env._binning.grid_frame
+        frame = self._binning_snapshot.grid_frame
         if frame is not None:
             from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
@@ -673,7 +674,7 @@ class PersistentFigureRenderer:
                 source_grid.shape, source_grid.active_mask, field, fill_value=np.nan
             )
             return np.asarray(data.T.ravel(), dtype=np.float64)
-        grid = self._env._binning.rectilinear
+        grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_array optimization
         # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
@@ -710,7 +711,7 @@ class PersistentFigureRenderer:
         ndarray or None
             2D array for set_data() if grid layout, None otherwise.
         """
-        grid = self._env._binning.rectilinear
+        grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_data optimization
         # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)

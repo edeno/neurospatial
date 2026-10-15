@@ -452,7 +452,7 @@ def _environment_payload(
     from neurospatial.geometry._arena import encode_arena
     from neurospatial.geometry._codecs import encode, graph_to_node_link
 
-    binning_meta, binning_arrays = encode(env._binning, "binning")
+    binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
     metadata: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,

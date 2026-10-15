@@ -123,7 +123,7 @@ def prepare_linear_spatial_intervals(
     """
     if (
         env.n_dims != 2
-        or env._binning.bins.measure_dim != 2
+        or env.binning.bins.measure_dim != 2
         or env.arena.coordinate_kind != "cartesian"
     ):
         raise NotImplementedError(
@@ -412,14 +412,13 @@ def _bin_spike_train_with_stats(
     for d in range(n_dims):
         spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
 
-    if linear_intervals is not None and env._binning.grid_frame is not None:
+    grid_frame = env.binning.grid_frame if linear_intervals is not None else None
+    if grid_frame is not None:
         from neurospatial.environment._polygon_trajectory import _source_grid
 
         # Use the same retained source planes and half-open ownership as
         # fractional dwell allocation, including paths along a hole edge.
-        locator, source_positions = _source_grid(
-            env._binning.grid_frame, spike_positions
-        )
+        locator, source_positions = _source_grid(grid_frame, spike_positions)
         spike_bins = locator.locate(source_positions)
         if env.arena.domain_known:
             spike_bins[~env.arena.contains(spike_positions)] = -1

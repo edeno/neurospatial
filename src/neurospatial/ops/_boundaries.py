@@ -34,7 +34,7 @@ def boundary_geometry(
             "Wall geometry requires planar Cartesian coordinates."
         )
     if source == "analysis":
-        return _analysis_boundary(env._binning, env.arena)
+        return _analysis_boundary(env.binning, env.arena)
     return physical_walls(env.arena)
 
 

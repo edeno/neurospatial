@@ -128,38 +128,42 @@ def _validate_encoding_environment(
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"
-        elif isinstance(source._binning.shapes, PolygonCells) or isinstance(
-            env._binning.shapes, PolygonCells
-        ):
-            source_cells, target_cells = (
-                materialize_cells(source._binning),
-                materialize_cells(env._binning),
-            )
-            if len(source_cells) != len(target_cells) or any(
-                not left.equals(right)
-                for left, right in zip(source_cells, target_cells, strict=True)
+        else:
+            source_binning, target_binning = source.binning, env.binning
+            if isinstance(source_binning.shapes, PolygonCells) or isinstance(
+                target_binning.shapes, PolygonCells
             ):
-                mismatch = "polygon cell geometry"
-            else:
-                from neurospatial.geometry._codecs import encode
-
-                try:
-                    source_meta, source_arrays = encode(
-                        source._binning.locator, "locator"
-                    )
-                    target_meta, target_arrays = encode(env._binning.locator, "locator")
-                except ValueError:
-                    mismatch = "bin-boundary ownership"
+                source_cells, target_cells = (
+                    materialize_cells(source_binning),
+                    materialize_cells(target_binning),
+                )
+                if len(source_cells) != len(target_cells) or any(
+                    not left.equals(right)
+                    for left, right in zip(source_cells, target_cells, strict=True)
+                ):
+                    mismatch = "polygon cell geometry"
                 else:
-                    if (
-                        source_meta != target_meta
-                        or source_arrays.keys() != target_arrays.keys()
-                        or any(
-                            not np.array_equal(value, target_arrays[key])
-                            for key, value in source_arrays.items()
+                    from neurospatial.geometry._codecs import encode
+
+                    try:
+                        source_meta, source_arrays = encode(
+                            source_binning.locator, "locator"
                         )
-                    ):
+                        target_meta, target_arrays = encode(
+                            target_binning.locator, "locator"
+                        )
+                    except ValueError:
                         mismatch = "bin-boundary ownership"
+                    else:
+                        if (
+                            source_meta != target_meta
+                            or source_arrays.keys() != target_arrays.keys()
+                            or any(
+                                not np.array_equal(value, target_arrays[key])
+                                for key, value in source_arrays.items()
+                            )
+                        ):
+                            mismatch = "bin-boundary ownership"
     if mismatch is not None:
         raise IncompatibleEnvironmentError(
             f"{context}: the encoding result's environment differs from the "

@@ -3034,7 +3034,7 @@ def render_napari(
     --------
     neurospatial.animation.core.animate_fields : Main animation interface
     """
-    if env._binning.grid_frame is not None:
+    if env.binning.grid_frame is not None:
         raise NotImplementedError(
             "Napari raster images do not support framed grids; use Matplotlib, video or HTML rendering."
         )

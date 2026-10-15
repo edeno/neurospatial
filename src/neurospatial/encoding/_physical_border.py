@@ -43,7 +43,8 @@ def _prepare_physical_border(
             return any(independent_frame(child.locator) for child in locator.children)
         return False
 
-    composition = composition_view(env._binning.locator)
+    binning = env.binning
+    composition = composition_view(binning.locator)
     if composition is not None and any(
         independent_frame(child.locator) for child in composition[0].children
     ):
@@ -52,7 +53,7 @@ def _prepare_physical_border(
         )
 
     try:
-        cells = materialize_cells(env._binning)
+        cells = materialize_cells(binning)
     except ValueError as exc:
         raise NotImplementedError(
             "Physical border coverage needs exact planar cells; supply supported grid or polygon cells, or choose boundary_source='analysis'."
@@ -60,7 +61,7 @@ def _prepare_physical_border(
     from neurospatial.geometry._wall_frame import _wall_source_frame
     from neurospatial.ops._boundaries import physical_walls
 
-    frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)
+    frame = _wall_source_frame(binning.locator, env.arena, env.bin_centers)
     contact_cells, contact_walls = cells, walls
     forward = None
     if frame is not None:

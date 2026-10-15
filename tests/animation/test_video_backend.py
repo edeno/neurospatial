@@ -771,7 +771,7 @@ class TestParallelRendering:
             assert artist is not None
 
             before = np.asarray(artist.get_array()).copy()
-            _update_field_artist(artist, env, field1)
+            _update_field_artist(artist, env.binning, field1)
             after = np.asarray(artist.get_array())
 
             # The active-bin values must have actually changed (0.0 -> 1.0).
