@@ -121,6 +121,7 @@ from neurospatial.behavior.segmentation import _positive_dt
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.behavior.segmentation import Trial
+    from neurospatial.environment._coordinates import CartesianSystem
 
 
 __all__ = [  # noqa: RUF022
@@ -555,6 +556,12 @@ def path_progress(
         Path progress from 0 to 1 at each timepoint. NaN for invalid bins (-1)
         or when no path exists between bins.
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``metric="euclidean"`` and ``env`` is polar. Use
+        ``metric="geodesic"``.
+
     Notes
     -----
     This function is fully vectorized - no loops over timepoints. The only
@@ -604,6 +611,14 @@ def path_progress(
         from neurospatial import EnvironmentNotFittedError
 
         raise EnvironmentNotFittedError("path_progress", is_function=True)
+    if metric == "euclidean":
+        from neurospatial.environment.polar import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "path_progress(metric='euclidean')",
+            instead="Use metric='geodesic', which follows physical graph edge lengths.",
+        )
 
     # Validate array lengths
     n_samples = len(position_bins)
@@ -715,6 +730,12 @@ def distance_to_region(
         Distance from current position to target at each timepoint.
         Units match environment coordinates (e.g., cm).
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``metric="euclidean"`` and ``env`` is polar. Use
+        ``metric="geodesic"``.
+
     Notes
     -----
     **Performance strategy (automatic)**:
@@ -740,6 +761,14 @@ def distance_to_region(
         from neurospatial import EnvironmentNotFittedError
 
         raise EnvironmentNotFittedError("distance_to_region", is_function=True)
+    if metric == "euclidean":
+        from neurospatial.environment.polar import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "distance_to_region(metric='euclidean')",
+            instead="Use metric='geodesic', which follows physical graph edge lengths.",
+        )
 
     is_scalar_target = np.isscalar(target_bins)
 
@@ -938,7 +967,7 @@ def time_to_goal(
 
 
 def graph_turn_sequence(
-    env: Environment,
+    env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
     start_bin: int,
     end_bin: int,
@@ -948,12 +977,12 @@ def graph_turn_sequence(
     """Extract discrete turn sequence from trajectory.
 
     Analyzes which bins were traversed and classifies turns based on
-    changes in movement direction. Works for any environment type.
+    changes in movement direction. Works for any Cartesian layout type.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment (any layout type).
+        Cartesian spatial environment (any layout type).
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along trajectory (single trial or segment).
     start_bin, end_bin : int
@@ -966,6 +995,12 @@ def graph_turn_sequence(
     str
         Turn sequence like "left-right-left", or empty string "" if no
         turns detected. Each turn is separated by "-".
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar: left and right come from cross products of
+        Cartesian bin-center displacements.
 
     Examples
     --------
@@ -982,6 +1017,16 @@ def graph_turn_sequence(
         from neurospatial import EnvironmentNotFittedError
 
         raise EnvironmentNotFittedError("graph_turn_sequence", is_function=True)
+    from neurospatial.environment.polar import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "graph_turn_sequence()",
+        instead=(
+            "Turn direction needs Cartesian bin centers; classify turns on an "
+            "allocentric Cartesian environment."
+        ),
+    )
 
     consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
     transition_counts = Counter(map(tuple, consecutive_bins))

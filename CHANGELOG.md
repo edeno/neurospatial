@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
+  raise `CartesianOnlyError` on polar environments instead of returning wrong
+  numbers. For example, a posterior split across the angle seam behind the
+  animal no longer has a `mean_position` of straight ahead. The refusals cover
+  `mean_position` (including `DecodingResult.mean_position` and
+  `to_dataframe()`), `decode_position_summary`, `field_shape_metrics`,
+  `field_shift_distance`, `spatial_autocorrelation`, `map_points_to_bins`,
+  `resample_field`, `map_probabilities`, `spatial_basis`,
+  `graph_turn_sequence` and `detect_laps`. Type checkers reject polar
+  environments for these functions. Some functions refuse only their Cartesian
+  mode and keep a graph-based mode for polar environments:
+  `rate_map_centroid(method="euclidean")`,
+  `compute_field_emd(metric="euclidean")`,
+  `select_basis_centers(method="kmeans")` (also the default `center_method` of
+  the basis functions), `path_progress` and `distance_to_region` with
+  `metric="euclidean"`, `trajectory_similarity` with `"hausdorff"` or `"dtw"`,
+  and `detect_runs_between_regions` with `min_speed`.
+
 - Preserve static attribute and protocol checking for the common Environment;
   runtime Cartesian/polar capability filtering no longer admits missing methods.
 

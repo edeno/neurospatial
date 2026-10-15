@@ -29,6 +29,7 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.environment._protocols import FieldMetricsConsumer
 
 # ruff: noqa: RUF022 - intentionally grouped by category
@@ -122,6 +123,13 @@ def rate_map_centroid(
     centroid : array, shape (n_dims,)
         Weighted center of mass in physical coordinates.
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``method="euclidean"`` and ``env`` is polar: averaging
+        ``(distance, angle)`` bin centers is not a position. Use
+        ``method="geodesic"``, which returns a field bin.
+
     Notes
     -----
     For ``method="euclidean"``, centroid is computed as the firing-rate-weighted
@@ -166,6 +174,18 @@ def rate_map_centroid(
     ... )
     """
     import networkx as nx
+
+    if method == "euclidean":
+        from neurospatial.environment.polar import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "rate_map_centroid(method='euclidean')",
+            instead=(
+                "Use method='geodesic', which returns the field bin that "
+                "minimizes rate-weighted graph distance."
+            ),
+        )
 
     # Get positions and rates for field bins
     field_positions = env.bin_centers[field_bins]
@@ -556,7 +576,7 @@ def in_out_field_ratio(
 
 
 def field_shape_metrics(
-    env: Environment,
+    env: Environment[CartesianSystem],
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
 ) -> dict[str, float]:
@@ -586,6 +606,12 @@ def field_shape_metrics(
         - 'area': float, spatial extent of field (number of bins)
 
         Returns dict with NaN values if field is empty or environment is not 2D.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar: eccentricity and orientation come from the
+        covariance of Cartesian bin centers.
 
     Notes
     -----
@@ -649,6 +675,16 @@ def field_shape_metrics(
     .. [2] Knierim et al. (1995). Place cells, head direction cells, and the
            learning of landmark stability. J Neurosci 15(3).
     """
+    from neurospatial.environment.polar import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "field_shape_metrics()",
+        instead=(
+            "Eccentricity and orientation need Cartesian bin centers; compute "
+            "field shape on an allocentric Cartesian environment."
+        ),
+    )
     # Initialize with NaN defaults
     result = {
         "eccentricity": np.nan,
@@ -736,10 +772,10 @@ def field_shape_metrics(
 
 
 def field_shift_distance(
-    env_1: Environment,
+    env_1: Environment[CartesianSystem],
     firing_rate_1: NDArray[np.float64],
     field_bins_1: NDArray[np.int64],
-    env_2: Environment,
+    env_2: Environment[CartesianSystem],
     firing_rate_2: NDArray[np.float64],
     field_bins_2: NDArray[np.int64],
     *,
@@ -777,6 +813,12 @@ def field_shift_distance(
     float
         Distance between field centroids in spatial units (same units as environment).
         Returns NaN if either field is empty or centroid calculation fails.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env_1`` or ``env_2`` is polar: field centroids are Cartesian
+        rate-weighted means of bin centers.
 
     Notes
     -----
@@ -857,6 +899,17 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
+    from neurospatial.environment.polar import _require_cartesian_coordinates
+
+    for env in (env_1, env_2):
+        _require_cartesian_coordinates(
+            env,
+            "field_shift_distance()",
+            instead=(
+                "Field centroids need Cartesian bin centers; compare field "
+                "positions on allocentric Cartesian environments."
+            ),
+        )
     # Compute centroids for both fields
     centroid_1 = rate_map_centroid(env_1, firing_rate_1, field_bins_1)
     centroid_2 = rate_map_centroid(env_2, firing_rate_2, field_bins_2)
@@ -967,6 +1020,10 @@ def compute_field_emd(
         If firing_rate arrays don't match env.n_bins.
         If metric is not "euclidean" or "geodesic".
         If normalize=False and distributions have different total mass.
+    CartesianOnlyError
+        If ``metric="euclidean"`` and ``env`` is polar: the ground distance
+        would treat ``(distance, angle)`` bin centers as ``(x, y)``. Use
+        ``metric="geodesic"``.
 
     Warns
     -----
@@ -1049,6 +1106,17 @@ def compute_field_emd(
 
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+    if metric == "euclidean":
+        from neurospatial.environment.polar import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "compute_field_emd(metric='euclidean')",
+            instead=(
+                "Use metric='geodesic', whose ground distance follows physical "
+                "graph edge lengths."
+            ),
+        )
 
     # Handle NaN values
     firing_rate_1 = firing_rate_1.copy()
