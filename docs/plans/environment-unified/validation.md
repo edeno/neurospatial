@@ -7,7 +7,9 @@ scientific comparisons, real-recording checks and measured costs are below.
 
 See [f0-contracts.md](f0-contracts.md) for reproductions, fixed parent commits,
 scientific baseline, native face inputs and migration decisions. The full
-matrix reruns remain pending; no platform-wide pass is implied by local results.
+matrix reruns were pending at this checkpoint; see the follow-up review below
+for the latest parent CI results. No platform-wide pass is implied by local
+results.
 
 ## F1 — Native face data and coordinate publication
 
@@ -250,8 +252,66 @@ branches, then merged forward without rewriting the stack. Latest reviewed
 heads: #70 `9d5ce567`, #71 `87b1cd6c`, #72 `79de81ba`, #73 `f41cf100`,
 #74 `1fe8cb1b`, #76 `c074957e`. The final read-only review found no failures:
 #67, #68, #70, #73 and #74 each have 24 successful checks and one skipped check.
-#71, #72 and #76 still have running/queued matrix jobs. The repaired Windows
+#71, #72 and #76 had running/queued matrix jobs at that checkpoint; the follow-up
+review below records their completed results. The repaired Windows
 3.10 cyclic-metadata check passed on its owning #70 branch. Cancelled duplicate
 runs have superseding checks and are not counted as failures. Stage F's new
 CI configuration has passed locally; Stage F has not been published as a PR.
-Pending remote jobs and unrun GUI/GPU checks are not reported as passes.
+Those pending remote jobs and unrun GUI/GPU checks were not reported as passes.
+
+## Post-implementation architecture review fixes
+
+The follow-up review identified four concrete responsibility and typing gaps.
+All four are addressed without changing public signatures, method docstrings or
+scientific results:
+
+- The runtime coordinate-capability attribute hook is hidden from static
+  analysis. Type checkers again reject misspelled attributes and unsatisfied
+  consumer protocols. Four negative-contract checks failed before the repair
+  with unused-ignore errors and pass afterward.
+- Readers validate storage records, then publish through the shared geometry
+  validator once. Dictionary, file and NWB regressions reproduced two graph
+  and component validations before the repair; each now runs once. Malformed
+  geometry remains rejected by publication.
+- Subset derivation, component/source lookup and bridge-table assembly live in
+  domain functions. Public methods retain signatures, guards and docstrings.
+- Explicit bins and clipping share `layout/_graph.py` for standard graph
+  projection. Pair-row IDs, graph vector orientation and source-grid IDs are
+  preserved. Subsets keep their dedicated metadata-preserving graph path.
+
+The starting commit is `3c722f11`. The fresh before/after captures
+`/private/tmp/environment-responsibilities-{base,final}.npz` contain 4,004
+identical probes, including API signatures and docstrings. The same pinned J16
+60,000-sample recording slice produces 14 arrays identical to the completed
+Stage F capture, using the parameters recorded above.
+
+The isolated environment and CPU exclusions are unchanged. Follow-up checks:
+
+| Gate | Result |
+| --- | --- |
+| Full CPU suite | 13,837 passed, 31 skipped |
+| Geometry, layouts, file/NWB and adapters, RuntimeWarnings as errors | 4,034 passed, seven skipped |
+| All-NaN plotting target modules, normal warning handling | 20 passed |
+| Source doctests | 585 passed, 124 skipped |
+| Executable Markdown, API, argument and import checks | 68 passed, three skipped |
+| Python 3.10 coordinate, ownership, subset and combine tests | 133 passed, one skipped |
+| Source and all static contracts | 256 files passed |
+| Import-linter | Two contracts kept |
+| Repository Ruff, formatting and whitespace | Passed |
+
+The strict geometry run excludes exactly two all-NaN plotting nodes. Both fail
+with the same NumPy warning on the archived starting source under
+RuntimeWarnings-as-errors; both pass with normal warning handling. No plotting
+implementation changed. The initial strict run's two failures are retained in
+`environment-responsibilities-tests.log`; the baseline reproduction is
+`environment-responsibilities-baseline-warnings.log`. Passing follow-up logs
+use `/private/tmp/environment-responsibilities-` with suffixes `strict.log`,
+`plotting.log`, `doctests.log`, `doc-api.log`, `py310.log`, `mypy-final.log`
+and `imports-final.log`; the full CPU log is `cpu.log`. GUI/GPU execution remains
+unrun.
+
+Independent review found no remaining source or architecture issues and passed
+147 focused tests plus both Python 3.10 static contracts. The final read-only
+parent CI refresh confirms that #67, #68, #70, #71, #72, #73, #74 and #76 each
+have 24 successful checks and one skipped check. Superseded cancelled duplicates
+are excluded. Stage F remains local; no new PR is implied by these parent results.

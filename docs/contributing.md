@@ -181,13 +181,15 @@ array views reject writes and its graph rejects topology and attribute edits.
 
 `Environment._from_binning` validates and publishes owned data atomically and
 starts fresh caches. Readers decode binning and graph records directly through
-this path, without replaying build parameters. `layout/_validation.py` checks
-positions, ordered faces and distances, measures, locator/component agreement,
-frames and immediate clip mappings. Center lookup is checked on a detached
-locator so publication does not warm the saved value's lookup cache. Native
-builders retain their previous coincident-track-center behavior; untrusted
-loaded and explicit bins retain strict center checks. Native mesh and hex
-logical indexing is distinct from a framed raster's source coordinates.
+this path, without replaying build parameters. Readers validate the storage
+format; publication runs the shared geometry checks once.
+`layout/_validation.py` checks positions, ordered faces and distances, measures,
+locator/component agreement, frames and immediate clip mappings. Center lookup
+is checked on a detached locator so publication does not warm the saved value's
+lookup cache. Native builders retain their previous coincident-track-center
+behavior; untrusted loaded and explicit bins retain strict center checks.
+Native mesh and hex logical indexing is distinct from a framed raster's source
+coordinates.
 Descriptive layout names and parameters never grant numerical capabilities.
 
 `subset` and `apply_transform` derive a binning through `layout/_derive.py` and
@@ -276,12 +278,19 @@ type.
 
 Geometry uses the [owned publication path](#diffusion-geometry-providers)
 described above. Derivations return new environments with fresh analysis caches.
+`layout/_graph.py` projects newly constructed binning into standard navigation
+graph attributes for explicit bins and clipping. It preserves bin IDs and pair
+row IDs. Derivations such as subsets retain their existing graph metadata and
+edge ordering rather than rebuilding those annotations from geometry alone.
 
 There is one public runtime `Environment` class. Factories infer its static
 Cartesian or egocentric-polar coordinate type. Cartesian-only entry points use
 restricted `self` annotations and a runtime `_require_cartesian` guard, including
 unbound calls. `CARTESIAN_OPERATIONS` controls polar attribute availability;
 `test_every_public_member_is_classified_for_polar` checks that capability table.
+The attribute-filtering hook exists only at runtime: type checkers must still
+reject missing attributes and unsatisfied consumer protocols. Negative static
+contracts in `tests/typing` guard these failures with checked ignore comments.
 Shared code asks the owned coordinate descriptor about lengths, axes and
 circularity, or uses public `coordinate_kind` for metadata. Do not discriminate
 using environment classes or descriptive layout labels.
