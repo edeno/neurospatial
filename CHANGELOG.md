@@ -13,6 +13,10 @@
   `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
   and `.npz` paths remain accepted.
 
+- Preserve physical diffusion faces on grids with small coordinate units;
+  exactly nonzero axis displacements no longer disappear below an absolute
+  `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
+
 ### Added
 
 - Plot actual positions directly on decoded posteriors with
