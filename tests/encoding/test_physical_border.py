@@ -40,17 +40,15 @@ def test_physical_score_matches_independent_wall_length_and_distance_oracle():
         np.testing.assert_allclose(border_score(env, field, metric=metric), expected)
 
 
-def test_analysis_crop_does_not_create_wall_or_change_euclidean_score():
+def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     env = physical(wall=True)
     field = (env.bin_centers[:, 0] == 3.5).astype(float)
     keep = env.bin_centers[:, 0] < 4
     cropped = env.subset(bins=keep)
-    np.testing.assert_allclose(
-        border_score(cropped, field[keep], metric="euclidean"),
-        border_score(env, field, metric="euclidean"),
-    )
+    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        border_score(cropped, field[keep], metric="euclidean")
     assert border_score(cropped, field[keep], boundary_source="analysis") == 1.0
-    assert border_score(cropped, field[keep], metric="euclidean") < 0
+    assert border_score(env, field, metric="euclidean") < 0
 
 
 def test_internal_wall_changes_contact_and_distance():
@@ -62,15 +60,16 @@ def test_internal_wall_changes_contact_and_distance():
     )
 
 
-def test_no_represented_path_to_wall_is_not_silently_dropped():
+def test_no_represented_wall_coverage_is_not_silently_scored():
     env = physical().subset(
         bins=(physical().bin_centers[:, 0] > 4)
         & (physical().bin_centers[:, 0] < 6)
         & (physical().bin_centers[:, 1] > 4)
         & (physical().bin_centers[:, 1] < 6)
     )
-    assert np.isnan(border_score(env, np.ones(env.n_bins), metric="geodesic"))
-    assert border_score(env, np.ones(env.n_bins), metric="euclidean") == -1
+    for metric in ("geodesic", "euclidean"):
+        with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+            border_score(env, np.ones(env.n_bins), metric=metric)
 
 
 def test_asserted_mask_holes_remain_walls_after_storage_and_crop():
@@ -218,3 +217,82 @@ def test_unknown_wall_error_distinguishes_geometry_from_map_support():
     assert "measured" in str(error.value)
     assert "bin support" in str(error.value)
     assert "boundary_source='analysis'" in str(error.value)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_position_footprint_inset_from_measured_walls_is_unavailable(metric):
+    x, y = np.meshgrid(np.arange(3.0, 98.0), np.arange(3.0, 98.0))
+    env = Environment.from_samples(
+        np.column_stack((x.ravel(), y.ravel())),
+        bin_size=2.0,
+        arena=OpenArena(box(0, 0, 100, 100)),
+    )
+    field = (env.bin_centers[:, 0] < 10).astype(float)
+    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        border_score(env, field, metric=metric)
+    assert border_score(env, field, boundary_source="analysis") > 0.8
+
+
+def test_rebuilding_a_rotated_arena_cannot_report_partial_wall_coverage_as_a_score():
+    from shapely.affinity import rotate
+
+    env = Environment.from_polygon(
+        rotate(box(0, 0, 10, 10), 45, origin=(5, 5)), bin_size=0.2
+    )
+    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        border_score(env, np.ones(env.n_bins))
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_unobserved_wall_rates_are_unavailable_but_observed_zero_rates_are_valid(
+    metric,
+):
+    env = physical()
+    field = (
+        (env.bin_centers[:, 0] > 4)
+        & (env.bin_centers[:, 0] < 6)
+        & (env.bin_centers[:, 1] > 4)
+        & (env.bin_centers[:, 1] < 6)
+    ).astype(float)
+    assert border_score(env, field, metric=metric) == -1.0
+    field[env.bin_centers[:, 0] < 1] = np.nan
+    with pytest.raises(NotImplementedError, match="finite firing rates"):
+        border_score(env, field, metric=metric)
+
+
+def test_all_missing_wall_rates_refuse_before_field_detection():
+    env = physical()
+    with pytest.raises(NotImplementedError, match="finite firing rates"):
+        border_score(env, np.full(env.n_bins, np.nan))
+
+
+def test_missing_wall_rate_support_is_reported_in_result_summary():
+    from neurospatial.encoding.spatial import SpatialRateResult
+
+    env = physical()
+    rates = np.ones(env.n_bins)
+    rates[env.bin_centers[:, 0] < 1] = np.nan
+    result = SpatialRateResult(
+        rates, np.ones(env.n_bins), env, method="binned", bandwidth=0.0
+    )
+    table = result.summary_table(include_classification=False)
+    assert np.isnan(table["border_score"].iloc[0])
+    assert "finite firing rates" in table.attrs["unavailable_metrics"]["border_score"]
+
+
+def test_batch_missing_wall_rate_support_raises_instead_of_hiding_as_numeric_failure():
+    from neurospatial.encoding._metrics import batch_border_scores
+
+    env = physical()
+    rates = np.ones((2, env.n_bins))
+    rates[1, env.bin_centers[:, 0] < 1] = np.nan
+    with pytest.raises(NotImplementedError, match="finite firing rates"):
+        batch_border_scores(env, rates)
+
+
+def test_observed_internal_wall_side_does_not_supply_the_other_sides_missing_rates():
+    env = physical(wall=True)
+    rates = np.ones(env.n_bins)
+    rates[env.bin_centers[:, 0] == 4.5] = np.nan
+    with pytest.raises(NotImplementedError, match="finite firing rates"):
+        border_score(env, rates)

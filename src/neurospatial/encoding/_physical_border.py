@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
@@ -14,18 +15,21 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
-def _physical_border_score(
-    env: EnvironmentProtocol,
-    field_bins: NDArray[np.int64],
-    walls: shapely.Geometry,
-    metric: Literal["geodesic", "euclidean"],
-) -> float:
-    """Use wall-length coverage and mean center-to-wall distance.
+@dataclass(frozen=True)
+class _PhysicalBorderContact:
+    """Exact cell and wall contact geometry in a shared source frame."""
 
-    Geodesic distances include a center-to-wall seed length and then paths
-    through the retained navigation graph. Unrepresented routes are unknown,
-    not zero distance, and any unreachable field bin makes that score NaN.
-    """
+    cells: tuple[shapely.Geometry, ...]
+    walls: shapely.Geometry
+    forward: NDArray[np.float64] | None
+
+
+def _prepare_physical_border(
+    env: EnvironmentProtocol,
+    firing_rate: NDArray[np.float64],
+    walls: shapely.Geometry,
+) -> _PhysicalBorderContact:
+    """Require represented, observed wall coverage before interpreting activity."""
     from neurospatial.layout._composition import CombinedLocator, composition_view
     from neurospatial.layout._locators import SubsetLocator, TransformedLocator
     from neurospatial.layout._polygon import ClippedLocator, materialize_cells
@@ -63,13 +67,48 @@ def _physical_border_score(
         contact_cells, _internal, _centers, inverse, frames = frame
         contact_walls = physical_walls(frames[-1].base)
         forward = np.asarray(np.linalg.inv(inverse), dtype=np.float64)
-    contact = contact_walls.intersection(
-        unary_union([contact_cells[index] for index in field_bins])
+
+    represented = unary_union(contact_cells)
+    wall_contact = (
+        shapely.length(
+            shapely.intersection(np.asarray(contact_cells, dtype=object), contact_walls)
+        )
+        > 0
     )
-    if forward is not None:
+    if contact_walls.difference(represented).length > 0 or np.any(
+        wall_contact & ~np.isfinite(firing_rate)
+    ):
+        raise NotImplementedError(
+            "Physical-wall coverage is unavailable: some measured wall segments have no retained cells "
+            "with finite firing rates. Build bins that reach every measured wall and collect sufficient "
+            "observations there. For rotated rectangular arenas, build bins in the arena-aligned frame "
+            "and transform the bins, arena and observations together. Adding OpenArena or clipping "
+            "existing bins cannot supply missing bins or observations. Alternatively, explicitly use "
+            "boundary_source='analysis' to score the retained analysis boundary."
+        )
+    return _PhysicalBorderContact(tuple(contact_cells), contact_walls, forward)
+
+
+def _physical_border_score(
+    env: EnvironmentProtocol,
+    field_bins: NDArray[np.int64],
+    walls: shapely.Geometry,
+    metric: Literal["geodesic", "euclidean"],
+    geometry: _PhysicalBorderContact,
+) -> float:
+    """Use observed wall-length coverage and mean center-to-wall distance.
+
+    Geodesic distances include a center-to-wall seed length and then paths
+    through the retained navigation graph. Unrepresented routes are unknown,
+    not zero distance, and any unreachable field bin makes that score NaN.
+    """
+    contact = geometry.walls.intersection(
+        unary_union([geometry.cells[index] for index in field_bins])
+    )
+    if geometry.forward is not None:
         from neurospatial.arena import _mapped_geometry
 
-        contact = _mapped_geometry(contact, forward)
+        contact = _mapped_geometry(contact, geometry.forward)
     coverage = contact.length / walls.length
     direct = np.asarray(
         shapely.distance(shapely.points(env.bin_centers), walls), dtype=float
@@ -80,8 +119,8 @@ def _physical_border_score(
         # Contact with a wall is a seed, not an invented zero-distance bin.
         seeds = [
             i
-            for i, cell in enumerate(contact_cells)
-            if cell.intersection(contact_walls).length > 0
+            for i, cell in enumerate(geometry.cells)
+            if cell.intersection(geometry.walls).length > 0
         ]
         if not seeds:
             return float("nan")

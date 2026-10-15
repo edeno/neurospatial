@@ -70,17 +70,31 @@ def border_score(
         by field cells; distance is mean center-to-wall distance normalized by
         the wall diameter (maximum point separation). Geodesic mode adds center-to-wall seed
         lengths to paths on the retained graph; unavailable routes return NaN.
+        Every measured wall segment must have retained cells with finite firing
+        rates. Missing cells or observations make physical scoring unavailable;
+        adding arena geometry alone does not supply them. For a rotated
+        rectangular arena, build bins in its aligned frame, then transform bins,
+        arena and observations together.
         Analysis mode explicitly retains the legacy boundary-bin formula below.
         It treats analysis edges as an approximation, not measured walls.
 
     Returns
     -------
     float
-        Border score in range [-1, 1]. Returns NaN if:
+        Border score in range [-1, 1]. After validating required physical-wall
+        observations, returns NaN if:
         - All firing rates are zero or NaN
         - Peak firing rate is zero or NaN
         - Field area is below min_area
         - No field bins after thresholding
+
+    Raises
+    ------
+    NotImplementedError
+        If physical wall geometry is unavailable, or any measured wall segment
+        lacks retained cells with finite firing rates. Missing observations are
+        not evidence for zero firing; explicitly select the analysis-boundary
+        approximation when that is the intended measurement.
 
     Notes
     -----
@@ -232,6 +246,11 @@ def border_score(
     walls = (
         boundary_geometry(env, "physical") if boundary_source == "physical" else None
     )
+    physical_contact = None
+    if walls is not None:
+        from neurospatial.encoding._physical_border import _prepare_physical_border
+
+        physical_contact = _prepare_physical_border(env, firing_rate, walls)
 
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
@@ -256,10 +275,10 @@ def border_score(
     if area < min_area:
         return np.nan
 
-    if walls is not None:
+    if walls is not None and physical_contact is not None:
         from neurospatial.encoding._physical_border import _physical_border_score
 
-        return _physical_border_score(env, field_bins, walls, metric)
+        return _physical_border_score(env, field_bins, walls, metric, physical_contact)
 
     # Explicit legacy approximation: analysis-boundary bins.
     boundary_bins = env.boundary_bins
