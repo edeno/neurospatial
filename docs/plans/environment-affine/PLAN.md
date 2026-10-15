@@ -2,7 +2,7 @@
 
 **Status:** Planned on 2026-10-15; implementation has not started.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
-`feature/environment-wall-visibility` at `21b2c5f4` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
+`feature/environment-wall-visibility` at `c725048e` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
 This is a local planning branch; opening another PR is a separate action.
 
 ## Entry status
@@ -17,9 +17,10 @@ source/contract typing (**245 files**). The final CPU log is
 The base PR's CI failures were reproduced from the Linux/Windows/slow-job logs.
 Portable geometry/plot assertions and explicit UTF-8 test reads are published;
 all stacked PRs now receive checks, with obsolete runs cancelled per PR.
-**Remote matrix verification is still queued, not established as passing.**
-Finish that gate before starting Stage E implementation. Planning does not
-claim that a queued CI job has passed.
+**Remote matrix verification is running/queued, not established as passing.**
+Finish that gate before starting Stage E implementation. Full source doctests
+passed 596 cases (126 skipped), and all 4,072 environment probes match the prior
+Stage D snapshot. Planning does not claim that a queued CI job has passed.
 
 ## Problem and user workflow
 
@@ -155,8 +156,10 @@ face area `a` and unit normal `n`:
   The absolute determinant handles reflections while normals keep the edge's
   physical first-bin-to-second-bin orientation.
 
-This area-vector rule is often called Nanson's formula. Verify it independently
-using transformed edge lengths in 2-D and cross products in 3-D. Use scaled or
+This area-vector rule is often called Nanson's formula. A deterministic planning
+check (seed 417, 100 maps each in 2-D/3-D) matched transformed edge lengths and
+cross-product areas within rtol=atol=1e-12, including reflections. Repeat those
+independent oracles on the published implementation and its stored normals. Use scaled or
 logarithmic arithmetic where needed; refuse unrepresentable values rather than
 publishing zero/NaN measures.
 
