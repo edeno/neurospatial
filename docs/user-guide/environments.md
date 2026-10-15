@@ -449,6 +449,9 @@ polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
+A combined environment also needs declared walls for every component: a field
+in a component without them would otherwise be scored against walls in other
+components, so physical scoring refuses and names the component.
 
 ## Change bin size while retaining the arena
 

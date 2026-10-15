@@ -335,3 +335,39 @@ def test_summary_does_not_call_a_wall_cell_place_when_border_is_unavailable():
     assert population.summary_table(boundary_source="analysis")[
         "cell_type"
     ].tolist() == ["border", "unclassified"]
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_combined_component_without_walls_is_not_scored_against_other_walls(metric):
+    known = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(6.0),) * 2,
+        arena=OpenArena(box(0, 0, 5, 5)),
+    )
+    unknown = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+    )
+    env = Environment.combine({"known": known, "unknown": unknown}, auto_bridge=False)
+    # This field hugs the unknown room's west edge, which is not a declared wall.
+    field = ((env.bin_centers[:, 0] > 10) & (env.bin_centers[:, 0] < 11)).astype(float)
+    with pytest.raises(NotImplementedError) as error:
+        border_score(env, field, metric=metric)
+    message = str(error.value)
+    assert "'unknown'" in message
+    assert "'known'" not in message
+    assert "boundary_source='analysis'" in message
+    assert border_score(env, field, boundary_source="analysis", metric=metric) == 1.0
+
+    walled = Environment.combine(
+        {
+            "known": known,
+            "walled": Environment.from_grid_mask(
+                np.ones((5, 5), dtype=bool),
+                grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+                arena=OpenArena(box(10, 0, 15, 5)),
+            ),
+        },
+        auto_bridge=False,
+    )
+    assert border_score(walled, field, metric=metric) > 0.5

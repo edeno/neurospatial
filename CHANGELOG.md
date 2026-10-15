@@ -11,6 +11,10 @@
   When the border score is unavailable, `summary_table()` labels a spatially
   tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
   border cell; single-unit and population tables agree.
+  Physical border scores refuse combined environments in which a component has
+  no declared walls, naming the component, instead of scoring its fields
+  against walls in other components (euclidean returned -1 for a wall-hugging
+  field). Declare walls for each component or use `boundary_source="analysis"`.
 
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
