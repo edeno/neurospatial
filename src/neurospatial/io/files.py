@@ -25,6 +25,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from zipfile import BadZipFile
 
 import networkx as nx
 import numpy as np
@@ -405,13 +406,35 @@ def from_file(path: PathLike) -> Environment:
             )
         )
 
-    # Load metadata
-    with json_path.open("r") as f:
-        metadata = json.load(f)
+    try:
+        with json_path.open("r") as f:
+            metadata = json.load(f)
+    except (json.JSONDecodeError, RecursionError) as error:
+        raise ValueError(
+            _format_error(
+                f"Invalid environment metadata in {json_path}: {error}",
+                why="Why: the metadata must contain complete JSON without excessive nesting.",
+                fix="restore the original JSON and NPZ file pair, or re-save the original environment",
+            )
+        ) from error
 
     _check_schema(metadata, str(json_path))
-    with np.load(npz_path, allow_pickle=False) as archive:
-        arrays = {key: archive[key] for key in archive.files}
+    try:
+        archive = np.load(npz_path, allow_pickle=False)
+        if not isinstance(archive, np.lib.npyio.NpzFile):
+            raise ValueError(
+                "expected an NPZ archive containing named numerical arrays"
+            )
+        with archive:
+            arrays = {key: archive[key] for key in archive.files}
+    except (BadZipFile, EOFError, ValueError) as error:
+        raise ValueError(
+            _format_error(
+                f"Invalid environment array archive in {npz_path}: {error}",
+                why="Why: the array file must be a complete NPZ archive matching its JSON metadata.",
+                fix="restore the original JSON and NPZ file pair, or re-save the original environment",
+            )
+        ) from error
     return _restore_environment(metadata, source=str(json_path), arrays=arrays)
 
 
@@ -458,6 +481,14 @@ def _environment_payload(
 
 def _check_schema(metadata: dict[str, Any], source: str) -> None:
     """Refuse obsolete or unknown file formats with a reproducible recovery."""
+    if not isinstance(metadata, dict):
+        raise ValueError(
+            _format_error(
+                f"Invalid environment metadata in {source}: expected a dictionary.",
+                why="Why: environment metadata must map field names to saved values.",
+                fix="restore a complete environment record saved by this version",
+            )
+        )
     version = metadata.get("schema_version")
     if version != _SCHEMA_VERSION:
         raise ValueError(
@@ -557,7 +588,14 @@ def _restore_environment(
             if attribute in metadata:
                 setattr(env, attribute, metadata[attribute])
         return cast("Environment", env)
-    except (ValueError, TypeError, KeyError, IndexError, OverflowError) as error:
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OverflowError,
+        RecursionError,
+    ) as error:
         raise ValueError(
             _format_error(
                 f"Invalid environment data in {source}: {error}",
