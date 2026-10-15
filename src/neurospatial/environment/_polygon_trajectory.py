@@ -57,17 +57,29 @@ def _crosses_wall(
     return False
 
 
-def _crosses_wall_at_sample(
-    previous: NDArray[np.float64],
+@dataclass(frozen=True)
+class _WallArrival:
+    """Known approach and possible travel sides at the last wall contact."""
+
+    previous: NDArray[np.float64]
+    sides: frozenset[int] | None
+
+
+def _wall_sectors(
+    previous: NDArray[np.float64] | None,
     contact: NDArray[np.float64],
     following: NDArray[np.float64],
+    sides: frozenset[int] | None,
     wall_segments: NDArray[np.float64],
     wall_tree: STRtree,
-) -> bool:
-    """Compare exact local wall sectors on both sides of an observed contact."""
+) -> frozenset[int] | None:
+    """Transport possible left/right travel sides through one exact wall contact.
+
+    A path along a wall may occupy either adjacent open sector until observed
+    entry constrains it. Carry that constraint through subsequent wall motion;
+    an isolated tip has one open sector and permits rounding the endpoint.
+    """
     incident = wall_tree.query(shapely.Point(contact), predicate="intersects")
-    if not len(incident):
-        return False
     center = tuple(Fraction(float(value)) for value in contact)
 
     def direction(point: NDArray[np.float64]) -> tuple[Fraction, Fraction]:
@@ -90,23 +102,89 @@ def _crosses_wall_at_sample(
         },
         key=cmp_to_key(compare),
     )
-    # Segments may have different endpoint distances on the same incident ray.
     rays = [ray for i, ray in enumerate(rays) if i == 0 or compare(ray, rays[i - 1])]
-    if len(rays) < 2:
-        return False  # A genuine isolated wall tip does not close the plane.
+    if not rays:
+        return None
 
-    def sectors(point: NDArray[np.float64]) -> set[int]:
+    def sectors(
+        point: NDArray[np.float64],
+        allowed_sides: frozenset[int] | None = None,
+        *,
+        incoming: bool = False,
+    ) -> set[int]:
         vector = direction(point)
         for index, ray in enumerate(rays):
             order = compare(vector, ray)
             if order == 0:
-                # Existing collinear boundary motion can approach either side.
-                return {(index - 1) % len(rays), index}
+                if allowed_sides is None:
+                    return {(index - 1) % len(rays), index}
+                # Incoming direction points backwards along the path, so left
+                # of travel is clockwise of that ray. Outgoing is the reverse.
+                return {
+                    (index - 1) % len(rays) if (side > 0) == incoming else index
+                    for side in allowed_sides
+                }
             if order < 0:
                 return {(index - 1) % len(rays)}
         return {len(rays) - 1}
 
-    return sectors(previous).isdisjoint(sectors(following))
+    possible = (
+        set(range(len(rays)))
+        if previous is None
+        else sectors(previous, sides, incoming=True)
+    )
+    possible &= sectors(following)
+    if not possible:
+        return frozenset()  # No continuous route through this wall contact.
+    vector = direction(following)
+    for index, ray in enumerate(rays):
+        if compare(vector, ray) == 0:
+            return frozenset(
+                side
+                for side, sector in ((1, index), (-1, (index - 1) % len(rays)))
+                if sector in possible
+            )
+    return None  # The outgoing path is strictly inside one open sector.
+
+
+def _advance_wall_contact(
+    start: NDArray[np.float64],
+    stop: NDArray[np.float64],
+    arrival: _WallArrival | None,
+    wall_segments: NDArray[np.float64],
+    wall_tree: STRtree,
+) -> tuple[bool, _WallArrival | None]:
+    """Check a moving interval, including unsampled joints along a wall run."""
+    segment = LineString([start, stop])
+    if _crosses_wall(segment, wall_segments, wall_tree):
+        return True, None
+    contacts = []
+    for index in wall_tree.query(segment, predicate="intersects"):
+        contacts.extend(
+            shapely.get_coordinates(segment.intersection(wall_tree.geometries[index]))
+        )
+    if not contacts:
+        return False, None
+    points = np.unique(np.asarray(contacts), axis=0)
+    axis = int(np.argmax(np.abs(stop - start)))
+    fractions = (points[:, axis] - start[axis]) / (stop[axis] - start[axis])
+    points = points[np.argsort(fractions)]
+    previous: NDArray[np.float64] | None = start
+    sides: frozenset[int] | None = None
+    for contact in points:
+        if np.array_equal(contact, start):
+            previous = None if arrival is None else arrival.previous
+            sides = None if arrival is None else arrival.sides
+        if np.array_equal(contact, stop):
+            assert previous is not None  # A moving interval has an approach.
+            return False, _WallArrival(previous, sides)
+        outgoing = _wall_sectors(
+            previous, contact, stop, sides, wall_segments, wall_tree
+        )
+        if outgoing == frozenset():
+            return True, None
+        previous, sides = contact, outgoing
+    return False, None
 
 
 def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
@@ -177,8 +255,9 @@ def retained_linear_intervals(
     ValueError
         If an observation-valid segment crosses an explicit physical wall.
         Adjacent valid intervals are checked together at an on-wall sample;
-        duplicate stationary samples do not hide a crossing. Filtered intervals
-        break this continuity.
+        duplicate stationary samples and motion along a wall retain the known
+        approach side. Joints inside an interval restrict the possible sides;
+        filtered intervals break this continuity.
         Wall endpoint contact and collinear boundary motion remain permitted.
     """
     if positions.shape != (len(times), 2) or valid_mask.shape != (
@@ -210,16 +289,16 @@ def retained_linear_intervals(
     ]
     wall_tree = STRtree(shapely.linestrings(wall_segments))
     retained = []
-    previous_start = None
+    arrival = None
     previous_index = -2
     for index in np.flatnonzero(valid_mask):
         if index != previous_index + 1:
-            previous_start = None
+            arrival = None
         previous_index = index
         start = positions[index]
         stop = positions[index + 1]
         if not np.all(np.isfinite(start)) or not np.all(np.isfinite(stop)):
-            previous_start = None
+            arrival = None
             continue
         delta = stop - start
         if np.all(delta == 0):
@@ -228,21 +307,16 @@ def retained_linear_intervals(
                 retained.append(RetainedLinearInterval(int(index), 0.0, 1.0, owner))
             continue
         segment = LineString([start, stop])
-        if len(wall_segments) and (
-            _crosses_wall(segment, wall_segments, wall_tree)
-            or (
-                previous_start is not None
-                and _crosses_wall_at_sample(
-                    previous_start, start, stop, wall_segments, wall_tree
+        if len(wall_segments):
+            crosses, arrival = _advance_wall_contact(
+                start, stop, arrival, wall_segments, wall_tree
+            )
+            if crosses:
+                raise ValueError(
+                    f"Trajectory interval {index} crosses a physical wall; "
+                    "provide observations that resolve the route around the wall "
+                    "or exclude the interval with the observation filters."
                 )
-            )
-        ):
-            raise ValueError(
-                f"Trajectory interval {index} crosses a physical wall; "
-                "provide observations that resolve the route around the wall "
-                "or exclude the interval with the observation filters."
-            )
-        previous_start = start
         # One varying coordinate gives the segment parameter without squaring
         # its length. Every intersection endpoint is a possible ownership change.
         axis = int(np.argmax(np.abs(delta)))

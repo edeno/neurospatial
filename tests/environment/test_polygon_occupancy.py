@@ -527,9 +527,12 @@ def test_sampled_wall_crossing_check_does_not_join_filtered_intervals(excluded):
 
 
 @pytest.mark.parametrize("excluded", ["gap", "epoch"])
-def test_filtered_wall_dwell_does_not_join_separate_valid_motion(excluded):
+@pytest.mark.parametrize("moving", [False, True])
+def test_filtered_wall_dwell_does_not_join_separate_valid_motion(excluded, moving):
     env = _wall_environment()
     positions = np.array([[0.5, 0.75], [1.0, 0.75], [1.0, 0.75], [1.5, 0.75]])
+    if moving:
+        positions[2:, 1] = 1.25
     times = np.arange(4.0)
     kwargs = {"max_gap": None}
     if excluded == "gap":
@@ -539,3 +542,75 @@ def test_filtered_wall_dwell_does_not_join_separate_valid_motion(excluded):
         kwargs["epochs"] = np.array([[0.0, 1.0], [2.0, 3.0]])
     occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
     assert occupancy.sum() == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+@pytest.mark.parametrize("same_side", [False, True])
+def test_wall_motion_preserves_the_observed_entry_side(duplicate, same_side):
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),)),
+    )
+    points = [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0]]
+    if duplicate:
+        points.insert(2, [2.0, 1.0])
+    points.append([1.0 if same_side else 3.0, 2.0])
+    positions = np.array(points)
+    times = np.arange(float(len(points)))
+    if same_side:
+        assert (
+            env.occupancy(
+                times, positions, time_allocation="linear", max_gap=None
+            ).sum()
+            == len(points) - 1
+        )
+    else:
+        with pytest.raises(ValueError, match="physical wall"):
+            env.occupancy(times, positions, time_allocation="linear", max_gap=None)
+
+
+@pytest.mark.parametrize("sample_joint", [False, True])
+@pytest.mark.parametrize("entry", ["left", "right", "unobserved"])
+def test_wall_motion_propagates_possible_sides_through_a_branch(sample_joint, entry):
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(
+            box(0, 0, 4, 4),
+            walls=(LineString([(2, 0), (2, 4)]), LineString([(2, 2), (4, 2)])),
+        ),
+    )
+    points = [[2.0, 1.0]]
+    if entry != "unobserved":
+        points.insert(0, [1.0 if entry == "left" else 3.0, 1.0])
+    if sample_joint:
+        points.append([2.0, 2.0])
+    points.extend([[2.0, 3.0], [1.0, 3.0]])
+    positions = np.array(points)
+    times = np.arange(float(len(points)))
+    if entry == "right":
+        with pytest.raises(ValueError, match="physical wall"):
+            env.occupancy(times, positions, time_allocation="linear", max_gap=None)
+    else:
+        assert (
+            env.occupancy(
+                times, positions, time_allocation="linear", max_gap=None
+            ).sum()
+            == len(points) - 1
+        )
+
+
+def test_wall_motion_can_round_a_genuine_isolated_tip():
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 2)]),)),
+    )
+    positions = np.array([[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [3.0, 2.0]])
+    assert (
+        env.occupancy(
+            np.arange(4.0), positions, time_allocation="linear", max_gap=None
+        ).sum()
+        == 3.0
+    )
