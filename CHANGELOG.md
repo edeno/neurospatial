@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `Environment.from_bins` and environment loading now check supplied
+  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
+  each face length must equal the shared cell edge (zero when cells share no
+  edge) and each face distance the center-to-center distance. Inconsistent
+  faces previously passed silently and changed smoothing and diffusion results.
 - Physical border scores require complete represented and observed wall
   coverage, distinguishing missing measurements from measured zero firing.
   Unsupported scores and batch summaries provide setup guidance rather than
@@ -15,7 +20,6 @@
   no declared walls, naming the component, instead of scoring its fields
   against walls in other components (euclidean returned -1 for a wall-hugging
   field). Declare walls for each component or use `boundary_source="analysis"`.
-
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
