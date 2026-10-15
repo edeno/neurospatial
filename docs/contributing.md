@@ -116,6 +116,27 @@ The layout-to-binning factory checks these protocols once when publishing
 supply geometry is represented by a `MissingFaces` reason. Saved binnings use
 `KnownFaces` for validated geometry and retain that reason when geometry is absent.
 
+`Binning.face_normals` optionally supplies an owned `FaceNormals` record.
+Cell faces are interfaces between bins; they do not assert physical arena walls. Its
+`values` array has shape `(n_edges, n_dims)` in `env.edge_pairs` order: each
+positive-area face has a unit normal pointing from the first bin toward the
+second; zero-area navigation edges have zero rows. These directions come from
+stored cell geometry, not from arbitrary center links. Subsets and physical
+walls select the same normal rows as their edges; clipping recomputes directions
+only for certified faces. Affine transforms map directions by the inverse
+transpose without changing edge orientation. `FaceGeometry` retains its four
+fields and tuple behavior.
+
+Normals alone do not enable diffusion. Existing approximate mesh faces keep
+their current behavior; the normal need not align with a centroid link.
+`MissingFaces` retains no areas, so zero rows there may conservatively suppress
+contacts as navigation-only edges. Loading can verify nonzero directions against
+available geometry but cannot recover discarded area/activity information.
+Numerical operations must continue to honor the missing-face reason. Binning
+codec version 2 stores normals; version 1 loads without them. New stored geometry
+components require a codec version increment so older readers cannot silently
+ignore a capability they do not understand.
+
 Combined environments retain child binnings instead of inventing physical faces
 for navigation bridges. Scalar diffusion assembles the certified child blocks
 and adds only explicitly supplied symmetric geometric bridge conductances.

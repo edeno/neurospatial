@@ -414,4 +414,13 @@ def apply_walls(
         )
     result_graph = graph.copy()
     result_graph.remove_edges_from(bins.pairs[~keep])
-    return replace(binning, bins=updated, faces=faces), result_graph
+    from neurospatial.layout._face_normals import FaceNormals
+
+    normals = (
+        FaceNormals(binning.face_normals.values[keep])
+        if binning.face_normals is not None
+        else None
+    )
+    return replace(
+        binning, bins=updated, faces=faces, face_normals=normals
+    ), result_graph

@@ -724,6 +724,11 @@ def _validate_components(
     if isinstance(binning.faces, KnownFaces):
         _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
         _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
+    from neurospatial.layout._face_normals import validate_normals
+
+    if binning.face_normals is not None and coordinate_kind != "cartesian":
+        raise ValueError("Physical face normals require Cartesian coordinates.")
+    validate_normals(binning)
     _validate_clip_mapping(binning)
     if isinstance(locator, CombinedLocator):
         expected_bins = locator.spatial_bins()

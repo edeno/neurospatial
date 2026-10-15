@@ -26,5 +26,66 @@ matrix pass is claimed.
 
 ## E1 — Face-normal data
 
-Implementation and verification in progress. No new numerical transform
-capabilities are claimed by this phase.
+Completed and independently reviewed on 2026-10-15. Public `FaceNormals`
+records own their arrays and preserve pair orientation through native capture,
+subsetting, clipping, physical-wall edge removal and affine transforms. Polar
+records refuse Cartesian normal components. Native face construction and mesh
+lookup memos remain lazy. Codec version 2 stores the optional component; legacy
+version 1 loads without it. No new numerical transform capabilities are enabled.
+
+The independent reviewer found wall-edge row filtering and large-offset hexagon
+rounding regressions during implementation. Both were reproduced and repaired;
+reviewer reruns passed at offsets through 1e9, including mesh rotation/subsetting
+and storage. Final independent signoff passed all 58 then-existing normal cases
+with RuntimeWarnings treated as errors. A final Cartesian-coordinate rejection
+case was added afterward and passes in the 126-test local strict gate. The
+reviewer also independently checked that final case and all codec contracts
+(**85 passed**), with no remaining confirmed blockers.
+
+| Check | Result |
+| --- | --- |
+| Relevant layout/environment/I/O/NWB/transform/wall suite | 4,471 passed, 7 skipped |
+| Full CPU suite | 13,612 passed, 31 skipped |
+| Final normals and Stage D wall/arena regressions, RuntimeWarnings as errors | 126 passed |
+| Normal and codec contracts | 143 passed |
+| Source doctests | 596 passed, 126 skipped |
+| Source plus five typing contracts | 246 files passed |
+| Public API snapshot and argument conventions | 4 passed |
+| Repository Ruff and formatting | Passed |
+| Empty face-array NWB probes | Two isolated cells in 2-D and 3-D passed |
+| Baseline numerical/behavior comparison | 4,070 probes exactly unchanged; only two parent-example docstrings differ |
+| Affine baseline cases | IDs, measures, smoothing, interpolation and renderer types exactly unchanged |
+
+The full CPU run collected 56 normal cases; the three final malformed-input,
+zero-area/refusal and coordinate-kind cases were checked afterward in the final
+strict gate. The wider suite uses the existing CPU runner exclusions (51 GUI
+nodes plus slow, napari, gui and wallclock markers). No GUI/GPU run is claimed.
+A broad exploratory run with every RuntimeWarning promoted failed the existing
+all-NaN plot cases; the final strict gate targets changed geometry and wall code.
+No cached real recording exists under `data/`; E1 uses deterministic simulated
+geometry. The real tracking/image-mask workflow gate remains part of E5.
+
+`MissingFaces` retains no area authority. Zero normal rows may conservatively
+suppress geometric contacts as navigation-only edges; validation can check
+nonzero directions but cannot reconstruct discarded activity. Such normals
+never grant numerical capability. E3 must continue to honor that restriction.
+
+Logs and captures:
+
+- `/private/tmp/stage-e-e1-cpu.log`
+- `/private/tmp/stage-e-e1-strict-gate-final.log`
+- `/private/tmp/stage-e-e1-doctests.log`
+- `/private/tmp/stage-e-e1-mypy-final-commit.log`
+- `/private/tmp/stage-e-e1-compare.log`
+- `/private/tmp/environment-stage-e-e1-final.npz`
+
+The parent documentation example also needed formatter corrections after its
+merge through the immutable-region API. Those corrections are published across
+all existing PRs and formatted locally. Remote reruns are pending; neither that
+matrix nor an unpublished Stage E PR is described as passing.
+
+## Remaining phases
+
+E2 retains source grid axes and exact transformed shapes. E3 certifies additional
+numerical transforms. E4 migrates interpolation, linear time allocation and
+rendering. E5 supplies the user workflow documentation and final stage gate.

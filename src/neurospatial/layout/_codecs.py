@@ -27,6 +27,7 @@ from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._diffusion import FaceGeometry
+from neurospatial.layout._face_normals import FaceNormals
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -130,9 +131,11 @@ def decode(
             "Fix: use a neurospatial version supporting this geometry codec."
         )
     version = meta.get("codec_version")
-    if type(version) is not int or version != 1:
+    supported = (1, 2) if name == "Binning" else (1,)
+    if type(version) is not int or version not in supported:
+        version_hint = "1 or 2" if name == "Binning" else "1"
         raise ValueError(
-            f"cannot load {name} codec_version {version!r}; supported version is 1.\n"
+            f"cannot load {name} codec_version {version!r}; supported version is {version_hint}.\n"
             "Fix: recreate and save the environment with this neurospatial version."
         )
     try:
@@ -583,7 +586,7 @@ def _decode_nearest_locator(
 
 
 def _encode_binning(obj: Binning, prefix: str) -> Payload:
-    meta: dict[str, Any] = {"kind": obj.kind}
+    meta: dict[str, Any] = {"kind": obj.kind, "codec_version": 2}
     arrays: dict[str, NDArray[Any]] = {}
     cells: list[PolygonCells] = []
     mappings: list[ClipMapping] = []
@@ -639,6 +642,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "outline",
         "clip_mapping",
         "grid_spec",
+        "face_normals",
     ):
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
@@ -783,6 +787,8 @@ def _decode_transformed_locator(
 def _decode_binning(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> Binning:
+    if meta["codec_version"] == 1 and meta.get("face_normals") is not None:
+        raise ValueError("face_normals requires Binning codec_version 2.")
     parts: dict[str, Any] = {}
     cells: list[PolygonCells] = []
     mappings: list[ClipMapping] = []
@@ -859,10 +865,14 @@ def _decode_binning(
         "outline": Outline,
         "clip_mapping": ClipMapping,
         "grid_spec": GridBinningSpec,
+        "face_normals": FaceNormals,
     }
     part: object | None
     for name, kind in expected.items():
-        value = meta.get(name) if name in {"clip_mapping", "grid_spec"} else meta[name]
+        optional_legacy = name in {"clip_mapping", "grid_spec"} or (
+            name == "face_normals" and meta["codec_version"] == 1
+        )
+        value = meta.get(name) if optional_legacy else meta[name]
         if value is None:
             part = None
         elif (
@@ -981,6 +991,16 @@ def _decode_grid_spec(
     )
 
 
+def _encode_face_normals(obj: FaceNormals, prefix: str) -> Payload:
+    return {}, _arrays(prefix, values=obj.values)
+
+
+def _decode_face_normals(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> FaceNormals:
+    return FaceNormals(np.asarray(arrays[f"{prefix}/values"]))
+
+
 _CODECS: dict[str, Codec] = {
     "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
@@ -1014,4 +1034,5 @@ _CODECS: dict[str, Codec] = {
         TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
     ),
     "Binning": Codec(Binning, _encode_binning, _decode_binning),
+    "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
 }

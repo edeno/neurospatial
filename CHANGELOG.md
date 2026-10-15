@@ -4,6 +4,13 @@
 
 ### Added
 
+- Add optional owned `FaceNormals` data to `Binning`, in authoritative neighbor
+  pair order. Native Cartesian grids and planar hexagon/triangle cells capture
+  physical directions; subsets, clipping, physical walls and affine transforms
+  preserve their alignment. Normals survive copying and JSON/NWB storage, but
+  do not enable additional numerical operations. New binnings use codec version
+  2, which older readers reject; legacy version 1 records remain loadable.
+
 - Ray casting and cue line of sight now intersect declared physical walls,
   including holes and internal barriers. Analysis crops no longer occlude
   physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for

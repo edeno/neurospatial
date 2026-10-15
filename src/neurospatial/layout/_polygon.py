@@ -624,11 +624,22 @@ def clip_binning(
             path_only=np.array([path for _, _, path in records], dtype=bool),
         )
     )
+    from neurospatial.layout._face_normals import FaceNormals, geometric_normals
+
+    locator = ClippedLocator(binning.locator, cells, mapping)
+    normal_values = (
+        geometric_normals(locator, bins.centers, bins.pairs)
+        if faces.available
+        else None
+    )
+    if normal_values is not None:
+        normal_values[faces.build().A == 0] = 0
     return Binning(
         "PolygonCells",
         bins,
-        ClippedLocator(binning.locator, cells, mapping),
+        locator,
         faces,
+        face_normals=FaceNormals(normal_values) if normal_values is not None else None,
         shapes=cells,
         clip_mapping=mapping,
         grid_spec=binning.grid_spec,

@@ -1,9 +1,9 @@
 # Stage E — Preserve geometry through affine transforms
 
-**Status:** E0 complete on 2026-10-15; E1 implementation in progress.
+**Status:** E0 and E1 complete on 2026-10-15. E2–E5 remain pending.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
-`feature/environment-wall-visibility` at `500e8aea` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
-This is a local planning branch; opening another PR is a separate action.
+`feature/environment-wall-visibility` at `98bf9790` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
+This is a local implementation branch; opening another PR is a separate action.
 
 ## Entry status
 
@@ -18,9 +18,10 @@ The base PR's CI failures were reproduced from the Linux/Windows/slow-job logs.
 Portable geometry/plot assertions and explicit UTF-8 test reads are published;
 all stacked PRs now receive checks, with obsolete runs cancelled per PR.
 **Remote matrix verification is running/queued, not established as passing.**
-The user authorized starting Stage E while that matrix is pending. Local phase
-gates proceed; the remote matrix remains a publication gate. The base slow-test job
-and multiple Ubuntu/Windows matrix jobs now pass. A further arena test-oracle
+Stage E has started with that matrix pending. Local phase gates proceed; the
+remote matrix remains a publication gate. Before the documentation-example
+correction, the base slow-test job and multiple Ubuntu/Windows matrix jobs
+passed; the current heads are rerunning. A further arena test-oracle
 repair evaluates the same filtered lookup batch; its final 150 publication/
 validation checks pass without changing library behavior. Full source doctests
 passed 596 cases (126 skipped), and all 4,072 environment probes match the prior
@@ -106,13 +107,14 @@ new general affine track-length rules, curved walls, 3-D clipping, polar affine
 coordinates and a general non-orthogonal diffusion solver are outside scope.
 Stage F's removal of the layout facade remains separate.
 
-## Proposed stored data
+## Data contracts
 
 E0 settled the public names `FaceNormals` / `Binning.face_normals` and
 `FramedGrid` / `Binning.grid_frame`. `FaceGeometry` keeps its four-field tuple
-contract. New binning records use codec version 2; readers accept legacy binning
-version 1 with absent optional components. Existing other codecs stay at version
-1, as do the new component codecs. Environment-v3 and NWB 3.0 envelopes remain
+contract. E1 binning records use codec version 2; readers accept legacy binning
+version 1 with absent optional components. E2 must increment the binning version
+again when adding framed grids, retaining support for earlier records. Existing
+other codecs stay at version 1, as do the new component codecs. Environment-v3 and NWB 3.0 envelopes remain
 unchanged: the nested version makes older readers reject the new binning record.
 No promise is made that an older reader can consume version 2.
 
@@ -157,9 +159,10 @@ transform classes but gain no unsupported numerical capability.
 Subset normal rows with the same edge map used for faces. Exact clipping must
 recompute normals only when its current face certificate is valid. Combined
 components retain their own normals; navigation bridges do not acquire invented
-normals. Serialization needs versioned codecs and consistency checks for both
-components. E0 must choose schema/version changes using old-record fixtures;
-never promise that an older reader understands new geometry records.
+normals. Both components require versioned codecs and consistency checks. E1
+verifies legacy version-1 records without normals and refuses a newer component hidden
+in a downgraded record. Never promise that an older reader understands new
+geometry records.
 
 ## Geometric and numerical rules
 

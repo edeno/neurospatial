@@ -27,6 +27,7 @@ from neurospatial.layout._capabilities import (
 )
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import FaceGeometry
+from neurospatial.layout._face_normals import FaceNormals, _unit_rows
 from neurospatial.layout._locators import (
     AffineMatrix,
     RectilinearLocator,
@@ -252,6 +253,11 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         shapes=shapes,
         outline=None,
         grid_spec=binning.grid_spec,
+        face_normals=(
+            FaceNormals(binning.face_normals.values[pair_kept])
+            if binning.face_normals is not None
+            else None
+        ),
         clip_mapping=(
             ClipMapping(
                 binning.clip_mapping.parent_bin_indices[keep],
@@ -587,6 +593,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         shapes=shapes,
         outline=outline,
         clip_mapping=binning.clip_mapping,
+        face_normals=(
+            FaceNormals(_unit_rows(binning.face_normals.values @ np.linalg.inv(linear)))
+            if binning.face_normals is not None
+            else None
+        ),
         grid_spec=(
             type(binning.grid_spec)(
                 binning.grid_spec.origin,
