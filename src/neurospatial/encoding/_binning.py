@@ -499,15 +499,24 @@ def prepare_frame_binning(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    interval_mask: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
-    """Resolve frame support once for counting and result provenance."""
-    mask = interval_valid_mask(
-        times,
-        start_bin=frame_bins,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-    )
+    """Resolve frame support once for counting and result provenance.
+
+    A supplied ``interval_mask`` already includes temporal and bin validity;
+    geometry consumers can share that gate without evaluating windows again.
+    """
+    if interval_mask is None:
+        mask = interval_valid_mask(
+            times,
+            start_bin=frame_bins,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+    else:
+        # Geometry consumers may already have resolved the shared gate.
+        mask = interval_mask
     support = TimeSupport.from_mask(
         times, mask, epochs=epochs, spike_window=spike_window, max_gap=max_gap
     )
