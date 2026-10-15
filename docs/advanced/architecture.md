@@ -21,7 +21,8 @@ a set of **mandatory attributes** on that graph so that spatial queries
 
 **Edge attributes:**
 
-- `'distance'`: Euclidean distance between bin centers
+- `'distance'`: Positive navigation path length; native grids use the distance
+  between centers, while explicit bins can declare longer paths
 - `'vector'`: Displacement vector (as a tuple)
 - `'edge_id'`: Unique integer edge identifier
 - `'angle_2d'`: Angle in 2D (optional, present for 2D layouts)
@@ -51,35 +52,48 @@ print(f"Edge ({u},{v}) distance: {edge_attrs['distance']}")
 print(f"Edge ({u},{v}) vector: {edge_attrs['vector']}")
 ```
 
-These attributes are what enable geodesic distances that respect boundaries,
-shortest-path queries, and the boundary-aware diffusion smoothing used by the
-encoding functions.
+These attributes enable geodesic distances and shortest-path queries. Diffusion
+uses the owned cell faces and volumes in `env.binning`, rather than treating
+every navigation edge as a physical interface. A navigation connection can carry
+a path without permitting diffusion across it.
 
-## Protocol-Based Design
+## Package responsibilities
 
-**Layout engines** define *how* continuous space is discretized into bins. They
-are wired into `Environment` through a **protocol** (structural typing), not
-inheritance — any object providing the required members works, so you can add a
-custom discretization strategy without modifying core code.
+The arrows show permitted dependencies between these packages:
 
-```python
-# Layout engines must provide:
-# - bin_centers: NDArray of shape (n_bins, n_dims)
-# - connectivity: nx.Graph with the mandatory attributes above
-# - dimension_ranges: List of (min, max) tuples
-# - is_linearized_track: bool (True for linearized layouts)
-# - build(): Method to construct the layout
-# - point_to_bin_index(): Map points to bins
-# - bin_sizes(): Compute bin sizes
-# - plot(): Visualize the layout
+```mermaid
+flowchart TD
+    Environment[environment: coordination and caches] --> Layout[layout: construction]
+    Environment --> Ops[ops: numerical algorithms]
+    Environment --> Geometry[geometry: owned data and codecs]
+    Layout --> Geometry
+    Ops --> Geometry
 ```
 
-This design allows:
+`geometry/` holds immutable bins, locators, arena evidence, coordinate semantics,
+validation and codecs. It does not import builders, numerical solvers, storage
+backends or plotting libraries. `layout/` and `ops/` are independent peers.
+Import-linter checks these package boundaries without exceptions.
 
-- Custom layout engines without modifying core code
-- Static type checking against the protocol
-- Maximum flexibility across grid, hexagonal, masked, polygon, mesh, and
-  1D-linearized layouts
+An environment captures construction output once, owns its geometry, and starts
+fresh caches when derived or restored. Public methods delegate to domain
+functions. Numerical builders take explicit data and arrays; callers use public
+operations for cached analyses. Small consumer protocols describe the operations
+each adapter actually needs.
+
+## Custom construction
+
+Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
+`Environment.from_layout(...)` for supported layout construction. Native
+builders supply owned snapshots; live lookup or track-conversion callbacks do
+not remain attached to the environment. Custom providers use registered adapters
+to supported built-in snapshots.
+
+Centers and a graph alone establish neither exact cell ownership nor diffusion
+faces. Supply a supported locator and explicit `KnownFaces` or `MissingFaces`;
+optional grid, track and drawing components establish their own capabilities.
+See [geometry access and cache ownership](../migration/environment-geometry.md)
+for snapshot reuse and the numerical API.
 
 See the [layout engines guide](../user-guide/layout-engines.md) for the
 built-in engines and their factory methods.
