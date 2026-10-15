@@ -2967,18 +2967,10 @@ class Environment(Generic[_C]):
         True
 
         """
-        # Import here to avoid circular dependency
-        # (the integration adapter constructs a new Environment)
-        # Delegate to free function
-        # Cast self to Environment for type checking
         self._require_cartesian("apply_transform()")
-        from neurospatial.ops.transforms import (
-            apply_transform_to_environment as _apply_transform_impl,
-        )
+        from neurospatial.environment._affine import _apply_transform_to_environment
 
-        env = self
-
-        return _apply_transform_impl(env, transform, name=name)
+        return _apply_transform_to_environment(self, transform, name=name)
 
     @classmethod
     def combine(

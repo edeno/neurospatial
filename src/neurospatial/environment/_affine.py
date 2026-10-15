@@ -20,27 +20,7 @@ def _apply_transform_to_environment(
 ) -> Environment:
     """Transform owned cells, graphs, arenas and regions together."""
     from neurospatial.environment import Environment
-    from neurospatial.environment.decorators import EnvironmentNotFittedError
     from neurospatial.regions import Region, Regions
-
-    # Validate
-    if not getattr(env, "_is_fitted", False):
-        raise EnvironmentNotFittedError(
-            "apply_transform_to_environment", is_function=True
-        )
-
-    # Guard the free-function path too, preserving its existing ValueError.
-    from neurospatial._exceptions import CartesianOnlyError
-
-    try:
-        env._require_cartesian("apply_transform_to_environment()")
-    except CartesianOnlyError:
-        raise ValueError(
-            "apply_transform requires a Cartesian environment but got an "
-            "egocentric polar environment (an affine transform on "
-            "(distance, angle) pairs is not geometrically meaningful). For "
-            "polar envs, work in the egocentric coordinate space directly."
-        ) from None
 
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2

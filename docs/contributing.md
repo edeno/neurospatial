@@ -338,10 +338,10 @@ there are no environment mixins or broad host protocol.
 Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Geometry data
 cannot import the public environment, native builders, encoders or optional
 storage/UI libraries. Numerical operations cannot import concrete environment
-APIs or builders. Type-only imports are excluded. The single ignored edge is
-`ops.transforms -> environment._affine`: the existing public transform
-convenience function lazily forwards to that construction adapter. The numerical
-package is otherwise checked in full. Add new geometry modules to the data
+APIs or builders. Type-only imports are excluded. The public transform convenience
+function delegates through a narrow protocol to the environment's own affine
+adapter; the numerical package has no runtime dependency on environment
+construction. Add new geometry modules to the data
 contract and keep `import-linter` in the dev extra; CI runs it on Python 3.13.
 
 Check refactors with `scripts/environment_baseline.py`. Before changing code,

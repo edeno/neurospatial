@@ -40,8 +40,6 @@ forbidden_modules =
     napari
     xarray
     pynapple
-ignore_imports =
-    neurospatial.ops.transforms -> neurospatial.environment._affine
 
 [importlinter:contract:numerics]
 name = Numerical operations avoid concrete environment APIs and builders
@@ -53,5 +51,3 @@ forbidden_modules =
     neurospatial.layout.engines
     neurospatial.layout.factories
     neurospatial.layout.base
-ignore_imports =
-    neurospatial.ops.transforms -> neurospatial.environment._affine
