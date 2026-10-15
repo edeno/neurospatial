@@ -1,8 +1,8 @@
 # Stage E — Preserve geometry through affine transforms
 
-**Status:** Planned on 2026-10-15; implementation has not started.
+**Status:** E0 complete on 2026-10-15; E1 implementation in progress.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
-`feature/environment-wall-visibility` at `dda434db` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
+`feature/environment-wall-visibility` at `500e8aea` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
 This is a local planning branch; opening another PR is a separate action.
 
 ## Entry status
@@ -18,7 +18,8 @@ The base PR's CI failures were reproduced from the Linux/Windows/slow-job logs.
 Portable geometry/plot assertions and explicit UTF-8 test reads are published;
 all stacked PRs now receive checks, with obsolete runs cancelled per PR.
 **Remote matrix verification is running/queued, not established as passing.**
-Finish that gate before starting Stage E implementation. The base slow-test job
+The user authorized starting Stage E while that matrix is pending. Local phase
+gates proceed; the remote matrix remains a publication gate. The base slow-test job
 and multiple Ubuntu/Windows matrix jobs now pass. A further arena test-oracle
 repair evaluates the same filtered lookup batch; its final 150 publication/
 validation checks pass without changing library behavior. Full source doctests
@@ -107,7 +108,21 @@ Stage F's removal of the layout facade remains separate.
 
 ## Proposed stored data
 
-Names below are design proposals to settle in E0 before public API changes.
+E0 settled the public names `FaceNormals` / `Binning.face_normals` and
+`FramedGrid` / `Binning.grid_frame`. `FaceGeometry` keeps its four-field tuple
+contract. New binning records use codec version 2; readers accept legacy binning
+version 1 with absent optional components. Existing other codecs stay at version
+1, as do the new component codecs. Environment-v3 and NWB 3.0 envelopes remain
+unchanged: the nested version makes older readers reject the new binning record.
+No promise is made that an older reader can consume version 2.
+
+Independent E0 review clarified that normal alignment means positive edge
+orientation, not perpendicularity. Existing approximate mesh faces remain
+available under their current rules. Full-cell subsets retain their framed grid;
+partial or split polygon clipping drops it rather than inventing tensor cells.
+Inverse composition restores geometry and lookup within storage precision; it
+does not restore numerical faces already discarded as `MissingFaces`. Retaining
+uncertified source faces for future recertification would need a separate design.
 Prefer two small optional components over changes to existing tuple iteration
 or a new parallel environment hierarchy.
 
