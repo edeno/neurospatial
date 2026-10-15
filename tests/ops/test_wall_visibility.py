@@ -267,15 +267,6 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
     point = np.array([2.5, 4.5]) @ matrix[:2, :2].T + matrix[:2, 2]
     for env, expected in [(cropped, -1), (clipped, 0)]:
         for restored in (env, Environment.from_dict(env.to_dict())):
-            if expected == -1:
-                with pytest.raises(NotImplementedError, match="Physical wall hit"):
-                    _precompute_view_bins(
-                        restored,
-                        point.reshape(1, 2),
-                        np.array([a]),
-                        gaze_model="ray_cast",
-                    )
-                continue
             np.testing.assert_array_equal(
                 _precompute_view_bins(
                     restored, point.reshape(1, 2), np.array([a]), gaze_model="ray_cast"
@@ -322,10 +313,12 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
         0
     ]
     selected = env.subset(bins=np.arange(env.n_bins) != one)
-    with pytest.raises(NotImplementedError, match="Physical wall hit"):
+    np.testing.assert_array_equal(
         _precompute_view_bins(
             selected, origins[:1], headings[:1], gaze_model="ray_cast"
-        )
+        ),
+        [-1],
+    )
 
 
 @pytest.mark.parametrize("gap", [1e-7, 1e-12])
@@ -343,8 +336,9 @@ def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
     env = Environment.from_bins(clipped._binning, arena=OpenArena(polygon))
     headings = np.linspace(-np.pi, np.pi, 100, endpoint=False)
     origins = np.tile([2.5, 2.5], (len(headings), 1))
-    with pytest.raises(NotImplementedError, match="Physical wall hit"):
-        _precompute_view_bins(env, origins, headings, gaze_model="ray_cast")
+    np.testing.assert_array_equal(
+        _precompute_view_bins(env, origins, headings, gaze_model="ray_cast"), -1
+    )
 
 
 @pytest.mark.parametrize("offset", [1e-14, 1e-13, 1e-12, 1e-7])
@@ -361,8 +355,9 @@ def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
     target = np.array([10.0, 4.0 + offset])
     delta = target - observer[0]
     heading = np.array([np.arctan2(delta[1], delta[0])])
-    with pytest.raises(NotImplementedError, match="Physical wall hit"):
-        _precompute_view_bins(selected, observer, heading, gaze_model="ray_cast")
+    np.testing.assert_array_equal(
+        _precompute_view_bins(selected, observer, heading, gaze_model="ray_cast"), [-1]
+    )
 
 
 @pytest.mark.parametrize("restore", [False, True])
@@ -489,12 +484,65 @@ def test_unowned_physical_wall_hit_refuses_view_encoding_without_fabricating_rat
 
 
 def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_binning import prepare_view_binning
 
     full = room(wall=False)
     cropped = full.subset(bins=full.bin_centers[:, 0] < 4)
-    positions = np.tile([2.5, 4.5], (2, 1))
+    positions = np.tile([2.5, 4.5], (3, 1))
     with pytest.raises(NotImplementedError, match=r"Physical wall hit.*retained bin"):
-        _precompute_view_bins(
-            cropped, positions, np.array([np.pi, 0.0]), gaze_model="ray_cast"
+        prepare_view_binning(
+            cropped,
+            np.arange(3.0),
+            positions,
+            np.array([np.pi, 0.0, 0.0]),
+            gaze_model="ray_cast",
+            max_gap=None,
         )
+
+
+@pytest.mark.parametrize("population", [False, True])
+@pytest.mark.parametrize(
+    "excluded", ["final", "epoch", "spike_window", "gap", "zero_duration"]
+)
+def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
+    population, excluded
+):
+    from neurospatial.encoding.view import compute_view_rate, compute_view_rates
+
+    full = room(wall=False)
+    env = full.subset(bins=full.bin_centers[:, 0] < 4)
+    times = np.arange(3.0)
+    headings = np.array([np.pi, 0.0, 0.0])
+    options = {"max_gap": None}
+    expected_occupancy = 1.0
+    if excluded == "final":
+        headings[1] = np.pi
+        expected_occupancy = 2.0
+    elif excluded == "epoch":
+        options["epochs"] = np.array([[0.0, 1.0]])
+    elif excluded == "spike_window":
+        options["spike_window"] = np.array([[0.0, 1.0]])
+    elif excluded == "gap":
+        times[-1] = 10.0
+        options["max_gap"] = 2.0
+    else:
+        times = np.array([0.0, 1.0, 1.0, 2.0])
+        headings = np.array([np.pi, 0.0, np.pi, 0.0])
+        expected_occupancy = 2.0
+    positions = np.tile([2.5, 4.5], (len(times), 1))
+    spikes = np.array([0.25])
+    encode = compute_view_rates if population else compute_view_rate
+    result = encode(
+        env,
+        [spikes] if population else spikes,
+        times,
+        positions,
+        headings,
+        gaze_model="ray_cast",
+        method="binned",
+        bandwidth=0.0,
+        **options,
+    )
+    assert result.occupancy.sum() == expected_occupancy
+    rates = result.firing_rates[0] if population else result.firing_rate
+    assert np.nansum(rates * result.occupancy) == 1.0

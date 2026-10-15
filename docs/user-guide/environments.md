@@ -502,7 +502,10 @@ The source choice is forwarded by the single/population view encoders, shuffle
 tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
 outside the retained analysis support makes physical view encoding unavailable
-and raises with guidance. Supplying wall geometry cannot add missing bins, and
+and raises with guidance when it contributes to the selected recording time.
+The final sample starts no exposure interval, and hits during excluded epochs,
+recording windows, long gaps or zero-duration intervals cannot change the map.
+Supplying wall geometry cannot add missing bins, and
 assigning a distant wall to a nearby bin would change the measured location.
 Build cells that reach the wall, or explicitly request the analysis-boundary
 approximation. The geometry-only `compute_viewed_location()` still returns the
