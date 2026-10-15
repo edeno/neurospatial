@@ -570,3 +570,48 @@ def test_cue_rounding_does_not_borrow_precision_from_an_unrelated_wall_axis():
     assert not clear_segments(
         wall, np.array([0.0, 0.0]), np.array([[1.0 + 1e-12, 0.0]])
     )[0]
+
+
+@pytest.mark.parametrize("extent,gap", [(1e12, 1e-5), (1e6, 1e-10)])
+def test_cue_rounding_does_not_inherit_distant_wall_endpoint_precision(extent, gap):
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString([(-extent, -extent), (extent, extent)])
+    assert not clear_segments(wall, np.array([-1.0, 0.0]), np.array([[gap, 0.0]]))[0]
+
+
+@pytest.mark.parametrize(
+    "endpoints,fraction",
+    [
+        (
+            [
+                [-10.172090202068187, 14.076307756288244],
+                [1.085972441298207, -1.2545006974556607],
+            ],
+            0.9020477927396752,
+        ),
+        (
+            [
+                [-6.878979164292339, 18.36264085148602],
+                [0.8085627104702203, -7.1763853749159985],
+            ],
+            0.8120264087299021,
+        ),
+    ],
+)
+def test_slanted_wall_contact_rounding_couples_the_cues_local_axes(endpoints, fraction):
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString(endpoints)
+    target = np.array(wall.interpolate(fraction, normalized=True).coords[0])
+    tangent = np.asarray(endpoints)[1] - np.asarray(endpoints)[0]
+    observer = target + np.array([tangent[1], -tangent[0]])
+    assert clear_segments(wall, observer, target[None])[0]
+
+
+def test_wall_cue_rounding_ignores_repeated_wall_vertices():
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString([(0.0, 0.0), (0.0, 0.0), (3.0, 2.0)])
+    with np.errstate(divide="raise", invalid="raise"):
+        assert clear_segments(wall, np.array([0.2, -1.0]), np.array([[0.0, 0.0]]))[0]

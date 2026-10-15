@@ -243,9 +243,10 @@ def clear_segments(
         )
         contact = shapely.intersection(lines, walls)
         # Intersection and interpolation can cancel one endpoint coordinate
-        # to zero. Bound those operations using the actual intersected wall's
-        # endpoint ULPs, separately per axis; neither a long ray nor an unrelated
-        # large coordinate may widen a resolved gap to an earlier blocker.
+        # to zero. Couple the cue's own per-axis rounding budgets along the
+        # intersected wall's direction. Its largest component is one, so this
+        # adds at most the sum of those budgets to either axis. Distant wall
+        # endpoints and axes perpendicular to the wall cannot widen gaps.
         coordinates, owners = shapely.get_coordinates(contact, return_index=True)
         terminal = selected[~same]
         allowance = 4 * np.spacing(np.abs(terminal[owners]))
@@ -254,10 +255,15 @@ def clear_segments(
             vertices, part_index = shapely.get_coordinates(parts, return_index=True)
             adjacent = part_index[:-1] == part_index[1:]
             wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
+            wall_segments = wall_segments[
+                np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
+            ]
             nearest = shapely.STRtree(shapely.linestrings(wall_segments)).nearest(
                 shapely.points(coordinates)
             )
-            allowance += 4 * np.max(np.spacing(np.abs(wall_segments[nearest])), axis=1)
+            tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
+            tangent /= np.max(tangent, axis=1)[:, None]
+            allowance += tangent * np.sum(allowance, axis=1)[:, None]
         at_terminal = np.all(
             np.abs(coordinates - terminal[owners]) <= allowance, axis=1
         )
