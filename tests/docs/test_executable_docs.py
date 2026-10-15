@@ -20,6 +20,7 @@ RUN_ALL = {
     "docs/getting-started/quickstart.md": False,
 }
 OPT_IN = (
+    "docs/user-guide/composite-environments.md",
     "docs/user-guide/environments.md",
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",

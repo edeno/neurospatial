@@ -118,7 +118,7 @@ def log_environment_created(
     )
 
 
-def log_composite_build(n_subenvs: int, total_bins: int, n_bridges: int) -> None:
+def log_environment_combine(n_subenvs: int, total_bins: int, n_bridges: int) -> None:
     """Log composite environment construction.
 
     Parameters
@@ -131,7 +131,7 @@ def log_composite_build(n_subenvs: int, total_bins: int, n_bridges: int) -> None
         Number of bridge edges created.
     """
     logger.info(
-        "CompositeEnvironment created: %d sub-envs, %d total bins, %d bridges",
+        "Environment.combine created: %d sub-envs, %d total bins, %d bridges",
         n_subenvs,
         total_bins,
         n_bridges,

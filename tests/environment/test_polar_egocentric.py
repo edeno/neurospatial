@@ -1364,6 +1364,7 @@ _POLAR_INHERITED_MEMBERS = {
     "constructors: only the masked grid builds; others refuse (tested below)": {
         "from_graph",
         "from_bins",
+        "combine",
         "from_grid_mask",
         "from_layout",
         "from_pixel_mask",
@@ -1485,6 +1486,9 @@ def test_cartesian_operations_are_the_capability_methods():
 
     assert {
         "apply_transform",
+        "component_keys",
+        "bin_sources",
+        "get_bridge_attributes",
         "bin_at",
         "bin_sequence",
         "bin_sequence_with_runs",

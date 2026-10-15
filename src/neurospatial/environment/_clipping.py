@@ -27,6 +27,13 @@ def _clip(
         raise NotImplementedError(
             "Exact polygon clipping requires Cartesian 2-D cells."
         )
+    from neurospatial.layout._composition import bridge_values
+
+    if bridge_values(env._binning):
+        raise NotImplementedError(
+            "Clipping navigation bridge endpoints needs an explicit reconnection rule. "
+            "Combine with auto_bridge=False before clipping, or clip the children first."
+        )
     domain = env.arena.polygonal_domain()
     if env.arena.domain_known and domain is None:
         raise NotImplementedError(

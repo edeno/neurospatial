@@ -16,8 +16,6 @@ Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
-CompositeEnvironment : Multi-environment composition
-    Merges multiple environments with automatic bridge inference.
 compute_spatial_rate, compute_spatial_rates : Spatial encoding
     Estimate rate maps from environment, spikes, times and positions.
 SpatialRateResult, SpatialRatesResult : Spatial rate results
@@ -239,7 +237,6 @@ from neurospatial._exceptions import (
     NeurospatialError,
     RegionNotFoundError,
 )
-from neurospatial.composite import CompositeEnvironment
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
@@ -325,7 +322,6 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "BinIndexOutOfRangeError",
-    "CompositeEnvironment",
     "DecodingResult",
     "Environment",
     "EnvironmentNotFittedError",

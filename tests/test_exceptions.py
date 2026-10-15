@@ -228,13 +228,12 @@ def test_bin_index_out_of_range_site():
 
 def test_incompatible_environment_site():
     from neurospatial import Environment
-    from neurospatial.composite import CompositeEnvironment
 
     points = np.array([[0.0, 0.0], [2.0, 2.0], [4.0, 4.0]])
     a = Environment.from_samples(points[:, :1], bin_size=2.0)
     b = Environment.from_samples(points, bin_size=2.0)
     with pytest.raises(IncompatibleEnvironmentError) as caught:
-        CompositeEnvironment([a, b])
+        Environment.combine({"first": a, "second": b})
     assert "[E1003]" in str(caught.value)
     assert "Fix:" in str(caught.value)
 

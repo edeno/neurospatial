@@ -78,7 +78,6 @@ def test_all_names_resolve(module_name):
         ("Environment", "neurospatial.environment"),
         ("Region", "neurospatial.regions"),
         ("Regions", "neurospatial.regions"),
-        ("CompositeEnvironment", "neurospatial.composite"),
     ],
 )
 def test_top_level_is_same_object_as_submodule(top_name, submodule_name):

@@ -810,6 +810,11 @@ class EnvironmentFields:
         by dense kernels, :meth:`diffuse`, smoothness bases, and the
         W-component support gates.
         """
+        from neurospatial.layout._composition import combined_diffusion
+
+        combined = combined_diffusion(self._binning)
+        if combined is not None:
+            return combined
         return DiffusionGeometry.from_faces(self._require_face_geometry("smoothing"))
 
     @versioned_cached_property

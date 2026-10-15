@@ -265,7 +265,7 @@ Suggested fixes:
 
 You're trying to combine or compare environments with different dimensionality (e.g., mixing 2D and 3D environments). This error commonly occurs when:
 
-1. **Creating CompositeEnvironment** - All sub-environments must have same n_dims
+1. **Calling Environment.combine** - All sub-environments must have same n_dims
 2. **Comparing environments** - Alignment/comparison requires matching dimensions
 3. **Stacking environments** - Cannot stack environments of different dimensionality
 
@@ -278,14 +278,14 @@ You're trying to combine or compare environments with different dimensionality (
 env_2d = Environment.from_samples(positions_2d, bin_size=5.0)  # shape (N, 2)
 env_3d = Environment.from_samples(positions_3d, bin_size=5.0)  # shape (N, 3)
 
-composite = CompositeEnvironment.from_environments([env_2d, env_3d])  # Error!
+composite = Environment.combine({"first": env_2d, "second": env_3d})  # Error!
 
 # ✓ Check dimensions first
 print(f"env_2d dimensions: {env_2d.n_dims}")  # 2
 print(f"env_3d dimensions: {env_3d.n_dims}")  # 3
 
-# Only combine environments with matching dimensions
-composite = CompositeEnvironment.from_environments([env_2d, env_2d_another])
+# Only combine disjoint environments with matching dimensions, units and frame
+composite = Environment.combine({"first": env_2d, "second": env_2d_another})
 ```
 
 #### Solution 2: Project 3D to 2D
@@ -301,7 +301,7 @@ env_2d_projected = Environment.from_samples(
 )
 
 # Now can combine with other 2D environments
-composite = CompositeEnvironment.from_environments([env_2d, env_2d_projected])
+composite = Environment.combine({"first": env_2d, "second": env_2d_projected})
 ```
 
 #### Solution 3: Create separate composites per dimensionality
@@ -312,12 +312,12 @@ envs_2d = [env1, env2, env3]  # All 2D
 envs_3d = [env4, env5]  # All 3D
 
 # Create separate composites
-composite_2d = CompositeEnvironment.from_environments(envs_2d)
-composite_3d = CompositeEnvironment.from_environments(envs_3d)
+composite_2d = Environment.combine({str(i): env for i, env in enumerate(envs_2d)})
+composite_3d = Environment.combine({str(i): env for i, env in enumerate(envs_3d)})
 ```
 
 **See Also:**
-- [CompositeEnvironment documentation](api/neurospatial/composite.md#neurospatial.composite.CompositeEnvironment)
+- [Combining environments](user-guide/composite-environments.md)
 - [3D Environment Support](dimensionality_support.md)
 
 ---

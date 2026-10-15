@@ -371,6 +371,30 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     linear = matrix[:-1, :-1]
     kind, scale, logdet = _classification(linear)
     similarity = kind in {"translation", "similarity"}
+    from neurospatial.layout._composition import bridge_values
+
+    couplings = bridge_values(binning)
+    if any(value > 0 for value in couplings.values()):
+        if not similarity:
+            raise _refusal(
+                "Cannot transform declared bridge conductance by a general affine map.",
+                "conductance scaling requires a similarity with a known length scale",
+                "use a translation, rotation, reflection or uniform scaling",
+            )
+        try:
+            factor_c = scale ** (parent.measure_dim - 2)
+            with np.errstate(over="raise", invalid="raise", under="ignore"):
+                transformed_c = np.array(list(couplings.values())) * factor_c
+            if np.any(
+                (np.array(list(couplings.values())) > 0) & (transformed_c == 0)
+            ) or not np.all(np.isfinite(transformed_c)):
+                raise FloatingPointError
+        except (OverflowError, FloatingPointError) as error:
+            raise _refusal(
+                "Transformed bridge conductance exceeds floating-point range.",
+                "positive conductances must remain finite and positive",
+                "rescale coordinate units before transforming",
+            ) from error
     if parent.measure_dim < parent.n_dims and not similarity:
         raise _refusal(
             f"Cannot apply {kind} to embedded track bins.",
