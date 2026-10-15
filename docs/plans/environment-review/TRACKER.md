@@ -65,7 +65,7 @@ The review's severity and introduction claims are hypotheses until checked here.
   raises `RecursionError`. An iterative preflight now rejects container cycles
   before decoding while allowing shared acyclic records and long valid affine
   histories. Verification: 478 IO tests and 15 Python 3.10 ingress tests pass;
-  independent review and publication are in progress.
+  independent review approved; published as `9436ae14` and merged forward without rewriting history.
 
 ## Architecture recommendations
 
@@ -119,8 +119,19 @@ Their passing regressions remain part of the broader gate.
 
 ## Integration progress
 
-- #67 repairs published through `45f7c403`; #68 repairs through `c0522e98`.
-- #77 documentation correction at `671961c7` passed 24 CI checks, with one skip.
-- The stack is being merged forward without rewriting published history. Source
-  repairs listed above still require downstream integration and final CI before
-  the overall task is complete.
+- Published owner heads: #67 `9436ae14`, #68 `6b8e530e`, #70 `31bc3ff2`,
+  #71 `7dffa014`, #72 `43d671ab`, #73 `58a88588`, #74 `ec1aa183`,
+  #76 `a2450fde`. Repairs are merged forward without rewriting published history.
+- Baseline fixes have separate PRs: polar count/circularity #78; dotted file
+  prefixes #79; small-unit native grid faces #80; Windows HTML decoding #81.
+- Stage F CPU verification at `8c35617e`: 13,846 passed, 335 skipped using
+  the locked dev/NWB/xarray environment plus CI's widget dependencies; slow,
+  napari and wall-clock checks were excluded. GUI/GPU execution remains unrun.
+  The subsequent cycle-preflight change passed the malformed-ingress gate and
+  passed a fresh complete IO gate: 590 passed, seven skipped. Source and static contracts pass for 257 files; Ruff, formatting and whitespace checks pass.
+- Parent CI is rerunning on the new heads. Earlier green runs and cancelled
+  superseded jobs are not treated as proof for these updated commits.
+- Structural work is isolated in `refactor/environment-responsibilities`,
+  stacked above #77. It retains separate before/after behavior captures and
+  independent reviews; optional plot namespacing and graph redesign remain
+  tracked rather than silently added.
