@@ -711,11 +711,20 @@ def _validate_components(
         )
         if bins.measure_dim != 1:
             raise ValueError("linearization bins.measure_dim must be 1.")
-    _equal(
-        locator.locate(bins.centers),
-        np.arange(bins.n_bins),
-        "locator bin-center lookup",
-    )
+    located = locator.locate(bins.centers)
+    if track is not None:
+        # An embedded track can revisit an identical spatial point at a
+        # different linear coordinate. Nearest-point lookup may choose either
+        # coincident bin; the validated track component owns path identity.
+        if located.shape != (bins.n_bins,) or np.any(
+            (located < 0) | (located >= bins.n_bins)
+        ):
+            raise ValueError("Track locator does not locate its bin centers.")
+        _equal(
+            bins.centers[located], bins.centers, "track locator bin-center coordinates"
+        )
+    else:
+        _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
 
 
 class BinningLayout:
