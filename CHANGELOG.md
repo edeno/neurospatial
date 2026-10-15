@@ -4,6 +4,12 @@
 
 ### Added
 
+- Retain 2-D/3-D source grid frames through affine transforms and whole-bin
+  subsets, without exposing source axes as world-aligned grid edges. Reflected
+  and deformed hexagons retain exact polygon cells. New binning codec version 3
+  stores the frame and reads earlier versions 1 and 2; partial clipping uses
+  exact polygon cells rather than a tensor grid.
+
 - Add optional owned `FaceNormals` data to `Binning`, in authoritative neighbor
   pair order. Native Cartesian grids and planar hexagon/triangle cells capture
   physical directions; subsets, clipping, physical walls and affine transforms

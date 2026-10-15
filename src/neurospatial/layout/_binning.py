@@ -26,6 +26,7 @@ from neurospatial.layout._diffusion import (
     FiniteVolumeGeometryProvider,
 )
 from neurospatial.layout._face_normals import FaceNormals, geometric_normals
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import LayoutEngine
 
@@ -536,6 +537,7 @@ class Binning:
     clip_mapping: ClipMapping | None = None
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
+    grid_frame: FramedGrid | None = None
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:

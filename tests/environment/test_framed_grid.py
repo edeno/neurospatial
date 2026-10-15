@@ -1,0 +1,251 @@
+"""Retained source grids and transformed cells keep identities and ownership."""
+
+from __future__ import annotations
+
+import copy
+import pickle
+from dataclasses import replace
+from datetime import datetime, timezone
+
+import numpy as np
+import pytest
+from shapely.affinity import affine_transform
+from shapely.geometry import box
+
+from neurospatial import Environment
+from neurospatial.binning import FramedGrid, RectilinearGrid
+from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout._codecs import decode, encode
+from neurospatial.layout._polygon import PolygonCells, materialize_cells
+from neurospatial.ops.transforms import Affine2D, AffineND
+
+
+def grid(n_dims=2, hole=True):
+    mask = np.ones((3,) * n_dims, dtype=bool)
+    if hole:
+        mask[(1,) * n_dims] = False
+    return Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * n_dims)
+
+
+def matrix(n_dims=2, kind="shear", offset=0.0):
+    value = np.eye(n_dims + 1)
+    value[0, -1] = offset
+    if kind == "shear":
+        value[0, 1] = 0.3
+    elif kind == "rotation":
+        value[:2, :2] = [[0.0, -1.0], [1.0, 0.0]]
+    elif kind == "reflection":
+        value[0, 0] = -1.0
+    return value
+
+
+def moved(env, value):
+    return env.apply_transform(AffineND(value))
+
+
+@pytest.mark.parametrize("n_dims", [2, 3])
+@pytest.mark.parametrize("kind", ["shear", "rotation", "reflection"])
+@pytest.mark.parametrize("offset", [0.0, 1e9])
+def test_frame_retains_source_mask_order_and_world_centers(n_dims, kind, offset):
+    env = grid(n_dims)
+    value = matrix(n_dims, kind, offset)
+    child = moved(env, value)
+    frame = child._binning.grid_frame
+    assert isinstance(frame, FramedGrid)
+    assert child._binning.rectilinear is None
+    np.testing.assert_array_equal(frame.source.active_mask, env.active_mask)
+    for actual, expected in zip(frame.source.edges, env.grid_edges, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(frame.forward, value)
+    np.testing.assert_array_equal(child.edge_pairs, env.edge_pairs)
+    np.testing.assert_array_equal(
+        child.bin_at(child.bin_centers), np.arange(env.n_bins)
+    )
+    np.testing.assert_allclose(frame.to_world(env.bin_centers), child.bin_centers)
+    np.testing.assert_allclose(
+        frame.to_source(child.bin_centers), env.bin_centers, atol=1e-6
+    )
+
+
+@pytest.mark.parametrize("n_dims", [2, 3])
+def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
+    env = grid(n_dims)
+    first, second = matrix(n_dims, "rotation"), matrix(n_dims, "shear")
+    child = moved(moved(env, first), second)
+    np.testing.assert_allclose(child._binning.grid_frame.forward, second @ first)
+    keep = np.arange(child.n_bins) % 3 != 1
+    subset = child.subset(bins=keep)
+    frame = subset._binning.grid_frame
+    expected = env.active_mask.copy()
+    expected.flat[np.flatnonzero(expected)] = keep
+    np.testing.assert_array_equal(frame.source.active_mask, expected)
+    np.testing.assert_array_equal(
+        subset.bin_at(child.bin_centers[keep]), np.arange(keep.sum())
+    )
+    np.testing.assert_array_equal(subset.bin_at(child.bin_centers[~keep]), -1)
+    original = moved(child, np.linalg.inv(second @ first))
+    np.testing.assert_allclose(original.bin_centers, env.bin_centers, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "transport",
+    ["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb), "deepcopy", "pickle"],
+)
+@pytest.mark.parametrize("n_dims", [2, 3])
+def test_frame_round_trip_owns_all_arrays(
+    transport, n_dims, tmp_path, forbid_layout_builds
+):
+    # Create before forbidding builders (the fixture patches classes at setup).
+    from neurospatial.binning import (
+        Binning,
+        MissingFaces,
+        RectilinearLocator,
+        SpatialBins,
+    )
+
+    shape = (2,) * n_dims
+    edges = (np.arange(3.0),) * n_dims
+    centers = (
+        np.array(np.meshgrid(*([np.arange(2.0) + 0.5] * n_dims), indexing="ij"))
+        .reshape(n_dims, -1)
+        .T
+    )
+    locator = RectilinearLocator(edges, shape, None, None)
+    bins = SpatialBins(
+        centers,
+        np.ones(len(centers)),
+        n_dims,
+        np.empty((0, 2), dtype=np.intp),
+        np.empty(0),
+    )
+    native = Environment.from_bins(
+        Binning(
+            "explicit",
+            bins,
+            locator,
+            MissingFaces("No edges."),
+            rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
+        )
+    )
+    env = moved(native, matrix(n_dims))
+    if transport == "dict":
+        restored = from_dict(to_dict(env))
+    elif transport == "file":
+        to_file(env, tmp_path / "frame")
+        restored = from_file(tmp_path / "frame")
+    elif transport == "deepcopy":
+        restored = copy.deepcopy(env)
+    elif transport == "pickle":
+        restored = pickle.loads(pickle.dumps(env))
+    else:
+        pynwb = pytest.importorskip("pynwb")
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        record = pynwb.NWBFile(
+            "frame", "frame", datetime(2020, 1, 1, tzinfo=timezone.utc)
+        )
+        write_environment(record, env)
+        path = tmp_path / "frame.nwb"
+        with pynwb.NWBHDF5IO(str(path), "w") as io:
+            io.write(record)
+        with pynwb.NWBHDF5IO(str(path), "r") as io:
+            restored = read_environment(io.read())
+    actual, expected = restored._binning.grid_frame, env._binning.grid_frame
+    for a, b in zip(
+        (
+            actual.forward,
+            actual.inverse,
+            actual.source.active_mask,
+            *actual.source.edges,
+        ),
+        (
+            expected.forward,
+            expected.inverse,
+            expected.source.active_mask,
+            *expected.source.edges,
+        ),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(a, b)
+        assert not a.flags.writeable
+        assert not np.shares_memory(a, b)
+    np.testing.assert_array_equal(
+        restored.bin_at(env.bin_centers), np.arange(env.n_bins)
+    )
+
+
+@pytest.mark.parametrize(
+    "corruption", ["shift", "mask", "edges", "duplicate", "inverse"]
+)
+def test_publication_rejects_inconsistent_frame(corruption):
+    env = moved(grid(), matrix())
+    binning = env._binning
+    frame = binning.grid_frame
+    forward = frame.forward.copy()
+    source = frame.source
+    if corruption == "shift":
+        forward[0, -1] += 0.1
+    elif corruption == "mask":
+        mask = source.active_mask.copy()
+        mask.flat[0], mask.flat[4] = False, True
+        source = RectilinearGrid(source.edges, source.shape, mask)
+    elif corruption == "edges":
+        edges = tuple(edge + 0.1 for edge in source.edges)
+        source = RectilinearGrid(edges, source.shape, source.active_mask)
+    frame = FramedGrid(source, forward)
+    if corruption == "inverse":
+        frame.inverse.setflags(write=True)
+        frame.inverse[0, -1] += 0.1
+    candidate = replace(binning, grid_frame=frame)
+    if corruption == "duplicate":
+        candidate = replace(candidate, rectilinear=source)
+    with pytest.raises(ValueError, match=r"[Ff]rame"):
+        Environment.from_bins(candidate)
+
+
+def test_partial_clipping_drops_tensor_grid_and_keeps_parent_map():
+    env = moved(grid(hole=False), matrix())
+    child = env.clip(box(0.25, 0.25, 2.75, 2.75))
+    assert child._binning.grid_frame is None
+    assert isinstance(child._binning.shapes, PolygonCells)
+    assert child.clip_mapping is not None
+
+
+@pytest.mark.parametrize("kind", ["reflection", "shear"])
+def test_hexagon_conversion_retains_exact_vertices(kind):
+    env = Environment.from_layout(
+        "Hexagonal",
+        {"hexagon_width": 4.0, "dimension_ranges": [(0.0, 12.0), (0.0, 12.0)]},
+    )
+    value = matrix(kind=kind)
+    child = env.apply_transform(Affine2D(value))
+    assert isinstance(child._binning.shapes, PolygonCells)
+    coefficients = [*value[0, :2], *value[1, :2], value[0, 2], value[1, 2]]
+    for original, actual in zip(
+        materialize_cells(env._binning), materialize_cells(child._binning), strict=True
+    ):
+        expected = affine_transform(original, coefficients)
+        assert actual.normalize().equals_exact(expected.normalize(), tolerance=1e-12)
+    loaded = from_dict(to_dict(child))
+    np.testing.assert_array_equal(
+        loaded.bin_at(child.bin_centers), np.arange(env.n_bins)
+    )
+
+
+def test_frame_codec_version_and_legacy_v2_normal_data():
+    env = moved(grid(), matrix())
+    meta, arrays = encode(env._binning, "binning")
+    assert meta["codec_version"] == 3
+    assert meta["grid_frame"]["codec_version"] == 1
+    meta["codec_version"] = 2
+    with pytest.raises(ValueError, match="grid_frame requires"):
+        decode(meta, arrays, "binning")
+    native = grid()
+    meta, arrays = encode(native._binning, "binning")
+    meta["codec_version"] = 2
+    del meta["grid_frame"]
+    restored = decode(meta, arrays, "binning")
+    assert restored.grid_frame is None
+    np.testing.assert_array_equal(
+        restored.face_normals.values, native._binning.face_normals.values
+    )

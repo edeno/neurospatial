@@ -212,7 +212,7 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
             assert "binning/faces/volumes" in arrays
     assert payload["schema_version"] == "Environment-v3"
     assert payload["layout_category"] == simple_saved_grid.layout.layout_type
-    assert payload["binning"]["codec_version"] == 2
+    assert payload["binning"]["codec_version"] == 3
 
 
 @pytest.mark.parametrize("transport", ["file", "dict"])

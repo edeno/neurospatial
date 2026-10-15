@@ -689,6 +689,8 @@ def _locator_geometry(
                 matrix[1, -1],
             ],
         )
+    if geometry.radius > 0 and not (similarity and sign > 0):
+        geometry.polygons = cells_from_locator(locator)
     if geometry.radius > 0:
         geometry.shapes_supported &= bool(similarity and sign > 0)
         geometry.radius *= scale
@@ -756,6 +758,42 @@ def _validate_components(
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(locator, coordinate_kind, bins.measure_dim)
     gap = min(_gap(geometry.centers), geometry.cell_gap)
+    if binning.grid_frame is not None:
+        from neurospatial.layout._grid_frame import FramedGrid, frame_from_locator
+
+        frame = binning.grid_frame
+        if coordinate_kind != "cartesian" or binning.rectilinear is not None:
+            raise ValueError(
+                "FramedGrid requires Cartesian cells without a duplicate world-axis grid."
+            )
+        checked = FramedGrid(frame.source, frame.forward)
+        _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
+        expected_frame = frame_from_locator(locator)
+        _equal(
+            frame.source.shape, expected_frame.source.shape, "grid_frame.source.shape"
+        )
+        _equal(
+            frame.source.active_mask,
+            expected_frame.source.active_mask,
+            "grid_frame.source.active_mask",
+        )
+        for axis, (actual, expected) in enumerate(
+            zip(frame.source.edges, expected_frame.source.edges, strict=True)
+        ):
+            _equal(actual, expected, f"grid_frame.source.edges[{axis}]")
+        reference = expected_frame.forward
+        error = (
+            128
+            * np.finfo(float).eps
+            * (np.abs(reference) @ np.abs(expected_frame.inverse) @ np.abs(reference))
+        )
+        _computed_equal(
+            frame.forward,
+            reference,
+            error,
+            "grid_frame.forward and locator frame",
+            gap=gap,
+        )
     if not isinstance(locator, CombinedLocator):
         from neurospatial.layout._composition import expected_composition_binning
 
@@ -870,7 +908,11 @@ def _validate_components(
             else grid_locator.active_mask
         )
         _equal(grid.active_mask, mask, "rectilinear active_mask")
-    if shapes is not None and not geometry.shapes_supported:
+    if (
+        shapes is not None
+        and not geometry.shapes_supported
+        and not isinstance(shapes, PolygonCells)
+    ):
         raise ValueError("shapes do not match the locator affine geometry.")
     if isinstance(shapes, HexagonShapes):
         _equal(shapes.centers, bins.centers, "shapes.centers")

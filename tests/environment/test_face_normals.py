@@ -233,10 +233,10 @@ def test_legacy_binning_keeps_old_transform_capabilities():
         np.testing.assert_array_equal(actual, expected)
 
 
-def test_version_two_requires_normal_field_and_other_codecs_stay_version_one():
+def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one():
     env = _grid()
     meta, arrays = encode(env._binning, "binning")
-    assert meta["codec_version"] == 2
+    assert meta["codec_version"] == 3
     assert meta["face_normals"]["codec_version"] == 1
     del meta["face_normals"]
     with pytest.raises(ValueError, match="face_normals"):

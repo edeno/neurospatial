@@ -28,6 +28,7 @@ from neurospatial.layout._capabilities import (
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import FaceGeometry
 from neurospatial.layout._face_normals import FaceNormals, _unit_rows
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
     AffineMatrix,
     RectilinearLocator,
@@ -253,6 +254,18 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         shapes=shapes,
         outline=None,
         grid_spec=binning.grid_spec,
+        grid_frame=(
+            FramedGrid(
+                RectilinearGrid(
+                    binning.grid_frame.source.edges,
+                    binning.grid_frame.source.shape,
+                    _restricted_mask(binning.grid_frame.source.active_mask, keep),
+                ),
+                binning.grid_frame.forward,
+            )
+            if binning.grid_frame is not None
+            else None
+        ),
         face_normals=(
             FaceNormals(binning.face_normals.values[pair_kept])
             if binning.face_normals is not None
@@ -371,7 +384,11 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
 
 
 def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
-    from neurospatial.layout._polygon import PolygonCells, transform_polygon_cells
+    from neurospatial.layout._polygon import (
+        PolygonCells,
+        materialize_cells,
+        transform_polygon_cells,
+    )
 
     parent = binning.bins
     matrix = _matrix(transform, parent.n_dims)
@@ -495,6 +512,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             )
         else:
             grid = None
+    frame = binning.grid_frame
+    if frame is not None:
+        frame = FramedGrid(frame.source, matrix @ frame.forward)
+    elif grid is None and binning.rectilinear is not None and parent.n_dims in (2, 3):
+        frame = FramedGrid(binning.rectilinear, matrix)
     faces: FacesSource = binning.faces
     if faces.available:
         old = faces.build()
@@ -541,7 +563,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 + math.atan2(linear[1, 0] / scale, linear[0, 0] / scale),
             )
             if similarity and np.linalg.slogdet(linear)[0] > 0
-            else None
+            else transform_polygon_cells(
+                PolygonCells(materialize_cells(binning)), matrix
+            )
         )
     elif isinstance(shapes, TriangleShapes):
         shapes = TriangleShapes(_mapped(shapes.points, matrix), shapes.triangles)
@@ -593,6 +617,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         shapes=shapes,
         outline=outline,
         clip_mapping=binning.clip_mapping,
+        grid_frame=frame,
         face_normals=(
             FaceNormals(_unit_rows(binning.face_normals.values @ np.linalg.inv(linear)))
             if binning.face_normals is not None

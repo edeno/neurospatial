@@ -549,8 +549,16 @@ def _restore_environment(
             is_linearized_track=metadata["is_linearized_track"],
             coordinate_kind=coordinate_kind,
         )
-        if binning.rectilinear is not None or isinstance(
-            binning.linearization, TrackLinearization
+        if binning.grid_frame is not None and any(
+            key.startswith("grid_edges_") for key in arrays
+        ):
+            raise ValueError(
+                "Framed grid source axes cannot be stored as world grid_edges."
+            )
+        if (
+            binning.grid_frame is not None
+            or binning.rectilinear is not None
+            or isinstance(binning.linearization, TrackLinearization)
         ):
             if (
                 "grid_shape" in metadata

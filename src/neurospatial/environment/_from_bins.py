@@ -84,6 +84,9 @@ def _plot_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
         return tuple(
             (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
         )
+    if binning.grid_frame is not None:
+        corners = binning.grid_frame.corners()
+        return tuple((float(axis.min()), float(axis.max())) for axis in corners.T)
     if binning.bins.n_bins == 0:
         return None
     if binning.outline is not None:

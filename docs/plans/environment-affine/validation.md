@@ -89,3 +89,23 @@ matrix nor an unpublished Stage E PR is described as passing.
 E2 retains source grid axes and exact transformed shapes. E3 certifies additional
 numerical transforms. E4 migrates interpolation, linear time allocation and
 rendering. E5 supplies the user workflow documentation and final stage gate.
+
+
+## E2 — Retained current grids and exact cells
+
+Completed with independent review. FramedGrid owns source axes/mask and a
+composed world frame; Binning codec 3 accepts legacy versions 1 and 2. Loading
+checks source order, masks, axes, frame/inverse and locator consistency; source
+axes never appear as world grid_edges. Partial clipping drops the tensor grid.
+Reflected/deformed hexagons become exact PolygonCells in the same bin order.
+Explicit-bin bounds include transformed corners; inferred mask domains assert
+no physical walls.
+
+- 928 geometry/derivation/frame/normal/codec/file/NWB tests passed under numerical
+  RuntimeWarning errors (`/private/tmp/stage-e-e2-final.log`).
+- Source typing: 242 files passed.
+- Independent review: 119 focused tests plus seeded nested transform/subset/
+  restoration probes at offsets through 1e9 passed. Corrupted coefficients were
+  rejected. No confirmed blockers.
+- Grid interpolation, allocation and rendering remain for E4; no new numerical
+  face capability is claimed by E2.

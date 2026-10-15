@@ -28,6 +28,7 @@ from neurospatial.layout._components import HexagonShapes, Outline, TriangleShap
 from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._diffusion import FaceGeometry
 from neurospatial.layout._face_normals import FaceNormals
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -131,9 +132,9 @@ def decode(
             "Fix: use a neurospatial version supporting this geometry codec."
         )
     version = meta.get("codec_version")
-    supported = (1, 2) if name == "Binning" else (1,)
+    supported = (1, 2, 3) if name == "Binning" else (1,)
     if type(version) is not int or version not in supported:
-        version_hint = "1 or 2" if name == "Binning" else "1"
+        version_hint = "1, 2 or 3" if name == "Binning" else "1"
         raise ValueError(
             f"cannot load {name} codec_version {version!r}; supported version is {version_hint}.\n"
             "Fix: recreate and save the environment with this neurospatial version."
@@ -586,7 +587,7 @@ def _decode_nearest_locator(
 
 
 def _encode_binning(obj: Binning, prefix: str) -> Payload:
-    meta: dict[str, Any] = {"kind": obj.kind, "codec_version": 2}
+    meta: dict[str, Any] = {"kind": obj.kind, "codec_version": 3}
     arrays: dict[str, NDArray[Any]] = {}
     cells: list[PolygonCells] = []
     mappings: list[ClipMapping] = []
@@ -643,6 +644,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "clip_mapping",
         "grid_spec",
         "face_normals",
+        "grid_frame",
     ):
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
@@ -787,6 +789,8 @@ def _decode_transformed_locator(
 def _decode_binning(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> Binning:
+    if meta["codec_version"] < 3 and meta.get("grid_frame") is not None:
+        raise ValueError("grid_frame requires Binning codec_version 3.")
     if meta["codec_version"] == 1 and meta.get("face_normals") is not None:
         raise ValueError("face_normals requires Binning codec_version 2.")
     parts: dict[str, Any] = {}
@@ -866,11 +870,14 @@ def _decode_binning(
         "clip_mapping": ClipMapping,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
+        "grid_frame": FramedGrid,
     }
     part: object | None
     for name, kind in expected.items():
-        optional_legacy = name in {"clip_mapping", "grid_spec"} or (
-            name == "face_normals" and meta["codec_version"] == 1
+        optional_legacy = (
+            name in {"clip_mapping", "grid_spec"}
+            or (name == "face_normals" and meta["codec_version"] == 1)
+            or (name == "grid_frame" and meta["codec_version"] < 3)
         )
         value = meta.get(name) if optional_legacy else meta[name]
         if value is None:
@@ -1001,6 +1008,21 @@ def _decode_face_normals(
     return FaceNormals(np.asarray(arrays[f"{prefix}/values"]))
 
 
+def _encode_grid_frame(obj: FramedGrid, prefix: str) -> Payload:
+    source, arrays = encode(obj.source, f"{prefix}/source")
+    arrays.update(_arrays(prefix, forward=obj.forward))
+    return {"source": source}, arrays
+
+
+def _decode_grid_frame(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> FramedGrid:
+    source = decode(meta["source"], arrays, f"{prefix}/source")
+    if type(source) is not RectilinearGrid:
+        raise ValueError("FramedGrid.source needs a RectilinearGrid codec.")
+    return FramedGrid(source, _array(arrays, prefix, "forward", np.float64))
+
+
 _CODECS: dict[str, Codec] = {
     "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
@@ -1035,4 +1057,5 @@ _CODECS: dict[str, Codec] = {
     ),
     "Binning": Codec(Binning, _encode_binning, _decode_binning),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
+    "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }

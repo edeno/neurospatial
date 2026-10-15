@@ -60,6 +60,11 @@ def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena
         return UnknownArena(n_dims)
     if binning.outline is not None:
         return OpenArena(binning.outline.geometry)
+    if binning.grid_frame is not None:
+        frame = binning.grid_frame
+        return MaskArena(frame.source.edges, frame.source.active_mask).transformed(
+            frame.forward
+        )
     if grid is not None and len(grid.shape) == n_dims:
         return MaskArena(grid.edges, grid.active_mask)
     # Exact area cells are sufficient to infer an analysis domain, but not

@@ -1185,7 +1185,9 @@ class CartesianCoordinates:
         else:
             shapes = binning.shapes
             vertices = binning.bins.centers
-            if isinstance(shapes, HexagonShapes):
+            if binning.grid_frame is not None:
+                vertices = binning.grid_frame.corners()
+            elif isinstance(shapes, HexagonShapes):
                 angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
                 offsets = shapes.radius * np.column_stack(
                     (np.cos(angles), np.sin(angles))
