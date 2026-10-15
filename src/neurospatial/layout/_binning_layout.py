@@ -272,6 +272,7 @@ class _LocatorGeometry:
     orientation_error: float = 0.0
     computed: bool = False
     shapes_supported: bool = True
+    similarity: bool = True
     polygons: tuple[Polygon, ...] | None = None
     grid_indices: NDArray[np.intp] | None = None
     grid_linear: NDArray[np.float64] | None = None
@@ -703,6 +704,7 @@ def _locator_geometry(
         for value, error in geometry.measures
     ]
     geometry.cell_gap *= float(np.min(np.linalg.svd(linear, compute_uv=False)))
+    geometry.similarity &= bool(similarity)
     if geometry.polygons is not None:
         geometry.polygons = transform_polygon_cells(
             PolygonCells(geometry.polygons), matrix
@@ -850,6 +852,13 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
             "the environment from its source geometry. Older tiny-grid records with "
             "incorrect zero-area faces must be regenerated."
         )
+    _validate_face_distances(binning, geometry, "grid faces.distance")
+
+
+def _center_distances(
+    geometry: _LocatorGeometry, pairs: NDArray[np.intp]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Center-link lengths ``(n_pairs,)`` and their propagated arithmetic error."""
     vectors = geometry.centers[pairs[:, 1]] - geometry.centers[pairs[:, 0]]
     distances = np.hypot.reduce(vectors, axis=1)
     distance_error = (
@@ -857,14 +866,91 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
             geometry.center_error[pairs[:, 0]] + geometry.center_error[pairs[:, 1]],
             axis=1,
         )
-        + 256 * eps * distances
+        + 256 * np.finfo(float).eps * distances
     )
+    return distances, distance_error
+
+
+def _validate_face_distances(
+    binning: Binning, geometry: _LocatorGeometry, name: str
+) -> None:
+    """Check stored two-point flux distances against the cell-center links."""
+    assert isinstance(binning.faces, KnownFaces)
+    distances, distance_error = _center_distances(geometry, binning.bins.pairs)
     _computed_equal(
-        faces.distance,
+        binning.faces.faces.distance,
         distances,
         np.minimum(distance_error, distances / 4),
-        "grid faces.distance",
+        name,
     )
+
+
+def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
+    """Check hexagon and triangle face lengths and distances against the cells.
+
+    Each pair's face measure is the length of the cell edge both bins share,
+    and zero when the cells share no edge. Regular hexagons share a side of
+    length ``radius`` exactly when their centers are ``sqrt(3) * radius``
+    apart; triangles share an edge exactly when they share two mesh points.
+    """
+    if not isinstance(binning.faces, KnownFaces):
+        return
+    pairs = binning.bins.pairs
+    eps = np.finfo(float).eps
+    if geometry.radius > 0:
+        label = "hexagon faces"
+        if not geometry.similarity:
+            raise ValueError(
+                "hexagon faces need center links normal to shared cell faces, "
+                "which an affine map other than a similarity does not keep. "
+                "Use MissingFaces for these bins or rebuild the environment "
+                "from its source geometry."
+            )
+        radius = geometry.radius
+        distances, distance_error = _center_distances(geometry, pairs)
+        # Nearest hexagon centers are sqrt(3) * radius apart; the next-nearest
+        # are 3 * radius apart, so a quarter-spacing band separates them.
+        spacing = np.sqrt(3.0) * radius
+        shares_edge = np.abs(distances - spacing) <= spacing / 4
+        expected = np.where(shares_edge, radius, 0.0)
+        error = np.where(
+            shares_edge,
+            geometry.radius_error + distance_error / np.sqrt(3.0) + 256 * eps * radius,
+            0.0,
+        )
+    elif geometry.triangles is not None and geometry.points is not None:
+        assert geometry.point_error is not None
+        label = "triangle faces"
+        first = geometry.triangles[pairs[:, 0]]
+        second = geometry.triangles[pairs[:, 1]]
+        shared = np.any(first[:, :, None] == second[:, None, :], axis=2)
+        shares_edge = np.count_nonzero(shared, axis=1) == 2
+        ends = first[shares_edge][shared[shares_edge]].reshape(-1, 2)
+        lengths = np.hypot.reduce(
+            geometry.points[ends[:, 1]] - geometry.points[ends[:, 0]], axis=1
+        )
+        expected = np.zeros(len(pairs))
+        error = np.zeros(len(pairs))
+        expected[shares_edge] = lengths
+        error[shares_edge] = (
+            np.hypot.reduce(
+                geometry.point_error[ends[:, 0]] + geometry.point_error[ends[:, 1]],
+                axis=1,
+            )
+            + 256 * eps * lengths
+        )
+    else:
+        return
+    if not np.all(
+        np.abs(binning.faces.faces.A - expected) <= np.minimum(error, expected / 4)
+    ):
+        raise ValueError(
+            f"{label}.A does not match shared cell-edge lengths. Supply the "
+            "physical length of the edge each pair of cells shares, using zero "
+            "only for pairs without a shared edge, or rebuild the environment "
+            "from its source geometry."
+        )
+    _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
 def _validate_components(
@@ -980,6 +1066,7 @@ def _validate_components(
         )
     if coordinate_kind == "cartesian":
         _validate_rectilinear_faces(binning, geometry)
+        _validate_cell_faces(binning, geometry)
     if grid is not None:
         if isinstance(locator, RectilinearLocator):
             grid_locator = locator
