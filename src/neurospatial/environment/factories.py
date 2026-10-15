@@ -305,8 +305,14 @@ class EnvironmentFactories:
                 "from_bins accepts Cartesian data; use the polar factory for polar coordinates."
             )
         layout = layout_from_bins(binning)
+        if arena is None and layout._binning.outline is not None:
+            from neurospatial.arena import OpenArena
+
+            arena = OpenArena(
+                layout._binning.outline.geometry, physical_footprint_known=False
+            )
         env_cls = cast("type[Environment]", cls)
-        return env_cls(
+        result = env_cls(
             name=name,
             layout=layout,
             layout_type_used=layout._layout_type_tag,
@@ -316,6 +322,12 @@ class EnvironmentFactories:
             regions=regions,
             arena=arena,
         )
+        if not np.array_equal(result.edge_pairs, layout._binning.bins.pairs):
+            raise ValueError(
+                "Supplied neighbor pairs cross physical walls. Remove those pairs "
+                "and their aligned face data explicitly before calling from_bins."
+            )
+        return result
 
     @classmethod
     def from_samples(

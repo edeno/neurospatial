@@ -9,7 +9,7 @@ from dataclasses import replace
 import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import box
+from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -24,6 +24,7 @@ from neurospatial.binning import (
     RectilinearLocator,
     SpatialBins,
 )
+from neurospatial.layout._components import Outline
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.regions import Regions
 
@@ -597,3 +598,22 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
         source.connectivity.nodes[i]["original_grid_nd_index"]
         for i in range(source.n_bins)
     ]
+
+
+def test_explicit_pairs_crossing_walls_are_rejected_without_changing_input():
+    source = _rectilinear()
+    arena = OpenArena(box(0, 0, 2, 2), walls=(LineString([(1, 0), (1, 2)]),))
+    expected = source.bins.pairs.copy()
+    with pytest.raises(ValueError, match=r"supplied.*pairs|Supplied.*pairs"):
+        Environment.from_bins(source, arena=arena)
+    np.testing.assert_array_equal(source.bins.pairs, expected)
+
+
+def test_explicit_outline_is_drawing_geometry_without_physical_wall_evidence():
+    source = replace(_rectilinear(), outline=Outline(box(0, 0, 2, 2)))
+    env = Environment.from_bins(source)
+    assert env.arena.domain_known
+    assert not env.arena.physical_footprint_known
+    np.testing.assert_array_equal(env.bin_centers, source.bins.centers)
+    asserted = Environment.from_bins(source, arena=OpenArena(box(0, 0, 2, 2)))
+    assert asserted.arena.physical_footprint_known
