@@ -11,6 +11,7 @@ from pathlib import Path
 
 NAMESPACES = (
     "neurospatial",
+    "neurospatial.arena",
     "neurospatial.encoding",
     "neurospatial.decoding",
     "neurospatial.behavior",

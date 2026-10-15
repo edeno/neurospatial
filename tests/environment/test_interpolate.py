@@ -331,7 +331,7 @@ class TestInterpolateEdgeCases:
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = rng.random(env.n_bins)
-        points = np.array([[5.0, 5.0]])
+        points = env.bin_centers[:1]
 
         result = env.interpolate(field, points, mode="nearest")
 

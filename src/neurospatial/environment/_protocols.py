@@ -37,10 +37,12 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
+    from neurospatial.arena import Arena
     from neurospatial.environment._coordinates import CoordinateSystem
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout._binning import Binning
     from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.layout._polygon import ClipMapping
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
@@ -62,6 +64,14 @@ class EnvironmentProtocol(Protocol):
 
     @property
     def _binning(self) -> Binning: ...
+
+    @property
+    def arena(self) -> Arena: ...
+
+    @property
+    def clip_mapping(self) -> ClipMapping | None: ...
+
+    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
     # Core attributes
     name: str
@@ -347,6 +357,9 @@ class TrajectoryBinningConsumer(Protocol):
     def _binning(self) -> Binning: ...
 
     @property
+    def arena(self) -> Arena: ...
+
+    @property
     def n_bins(self) -> int: ...
 
     @property
@@ -391,6 +404,9 @@ class RebinConsumer(Protocol):
 
     @property
     def layout(self) -> LayoutEngine: ...
+
+    @property
+    def arena(self) -> Arena: ...
 
     @property
     def name(self) -> str: ...
@@ -444,6 +460,8 @@ class InterpolationConsumer(Protocol):
 
     @property
     def _binning(self) -> Binning: ...
+
+    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...

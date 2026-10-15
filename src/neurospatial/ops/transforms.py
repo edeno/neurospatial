@@ -1552,7 +1552,14 @@ def apply_transform_to_environment(
         is_linearized_track=env.is_linearized_track,
     )
     new_name = name if name is not None else f"{env.name}_transformed"
-    new_env = Environment(new_name, transformed_layout, tag, params)
+    new_env = Environment(
+        new_name,
+        transformed_layout,
+        tag,
+        params,
+        arena=env.arena.transformed(transform.A),
+        clip_mapping=env.clip_mapping,
+    )
 
     # Transform and copy regions
     if env.regions and len(env.regions) > 0:

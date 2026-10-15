@@ -122,7 +122,7 @@ class CartesianCoordinates:
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self._binning.locator.locate(points_nd).astype(np.intp, copy=False)
+        return self._locate(points_nd)
 
     @check_fitted
     def contains(
@@ -168,7 +168,7 @@ class CartesianCoordinates:
         """
         # Optimized: compute indices once and check for -1 sentinel
         # This avoids redundant KDTree queries compared to calling bin_at() separately
-        indices = self._binning.locator.locate(points_nd)
+        indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
     @check_fitted
@@ -493,7 +493,7 @@ class CartesianCoordinates:
             If ``times`` contains non-finite values (NaN or Inf). The error
             names ``times`` and the first offending index.
         NotImplementedError
-            If time_allocation='linear' is used without rectangular grid cells.
+            If linear allocation lacks exact supported cell geometry.
 
         See Also
         --------
@@ -511,9 +511,11 @@ class CartesianCoordinates:
 
         - time_allocation='linear': Splits Δt proportionally across all bins
           traversed by the straight-line path between consecutive samples.
-          More accurate for trajectories that cross multiple bins, but only
-          supported on layouts with rectangular grid cells. Requires ray-grid intersection
-          calculations.
+          Supported for rectangular grids and exact planar polygon cells.
+          Polygon allocation retains entry and re-entry intervals, excludes
+          holes and outside portions without renormalizing their duration,
+          and refuses proper crossings of a known physical wall. Observation
+          validity is independent of whether the starting point is in a bin.
 
         **Mass conservation**: The sum of the returned occupancy array equals
         the total valid time:
@@ -862,8 +864,8 @@ class CartesianCoordinates:
         -------
         coarse_env : Environment
             New environment with reduced resolution. The new grid shape is
-            ``original_shape // factor`` in each dimension. All bins in the
-            coarsened grid are marked as active.
+            ``original_shape // factor`` in each dimension. Keep coarse bins
+            whose centers lie inside the original arena.
 
         Raises
         ------
@@ -873,12 +875,13 @@ class CartesianCoordinates:
             If environment layout is not RegularGridLayout.
         ValueError
             If factor is not positive or if factor is too large for grid shape.
+            Also raised when coarse cells cannot represent an existing wall.
 
         See Also
         --------
         smooth : Apply diffusion kernel smoothing to fields.
         subset : Extract spatial subset of environment.
-        map_points_to_bins : Map original bin centers to coarsened bins.
+        bin_at : Assign retained original bin centers to coarsened bins.
 
         Notes
         -----
@@ -886,15 +889,13 @@ class CartesianCoordinates:
         aggregate field values (occupancy, spike counts, etc.) from the original
         grid to the coarsened grid, map the original bin centers and aggregate:
 
-            >>> from neurospatial.ops.binning import (
-            ...     map_points_to_bins,
-            ... )  # doctest: +SKIP
             >>> coarse = env.rebin(factor=2)  # doctest: +SKIP
-            >>> coarse_indices = map_points_to_bins(
-            ...     coarse, env.bin_centers
-            ... )  # doctest: +SKIP
+            >>> coarse_indices = coarse.bin_at(env.bin_centers)  # doctest: +SKIP
+            >>> retained = coarse_indices >= 0  # doctest: +SKIP
             >>> coarse_field = np.bincount(  # doctest: +SKIP
-            ...     coarse_indices, weights=field, minlength=coarse.n_bins
+            ...     coarse_indices[retained],
+            ...     weights=field[retained],
+            ...     minlength=coarse.n_bins,
             ... )
 
         **Grid-only operation**: This method only works for environments with
@@ -906,16 +907,17 @@ class CartesianCoordinates:
 
         **Connectivity**: The connectivity graph is rebuilt for the coarsened
         grid with the same connectivity pattern as the original (e.g., if
-        original had diagonal connections, coarsened grid will too).
+        original had diagonal connections, coarsened grid will too). Physical
+        walls still block connections and must align with complete coarse faces.
 
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: All bins in the coarsened environment are marked as
-        active, even if the original grid had inactive regions.
+        **Active bins**: Keep centers strictly inside a polygonal arena, or
+        contained by another known arena. Unknown domains retain the full
+        coarse grid. Rebinning preserves the arena rather than filling its holes.
 
-        **Metadata preservation**: The units and frame attributes are copied
-        from the original environment to the coarsened environment.
+        **Metadata preservation**: The arena, units and frame are preserved.
 
         Examples
         --------
@@ -939,14 +941,16 @@ class CartesianCoordinates:
         (5, 2)
         >>>
         >>> # Aggregate a field to the coarsened grid
-        >>> from neurospatial.ops.binning import map_points_to_bins
         >>> occupancy = np.random.rand(env.n_bins) * 100
-        >>> coarse_indices = map_points_to_bins(coarse, env.bin_centers)
+        >>> coarse_indices = coarse.bin_at(env.bin_centers)
+        >>> retained = coarse_indices >= 0
         >>> coarse_occupancy = np.bincount(
-        ...     coarse_indices, weights=occupancy, minlength=coarse.n_bins
+        ...     coarse_indices[retained],
+        ...     weights=occupancy[retained],
+        ...     minlength=coarse.n_bins,
         ... )
-        >>> # Total time is preserved
-        >>> bool(np.isclose(occupancy.sum(), coarse_occupancy.sum()))
+        >>> # The total over retained source-bin centers is preserved
+        >>> bool(np.isclose(occupancy[retained].sum(), coarse_occupancy.sum()))
         True
 
         """
@@ -1081,6 +1085,15 @@ class CartesianCoordinates:
                 vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
             elif isinstance(shapes, TriangleShapes):
                 vertices = shapes.points[shapes.triangles].reshape(-1, 2)
+            else:
+                from neurospatial.layout._polygon import PolygonCells
+
+                if isinstance(shapes, PolygonCells):
+                    import shapely
+
+                    vertices = np.concatenate(
+                        [shapely.get_coordinates(cell) for cell in shapes.polygons]
+                    )
             ranges = []
             for axis in vertices.T:
                 low, high = float(axis.min()), float(axis.max())
@@ -1096,10 +1109,46 @@ class CartesianCoordinates:
             is_linearized_track=self.is_linearized_track,
         )
         env_cls = cast("type[Environment]", self.__class__)
-        result = env_cls("", layout, tag, params)
+        result = env_cls("", layout, tag, params, arena=self.arena)
         result.units = self.units
         result.frame = self.frame
         return result
+
+    @check_fitted
+    def clip(
+        self: SelfCartesianEnv,
+        polygon: shapely.Polygon | shapely.MultiPolygon,
+        *,
+        name: str | None = None,
+    ) -> Environment:
+        """Clip planar cells to a polygon, returning a new environment.
+
+        Parameters
+        ----------
+        polygon : Polygon or MultiPolygon
+            Retained Cartesian analysis area, including any holes.
+        name : str, optional
+            Output name; defaults to the parent's name.
+
+        Returns
+        -------
+        Environment
+            Exact positive-area cells. Disconnected pieces get separate bins;
+            ``clip_mapping.parent_bin_indices`` identifies their input bins.
+            Rates, counts and fitted models are not transferred. Numerical
+            operations require certified finite-volume geometry. The analysis
+            crop preserves the parent arena and does not assert new walls.
+
+        Raises
+        ------
+        ValueError
+            If geometry is invalid, unavailable, unsupported, or has no
+            positive-area intersection. Track, polar and 3-D cells are not
+            Cartesian planar area cells.
+        """
+        from neurospatial.environment._clipping import _clip
+
+        return _clip(self, polygon, name=name)
 
     @check_fitted
     def apply_transform(

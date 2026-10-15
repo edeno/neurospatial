@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -195,6 +196,46 @@ def _rebin(
         layout_params_used=new_layout._build_params_used,
         name=f"{env.name}_rebinned" if env.name else "",
         regions=Regions(),  # Start with empty regions
+    )
+    coarse_layout = coarse_env.layout
+
+    # Select before publishing the original arena: excluded centers and walls
+    # are validated by the final constructor, just as in layout factories.
+    if env.arena.domain_known:
+        domain = env.arena.polygonal_domain()
+        if domain is not None:
+            from shapely import contains_xy
+
+            keep = contains_xy(
+                domain, coarse_bin_centers[:, 0], coarse_bin_centers[:, 1]
+            )
+        else:
+            keep = env.arena.contains(coarse_bin_centers)
+        if not np.any(keep):
+            raise ValueError(
+                "Rebinning retains no coarse bin center inside the original arena. "
+                "Use a smaller factor or rebuild a grid with centers in the domain."
+            )
+        if not np.all(keep):
+            from neurospatial.layout._binning_layout import BinningLayout
+
+            selected = coarse_env.subset(bins=keep)
+            coarse_layout = BinningLayout(
+                replace(selected._binning, kind="RegularGrid"),
+                connectivity=selected.connectivity,
+                dimension_ranges=selected.dimension_ranges,
+                layout_type_tag="RegularGrid",
+                layout_type=new_layout.layout_type,
+                build_params=new_layout._build_params_used,
+                is_linearized_track=False,
+            )
+    coarse_env = env_cls(
+        name=f"{env.name}_rebinned" if env.name else "",
+        layout=coarse_layout,
+        layout_type_used="RegularGrid",
+        layout_params_used=new_layout._build_params_used,
+        regions=Regions(),
+        arena=env.arena,
     )
 
     # Preserve metadata

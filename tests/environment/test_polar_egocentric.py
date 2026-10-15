@@ -1320,6 +1320,8 @@ _POLAR_INHERITED_MEMBERS = {
     },
     "read-only geometry views in (distance, angle) coordinates": {
         "active_mask",
+        "arena",
+        "clip_mapping",
         "bin_centers",
         "connectivity",
         "dimension_ranges",
@@ -1453,6 +1455,7 @@ def test_cartesian_operations_are_the_capability_methods():
         "bin_at",
         "bin_sequence",
         "bin_sequence_with_runs",
+        "clip",
         "contains",
         "distance_between",
         "interpolate",

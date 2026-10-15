@@ -144,6 +144,13 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     np.testing.assert_array_equal(actual, expected)
     assert actual_warnings == expected_warnings
     if isinstance(env, Environment):
+        if env.arena.domain_known:
+            inside = env.arena.contains(points)
+            expected = expected.copy()
+            expected[~inside] = -1
+            _, expected_warnings = _lookup_with_warnings(
+                env._binning.locator.locate, points[inside]
+            )
         indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
         contains, contains_warnings = _lookup_with_warnings(env.contains, points)
         np.testing.assert_array_equal(indices, expected)

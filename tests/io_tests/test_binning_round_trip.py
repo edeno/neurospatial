@@ -208,7 +208,7 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
         with np.load(path.with_suffix(".npz")) as arrays:
             assert "binning/bins/centers" in arrays
             assert "binning/faces/volumes" in arrays
-    assert payload["schema_version"] == "Environment-v2"
+    assert payload["schema_version"] == "Environment-v3"
     assert payload["layout_category"] == simple_saved_grid.layout.layout_type
     assert payload["binning"]["codec_version"] == 1
 
