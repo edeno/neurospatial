@@ -319,8 +319,10 @@ for track coordinate conversions. The construction adapter reads a
 `track_linearization()`. Custom builders supply supported owned binning
 snapshots. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Integer-factor `rebin` retains its existing RegularGrid-family
-restriction, truncation warnings and complete-face wall constraints.
+alternative. Integer-factor `rebin` requires uniform rectangular cells and
+native grid navigation, allowing physical walls to remove connections. It
+refuses custom path lengths or topology that cell geometry cannot reconstruct,
+and retains truncation warnings and complete-face wall constraints.
 `rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
 provenance. It re-bins the retained known arena, preserving the grid anchor and
 affine frame; requested sizes are physical lengths along those axes. Subset and

@@ -2219,7 +2219,8 @@ class Environment(Generic[_C]):
         RuntimeError
             If called before the environment is fitted.
         NotImplementedError
-            If environment layout is not uniform rectangular grid.
+            If cells are not a uniform rectangular grid, or factor rebinning
+            would replace custom navigation distances or connections.
         ValueError
             If factor is not positive or if factor is too large for grid shape.
             Also raised when coarse cells cannot represent an existing wall.
@@ -2245,18 +2246,20 @@ class Environment(Generic[_C]):
             ...     minlength=coarse.n_bins,
             ... )
 
-        **Factor mode**: Integer coarsening requires the uniform RegularGrid
-        family. New-size mode uses the stored GridBinningSpec instead of a
-        descriptive layout name.
+        **Factor mode**: Integer coarsening requires uniform rectangular cells
+        with native grid connections and straight center-to-center navigation
+        distances, allowing connections removed by physical walls. Custom
+        paths cannot be reconstructed from cell geometry; use ``subset`` to
+        retain them or construct the target bins and paths explicitly.
 
         **Non-divisible dimensions**: If the grid shape is not evenly divisible
         by the factor in any dimension, the grid is truncated to the largest
         multiple of the factor. A warning is issued in this case.
 
         **Connectivity**: The connectivity graph is rebuilt for the coarsened
-        grid with the same connectivity pattern as the original (e.g., if
-        original had diagonal connections, coarsened grid will too). Physical
-        walls still block connections and must align with complete coarse faces.
+        grid using the stored diagonal-connection choice, or actual edges when
+        an older grid has no stored choice. Physical walls still block
+        connections and must align with complete coarse faces.
 
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.

@@ -16,8 +16,79 @@ from neurospatial._stacklevel import _external_stacklevel
 if TYPE_CHECKING:
     import shapely
 
+    from neurospatial.arena import Arena
     from neurospatial.environment._protocols import RebinConsumer, SubsetConsumer
     from neurospatial.environment.core import Environment
+    from neurospatial.layout._binning import Binning
+
+
+def _require_native_grid_navigation(
+    binning: Binning, arena: Arena, *, connect_diagonal: bool
+) -> None:
+    """Require the native grid paths that factor rebinning knows how to rebuild."""
+    from dataclasses import replace
+
+    from neurospatial.environment._arena import apply_walls
+    from neurospatial.layout._binning import SpatialBins
+    from neurospatial.layout._native_faces import NativeFaces
+    from neurospatial.layout.helpers.regular_grid import (
+        _create_regular_grid_connectivity_graph,
+    )
+
+    bins = binning.bins
+    direct_distances = np.hypot.reduce(
+        bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]], axis=1
+    )
+    message = (
+        "rebin() cannot reconstruct custom navigation paths or connections. "
+        "Use subset() to retain them, or explicitly construct the target bins "
+        "and their navigation geometry."
+    )
+    if not np.allclose(
+        bins.pair_distances,
+        direct_distances,
+        rtol=64 * np.finfo(np.float64).eps,
+        atol=0.0,
+    ):
+        raise NotImplementedError(message)
+
+    grid = binning.rectilinear
+    assert grid is not None
+    # Only adjacency is needed from this builder. Grid indices avoid computing
+    # unused physical edge lengths at potentially extreme coordinate scales.
+    indices = np.column_stack(
+        np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
+    ).astype(np.float64)
+    graph = _create_regular_grid_connectivity_graph(
+        indices,
+        grid.active_mask,
+        grid.shape,
+        connect_diagonal=connect_diagonal,
+    )
+    pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
+    candidate_bins = SpatialBins(
+        bins.centers,
+        bins.sizes,
+        bins.measure_dim,
+        pairs,
+        np.hypot.reduce(bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]], axis=1),
+    )
+    # Apply the same physical wall rule as native construction, with fresh faces
+    # aligned to the candidate graph rather than the source's selected pairs.
+    candidate = replace(
+        binning,
+        bins=candidate_bins,
+        faces=NativeFaces(
+            candidate_bins,
+            "grid",
+            (np.array([edge[1] - edge[0] for edge in grid.edges]),),
+        ),
+        face_normals=None,
+    )
+    candidate, _ = apply_walls(candidate, graph, arena)
+    expected_pairs = {frozenset(pair) for pair in candidate.bins.pairs}
+    if expected_pairs != {frozenset(pair) for pair in bins.pairs}:
+        raise NotImplementedError(message)
 
 
 def _rebin(
@@ -96,6 +167,20 @@ def _rebin(
                 f"Dimension {i} has only {grid_shape[i]} bins."
             )
 
+    # The stored choice governs future bins even if a sparse source currently
+    # contains no diagonal edges. Legacy grids infer it from their actual edges.
+    connect_diagonal = (
+        env._binning.grid_spec.connect_diagonal
+        if env._binning.grid_spec is not None
+        else any(
+            np.count_nonzero(env.bin_centers[u] != env.bin_centers[v]) > 1
+            for u, v in env.connectivity.edges()
+        )
+    )
+    _require_native_grid_navigation(
+        env._binning, env.arena, connect_diagonal=connect_diagonal
+    )
+
     # Check for non-divisible dimensions
     truncated_shape = tuple(
         s // f * f for s, f in zip(grid_shape, factor_tuple, strict=True)
@@ -169,13 +254,6 @@ def _rebin(
             )
 
     # --- Build new connectivity graph ---
-
-    # A diagonal changes more than one coordinate. Inspect actual edges:
-    # small or sparsely active grids need not have any full-degree nodes.
-    connect_diagonal = any(
-        np.count_nonzero(env.bin_centers[u] != env.bin_centers[v]) > 1
-        for u, v in env.connectivity.edges()
-    )
 
     # Create new layout
     from neurospatial.layout.helpers.regular_grid import (
