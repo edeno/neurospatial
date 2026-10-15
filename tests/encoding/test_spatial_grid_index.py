@@ -1,10 +1,10 @@
-"""Logical raster indexing must preserve each family's segmentation policy."""
+"""Place-field components follow retained graph edges across grid contexts."""
 
 import numpy as np
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.encoding.spatial import _extract_connected_component_scipy
+from neurospatial.encoding.spatial import _extract_connected_component_graph
 
 
 def test_hex_logical_diagonals_do_not_join_unconnected_fields():
@@ -14,10 +14,10 @@ def test_hex_logical_diagonals_do_not_join_unconnected_fields():
     mask = np.zeros(env.n_bins, dtype=bool)
     mask[[0, 5]] = True
     assert not env.connectivity.has_edge(0, 5)
-    np.testing.assert_array_equal(_extract_connected_component_scipy(0, mask, env), [0])
+    np.testing.assert_array_equal(_extract_connected_component_graph(0, mask, env), [0])
 
 
-def test_legacy_grid_segmentation_normalizes_saved_diagonal_policy():
+def test_legacy_grid_segmentation_follows_graph_despite_provenance():
     from dataclasses import replace
 
     from neurospatial import Environment
@@ -38,15 +38,15 @@ def test_legacy_grid_segmentation_normalizes_saved_diagonal_policy():
         is_linearized_track=False,
     )
     env = publish_environment(layout=legacy, layout_type_used="MaskedGrid")
-    # Provenance exports cannot alter the normalized algorithm choice.
-    env._layout_params_used["connect_diagonal_neighbors"] = False
+    # A detached provenance export cannot change the retained graph.
+    env.layout_parameters["connect_diagonal_neighbors"] = False
     mask = np.array([True, False, False, True])
     np.testing.assert_array_equal(
-        _extract_connected_component_scipy(0, mask, env), [0, 3]
+        _extract_connected_component_graph(0, mask, env), [0, 3]
     )
 
 
-def test_explicit_bins_keep_existing_axis_only_segmentation_policy():
+def test_explicit_bins_segment_using_supplied_diagonal_connections():
     from dataclasses import replace
 
     from neurospatial.binning import KnownFaces
@@ -61,10 +61,12 @@ def test_explicit_bins_keep_existing_axis_only_segmentation_policy():
     )
     assert env._binning.grid_spec.connect_diagonal
     mask = np.array([True, False, False, True])
-    np.testing.assert_array_equal(_extract_connected_component_scipy(0, mask, env), [0])
+    np.testing.assert_array_equal(
+        _extract_connected_component_graph(0, mask, env), [0, 3]
+    )
 
 
-def test_legacy_pickle_normalizes_segmentation_policy():
+def test_pickle_preserves_segmentation_connections():
     import pickle
 
     original = Environment.from_grid_mask(
@@ -72,9 +74,11 @@ def test_legacy_pickle_normalizes_segmentation_policy():
         grid_edges=(np.arange(3.0),) * 2,
         connect_diagonal_neighbors=True,
     )
-    object.__delattr__(original._geometry, "component_diagonal")
     restored = pickle.loads(pickle.dumps(original))
-    assert restored._component_diagonal
+    mask = np.array([True, False, False, True])
+    np.testing.assert_array_equal(
+        _extract_connected_component_graph(0, mask, restored), [0, 3]
+    )
 
 
 def test_from_layout_segmentation_keeps_resolved_default():
@@ -88,7 +92,7 @@ def test_from_layout_segmentation_keeps_resolved_default():
     assert "connect_diagonal_neighbors" not in env.layout_parameters
     mask = np.array([True, False, False, True])
     np.testing.assert_array_equal(
-        _extract_connected_component_scipy(0, mask, env), [0, 3]
+        _extract_connected_component_graph(0, mask, env), [0, 3]
     )
 
 
@@ -105,9 +109,8 @@ def test_supplied_arena_keeps_resolved_segmentation_default():
         },
         arena=OpenArena(box(-1, -1, 3, 3)),
     )
-    assert env._component_diagonal
     np.testing.assert_array_equal(
-        _extract_connected_component_scipy(
+        _extract_connected_component_graph(
             0, np.array([True, False, False, True]), env
         ),
         [0, 3],
