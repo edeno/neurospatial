@@ -612,7 +612,7 @@ def path_progress(
 
         raise EnvironmentNotFittedError("path_progress", is_function=True)
     if metric == "euclidean":
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,
@@ -762,7 +762,7 @@ def distance_to_region(
 
         raise EnvironmentNotFittedError("distance_to_region", is_function=True)
     if metric == "euclidean":
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,
@@ -1017,7 +1017,7 @@ def graph_turn_sequence(
         from neurospatial import EnvironmentNotFittedError
 
         raise EnvironmentNotFittedError("graph_turn_sequence", is_function=True)
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,

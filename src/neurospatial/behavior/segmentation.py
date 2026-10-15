@@ -652,7 +652,7 @@ def detect_runs_between_regions(
     True
     """
     if min_speed is not None:
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,
@@ -1331,7 +1331,7 @@ def detect_laps(
            The reorganization and reactivation of hippocampal maps predict
            spatial memory performance. Nature Neuroscience, 13(8), 995-1002.
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,
@@ -2357,7 +2357,7 @@ def trajectory_similarity(
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
     if method in ("hausdorff", "dtw"):
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,

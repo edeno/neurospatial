@@ -250,7 +250,7 @@ def map_points_to_bins(
       processing.
 
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,
@@ -801,7 +801,7 @@ def resample_field(
     >>> np.allclose(resampled_identity, field)
     True
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     for env in (src_env, dst_env):
         _require_cartesian_coordinates(

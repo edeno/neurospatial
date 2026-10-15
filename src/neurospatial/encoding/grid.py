@@ -273,7 +273,7 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,

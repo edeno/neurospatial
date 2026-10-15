@@ -208,7 +208,7 @@ def mean_position(
     >>> mean_pos.shape
     (1, 2)
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(env, "mean_position()", instead=_POLAR_MEAN_INSTEAD)
     return posterior @ env.bin_centers

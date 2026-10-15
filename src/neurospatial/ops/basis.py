@@ -205,7 +205,7 @@ def select_basis_centers(
         generator = np.random.default_rng(rng)
 
     if method == "kmeans":
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,
@@ -1098,7 +1098,7 @@ def spatial_basis(
     The function creates a multi-scale basis with 3 octave-spaced sigma
     values centered around the coverage-determined scale.
     """
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,

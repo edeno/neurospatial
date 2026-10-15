@@ -404,7 +404,7 @@ class DecodingResult(ResultMixin):
         map_position : MAP position (mode of posterior)
         """
         from neurospatial.decoding.estimates import _POLAR_MEAN_INSTEAD
-        from neurospatial.environment.polar import _require_cartesian_coordinates
+        from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             self.env, "mean_position", instead=_POLAR_MEAN_INSTEAD

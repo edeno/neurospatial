@@ -548,7 +548,7 @@ def map_probabilities(
         mode=mode,
         n_neighbors=n_neighbors,
     )
-    from neurospatial.environment.polar import _require_cartesian_coordinates
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
 
     for env in (source_env, target_env):
         _require_cartesian_coordinates(
