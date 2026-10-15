@@ -91,8 +91,9 @@ def border_score(
     Raises
     ------
     NotImplementedError
-        If physical wall geometry is unavailable, or any measured wall segment
-        lacks retained cells with finite firing rates. Missing observations are
+        If physical wall geometry is unavailable, a combined component has no
+        declared walls, or any measured wall segment lacks retained cells with
+        finite firing rates. Missing observations are
         not evidence for zero firing; explicitly select the analysis-boundary
         approximation when that is the intended measurement.
 

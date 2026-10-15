@@ -441,13 +441,17 @@ The same choice is available on `result.border_score()`, population
 `border_scores()` and `label_cell_types()`, and `summary_table()`. Tables retain
 other metrics when wall geometry is unavailable: border scores are NaN, with a
 reason in `table.attrs["unavailable_metrics"]` and the chosen source in
-`table.attrs["border_boundary_source"]`. No analysis approximation is selected
-implicitly. With an unavailable border metric, cell-type labels reflect the
-remaining scores and do not rule out border tuning. Physical border coverage
-currently requires exact planar cells and polygonal walls; curved track footprints require a separate representation.
+`table.attrs["border_boundary_source"]`. A spatially tuned cell that is not a
+grid cell is then labeled `"undetermined"` rather than `"place"`, because it may
+be a border cell. No analysis approximation is selected
+implicitly. Physical border coverage currently requires exact planar cells and
+polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
+A combined environment also needs declared walls for every component: a field
+in a component without them would otherwise be scored against walls in other
+components, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 
