@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Preserve coincident track centers, native mesh indexing and reserved user
+  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
+  now report contextual recovery guidance.
+
 - Preserve intended radial/angular bin counts when a polar step divides its
   range but floating-point division rounds above an integer. Polar circularity
   now defaults to automatic: full circles wrap, partial angle ranges remain
