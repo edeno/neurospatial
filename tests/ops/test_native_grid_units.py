@@ -15,10 +15,10 @@ def test_native_grid_faces_and_diffusion_scale_with_coordinate_units(scale):
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * scale, np.arange(2.0) * scale),
     )
-    graph, volumes = scaled.layout.finite_volume_geometry()
-    np.testing.assert_allclose(volumes, scale**2, rtol=1e-14, atol=0)
-    assert graph.edges[0, 1]["A"] == pytest.approx(scale, rel=1e-14, abs=0)
-    assert graph.edges[0, 1]["distance"] == pytest.approx(scale, rel=1e-14, abs=0)
+    faces = scaled._face_geometry
+    np.testing.assert_allclose(faces.volumes, scale**2, rtol=1e-14, atol=0)
+    assert faces.A[0] == pytest.approx(scale, rel=1e-14, abs=0)
+    assert faces.distance[0] == pytest.approx(scale, rel=1e-14, abs=0)
     np.testing.assert_allclose(
         scaled.compute_kernel(0.5 * scale, mode="average"),
         reference.compute_kernel(0.5, mode="average"),
@@ -33,7 +33,10 @@ def test_tiny_axis_does_not_turn_diagonal_contacts_into_physical_faces():
         grid_edges=(np.arange(3.0) * 1e-12, np.arange(3.0)),
         connect_diagonal_neighbors=True,
     )
-    graph, _ = env.layout.finite_volume_geometry()
-    assert graph.edges[0, 1]["A"] == 1e-12  # y-neighbor: face length in x
-    assert graph.edges[0, 2]["A"] == 1.0  # x-neighbor: face length in y
-    assert graph.edges[0, 3]["A"] == 0.0  # a corner has no physical interface
+    faces = env._face_geometry
+    areas = {
+        frozenset(pair): area for pair, area in zip(faces.edges, faces.A, strict=True)
+    }
+    assert areas[frozenset((0, 1))] == 1e-12  # y-neighbor: face length in x
+    assert areas[frozenset((0, 2))] == 1.0  # x-neighbor: face length in y
+    assert areas[frozenset((0, 3))] == 0.0  # a corner has no physical interface
