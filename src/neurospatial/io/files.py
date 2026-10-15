@@ -132,7 +132,9 @@ def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]
     def _encode(value: Any) -> Any:
         # networkx graph -> node-link dict (same form used for connectivity)
         if isinstance(value, nx.Graph):
-            return {"__nx_graph__": nx.node_link_data(value, edges="links")}
+            from neurospatial.layout._codecs import graph_to_node_link
+
+            return {"__nx_graph__": graph_to_node_link(value)}
         # shapely geometry -> WKT string (round-trippable, human-readable)
         wkt = getattr(value, "wkt", None)
         geom_type = getattr(value, "geom_type", None)
@@ -417,7 +419,7 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
-    from neurospatial.layout._codecs import encode
+    from neurospatial.layout._codecs import encode, graph_to_node_link
 
     binning_meta, binning_arrays = encode(env._binning, "binning")
     metadata: dict[str, Any] = {
@@ -434,7 +436,7 @@ def _environment_payload(
         "binning": binning_meta,
         "dimension_ranges": env.dimension_ranges,
         "grid_shape": env.grid_shape,
-        "graph": nx.node_link_data(env.connectivity, edges="links"),
+        "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
         "coordinate_kind": "polar" if getattr(env, "_POLAR", False) else "cartesian",
     }
@@ -477,7 +479,7 @@ def _restore_environment(
     from neurospatial.environment import Environment
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._binning_layout import BinningLayout
-    from neurospatial.layout._codecs import decode
+    from neurospatial.layout._codecs import decode, graph_from_node_link
     from neurospatial.layout._locators import MeshLocator
     from neurospatial.regions import Region, Regions
 
@@ -509,7 +511,7 @@ def _restore_environment(
         ranges = metadata.get("dimension_ranges")
         layout = BinningLayout(
             binning,
-            connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
+            connectivity=graph_from_node_link(metadata["graph"]),
             dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
             layout_type_tag=metadata["layout_type"],
             layout_type=metadata["layout_category"],
