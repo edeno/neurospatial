@@ -63,6 +63,14 @@ _POLAR_EXPLANATION = (
 )
 
 
+def _bin_count(span: float, bin_size: float) -> int:
+    """Cover a range without adding a bin for one-ULP division round-off."""
+    # span / (span / n) can round one representable float above n. Move
+    # toward the lower neighbor before ceil so an exact division keeps n bins.
+    quotient = np.nextafter(span / bin_size, -np.inf)
+    return max(1, int(np.ceil(quotient)))
+
+
 class EgocentricPolarEnvironment(_BaseEnvironment):
     """A discretized egocentric polar environment.
 
@@ -254,13 +262,10 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
             raise ValueError(f"angle_range must have min < max, got {angle_range}")
 
         # Calculate number of bins in each dimension
-        n_distance = max(
-            1,
-            int(np.ceil((distance_range[1] - distance_range[0]) / distance_bin_size)),
+        n_distance = _bin_count(
+            distance_range[1] - distance_range[0], distance_bin_size
         )
-        n_angle = max(
-            1, int(np.ceil((angle_range[1] - angle_range[0]) / angle_bin_size))
-        )
+        n_angle = _bin_count(angle_range[1] - angle_range[0], angle_bin_size)
 
         # Create grid edges and an all-active mask
         distance_edges = np.linspace(
