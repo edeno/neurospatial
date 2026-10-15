@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -21,11 +22,13 @@ from neurospatial.layout._binning import (
     KnownFaces,
     LayoutLocator,
     Locator,
+    SpatialBins,
     TrackLinearization,
     _outline_of,
     _shapes_of,
 )
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
+from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._derive import _LegacyTrackLinearization
 from neurospatial.layout._locators import (
     HexLocator,
@@ -373,6 +376,33 @@ def _primitive_geometry(
     locator: Locator,
     coordinate_kind: Literal["cartesian", "polar"],
 ) -> _LocatorGeometry:
+    if isinstance(locator, CombinedLocator):
+        if coordinate_kind != "cartesian":
+            raise ValueError("Combined lookup requires Cartesian coordinates.")
+        for child in locator.children:
+            raw = child.bins
+            SpatialBins.from_arrays(
+                raw.centers, raw.sizes, raw.measure_dim, raw.pairs, raw.pair_distances
+            )
+            if isinstance(child.faces, KnownFaces):
+                KnownFaces(child.faces.faces)
+            _validate_components(
+                child, child.linearization is not None, coordinate_kind
+            )
+        from neurospatial.layout._combine_geometry import certify_components
+
+        certify_components(locator.children, locator.arenas, locator.keys)
+        bins = locator.spatial_bins()
+        geometry = _LocatorGeometry(
+            locator,
+            bins.centers,
+            np.zeros_like(bins.centers),
+            [(bins.sizes, np.zeros_like(bins.sizes))],
+        )
+        if bins.n_dims == 2 and bins.measure_dim == 2:
+            with suppress(ValueError):
+                geometry.polygons = cells_from_locator(locator)
+        return geometry
     if isinstance(locator, ClippedLocator):
         if coordinate_kind != "cartesian":
             raise ValueError("polygon cells require Cartesian coordinates.")
@@ -680,10 +710,87 @@ def _validate_components(
 ) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     bins, locator = binning.bins, binning.locator
+    if isinstance(binning.faces, KnownFaces):
+        _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
+        _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
     _validate_clip_mapping(binning)
+    if isinstance(locator, CombinedLocator):
+        expected_bins = locator.spatial_bins()
+        _equal(bins.pairs, expected_bins.pairs, "combined neighbor pairs")
+        _equal(
+            bins.pair_distances, expected_bins.pair_distances, "combined path distances"
+        )
+        if locator.bridge_pairs.size and binning.faces.available:
+            raise ValueError(
+                "Navigation bridges cannot be published as physical faces."
+            )
+    if isinstance(locator, CombinedLocator) and isinstance(binning.faces, KnownFaces):
+        if not all(child.faces.available for child in locator.children):
+            raise ValueError(
+                "Combined faces require certified geometry in every child."
+            )
+        for name in ("A", "distance"):
+            _equal(
+                getattr(binning.faces.faces, name),
+                np.concatenate(
+                    [getattr(child.faces.build(), name) for child in locator.children]
+                ),
+                f"combined faces.{name}",
+            )
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(locator, coordinate_kind, bins.measure_dim)
     gap = min(_gap(geometry.centers), geometry.cell_gap)
+    if not isinstance(locator, CombinedLocator):
+        from neurospatial.layout._composition import expected_composition_binning
+
+        composition = expected_composition_binning(locator)
+        if composition is not None:
+            expected_binning, computed = composition
+            _equal(
+                bins.pairs,
+                expected_binning.bins.pairs,
+                "derived combined neighbor pairs",
+            )
+            if computed:
+                u, v = bins.pairs.T
+                error = np.linalg.norm(
+                    geometry.center_error[u] + geometry.center_error[v], axis=1
+                )
+                error += (
+                    64
+                    * np.finfo(float).eps
+                    * np.abs(expected_binning.bins.pair_distances)
+                )
+                _computed_equal(
+                    bins.pair_distances,
+                    expected_binning.bins.pair_distances,
+                    error,
+                    "derived combined path distances",
+                    gap=gap,
+                )
+            else:
+                _equal(
+                    bins.pair_distances,
+                    expected_binning.bins.pair_distances,
+                    "derived combined path distances",
+                )
+            if isinstance(binning.faces, KnownFaces):
+                if not expected_binning.faces.available:
+                    raise ValueError(
+                        "Combined physical faces cannot be inferred from navigation bridges or missing child faces."
+                    )
+                for name in ("A", "distance"):
+                    actual = getattr(binning.faces.faces, name)
+                    reference = getattr(expected_binning.faces.build(), name)
+                    if computed:
+                        _computed_equal(
+                            actual,
+                            reference,
+                            64 * np.finfo(float).eps * np.abs(reference),
+                            f"derived combined faces.{name}",
+                        )
+                    else:
+                        _equal(actual, reference, f"derived combined faces.{name}")
     _computed_equal(
         bins.centers,
         geometry.centers,
@@ -693,7 +800,9 @@ def _validate_components(
     )
     if (
         track is None
-        and not isinstance(geometry.leaf, (NearestBinLocator, LayoutLocator))
+        and not isinstance(
+            geometry.leaf, (NearestBinLocator, LayoutLocator, CombinedLocator)
+        )
         and bins.measure_dim != bins.n_dims
     ):
         raise ValueError("bins.measure_dim does not match the cell geometry dimension.")
@@ -829,7 +938,9 @@ def _validate_components(
                 raise ValueError(
                     f"polygon cell {index} area disagrees with bins.sizes."
                 )
-        if isinstance(binning.faces, KnownFaces):
+        if isinstance(binning.faces, KnownFaces) and not isinstance(
+            geometry.leaf, CombinedLocator
+        ):
             stored = binning.faces.faces
             contacts = [
                 shapes.polygons[u].boundary.intersection(shapes.polygons[v].boundary)

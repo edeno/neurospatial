@@ -17,6 +17,7 @@ from neurospatial.arena import (
     OpenArena,
     TrackArena,
     UnknownArena,
+    _CombinedArena,
     _TransformedArena,
 )
 from neurospatial.layout import (
@@ -42,6 +43,7 @@ from neurospatial.layout._binning import (
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -75,6 +77,12 @@ def _migration(provider: object) -> NoReturn:
 
 
 def _check_locator(locator: Locator) -> None:
+    if type(locator) is CombinedLocator:
+        for child in locator.children:
+            _check_binning(child)
+        for arena in locator.arenas:
+            own_arena(arena)
+        return
     if isinstance(
         locator, (SubsetLocator, TransformedLocator, ClippedLocator)
     ) and type(locator) in (SubsetLocator, TransformedLocator, ClippedLocator):
@@ -133,6 +141,12 @@ def _snapshot_locator(locator: Locator) -> Locator:
     ) and type(locator) in (SubsetLocator, TransformedLocator, ClippedLocator):
         base = _snapshot_locator(locator.base)
         return locator if base is locator.base else replace(locator, base=base)
+    if type(locator) is CombinedLocator:
+        return replace(
+            locator,
+            children=tuple(_snapshot_binning(child) for child in locator.children),
+            arenas=tuple(own_arena(arena) for arena in locator.arenas),
+        )
     if type(locator) in (
         RectilinearLocator,
         HexLocator,
@@ -315,6 +329,8 @@ def own_arena(arena: Arena) -> Arena:
     """
 
     def snapshot(value: Arena) -> Arena:
+        if type(value) is _CombinedArena:
+            return _CombinedArena(tuple(snapshot(child) for child in value.children))
         if type(value) is _TransformedArena:
             base = snapshot(value.base)
             return value if base is value.base else replace(value, base=base)

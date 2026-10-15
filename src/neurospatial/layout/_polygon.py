@@ -238,6 +238,14 @@ def transform_polygon_cells(
 
 def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
     """Materialize native cell geometry in a stored locator's current frame."""
+    from neurospatial.layout._composition import CombinedLocator
+
+    if isinstance(locator, CombinedLocator):
+        return tuple(
+            polygon
+            for child in locator.children
+            for polygon in materialize_cells(child)
+        )
     if isinstance(locator, ClippedLocator):
         return locator.cells.polygons
     if isinstance(locator, SubsetLocator):
