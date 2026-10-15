@@ -175,3 +175,29 @@ structural recommendations have implementations and regression evidence.
 The CI-only PR #82 repair is merged through every parent; final Stage F parent
 is `236a2ef9`. The structural branch includes that merge. Remote CI is rerunning
 on the updated heads; pending jobs are not claimed as passes.
+
+## Pre-merge review (2026-10-15)
+
+An independent per-PR review of #67–#83 was run before landing. Findings
+reproduced on the stack top and repaired on their owning PRs, then merged
+forward:
+
+| ID | Owning PR | Finding | Status / evidence |
+| --- | --- | --- | --- |
+| R37 | #74 | An observer tracked exactly on a wall viewed its own position (regression vs main): gaze hit, viewshed, cues and view-rate bins. | Fixed `92f01345`: a zero-distance start contact is ignored when the ray departs into the domain; corner/internal-wall/rotated cases tested. |
+| R38 | #74 | Ray-cast view rates refused exactly clipped cells on curved/slanted walls (floating-point overlay fragments). | Fixed `49ec39d0`: ownership by per-cell coordinate budget at the hit; centre-inclusion cells still refuse (approved policy); refusal names `grid.clip(polygon).binning`. |
+| R39 | #73 | `summary_table()` labeled a cell `"place"` when the physical border score was unavailable. | Fixed `322e9ca8`: `"undetermined"` in single-unit and population tables. |
+| R40 | #73 | A combined component without declared walls scored its wall fields against other components' walls (−1.0). | Fixed `9373e7ae`: physical scoring refuses and names the component. |
+| R41 | #70 | `from_bins` accepted hexagon/triangle `KnownFaces` inconsistent with cell geometry. | Fixed `1c0e37e3`: shared-edge length and centre distance validated. |
+| R42 | #77 | Cartesian-only domain functions accepted polar environments (mypy and runtime), e.g. `mean_position` at the ±π seam. | Fixed `af14a148`, `586cee4a`: `Environment[CartesianSystem]` typing plus runtime `CartesianOnlyError`; guard kept below `ops` in the layer contracts. |
+| R43 | #67 | Saved environments from 0.6.0 cannot be loaded; migration guide was silent. | Intended (maintainer); documented `337016e6`. |
+
+Open follow-ups (not blocking): mesh environments saved on one OS refuse to
+load on another (Delaunay rebuild at load, #67); factor rebin of masked/polygon
+grids drops valid coarse cells and `CHANGELOG` claims unchanged behavior (#83);
+circular `rebin(factor=2)` drops perimeter bins (#68); combine overlap
+certification is O(n²) (#71); no warning when `rebin(bin_size=)` leaves arena
+area unbinned and coarse rebin can connect across thin outline barriers (#72);
+a single arena with internal walls but unknown footprint can still mis-score
+outer-edge border fields (#73); polar `DecodingResult.to_dataframe()` and
+`decode_position_summary` now refuse because they include `mean_position`.
