@@ -88,6 +88,46 @@ def _rotation(angle):
     return np.array([[cosine, -sine, 0.0], [sine, cosine, 0.0], [0.0, 0.0, 1.0]])
 
 
+@pytest.mark.parametrize(
+    "restore", [lambda env: env, lambda env: Environment.from_dict(env.to_dict())]
+)
+def test_clipped_boundary_bins_match_the_equivalent_whole_bin_selection(restore):
+    parent = _grid((20, 20))
+    selected = parent.subset(polygon=box(2, 2, 17, 17))
+    clipped = restore(parent.clip(box(2, 2, 17, 17)))
+    assert len(clipped.boundary_bins) == 56
+    np.testing.assert_array_equal(
+        clipped.bin_centers[clipped.boundary_bins],
+        selected.bin_centers[selected.boundary_bins],
+    )
+
+
+def test_clipped_boundaries_count_holes_without_vertex_only_contacts():
+    parent = _grid((5, 5))
+    child = parent.clip(box(0, 0, 5, 5).difference(box(2, 2, 3, 3)))
+    assert len(child.boundary_bins) == 20
+    centers = child.bin_centers[child.boundary_bins]
+    assert any(np.array_equal(center, [1.5, 2.5]) for center in centers)
+    assert not any(np.array_equal(center, [1.5, 1.5]) for center in centers)
+
+
+def test_internal_physical_wall_does_not_create_an_analysis_perimeter():
+    parent = _grid(
+        (5, 5), arena=OpenArena(box(0, 0, 5, 5), walls=(LineString([(2, 0), (2, 5)]),))
+    )
+    child = parent.clip(box(0, 0, 5, 5))
+    np.testing.assert_array_equal(child.boundary_bins, parent.boundary_bins)
+    assert len(child.boundary_bins) == 16
+
+
+def test_polygon_boundary_bins_survive_subset_and_rotation():
+    parent = _grid((8, 8)).clip(box(0, 0, 8, 8))
+    subset = parent.subset(polygon=box(1, 1, 6, 6))
+    assert len(subset.boundary_bins) == 16
+    rotated = subset.apply_transform(AffineND(_rotation(0.3)))
+    np.testing.assert_array_equal(rotated.boundary_bins, subset.boundary_bins)
+
+
 def _grid(shape=(2, 1), *, arena=None, diagonals=False):
     return Environment.from_grid_mask(
         np.ones(shape, dtype=bool),

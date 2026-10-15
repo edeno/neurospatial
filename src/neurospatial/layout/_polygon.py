@@ -364,6 +364,14 @@ def _parts(geometry: shapely.Geometry) -> list[Polygon]:
     return []
 
 
+def _boundary_cell_indices(polygons: Sequence[Polygon]) -> NDArray[np.intp]:
+    """Find cells with positive-length edges exposed on their union's boundary."""
+    boundary = unary_union(polygons).boundary
+    return np.flatnonzero(
+        [polygon.boundary.intersection(boundary).length > 0 for polygon in polygons]
+    ).astype(np.intp, copy=False)
+
+
 def _key(polygon: Polygon) -> tuple[Any, ...]:
     return (*polygon.bounds, polygon.area, shapely.normalize(polygon).wkb)
 
