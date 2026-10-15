@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `Environment.from_bins` and environment loading now check supplied
+  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
+  each face length must equal the shared cell edge (zero when cells share no
+  edge) and each face distance the center-to-center distance. Inconsistent
+  faces previously passed silently and changed smoothing and diffusion results.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
