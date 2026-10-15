@@ -307,3 +307,21 @@ Local evidence: `/private/tmp/stage-d-wall-review-before.log`,
 `/private/tmp/stage-d-owner-guard-before.log`,
 `/private/tmp/stage-d-review-fixes.log`, `/private/tmp/stage-d-review-gate.log`,
 `/private/tmp/stage-d-review-mypy-final.log`.
+
+
+The final reviewed-source CPU rerun passed **13,556 tests, 31 skipped**, with
+6,545 warnings (299.54 seconds). Full source doctests passed **596 cases,
+126 skipped**, with 203 warnings. All **4,072** environment baseline probes
+match the previous Stage D snapshot exactly. These checks include both repaired
+review findings; no API baseline allowances were needed for the repairs.
+Evidence: `/private/tmp/stage-d-review-full-final.log`,
+`/private/tmp/stage-d-review-doctests.log`,
+`/private/tmp/environment-stage-d-reviewed.npz`.
+
+CI now runs for all feature-branch PR bases and cancels superseded checks per PR;
+documentation builds use separate PR groups while main-only deployments remain
+serial. Follow-up matrix execution exposed one Stage B-only formatting issue;
+that call was formatted and all 770 Stage B Python files passed the formatter.
+The subsequent merges carry this repair forward without changing Stage D's
+source tree. Remote matrix verification remains in progress; local passes do
+not substitute for Linux/Windows results.
