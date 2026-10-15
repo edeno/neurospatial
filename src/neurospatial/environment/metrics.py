@@ -249,18 +249,8 @@ class EnvironmentMetrics:
         if not self._is_linearized_track_env:
             return {"is_linearized_track": False}
 
-        # For 1D environments, extract linearization metadata from layout
-        metadata: dict[str, Any] = {"is_linearized_track": True}
-        if hasattr(self.layout, "linear_bin_edges"):
-            metadata["linear_bin_edges"] = _copy_export(self.layout.linear_bin_edges)
-        if hasattr(self.layout, "linear_bin_centers_1d"):
-            metadata["linear_bin_centers_1d"] = _copy_export(
-                self.layout.linear_bin_centers_1d
-            )
-        if hasattr(self.layout, "track_graph"):
-            metadata["track_graph"] = _copy_export(self.layout.track_graph)
-
-        return metadata
+        # The owned public value never exposed mutable builder-only fields.
+        return {"is_linearized_track": True}
 
     @check_fitted
     def get_bin_attributes(self: SelfEnv) -> pd.DataFrame:

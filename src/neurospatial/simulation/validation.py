@@ -696,8 +696,8 @@ Traj: {metadata.get("trajectory_method", "ou")}
             )
 
             # Plot as 2D heatmap if possible
-            if env.layout is not None and hasattr(env.layout, "grid_shape"):
-                grid_shape = env.layout.grid_shape
+            if hasattr(env, "grid_shape"):
+                grid_shape = env.grid_shape
 
                 # Check if rate_map matches full grid (no inactive bins)
                 if grid_shape is not None and len(rate_map) == np.prod(grid_shape):

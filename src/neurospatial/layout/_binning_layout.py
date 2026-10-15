@@ -37,15 +37,6 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._plotting import (
-    plot_grid,
-    plot_hexagons,
-    plot_polygon_cells,
-    plot_polygon_grid,
-    plot_track,
-    plot_track_linear,
-    plot_triangles,
-)
 from neurospatial.layout._polygon import (
     ClipMapping,
     ClippedLocator,
@@ -1340,88 +1331,21 @@ class BinningLayout:
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Draw retained track, shape or rectangular geometry by component."""
-        data = self._binning
-        common: dict[str, Any] = {
-            "title": self._layout_type_tag,
-            "connectivity": self.connectivity,
-            "dimension_ranges": self.dimension_ranges,
-        }
-        if isinstance(data.linearization, TrackLinearization):
-            return plot_track(
-                ax,
-                title=self._layout_type_tag,
-                linearization=data.linearization,
-                bin_centers=self.bin_centers,
-                connectivity=self.connectivity,
-                grid_edges=self.grid_edges,
-                **kwargs,
-            )
-        if isinstance(data.shapes, HexagonShapes):
-            return plot_hexagons(ax, shapes=data.shapes, **common, **kwargs)
-        if isinstance(data.shapes, TriangleShapes):
-            ranges = self.dimension_ranges
-            if ranges is None:
-                ranges = tuple(
-                    (float(axis.min()), float(axis.max()))
-                    for axis in self.bin_centers.T
-                )
-            return plot_triangles(
-                ax,
-                title=self._layout_type_tag,
-                shapes=data.shapes,
-                outline=data.outline,
-                connectivity=self.connectivity,
-                dimension_ranges=ranges,
-                bin_centers=self.bin_centers,
-                **kwargs,
-            )
-        if isinstance(data.shapes, PolygonCells):
-            return plot_polygon_cells(ax, shapes=data.shapes, **common, **kwargs)
-        if data.grid_frame is not None:
-            return plot_grid(
-                ax,
-                rectilinear=data.grid_frame.source,
-                frame=data.grid_frame,
-                bin_centers=self.bin_centers,
-                **common,
-                **kwargs,
-            )
-        if data.rectilinear is not None:
-            if data.outline is not None:
-                return plot_polygon_grid(
-                    ax,
-                    rectilinear=data.rectilinear,
-                    outline=data.outline,
-                    bin_centers=self.bin_centers,
-                    **common,
-                    **kwargs,
-                )
-            return plot_grid(
-                ax,
-                rectilinear=data.rectilinear,
-                bin_centers=self.bin_centers,
-                **common,
-                **kwargs,
-            )
-        import matplotlib.pyplot as plt
+        from neurospatial.layout._plotting_binning import plot_binning
 
-        if ax is None:
-            _, ax = plt.subplots()
-        if self.bin_centers.shape[1] == 2:
-            ax.scatter(self.bin_centers[:, 0], self.bin_centers[:, 1], **kwargs)
-        return ax
+        return plot_binning(
+            self._binning,
+            self.connectivity,
+            self.dimension_ranges,
+            self._layout_type_tag,
+            ax=ax,
+            **kwargs,
+        )
 
     def plot_linear_layout(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Draw a retained track in its absolute linear coordinate system."""
-        track = self._binning.linearization
-        if not isinstance(track, TrackLinearization):
-            raise NotImplementedError(
-                "plot_linear_layout needs stored track linearization."
-            )
-        return plot_track_linear(
-            ax,
-            title=self._layout_type_tag,
-            linearization=track,
-            grid_edges=track.grid_edges,
-            **kwargs,
+        from neurospatial.layout._plotting_binning import plot_linear_binning
+
+        return plot_linear_binning(
+            self._binning, self._layout_type_tag, ax=ax, **kwargs
         )

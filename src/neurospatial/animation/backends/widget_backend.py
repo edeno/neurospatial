@@ -502,7 +502,7 @@ class PersistentFigureRenderer:
                     self._mesh.set_array(mesh_data)
                 else:
                     # Fallback: re-render completely for non-grid layouts
-                    layout_type = getattr(self._env.layout, "layout_type", "unknown")
+                    layout_type = self._env._layout_category
                     fallback_reason = (
                         f"set_array optimization not supported for layout type "
                         f"'{layout_type}' (is_grid_compatible=False)"
@@ -668,32 +668,23 @@ class PersistentFigureRenderer:
         if frame is not None:
             from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
-            grid = frame.source
+            source_grid = frame.source
             data = map_active_data_to_grid(
-                grid.shape, grid.active_mask, field, fill_value=np.nan
+                source_grid.shape, source_grid.active_mask, field, fill_value=np.nan
             )
             return np.asarray(data.T.ravel(), dtype=np.float64)
-        layout = self._env.layout
+        grid = self._env._binning.rectilinear
 
         # Only grid-compatible layouts can use set_array optimization
         # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
-        if not getattr(layout, "is_grid_compatible", False):
-            return None
-
-        # Check required grid attributes
-        if (
-            not hasattr(layout, "grid_shape")
-            or layout.grid_shape is None
-            or not hasattr(layout, "active_mask")
-            or layout.active_mask is None
-        ):
+        if grid is None:
             return None
 
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
         # Convert to grid
         grid_data: NDArray[np.float64] = map_active_data_to_grid(
-            layout.grid_shape, layout.active_mask, field, fill_value=np.nan
+            grid.shape, grid.active_mask, field, fill_value=np.nan
         )
 
         # Transpose and flatten for pcolormesh set_array
@@ -719,27 +710,18 @@ class PersistentFigureRenderer:
         ndarray or None
             2D array for set_data() if grid layout, None otherwise.
         """
-        layout = self._env.layout
+        grid = self._env._binning.rectilinear
 
         # Only grid-compatible layouts can use set_data optimization
         # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
-        if not getattr(layout, "is_grid_compatible", False):
-            return None
-
-        # Check required grid attributes
-        if (
-            not hasattr(layout, "grid_shape")
-            or layout.grid_shape is None
-            or not hasattr(layout, "active_mask")
-            or layout.active_mask is None
-        ):
+        if grid is None:
             return None
 
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
         # Convert to grid
         grid_data: NDArray[np.float64] = map_active_data_to_grid(
-            layout.grid_shape, layout.active_mask, field, fill_value=np.nan
+            grid.shape, grid.active_mask, field, fill_value=np.nan
         )
 
         # Transpose for display (matplotlib pcolormesh expects data.T)

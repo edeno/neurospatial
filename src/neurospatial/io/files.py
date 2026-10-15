@@ -430,7 +430,7 @@ def _environment_payload(
         "n_bins": env.n_bins,
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
-        "layout_category": env.layout.layout_type,
+        "layout_category": env._layout_category,
         "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
         "binning": binning_meta,
         "arena": arena_meta,

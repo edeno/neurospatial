@@ -5430,12 +5430,7 @@ def _extract_connected_component_scipy(
     # Determine connectivity structure to match graph connectivity
     # Check if environment uses diagonal neighbors
     n_dims = len(env.grid_shape)
-    if hasattr(env.layout, "_build_params_used"):
-        params = env.layout._build_params_used
-        connect_diagonal = params.get("connect_diagonal_neighbors", False)
-    else:
-        # Default: no diagonal connections (4-connected in 2D, 6-connected in 3D)
-        connect_diagonal = False
+    connect_diagonal = env._component_diagonal
 
     # Create connectivity structure for scipy
     if connect_diagonal:

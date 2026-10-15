@@ -34,10 +34,10 @@ def _rebin(
     # --- Input validation ---
 
     # Check layout type using _layout_type_tag (Protocol-safe check)
-    if env.layout._layout_type_tag != "RegularGrid":
+    if env.layout_type != "RegularGrid":
         raise NotImplementedError(
             "rebin() is only supported for RegularGridLayout. "
-            f"Current layout type: {env.layout._layout_type_tag}. "
+            f"Current layout type: {env.layout_type}. "
             "For other layout types, consider using smooth() for field smoothing "
             "or subset() for spatial cropping."
         )
@@ -64,9 +64,8 @@ def _rebin(
 
     # Parse factor
     # Cast to RegularGridLayout to access grid-specific attributes
-    layout = cast("RegularGridLayout", env.layout)
-    grid_shape = layout.grid_shape
-    grid_edges = layout.grid_edges
+    grid_shape = grid.shape
+    grid_edges = grid.edges
 
     # Validate grid attributes (RegularGridLayout always has these)
     if grid_shape is None:
@@ -186,7 +185,7 @@ def _rebin(
     # A diagonal changes more than one coordinate. Inspect actual edges:
     # small or sparsely active grids need not have any full-degree nodes.
     connect_diagonal = any(
-        np.count_nonzero(layout.bin_centers[u] != layout.bin_centers[v]) > 1
+        np.count_nonzero(env.bin_centers[u] != env.bin_centers[v]) > 1
         for u, v in env.connectivity.edges()
     )
 

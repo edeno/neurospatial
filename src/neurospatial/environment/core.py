@@ -202,6 +202,7 @@ class _PublishedGeometry:
     arena: Arena | None = None
     clip_mapping: ClipMapping | None = None
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None
+    component_diagonal: bool = False
 
 
 class _GeometryView(Generic[_T]):
@@ -618,6 +619,7 @@ class _BaseEnvironment(
             else getattr(layout, "_build_params_used", {})
         )
 
+        self._layout_category = layout.layout_type
         self._is_linearized_track_env = layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
@@ -651,6 +653,7 @@ class _BaseEnvironment(
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore published geometry from pickles predating binning snapshots."""
         self.__dict__.update(state)
+        legacy_component_policy = "component_diagonal" not in vars(self._geometry)
         if "_layout" not in state:
             self._layout = state["layout"]
         self.__dict__.pop("layout", None)
@@ -694,6 +697,15 @@ class _BaseEnvironment(
             )
             _freeze_graph_attributes(self._geometry.connectivity)
             self._reset_analysis_caches()
+        if legacy_component_policy:
+            self._geometry = replace(
+                self._geometry,
+                component_diagonal=bool(
+                    self._layout._build_params_used.get(
+                        "connect_diagonal_neighbors", False
+                    )
+                ),
+            )
         if getattr(self._geometry, "coordinates", None) is None:
             self._geometry = replace(
                 self._geometry,
@@ -741,6 +753,11 @@ class _BaseEnvironment(
         binning = self._geometry.binning
         assert binning is not None
         return binning
+
+    @property
+    def _component_diagonal(self) -> bool:
+        """Owned logical segmentation policy, normalized once for legacy files."""
+        return self._geometry.component_diagonal
 
     @property
     @check_fitted
@@ -1495,6 +1512,9 @@ class _BaseEnvironment(
             active_mask=active_mask,
             arena=arena,
             clip_mapping=clip_mapping,
+            component_diagonal=bool(
+                self._layout._build_params_used.get("connect_diagonal_neighbors", False)
+            ),
             coordinates=(
                 EgocentricPolarSystem(
                     polar_circularity(

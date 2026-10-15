@@ -642,13 +642,13 @@ def shuffle_place_fields_circular_2d(
         )
 
     # Get grid shape from environment
-    if not hasattr(env.layout, "grid_shape") or env.layout.grid_shape is None:
+    if not hasattr(env, "grid_shape") or env.grid_shape is None:
         raise ValueError(
             "shuffle_place_fields_circular_2d requires environment with grid layout "
             "(grid_shape attribute)"
         )
 
-    grid_shape = env.layout.grid_shape
+    grid_shape = env.grid_shape
     if len(grid_shape) != 2:
         raise ValueError(
             "shuffle_place_fields_circular_2d requires a world-aligned 2D grid; "

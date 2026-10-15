@@ -22,3 +22,21 @@ matrix reruns remain pending; no platform-wide pass is implied by local results.
   sibling classes are transitional until their later migration phases.
 - Independent review: ownership/coordinate checks passed; final review recorded
   at the phase commit. No full scientific CPU/docs suite is claimed at this gate.
+
+## F2 — Direct geometry consumers
+
+- Migrated encoding/grid metrics, animation raster/index reads, simulation and
+  shuffling to published indexing/components. Native hex logical indexing and
+  framed-grid raster refusals remain distinct.
+- Plot dispatch is now a component function; affine environment integration is
+  separated from primitive transforms, retaining the public wrapper/signature.
+- 4,072 baseline probes compare identically. Source/static-contract typing passes.
+- CPU suite: 13,757 passed, 31 skipped; targeted consumer/rendering tests: 265
+  passed. A subsequent policy-focused run passed 353 tests.
+- Independent review exposed a segmentation migration regression. Five focused
+  tests now preserve native hex axis-only labeling, explicit bins, legacy saved
+  settings, old-state pickle normalization and from_layout resolved defaults.
+  The resolved builder option is normalized once into owned state rather than
+  inferred from coordinate differences or read from mutable provenance.
+- After the final normalization repair all five regressions pass; the full CPU
+  suite will run again at the final stage gate. GUI/GPU remain unrun.

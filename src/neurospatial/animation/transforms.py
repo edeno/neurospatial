@@ -87,14 +87,14 @@ class EnvScale:
         Parameters
         ----------
         env : Environment
-            Environment with dimension_ranges and layout.grid_shape.
+            Environment with dimension_ranges and grid_shape.
         """
         if getattr(getattr(env, "_binning", None), "grid_frame", None) is not None:
             raise NotImplementedError(
                 "Napari raster coordinates do not support framed grids; use Matplotlib, video or HTML rendering."
             )
         (self.x_min, self.x_max), (self.y_min, self.y_max) = env.dimension_ranges
-        self.n_x, self.n_y = env.layout.grid_shape
+        self.n_x, self.n_y = env.grid_shape
 
         # Pre-compute scale factors (avoid division by zero)
         x_range = self.x_max - self.x_min
@@ -107,7 +107,7 @@ class EnvScale:
         """Create EnvScale from environment, or None if not applicable.
 
         Returns None if environment lacks required attributes (dimension_ranges,
-        layout.grid_shape), allowing fallback to simple axis swap.
+        grid_shape), allowing fallback to simple axis swap.
 
         Parameters
         ----------
@@ -128,8 +128,7 @@ class EnvScale:
         if (
             env is None
             or not hasattr(env, "dimension_ranges")
-            or not hasattr(env, "layout")
-            or not hasattr(env.layout, "grid_shape")
+            or not hasattr(env, "grid_shape")
         ):
             return None
         return cls(env)
@@ -246,11 +245,11 @@ def _warn_fallback(suppress: bool = False) -> None:
             "  This may cause misalignment between overlays and the field image.\n\n"
             "WHY: Environment lacks required attributes for proper scaling:\n"
             "  - dimension_ranges: needed to compute spatial bounds\n"
-            "  - layout.grid_shape: needed to compute pixel scaling\n\n"
+            "  - grid_shape: needed to compute pixel scaling\n\n"
             "Fix: Ensure your environment has proper dimension ranges:\n"
             "  - Use Environment.from_samples() which computes ranges automatically\n"
             "  - Or set env.dimension_ranges manually after creation\n"
-            "  - For custom layouts, ensure layout.grid_shape is defined",
+            "  - For custom layouts, ensure grid_shape is defined",
             UserWarning,
             stacklevel=4,
         )

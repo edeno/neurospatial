@@ -203,7 +203,16 @@ class EnvironmentVisualization:
         l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
-        ax = self.layout.plot(ax=ax, **l_kwargs)
+        from neurospatial.layout._plotting_binning import plot_binning
+
+        ax = plot_binning(
+            self._binning,
+            self.connectivity,
+            self.dimension_ranges,
+            self.layout_type or "",
+            ax=ax,
+            **l_kwargs,
+        )
         # layout.plot() always returns an Axes object, never None
         assert ax is not None
 
@@ -214,12 +223,8 @@ class EnvironmentVisualization:
             plot_regions(self.regions, ax=ax, **r_kwargs)
 
         plot_title = self.name
-        if (
-            self.layout
-            and hasattr(self.layout, "_layout_type_tag")
-            and self.layout._layout_type_tag
-        ):
-            plot_title += f" ({self.layout._layout_type_tag})"
+        if self.layout_type:
+            plot_title += f" ({self.layout_type})"
 
         # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
         if ax.get_title() == "":
@@ -283,23 +288,18 @@ class EnvironmentVisualization:
         """
         l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-        if self.layout.is_linearized_track:
+        if self.is_linearized_track:
             linearization = self._binning.linearization
             if isinstance(linearization, TrackLinearization):
                 from neurospatial.layout._plotting import plot_track_linear
 
                 ax = plot_track_linear(
                     ax=ax,
-                    title=self.layout._layout_type_tag,
+                    title=self.layout_type or "",
                     linearization=linearization,
                     grid_edges=linearization.grid_edges,
                     **l_kwargs,
                 )
-            elif linearization is not None and hasattr(
-                self.layout, "plot_linear_layout"
-            ):
-                # Custom layouts can still supply the older linearization adapter.
-                ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)
             else:
                 warnings.warn(
                     f"Layout '{self._layout_type_used}' is 1D but does not "
@@ -442,7 +442,7 @@ class EnvironmentVisualization:
             )
 
         # Check dimensionality for spatial plots
-        if not self.layout.is_linearized_track and self.n_dims > 2:
+        if not self.is_linearized_track and self.n_dims > 2:
             raise NotImplementedError(
                 f"Cannot plot {self.n_dims}D fields spatially. "
                 "Only 1D and 2D environments are supported. "
@@ -509,7 +509,7 @@ class EnvironmentVisualization:
 
         # Add colorbar (not for 1D)
         # Note: mappable can be None if all field values are NaN and nan_color=None
-        if colorbar and mappable is not None and not self.layout.is_linearized_track:
+        if colorbar and mappable is not None and not self.is_linearized_track:
             cbar = plt.colorbar(mappable, ax=ax)
             if colorbar_label:
                 cbar.set_label(colorbar_label, fontsize=12)
@@ -521,7 +521,7 @@ class EnvironmentVisualization:
         # wrong; relabel and skip the equal-aspect lock (a polar map's
         # angular extent is fixed by bin_centers[:, 1] but its distance
         # extent is independent and physical).
-        if not self.layout.is_linearized_track and self.n_dims != 1:
+        if not self.is_linearized_track and self.n_dims != 1:
             system = self._coordinate_system
             xlabel, ylabel = system.axis_labels(self.units)
             if system.equal_aspect:
