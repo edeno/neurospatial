@@ -478,6 +478,7 @@ def _restore_environment(
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._codecs import decode
+    from neurospatial.layout._locators import MeshLocator
     from neurospatial.regions import Region, Regions
 
     try:
@@ -516,8 +517,10 @@ def _restore_environment(
             is_linearized_track=metadata["is_linearized_track"],
             coordinate_kind=metadata.get("coordinate_kind", "cartesian"),
         )
-        if binning.rectilinear is not None or isinstance(
-            binning.linearization, TrackLinearization
+        if (
+            binning.rectilinear is not None
+            or isinstance(binning.linearization, TrackLinearization)
+            or isinstance(binning.locator, MeshLocator)
         ):
             if (
                 "grid_shape" in metadata

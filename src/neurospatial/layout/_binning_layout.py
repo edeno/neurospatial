@@ -836,6 +836,9 @@ class BinningLayout:
         track = self._binning.linearization
         if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
             return track.active_mask.shape
+        locator = self._binning.locator
+        if isinstance(locator, MeshLocator):
+            return (len(locator.simplices),)
         return (self._binning.bins.n_bins,)
 
     @property
@@ -846,7 +849,12 @@ class BinningLayout:
         track = self._binning.linearization
         if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
             return track.active_mask
-        mask = np.ones(self._binning.bins.n_bins, dtype=bool)
+        locator = self._binning.locator
+        mask = (
+            locator.simplex_to_active >= 0
+            if isinstance(locator, MeshLocator)
+            else np.ones(self._binning.bins.n_bins, dtype=bool)
+        )
         mask.setflags(write=False)
         return mask
 
