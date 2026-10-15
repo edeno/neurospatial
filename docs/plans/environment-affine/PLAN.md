@@ -2,7 +2,7 @@
 
 **Status:** Planned on 2026-10-15; implementation has not started.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
-`feature/environment-wall-visibility` at `c725048e` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
+`feature/environment-wall-visibility` at `dda434db` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
 This is a local planning branch; opening another PR is a separate action.
 
 ## Entry status
@@ -18,7 +18,10 @@ The base PR's CI failures were reproduced from the Linux/Windows/slow-job logs.
 Portable geometry/plot assertions and explicit UTF-8 test reads are published;
 all stacked PRs now receive checks, with obsolete runs cancelled per PR.
 **Remote matrix verification is running/queued, not established as passing.**
-Finish that gate before starting Stage E implementation. Full source doctests
+Finish that gate before starting Stage E implementation. The base slow-test job
+and multiple Ubuntu/Windows matrix jobs now pass. A further arena test-oracle
+repair evaluates the same filtered lookup batch; its final 150 publication/
+validation checks pass without changing library behavior. Full source doctests
 passed 596 cases (126 skipped), and all 4,072 environment probes match the prior
 Stage D snapshot. Planning does not claim that a queued CI job has passed.
 
