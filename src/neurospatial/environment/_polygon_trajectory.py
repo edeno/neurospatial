@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -26,6 +27,33 @@ class RetainedLinearInterval:
     start_fraction: float
     stop_fraction: float
     bin_index: int
+
+
+def _crosses_wall(
+    segment: LineString, wall_segments: NDArray[np.float64], wall_tree: STRtree
+) -> bool:
+    """Test incident wall rays on both sides of an interior trajectory contact."""
+    origin, stop = (
+        tuple(Fraction(float(value)) for value in coordinate)
+        for coordinate in (segment.coords[0], segment.coords[-1])
+    )
+    dx, dy = stop[0] - origin[0], stop[1] - origin[1]
+    for index in wall_tree.query(segment, predicate="intersects"):
+        contact = segment.intersection(wall_tree.geometries[index])
+        if not isinstance(contact, shapely.Point) or segment.boundary.covers(contact):
+            continue
+        incident = np.union1d(wall_tree.query(contact, predicate="intersects"), [index])
+        positive = negative = False
+        for endpoint in wall_segments[incident].reshape(-1, 2):
+            # Exact signs for stored float coordinates avoid an angle or
+            # distance tolerance that could open a narrow physical crossing.
+            x, y = (Fraction(float(value)) for value in endpoint)
+            side = dx * (y - origin[1]) - dy * (x - origin[0])
+            positive |= side > 0
+            negative |= side < 0
+        if positive and negative:
+            return True
+    return False
 
 
 def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
@@ -110,6 +138,21 @@ def retained_linear_intervals(
     )
     tree = STRtree(effective_cells)
     walls = env.arena.walls
+    wall_segments = (
+        np.concatenate(
+            [
+                np.stack((coordinates[:-1], coordinates[1:]), axis=1)
+                for wall in walls
+                for coordinates in (np.asarray(wall.coords),)
+            ]
+        )
+        if walls
+        else np.empty((0, 2, 2), dtype=np.float64)
+    )
+    wall_segments = wall_segments[
+        np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
+    ]
+    wall_tree = STRtree(shapely.linestrings(wall_segments))
     retained = []
     for index in np.flatnonzero(valid_mask):
         start = positions[index]
@@ -123,7 +166,7 @@ def retained_linear_intervals(
                 retained.append(RetainedLinearInterval(int(index), 0.0, 1.0, owner))
             continue
         segment = LineString([start, stop])
-        if any(segment.crosses(wall) for wall in walls):
+        if len(wall_segments) and _crosses_wall(segment, wall_segments, wall_tree):
             raise ValueError(
                 f"Trajectory interval {index} crosses a physical wall; "
                 "provide observations that resolve the route around the wall "

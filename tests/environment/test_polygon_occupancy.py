@@ -94,6 +94,108 @@ def test_linear_polygon_wall_crossing_refused():
         )
 
 
+@pytest.mark.parametrize("operation", ["occupancy", "encoding"])
+def test_crossing_a_joint_in_a_continuous_wall_is_refused(operation):
+    from neurospatial import compute_spatial_rates
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.arange(3.0), np.array([0.0, 2.0])),
+        arena=OpenArena(
+            box(0, 0, 2, 2),
+            walls=(LineString([(1, 0), (1, 1)]), LineString([(1, 1), (1, 2)])),
+        ),
+    )
+    times = np.array([0.0, 1.0])
+    positions = np.array([[0.5, 0.5], [1.5, 1.5]])
+    with pytest.raises(ValueError, match="wall"):
+        if operation == "occupancy":
+            env.occupancy(times, positions, max_gap=None, time_allocation="linear")
+        else:
+            compute_spatial_rates(
+                env,
+                [np.array([])],
+                times,
+                positions,
+                method="binned",
+                bandwidth=0,
+                max_gap=None,
+                time_allocation="linear",
+            )
+
+
+@pytest.mark.parametrize("operation", ["occupancy", "encoding"])
+@pytest.mark.parametrize(
+    "junction", ["T", "split_T", "X", "split_X", "bent", "overlap"]
+)
+def test_wall_junction_crossings_do_not_depend_on_line_partition(operation, junction):
+    from neurospatial import compute_spatial_rates
+
+    vertical = [LineString([(2, 0), (2, 4)])]
+    if junction.startswith("split"):
+        vertical = [LineString([(2, 0), (2, 2)]), LineString([(2, 2), (2, 4)])]
+    horizontal = [LineString([(2, 2), (4, 2)])]
+    if junction == "X":
+        horizontal = [LineString([(0, 2), (4, 2)])]
+    elif junction == "split_X":
+        horizontal = [LineString([(0, 2), (2, 2)]), *horizontal]
+    positions = np.array([[0.5, 0.5], [3.5, 3.5]])
+    if junction == "bent":
+        vertical = [LineString([(2, 2), (2, 4)])]
+    elif junction == "overlap":
+        vertical = [LineString([(3, 0), (3, 4)])]
+        horizontal = [LineString([(0, 2), (1, 2)])]
+        positions = np.array([[0.5, 2.0], [3.5, 2.0]])
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=(*vertical, *horizontal)),
+    )
+    with pytest.raises(ValueError, match="wall"):
+        if operation == "occupancy":
+            env.occupancy(
+                np.array([0.0, 1.0]), positions, time_allocation="linear", max_gap=None
+            )
+        else:
+            compute_spatial_rates(
+                env,
+                [np.array([])],
+                np.array([0.0, 1.0]),
+                positions,
+                method="binned",
+                bandwidth=0,
+                time_allocation="linear",
+                max_gap=None,
+            )
+
+
+@pytest.mark.parametrize("contact", ["tip", "end_at_joint", "along", "graze_bend"])
+def test_wall_junction_contact_without_a_crossing_remains_allowed(contact):
+    walls = (LineString([(2, 0), (2, 4)]), LineString([(2, 2), (4, 2)]))
+    if contact == "tip":
+        walls = (LineString([(2, 0), (2, 2)]),)
+        positions = [[0.5, 0.5], [3.5, 3.5]]
+    elif contact == "end_at_joint":
+        positions = [[0.5, 0.5], [2.0, 2.0]]
+    elif contact == "along":
+        positions = [[2.0, 0.5], [2.0, 3.5]]
+    else:
+        walls = (LineString([(2, 2), (2, 4)]), LineString([(2, 2), (4, 2)]))
+        positions = [[0.5, 3.5], [3.5, 0.5]]
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4), walls=walls),
+    )
+    result = env.occupancy(
+        np.array([0.0, 1.0]),
+        np.array(positions),
+        time_allocation="linear",
+        max_gap=None,
+    )
+    np.testing.assert_allclose(result.sum(), 1.0)
+
+
 @pytest.mark.parametrize(
     ("positions", "expected"),
     [
