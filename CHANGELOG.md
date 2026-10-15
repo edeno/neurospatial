@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve coincident track centers, native mesh indexing and reserved user
+  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
+  now report contextual recovery guidance.
+
+- Preserve intended radial/angular bin counts when a polar step divides its
+  range but floating-point division rounds above an integer. Polar circularity
+  now defaults to automatic: full circles wrap, partial angle ranges remain
+  open, and explicitly wrapping a partial range is rejected.
+
+- Preserve dotted recording names in environment file prefixes, so saving
+  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
+  and `.npz` paths remain accepted.
+
+- Preserve physical diffusion faces on grids with small coordinate units;
+  exactly nonzero axis displacements no longer disappear below an absolute
+  `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
+
 ### Added
 
 - Add continuous Arena domains alongside spatial bins. Tracked positions,

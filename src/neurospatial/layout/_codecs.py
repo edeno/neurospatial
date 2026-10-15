@@ -7,7 +7,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
-from typing import Any
+from typing import Any, cast
 
 import networkx as nx
 import numpy as np
@@ -332,7 +332,7 @@ def _encode_track(obj: TrackLinearization, prefix: str) -> Payload:
     }
     values["active_mask"] = obj.active_mask
     return {
-        "graph": nx.node_link_data(obj.graph, edges="links"),
+        "graph": graph_to_node_link(obj.graph),
         "edge_order": obj.edge_order,
         "edge_spacing": obj.edge_spacing,
         "shape": [len(edge) - 1 for edge in obj.grid_edges],
@@ -349,6 +349,46 @@ def _node_id(value: Any) -> Any:
     )
 
 
+_RESERVED_GRAPH_ATTRIBUTES = "_neurospatial_reserved_attributes"
+
+
+def graph_to_node_link(graph: nx.Graph) -> dict[str, Any]:
+    """Preserve attributes overwritten by NetworkX's node-link identity fields.
+
+    Optional sidecar rows retain node ``id`` and edge ``source``/``target``
+    attributes, plus ``key`` for multigraphs. Ordinary records remain unchanged.
+    """
+    data = nx.node_link_data(graph, edges="links")
+    sidecar: dict[str, list[dict[str, Any]]] = {}
+
+    def remember(
+        group: str, identity: tuple[str, ...], attributes: list[dict[str, Any]]
+    ) -> None:
+        rows = []
+        for record, original in zip(data[group], attributes, strict=True):
+            saved = {key: original[key] for key in identity if key in original}
+            rows.append({**{key: record[key] for key in identity}, "attributes": saved})
+        if any(row["attributes"] for row in rows):
+            sidecar[group] = rows
+
+    remember("nodes", ("id",), [attributes for _, attributes in graph.nodes(data=True)])
+    if graph.is_multigraph():
+        remember(
+            "links",
+            ("source", "target", "key"),
+            [attributes for _, _, _, attributes in graph.edges(keys=True, data=True)],
+        )
+    else:
+        remember(
+            "links",
+            ("source", "target"),
+            [attributes for _, _, attributes in graph.edges(data=True)],
+        )
+    if sidecar:
+        data[_RESERVED_GRAPH_ATTRIBUTES] = sidecar
+    return cast("dict[str, Any]", data)
+
+
 def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
     """Restore tuple-valued graph labels without changing supplied metadata.
 
@@ -362,7 +402,56 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
     for link in graph_data["links"]:
         link["source"] = _node_id(link["source"])
         link["target"] = _node_id(link["target"])
-    return nx.node_link_graph(graph_data, edges="links")
+        if graph_data.get("multigraph", False) and "key" in link:
+            link["key"] = _node_id(link["key"])
+    sidecar = graph_data.pop(_RESERVED_GRAPH_ATTRIBUTES, None)
+    if sidecar is not None:
+        if not isinstance(sidecar, dict) or not set(sidecar) <= {"nodes", "links"}:
+            raise ValueError(
+                "Reserved graph attributes must contain node/link sidecar rows."
+            )
+        for group, rows in sidecar.items():
+            identity = (
+                ("id",)
+                if group == "nodes"
+                else ("source", "target", "key")
+                if graph_data.get("multigraph", False)
+                else ("source", "target")
+            )
+            if not isinstance(rows, list) or len(rows) != len(graph_data[group]):
+                raise ValueError(
+                    "Reserved graph attribute sidecar length differs from its graph."
+                )
+            for row, record in zip(rows, graph_data[group], strict=True):
+                if not isinstance(row, dict) or set(row) != {*identity, "attributes"}:
+                    raise ValueError(
+                        "Reserved graph attribute rows need matching identities and attributes."
+                    )
+                if any(_node_id(row[key]) != record[key] for key in identity):
+                    raise ValueError(
+                        "Reserved graph attribute sidecar identities differ from its graph."
+                    )
+                attributes = row["attributes"]
+                if not isinstance(attributes, dict) or not set(attributes) <= set(
+                    identity
+                ):
+                    raise ValueError(
+                        "Reserved graph attribute sidecars may restore only reserved keys."
+                    )
+    graph = nx.node_link_graph(graph_data, edges="links")
+    if sidecar is not None:
+        for group, rows in sidecar.items():
+            for row, record in zip(rows, graph_data[group], strict=True):
+                if group == "nodes":
+                    attributes = graph.nodes[record["id"]]
+                elif graph.is_multigraph():
+                    attributes = graph.edges[
+                        record["source"], record["target"], record["key"]
+                    ]
+                else:
+                    attributes = graph.edges[record["source"], record["target"]]
+                attributes.update(row["attributes"])
+    return graph
 
 
 def _decode_track(

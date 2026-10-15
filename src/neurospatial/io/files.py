@@ -25,6 +25,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from zipfile import BadZipFile
 
 import networkx as nx
 import numpy as np
@@ -132,7 +133,9 @@ def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]
     def _encode(value: Any) -> Any:
         # networkx graph -> node-link dict (same form used for connectivity)
         if isinstance(value, nx.Graph):
-            return {"__nx_graph__": nx.node_link_data(value, edges="links")}
+            from neurospatial.layout._codecs import graph_to_node_link
+
+            return {"__nx_graph__": graph_to_node_link(value)}
         # shapely geometry -> WKT string (round-trippable, human-readable)
         wkt = getattr(value, "wkt", None)
         geom_type = getattr(value, "geom_type", None)
@@ -237,6 +240,13 @@ def _validate_path_safety(path: PathLike) -> Path:
     return path_obj
 
 
+def _environment_file_paths(path: Path) -> tuple[Path, Path]:
+    """Append storage extensions while preserving dots in the path prefix."""
+    if path.suffix.lower() in {".json", ".npz"}:
+        path = path.with_suffix("")
+    return path.with_name(path.name + ".json"), path.with_name(path.name + ".npz")
+
+
 def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
@@ -253,8 +263,10 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     env : Environment
         Environment instance to save.
     path : str or Path
-        Base path for output files (without extension).
-        Will create `{path}.json` and `{path}.npz`.
+        Prefix for output files. Creates ``{path}.json`` and ``{path}.npz``.
+        A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
+        part of the prefix, so ``rat1.day1`` creates ``rat1.day1.json`` and
+        ``rat1.day1.npz``.
         Paths containing '..' components are rejected to prevent
         directory traversal attacks.
     overwrite : bool, default=False
@@ -290,8 +302,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     """
     # Validate path for security
     path_obj = _validate_path_safety(path)
-    json_path = path_obj.with_suffix(".json")
-    npz_path = path_obj.with_suffix(".npz")
+    json_path, npz_path = _environment_file_paths(path_obj)
 
     from neurospatial._validation import check_writable
 
@@ -341,8 +352,9 @@ def from_file(path: PathLike) -> Environment:
     Parameters
     ----------
     path : str or Path
-        Base path to load from (without extension).
-        Will read `{path}.json` and `{path}.npz`.
+        Prefix to load from. Reads ``{path}.json`` and ``{path}.npz``.
+        A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
+        part of the prefix.
         Paths containing '..' components are rejected to prevent
         directory traversal attacks.
 
@@ -376,8 +388,7 @@ def from_file(path: PathLike) -> Environment:
     """
     # Validate path for security
     path_obj = _validate_path_safety(path)
-    json_path = path_obj.with_suffix(".json")
-    npz_path = path_obj.with_suffix(".npz")
+    json_path, npz_path = _environment_file_paths(path_obj)
 
     if not json_path.exists():
         raise FileNotFoundError(
@@ -396,13 +407,35 @@ def from_file(path: PathLike) -> Environment:
             )
         )
 
-    # Load metadata
-    with json_path.open("r") as f:
-        metadata = json.load(f)
+    try:
+        with json_path.open("r") as f:
+            metadata = json.load(f)
+    except (json.JSONDecodeError, RecursionError) as error:
+        raise ValueError(
+            _format_error(
+                f"Invalid environment metadata in {json_path}: {error}",
+                why="Why: the metadata must contain complete JSON without excessive nesting.",
+                fix="restore the original JSON and NPZ file pair, or re-save the original environment",
+            )
+        ) from error
 
     _check_schema(metadata, str(json_path))
-    with np.load(npz_path, allow_pickle=False) as archive:
-        arrays = {key: archive[key] for key in archive.files}
+    try:
+        archive = np.load(npz_path, allow_pickle=False)
+        if not isinstance(archive, np.lib.npyio.NpzFile):
+            raise ValueError(
+                "expected an NPZ archive containing named numerical arrays"
+            )
+        with archive:
+            arrays = {key: archive[key] for key in archive.files}
+    except (BadZipFile, EOFError, ValueError) as error:
+        raise ValueError(
+            _format_error(
+                f"Invalid environment array archive in {npz_path}: {error}",
+                why="Why: the array file must be a complete NPZ archive matching its JSON metadata.",
+                fix="restore the original JSON and NPZ file pair, or re-save the original environment",
+            )
+        ) from error
     return _restore_environment(
         metadata,
         source=str(json_path),
@@ -416,7 +449,7 @@ def _environment_payload(
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
     from neurospatial.arena import encode_arena
-    from neurospatial.layout._codecs import encode
+    from neurospatial.layout._codecs import encode, graph_to_node_link
 
     binning_meta, binning_arrays = encode(env._binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
@@ -435,7 +468,7 @@ def _environment_payload(
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
         "grid_shape": env.grid_shape,
-        "graph": nx.node_link_data(env.connectivity, edges="links"),
+        "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
         "coordinate_kind": "polar" if getattr(env, "_POLAR", False) else "cartesian",
     }
@@ -461,6 +494,14 @@ def _environment_payload(
 
 def _check_schema(metadata: dict[str, Any], source: str) -> None:
     """Refuse obsolete or unknown file formats with a reproducible recovery."""
+    if not isinstance(metadata, dict):
+        raise ValueError(
+            _format_error(
+                f"Invalid environment metadata in {source}: expected a dictionary.",
+                why="Why: environment metadata must map field names to saved values.",
+                fix="restore a complete environment record saved by this version",
+            )
+        )
     version = metadata.get("schema_version")
     if version not in ("Environment-v2", _SCHEMA_VERSION):
         raise ValueError(
@@ -484,7 +525,8 @@ def _restore_environment(
     from neurospatial.environment import Environment
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._binning_layout import BinningLayout
-    from neurospatial.layout._codecs import decode
+    from neurospatial.layout._codecs import decode, graph_from_node_link
+    from neurospatial.layout._locators import MeshLocator
     from neurospatial.regions import Region, Regions
 
     try:
@@ -540,7 +582,7 @@ def _restore_environment(
         ranges = metadata.get("dimension_ranges")
         layout = BinningLayout(
             binning,
-            connectivity=nx.node_link_graph(metadata["graph"], edges="links"),
+            connectivity=graph_from_node_link(metadata["graph"]),
             dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
             layout_type_tag=metadata["layout_type"],
             layout_type=metadata["layout_category"],
@@ -548,8 +590,10 @@ def _restore_environment(
             is_linearized_track=metadata["is_linearized_track"],
             coordinate_kind=coordinate_kind,
         )
-        if binning.rectilinear is not None or isinstance(
-            binning.linearization, TrackLinearization
+        if (
+            binning.rectilinear is not None
+            or isinstance(binning.linearization, TrackLinearization)
+            or isinstance(binning.locator, MeshLocator)
         ):
             if (
                 "grid_shape" in metadata
@@ -583,7 +627,14 @@ def _restore_environment(
             if attribute in metadata:
                 setattr(env, attribute, metadata[attribute])
         return cast("Environment", env)
-    except (ValueError, TypeError, KeyError, IndexError, OverflowError) as error:
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OverflowError,
+        RecursionError,
+    ) as error:
         raise ValueError(
             _format_error(
                 f"Invalid environment data in {source}: {error}",
