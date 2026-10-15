@@ -96,8 +96,10 @@ class EnvironmentRegions:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+>>> data = np.array([[0.0, 0.0], [10.0, 10.0]])
+        >>> env = Environment.from_samples(
+        ...     data, bin_size=2.0, infer_active_bins=False
+        ... )
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
         >>> _ = regions.add("center", point=(5.0, 5.0))
