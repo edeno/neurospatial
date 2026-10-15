@@ -116,6 +116,14 @@ The layout-to-binning factory checks these protocols once when publishing
 supply geometry is represented by a `MissingFaces` reason. Saved binnings use
 `KnownFaces` for validated geometry and retain that reason when geometry is absent.
 
+Combined environments retain child binnings instead of inventing physical faces
+for navigation bridges. Scalar diffusion assembles the certified child blocks
+and adds only explicitly supplied symmetric geometric bridge conductances.
+Path-only bridges do not transport the field. A retained child with missing
+numerical geometry still prevents whole-environment diffusion; removing it with
+a subset allows the certified remainder. Gradient/divergence keep the existing
+physical-face contract and refuse combinations with nonphysical bridges.
+
 Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
 Polar environments are built on `_PolarGridLayout`, a masked grid over
 `(distance, angle)` whose cell and face measures are the grid's scaled by

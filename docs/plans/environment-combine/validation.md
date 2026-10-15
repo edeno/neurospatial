@@ -51,14 +51,15 @@ Results:
 
 Probe output: `/private/tmp/environment-combine-observations-bab36f5f.json`.
 The script records old behavior rather than encoding defects as desired tests.
-Production regression tests will assert the reviewed new contract in each
-implementation phase.
+Production regression tests now assert the reviewed new contract; the C0
+script remains a historical legacy-behavior probe and runs on base commit
+`bab36f5f`, where `CompositeEnvironment` still exists.
 
-The expanded geometry/coupling document is a proposal. The user has approved
-retaining automatic bridges and broadening the design before implementation;
-remaining decisions are explicitly listed. C0 completion does not establish
-Stage C implementation completion. Full-suite, GUI/GPU and real-data validation
-have not been rerun for this documentation-only start.
+At C0, the expanded geometry/coupling document was a proposal. The user had
+approved retaining automatic bridges and broadening the design before
+implementation; remaining decisions were explicitly listed. This initial
+documentation-only step did not establish implementation completion or rerun
+the full suite, GUI/GPU or real-data validation.
 
 
 ## Independent C0 review
@@ -77,5 +78,148 @@ review prompted three design corrections before implementation:
   bins/masks rather than the full retained coordinate-conversion graph.
 
 The composition script passes Ruff lint/format checks; whitespace checks pass.
-Remaining major decisions are listed in the design and are not treated as
-approved merely because C0 is recorded.
+C0 review did not itself approve the then-open major decisions. The subsequent
+implementation contract and user migration choice are recorded below.
+
+## C1–C4 implementation and review
+
+Completed on `feature/environment-combine`, stacked on `bab36f5f`. The user
+requested implementation after reviewing the expanded design and explicitly
+chose immediate removal of `CompositeEnvironment` after migration. No Stage C
+push or pull request was made.
+
+The implementation adds owned built-in composition locator and arena records,
+child-to-combined identities, disjoint-support certificates, deterministic MNN
+bridges and scalar diffusion coupling. The public factory returns an ordinary
+`Environment`. Consumers, exports, error tests and the API snapshot were migrated
+with removal of the legacy class. The user guide has runnable construction and
+conductance examples.
+
+### Independent review and regressions
+
+Review was performed independently at the snapshot/validation boundary and again
+on integrated scientific behavior. Confirmed findings were reproduced, fixed
+and checked again:
+
+- Revalidate nested child face numbers, volumes and pair alignment, as well as
+  duplicated aggregate faces and navigation lengths. A saved wrapper cannot
+  silently disagree with its child geometry.
+- Bound recursive arena decoding before recursive construction; a 600-level
+  malformed input now raises `ValueError`, not `RecursionError`.
+- Reapply walls and arena consistency in each child's source frame. Rounded
+  globally transformed coordinates previously refused valid rotated walls.
+- Assemble subset diffusion only from retained child bins; removing an
+  uncertified child no longer blocks the remaining certified geometry.
+- Certify transformed measured-track supports and refuse ill-conditioned
+  nearly parallel segment clearance. The previous segment-distance calculation
+  could falsely certify a long crossing pair as disjoint.
+
+The final independent checks reported no remaining confirmed defect:
+
+- **18 round-trip matrix cases:** dimensions 1/2/3, bridges on/off and native,
+  subset or rotated/scaled/translated geometry, including offsets of `1e9`.
+  Checked deepcopy, pickle, dict and JSON, geometry, edge order, source mapping,
+  diffusion and conserved mass.
+- **22 additional strict cases:** linear exposure in 1/3/4 dimensions, reversed
+  and stationary trajectories, transformed/subset boxes, partial mask domains,
+  nested bridges and conductance scaling/refusal at floating-point limits.
+
+Independent logs are local artifacts at
+`/private/tmp/stage_c_independent_roundtrips.log` and
+`/private/tmp/stage_c_final_review.log`. Permanent regression cases live in
+`tests/layout/test_composition_snapshot.py` and
+`tests/environment/test_combine.py`.
+
+### Final verification
+
+All Python commands used the existing isolated environment. No package was
+installed or updated. The final gates passed:
+
+| Check | Result |
+| --- | --- |
+| Focused composition, polar capability, explicit-bin, adapter and NWB regressions; runtime warnings treated as errors | **276 passed**, 2 expected mesh-geometry warnings |
+| Broad CPU suite | **13,485 passed, 31 skipped**, 257.05 seconds |
+| Source doctests | **596 passed, 126 skipped**, 176.19 seconds |
+| Source and four typing contracts with mypy | **Success**, 240 files |
+| Exact staged foundation tests and mypy | **163 passed**; mypy success, 236 files |
+| Exact staged integration: feature, API/import/error/typing and executable-document tests | **213 passed, 3 skipped** |
+| Final composition suite, including four added tie/cutoff/boundary acceptance cases | **62 passed**, runtime warnings treated as errors |
+| Runnable combine guide | **1 passed**, 21 unrelated documents deselected |
+| Ruff lint/format and Git whitespace checks | **Passed** for changed Python files and staged changes |
+
+Broad CPU invocation:
+
+```bash
+MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache \
+UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache \
+uv run --no-sync pytest tests -p no:napari -n 4 -q \
+  -m 'not slow and not napari and not gui and not wallclock' --tb=short
+```
+
+As in the [Stage B CPU gate](../environment-immutable/validation.md), the actual
+invocation additionally deselected 51 GUI cases blocked by the sandbox's Napari
+cache permissions. The exact local list is
+`/private/tmp/immutable-gui-exclusions.json`, applied by
+`/private/tmp/run_immutable_cpu.py`. This result does not claim GUI coverage.
+The broad run emitted existing numerical, plotting and dependency warnings;
+the focused scientific regression gate promoted runtime warnings to errors.
+
+The four final acceptance cases were added after the broad run; all 62
+composition tests were then rerun without production changes. The staged
+integration gate log is `/private/tmp/combine-integration-staged.log`.
+
+An earlier broad invocation overlapped live source edits and had stale worker
+imports and an outdated capability expectation. The result above is the fresh
+rerun after those issues were resolved; it is the acceptance result. Final logs:
+`/private/tmp/environment-combine-cpu-final.log`,
+`/private/tmp/combine-frozen-focused.log`,
+`/private/tmp/combine-doctests.log`, and
+`/private/tmp/combine-mypy-release.log`.
+
+### Native behavior comparison
+
+Final baseline capture contains **4,072 probes**, including **584 expected
+refusals**. Every one of the **3,920 non-API native probes** matches the Stage B
+capture exactly, including lookup, geometry, numeric outputs, plotting,
+persistence and expected errors. The five added API probes correspond to
+`combine` on the shared factory surface and the three Cartesian composition
+inspection members. Removal of the root `CompositeEnvironment` export is the
+intentional public API snapshot change.
+
+Captures: `/private/tmp/environment-combine-base-bab36f5f.npz` and
+`/private/tmp/environment-combine-final.npz`. The existing baseline script was
+used for recording; non-API keys were compared with its exact comparison logic.
+No native numerical difference was accepted as refactor fallout.
+
+### Scope and unrun checks
+
+This is simulated/deterministic scientific validation, including real NWB file
+round trips with access after reader closure. No new real-recording notebook
+workflow, GUI/GPU execution, slow suite or wall-clock performance benchmark was
+run. The local `data/` directory contains only the README and download helper;
+no cached real recording was available for a slice test. No performance
+improvement is claimed.
+
+Conservative geometry checks can refuse disjoint mixed supports or ambiguous
+track clearance. Combined environments have no single global track coordinate
+or regular grid. Gradient/divergence refuse nonphysical bridges; positive
+geometric couplings require supported scaling. Clipping retained bridges needs
+a separately designed reconnection policy. These limits are explicit in the
+[user guide](../../user-guide/composite-environments.md) and
+[geometry contract](geometry-and-coupling.md).
+
+### Commit groups
+
+- `2808cf2f`: C0 design and baseline capture.
+- `0ebc21dd`: owned composition records, overlap certificates, recursive codecs
+  and validation at publication/loading.
+- `74652f0a`: public combine factory, bridges and numerical consumers, derivation,
+  legacy removal, regression tests and runnable migration guide.
+- Final documentation commit: completed contract, roadmap status and this
+  validation record.
+
+The first implementation group was exported from the index and tested using
+`PYTHONPATH=<snapshot>/src` with the existing virtual environment. The integrated
+snapshot was checked the same way. Ruff, formatting, mypy and the relevant tests
+were run explicitly; commits disabled automatic hooks to avoid the hook runner
+stashing cross-file dependencies from the remaining logical groups.

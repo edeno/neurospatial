@@ -1,9 +1,10 @@
 # Stage C — Combine owned environments
 
-**Status:** C0 started: baseline captured and broader geometry design drafted.
-No production implementation has changed. The user requested the broader design
-before implementation on 2026-10-14 and approved retaining automatic
-nearest-neighbor bridges. Sections marked proposed need review before coding.
+**Status:** C0–C4 implemented and independently reviewed on 2026-10-14.
+`Environment.combine` returns an owned ordinary environment; the legacy
+`CompositeEnvironment` class is removed. The broader geometry contract includes
+explicit refusal when disjoint support cannot be certified. See the
+[validation record](validation.md) for checks and remaining validation limits.
 
 **Branch:** `feature/environment-combine`, stacked on
 `feature/environment-immutable` at `bab36f5f`.
@@ -11,7 +12,8 @@ nearest-neighbor bridges. Sections marked proposed need review before coding.
 **PR stack:** [representation #67](https://github.com/edeno/neurospatial/pull/67)
 → [arena #68](https://github.com/edeno/neurospatial/pull/68)
 → [immutable values #70](https://github.com/edeno/neurospatial/pull/70).
-There is no Stage C PR; this turn authorizes opening the completed Stage B PR.
+Stage C remains local, with no push or PR. Publishing it requires a later
+instruction.
 
 ## Outcome and scope
 
@@ -30,19 +32,20 @@ path-only bridges unless conductance is supplied. The user additionally chose:
   implementing a planar-only subset.
 
 Read [geometry-and-coupling.md](geometry-and-coupling.md) for that expanded
-contract and the decisions still needing agreement. A geometry refusal is an
+contract and recorded implementation decisions. A geometry refusal is an
 explicit part of the contract, not silent loss of a component's capabilities.
 
-## Proposed user workflow
+## User workflow
 
 1. Construct components from positions, calibrated masks, grids, tracks or
    explicit bins, as today. Supply consistent units/frame declarations. Align
    coordinates with an actual transform before combining if necessary.
 2. Give each component a stable key in an ordered mapping. This avoids using
    display names as identity; duplicate or empty environment names remain legal.
-3. Call the proposed `Environment.combine(components, *, auto_bridge=True,
-   max_mnn_distance=None, name="", ...)`. Additional bridge-conductance and
-   overlap-certificate arguments are not fixed until the design is agreed.
+3. Call `Environment.combine(components, *, auto_bridge=True,
+   max_mnn_distance=None, bridge_conductances=None, name="")`. Conductance keys
+   identify inferred endpoints by pairs of `(component_key, local_bin_id)`.
+   Conductances use the existing geometric convention, `length ** (measure_dim - 2)`.
 4. Inspect the returned component-to-bin mapping and inferred bridge table.
    `auto_bridge=False` leaves components disconnected; a maximum distance limits
    the automatically proposed connections. Automatic bridges describe graph
@@ -51,14 +54,15 @@ explicit part of the contract, not silent loss of a component's capabilities.
    certified geometry/couplings. Save with `to_file` or NWB; readers never rerun
    bridge inference or rebuild a component layout.
 
-The proposed result owns immutable component keys, bin offsets and bridge
-records. Input order fixes IDs. Child internal edge order is concatenated first;
+The result owns immutable component keys, child snapshots and bridge records.
+Offsets are derived from the stored child bin counts. Input order fixes IDs.
+Child internal edge order is concatenated first;
 bridges follow in a deterministic order. `edge_pairs` remains authoritative.
 No rates or models are copied automatically.
 
 ## Implementation phases
 
-### C0 — Behavior capture and design (current)
+### C0 — Behavior capture and design (complete)
 
 - Record the Stage B environment baseline and current composite tests.
 - Capture deterministic legacy overlap, units, lookup, bridges and API behavior.
@@ -66,7 +70,7 @@ No rates or models are copied automatically.
   lengths versus conductance, persistence and derivation rules.
 - Review the design independently; resolve major decisions before code changes.
 
-### C1 — Owned component identity and lookup
+### C1 — Owned component identity and lookup (complete)
 
 - Add the smallest immutable composition data needed to retain child bin IDs,
   child locators, arena restrictions and their offsets. Never retain live
@@ -80,7 +84,7 @@ No rates or models are copied automatically.
 - Prove copies, metadata/region replacements, pickle and dict/file/NWB reads
   retain ownership. Exercise the existing public contract kit.
 
-### C2 — Geometry certification and automatic bridges
+### C2 — Geometry certification and automatic bridges (complete)
 
 - Implement reviewed overlap checks for planar cells, 3D boxes, tracks and
   bounded nearest supports, with explicit refusals for uncertified cases.
@@ -91,7 +95,7 @@ No rates or models are copied automatically.
 - Bridge inference does not create cell volume, a physical corridor or a
   finite-volume face. Internal walls remain part of each child's arena.
 
-### C3 — Numerical coupling and ordinary environment integration
+### C3 — Numerical coupling and ordinary environment integration (complete)
 
 - Keep navigation edges separate from certified numerical couplings. Implement
   the reviewed bridge conductance contract; test mass conservation, constants,
@@ -104,12 +108,12 @@ No rates or models are copied automatically.
 - Verify subset, transform, clip and storage keep component identity and bridge
   semantics, including removal of bridge endpoints.
 
-### C4 — Migrate and retire CompositeEnvironment
+### C4 — Migrate and retire CompositeEnvironment (complete)
 
 - Replace existing callers and examples with the agreed combine workflow.
 - Migrate exports, typing, API snapshots and persistence guidance together.
-  Decide immediate removal versus a temporary forwarding factory before coding;
-  do not carry a second independent environment implementation forward.
+  The user chose immediate removal after migration; no forwarding constructor
+  or second independent environment implementation remains.
 - Run independent review, scientific regressions, the environment baseline,
   composite/consumer suites, doctests, executable guides, Ruff and mypy.
 - Commit logical phases. Opening or publishing a Stage C PR requires a later
@@ -117,7 +121,8 @@ No rates or models are copied automatically.
 
 ## Evidence and acceptance
 
-See [validation.md](validation.md) for the initial evidence. Completion requires:
+See [validation.md](validation.md) for baseline, regression and independent-review
+evidence against these acceptance requirements:
 
 - No unapproved changes to existing native environments.
 - Independently specified boundary oracles, component offsets and bridge IDs.
@@ -129,3 +134,24 @@ See [validation.md](validation.md) for the initial evidence. Completion requires
 - Geometry/ownership/storage checks after subset, transform and clipping.
 - Preserved wall meaning: joining analysis components must not erase a physical
   barrier, while an analysis cut must not invent one.
+
+## Delivered limits and later work
+
+The runnable [user guide](../../user-guide/composite-environments.md) covers the
+public workflow. `component_keys`, `bin_sources` and `get_bridge_attributes()`
+expose identity and connections; `edge_pairs` remains the authoritative edge
+order. Child region names are qualified by component key.
+
+The implementation certifies exact planar cells, axis-aligned boxes, transformed
+3D boxes, complementary nearest-locator subsets, and separable finite nearest or
+measured-track supports. Conservative enclosures may refuse otherwise disjoint
+mixed geometries. Nearly parallel or numerically unresolved track clearance is
+refused. This is conditional geometry support, not a general mesh solver.
+
+Subset drops incident bridges. Similarity transforms scale geometric
+conductance by `scale ** (measure_dim - 2)`; unsupported coupled transforms
+refuse. Clip children before bridging, or combine without bridges before
+clipping: splitting a bridge endpoint requires a future reconnection contract.
+Combined environments have no single regular grid or global track coordinate.
+Re-binning (Stage D), broader affine numerics (Stage E) and removal of the layout
+facade (Stage F) remain separate roadmap work.
