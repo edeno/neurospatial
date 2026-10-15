@@ -125,9 +125,16 @@ def _polygon_coordinate_errors(polygon: Polygon | MultiPolygon) -> NDArray[np.fl
             np.spacing(np.abs(coordinates)), axis=0
         ) + 64 * np.finfo(float).eps * np.ptp(coordinates, axis=0)
         normalized = (coordinates - coordinates[0]) / uncertainty
+    # Overlay can insert consecutive vertices separated by less than the
+    # coordinate uncertainty at an otherwise well-resolved corner. Those
+    # redundant vertices are not the cell's width. Simplify only this temporary
+    # normalized clearance probe; retain the original geometry and every cell.
     if (
         not np.all(np.isfinite(normalized))
-        or shapely.set_coordinates(polygon, normalized).minimum_clearance < 1e4
+        or shapely.set_coordinates(polygon, normalized)
+        .simplify(1.0, preserve_topology=True)
+        .minimum_clearance
+        < 1e4
     ):
         raise ValueError(
             "Polygon features are not resolvable at the stored coordinate precision. "

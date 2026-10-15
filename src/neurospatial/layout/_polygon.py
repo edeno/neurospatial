@@ -383,25 +383,14 @@ def _representative(polygon: Polygon) -> tuple[float, float]:
 def _overlay(
     source: tuple[Polygon, ...], polygon: Polygon | MultiPolygon
 ) -> tuple[PolygonCells, ClipMapping]:
-    tree = STRtree(source)
-    atoms: dict[int, list[Polygon]] = defaultdict(list)
-    linework = unary_union([*(cell.boundary for cell in source), polygon.boundary])
-    for atom in polygonize(linework):
-        point = atom.representative_point()
-        if not polygon.contains(point):
-            continue
-        owners = tree.query(point, predicate="within")
-        if len(owners) > 1:
-            raise _error(
-                "Polygon overlay found ambiguous parent ownership.",
-                "provide cells with disjoint interiors",
-            )
-        if len(owners):
-            atoms[int(owners[0])].append(atom)
+    # Each intersection retains its known parent. Polygonizing all boundaries
+    # together can create rounding-sized strips whose representative point is
+    # assigned to a different parent, losing coverage of an otherwise valid
+    # cell. GEOS overlay computes the common intersections directly instead.
     records = [
         (parent, shapely.normalize(piece))
-        for parent in sorted(atoms)
-        for piece in sorted(_parts(unary_union(atoms[parent])), key=_key)
+        for parent, cell in enumerate(source)
+        for piece in sorted(_parts(cell.intersection(polygon)), key=_key)
     ]
     if not records:
         raise _error(

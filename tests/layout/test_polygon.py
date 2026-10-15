@@ -192,10 +192,11 @@ def test_zero_area_intersections_are_not_bins(region):
         clip_binning(_grid((1, 1), (np.array([0.0, 4.0]),) * 2), region)
 
 
-def test_every_positive_sliver_is_retained():
+@pytest.mark.parametrize("width", [2.0**-40, 1e-100])
+def test_every_positive_sliver_is_retained(width):
     parent = _grid((1, 1), (np.array([0.0, 4.0]),) * 2)
-    child, _ = clip_binning(parent, box(0, 0, 2.0**-40, 4))
-    assert child.bins.sizes.tolist() == [2.0**-38]
+    child, _ = clip_binning(parent, box(0, 0, width, 4))
+    assert child.bins.sizes.tolist() == [4 * width]
     np.testing.assert_array_equal(child.locator.locate(child.bins.centers), [0])
 
 

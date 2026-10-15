@@ -18,8 +18,74 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClippedLocator
+from neurospatial.layout._polygon import ClippedLocator, materialize_cells
 from neurospatial.ops.transforms import AffineND
+
+
+@pytest.mark.parametrize("width", [2.0**-40, 1e-100])
+def test_clipping_preserves_resolved_tiny_cells_without_geometry_repair(width):
+    edges = np.array([0.0, 1.0])
+    parent = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool), grid_edges=(edges, edges)
+    )
+    child = parent.clip(box(0.0, 0.0, width, 1.0))
+    assert child.n_bins == 1
+    np.testing.assert_array_equal(child.bin_sizes, [width])
+    np.testing.assert_array_equal(child.bin_at(child.bin_centers), [0])
+    np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, [0])
+
+
+@pytest.mark.parametrize("scale", [1.0, 100.0])
+def test_diagonal_crop_preserves_area_and_ownership_across_units(scale):
+    edges = np.linspace(0.0, scale, 21)
+    parent = Environment.from_grid_mask(
+        np.ones((20, 20), dtype=bool), grid_edges=(edges, edges)
+    )
+    child = parent.clip(Polygon([(0, 0), (scale, 0), (0, scale)]))
+    assert child.n_bins == 210
+    np.testing.assert_allclose(child.bin_sizes.sum(), scale**2 / 2, rtol=1e-14)
+    np.testing.assert_array_equal(child.bin_at(child.bin_centers), np.arange(210))
+    np.testing.assert_array_equal(
+        parent.bin_at(child.bin_centers), child.clip_mapping.parent_bin_indices
+    )
+    restored = Environment.from_dict(child.to_dict())
+    np.testing.assert_array_equal(restored.bin_sizes, child.bin_sizes)
+    np.testing.assert_array_equal(restored.bin_at(child.bin_centers), np.arange(210))
+
+
+@pytest.mark.parametrize("angle", [0.1, 0.3, 0.37, 0.7])
+def test_rotated_grid_noop_crop_preserves_cells_and_ownership(angle):
+    edges = np.linspace(0.0, 1.0, 21)
+    parent = Environment.from_grid_mask(
+        np.ones((20, 20), dtype=bool), grid_edges=(edges, edges)
+    ).apply_transform(AffineND(_rotation(angle)))
+    child = parent.clip(box(-2, -2, 2, 2))
+    assert child.n_bins == parent.n_bins
+    np.testing.assert_allclose(child.bin_sizes, parent.bin_sizes, rtol=1e-13)
+    np.testing.assert_array_equal(child.bin_at(child.bin_centers), np.arange(400))
+    np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, np.arange(400))
+    # Arena and locator frames are stored independently. Their reconstructed
+    # boundaries may differ at coordinate precision, but a no-op crop must not
+    # lose parent support or turn rounding-sized strips into separate cells.
+    for original, clipped in zip(
+        materialize_cells(parent._binning),
+        materialize_cells(child._binning),
+        strict=True,
+    ):
+        assert original.symmetric_difference(clipped).area < 1e-14 * original.area
+    # Exact geometry remains usable when tiny rounded kinks prevent the
+    # conservative two-point certificate; clipping must not relax that check.
+    if not child._binning.faces.available:
+        with pytest.raises(NotImplementedError, match="certified"):
+            child.compute_kernel(0.1)
+    restored = Environment.from_dict(child.to_dict())
+    np.testing.assert_array_equal(restored.bin_sizes, child.bin_sizes)
+    np.testing.assert_array_equal(restored.bin_at(child.bin_centers), np.arange(400))
+
+
+def _rotation(angle):
+    cosine, sine = np.cos(angle), np.sin(angle)
+    return np.array([[cosine, -sine, 0.0], [sine, cosine, 0.0], [0.0, 0.0, 1.0]])
 
 
 def _grid(shape=(2, 1), *, arena=None, diagonals=False):
