@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Compare point regions by coordinate values, avoiding ambiguous NumPy truth
+  values on Python 3.10–3.12 and when comparing independent region copies.
+
 ### Added
 
 - Preserve linear interpolation and movement time fractions after rotating,
