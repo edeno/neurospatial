@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
 import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.environment._protocols import ClipConsumer
+from neurospatial.layout._graph import _graph_from_binning
 from neurospatial.layout._polygon import clip_binning
 
 if TYPE_CHECKING:
@@ -45,24 +45,7 @@ def _clip(
         domain=domain,
         walls=env.arena.walls,
     )
-    graph = nx.Graph()
-    for index, center in enumerate(binning.bins.centers):
-        graph.add_node(
-            index,
-            pos=tuple(center),
-            source_grid_flat_index=index,
-            original_grid_nd_index=(index,),
-        )
-    for index, (u, v) in enumerate(binning.bins.pairs):
-        vector = binning.bins.centers[v] - binning.bins.centers[u]
-        graph.add_edge(
-            int(u),
-            int(v),
-            distance=float(binning.bins.pair_distances[index]),
-            vector=tuple(vector),
-            edge_id=index,
-            angle_2d=float(np.arctan2(vector[1], vector[0])),
-        )
+    graph = _graph_from_binning(binning)
     shapes = binning.shapes
     assert shapes is not None
     from neurospatial.layout._polygon import PolygonCells

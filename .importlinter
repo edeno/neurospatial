@@ -24,6 +24,7 @@ source_modules =
     neurospatial.layout._combine_geometry
     neurospatial.layout._polygon
     neurospatial.layout._context
+    neurospatial.layout._graph
     neurospatial.layout._codecs
 forbidden_modules =
     neurospatial.environment
