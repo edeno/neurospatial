@@ -932,13 +932,9 @@ class CartesianCoordinates:
         contained by another known arena. Unknown domains retain the full
         coarse grid. Rebinning preserves the arena rather than filling its holes.
 
-<<<<<<< HEAD
-        **Metadata preservation**: The arena, units and frame are preserved.
-=======
-        **Metadata preservation**: Units, frame and named regions are copied
-        from the original environment. Region coordinates and metadata are
-        preserved even when truncation removes the bins near a region.
->>>>>>> feature/environment-representation
+        **Metadata preservation**: The arena, units, frame and named regions
+        are preserved. Region coordinates and metadata remain intact even when
+        truncation removes the bins near a region.
 
         Examples
         --------

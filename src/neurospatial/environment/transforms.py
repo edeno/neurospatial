@@ -212,13 +212,8 @@ def _rebin(
         layout=cast("LayoutEngine", new_layout),
         layout_type_used="RegularGrid",
         layout_params_used=new_layout._build_params_used,
-<<<<<<< HEAD
-        regions=Regions(),
-        arena=env.arena,
-=======
-        name=f"{env.name}_rebinned" if env.name else "",
         regions=deepcopy(env.regions),
->>>>>>> feature/environment-representation
+        arena=env.arena,
     )
 
     # Preserve metadata
