@@ -94,7 +94,7 @@ if TYPE_CHECKING:
     from typing_extensions import TypeVar as _CoordinateTypeVar
 
     _C = _CoordinateTypeVar(
-        "_C", bound=CartesianSystem | EgocentricPolarSystem, default=CartesianSystem
+        "_C", bound=CartesianSystem | EgocentricPolarSystem, default=Any
     )
 else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
@@ -2456,7 +2456,7 @@ class Environment(Generic[_C]):
         factor: int | tuple[int, ...] | None = None,
         *,
         bin_size: float | tuple[float, ...] | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
         Creates a new environment with coarser spatial resolution by reducing
@@ -2599,7 +2599,7 @@ class Environment(Generic[_C]):
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
         invert: bool = False,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create new environment containing subset of bins.
 
         Extracts a subgraph from the environment containing only the selected
@@ -2693,7 +2693,7 @@ class Environment(Generic[_C]):
         polygon: shapely.Polygon | shapely.MultiPolygon,
         *,
         name: str | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Clip planar cells to a polygon, returning a new environment.
 
         Parameters
@@ -2730,7 +2730,7 @@ class Environment(Generic[_C]):
         transform: AffineND | Affine2D,
         *,
         name: str | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Apply affine transformation to environment, returning a new instance.
 
         Transforms the environment's bin centers, connectivity graph, and regions
@@ -2939,7 +2939,7 @@ class Environment(Generic[_C]):
         bridge_conductances: Mapping[tuple[tuple[str, int], tuple[str, int]], float]
         | None = None,
         name: str = "",
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Combine disjoint components into an ordinary owned environment.
 
         Parameters
@@ -2989,7 +2989,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Construct an environment from explicit Cartesian binning data.
 
         Parameters
@@ -3048,7 +3048,7 @@ class Environment(Generic[_C]):
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
         **layout_specific_kwargs: Any,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
         The common path (`positions` + `bin_size`) needs none of the advanced /
@@ -3236,7 +3236,7 @@ class Environment(Generic[_C]):
         add_boundary_bins: bool = False,
         connect_diagonal_neighbors: bool = True,
         **layout_specific_kwargs: Any,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create an open-arena Environment from sampled positions.
 
         This is the only positions-based preset. It delegates to
@@ -3334,7 +3334,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create a 1D linearized track Environment from an explicit topology.
 
         Unlike :meth:`open_field`, a linear track is defined by its *topology*,
@@ -3431,7 +3431,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create a 1D linearized W / plus / T maze Environment.
 
         Like :meth:`linear_track`, a maze is defined by its *topology*, not by
@@ -3573,7 +3573,7 @@ class Environment(Generic[_C]):
         units: str | None = None,
         frame: str | None = None,
         track_width: float | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create an Environment from a user-defined graph structure.
 
         This method is used for 1D environments where the spatial layout is
@@ -3729,7 +3729,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
 
         A regular grid is formed based on the polygon's bounds and `bin_size`.
@@ -3826,7 +3826,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
         This factory method allows for precise specification of active bins in
@@ -3917,7 +3917,7 @@ class Environment(Generic[_C]):
         units: str | None = None,
         frame: str | None = None,
         arena: Arena | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create a 2D Environment from a binary image / pixel mask.
 
         Each ``True`` pixel in the ``image_mask`` becomes an active bin in the
@@ -4005,7 +4005,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
-    ) -> Environment:
+    ) -> Environment[CartesianSystem]:
         """Create an Environment with a specified layout type and its build parameters.
 
         Parameters
@@ -4075,7 +4075,7 @@ class Environment(Generic[_C]):
         scratch_name: str | None = None,
         bin_size: float | None = None,
         **kwargs: Any,
-    ) -> Environment:
+    ) -> Environment[Any]:
         """Create Environment from NWB file.
 
         This classmethod provides two modes of operation:
@@ -4739,7 +4739,7 @@ class Environment(Generic[_C]):
         return _to_file(self, path, overwrite=overwrite)
 
     @classmethod
-    def from_file(cls, path: str | Path) -> Environment:
+    def from_file(cls, path: str | Path) -> Environment[Any]:
         """Load Environment from versioned JSON + npz files.
 
         Parameters
@@ -4825,7 +4825,7 @@ class Environment(Generic[_C]):
         return _to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Environment:
+    def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
         """Decode Environment-v3 binning and Arena without rebuilding a layout.
 
         Version 2 dictionaries retain bins with an explicitly unknown Arena.

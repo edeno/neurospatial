@@ -37,6 +37,13 @@ math. Cartesian lookup, affine transforms, clipping and Cartesian trajectory
 operations still refuse polar inputs. Type checkers infer that restriction from
 the factory return type; runtime checks also cover explicit unbound calls.
 
+An unparameterized `Environment` annotation accepts either coordinate kind for
+shared operations. Loading from a file, dictionary or NWB record also returns
+an environment whose coordinate type is unknown until the record is read;
+the annotation does not promise Cartesian coordinates. Inspect `coordinate_kind`
+before choosing coordinate-specific operations. Factory-inferred Cartesian and
+polar types retain their stricter static checks.
+
 Replace `EgocentricPolarEnvironment.create(...)` with
 `Environment.from_polar_egocentric(...)`. The old public class and import are
 removed, with no alias. For metadata dispatch, use `coordinate_kind` instead of

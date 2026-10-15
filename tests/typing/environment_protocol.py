@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     def _environment(env: FieldConsumer) -> None: ...
 
     def _check(
-        cartesian: Environment,
+        cartesian: Environment[CartesianSystem],
         polar: Environment[EgocentricPolarSystem],
         field: NDArray[np.float64],
     ) -> None:
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
         assert_type(cartesian.neighbors(0), list[int])
 
     def _check_signatures(
-        cartesian: Environment,
+        cartesian: Environment[CartesianSystem],
         protocol: CartesianLookupConsumer,
         points: NDArray[np.float64],
         times: NDArray[np.float64],
@@ -61,21 +61,23 @@ if TYPE_CHECKING:
         )
 
     def _check_trajectory(
-        cartesian: Environment, polar: Environment[EgocentricPolarSystem]
+        cartesian: Environment[CartesianSystem],
+        polar: Environment[EgocentricPolarSystem],
     ) -> None:
         _binning: TrajectoryBinningConsumer = cartesian
         _cartesian_transitions: TransitionsConsumer = cartesian
         _polar_transitions: TransitionsConsumer = polar
 
-    def _check_transforms(cartesian: Environment) -> None:
+    def _check_transforms(cartesian: Environment[CartesianSystem]) -> None:
         _rebin: RebinConsumer = cartesian
         _subset: SubsetConsumer = cartesian
 
-    def _check_interpolation(cartesian: Environment) -> None:
+    def _check_interpolation(cartesian: Environment[CartesianSystem]) -> None:
         _interpolation: InterpolationConsumer = cartesian
 
     def _check_coordinates(
-        cartesian: Environment, polar: Environment[EgocentricPolarSystem]
+        cartesian: Environment[CartesianSystem],
+        polar: Environment[EgocentricPolarSystem],
     ) -> None:
         _cartesian_lengths: CellLengthConsumer = cartesian
         _polar_lengths: CellLengthConsumer = polar

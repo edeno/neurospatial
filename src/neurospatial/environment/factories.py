@@ -716,7 +716,7 @@ def _from_layout(
 
         arena = own_arena(arena)
     layout_instance = cls._create_layout(kind, layout_params)
-    env_cls = cast("type[Environment]", cls)
+    env_cls = cls
     env = env_cls._from_built_layout(
         layout_instance,
         name=name,
