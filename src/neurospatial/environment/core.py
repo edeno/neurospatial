@@ -1569,7 +1569,6 @@ class Environment(Generic[_C]):
             graph=self.connectivity,
             grid_shape=self.grid_shape,
             active_mask=self.active_mask,
-            layout_kind=self._layout_type_used,
             periodic_axes=(1,) if self._angular_is_circular else (),
         ).astype(np.intp, copy=False)
 
@@ -2524,7 +2523,7 @@ class Environment(Generic[_C]):
             Coarsening factor per dimension. If int, applied uniformly to all
             dimensions. If tuple, must match the number of dimensions.
             Each factor must be a positive integer. Only supported for the
-            existing uniform RegularGrid family; retains truncation behavior.
+            existing axis-aligned uniform rectangular cells; retains truncation behavior.
         bin_size : float or tuple of float, optional
             New positive physical bin lengths along the retained grid axes,
             in environment units. May refine or coarsen a rectangular grid.
@@ -2544,7 +2543,7 @@ class Environment(Generic[_C]):
         RuntimeError
             If called before the environment is fitted.
         NotImplementedError
-            If environment layout is not RegularGridLayout.
+            If environment layout is not uniform rectangular grid.
         ValueError
             If factor is not positive or if factor is too large for grid shape.
             Also raised when coarse cells cannot represent an existing wall.
@@ -6864,6 +6863,10 @@ class Environment(Generic[_C]):
         binning, graph, ranges, tag, category, resolved, index = built_layout_data(
             layout
         )
+        if isinstance(_coordinates, EgocentricPolarSystem) and arena is None:
+            from neurospatial.environment._arena import infer_arena
+
+            arena = infer_arena(binning, polar=True, circular=_coordinates.circular)
         return cls._from_binning(
             binning,
             connectivity=graph,
@@ -6941,8 +6944,14 @@ class Environment(Generic[_C]):
         index = (
             _grid_index if isinstance(_grid_index, GridIndex) else grid_index(binning)
         )
+        from neurospatial.arena import EgocentricSurround
+
         coordinates = (
-            EgocentricPolarSystem(polar_circularity(index.shape, graph, build_params))
+            EgocentricPolarSystem(
+                arena.circular
+                if isinstance(arena, EgocentricSurround)
+                else polar_circularity(index.shape, graph, build_params)
+            )
             if polar
             else CartesianSystem()
         )

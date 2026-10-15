@@ -29,14 +29,6 @@ def _rebin(
 
     # --- Input validation ---
 
-    # Check layout type using _layout_type_tag (Protocol-safe check)
-    if env.layout_type != "RegularGrid":
-        raise NotImplementedError(
-            "rebin() is only supported for RegularGridLayout. "
-            f"Current layout type: {env.layout_type}. "
-            "For other layout types, consider using smooth() for field smoothing "
-            "or subset() for spatial cropping."
-        )
     grid = env._binning.rectilinear
     if (
         grid is None

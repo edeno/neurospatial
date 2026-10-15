@@ -81,7 +81,6 @@ def _cartesian_boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
         graph=env.connectivity,
         grid_shape=grid_shape,
         active_mask=active_mask,
-        layout_kind=env._layout_type_used,
     ).astype(np.intp, copy=False)
 
 

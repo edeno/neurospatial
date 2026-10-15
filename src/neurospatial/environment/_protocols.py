@@ -114,9 +114,6 @@ class RebinConsumer(Protocol):
     def connectivity(self) -> nx.Graph: ...
 
     @property
-    def layout_type(self) -> str | None: ...
-
-    @property
     def bin_centers(self) -> NDArray[np.float64]: ...
 
     @property

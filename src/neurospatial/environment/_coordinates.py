@@ -145,7 +145,8 @@ def polar_circularity(
 ) -> bool:
     """Normalize legacy circularity once: saved small grids, otherwise graph seams.
 
-    Known arena circularity historically does not override this precedence.
+    Used only when a legacy record has no owned polar arena declaration.
+    Current environments take circularity from their EgocentricSurround.
     """
     if grid_shape is not None and grid_shape[1] <= 2:
         return bool(parameters.get("circular_angle", False))

@@ -378,15 +378,11 @@ class TestRebinValidation:
     """Input validation tests."""
 
     def test_rebin_non_grid_layout_raises(self):
-        """Rebinning non-grid layout raises NotImplementedError."""
-        # Create a polygon layout (not a regular grid)
-        from shapely.geometry import box
-
-        polygon = box(0, 0, 50, 50)
-        env = Environment.from_polygon(polygon, bin_size=10.0)
-
-        # Should raise NotImplementedError
-        with pytest.raises(NotImplementedError, match=r"only.*RegularGridLayout"):
+        """Factor rebinning needs rectangular cell geometry."""
+        env = Environment.from_layout(
+            "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+        )
+        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
             env.rebin(factor=2)
 
     def test_rebin_invalid_factor_raises(self):
