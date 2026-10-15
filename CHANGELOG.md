@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve dotted recording names in environment file prefixes, so saving
+  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
+  and `.npz` paths remain accepted.
+
 ### Added
 
 - Plot actual positions directly on decoded posteriors with
