@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Physical border scores require complete represented and observed wall
+  coverage, distinguishing missing measurements from measured zero firing.
+  Unsupported scores and batch summaries provide setup guidance rather than
+  treating an unobserved wall as zero activity.
+
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
