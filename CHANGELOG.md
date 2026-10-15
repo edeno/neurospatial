@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject cyclic environment metadata before recursive decoding, avoiding a
+  Windows/Python 3.10 stack crash while retaining shared acyclic records.
+
 - Preserve coincident track centers, native mesh indexing and reserved user
   graph attributes through environment storage. Malformed JSON/NWB/NPZ records
   now report contextual recovery guidance.

@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import zlib
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -501,6 +502,40 @@ def _check_schema(metadata: dict[str, Any], source: str) -> None:
         )
 
 
+def _reject_cyclic_metadata(metadata: dict[str, Any]) -> None:
+    """Reject container cycles before calling recursive component decoders.
+
+    Numerical payloads have already been parsed independently; avoid walking
+    their potentially large lists a second time. Shared acyclic containers are
+    valid and are visited once. The traversal itself uses no Python recursion.
+    """
+    active = {id(metadata)}
+    complete: set[int] = set()
+    stack: list[tuple[int, Iterator[Any]]] = [
+        (id(metadata), (value for key, value in metadata.items() if key != "arrays"))
+    ]
+    while stack:
+        identity, children = stack[-1]
+        try:
+            value = next(children)
+        except StopIteration:
+            stack.pop()
+            active.remove(identity)
+            complete.add(identity)
+            continue
+        if not isinstance(value, (dict, list, tuple)):
+            continue
+        identity = id(value)
+        if identity in active:
+            raise ValueError("Circular environment metadata is not supported.")
+        if identity in complete:
+            continue
+        active.add(identity)
+        stack.append(
+            (identity, iter(value.values() if isinstance(value, dict) else value))
+        )
+
+
 def _restore_environment(
     metadata: dict[str, Any],
     *,
@@ -516,6 +551,7 @@ def _restore_environment(
     from neurospatial.regions import Region, Regions
 
     try:
+        _reject_cyclic_metadata(metadata)
         for key, spec in metadata["array_specs"].items():
             array = arrays[key]
             if list(array.shape) != spec["shape"] or array.dtype.str != spec["dtype"]:
