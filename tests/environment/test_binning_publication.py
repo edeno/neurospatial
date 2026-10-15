@@ -146,9 +146,10 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     if isinstance(env, Environment):
         if env.arena.domain_known:
             inside = env.arena.contains(points)
-            expected = expected.copy()
-            expected[~inside] = -1
-            _, expected_warnings = _lookup_with_warnings(
+            # Qhull can choose either triangle at a shared edge, depending
+            # on preceding queries. Compare the same arena-filtered batch.
+            expected = np.full_like(expected, -1)
+            expected[inside], expected_warnings = _lookup_with_warnings(
                 env._binning.locator.locate, points[inside]
             )
         indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
