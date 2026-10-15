@@ -9,6 +9,10 @@
   now defaults to automatic: full circles wrap, partial angle ranges remain
   open, and explicitly wrapping a partial range is rejected.
 
+- Preserve dotted recording names in environment file prefixes, so saving
+  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
+  and `.npz` paths remain accepted.
+
 ### Added
 
 - Plot actual positions directly on decoded posteriors with

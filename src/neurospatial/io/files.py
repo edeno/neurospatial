@@ -237,6 +237,13 @@ def _validate_path_safety(path: PathLike) -> Path:
     return path_obj
 
 
+def _environment_file_paths(path: Path) -> tuple[Path, Path]:
+    """Append storage extensions while preserving dots in the path prefix."""
+    if path.suffix.lower() in {".json", ".npz"}:
+        path = path.with_suffix("")
+    return path.with_name(path.name + ".json"), path.with_name(path.name + ".npz")
+
+
 def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
@@ -253,8 +260,10 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     env : Environment
         Environment instance to save.
     path : str or Path
-        Base path for output files (without extension).
-        Will create `{path}.json` and `{path}.npz`.
+        Prefix for output files. Creates ``{path}.json`` and ``{path}.npz``.
+        A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
+        part of the prefix, so ``rat1.day1`` creates ``rat1.day1.json`` and
+        ``rat1.day1.npz``.
         Paths containing '..' components are rejected to prevent
         directory traversal attacks.
     overwrite : bool, default=False
@@ -290,8 +299,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     """
     # Validate path for security
     path_obj = _validate_path_safety(path)
-    json_path = path_obj.with_suffix(".json")
-    npz_path = path_obj.with_suffix(".npz")
+    json_path, npz_path = _environment_file_paths(path_obj)
 
     from neurospatial._validation import check_writable
 
@@ -340,8 +348,9 @@ def from_file(path: PathLike) -> Environment:
     Parameters
     ----------
     path : str or Path
-        Base path to load from (without extension).
-        Will read `{path}.json` and `{path}.npz`.
+        Prefix to load from. Reads ``{path}.json`` and ``{path}.npz``.
+        A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
+        part of the prefix.
         Paths containing '..' components are rejected to prevent
         directory traversal attacks.
 
@@ -375,8 +384,7 @@ def from_file(path: PathLike) -> Environment:
     """
     # Validate path for security
     path_obj = _validate_path_safety(path)
-    json_path = path_obj.with_suffix(".json")
-    npz_path = path_obj.with_suffix(".npz")
+    json_path, npz_path = _environment_file_paths(path_obj)
 
     if not json_path.exists():
         raise FileNotFoundError(
