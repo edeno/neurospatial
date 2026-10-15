@@ -189,7 +189,7 @@ forward:
 | R39 | #73 | `summary_table()` labeled a cell `"place"` when the physical border score was unavailable. | Fixed `322e9ca8`: `"undetermined"` in single-unit and population tables. |
 | R40 | #73 | A combined component without declared walls scored its wall fields against other components' walls (−1.0). | Fixed `9373e7ae`: physical scoring refuses and names the component. |
 | R41 | #70 | `from_bins` accepted hexagon/triangle `KnownFaces` inconsistent with cell geometry. | Fixed `1c0e37e3`: shared-edge length and centre distance validated. |
-| R42 | #77 | Cartesian-only domain functions accepted polar environments (mypy and runtime), e.g. `mean_position` at the ±π seam. | Fixed `af14a148`, `586cee4a`: `Environment[CartesianSystem]` typing plus runtime `CartesianOnlyError`; guard kept below `ops` in the layer contracts. |
+| R42 | #77 | Cartesian-only domain functions accepted polar environments (mypy and runtime), e.g. `mean_position` at the ±π seam. | Fixed `af14a148`, `586cee4a`: `Environment[CartesianSystem]` typing plus runtime `CartesianOnlyError`; guard kept below `ops` in the layer contracts. Posterior means instead use the egocentric-plane centroid on polar environments (`dbe8fa3f`), so polar decoding results and summaries return. |
 | R43 | #67 | Saved environments from 0.6.0 cannot be loaded; migration guide was silent. | Intended (maintainer); documented `337016e6`. |
 
 Open follow-ups (not blocking): mesh environments saved on one OS refuse to
@@ -199,5 +199,4 @@ circular `rebin(factor=2)` drops perimeter bins (#68); combine overlap
 certification is O(n²) (#71); no warning when `rebin(bin_size=)` leaves arena
 area unbinned and coarse rebin can connect across thin outline barriers (#72);
 a single arena with internal walls but unknown footprint can still mis-score
-outer-edge border fields (#73); polar `DecodingResult.to_dataframe()` and
-`decode_position_summary` now refuse because they include `mean_position`.
+outer-edge border fields (#73).

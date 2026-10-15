@@ -47,10 +47,6 @@ if TYPE_CHECKING:
         values: NDArray[np.float64],
         bins: NDArray[np.int64],
     ) -> None:
-        mean_position(cartesian, values)
-        mean_position(polar, values)  # type: ignore[arg-type]
-        decode_position_summary(cartesian, bins, values, 0.02)
-        decode_position_summary(polar, bins, values, 0.02)  # type: ignore[arg-type]
         field_shape_metrics(cartesian, values, bins)
         field_shape_metrics(polar, values, bins)  # type: ignore[arg-type]
         field_shift_distance(cartesian, values, bins, cartesian, values, bins)
@@ -85,3 +81,6 @@ if TYPE_CHECKING:
         path_progress(bins, polar, start_bins=bins, goal_bins=bins)
         distance_to_region(bins, polar, target_bins=bins)
         trajectory_similarity(bins, bins, polar, method="jaccard")
+        # Posterior means are egocentric-plane centroids on polar environments.
+        mean_position(polar, values)
+        decode_position_summary(polar, bins, values, 0.02)

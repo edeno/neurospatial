@@ -36,7 +36,6 @@ from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.geometry._arena import Arena
 
 
@@ -1372,6 +1371,7 @@ def _decode_and_reduce_block(
     nonfinite_mask: NDArray[np.bool_] | None,
     validate: bool,
     dtype: Any,
+    mean_basis: NDArray[np.float64] | None = None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.float64],
@@ -1408,6 +1408,9 @@ def _decode_and_reduce_block(
         If ``True``, run the per-block posterior-sum output check.
     dtype : np.float32 or np.float64
         Working dtype of the posterior block.
+    mean_basis : NDArray[np.float64] or None, shape (n_bins, n_dims)
+        Coordinates averaged for the posterior mean; defaults to
+        ``bin_centers``. Polar callers pass egocentric-plane coordinates.
 
     Returns
     -------
@@ -1433,7 +1436,7 @@ def _decode_and_reduce_block(
     if validate:
         _validate_output(post_block)
     block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
-        post_block, bin_centers
+        post_block, bin_centers if mean_basis is None else mean_basis
     )
     block_map_position = bin_centers[block_map_bin]
     # post_block goes out of scope and is reclaimed before the next block.
@@ -1441,7 +1444,7 @@ def _decode_and_reduce_block(
 
 
 def decode_position_summary(
-    env: Environment[CartesianSystem],
+    env: Environment,
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64] | SpatialRatesLike,
     dt: float,
@@ -1516,10 +1519,6 @@ def decode_position_summary(
         If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
         conditions as :func:`decode_position` (invalid method, no finite bins,
         bin-count mismatch, bad ``times`` length, validation failures).
-    CartesianOnlyError
-        If ``env`` is polar: the summary's ``mean_position`` would average
-        ``(distance, angle)`` bin centers. Use :func:`decode_position` and its
-        ``map_position`` instead.
 
     Notes
     -----
@@ -1548,16 +1547,6 @@ def decode_position_summary(
     >>> summary.map_position.shape
     (4, 2)
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
-        "decode_position_summary()",
-        instead=(
-            "Its mean_position averages Cartesian bin centers. Use "
-            "decode_position(env, ...) and its map_position or posterior instead."
-        ),
-    )
     if time_chunk is None:
         raise ValueError(
             "time_chunk=None is not allowed for decode_position_summary: this "
@@ -1621,7 +1610,13 @@ def decode_position_summary(
             n_bins=encoding_models.shape[1],
         )
 
+    from neurospatial.decoding.estimates import (
+        _finish_posterior_mean,
+        _posterior_mean_basis,
+    )
+
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    mean_basis = _posterior_mean_basis(env)
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
@@ -1663,6 +1658,7 @@ def decode_position_summary(
             nonfinite_mask=nonfinite_mask,
             validate=validate,
             dtype=dtype,
+            mean_basis=mean_basis,
         )
         map_bin[start:stop] = block_map_bin
         map_position[start:stop] = block_map_position
@@ -1673,7 +1669,7 @@ def decode_position_summary(
     return DecodingSummary(
         times=times_arr,
         map_position=map_position,
-        mean_position=mean_position,
+        mean_position=_finish_posterior_mean(env, mean_position),
         posterior_entropy=posterior_entropy,
         peak_prob=peak_prob,
         map_bin=map_bin,
