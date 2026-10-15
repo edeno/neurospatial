@@ -1,16 +1,19 @@
 # Stage D — Re-binning and physical-wall consumers
 
 **Status:** D0–D3 complete and validated on 2026-10-15.
-Three local stacked branches separate rebinning, border scoring and visibility;
-the current branch is `feature/environment-wall-visibility`. Stage D is not
-pushed and has no PRs.
+Three published stacked branches separate rebinning, border scoring and visibility;
+the current branch is `feature/environment-wall-visibility`.
+**PR stack:** [#72](https://github.com/edeno/neurospatial/pull/72) (rebinning) →
+[#73](https://github.com/edeno/neurospatial/pull/73) (border scoring) →
+[#74](https://github.com/edeno/neurospatial/pull/74) (visibility).
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
 The representation roadmap calls for separate changes per consumer: arena
 re-binning, border scores, and visibility/ray casting. Implement and validate
-these in order, with separate logical commits and stacked branches. Creating
-Stage D PRs requires a later publication instruction.
+these in order, with separate logical commits and stacked branches. Stage D PRs
+were opened on 2026-10-15 following the user’s publication instruction; each
+targets its immediate predecessor, starting with Stage C PR #71.
 
 ## Scientific contract
 
