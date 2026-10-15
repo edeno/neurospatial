@@ -243,13 +243,13 @@ def clear_segments(
         )
         contact = shapely.intersection(lines, walls)
         # Intersection and interpolation can cancel one endpoint coordinate
-        # to zero. Couple the cue's own per-axis rounding budgets along the
-        # intersected wall's direction. Its largest component is one, so this
-        # adds at most the sum of those budgets to either axis. Distant wall
-        # endpoints and axes perpendicular to the wall cannot widen gaps.
+        # to zero. Allow eight ULPs in the cue's own coordinates and project
+        # that rounding box onto the intersected wall's tangent. A coordinate
+        # perpendicular to the wall contributes no cross-axis allowance, and
+        # distant endpoints cannot widen gaps. Any positive wall overlap blocks.
         coordinates, owners = shapely.get_coordinates(contact, return_index=True)
         terminal = selected[~same]
-        allowance = 4 * np.spacing(np.abs(terminal[owners]))
+        allowance = 8 * np.spacing(np.abs(terminal[owners]))
         if len(coordinates):
             parts = shapely.get_parts(walls)
             vertices, part_index = shapely.get_coordinates(parts, return_index=True)
@@ -262,13 +262,14 @@ def clear_segments(
                 shapely.points(coordinates)
             )
             tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
-            tangent /= np.max(tangent, axis=1)[:, None]
-            allowance += tangent * np.sum(allowance, axis=1)[:, None]
+            tangent /= np.hypot.reduce(tangent, axis=1)[:, None]
+            allowance += tangent * np.sum(tangent * allowance, axis=1)[:, None]
         at_terminal = np.all(
             np.abs(coordinates - terminal[owners]) <= allowance, axis=1
         )
         clear = np.ones(len(terminal), dtype=bool)
         np.logical_and.at(clear, owners, at_terminal)
+        clear &= shapely.is_empty(contact) | (shapely.get_dimensions(contact) <= 0)
         same[~same] = clear
     result[valid] = same
     return result

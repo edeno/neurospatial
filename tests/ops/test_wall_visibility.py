@@ -615,3 +615,44 @@ def test_wall_cue_rounding_ignores_repeated_wall_vertices():
     wall = LineString([(0.0, 0.0), (0.0, 0.0), (3.0, 2.0)])
     with np.errstate(divide="raise", invalid="raise"):
         assert clear_segments(wall, np.array([0.2, -1.0]), np.array([[0.0, 0.0]]))[0]
+
+
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("offset", [0.0, 1e12])
+def test_wall_cue_rounding_does_not_borrow_perpendicular_axis_precision(swap, offset):
+    from neurospatial.ops._boundaries import clear_segments
+
+    endpoints = np.array([[-1e-5, offset], [0.0, offset]])
+    observer = np.array([-1.0, offset])
+    target = np.array([[1e-5, offset]])
+    if swap:
+        endpoints, observer, target = (
+            endpoints[:, ::-1],
+            observer[::-1],
+            target[:, ::-1],
+        )
+    assert not clear_segments(LineString(endpoints), observer, target)[0]
+
+
+def test_wall_overlap_blocks_even_when_shorter_than_endpoint_rounding():
+    from neurospatial.ops._boundaries import clear_segments
+
+    start, end = 1e12, np.nextafter(1e12, np.inf)
+    wall = LineString([(start, 0.0), (end, 0.0)])
+    assert not clear_segments(wall, np.array([start, 0.0]), np.array([[end, 0.0]]))[0]
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_point_occluder_does_not_borrow_perpendicular_axis_precision(swap):
+    from neurospatial.ops._boundaries import clear_segments
+
+    endpoints = np.array([[-1.0, 1e12], [1.0, 1e12]])
+    observer = np.array([-1.0, 1e12 - 1.0])
+    target = np.array([[1e-5, np.nextafter(1e12, np.inf)]])
+    if swap:
+        endpoints, observer, target = (
+            endpoints[:, ::-1],
+            observer[::-1],
+            target[:, ::-1],
+        )
+    assert not clear_segments(LineString(endpoints), observer, target)[0]
