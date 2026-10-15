@@ -1017,12 +1017,16 @@ def distance_to(
 **Example:**
 
 ```python
+from neurospatial import Regions
+
 # Distance to specific bin indices
 goal_bins = [42, 87, 103]
 dist_to_goals = env.distance_to(goal_bins, metric='geodesic')
 
 # Distance to named region (requires regions defined)
-env.regions.add('goal_zone', polygon=goal_polygon)
+region_builder = Regions(env.regions.values())
+region_builder.add('goal_zone', polygon=goal_polygon)
+env = env.with_regions(region_builder)
 dist_to_goal_region = env.distance_to('goal_zone', metric='geodesic')
 
 # Euclidean vs geodesic comparison
@@ -1256,11 +1260,15 @@ def region_membership(
 **Example:**
 
 ```python
+from neurospatial import Regions
+
 # Define maze arms as regions
-env.regions.add('north_arm', polygon=north_polygon)
-env.regions.add('south_arm', polygon=south_polygon)
-env.regions.add('east_arm', polygon=east_polygon)
-env.regions.add('west_arm', polygon=west_polygon)
+region_builder = Regions(env.regions.values())
+region_builder.add('north_arm', polygon=north_polygon)
+region_builder.add('south_arm', polygon=south_polygon)
+region_builder.add('east_arm', polygon=east_polygon)
+region_builder.add('west_arm', polygon=west_polygon)
+env = env.with_regions(region_builder)
 
 # Get region membership matrix
 membership = env.region_membership()  # shape: (n_bins, 4)
@@ -1339,33 +1347,37 @@ def copy(self, *, deep: bool = True) -> Environment:
     -------
     env_copy : Environment
         Copy of environment.
-        - Deep copy: Modifications to arrays don't affect original
-        - Shallow copy: Shares references, modifications propagate
+        - Deep copy: Independent geometry storage
+        - Shallow copy: Shares immutable geometry
+        Both copies have read-only public values and fresh analysis caches.
     """
 ```
 
 **Example:**
 
 ```python
+from neurospatial import Regions
+
 # Create baseline environment
 env_baseline = Environment.from_samples(positions, bin_size=3.0, name='Session1')
 
 # Deep copy (default) - fully independent
 env_deep = env_baseline.copy(deep=True)
-env_deep.regions.add('goal', point=np.array([75.0, 75.0]))
+region_builder = Regions(env_deep.regions.values())
+region_builder.add('goal', point=np.array([75.0, 75.0]))
+env_deep = env_deep.with_regions(region_builder)
 
 # Original unchanged
 assert 'goal' not in env_baseline.regions
 assert 'goal' in env_deep.regions
 
-# Shallow copy - shares references
+# Shallow copy - safely shares immutable geometry
 env_shallow = env_baseline.copy(deep=False)
-# Modifications to shared objects may affect both
 
-# Verify independence (deep copy)
-env_deep_2 = env_baseline.copy()
-env_deep_2.bin_centers[0] = [999.0, 999.0]
-assert not np.allclose(env_baseline.bin_centers[0], [999.0, 999.0])
+# Export an editable array for separate calculations.
+centers = env_shallow.bin_centers.copy()
+centers[0] = [999.0, 999.0]
+assert not np.allclose(env_baseline.bin_centers[0], centers[0])
 ```
 
 **Use Cases:**

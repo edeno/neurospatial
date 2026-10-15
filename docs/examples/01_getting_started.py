@@ -46,6 +46,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.ops.binning import regions_to_mask
+from neurospatial.regions import Regions
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
@@ -104,7 +105,7 @@ env = Environment.from_grid_mask(
     grid_edges=(edges, edges),
     name="Known square arena",
 )
-env.units, env.frame = "cm", "arena"
+env = env.with_metadata(units="cm", frame="arena")
 sampled_env = Environment.from_samples(
     positions,
     bin_size=5.0,
@@ -187,7 +188,9 @@ assert np.isclose(occupancy.sum(), times[-1] - times[0])
 
 # %%
 # Select the center zone using its measured coordinates.
-env.regions.add("center", polygon=box(20.0, 20.0, 40.0, 40.0))
+regions = Regions(env.regions.values())
+regions.add("center", polygon=box(20.0, 20.0, 40.0, 40.0))
+env = env.with_regions(regions)
 center_mask = regions_to_mask(env, "center")
 center_time = occupancy[center_mask].sum()
 print(
@@ -233,7 +236,7 @@ for bin_width in [2.5, 5.0, 10.0]:
         active_mask=np.ones((n_cells, n_cells), dtype=bool),
         grid_edges=(comparison_edges, comparison_edges),
     )
-    comparison.units, comparison.frame = "cm", "arena"
+    comparison = comparison.with_metadata(units="cm", frame="arena")
     dwell = comparison.occupancy(times, positions, max_gap=0.1)
     visited = dwell > 0
     print(
@@ -250,7 +253,7 @@ for bin_width in [2.5, 5.0, 10.0]:
 #
 # Replace `times` with increasing timestamps in seconds and `positions` with
 # one `(x, y)` row per sample. Calibrate camera coordinates into physical units
-# before analysis. Setting `env.units = "cm"` labels values already in cm; it
+# before analysis. Setting `units="cm"` at construction labels values already in cm; it
 # does not convert pixels.
 #
 # Define bins from the measured arena boundary, choose bin width for the spatial

@@ -53,6 +53,7 @@ from neurospatial.animation import (
     VideoOverlay,
 )
 from neurospatial.ops.transforms import VideoCalibration, calibrate_from_landmarks
+from neurospatial.regions import Regions
 
 RUN_NAPARI = False
 RUN_WIDGET = False
@@ -89,8 +90,10 @@ env = Environment.from_grid_mask(
     np.ones((20, 20), dtype=bool),
     grid_edges=(np.arange(0, 105, 5.0), np.arange(0, 105, 5.0)),
 )
-env.units = "cm"
-env.regions.add("reference", point=np.array([50.0, 50.0]))
+env = env.with_metadata(units="cm")
+regions = Regions(env.regions.values())
+regions.add("reference", point=np.array([50.0, 50.0]))
+env = env.with_regions(regions)
 n_frames, fps = 16, 8.0
 frame_times = np.arange(n_frames) / fps
 phase = 2 * np.pi * np.arange(n_frames) / n_frames

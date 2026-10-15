@@ -1,11 +1,11 @@
 # Stage B — Immutable environment values
 
-**Status:** Implementation started. B0 behavior capture and API review are
-complete; B1 ownership and metadata work is next. See [validation.md](validation.md).
-The user approved immediate read-only metadata and mutable standalone region
-builders with immutable environment snapshots on 2026-10-14. Remaining API
-extension contracts need review before dependent code changes. No Stage B PR
-publication is authorized.
+**Status:** B0–B4 complete and independently reviewed. Validation results and
+remaining execution limits are recorded in [validation.md](validation.md).
+The user approved immediate read-only metadata, mutable standalone region
+builders with immutable environment snapshots, and migration of custom
+providers to immutable built-in snapshots. No Stage B PR publication is
+authorized.
 
 **Branch:** `feature/environment-immutable`, stacked on
 `feature/environment-arena` at `a88360e5`.
@@ -29,7 +29,7 @@ Immutability does not imply numerical equality or a new cache-key scheme.
 Preserve environment identity behavior and existing name/string comparison;
 do not introduce structural equality, structural hashing or global caches.
 
-## Confirmed current behavior
+## Captured behavior before Stage B
 
 Small deterministic probes on the Stage A tree confirmed:
 
@@ -44,16 +44,15 @@ Small deterministic probes on the Stage A tree confirmed:
 Relevant code is [Region construction](../../../src/neurospatial/regions/core.py),
 [environment publication and metadata](../../../src/neurospatial/environment/core.py)
 and the [factories](../../../src/neurospatial/environment/factories.py).
-The public `layout_parameters` property also returns its live dictionary;
-descriptive provenance and the retained layout bridge need an ownership audit.
-Several factories do not yet accept units/frame consistently.
+The original `layout_parameters` property returned its live dictionary;
+provenance and the retained layout bridge are now owned. Factories consistently
+accept units/frame at construction.
 
 ## Proposed contracts and decisions
 
 The mutation policy, region collection model and custom-provider snapshot
-requirement below are approved. The two replacement methods have received an
-independent contract review. B3/B4 public types and extension contracts remain
-proposals.
+requirement below are approved. The replacement methods, B3 public binning
+records and B4 installed adapter contract have received independent review.
 
 | Decision | Proposed default | Alternative or constraint |
 | --- | --- | --- |
@@ -139,7 +138,7 @@ Primary touchpoints: `environment/core.py`, `factories.py`, `_protocols.py`,
 
 ### B3 — Explicit bin construction and editable graph export
 
-Design and review this public surface after B1/B2:
+Implemented after the B1/B2 contract review:
 
 - `Environment.from_bins(...)` uses one authoritative data representation and
   the existing publication/validation path. Review the public binning types and
@@ -208,3 +207,26 @@ stage does not add another environment wrapper or timeline system.
 Stage A's measured lookup overhead is a separate performance follow-up. Capture
 and preserve its current geometry behavior; do not mix a lookup redesign into
 metadata immutability.
+
+## Approved B3/B4 details
+
+- `Environment.from_bins(binning, *, name="", units=None, frame=None,
+  regions=None, arena=None)` accepts a `Binning` or an installed provider adapter.
+  Explicit construction is Cartesian; existing polar factories remain supported.
+- Supplied neighbor order and orientation are preserved. `env.edge_pairs` is
+  authoritative for edge arrays; NetworkX graph iteration order may differ.
+- Hex locators restore conceptual grid shape and the exact active mask, including
+  saved environments. This intentionally fixes the previous loss of hexagonal
+  spatial-autocorrelation support after loading.
+- Transforms preserve declared non-Euclidean path weights for rigid maps and
+  multiply them for uniform scaling. Shear and unequal scaling refuse when only
+  scalar path lengths are known. Native Euclidean computations retain their
+  existing arithmetic and rounding.
+- Installed entry-point objects in `neurospatial.snapshot_adapters.v1` provide
+  versioned adapters for locator, track, arena and whole-binning data. The first
+  contract normalizes to existing built-in snapshots; it does not add arbitrary
+  runtime lookup algorithms. Original custom payloads require the adapter;
+  canonical resaves do not.
+- `assert_environment_contract` checks independent caller-supplied lookup
+  answers, ownership, copy/pickle/storage and missing-face refusals without a
+  pytest dependency. Dedicated plugin tests cover missing/conflicting codecs.

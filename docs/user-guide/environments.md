@@ -61,8 +61,8 @@ env = Environment.from_grid_mask(
     active_mask,
     grid_edges=(x_edges, y_edges),
     name="Analysis mask",
+    units="cm",
 )
-env.units = "cm"
 
 assert env.n_bins == active_mask.sum()
 np.testing.assert_array_equal(env.bin_sizes, 8.0)
@@ -84,8 +84,7 @@ import numpy as np
 from neurospatial import Environment
 
 image_mask = np.array([[True, False, True], [False, True, False]])
-env = Environment.from_pixel_mask(image_mask, pixel_size=(2.0, 3.0))
-env.units = "cm"
+env = Environment.from_pixel_mask(image_mask, pixel_size=(2.0, 3.0), units="cm")
 
 assert env.n_bins == 3
 np.testing.assert_array_equal(env.bin_sizes, 6.0)
@@ -96,6 +95,74 @@ The mask itself supplies the domain; you do not need to trace an additional
 polygon. Its physical interpretation depends on how the mask was obtained.
 The default `MaskArena` records computational support without claiming a
 measured physical footprint.
+
+## Immutable values and labels
+
+Set `name`, `units` and `frame` at construction. These labels and the published
+geometry are read-only. Units describe the values already supplied; declaring
+`units="cm"` does not calibrate pixels or rescale coordinates.
+
+To rename an analysis or correct a declaration, keep the returned environment:
+
+```python
+updated = env.with_metadata(name="Reviewed mask", frame="arena")
+```
+
+Omitted labels are preserved; explicit `None` clears `units` or `frame`.
+Replacements share the immutable geometry and have separate analysis caches.
+Use a factory, `subset`, `clip` or a supported transform for geometry changes.
+Build named selections with `Regions` and publish them with `with_regions`;
+the [region guide](regions.md) shows that workflow.
+
+## Bring explicit bins
+
+Use `from_bins()` when another tool already defines the bin centers, measures,
+neighbor pairs and lookup rule. Supply the measures and navigation distances
+explicitly; nearest-center lookup does not establish cell boundaries or faces.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+
+centers = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]])
+bins = SpatialBins.from_arrays(
+    centers=centers,
+    sizes=np.array([1.0, 1.0, 1.0]),  # supplied areas, in cm squared
+    measure_dim=2,
+    pairs=np.array([[1, 2], [1, 0]]),
+    pair_distances=np.array([3.0, 4.0]),  # supplied navigation path lengths
+)
+env = Environment.from_bins(
+    Binning(
+        kind="sample_sites",
+        bins=bins,
+        locator=NearestBinLocator(centers, max_distance=0.25),
+        faces=MissingFaces("Only centers and navigation distances were measured."),
+    ),
+    units="cm",
+    frame="lab",
+)
+
+np.testing.assert_array_equal(env.bin_at([[0.0, 0.0], [10.0, 0.0]]), [0, -1])
+np.testing.assert_array_equal(env.edge_pairs, [[1, 2], [1, 0]])
+graph = env.to_networkx()
+graph.remove_node(0)  # editable export; the environment keeps its own graph
+assert env.n_bins == env.connectivity.number_of_nodes() == 3
+```
+
+The environment owns its published snapshot. `edge_pairs` determines the order
+and orientation of pair-aligned values, including flux when faces are available;
+NetworkX edge iteration can have a different order. `MissingFaces` permits lookup
+and graph navigation while numerical operations requiring cell faces raise.
+Supply `KnownFaces` and consistent geometry when those operations are required.
+
+For supplied path lengths whose paths are unknown, translations, rotations and
+reflections preserve the lengths; uniform scaling scales them by the same
+factor. Unequal axis scaling and shear raise because scalar path lengths do not
+determine how those paths stretch. See [snapshot adapters](interoperability.md#installed-snapshot-adapters)
+to convert an external provider into these built-in records.
 
 ## Add known geometry when available
 
@@ -179,7 +246,7 @@ child = parent.clip(MultiPolygon([box(0, 0, 0.2, 1), box(0.8, 0, 1, 1)]))
 np.testing.assert_allclose(child.bin_sizes, [0.2, 0.2])
 assert child.clip_mapping is not None
 np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, [0, 0])
-assert child.arena is parent.arena
+assert child.arena.polygonal_domain().equals(parent.arena.polygonal_domain())
 ```
 
 The mapping identifies each child's bin in the environment passed to the most

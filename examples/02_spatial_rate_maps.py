@@ -74,7 +74,7 @@ env = Environment.from_grid_mask(
     grid_edges=(edges, edges),
     name="Rate-map arena",
 )
-env.units, env.frame = "cm", "arena"
+env = env.with_metadata(units="cm", frame="arena")
 
 # %% jupyter={"source_hidden": true}
 positions, times = simulate_trajectory_ou(

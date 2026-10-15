@@ -72,7 +72,7 @@ apply_style(figsize=(11, 5))
 env = Environment.from_grid_mask(
     np.ones(50, dtype=bool), grid_edges=(np.linspace(0.0, 100.0, 51),)
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 trajectory_stream, spike_stream = np.random.SeedSequence(2026).spawn(2)
 trajectory_seed = int(trajectory_stream.generate_state(1)[0])
 spike_seed = int(spike_stream.generate_state(1)[0])

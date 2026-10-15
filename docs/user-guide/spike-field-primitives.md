@@ -339,7 +339,7 @@ spike_times = times[:-1][random.random(len(dt)) < 1 - np.exp(-rate_hz[:-1] * dt)
 
 # 3. Create environment
 env = Environment.from_samples(positions, bin_size=2.5)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # 4. Compute place field
 result = compute_spatial_rate(

@@ -27,7 +27,7 @@ env = Environment.from_grid_mask(
     active_mask=np.ones((10, 10), dtype=bool),
     grid_edges=(edges, edges),
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 times = np.arange(2400, dtype=float) / 20.0
 positions = 50.0 + 35.0 * np.column_stack(
     [np.sin(times / 4.0), np.cos(times / 7.0)]

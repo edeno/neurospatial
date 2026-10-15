@@ -54,7 +54,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.patches import Circle
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior import (
     detect_region_visits,
     path_progress,
@@ -129,16 +129,18 @@ env = Environment.from_graph(
     bin_size=2.0,
     name="J16 maze",
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
 arm_end_radius_cm = 8.0
 arm_end_names = []
+regions = Regions(env.regions.values())
 for node in endpoint_nodes:
     name = f"arm_end_{node}"
-    env.regions.buffer(
+    regions.buffer(
         np.asarray(graph.nodes[node]["pos"], dtype=float), arm_end_radius_cm, name
     )
     arm_end_names.append(name)
+env = env.with_regions(regions)
 
 fig, ax = plt.subplots(figsize=(7, 6))
 for first, second in graph.edges:

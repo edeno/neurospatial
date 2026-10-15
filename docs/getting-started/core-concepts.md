@@ -227,40 +227,61 @@ position_2d_reconstructed = env_1d.linear_to_nd(position_1d)
 - Decoding position in 1D space
 - Reducing dimensionality for analysis
 
+## Published values and coordinate labels
+
+An environment's geometry, name, units, frame and named regions are read-only.
+Set labels when constructing it:
+
+```python
+env = Environment.from_samples(data, bin_size=2.0, units="cm", frame="arena")
+```
+
+Units describe the coordinates supplied; setting `units="cm"` does not convert
+pixels into centimeters. Calibrate coordinates before construction. To correct
+a declaration or rename an analysis, keep the returned environment:
+
+```python
+renamed = env.with_metadata(name="session_1_checked")
+```
+
+This shares the published geometry and gives the new environment its own
+analysis caches. It does not change `env` or rescale coordinates. Use factories,
+`subset`, `clip` or a supported transform to create different geometry.
+
 ## Regions of Interest (ROIs)
 
 **Regions** are named spatial areas within an environment:
 
 - Immutable `Region` objects (point or polygon)
-- Managed by `Regions` container (dict-like)
+- Built with a mutable `Regions` collection and snapshotted by the environment
 - JSON serialization support
 
 ```python
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
+from neurospatial import Regions
 
-# Add point region
-env.regions.add("StartLocation", point=(0.0, 0.0))
-
-# Add polygon region (buffered point = circle)
-reward_zone = Point(10.0, 10.0).buffer(5.0)
-env.regions.add("RewardZone", polygon=reward_zone)
-
-# Add polygon region (custom shape)
-corners = [(0, 0), (10, 0), (10, 10), (0, 10)]
-custom_zone = Polygon(corners)
-env.regions.add("CustomZone", polygon=custom_zone)
+regions = Regions(env.regions.values())
+regions.add("StartLocation", point=(0.0, 0.0))
+regions.add("RewardZone", polygon=Point(10.0, 10.0).buffer(5.0))
+env = env.with_regions(regions)
 
 # Access regions
-print(env.regions.list_names())  # ['StartLocation', 'RewardZone', 'CustomZone']
-print(env.regions["RewardZone"].type)  # 'polygon'
+print(env.regions.list_names())  # ['StartLocation', 'RewardZone']
+print(env.regions["RewardZone"].kind)  # 'polygon'
 
 # Region operations
 area = env.regions.area("RewardZone")
 center = env.regions.region_center("RewardZone")
 
-# Regions are immutable - use update to modify
-env.regions.update_region("StartLocation", point=(5.0, 5.0))
+# Edit the builder and publish a replacement; env keeps its original snapshot.
+regions.update_region("StartLocation", point=(5.0, 5.0))
+updated = env.with_regions(regions)
 ```
+
+`with_regions` replaces the complete collection. Start with
+`Regions(env.regions.values())` to retain existing names, or `Regions()` for a
+new collection. Regions are analysis selections and do not define physical
+walls. See the [region guide](../user-guide/regions.md) for editing and buffering.
 
 ## The Fitted State Pattern
 

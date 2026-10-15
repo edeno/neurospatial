@@ -153,10 +153,12 @@ transform = estimate_transform(src_points_3d, dst_points_3d, kind="rigid")
 ❌ **Polygon regions**
 ```python
 # Polygon regions are 2D only
-polygon_coords = np.array([[0, 0], [10, 0], [10, 10], [0, 10]])
-env_3d.regions.add("goal", polygon=polygon_coords)  # Will raise error
+from shapely.geometry import Polygon
+from neurospatial import Regions
 
-bins = env_3d.bins_in_region("goal")  # ValueError: Polygon regions only supported for 2D
+regions = Regions()
+regions.add("goal", polygon=Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]))
+env_3d = env_3d.with_regions(regions)  # ValueError: region dimension differs
 ```
 
 ❌ **Image mask layouts** - Binary images are inherently 2D
@@ -240,12 +242,17 @@ else:
     bin_idx = env.bin_at(nd_position)
 
 # Check before using 2D-only features
+from shapely.geometry import Polygon
+from neurospatial import Regions
+
+regions = Regions(env.regions.values())
 if env.n_dims == 2:
     # Safe to use polygon regions, 2D transforms, etc.
-    env.regions.add("goal", polygon=polygon_coords)
+    regions.add("goal", polygon=Polygon(polygon_coords))
 else:
     # Use point regions instead
-    env.regions.add("goal", point=[10, 20, 30])
+    regions.add("goal", point=[10, 20, 30])
+env = env.with_regions(regions)
 ```
 
 ---

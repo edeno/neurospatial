@@ -27,6 +27,8 @@ Reward shaping provides additional guidance signals to help RL agents learn fast
 Generate reward fields from named regions in your environment:
 
 ```python
+from neurospatial import Regions
+
 import numpy as np
 from neurospatial import Environment
 from neurospatial import region_reward_field
@@ -34,10 +36,12 @@ from neurospatial import region_reward_field
 # Create environment
 positions = np.random.randn(1000, 2) * 50
 env = Environment.from_samples(positions, bin_size=5.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # Define goal region (circular, 10 cm radius around origin)
-env.regions.add("goal", point=np.array([0.0, 0.0]))
+region_builder = Regions(env.regions.values())
+region_builder.add("goal", point=np.array([0.0, 0.0]))
+env = env.with_regions(region_builder)
 
 # Binary reward (sparse RL)
 reward_sparse = region_reward_field(env, "goal", decay="constant")
@@ -148,6 +152,8 @@ reward = (smoothed / max_in_region) * reward_value
 ### Complete Example: Region Rewards
 
 ```python
+from neurospatial import Regions
+
 import numpy as np
 import matplotlib.pyplot as plt
 from neurospatial import Environment
@@ -156,10 +162,12 @@ from neurospatial import region_reward_field
 # Create simple 2D environment
 positions = np.random.randn(2000, 2) * 50
 env = Environment.from_samples(positions, bin_size=5.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # Define circular goal region at origin
-env.regions.add("goal", point=np.array([0.0, 0.0]))
+region_builder = Regions(env.regions.values())
+region_builder.add("goal", point=np.array([0.0, 0.0]))
+env = env.with_regions(region_builder)
 
 # Compare decay types
 reward_sparse = region_reward_field(env, "goal", reward_value=10.0, decay="constant")
@@ -331,7 +339,7 @@ from neurospatial import Environment, goal_reward_field
 # Create environment
 positions = np.random.randn(2000, 2) * 50
 env = Environment.from_samples(positions, bin_size=5.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # Select goal at origin
 goal_bin = env.bin_at(np.array([[0.0, 0.0]]))[0]

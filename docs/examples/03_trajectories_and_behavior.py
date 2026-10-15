@@ -48,6 +48,7 @@ from neurospatial.behavior import (
     path_progress,
     segment_by_velocity,
 )
+from neurospatial.regions import Regions
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
@@ -79,8 +80,10 @@ track = Environment.linear_track(
     frame="track",
     name="Bent shuttle track",
 )
-track.regions.add("left", polygon=Point(2.0, 0.0).buffer(8.0))
-track.regions.add("right", polygon=Point(60.0, 38.0).buffer(8.0))
+regions = Regions(track.regions.values())
+regions.add("left", polygon=Point(2.0, 0.0).buffer(8.0))
+regions.add("right", polygon=Point(60.0, 38.0).buffer(8.0))
+track = track.with_regions(regions)
 
 # %% jupyter={"source_hidden": true}
 # Generate repeated traversals with variation in running duration and pause length.
