@@ -462,6 +462,31 @@ class TestGazeModels:
         assert len(rate) == 1
         assert rate[0] >= 0
 
+    def test_ray_cast_from_wall_views_the_opposite_wall(self):
+        """An animal tracked on the wall views the wall it faces, not itself."""
+        from shapely.geometry import box
+
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
+        model = SpatialViewCellModel(
+            env=env,
+            preferred_view_location=np.array([9.75, 4.5]),
+            view_field_width=1.0,
+            gaze_model="ray_cast",
+            require_visibility=True,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+        rates = model.firing_rate(
+            np.array([[0.0, 4.5], [0.0, 4.5]]), headings=np.array([0.0, np.pi])
+        )
+        # Facing east views (10, 4.5), 0.25 from the preferred location; facing
+        # west views the animal's own wall contact, 9.75 away.
+        assert_allclose(rates, [20.0 * np.exp(-0.5 * 0.25**2), 0.0], atol=1e-9)
+
 
 class TestVisibilityRequirement:
     """Test require_visibility flag behavior."""
