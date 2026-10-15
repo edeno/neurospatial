@@ -328,6 +328,11 @@ composite_3d = Environment.combine({str(i): env for i, env in enumerate(envs_3d)
 
 ### E1004: Environment not fitted
 
+This is a legacy initialization guard for partially constructed internal
+objects. Normal factory calls return complete environments; they do not require
+a separate fit step. Calling `Environment()` directly raises
+[E1006](#e1006-environment-constructed-directly) immediately, before any query.
+
 **Error Message Example:**
 ```
 EnvironmentNotFittedError: [E1004] Environment.bin_at() requires the environment to be fully initialized.
@@ -494,7 +499,7 @@ This restriction is intentional and cannot be disabled. If you have a legitimate
 
 **See Also:**
 - [I/O Module Documentation](api/neurospatial/io/index.md#neurospatial.io)
-- [Environment serialization API](api/neurospatial/environment/serialization.md#neurospatial.environment.serialization.EnvironmentSerialization)
+- [Environment serialization API](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.to_file)
 
 ---
 

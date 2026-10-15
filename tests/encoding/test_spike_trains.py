@@ -1,16 +1,15 @@
 """Tests for the ``SpikeTrains`` ragged-spike-train container.
 
-``SpikeTrains`` is the one justified new container in Phase 3: ragged per-unit
-spike times genuinely do not fit a rectangular array. It must duck-type as a
-spike group so it flows through the Phase 3.1 spike-input adapter
+Per-unit spike trains have different lengths and do not fit a rectangular
+array. ``SpikeTrains`` must duck-type as a spike group for the spike-input adapter
 (:func:`as_spike_trains_with_ids`) via the **iterate-yields-trains** branch:
 
 - it is NOT a ``collections.abc.Mapping`` (so the adapter iterates it),
 - it exposes a non-callable ``.index`` property (the unit ids), and
 - ``__iter__`` yields the per-unit train arrays (not the ids).
 
-Getting this wrong re-introduces the garbage-trains footgun that 3.1 fixed for a
-real pynapple ``TsGroup`` (a ``UserDict`` whose iteration yields KEYS). The
+Getting this wrong can interpret unit identifiers as spike trains in a
+pynapple ``TsGroup`` (a ``UserDict`` whose iteration yields keys). The
 duck-typing tests below are the footgun guard.
 """
 

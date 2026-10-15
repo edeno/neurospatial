@@ -95,14 +95,13 @@ uv run mypy src/neurospatial
 
 ### Diffusion geometry providers
 
-Smoothing, diffusion, smoothness bases, gradients and divergence all use one
-layout capability, defined in `neurospatial.layout._diffusion`:
+Smoothing, diffusion, smoothness bases, gradients and divergence use the owned
+face source in `Binning.faces`:
 
-- `FiniteVolumeGeometryProvider.finite_volume_geometry()` returns a copy of the
-  layout's connectivity graph with face measures (`A`) and edge distances
-  (`distance`) on every edge, plus cell measures in active-bin order. Gradient
-  and divergence index edge fields by `env.connectivity`, so the environment
-  rejects a graph whose edge order or orientation differs from it. Each
+- Native construction captures the data needed to compute faces lazily;
+  explicit and restored geometry use validated face records. Gradient and
+  divergence index edge fields by `env.edge_pairs`, so publication rejects
+  faces whose order, distances or orientation disagree with the bins. Each
   undirected edge defines the scalar, symmetric two-point conductance
   `A / distance` used by the current numerical scheme.
 - `FaceGeometry.from_graph` validates those faces into read-only per-edge arrays
@@ -111,9 +110,11 @@ layout capability, defined in `neurospatial.layout._diffusion`:
   so zero-area (corner-touching) edges and isolated bins form separate
   components.
 
-The layout-to-binning factory checks these protocols once when publishing
-`env._binning`. Environment operations read the resulting components. A layout that cannot
-supply geometry is represented by a `MissingFaces` reason. Saved binnings use
+The construction adapter captures supported native face inputs once when
+publishing `env._binning`; it does not check the legacy
+`FiniteVolumeGeometryProvider` protocol. Environment operations read the
+resulting components. Geometry without supported faces has a `MissingFaces`
+reason. Saved binnings use
 `KnownFaces` for validated geometry and retain that reason when geometry is absent.
 
 `Binning.face_normals` optionally supplies an owned `FaceNormals` record.
@@ -298,10 +299,10 @@ using environment classes or descriptive layout labels.
 Layout-specific operations read components from `env._binning`: faces for
 smoothing, a rectilinear grid for grid interpolation and native N-D time
 allocation, exact planar cells for polygon time allocation, and linearization
-for track coordinate conversions. Only the layout-to-binning
-factory checks `FiniteVolumeGeometryProvider`, `RectilinearGridProvider` and
-`TrackLinearizationProvider` on layouts. A layout supplies a capability when it
-defines the corresponding method. Do not dispatch new behavior by comparing
+for track coordinate conversions. The construction adapter reads a
+`RectilinearGridProvider` snapshot when available and obtains track data through
+`track_linearization()`. Custom builders supply supported owned binning
+snapshots. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
 alternative. Integer-factor `rebin` retains its existing RegularGrid-family
 restriction, truncation warnings and complete-face wall constraints.

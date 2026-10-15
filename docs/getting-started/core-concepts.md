@@ -283,24 +283,30 @@ updated = env.with_regions(regions)
 new collection. Regions are analysis selections and do not define physical
 walls. See the [region guide](../user-guide/regions.md) for editing and buffering.
 
-## The Fitted State Pattern
+## Construct a complete environment
 
-`Environment` uses a **fitted state pattern** to ensure proper initialization:
+Factory methods return environments with validated geometry and connectivity,
+ready for spatial queries. There is no public fit step or empty environment to
+initialize later.
 
+<!-- docs-test: run -->
 ```python
-# Factory methods automatically fit the environment
-env = Environment.from_samples(data, bin_size=2.0)
-print(env._is_fitted)  # True
+import numpy as np
+from neurospatial import Environment
 
-# Can now call spatial query methods
-bin_idx = env.bin_at(point)  # Works
-
-# Don't use bare constructor (not fitted)
-# env_bad = Environment()  # Not fitted
-# env_bad.bin_at(point)  # RuntimeError!
+positions = np.array([[0., 0.], [0., 10.], [10., 0.], [10., 10.]])
+env = Environment.from_samples(positions, bin_size=2.0)
+bin_idx = env.bin_at(positions[:1])
 ```
 
-Methods requiring a fitted environment use the `@check_fitted` decorator to prevent errors.
+Calling the bare constructor raises E1006 immediately:
+
+<!-- docs-test: raises ValueError -->
+```python
+from neurospatial import Environment
+
+Environment()
+```
 
 ## Factory Methods vs Constructor
 
