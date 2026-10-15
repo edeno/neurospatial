@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Observers tracked exactly on a wall no longer view their own position. A ray
+  or cue sight line that leaves the wall into the room reaches the next wall;
+  only facing out through the wall or exactly along it gives a zero-distance
+  contact. Standing on an internal wall views the side faced. Gaze hits,
+  viewsheds, visible cues, view-rate bins and simulated view cells agree.
+
 - Check physical view-map ownership only for samples with selected exposure.
   Missing wall bins raise actionable guidance; excluded/final samples and raw
   geometric hits retain their meanings. Slanted wall cues tolerate local cue

@@ -576,6 +576,7 @@ def compute_viewed_location(
     else:
         assert env is not None
         from neurospatial.ops._boundaries import (
+            analysis_interior,
             boundary_geometry,
             physical_ray_hits,
             ray_hits,
@@ -588,7 +589,9 @@ def compute_viewed_location(
         viewed = (
             physical_ray_hits(env.arena, origins, gaze_direction, max_distance)
             if boundary_source == "physical"
-            else ray_hits(walls, origins, gaze_direction, max_distance)
+            else ray_hits(
+                walls, origins, gaze_direction, max_distance, analysis_interior(env)
+            )
         )
 
     return viewed
@@ -715,6 +718,7 @@ def _batch_line_of_sight_clear(
         True if line of sight is clear for each target.
     """
     from neurospatial.ops._boundaries import (
+        analysis_interior,
         boundary_geometry,
         clear_segments,
         physical_clear_segments,
@@ -733,7 +737,7 @@ def _batch_line_of_sight_clear(
     return (
         physical_clear_segments(env.arena, observer, targets)
         if boundary_source == "physical"
-        else clear_segments(walls, observer, targets)
+        else clear_segments(walls, observer, targets, analysis_interior(env))
     )
 
 
@@ -824,6 +828,7 @@ def compute_viewshed(
     ray_angles_allo = ray_angles_ego + heading
 
     from neurospatial.ops._boundaries import (
+        analysis_interior,
         boundary_geometry,
         physical_ray_hits,
         ray_hits,
@@ -861,7 +866,9 @@ def compute_viewshed(
     hits = (
         physical_ray_hits(env.arena, origins, ray_angles_allo, max_distance)
         if boundary_source == "physical"
-        else ray_hits(walls, origins, ray_angles_allo, max_distance)
+        else ray_hits(
+            walls, origins, ray_angles_allo, max_distance, analysis_interior(env)
+        )
     )
     hit_distance = np.hypot.reduce(hits - position, axis=1)
     ray_lengths = np.where(np.isfinite(hit_distance), hit_distance, max_distance)

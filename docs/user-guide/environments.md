@@ -487,8 +487,11 @@ np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
 
 `compute_viewed_location()` returns the first wall contact. No hit within
 `max_distance`, a nonfinite observation, or an observer outside an asserted
-footprint yields NaN. Starting on a wall gives a zero-distance contact. A cue at
-the first contact is visible; a cue behind it is occluded. Stored affine frames
+footprint yields NaN. An observer tracked exactly on a wall sees the next wall
+when it faces into the room; facing out through the wall, or exactly along it,
+gives a zero-distance contact at the observer. On an internal wall, the
+observer sees the side it faces. A cue at the first contact is visible; a cue
+behind it is occluded. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 
