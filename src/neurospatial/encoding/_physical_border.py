@@ -57,7 +57,7 @@ def _prepare_physical_border(
         raise NotImplementedError(
             "Physical border coverage needs exact planar cells; supply supported grid or polygon cells, or choose boundary_source='analysis'."
         ) from exc
-    from neurospatial.environment._arena import _wall_source_frame
+    from neurospatial.geometry._wall_frame import _wall_source_frame
     from neurospatial.ops._boundaries import physical_walls
 
     frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)

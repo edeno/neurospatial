@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -11,6 +12,7 @@ from shapely.ops import unary_union
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena, _TransformedArena
+    from neurospatial.geometry._binning import Binning, Locator
     from neurospatial.ops._protocols import BoundaryConsumer, ObserverConsumer
 
 BoundarySource = Literal["physical", "analysis"]
@@ -32,21 +34,230 @@ def boundary_geometry(
             "Wall geometry requires planar Cartesian coordinates."
         )
     if source == "analysis":
-        from neurospatial.geometry._polygon import materialize_cells
-
-        try:
-            domain = unary_union(materialize_cells(env._binning))
-            restriction = (
-                env.arena.polygonal_domain() if env.arena.domain_known else None
-            )
-            if restriction is not None:
-                domain = domain.intersection(restriction)
-            return unary_union([domain.boundary, *env.arena.walls])
-        except ValueError as exc:
-            raise NotImplementedError(
-                "Analysis-boundary geometry needs exact planar cells; supply supported grid or polygon cells."
-            ) from exc
+        return _analysis_boundary(env._binning, env.arena)
     return physical_walls(env.arena)
+
+
+def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
+    """Return retained cell edges restricted by the supplied planar domain."""
+    from neurospatial.geometry._polygon import materialize_cells
+
+    try:
+        domain = unary_union(materialize_cells(binning))
+        restriction = arena.polygonal_domain() if arena.domain_known else None
+        if restriction is not None:
+            domain = domain.intersection(restriction)
+        return unary_union([domain.boundary, *arena.walls])
+    except ValueError as exc:
+        raise NotImplementedError(
+            "Analysis-boundary geometry needs exact planar cells; supply supported grid or polygon cells."
+        ) from exc
+
+
+def _resolve_wall_contacts(
+    locator: Locator,
+    arena: Arena,
+    cells: Sequence[shapely.Geometry],
+    walls: shapely.Geometry,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    bins: NDArray[np.intp],
+) -> NDArray[np.intp]:
+    """Resolve rounded boundary hits using cells that actually touch the wall.
+
+    A single representable step can remain outside a slanted polygon. For a
+    failed hit, intersect its approach segment with a retained wall-touching
+    cell, and query an interior point of the terminal segment. Contact must be
+    within the cell's bounded coordinate uncertainty; a missing strip between
+    a cell and the wall is never bridged by an inward search.
+    """
+    import shapely
+
+    from neurospatial.geometry._arena import _feature_cap
+    from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
+    from neurospatial.geometry._polygon import ClippedLocator
+    from neurospatial.geometry._validation import _polygon_coordinate_errors
+
+    def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
+        parent = locator
+        while True:
+            if isinstance(parent, RectilinearLocator):
+                # Optimized grid subsets retain inactive cells in their grid
+                # mask, rather than a SubsetLocator wrapper. Preserve that
+                # full-grid owner even when its active-bin index is -1.
+                return all(
+                    np.searchsorted(edge, target[0, axis], side="right")
+                    == np.searchsorted(edge, query[0, axis], side="right")
+                    for axis, edge in enumerate(parent.edges)
+                )
+            original = parent.locate(target)[0]
+            if original >= 0 and parent.locate(query)[0] != original:
+                return False
+            if not isinstance(parent, (SubsetLocator, ClippedLocator)):
+                return True
+            parent = parent.base
+
+    missing = np.flatnonzero((bins < 0) & np.all(np.isfinite(hits), axis=1))
+    if not len(missing):
+        return bins
+    polygons = np.asarray(cells, dtype=object)
+    # Union first: adjacent clipped cells can carry independently rounded
+    # fragments of the same wall. Their shared edges cancel in the union.
+    contact = shapely.union_all(polygons).intersection(walls)
+    if contact.is_empty:
+        return bins
+    budgets = np.array(
+        [
+            np.hypot.reduce(
+                np.minimum(_polygon_coordinate_errors(cell), _feature_cap(arena))
+            )
+            for cell in cells
+        ]
+    )
+    for row in missing:
+        point = shapely.Point(hits[row])
+        distances = shapely.distance(polygons, point)
+        candidates = np.flatnonzero(
+            (distances <= budgets) & (contact.distance(point) <= budgets)
+        )
+        end = shapely.get_point(shapely.shortest_line(point, contact), -1)
+        segment = shapely.LineString([origins[row], [end.x, end.y]])
+        for index in candidates:
+            pieces = shapely.get_parts(segment.intersection(cells[index]))
+            for piece in pieces:
+                if piece.geom_type != "LineString" or piece.length == 0:
+                    continue
+                # Only the terminal approach interval establishes ownership.
+                if piece.distance(end) > budgets[index]:
+                    continue
+                middle = piece.interpolate(0.5, normalized=True)
+                query = np.array([[middle.x, middle.y]])
+                if arena.domain_known and not arena.contains(query)[0]:
+                    continue
+                original = np.nextafter(hits[row : row + 1], origins[row : row + 1])
+                if locator.locate(query)[0] == index and same_parent(original, query):
+                    bins[row] = index
+                    break
+            if bins[row] >= 0:
+                break
+
+    return bins
+
+
+def _wall_hit_bins(
+    binning: Binning,
+    arena: Arena,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    bins: NDArray[np.intp],
+    source: BoundarySource,
+) -> NDArray[np.intp]:
+    """Assign wall hits to observer-side bins using owned geometry.
+
+    ``hits`` and ``origins`` have shape ``(n_hits, 2)``. ``bins`` contains
+    the caller's initial lookup of the observer-side limit, shape ``(n_hits,)``.
+    Shared affine frames are resolved in their stored cell-owner coordinates.
+    """
+    import shapely
+    from shapely.ops import unary_union
+
+    from neurospatial.geometry._arena import _feature_cap, _TransformedArena
+    from neurospatial.geometry._composition import CombinedLocator
+    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+    from neurospatial.geometry._polygon import (
+        ClippedLocator,
+        PolygonCells,
+        materialize_cells,
+    )
+    from neurospatial.geometry._wall_frame import _wall_source_frame
+
+    def source_locator(
+        locator: Locator, arena: Arena, centers: NDArray[np.float64]
+    ) -> Locator:
+        if isinstance(locator, TransformedLocator):
+            if isinstance(arena, _TransformedArena) and np.array_equal(
+                locator.inverse, arena.inverse
+            ):
+                original, _error = arena._project(centers)
+                return source_locator(locator.base, arena.base, original)
+            if source == "physical":
+                raise NotImplementedError(
+                    "Physical wall-bin assignment needs a shared source frame; retain the arena's transform with the bins, or explicitly choose boundary_source='analysis'."
+                )
+        if isinstance(locator, SubsetLocator):
+            return SubsetLocator(
+                source_locator(locator.base, arena, centers), locator.parent_to_child
+            )
+        if isinstance(locator, ClippedLocator):
+            local = _wall_source_frame(locator, arena, centers)
+            if local is not None:
+                return ClippedLocator(
+                    source_locator(locator.base, arena, centers),
+                    PolygonCells(local[0]),
+                    locator.mapping,
+                )
+        if isinstance(locator, CombinedLocator) and source == "physical":
+            # A child with its own affine frame has no one shared owner frame.
+            pending = [child.locator for child in locator.children]
+            while pending:
+                child = pending.pop()
+                if isinstance(child, TransformedLocator):
+                    raise NotImplementedError(
+                        "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
+                    )
+                if isinstance(child, (SubsetLocator, ClippedLocator)):
+                    pending.append(child.base)
+                elif isinstance(child, CombinedLocator):
+                    pending.extend(part.locator for part in child.children)
+        return locator
+
+    locator = source_locator(binning.locator, arena, binning.bins.centers)
+    frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
+    if frame is None:
+        if source == "physical":
+            walls = physical_walls(arena)
+        else:
+            walls = _analysis_boundary(binning, arena)
+        return _resolve_wall_contacts(
+            locator,
+            arena,
+            materialize_cells(binning),
+            walls,
+            hits,
+            origins,
+            bins,
+        )
+    cells, _walls, _centers, _inverse, frames = frame
+    query = np.vstack((hits, origins))
+    error = None
+    for arena in frames:
+        query, error = arena._project(query, error)
+    base = frames[-1].base
+    if source == "physical":
+        walls = physical_walls(base)
+    else:
+        domain = unary_union(cells)
+        restriction = base.polygonal_domain() if base.domain_known else None
+        if restriction is not None:
+            domain = domain.intersection(restriction)
+        walls = unary_union([domain.boundary, *base.walls])
+    assert error is not None
+    points = shapely.points(query[: len(hits)])
+    allowance = np.hypot.reduce(
+        np.minimum(error[: len(hits)], _feature_cap(base)), axis=1
+    )
+    close = shapely.distance(points, walls) <= allowance
+    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
+    query[np.flatnonzero(close)] = np.column_stack(
+        (shapely.get_x(nearest), shapely.get_y(nearest))
+    )
+    inside = np.nextafter(query[: len(hits)], query[len(hits) :])
+    bins = locator.locate(inside)
+    if base.domain_known:
+        bins[~base.contains(inside)] = -1
+    return _resolve_wall_contacts(
+        locator, base, cells, walls, query[: len(hits)], query[len(hits) :], bins
+    )
 
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
