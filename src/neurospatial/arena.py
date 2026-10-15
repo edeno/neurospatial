@@ -998,20 +998,28 @@ def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry
 
 
 def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
-    """Bound recursive domain records before entering the recursive decoder."""
-    stack: list[tuple[object, int]] = [(meta, 0)]
+    """Bound composite nesting without limiting valid affine histories."""
+    stack: list[tuple[object, int, bool]] = [(meta, 0, False)]
+    active: set[int] = set()
     while stack:
-        value, depth = stack.pop()
+        value, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(value))
+            continue
         if depth > 32:
             raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
         if not isinstance(value, Mapping):
             continue
+        if id(value) in active:
+            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
+        active.add(id(value))
+        stack.append((value, depth, True))
         if value.get("codec") == "_CombinedArena":
             children = value.get("children", ())
             if isinstance(children, (list, tuple)):
-                stack.extend((child, depth + 1) for child in children)
+                stack.extend((child, depth + 1, False) for child in children)
         elif value.get("codec") == "_TransformedArena":
-            stack.append((value.get("base", {}), depth + 1))
+            stack.append((value.get("base", {}), depth, False))
 
 
 def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) -> Arena:
