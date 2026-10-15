@@ -24,7 +24,7 @@ Performance Notes:
 import networkx as nx
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 from numpy.typing import NDArray
@@ -136,7 +136,11 @@ class TestEnvironmentProperties:
         angle1=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi),
         angle2=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi),
     )
-    @settings(deadline=1000)  # Use profile's max_examples
+    # Shared CI workers can pause while drawing two scalar angles. This tests
+    # rotation composition; keep its execution deadline without timing draws.
+    @settings(
+        deadline=1000, suppress_health_check=[HealthCheck.too_slow]
+    )  # Use profile's max_examples
     def test_rotation_composition_property(self, angle1: float, angle2: float):
         """
         Property: Composing two rotations should equal a single rotation by the sum.
