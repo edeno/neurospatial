@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve intended radial/angular bin counts when a polar step divides its
+  range but floating-point division rounds above an integer. Polar circularity
+  now defaults to automatic: full circles wrap, partial angle ranges remain
+  open, and explicitly wrapping a partial range is rejected.
+
 ### Added
 
 - Plot actual positions directly on decoded posteriors with
