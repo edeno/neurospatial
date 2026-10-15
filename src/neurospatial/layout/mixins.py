@@ -9,6 +9,7 @@ from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._locators import NearestBinLocator, RectilinearLocator
 from neurospatial.layout._plotting import plot_grid
+from neurospatial.layout._rebin_spec import GridBinningSpec
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +116,7 @@ class _GridMixin:
     _layout_type_tag: str = "_Grid_Layout"
     _active_mask_inverse_map: NDArray[np.intp] | None = None
     _locator: RectilinearLocator | None = None
+    _grid_spec: GridBinningSpec | None = None
 
     @property
     def active_mask_inverse_map(self) -> NDArray[np.intp] | None:
@@ -138,8 +140,13 @@ class _GridMixin:
 
         return self._active_mask_inverse_map
 
-    def _build_locator(self) -> None:
-        """Snapshot rectangular cells after their active bins are finalized."""
+    def _build_locator(self, *, connect_diagonal: bool | None = None) -> None:
+        """Snapshot cells and explicit native construction choices together.
+
+        ``connect_diagonal`` is supplied by builders, independently of whether
+        the current mask happens to contain any diagonal pair. Legacy locator
+        restoration omits it and does not infer a historical preference.
+        """
         if self.grid_edges is None or self.grid_shape is None:
             raise LayoutNotBuiltError(
                 type(self).__name__,
@@ -156,6 +163,13 @@ class _GridMixin:
             self.active_mask,
             self.active_mask_inverse_map,
         )
+
+        if connect_diagonal is not None:
+            self._grid_spec = GridBinningSpec(
+                np.array([edge[0] for edge in self.grid_edges]),
+                np.eye(len(self.grid_edges) + 1),
+                bool(connect_diagonal),
+            )
 
     def locator(self) -> RectilinearLocator:
         """Return the owned locator, rebuilding it for older saved layouts."""

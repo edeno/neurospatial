@@ -190,4 +190,4 @@ class MaskedGridLayout(_GridMixin):
         validate_connectivity_graph(
             self.connectivity, n_dims=len(self.dimension_ranges)
         )
-        self._build_locator()
+        self._build_locator(connect_diagonal=connect_diagonal_neighbors)

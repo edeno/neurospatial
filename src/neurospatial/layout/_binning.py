@@ -582,11 +582,15 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
             atol=0,
         )
     ):
-        spec = GridBinningSpec(
-            np.array([edge[0] for edge in grid.edges]),
-            np.eye(bins.n_dims + 1),
-            any(np.count_nonzero(centers[u] != centers[v]) > 1 for u, v in pairs),
-        )
+        spec = getattr(layout, "_grid_spec", None)
+        if spec is None:
+            # Manually constructed legacy layouts only establish their current
+            # edge pattern; native builders supply the actual choice above.
+            spec = GridBinningSpec(
+                np.array([edge[0] for edge in grid.edges]),
+                np.eye(bins.n_dims + 1),
+                any(np.count_nonzero(centers[u] != centers[v]) > 1 for u, v in pairs),
+            )
     return Binning(
         kind=getattr(layout, "_layout_type_tag", type(layout).__name__),
         bins=bins,

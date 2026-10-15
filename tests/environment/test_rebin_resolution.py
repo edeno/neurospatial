@@ -187,3 +187,34 @@ def test_grid_spec_is_available_after_nwb_reader_closes(tmp_path):
         restored.rebin(bin_size=2).bin_centers,
         [[x, y] for x in [1, 3, 5] for y in [1, 3, 5]],
     )
+
+
+@pytest.mark.parametrize("diagonal", [False, True])
+@pytest.mark.parametrize("family", ["mask", "regular"])
+def test_thin_grid_preserves_construction_choice_before_diagonals_exist(
+    diagonal, family
+):
+    if family == "mask":
+        env = Environment.from_grid_mask(
+            np.ones((1, 2), dtype=bool),
+            grid_edges=(np.arange(2.0), np.arange(3.0)),
+            connect_diagonal_neighbors=diagonal,
+        )
+    else:
+        env = Environment.from_layout(
+            "RegularGrid",
+            {
+                "bin_size": 1.0,
+                "dimension_ranges": [(0, 1), (0, 2)],
+                "connect_diagonal_neighbors": diagonal,
+            },
+        )
+    assert env._binning.grid_spec.connect_diagonal is diagonal
+    # Make the regular-family result exercise legacy identity coarsening too.
+    for variant in (env, env.rebin(bin_size=1).rebin(1)):
+        refined = variant.rebin(bin_size=0.5)
+        actual = any(
+            np.count_nonzero(refined.bin_centers[u] != refined.bin_centers[v]) > 1
+            for u, v in refined.edge_pairs
+        )
+        assert actual is diagonal
