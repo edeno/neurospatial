@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Compare point regions by coordinate values, avoiding ambiguous NumPy truth
+  values on Python 3.10–3.12 and when comparing independent region copies.
+
 ### Added
 
 - Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
