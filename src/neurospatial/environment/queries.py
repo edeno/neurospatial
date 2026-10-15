@@ -1,14 +1,4 @@
-"""Spatial query methods for Environment class.
-
-This module provides the EnvironmentQueries mixin class containing methods
-for querying spatial properties of an environment:
-
-- bin_center_of: Get center coordinates of bins by index
-- neighbors: Find neighboring bins for a given bin
-- bin_sizes: Get area/volume of each active bin (cached property)
-- distance_to: Calculate distances from bins to targets
-- path_between: Find shortest path between two bins
-"""
+"""Private graph and spatial query implementations for Environment entry points."""
 
 from __future__ import annotations
 

@@ -188,7 +188,7 @@ def spatial_autocorrelation(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Spatial environment with a regular 2D grid layout.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -298,7 +298,7 @@ def spatial_autocorrelation_radial(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -368,7 +368,7 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment to check.
 
     Returns
@@ -408,7 +408,7 @@ def _spatial_autocorrelation_fft(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment (must be regular 2D grid).
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map.
@@ -507,7 +507,7 @@ def _spatial_autocorrelation_graph(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map.

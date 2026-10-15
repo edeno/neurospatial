@@ -505,7 +505,7 @@ def test_public_track_adapter_drops_delegated_conversions(_registry):
     assert reference() is None
 
 
-@pytest.mark.parametrize("ingress", ["constructor", "from_bins", "mask_factory"])
+@pytest.mark.parametrize("ingress", ["layout_factory", "from_bins", "mask_factory"])
 def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     _registry, ingress
 ):
@@ -526,10 +526,9 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     native = Environment.from_grid_mask(
         np.ones(shape, dtype=bool), (np.arange(shape[0] + 1.0), np.arange(3.0))
     )
-    if ingress == "constructor":
-        layout = native
-        env = publish_environment(
-            "adapted", layout, layout._layout_type_tag, arena=provider
+    if ingress == "layout_factory":
+        env = Environment.from_layout(
+            "MaskedGrid", native.layout_parameters, name="adapted", arena=provider
         )
     elif ingress == "from_bins":
         env = Environment.from_bins(_explicit_binning(native), arena=provider)

@@ -1,20 +1,4 @@
-"""Visualization methods for Environment.
-
-This module contains the EnvironmentVisualization mixin class that provides
-plotting capabilities for Environment instances.
-
-Classes
--------
-EnvironmentVisualization
-    Mixin class providing plot() and plot_1d() methods.
-
-Notes
------
-This module uses TYPE_CHECKING guards to avoid circular imports with the
-Environment class. Type hints use string annotations ("Environment") for
-forward references.
-
-"""
+"""Rendering adapters for owned environment components and published regions."""
 
 from __future__ import annotations
 

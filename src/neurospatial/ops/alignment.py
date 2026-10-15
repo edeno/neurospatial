@@ -58,7 +58,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
-from neurospatial.environment.decorators import EnvironmentNotFittedError
+from neurospatial._exceptions import EnvironmentNotFittedError
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree

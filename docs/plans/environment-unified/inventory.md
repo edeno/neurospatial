@@ -75,3 +75,19 @@ observations and must be refreshed at implementation/publication gates.
 - Repository Ruff passes; all 787 Python files are formatted; whitespace checks
   pass. This branch changes planning documents only, so the full scientific
   suite was not rerun. Stage E's completed local gate remains the parent record.
+
+## Final disposition
+
+The original 100 stored-layout AST reads/writes have been resolved. The final
+AST scan of all source modules finds zero attributes named `layout` or `_layout`.
+Native builder usage is confined to construction adapters, and environment state
+is recursively checked after copy/deepcopy/pickle/dict restoration for retained
+builders or callbacks. Closed native face recipes retain only numerical data.
+Consumers use owned binning, narrow protocols and the dedicated grid context.
+
+`layout/_construction.py` extracts native data once; `layout/_validation.py` keeps
+the removed facade's consistency algorithms; `layout/_plotting_binning.py` keeps
+component rendering. The runtime data and numerical dependency boundaries are
+enforced by `.importlinter`; its only specific ignored import is the public
+transform convenience function's lazy integration edge. The original access
+list remains historical evidence rather than a list of current source lines.

@@ -1,7 +1,7 @@
 """Decorators for Environment methods.
 
 This module provides utility decorators used throughout the Environment class
-and its mixins to enforce constraints and add functionality.
+to enforce initialization and cache contracts.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def check_fitted(method: Callable[P, T]) -> Callable[P, T]:
     It prevents runtime errors by catching attempts to use uninitialized instances.
 
     The decorator checks for the `_is_fitted` attribute, which is set to `True`
-    after the Environment has been properly initialized through `_setup_from_layout()`.
+    after the Environment has been properly initialized through owned geometry publication.
 
     """
 
@@ -94,10 +94,9 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     ``_state_version``; on mismatch the underlying function is re-run
     and the new value is cached.
 
-    This decorator is the mechanism for invalidating derived quantities
-    (bin attributes, distance fields, …) when the Environment is mutated
-    through the documented paths (``_setup_from_layout``, ``subset``,
-    ``apply_transform``, ``rebin``). The host class must expose an
+    New environments own fresh caches; subsets, transforms and re-binning
+    return new values. The descriptor also protects internal hosts that advance
+    their version explicitly. The host class must expose an
     integer attribute named ``_state_version`` and must allow
     per-instance attribute storage (no ``__slots__`` without
     ``_state_version`` plus the versioned cache keys).
@@ -106,9 +105,7 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     -----------
     Invalidation is **only** triggered by ``_state_version`` bumps. The
     descriptor does **not** fingerprint the underlying state. To keep that
-    sound, ``_setup_from_layout`` is the only place geometry changes: it
-    swaps in a whole new ``_PublishedGeometry`` and bumps the version in the
-    same step. The host must own and protect geometry so edits cannot bypass
+    sound, Environment publishes owned read-only geometry as one value. The host must own and protect geometry so edits cannot bypass
     invalidation. Build a new environment to change geometry. Assigning or
     deleting a cached property raises rather than shadowing its descriptor and
     bypassing future version checks.

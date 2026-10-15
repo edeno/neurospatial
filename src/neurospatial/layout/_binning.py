@@ -1,8 +1,4 @@
-"""Owned bin geometry and the capabilities used by environment operations.
-
-Layout-backed adapters retain point lookup and finite-volume geometry behavior
-while exposing their capabilities together with the published bin arrays.
-"""
+"""Owned bin geometry, lookup and finite-volume face capabilities."""
 
 from __future__ import annotations
 

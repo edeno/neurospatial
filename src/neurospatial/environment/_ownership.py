@@ -1,4 +1,4 @@
-"""Private ownership boundaries for published layouts and continuous domains."""
+"""Ownership boundaries for published binning and continuous domains."""
 
 from __future__ import annotations
 

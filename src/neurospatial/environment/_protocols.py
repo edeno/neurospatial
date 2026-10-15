@@ -1,13 +1,4 @@
-"""Protocol definitions for Environment mixins.
-
-This module defines Protocol classes that specify the interface mixins expect
-from the Environment class. Using Protocols lets mypy understand the mixin
-pattern without ``type: ignore`` comments or disabled error codes.
-
-Docstrings here are intentionally one-line summaries. The full parameter and
-return documentation lives on the concrete ``Environment`` (and sibling)
-methods that users actually read; keeping this typing-only file to bare
-signatures avoids the docstring drift that duplication invites.
+"""Narrow structural contracts for domain functions consuming environment data.
 
 Index-dtype convention: point/region *index* arrays (``bin_at``,
 ``bins_in_region``, ``boundary_bins``, ``point_to_bin_index``,
@@ -19,7 +10,6 @@ fancy-indexing returns. Trajectory *sequence* arrays (``bin_sequence``,
 intentional -- portability for indices, memory for long sequences -- so do not
 collapse them to one dtype.
 
-See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 """
 
 from __future__ import annotations

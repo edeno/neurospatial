@@ -68,3 +68,55 @@ def test_native_face_recipe_contains_only_owned_data(built_environment):
         for actual, expected in zip(restored.build(), source.build(), strict=True):
             np.testing.assert_array_equal(actual, expected)
             assert not actual.flags.writeable
+
+
+@pytest.mark.parametrize(
+    "restore",
+    [
+        copy.copy,
+        copy.deepcopy,
+        lambda x: pickle.loads(pickle.dumps(x)),
+        lambda x: Environment.from_dict(x.to_dict()),
+    ],
+)
+def test_environment_state_contains_no_builder_or_delegated_callback(
+    built_environment, restore
+):
+    from collections.abc import Mapping
+
+    import networkx as nx
+
+    env = restore(built_environment)
+    assert not hasattr(env, "layout")
+    seen = set()
+
+    def check(value):
+        if id(value) in seen:
+            return
+        seen.add(id(value))
+        assert not isinstance(value, LayoutEngine)
+        assert not callable(value)
+        if isinstance(value, Environment):
+            check(vars(value))
+        elif is_dataclass(value) and not isinstance(value, type):
+            for item in fields(value):
+                check(getattr(value, item.name))
+        elif isinstance(value, Mapping):
+            for item in value.values():
+                check(item)
+        elif isinstance(value, (tuple, list)):
+            for item in value:
+                check(item)
+        elif isinstance(value, nx.Graph):
+            check(value.graph)
+            check(dict(value.nodes(data=True)))
+            check(list(value.edges(data=True)))
+
+    check(env)
+
+
+def test_direct_layout_constructor_is_removed():
+    with pytest.raises(ValueError, match="E1006"):
+        Environment()
+    with pytest.raises(TypeError, match="layout"):
+        Environment(layout=object())

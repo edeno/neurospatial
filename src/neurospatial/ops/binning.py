@@ -369,7 +369,7 @@ def clear_kdtree_cache(env: Environment) -> None:
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment whose KD-tree cache should be cleared.
 
     See Also
@@ -406,7 +406,7 @@ def regions_to_mask(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment with bin centers defining the discrete grid.
     regions : str, list[str], Region, or Regions
         Region(s) to rasterize. Can be:

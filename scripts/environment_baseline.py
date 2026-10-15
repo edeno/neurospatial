@@ -6,8 +6,8 @@ a triangular mesh, and circular and open polar grids), each also read back
 from a dict, a file and NWB, and copied. A probe stores its output as a float
 array, or the exception type and message it raised, so refusals are compared
 too, and a probe that yields text (warnings, plot labels) stores the text. The
-signature and docstring of every public member of Environment and
-EgocentricPolarEnvironment are recorded as well.
+signature and docstring of every public member of the common Environment
+are recorded as well. Cartesian and polar numerical cases remain separate.
 
 Usage
 -----

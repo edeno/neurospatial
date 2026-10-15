@@ -1,8 +1,8 @@
 # Stage F — One public Environment and direct geometry consumers
 
-**Status:** Planning complete; implementation has not started.
+**Status:** Complete and independently reviewed. See [validation.md](validation.md).
 **Branch:** `feature/environment-unified`, stacked on `feature/environment-affine`
-at `936b29ae` ([Stage E PR #76](https://github.com/edeno/neurospatial/pull/76)).
+at the repaired Stage E head `c074957e` ([Stage E PR #76](https://github.com/edeno/neurospatial/pull/76)).
 **User decision, 2026-10-15:** Merge the public Cartesian and polar classes during
 Stage F. Place that merge where the dependency audit supports it; retaining two
 public classes is not the final design. No Stage F PR is requested by this plan.
@@ -194,7 +194,7 @@ establish, rather than recreating the old public class accidentally.
 
 Each implementation phase captures the affected behavior first, commits a
 logical change and receives independent review. Fix confirmed bugs separately
-from behavior-preserving moves. No Stage F runtime code is changed by this plan.
+from behavior-preserving moves. The completed phases and their evidence are recorded in [validation.md](validation.md).
 
 | Phase | Work | Acceptance gate |
 | --- | --- | --- |

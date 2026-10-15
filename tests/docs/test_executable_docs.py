@@ -32,6 +32,7 @@ OPT_IN = (
     "docs/user-guide/neuroscience-metrics.md",
     "docs/user-guide/signal-processing-primitives.md",
     "docs/migration/v0.6.md",
+    "docs/migration/environment-unified.md",
 )
 SETUPS = {
     "docs_animation_quick_start": """import os

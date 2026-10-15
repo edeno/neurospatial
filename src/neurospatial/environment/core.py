@@ -1,22 +1,4 @@
-"""Core Environment class with mixin inheritance.
-
-This module defines the shared Environment[Any] dataclass and the Cartesian
-Environment type, assembling specialized domain mixins:
-
-- EnvironmentFactories: Factory methods (from_samples, from_graph, etc.)
-- EnvironmentQueries: Graph queries (neighbors, paths and distances)
-- EnvironmentSerialization: Save/load methods (to_file, from_file, etc.)
-- EnvironmentRegions: Region operations (bins_in_region, region_mask)
-- EnvironmentVisualization: Plotting methods (plot, plot_1d)
-- EnvironmentMetrics: Environment metrics (boundary_bins and bin attributes)
-- EnvironmentFields: Spatial field operations (compute_kernel, smooth, diffuse)
-- EnvironmentTrajectory: Transition matrices
-- CartesianCoordinates: Cartesian coordinate and trajectory/transform entry points
-
-The Environment[Any] class is the dataclass in the hierarchy - all mixins
-are plain classes. This design prevents dataclass field inheritance conflicts
-while maintaining clean code organization.
-"""
+"""One public Environment with owned geometry and thin domain entry points."""
 
 from __future__ import annotations
 
@@ -219,9 +201,8 @@ def _freeze_graph_attributes(graph: nx.Graph) -> None:
 class _PublishedGeometry:
     """The geometry an environment publishes, replaced whole and never edited.
 
-    ``_setup_from_layout`` builds a new instance (with read-only arrays and a
-    frozen graph) and advances ``_state_version``, which keys every derived
-    cache, in the same step.
+    ``_from_binning`` publishes owned arrays and a frozen graph atomically.
+    Each new value owns fresh versioned analysis caches.
     """
 
     binning: Binning | None
@@ -285,14 +266,13 @@ class _GeometryView(Generic[_T]):
 class Environment(Generic[_C]):
     """A discretized environment with owned coordinate meaning and connectivity.
 
-    ``Environment`` is the central user-facing spatial type. Its
-    ``bin_centers`` hold Cartesian ``(x, y[, z])`` coordinates. Geometric
-    methods in ``CartesianCoordinates`` (``bin_at``, ``contains``,
-    ``distance_between``, ``apply_transform``) interpret inputs as Cartesian
-    points. The shared ``distance_to`` method guards its Euclidean mode.
+    ``Environment`` is the central user-facing spatial type. Each instance
+    declares whether ``bin_centers`` hold Cartesian ``(x, y[, z])`` positions
+    or egocentric ``(distance, angle)`` coordinates. Methods such as ``bin_at``,
+    ``contains``, ``distance_between`` and ``apply_transform`` require Cartesian
+    positions. The shared ``distance_to`` method guards its Euclidean mode.
 
-    Instances are created via the factory classmethods inherited from
-    :class:`~neurospatial.environment.factories.EnvironmentFactories`
+    Instances are created via factory classmethods on ``Environment``
     (``from_samples``, ``from_polygon``, ``from_grid_mask``,
     ``from_pixel_mask``, ``from_graph``, ``from_layout``).
 
@@ -578,7 +558,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        Environment or EgocentricPolarEnvironment
+        Environment
             Same concrete type and geometry, with fresh analysis caches.
         """
         metadata = _Metadata(
@@ -613,7 +593,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        Environment or EgocentricPolarEnvironment
+        Environment
             Same concrete type and geometry, with fresh analysis caches.
         """
         snapshot = self._validate_regions(regions)
@@ -2622,17 +2602,17 @@ class Environment(Generic[_C]):
         >>> rng = np.random.RandomState(42)
         >>> data = rng.rand(1000, 2) * 100
         >>> env = Environment.from_samples(data, bin_size=10.0)
-        >>> env.layout.grid_shape  # May vary with random data
+        >>> env.grid_shape  # May vary with random data
         (11, 11)
         >>>
         >>> # Coarsen by factor 2 → ~5x5 grid (11 // 2 = 5)
         >>> coarse = env.rebin(factor=2)
-        >>> coarse.layout.grid_shape
+        >>> coarse.grid_shape
         (5, 5)
         >>>
         >>> # Anisotropic coarsening with tuple (11 // 2 = 5, 11 // 5 = 2)
         >>> coarse_aniso = env.rebin(factor=(2, 5))
-        >>> coarse_aniso.layout.grid_shape
+        >>> coarse_aniso.grid_shape
         (5, 2)
         >>>
         >>> # Aggregate a field to the coarsened grid
@@ -3048,7 +3028,7 @@ class Environment(Generic[_C]):
 
         """
         # Import here to avoid circular dependency
-        # (transforms.py imports Environment, which imports this mixin)
+        # (the integration adapter constructs a new Environment)
         # Delegate to free function
         # Cast self to Environment for type checking
         self._require_cartesian("apply_transform()")
@@ -4383,8 +4363,7 @@ class Environment(Generic[_C]):
         during layout creation.
 
         For 1D environments, this typically returns the length of each bin.
-        This method delegates to the `bin_sizes` method of the
-        underlying `LayoutEngine`.
+        Measures come from the environment's owned binning data.
 
         Returns
         -------
@@ -6096,7 +6075,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        EnvironmentQueries.neighbors : Get neighbors of a bin
+        Environment.neighbors : Get neighbors of a bin
 
         Examples
         --------

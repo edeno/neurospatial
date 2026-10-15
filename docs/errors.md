@@ -155,7 +155,7 @@ if nan_count > 0:
 ```
 
 **See Also:**
-- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
+- [Environment.from_samples() documentation](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.from_samples)
 - [Quickstart Guide](getting-started/quickstart.md)
 
 ---
@@ -223,7 +223,7 @@ env = Environment.from_samples(
 - Mixing up bin_size with number of bins: bin_size is spatial extent, not count
 
 **See Also:**
-- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
+- [Environment.from_samples() documentation](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.from_samples)
 - [Layout validation module](api/neurospatial/layout/validation.md#neurospatial.layout.validation)
 
 ---

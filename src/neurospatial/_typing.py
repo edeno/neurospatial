@@ -14,7 +14,7 @@ Design rules:
 - **Duck-typing, never ``isinstance`` on third-party types.** The adapters
   test for attributes (``.t`` / ``.values`` / ``.index``), not concrete types.
 - **Import-light.** This module imports only ``typing`` + ``numpy`` and the
-  first-party :class:`EnvironmentProtocol`; it never imports pynapple, pynwb,
+  first-party narrow environment consumer protocols; it never imports pynapple, pynwb,
   xarray, or any other optional/heavy dependency.
 
 Types

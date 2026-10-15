@@ -1,25 +1,4 @@
-"""Spatial field operations for Environment class.
-
-This module provides methods for processing spatial fields, including
-kernel computation, smoothing, and interpolation.
-
-Key Features
-------------
-- Diffusion kernel computation with caching
-- Graph-based field smoothing
-- Field interpolation at arbitrary points (nearest/linear modes)
-
-Notes
------
-This is a mixin class designed to be used with Environment. It should NOT
-be decorated with @dataclass. Only the main Environment class in core.py
-should be a dataclass.
-
-TYPE_CHECKING Pattern
----------------------
-To avoid circular imports, we import Environment only for type checking.
-
-"""
+"""Private spatial field operations using narrow geometry consumers."""
 
 from __future__ import annotations
 

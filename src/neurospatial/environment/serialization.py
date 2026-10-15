@@ -1,28 +1,4 @@
-"""Serialization methods for Environment.
-
-This module provides serialization and deserialization methods for the
-Environment class, including:
-
-- JSON + npz format (the on-disk persistence path)
-- In-memory dictionary format
-
-The methods in this mixin delegate to the implementations in `neurospatial.io`
-to maintain separation of concerns and avoid code duplication.
-
-Classes
--------
-EnvironmentSerialization
-    Mixin class providing serialization methods.
-
-Notes
------
-This is a plain mixin class (NOT a dataclass). It is designed to be mixed
-into the Environment dataclass defined in `neurospatial.environment.core`.
-
-The TYPE_CHECKING guard is used to prevent circular imports while still
-providing type hints for IDEs and type checkers.
-
-"""
+"""Private storage entry points delegating to geometry codecs and IO adapters."""
 
 from __future__ import annotations
 

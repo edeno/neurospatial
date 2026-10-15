@@ -1,25 +1,4 @@
-"""Factory methods for creating Environment instances.
-
-This module contains classmethods that provide different ways to construct
-Environment objects from various input sources: sample data, graphs, polygons,
-masks, images, and custom layouts.
-
-Classes
--------
-EnvironmentFactories
-    Mixin class providing factory classmethods for Environment creation.
-
-Notes
------
-This is a mixin class (plain class, NOT a dataclass) that provides factory
-classmethods to the Environment dataclass via inheritance.
-
-Type Checking
--------------
-Uses TYPE_CHECKING guard to prevent circular imports when referencing Environment
-in type hints. At runtime, TYPE_CHECKING is False, so no import occurs.
-
-"""
+"""Construction adapters that consume builders once and publish owned environments."""
 
 from __future__ import annotations
 
@@ -737,8 +716,6 @@ def _from_layout(
 
         arena = own_arena(arena)
     layout_instance = cls._create_layout(kind, layout_params)
-    # Note: This call will work when cls is Environment (via inheritance).
-    # Mypy can't infer this for mixins, so we use cast() to help the type checker.
     env_cls = cast("type[Environment]", cls)
     env = env_cls._from_built_layout(
         layout_instance,

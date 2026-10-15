@@ -200,6 +200,7 @@ nav:
       - Errors: errors.md
       - Glossary: glossary.md
       - Migrating to v0.6 and later: migration/v0.6.md
+      - Unified Environment API: migration/environment-unified.md
   - API Reference:
       - api/index.md
   - About:

@@ -1,4 +1,4 @@
-"""A layout-compatible view of saved binning data, without a builder."""
+"""Pure consistency checks for owned binning, locators, components and connectivity."""
 
 from __future__ import annotations
 

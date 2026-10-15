@@ -1,8 +1,4 @@
-"""Transform implementations for Cartesian environments.
-
-Private module functions create environments with modified spatial structure.
-The scientist-facing entry points belong to ``CartesianCoordinates``.
-"""
+"""Cartesian re-binning and selection algorithms for owned environment data."""
 
 from __future__ import annotations
 

@@ -1,27 +1,7 @@
-"""Trajectory analysis methods for Environment class.
+"""Trajectory algorithms using narrow consumers and explicit sampled data.
 
-This module provides methods for analyzing trajectory data, including
-occupancy computation, bin sequence extraction, and transition matrix calculation.
-
-Key Features
-------------
-- Occupancy (time-in-bin) computation with speed filtering
-- Bin sequence extraction with run-length encoding
-- Transition matrix calculation (empirical, random walk, diffusion)
-- Linear time allocation for grids and exact planar polygon cells
-
-Notes
------
-Module functions implement trajectory analysis. ``EnvironmentTrajectory``
-provides shared transition entry points; Cartesian trajectory entry points
-belong to ``CartesianCoordinates``. Mixins are plain classes, while
-``_BaseEnvironment`` in core.py is the dataclass.
-
-TYPE_CHECKING Pattern
----------------------
-To avoid circular imports, we import Environment only for type checking.
-
-"""
+Includes time allocation, occupancy, run extraction and transition matrices.
+Environment exposes thin entry points; Cartesian coordinate operations are guarded."""
 
 from __future__ import annotations
 

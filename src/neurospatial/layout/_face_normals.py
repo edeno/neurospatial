@@ -179,7 +179,7 @@ def validate_normals(binning: Binning) -> None:
             "face normals must match full-dimensional bins and pair order."
         )
     active = np.any(values != 0, axis=1)
-    # A native LayoutFaces source is deliberately lazy, including its mesh
+    # A native face recipe is deliberately lazy, including its mesh
     # warning. Explicit/saved records always supply KnownFaces or MissingFaces.
     if isinstance(binning.faces, KnownFaces):
         areas = binning.faces.faces.A
