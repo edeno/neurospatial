@@ -95,10 +95,14 @@ the CPU validation run.
 
 An existing test,
 `tests/test_environment_validation.py::TestValidateEnvironment::test_validates_graph_structure`,
-attempts to mutate the published read-only graph and fails before it reaches
+attempted to mutate the published read-only graph and failed before it reached
 its validation assertion. The same failure was reproduced with source imports
-from `944c818d`; the test remains unchanged and is explicitly deselected in the
-broad candidate environment run.
+from `944c818d`; the test was explicitly deselected in the broad candidate run.
+During PR handoff, parent PR #67 repaired the fixture to install a detached
+malformed graph as simulated corrupted state, preserving its validator
+assertion. All 150 focused parent validation/publication/state-version checks
+pass, and the repaired test no longer needs deselection. The broad result below
+records the earlier run rather than claiming a new full-suite rerun.
 
 Broad checks, with focused rechecks after independent review repairs:
 
