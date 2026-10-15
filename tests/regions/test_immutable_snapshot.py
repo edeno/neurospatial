@@ -218,3 +218,22 @@ def test_failed_region_replacement_preserves_original_value_and_order(invalid):
         regions.update_region("goal", **kwargs)
     assert regions.list_names() == ["goal", "arena"]
     assert regions["goal"] is original
+
+
+@pytest.mark.parametrize("kind", ["mapping", "list"])
+def test_metadata_thaw_rejects_cycles_before_exhausting_stack(kind):
+    from neurospatial.regions.core import _thaw_metadata
+
+    cyclic = {} if kind == "mapping" else []
+    if kind == "mapping":
+        cyclic["self"] = cyclic
+    else:
+        cyclic.append(cyclic)
+    with pytest.raises(ValueError, match="Circular"):
+        _thaw_metadata(cyclic)
+
+
+def test_metadata_shared_containers_are_not_cycles():
+    nested = {"colors": ["red", "blue"]}
+    region = Region("goal", "point", [1, 2], metadata={"a": nested, "b": nested})
+    assert region.to_dict()["metadata"] == {"a": nested, "b": nested}
