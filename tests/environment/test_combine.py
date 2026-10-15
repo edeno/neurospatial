@@ -186,6 +186,44 @@ def test_no_bridge_combination_clips_without_losing_sources():
     env = Environment.combine({"a": grid(), "b": grid(4)}, auto_bridge=False)
     clipped = env.clip(box(0.1, 0.1, 1.9, 0.9))
     assert clipped.bin_sources == (("a", 0), ("a", 1))
+    # Certified clipped faces, rather than the pre-clip composition, own the
+    # numerical geometry even when all surviving bins come from one child.
+    expected = grid().clip(box(0.1, 0.1, 1.9, 0.9))
+    np.testing.assert_array_equal(
+        clipped._diffusion_geometry.W.toarray(),
+        expected._diffusion_geometry.W.toarray(),
+    )
+    np.testing.assert_allclose(
+        clipped.diffuse(np.array([1.0, 0.0]), 0.5, mode="average"),
+        expected.diffuse(np.array([1.0, 0.0]), 0.5, mode="average"),
+    )
+
+
+@pytest.mark.parametrize("history", ["clip", "subset", "transform", "load"])
+def test_uncertified_combined_clip_cannot_regain_its_parents_diffusion(history):
+    from shapely.geometry import Polygon
+
+    from neurospatial.ops.transforms import translate
+
+    children = {
+        key: Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            grid_edges=(np.arange(offset, offset + 3.0), np.arange(3.0)),
+        )
+        for key, offset in (("a", 0), ("b", 4))
+    }
+    parent = Environment.combine(children, auto_bridge=False)
+    assert parent._binning.faces.available
+    clipped = parent.clip(Polygon([(0, 0), (2, 0), (0, 2)]))
+    if history == "subset":
+        clipped = clipped.subset(bins=np.ones(clipped.n_bins, dtype=bool))
+    elif history == "transform":
+        clipped = clipped.apply_transform(translate(10, 0))
+    elif history == "load":
+        clipped = Environment.from_dict(clipped.to_dict())
+    assert not clipped._binning.faces.available
+    with pytest.raises(NotImplementedError, match="orthogonality"):
+        clipped.diffuse(np.ones(clipped.n_bins), 0.5, mode="average")
 
 
 @pytest.mark.parametrize("kind", ["hex", "mesh", "polygon", "mask", "samples"])
