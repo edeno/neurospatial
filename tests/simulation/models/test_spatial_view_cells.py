@@ -50,6 +50,7 @@ class TestSpatialViewCellModelCreation:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         assert model.env is env
@@ -64,6 +65,7 @@ class TestSpatialViewCellModelCreation:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         # Default view field width
@@ -106,6 +108,7 @@ class TestSpatialViewCellModelCreation:
             baseline_rate=0.5,
             require_visibility=True,
             fov=fov,
+            boundary_source="analysis",
         )
 
         assert model.view_field_width == 15.0
@@ -136,7 +139,8 @@ class TestParameterValidation:
         with pytest.raises(ValueError, match=r"preferred_view_location.*shape"):
             SpatialViewCellModel(
                 env=env,
-                preferred_view_location=np.array([50.0]),  # Wrong shape
+                preferred_view_location=np.array([50.0]),
+                boundary_source="analysis",  # Wrong shape
             )
 
         # 2D array (should be 1D with 2 elements)
@@ -144,6 +148,7 @@ class TestParameterValidation:
             SpatialViewCellModel(
                 env=env,
                 preferred_view_location=np.array([[50.0, 50.0]]),
+                boundary_source="analysis",
             )
 
     def test_non_positive_view_field_width_raises(self, env):
@@ -157,6 +162,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 view_field_width=0.0,
+                boundary_source="analysis",
             )
 
         with pytest.raises(ValueError, match=r"view_field_width.*positive"):
@@ -164,6 +170,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 view_field_width=-5.0,
+                boundary_source="analysis",
             )
 
     def test_non_positive_view_distance_raises(self, env):
@@ -177,6 +184,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 view_distance=0.0,
+                boundary_source="analysis",
             )
 
     def test_non_positive_max_rate_raises(self, env):
@@ -190,6 +198,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 max_rate=0.0,
+                boundary_source="analysis",
             )
 
     def test_negative_baseline_rate_raises(self, env):
@@ -203,6 +212,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 baseline_rate=-1.0,
+                boundary_source="analysis",
             )
 
     def test_baseline_rate_exceeds_max_rate_raises(self, env):
@@ -217,6 +227,7 @@ class TestParameterValidation:
                 preferred_view_location=np.array([50.0, 50.0]),
                 max_rate=10.0,
                 baseline_rate=15.0,
+                boundary_source="analysis",
             )
 
     def test_invalid_gaze_model_raises(self, env):
@@ -232,6 +243,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 gaze_model="invalid",
+                boundary_source="analysis",
             )
 
     def test_preferred_view_location_outside_warns(self, env):
@@ -244,6 +256,7 @@ class TestParameterValidation:
             SpatialViewCellModel(
                 env=env,
                 preferred_view_location=np.array([200.0, 200.0]),
+                boundary_source="analysis",
             )
 
 
@@ -265,6 +278,7 @@ class TestFiringRateComputation:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         positions = np.random.default_rng(42).uniform(0, 100, (100, 2))
@@ -283,6 +297,7 @@ class TestFiringRateComputation:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         positions = np.random.default_rng(42).uniform(0, 100, (1000, 2))
@@ -308,6 +323,7 @@ class TestFiringRateComputation:
             gaze_model="fixed_distance",
             max_rate=20.0,
             baseline_rate=0.0,
+            boundary_source="analysis",
         )
 
         # Position to the West of the target, looking East
@@ -344,6 +360,7 @@ class TestFiringRateComputation:
             gaze_model="fixed_distance",
             max_rate=20.0,
             baseline_rate=0.0,
+            boundary_source="analysis",
         )
 
         # Animal at position looking at various locations along x-axis
@@ -378,6 +395,7 @@ class TestFiringRateComputation:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         positions = np.array([[60.0, 50.0]])
@@ -408,6 +426,7 @@ class TestGazeModels:
             gaze_model="fixed_distance",
             max_rate=20.0,
             baseline_rate=0.0,
+            boundary_source="analysis",
         )
 
         # Position at (50, 50), heading East
@@ -432,6 +451,7 @@ class TestGazeModels:
             gaze_model="ray_cast",
             max_rate=20.0,
             baseline_rate=0.0,
+            boundary_source="analysis",
         )
 
         # Ray cast should work without errors
@@ -465,6 +485,7 @@ class TestVisibilityRequirement:
             gaze_model="fixed_distance",
             require_visibility=False,
             max_rate=20.0,
+            boundary_source="analysis",
         )
 
         # Set up position and heading to look at preferred location
@@ -489,6 +510,7 @@ class TestVisibilityRequirement:
             gaze_model="fixed_distance",
             require_visibility=True,
             max_rate=20.0,
+            boundary_source="analysis",
         )
 
         # Inside environment looking at preferred location
@@ -529,6 +551,7 @@ class TestFieldOfViewIntegration:
             fov=narrow_fov,
             max_rate=20.0,
             baseline_rate=0.0,
+            boundary_source="analysis",
         )
 
         # Position at center, facing East
@@ -572,6 +595,7 @@ class TestGroundTruth:
             baseline_rate=0.5,
             require_visibility=True,
             fov=FieldOfView.rat(),
+            boundary_source="analysis",
         )
 
         gt = model.ground_truth
@@ -604,6 +628,7 @@ class TestGroundTruth:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         gt = model.ground_truth
@@ -643,6 +668,7 @@ class TestVectorizationEquivalence:
             method=model.gaze_model,
             view_distance=model.view_distance,
             env=model.env if model.gaze_model != "fixed_distance" else None,
+            boundary_source="analysis",
         )
 
         distances = np.linalg.norm(
@@ -666,7 +692,10 @@ class TestVectorizationEquivalence:
                         response[i] = 0.0
                         continue
                 if not _line_of_sight_clear(
-                    model.env, positions[i], model.preferred_view_location
+                    model.env,
+                    positions[i],
+                    model.preferred_view_location,
+                    boundary_source="analysis",
                 ):
                     response[i] = 0.0
 
@@ -701,6 +730,7 @@ class TestVectorizationEquivalence:
             require_visibility=False,
             max_rate=20.0,
             baseline_rate=0.3,
+            boundary_source="analysis",
         )
 
         rng = np.random.default_rng(7)
@@ -728,6 +758,7 @@ class TestVectorizationEquivalence:
             require_visibility=True,
             max_rate=20.0,
             baseline_rate=0.3,
+            boundary_source="analysis",
         )
 
         rng = np.random.default_rng(11)
@@ -754,6 +785,7 @@ class TestVectorizationEquivalence:
             require_visibility=True,
             max_rate=20.0,
             baseline_rate=0.3,
+            boundary_source="analysis",
         )
 
         rng = np.random.default_rng(13)
@@ -784,6 +816,7 @@ class TestProtocolCompliance:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         assert isinstance(model, NeuralModel)
@@ -797,6 +830,7 @@ class TestProtocolCompliance:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         positions = np.array([[60.0, 50.0]])
@@ -835,6 +869,7 @@ class TestEdgeCases:
             gaze_model="fixed_distance",
             max_rate=20.0,
             baseline_rate=0.5,
+            boundary_source="analysis",
         )
 
         # Position and heading that would look outside environment
@@ -855,6 +890,7 @@ class TestEdgeCases:
         model = SpatialViewCellModel(
             env=env,
             preferred_view_location=np.array([50.0, 50.0]),
+            boundary_source="analysis",
         )
 
         position = np.array([[60.0, 50.0]])

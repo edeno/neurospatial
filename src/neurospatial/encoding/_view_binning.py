@@ -45,13 +45,107 @@ from neurospatial.environment.trajectory import (
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
+    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
+    from neurospatial.layout._binning import Locator
 
 __all__ = [
     "bin_view_spike_train",
     "bin_view_spike_trains",
     "compute_occupancy",
 ]
+
+
+def _wall_view_bins(
+    env: Environment,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    source: Literal["physical", "analysis"],
+) -> NDArray[np.intp]:
+    """Assign the observer-side limit in the retained cell-owner frame."""
+    import shapely
+    from shapely.ops import unary_union
+
+    from neurospatial.arena import _feature_cap, _TransformedArena
+    from neurospatial.environment._arena import _wall_source_frame
+    from neurospatial.layout._composition import CombinedLocator
+    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
+    from neurospatial.layout._polygon import ClippedLocator, PolygonCells
+    from neurospatial.ops._boundaries import physical_walls
+
+    def source_locator(
+        locator: Locator, arena: Arena, centers: NDArray[np.float64]
+    ) -> Locator:
+        if isinstance(locator, TransformedLocator):
+            if isinstance(arena, _TransformedArena) and np.array_equal(
+                locator.inverse, arena.inverse
+            ):
+                original, _error = arena._project(centers)
+                return source_locator(locator.base, arena.base, original)
+            if source == "physical":
+                raise NotImplementedError(
+                    "Physical wall-bin assignment needs a shared source frame; retain the arena's transform with the bins, or explicitly choose boundary_source='analysis'."
+                )
+        if isinstance(locator, SubsetLocator):
+            return SubsetLocator(
+                source_locator(locator.base, arena, centers), locator.parent_to_child
+            )
+        if isinstance(locator, ClippedLocator):
+            local = _wall_source_frame(locator, arena, centers)
+            if local is not None:
+                return ClippedLocator(
+                    source_locator(locator.base, arena, centers),
+                    PolygonCells(local[0]),
+                    locator.mapping,
+                )
+        if isinstance(locator, CombinedLocator) and source == "physical":
+            # A child with its own affine frame has no one shared owner frame.
+            pending = [child.locator for child in locator.children]
+            while pending:
+                child = pending.pop()
+                if isinstance(child, TransformedLocator):
+                    raise NotImplementedError(
+                        "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
+                    )
+                if isinstance(child, (SubsetLocator, ClippedLocator)):
+                    pending.append(child.base)
+                elif isinstance(child, CombinedLocator):
+                    pending.extend(part.locator for part in child.children)
+        return locator
+
+    locator = source_locator(env._binning.locator, env.arena, env.bin_centers)
+    frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)
+    if frame is None:
+        return env.bin_at(np.nextafter(hits, origins))
+    cells, _walls, _centers, _inverse, frames = frame
+    query = np.vstack((hits, origins))
+    error = None
+    for arena in frames:
+        query, error = arena._project(query, error)
+    base = frames[-1].base
+    if source == "physical":
+        walls = physical_walls(base)
+    else:
+        domain = unary_union(cells)
+        restriction = base.polygonal_domain() if base.domain_known else None
+        if restriction is not None:
+            domain = domain.intersection(restriction)
+        walls = unary_union([domain.boundary, *base.walls])
+    assert error is not None
+    points = shapely.points(query[: len(hits)])
+    allowance = np.hypot.reduce(
+        np.minimum(error[: len(hits)], _feature_cap(base)), axis=1
+    )
+    close = shapely.distance(points, walls) <= allowance
+    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
+    query[np.flatnonzero(close)] = np.column_stack(
+        (shapely.get_x(nearest), shapely.get_y(nearest))
+    )
+    inside = np.nextafter(query[: len(hits)], query[len(hits) :])
+    bins = locator.locate(inside)
+    if base.domain_known:
+        bins[~base.contains(inside)] = -1
+    return bins
 
 
 def _precompute_view_bins(
@@ -62,6 +156,7 @@ def _precompute_view_bins(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.intp]:
     """Precompute view bin indices for all trajectory samples.
 
@@ -83,6 +178,11 @@ def _precompute_view_bins(
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     view_bins : ndarray, shape (n_samples,), dtype=intp
@@ -90,11 +190,21 @@ def _precompute_view_bins(
     """
     n_samples = len(positions)
 
+    max_distance = 100.0
+    if gaze_model != "fixed_distance":
+        from neurospatial.ops._boundaries import boundary_geometry, search_distance
+
+        max_distance = search_distance(
+            boundary_geometry(env, boundary_source), positions
+        )
+
     # Compute viewed locations for all timepoints
     viewed_locations = compute_viewed_location(
         positions,
         headings,
         method=gaze_model,
+        boundary_source=boundary_source,
+        max_distance=max_distance,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         env=env if gaze_model in ("ray_cast", "boundary") else None,
@@ -107,7 +217,12 @@ def _precompute_view_bins(
     view_bins = np.full(n_samples, -1, dtype=np.intp)
     if np.any(valid_view_mask):
         valid_viewed = viewed_locations[valid_view_mask]
-        valid_bins = env.bin_at(valid_viewed)
+        if gaze_model != "fixed_distance":
+            valid_bins = _wall_view_bins(
+                env, valid_viewed, positions[valid_view_mask], boundary_source
+            )
+        else:
+            valid_bins = env.bin_at(valid_viewed)
         view_bins[valid_view_mask] = valid_bins
         # Bins outside environment return -1 from bin_at, which is what we want
 
@@ -126,6 +241,7 @@ def compute_occupancy(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Compute view occupancy (time spent viewing each bin).
 
@@ -175,6 +291,11 @@ def compute_occupancy(
         assumed (``result.spike_window_assumed``).
         Windows must already be normalized by ``resolve_time_windows``;
         public encoders accept and normalize the other supported input forms.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -268,6 +389,7 @@ def compute_occupancy(
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
+        boundary_source=boundary_source,
     )
     mask = interval_valid_mask(
         times,
@@ -292,6 +414,7 @@ def bin_view_spike_train(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Bin spike train by viewed location.
 
@@ -337,6 +460,11 @@ def bin_view_spike_train(
         assumed (``result.spike_window_assumed``).
         Windows must already be normalized by ``resolve_time_windows``;
         public encoders accept and normalize the other supported input forms.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -404,6 +532,7 @@ def bin_view_spike_train(
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
+        boundary_source=boundary_source,
     )
     mask = interval_valid_mask(
         times,
@@ -428,6 +557,7 @@ def prepare_view_binning(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     view_bins: NDArray[np.intp] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> FrameBinning:
     """Prepare geometry and exact temporal support before counting spikes."""
     times = np.asarray(times, dtype=np.float64)
@@ -448,6 +578,7 @@ def prepare_view_binning(
             gaze_model=gaze_model,
             view_distance=view_distance,
             gaze_offsets=gaze_offsets,
+            boundary_source=boundary_source,
         )
 
     n_bins = env.n_bins
@@ -477,6 +608,7 @@ def bin_view_spike_trains(
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
     view_bins: NDArray[np.intp] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains by viewed location.
 
@@ -531,6 +663,11 @@ def bin_view_spike_trains(
         Viewed bin per sample from ``_precompute_view_bins`` for exactly these
         samples and gaze settings. Passing it skips the gaze computation, so a
         caller that bins many spike sets on one trajectory computes it once.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -603,6 +740,7 @@ def bin_view_spike_trains(
         epochs=epochs,
         spike_window=spike_window,
         view_bins=view_bins,
+        boundary_source=boundary_source,
     )
     spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
     return spike_counts, occupancy

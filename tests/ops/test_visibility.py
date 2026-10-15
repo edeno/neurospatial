@@ -274,7 +274,11 @@ class TestComputeViewedLocation:
         headings = np.array([0.0, np.pi / 2])  # East, then North
 
         viewed = compute_viewed_location(
-            positions, headings, method="fixed_distance", view_distance=10.0
+            positions,
+            headings,
+            method="fixed_distance",
+            view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # Facing East: viewed location should be 10 units East
@@ -297,7 +301,7 @@ class TestComputeViewedLocation:
         headings = np.array([0.0])  # East
 
         viewed = compute_viewed_location(
-            positions, headings, method="ray_cast", env=env
+            positions, headings, method="ray_cast", env=env, boundary_source="analysis"
         )
 
         # Should hit boundary towards East (x > animal position)
@@ -320,7 +324,7 @@ class TestComputeViewedLocation:
         headings = np.array([0.0])
 
         viewed = compute_viewed_location(
-            positions, headings, method="boundary", env=env
+            positions, headings, method="boundary", env=env, boundary_source="analysis"
         )
 
         assert viewed.shape == (1, 2)
@@ -342,6 +346,7 @@ class TestComputeViewedLocation:
             method="fixed_distance",
             view_distance=10.0,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # Should be looking North (heading + offset)
@@ -366,7 +371,12 @@ class TestComputeViewedLocation:
         headings = np.array([np.pi / 4])  # North-East
 
         viewed = compute_viewed_location(
-            positions, headings, method="ray_cast", env=env, max_distance=200.0
+            positions,
+            headings,
+            method="ray_cast",
+            env=env,
+            max_distance=200.0,
+            boundary_source="analysis",
         )
 
         # Ray should not find intersection (goes into void)
@@ -382,7 +392,9 @@ class TestComputeViewedLocation:
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="method"):
-            compute_viewed_location(positions, headings, method="invalid")
+            compute_viewed_location(
+                positions, headings, method="invalid", boundary_source="analysis"
+            )
 
     def test_ray_cast_without_env_raises(self):
         """ray_cast method without environment raises error."""
@@ -392,7 +404,9 @@ class TestComputeViewedLocation:
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="env"):
-            compute_viewed_location(positions, headings, method="ray_cast")
+            compute_viewed_location(
+                positions, headings, method="ray_cast", boundary_source="analysis"
+            )
 
 
 class TestComputeViewshed:
@@ -412,7 +426,7 @@ class TestComputeViewshed:
         position = np.array([50.0, 50.0])
         heading = 0.0
 
-        result = compute_viewshed(env, position, heading)
+        result = compute_viewshed(env, position, heading, boundary_source="analysis")
 
         assert isinstance(result, ViewshedResult)
         assert len(result.visible_bins) > 0
@@ -433,11 +447,15 @@ class TestComputeViewshed:
         heading = 0.0
 
         # Full 360 degree view
-        result_full = compute_viewshed(env, position, heading, fov=None)
+        result_full = compute_viewshed(
+            env, position, heading, fov=None, boundary_source="analysis"
+        )
 
         # Restricted 90 degree view
         fov_90 = FieldOfView.symmetric(half_angle=np.pi / 4)
-        result_90 = compute_viewshed(env, position, heading, fov=fov_90)
+        result_90 = compute_viewshed(
+            env, position, heading, fov=fov_90, boundary_source="analysis"
+        )
 
         # Restricted view should have fewer visible bins
         assert result_90.n_visible_bins < result_full.n_visible_bins
@@ -455,7 +473,9 @@ class TestComputeViewshed:
         heading = 0.0
 
         # Use float for 180 degree FOV
-        result = compute_viewshed(env, position, heading, fov=np.pi)
+        result = compute_viewshed(
+            env, position, heading, fov=np.pi, boundary_source="analysis"
+        )
 
         assert result.n_visible_bins > 0
         assert result.n_visible_bins < env.n_bins  # Not full visibility
@@ -482,7 +502,13 @@ class TestComputeViewshed:
             ]
         )
 
-        result = compute_viewshed(env, position, heading, cue_positions=cue_positions)
+        result = compute_viewshed(
+            env,
+            position,
+            heading,
+            cue_positions=cue_positions,
+            boundary_source="analysis",
+        )
 
         # All cues should be visible in open environment
         assert len(result.visible_cues) == 3
@@ -502,8 +528,12 @@ class TestComputeViewshed:
         heading = 0.0
 
         # More rays should give more accurate (but similar) results
-        result_few = compute_viewshed(env, position, heading, n_rays=36)
-        result_many = compute_viewshed(env, position, heading, n_rays=360)
+        result_few = compute_viewshed(
+            env, position, heading, n_rays=36, boundary_source="analysis"
+        )
+        result_many = compute_viewshed(
+            env, position, heading, n_rays=360, boundary_source="analysis"
+        )
 
         # Both should identify some bins as visible
         # With sparse rays (36), we may not hit all bins even in open space
@@ -524,7 +554,7 @@ class TestComputeViewshed:
         position = np.array([50.0, 50.0])
         heading = 0.0
 
-        result = compute_viewshed(env, position, heading)
+        result = compute_viewshed(env, position, heading, boundary_source="analysis")
 
         # Occlusion map should have one value per bin
         assert len(result.occlusion_map) == env.n_bins
@@ -561,7 +591,9 @@ class TestComputeViewshed:
             return real_linspace(start, stop, num, *args, **kwargs)
 
         with patch("neurospatial.ops.visibility.np.linspace", side_effect=spy_linspace):
-            compute_viewshed(env, position, heading, fov=None, n_rays=360)
+            compute_viewshed(
+                env, position, heading, fov=None, n_rays=360, boundary_source="analysis"
+            )
 
         assert "angles" in captured, "Ray-angle linspace call was not captured"
         angles = captured["angles"]
@@ -592,7 +624,7 @@ class TestComputeViewField:
         position = np.array([50.0, 50.0])
         heading = 0.0
 
-        mask = compute_view_field(env, position, heading)
+        mask = compute_view_field(env, position, heading, boundary_source="analysis")
 
         assert mask.dtype == bool
         assert mask.shape == (env.n_bins,)
@@ -623,7 +655,7 @@ class TestVisibleCues:
         )
 
         visible, distances, bearings = visible_cues(
-            env, position, heading, cue_positions
+            env, position, heading, cue_positions, boundary_source="analysis"
         )
 
         assert visible.dtype == bool
@@ -650,7 +682,7 @@ class TestVisibleCues:
         )
 
         visible, distances, bearings = visible_cues(
-            env, position, heading, cue_positions
+            env, position, heading, cue_positions, boundary_source="analysis"
         )
 
         assert np.all(visible)  # open arena, all cues in line of sight
@@ -684,7 +716,7 @@ class TestVisibleCues:
         cue_positions = np.array([[80.0, 50.0]])  # On right side
 
         visible, _distances, _bearings = visible_cues(
-            env, position, heading, cue_positions
+            env, position, heading, cue_positions, boundary_source="analysis"
         )
 
         # Cue should NOT be visible due to obstacle
@@ -715,7 +747,9 @@ class TestComputeViewshedTrajectory:
         )
         headings = np.zeros(5)  # All facing east
 
-        results = compute_viewshed_trajectory(env, trajectory, headings)
+        results = compute_viewshed_trajectory(
+            env, trajectory, headings, boundary_source="analysis"
+        )
 
         assert len(results) == 5
         for result in results:
@@ -745,7 +779,9 @@ class TestVisibilityOccupancy:
         headings = np.zeros(3)
         times = np.array([0.0, 1.0, 2.0])
 
-        occupancy = visibility_occupancy(env, times, trajectory, headings)
+        occupancy = visibility_occupancy(
+            env, times, trajectory, headings, boundary_source="analysis"
+        )
 
         assert occupancy.shape == (env.n_bins,)
         # All values should be non-negative
@@ -768,7 +804,9 @@ class TestVisibilityOccupancy:
         headings = np.zeros(n_samples)
         times = np.linspace(0, 10, n_samples)
 
-        occupancy = visibility_occupancy(env, times, trajectory, headings)
+        occupancy = visibility_occupancy(
+            env, times, trajectory, headings, boundary_source="analysis"
+        )
 
         # Visible bins should have occupancy close to 10 seconds
         # (accounting for frame duration)
@@ -790,7 +828,7 @@ class TestLineOfSightClear:
         observer = np.array([50.0, 50.0])
         target = np.array([60.0, 50.0])
 
-        assert _line_of_sight_clear(env, observer, target)
+        assert _line_of_sight_clear(env, observer, target, boundary_source="analysis")
 
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
@@ -809,4 +847,6 @@ class TestLineOfSightClear:
         observer = np.array([20.0, 50.0])
         target = np.array([80.0, 50.0])
 
-        assert not _line_of_sight_clear(env, observer, target)
+        assert not _line_of_sight_clear(
+            env, observer, target, boundary_source="analysis"
+        )

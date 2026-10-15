@@ -39,7 +39,13 @@ def populations() -> dict[str, object]:
         "spatial": compute_spatial_rates(env, trains, times, positions),
         "directional": compute_directional_rates(trains, times, headings),
         "view": compute_view_rates(
-            env, trains, times, positions, headings, view_distance=10.0
+            env,
+            trains,
+            times,
+            positions,
+            headings,
+            view_distance=10.0,
+            boundary_source="analysis",
         ),
         "egocentric": compute_egocentric_rates(
             None, trains, times, positions, headings, objects

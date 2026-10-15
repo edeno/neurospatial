@@ -79,3 +79,9 @@ class BoundaryConsumer(Protocol):
 
     @property
     def _binning(self) -> Binning: ...
+
+
+class ObserverConsumer(BoundaryConsumer, Protocol):
+    """Boundary geometry plus assignment for explicit analysis-mode observers."""
+
+    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...

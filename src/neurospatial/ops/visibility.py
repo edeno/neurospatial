@@ -492,6 +492,7 @@ def compute_viewed_location(
     gaze_offsets: NDArray[np.float64] | None = None,
     env: Environment | None = None,
     max_distance: float = 100.0,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Compute the location being viewed by the animal.
 
@@ -516,6 +517,11 @@ def compute_viewed_location(
     max_distance : float, default 100.0
         Maximum ray distance for ray_cast method.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     NDArray[np.float64], shape (n_time, 2)
@@ -525,7 +531,8 @@ def compute_viewed_location(
     Raises
     ------
     ValueError
-        If method is invalid or ray_cast/boundary without environment.
+        If method is invalid, ray_cast/boundary has no environment, or the
+        requested search distance is not finite and positive.
 
     Examples
     --------
@@ -566,18 +573,23 @@ def compute_viewed_location(
         viewed[:, 0] = positions[:, 0] + view_distance * np.cos(gaze_direction)
         viewed[:, 1] = positions[:, 1] + view_distance * np.sin(gaze_direction)
 
-    else:  # ray_cast or boundary (both use ray casting)
+    else:
         assert env is not None
-        # Cast ray until it exits environment or hits max distance
-        for i in range(n_time):
-            intersection = _ray_cast_to_boundary(
-                env,
-                positions[i],
-                gaze_direction[i],
-                max_distance=max_distance,
-            )
-            if intersection is not None:
-                viewed[i] = intersection
+        from neurospatial.ops._boundaries import (
+            boundary_geometry,
+            physical_ray_hits,
+            ray_hits,
+            valid_observers,
+        )
+
+        walls = boundary_geometry(env, boundary_source)
+        origins = positions.copy()
+        origins[~valid_observers(env, positions, boundary_source)] = np.nan
+        viewed = (
+            physical_ray_hits(env.arena, origins, gaze_direction, max_distance)
+            if boundary_source == "physical"
+            else ray_hits(walls, origins, gaze_direction, max_distance)
+        )
 
     return viewed
 
@@ -588,10 +600,12 @@ def _ray_cast_to_boundary(
     direction: float,
     max_distance: float = 100.0,
     n_steps: int = 100,
+    *,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64] | None:
     """Cast a ray from origin in direction until it exits the environment.
 
-    Uses iterative stepping with binary search refinement.
+    Uses exact geometric intersection; n_steps is retained for compatibility.
 
     Parameters
     ----------
@@ -604,62 +618,27 @@ def _ray_cast_to_boundary(
     max_distance : float
         Maximum distance to search.
     n_steps : int
-        Number of steps for initial search.
+        Retained for compatibility; geometric intersections do not use steps.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
     NDArray[np.float64] or None
         Intersection point, or None if no intersection found.
     """
-    # Create ray points
-    distances = np.linspace(0, max_distance, n_steps)
-    dx = np.cos(direction)
-    dy = np.sin(direction)
-
-    ray_x = origin[0] + distances * dx
-    ray_y = origin[1] + distances * dy
-    ray_points = np.column_stack([ray_x, ray_y])
-
-    # Find which points are inside environment
-    bin_indices = env.bin_at(ray_points)
-    inside = bin_indices >= 0
-
-    # Find first transition from inside to outside
-    if not np.any(inside):
-        # Start point outside environment
-        return None
-
-    # Find transition points
-    transitions = np.diff(inside.astype(int))
-    exit_indices = np.where(transitions == -1)[0]
-
-    if len(exit_indices) == 0:
-        # Ray never exits (all points inside or outside)
-        if inside[-1]:
-            # Ray ends inside - return max distance point
-            result: NDArray[np.float64] = ray_points[-1]
-            return result
-        return None
-
-    # Refine first exit point with binary search
-    exit_idx = exit_indices[0]
-    low_dist = distances[exit_idx]
-    high_dist = distances[exit_idx + 1]
-
-    # Binary search for boundary
-    for _ in range(10):  # 10 iterations gives ~0.1% precision
-        mid_dist = (low_dist + high_dist) / 2
-        mid_point = np.array([origin[0] + mid_dist * dx, origin[1] + mid_dist * dy])
-        mid_bin = env.bin_at(mid_point.reshape(1, -1))[0]
-
-        if mid_bin >= 0:
-            low_dist = mid_dist
-        else:
-            high_dist = mid_dist
-
-    # Return last point inside
-    boundary_point = np.array([origin[0] + low_dist * dx, origin[1] + low_dist * dy])
-    return boundary_point
+    viewed = compute_viewed_location(
+        np.asarray(origin).reshape(1, 2),
+        np.array([direction]),
+        method="ray_cast",
+        env=env,
+        max_distance=max_distance,
+        boundary_source=boundary_source,
+    )
+    return None if not np.all(np.isfinite(viewed[0])) else viewed[0]
 
 
 def _line_of_sight_clear(
@@ -667,6 +646,8 @@ def _line_of_sight_clear(
     observer: NDArray[np.float64],
     target: NDArray[np.float64],
     n_samples: int = 20,
+    *,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> bool:
     """Check if line of sight between observer and target is clear.
 
@@ -679,22 +660,27 @@ def _line_of_sight_clear(
     target : NDArray[np.float64], shape (2,)
         Target position.
     n_samples : int
-        Number of points to sample along line.
+        Retained for compatibility; line-of-sight tests use exact intersections.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
     bool
         True if line of sight is clear (all points inside environment).
     """
-    # Sample points along line
-    t = np.linspace(0, 1, n_samples)
-    line_x = observer[0] + t * (target[0] - observer[0])
-    line_y = observer[1] + t * (target[1] - observer[1])
-    line_points = np.column_stack([line_x, line_y])
-
-    # Check if all points are inside environment
-    bin_indices = env.bin_at(line_points)
-    return bool(np.all(bin_indices >= 0))
+    return bool(
+        _batch_line_of_sight_clear(
+            env,
+            observer,
+            np.asarray(target).reshape(1, 2),
+            n_samples=n_samples,
+            boundary_source=boundary_source,
+        )[0]
+    )
 
 
 def _batch_line_of_sight_clear(
@@ -702,6 +688,8 @@ def _batch_line_of_sight_clear(
     observer: NDArray[np.float64],
     targets: NDArray[np.float64],
     n_samples: int = 20,
+    *,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.bool_]:
     """Check line of sight between observer and multiple targets (vectorized).
 
@@ -714,38 +702,39 @@ def _batch_line_of_sight_clear(
     targets : NDArray[np.float64], shape (n_targets, 2)
         Target positions.
     n_samples : int
-        Number of points to sample along each line.
+        Retained for compatibility; line-of-sight tests use exact intersections.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
     NDArray[np.bool_], shape (n_targets,)
         True if line of sight is clear for each target.
     """
-    n_targets = len(targets)
-    if n_targets == 0:
-        return np.array([], dtype=bool)
+    from neurospatial.ops._boundaries import (
+        boundary_geometry,
+        clear_segments,
+        physical_clear_segments,
+        valid_observers,
+    )
 
-    # Create parameter array for line sampling: shape (n_samples,)
-    t = np.linspace(0, 1, n_samples)
-
-    # Vectorized line sampling for all targets at once
-    # observer: (2,), targets: (n_targets, 2)
-    # line_points shape: (n_targets, n_samples, 2)
-    diff = targets - observer  # (n_targets, 2)
-    line_points = observer + t[:, np.newaxis, np.newaxis] * diff[np.newaxis, :, :]
-    # Transpose to (n_targets, n_samples, 2)
-    line_points = np.transpose(line_points, (1, 0, 2))
-
-    # Reshape for batch bin_at query: (n_targets * n_samples, 2)
-    flat_points = line_points.reshape(-1, 2)
-    bin_indices = env.bin_at(flat_points)
-
-    # Reshape back to (n_targets, n_samples)
-    bin_indices_2d = bin_indices.reshape(n_targets, n_samples)
-
-    # Check if ALL points along each line are inside (bin_idx >= 0)
-    result: NDArray[np.bool_] = np.all(bin_indices_2d >= 0, axis=1)
-    return result
+    walls = boundary_geometry(env, boundary_source)
+    observer = np.asarray(observer, dtype=np.float64)
+    targets = np.asarray(targets, dtype=np.float64)
+    if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
+        raise ValueError(
+            "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
+        )
+    if not valid_observers(env, observer.reshape(1, 2), boundary_source)[0]:
+        return np.zeros(len(targets), dtype=bool)
+    return (
+        physical_clear_segments(env.arena, observer, targets)
+        if boundary_source == "physical"
+        else clear_segments(walls, observer, targets)
+    )
 
 
 def compute_viewshed(
@@ -756,6 +745,7 @@ def compute_viewshed(
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
     cue_positions: NDArray[np.float64] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> ViewshedResult:
     """Compute visible bins from an observer position.
 
@@ -779,6 +769,11 @@ def compute_viewshed(
     cue_positions : NDArray[np.float64], shape (n_cues, 2), optional
         Positions of cues to check visibility for.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     ViewshedResult
@@ -792,7 +787,9 @@ def compute_viewshed(
     >>> rng = np.random.default_rng(42)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> result = compute_viewshed(env, np.array([50.0, 50.0]), heading=0.0)
+    >>> result = compute_viewshed(
+    ...     env, np.array([50.0, 50.0]), heading=0.0, boundary_source="analysis"
+    ... )
     >>> result.n_visible_bins > 0
     True
     """
@@ -826,9 +823,48 @@ def compute_viewshed(
     # Convert to allocentric
     ray_angles_allo = ray_angles_ego + heading
 
-    # Vectorized ray casting setup
-    max_distance = 200.0
+    from neurospatial.ops._boundaries import (
+        boundary_geometry,
+        physical_ray_hits,
+        ray_hits,
+        valid_observers,
+    )
+
+    walls = boundary_geometry(env, boundary_source)
+    if position.shape != (2,):
+        raise ValueError("position must have shape (2,).")
+    if (
+        isinstance(n_rays, (bool, np.bool_))
+        or not isinstance(n_rays, (int, np.integer))
+        or n_rays < 1
+    ):
+        raise ValueError("n_rays must be a positive integer.")
+    if (
+        not np.isfinite(heading)
+        or not valid_observers(env, position.reshape(1, 2), boundary_source)[0]
+    ):
+        return ViewshedResult(
+            np.empty(0, dtype=np.intp),
+            np.empty(0, dtype=np.intp),
+            np.empty(0),
+            np.empty(0),
+            np.zeros(env.n_bins),
+            _total_bins=env.n_bins,
+        )
+    # Enclose both known walls and retained bin centers; no fixed 200-unit cap.
+    coordinates = np.vstack((np.array(walls.bounds).reshape(2, 2), env.bin_centers))
+    max_distance = max(
+        float(np.hypot.reduce(coordinates - position, axis=1).max()) * 2, 1.0
+    )
     n_steps = 100
+    origins = np.broadcast_to(position, (n_rays, 2))
+    hits = (
+        physical_ray_hits(env.arena, origins, ray_angles_allo, max_distance)
+        if boundary_source == "physical"
+        else ray_hits(walls, origins, ray_angles_allo, max_distance)
+    )
+    hit_distance = np.hypot.reduce(hits - position, axis=1)
+    ray_lengths = np.where(np.isfinite(hit_distance), hit_distance, max_distance)
 
     # Pre-compute direction vectors for all rays: shape (n_rays, 2)
     dx = np.cos(ray_angles_allo)
@@ -836,14 +872,18 @@ def compute_viewshed(
     directions = np.column_stack([dx, dy])  # (n_rays, 2)
 
     # Create ray sample points: distances along ray
-    distances = np.linspace(0, max_distance, n_steps)  # (n_steps,)
+    distances = np.linspace(0, 1, n_steps, endpoint=False)  # strictly before contact
 
     # Generate all ray points at once: (n_rays, n_steps, 2)
     # position: (2,), directions: (n_rays, 2), distances: (n_steps,)
     ray_points_all = (
         position[np.newaxis, np.newaxis, :]
-        + directions[:, np.newaxis, :] * distances[np.newaxis, :, np.newaxis]
+        + directions[:, np.newaxis, :]
+        * (ray_lengths[:, np.newaxis] * distances)[..., np.newaxis]
     )
+
+    # A zero-length ray ends on the observer's wall; it exposes no cell interior.
+    ray_points_all[ray_lengths == 0] = np.nan
 
     # Reshape for batch bin_at query: (n_rays * n_steps, 2)
     flat_ray_points = ray_points_all.reshape(-1, 2)
@@ -851,38 +891,15 @@ def compute_viewshed(
 
     # Reshape back: (n_rays, n_steps)
     bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)
-    inside_2d = bin_indices_2d >= 0
 
-    # Find boundary points for each ray (first exit from environment)
-    # For each ray, find the last consecutive "inside" point
+    # Sample analysis bins before the first chosen wall contact. Missing bins
+    # do not occlude physical rays.
     occlusion_scores = np.zeros(env.n_bins, dtype=np.float64)
     ray_counts = np.zeros(env.n_bins, dtype=np.float64)
     visible_bin_mask = np.zeros(env.n_bins, dtype=bool)
 
     for ray_idx in range(n_rays):
-        inside_mask = inside_2d[ray_idx]
-
-        if not np.any(inside_mask):
-            # Ray starts outside - skip
-            continue
-
-        # Find transition points (inside -> outside)
-        transitions = np.diff(inside_mask.astype(np.int8))
-        exit_indices = np.where(transitions == -1)[0]
-
-        if len(exit_indices) > 0:
-            # Use first exit point as boundary
-            boundary_idx = exit_indices[0]
-        elif inside_mask[-1]:
-            # Ray ends inside - use last point
-            boundary_idx = n_steps - 1
-        else:
-            # Ray starts inside but immediately exits - use first inside point
-            first_inside = np.argmax(inside_mask)
-            boundary_idx = first_inside
-
-        # Get valid bins along this ray up to boundary
-        valid_bins = bin_indices_2d[ray_idx, : boundary_idx + 1]
+        valid_bins = bin_indices_2d[ray_idx]
         valid_bins = valid_bins[valid_bins >= 0]
 
         # Use numpy's unique and bincount for fast accumulation
@@ -921,7 +938,10 @@ def compute_viewshed(
             fov_indices = np.where(in_fov)[0]
             if len(fov_indices) > 0:
                 los_clear = _batch_line_of_sight_clear(
-                    env, position, cue_positions[fov_indices]
+                    env,
+                    position,
+                    cue_positions[fov_indices],
+                    boundary_source=boundary_source,
                 )
                 # Build visibility mask
                 visible_mask = np.zeros(n_cues, dtype=bool)
@@ -961,6 +981,7 @@ def compute_view_field(
     *,
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.bool_]:
     """Compute binary visibility mask from observer position.
 
@@ -977,6 +998,11 @@ def compute_view_field(
     n_rays : int, default 360
         Number of rays to cast.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     NDArray[np.bool_], shape (n_bins,)
@@ -990,11 +1016,15 @@ def compute_view_field(
     >>> rng = np.random.default_rng(42)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> mask = compute_view_field(env, np.array([50.0, 50.0]), heading=0.0)
+    >>> mask = compute_view_field(
+    ...     env, np.array([50.0, 50.0]), heading=0.0, boundary_source="analysis"
+    ... )
     >>> mask.dtype == bool
     True
     """
-    result = compute_viewshed(env, position, heading, fov=fov, n_rays=n_rays)
+    result = compute_viewshed(
+        env, position, heading, fov=fov, n_rays=n_rays, boundary_source=boundary_source
+    )
     mask = np.zeros(env.n_bins, dtype=bool)
     mask[result.visible_bins] = True
     return mask
@@ -1007,6 +1037,7 @@ def visible_cues(
     cue_positions: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.float64]]:
     """Check visibility of cue positions.
 
@@ -1022,6 +1053,11 @@ def visible_cues(
         Positions of cues to check.
     fov : FieldOfView, float, or None, default None
         Field of view constraint.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -1044,7 +1080,11 @@ def visible_cues(
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> cues = np.array([[50, 50], [80, 20]])  # 2 cues
     >>> visible, distances, bearings = visible_cues(
-    ...     env, position=np.array([25, 25]), heading=0.0, cue_positions=cues
+    ...     env,
+    ...     position=np.array([25, 25]),
+    ...     heading=0.0,
+    ...     cue_positions=cues,
+    ...     boundary_source="analysis",
     ... )  # doctest: +SKIP
     """
     from neurospatial.ops.egocentric import compute_egocentric_bearing
@@ -1086,7 +1126,7 @@ def visible_cues(
 
     if len(fov_indices) > 0:
         los_clear = _batch_line_of_sight_clear(
-            env, position, cue_positions[fov_indices]
+            env, position, cue_positions[fov_indices], boundary_source=boundary_source
         )
         visible[fov_indices] = los_clear
 
@@ -1105,6 +1145,7 @@ def compute_viewshed_trajectory(
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
     cue_positions: NDArray[np.float64] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> list[ViewshedResult]:
     """Compute viewshed at each point along a trajectory.
 
@@ -1123,6 +1164,11 @@ def compute_viewshed_trajectory(
     cue_positions : NDArray[np.float64], shape (n_cues, 2), optional
         Cue positions to check.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     list of ViewshedResult
@@ -1140,6 +1186,7 @@ def compute_viewshed_trajectory(
             fov=fov,
             n_rays=n_rays,
             cue_positions=cue_positions,
+            boundary_source=boundary_source,
         )
         results.append(result)
 
@@ -1154,6 +1201,7 @@ def visibility_occupancy(
     *,
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Compute time each bin was visible during trajectory.
 
@@ -1171,6 +1219,11 @@ def visibility_occupancy(
         Field of view constraint.
     n_rays : int, default 360
         Number of rays per viewshed.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -1200,6 +1253,7 @@ def visibility_occupancy(
             headings[i],
             fov=fov,
             n_rays=n_rays,
+            boundary_source=boundary_source,
         )
         np.add.at(occupancy, result.visible_bins, dt[i])
 

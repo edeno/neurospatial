@@ -434,6 +434,7 @@ class TestComputeViewRateJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="jax",
+            boundary_source="analysis",
         )
 
         # Basic sanity checks
@@ -465,6 +466,7 @@ class TestComputeViewRateJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="numpy",
+            boundary_source="analysis",
         )
 
         # Compute with JAX backend
@@ -478,6 +480,7 @@ class TestComputeViewRateJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="jax",
+            boundary_source="analysis",
         )
 
         # Results should match
@@ -518,6 +521,7 @@ class TestComputeViewRateJaxBackend:
             method="diffusion_kde",
             bandwidth=5.0,
             backend="numpy",
+            boundary_source="analysis",
         )
 
         # Compute with JAX backend
@@ -532,6 +536,7 @@ class TestComputeViewRateJaxBackend:
             method="diffusion_kde",
             bandwidth=5.0,
             backend="jax",
+            boundary_source="analysis",
         )
 
         # Results should match
@@ -573,6 +578,7 @@ class TestComputeViewRatesJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="jax",
+            boundary_source="analysis",
         )
 
         # Basic sanity checks
@@ -604,6 +610,7 @@ class TestComputeViewRatesJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="numpy",
+            boundary_source="analysis",
         )
 
         # Compute with JAX backend
@@ -617,6 +624,7 @@ class TestComputeViewRatesJaxBackend:
             view_distance=10.0,
             method="binned",
             backend="jax",
+            boundary_source="analysis",
         )
 
         # Results should match

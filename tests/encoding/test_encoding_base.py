@@ -670,7 +670,14 @@ class TestComputeRateRequiresFittedEnv:
         positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
         headings = np.zeros(10)
         with pytest.raises(EnvironmentNotFittedError):
-            compute_view_rate(env, np.array([0.5]), times, positions, headings)
+            compute_view_rate(
+                env,
+                np.array([0.5]),
+                times,
+                positions,
+                headings,
+                boundary_source="analysis",
+            )
 
     def test_compute_egocentric_rate_rejects_unfitted_env(self) -> None:
         """When env is supplied to egocentric, it must be fitted.
@@ -701,7 +708,14 @@ class TestComputeRateRequiresFittedEnv:
         positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
         headings = np.zeros(10)
         with pytest.raises(EnvironmentNotFittedError):
-            compute_view_rates(env, [np.array([0.5])], times, positions, headings)
+            compute_view_rates(
+                env,
+                [np.array([0.5])],
+                times,
+                positions,
+                headings,
+                boundary_source="analysis",
+            )
 
     def test_compute_egocentric_rates_rejects_unfitted_env(self) -> None:
         from neurospatial.encoding.egocentric import compute_egocentric_rates

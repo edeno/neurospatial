@@ -408,6 +408,69 @@ Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
 
+## Compute gaze and visibility against walls
+
+Ray casting and cue visibility use the same `boundary_source` choice. Physical
+mode reads declared footprint rings and internal walls; it does not stop when a
+ray crosses an analysis crop or an unvisited bin. Analysis mode explicitly uses
+analysis-cell boundaries, constrained by the known domain and internal walls.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box, LineString
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.ops.visibility import compute_viewed_location, visible_cues
+
+env = Environment.from_grid_mask(
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
+    arena=OpenArena(box(0, 0, 10, 10), walls=(LineString([(5, 0), (5, 10)]),)),
+)
+crop = env.subset(bins=env.bin_centers[:, 0] < 4)
+hit = compute_viewed_location(
+    np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
+    method="ray_cast", max_distance=30,
+)
+np.testing.assert_allclose(hit, [[5.0, 4.5]])  # real wall, beyond the analysis crop
+approximate = compute_viewed_location(
+    np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
+    method="ray_cast", max_distance=30, boundary_source="analysis",
+)
+np.testing.assert_allclose(approximate, [[4.0, 4.5]])
+visible, _, _ = visible_cues(
+    crop, np.array([2.5, 4.5]), 0.0, np.array([[5.0, 4.5], [7.5, 4.5]]),
+)
+np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
+```
+
+`compute_viewed_location()` returns the first wall contact. No hit within
+`max_distance`, a nonfinite observation, or an observer outside an asserted
+footprint yields NaN. Starting on a wall gives a zero-distance contact. A cue at
+the first contact is visible; a cue behind it is occluded. Stored affine frames
+use locally bounded projection errors for boundary contact. Physical mode only
+uses supplied wall evidence; inferred domains do not add unasserted outer walls.
+
+`compute_viewshed()` still samples rays to determine visible-bin coverage;
+wall intersections and cue line of sight use geometric intersections. Missing
+analysis bins do not occlude physical rays, and the sampled bins stop strictly
+before wall contact. Visibility maps remain an approximation whose angular
+coverage depends on `n_rays`.
+
+The source choice is forwarded by the single/population view encoders, shuffle
+tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
+encoding assigns a wall hit to the bin just inside the observer's side. A hit
+outside the retained analysis support remains invalid. Spike counts and exposure
+share that assignment, and results record the source in `analysis_settings`.
+Encoder/model searches cover the known geometry rather than imposing a fixed
+100-unit range. Fixed-distance gaze keeps its existing behavior.
+
+Physical encoding of independently transformed combined components requires a
+shared certified owner frame; unsupported cases refuse with guidance. Curved
+track footprints still require a separate exact wall representation. For a
+position-derived environment with supported planar cells, explicitly select
+`boundary_source="analysis"` when that approximation is the intended model.
+
 ## Change bin size while retaining the arena
 
 `env.rebin(bin_size=...)` builds a new rectangular lattice over the retained

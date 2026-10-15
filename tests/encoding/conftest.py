@@ -38,7 +38,9 @@ def rate_family_results(rate_family_inputs):
     env, times, positions, headings, spikes, objects = rate_family_inputs
     return {
         "spatial": compute_spatial_rates(env, spikes, times, positions),
-        "view": compute_view_rates(env, spikes, times, positions, headings),
+        "view": compute_view_rates(
+            env, spikes, times, positions, headings, boundary_source="analysis"
+        ),
         "allocentric": compute_object_vector_rates(
             env, spikes, times, positions, objects
         ),

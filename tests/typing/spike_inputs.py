@@ -52,12 +52,16 @@ if TYPE_CHECKING:
     ) -> None:
         compute_spatial_rates(env, spikes, times, positions)
         compute_directional_rates(spikes, times, headings)
-        compute_view_rates(env, spikes, times, positions, headings)
+        compute_view_rates(
+            env, spikes, times, positions, headings, boundary_source="analysis"
+        )
         compute_egocentric_rates(env, spikes, times, positions, headings, objects)
         compute_object_vector_rates(env, spikes, times, positions, objects)
         place_cell_significance(env, spikes, times, positions)
         head_direction_cell_significance(spikes, times, headings)
-        spatial_view_cell_significance(env, spikes, times, positions, headings)
+        spatial_view_cell_significance(
+            env, spikes, times, positions, headings, boundary_source="analysis"
+        )
         object_vector_cell_significance(env, spikes, times, positions, objects)
         egocentric_object_vector_cell_significance(
             env, spikes, times, positions, headings, objects

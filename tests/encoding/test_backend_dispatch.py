@@ -187,6 +187,7 @@ def _make_call(
             trajectory_positions,
             trajectory_headings,
             backend=backend,
+            boundary_source="analysis",
         ),
         "compute_view_rates": lambda backend: compute_view_rates(
             simple_env,
@@ -195,6 +196,7 @@ def _make_call(
             trajectory_positions,
             trajectory_headings,
             backend=backend,
+            boundary_source="analysis",
         ),
         "compute_egocentric_rate": lambda backend: compute_egocentric_rate(
             None,

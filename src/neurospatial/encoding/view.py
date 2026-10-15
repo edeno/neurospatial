@@ -125,7 +125,11 @@ VIEW_THRESHOLDS = MappingProxyType({"min_info": 0.5})
 
 def _view_xarray_attrs(result: ViewRateResult | ViewRatesResult) -> dict[str, Any]:
     """Coordinate and estimator metadata specific to this rate family."""
-    return {"gaze_model": result.gaze_model, "view_distance": result.view_distance}
+    attrs = {"gaze_model": result.gaze_model, "view_distance": result.view_distance}
+    source = (result.analysis_settings or {}).get("boundary_source")
+    if source is not None:
+        attrs["boundary_source"] = source
+    return attrs
 
 
 def _view_classify(
@@ -1185,6 +1189,7 @@ def compute_view_rate(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
@@ -1268,6 +1273,11 @@ def compute_view_rate(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -1448,6 +1458,7 @@ def compute_view_rate(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        boundary_source=boundary_source,
     )
     spike_counts_batch, occupancy = prepared.count([spike_times])
     from neurospatial.encoding._provenance import rate_analysis_settings
@@ -1461,6 +1472,7 @@ def compute_view_rate(
         gaze_model=gaze_model,
         view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
         gaze_offsets_source="provided" if gaze_offsets is not None else None,
+        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
     )
 
     spike_counts = spike_counts_batch[0]
@@ -1518,6 +1530,7 @@ def compute_view_rates(
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -1616,6 +1629,11 @@ def compute_view_rates(
         group, a ``unit_ids`` that differs from the group's index raises
         ``ValueError`` (relabel the group itself instead). A wrong-length
         value or a repeated label raises ``ValueError``.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
 
     Returns
     -------
@@ -1764,6 +1782,7 @@ def compute_view_rates(
         n_jobs=n_jobs,
         backend=backend,
         unit_ids=unit_ids,
+        boundary_source=boundary_source,
     )
 
 
@@ -1787,6 +1806,7 @@ def _compute_view_rates(
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     view_bins: NDArray[np.intp] | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> ViewRatesResult:
     """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -1901,6 +1921,7 @@ def _compute_view_rates(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         view_bins=view_bins,
+        boundary_source=boundary_source,
     )
 
     spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
@@ -1915,6 +1936,7 @@ def _compute_view_rates(
         gaze_model=gaze_model,
         view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
         gaze_offsets_source="provided" if gaze_offsets is not None else None,
+        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -1985,6 +2007,7 @@ def is_spatial_view_cell(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> bool:
     """Classify one neuron by the spatial_view_cell screen or circular-shift test.
 
@@ -2080,6 +2103,11 @@ def is_spatial_view_cell(
     unit_id : hashable or None, default=None
         Shuffle stream label; None uses label 0. Match the population's label.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     bool
@@ -2162,6 +2190,7 @@ def is_spatial_view_cell(
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
             backend=backend,
+            boundary_source=boundary_source,
         )[label]
         return shuffle_result.p_value < level
     min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
@@ -2181,6 +2210,7 @@ def is_spatial_view_cell(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
+        boundary_source=boundary_source,
     )
     return result.is_spatial_view_cell(min_info=min_info)
 
@@ -2207,6 +2237,7 @@ def spatial_view_cell_significance(
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
+    boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test spatial view tuning against circular spike-time shifts.
 
@@ -2311,6 +2342,11 @@ def spatial_view_cell_significance(
     rng : numpy.random.Generator, int or None, default=None
         Integer seeds give stable per-unit shifts regardless of population order.
 
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+
     Returns
     -------
     dict[Hashable, ShuffleTestResult]
@@ -2376,6 +2412,7 @@ def spatial_view_cell_significance(
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     options: dict[str, Any] = {
         "gaze_model": gaze_model,
+        "boundary_source": boundary_source,
         "view_distance": view_distance,
         "gaze_offsets": gaze_offsets,
         "max_gap": max_gap,
@@ -2411,6 +2448,7 @@ def spatial_view_cell_significance(
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=options["gaze_offsets"],
+        boundary_source=boundary_source,
     )
     mask = interval_valid_mask(
         times,

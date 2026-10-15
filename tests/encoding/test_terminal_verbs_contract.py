@@ -56,7 +56,13 @@ def view_batch():
     headings = rng.uniform(-np.pi, np.pi, 200)
     spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
     return compute_view_rates(
-        env, spike_times, times, trajectory, headings, view_distance=10.0
+        env,
+        spike_times,
+        times,
+        trajectory,
+        headings,
+        view_distance=10.0,
+        boundary_source="analysis",
     )
 
 

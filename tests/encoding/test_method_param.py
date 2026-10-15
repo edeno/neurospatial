@@ -51,13 +51,15 @@ def _spatial_rates(session, method):
 def _view_rate(session, method):
     env, st, t, pos, hd, _obj = session
     kw = {} if method is None else {"method": method}
-    return compute_view_rate(env, st, t, pos, hd, **kw)
+    return compute_view_rate(env, st, t, pos, hd, **kw, boundary_source="analysis")
 
 
 def _view_rates(session, method):
     env, st, t, pos, hd, _obj = session
     kw = {} if method is None else {"method": method}
-    return compute_view_rates(env, [st, st], t, pos, hd, **kw)
+    return compute_view_rates(
+        env, [st, st], t, pos, hd, **kw, boundary_source="analysis"
+    )
 
 
 def _ego_rate(session, method):
@@ -136,10 +138,22 @@ def _old_kwarg_calls(session):
             env, [st], t, pos, smoothing_method="diffusion_kde"
         ),
         "compute_view_rate": lambda: compute_view_rate(
-            env, st, t, pos, hd, smoothing_method="diffusion_kde"
+            env,
+            st,
+            t,
+            pos,
+            hd,
+            smoothing_method="diffusion_kde",
+            boundary_source="analysis",
         ),
         "compute_view_rates": lambda: compute_view_rates(
-            env, [st], t, pos, hd, smoothing_method="diffusion_kde"
+            env,
+            [st],
+            t,
+            pos,
+            hd,
+            smoothing_method="diffusion_kde",
+            boundary_source="analysis",
         ),
         "compute_egocentric_rate": lambda: compute_egocentric_rate(
             env, st, t, pos, hd, obj, smoothing_method="binned"
@@ -234,7 +248,9 @@ def test_method_in_projections(ovc_session):
     env, st, t, pos, hd, _obj = ovc_session
     cases = [
         compute_spatial_rates(env, [st, st], t, pos, method="binned"),
-        compute_view_rates(env, [st, st], t, pos, hd, method="binned"),
+        compute_view_rates(
+            env, [st, st], t, pos, hd, method="binned", boundary_source="analysis"
+        ),
     ]
     for result in cases:
         assert result.summary()["method"] == "binned"
@@ -251,7 +267,9 @@ def test_method_in_xarray_attrs(ovc_session):
     env, st, t, pos, hd, _obj = ovc_session
     for result in (
         compute_spatial_rates(env, [st, st], t, pos, method="binned"),
-        compute_view_rates(env, [st, st], t, pos, hd, method="binned"),
+        compute_view_rates(
+            env, [st, st], t, pos, hd, method="binned", boundary_source="analysis"
+        ),
     ):
         assert result.to_xarray().attrs["method"] == "binned"
 
@@ -261,7 +279,9 @@ def test_method_in_singular_projections(ovc_session):
     env, st, t, pos, hd, _obj = ovc_session
     for result in (
         compute_spatial_rate(env, st, t, pos, method="binned"),
-        compute_view_rate(env, st, t, pos, hd, method="binned"),
+        compute_view_rate(
+            env, st, t, pos, hd, method="binned", boundary_source="analysis"
+        ),
     ):
         assert result.summary()["method"] == "binned"
         df = result.to_dataframe()

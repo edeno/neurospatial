@@ -2,7 +2,8 @@
 
 **Status:** D0/D1 complete and validated on 2026-10-15.
 D2 is complete and validated on `feature/environment-border-walls`,
-stacked on rebin commit `bf5121e5`. D3 remains to be implemented.
+stacked on rebin commit `bf5121e5`. D3 is implemented and under final validation on
+`feature/environment-wall-visibility`, stacked on border commit `8a8693d5`.
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
@@ -170,3 +171,30 @@ The API snapshot changes only the intended `boundary_source` argument.
 Logs: `/private/tmp/stage-d2-release.log`,
 `/private/tmp/stage-d2-release-types.log`, `/private/tmp/stage-d2-doctests.log`,
 `/private/tmp/stage-d2-guide.log`.
+
+## D3 delivered behavior and limits
+
+Wall hits and cue occlusion use exact planar geometric intersections. Physical
+mode reads asserted footprint rings and internal walls; explicit analysis mode
+uses the effective analysis-cell domain and known internal walls. A maximum
+search endpoint is not a wall. No hit or invalid/outside observer returns NaN;
+starting on a wall returns the origin. A target at first contact is visible,
+while an earlier contact blocks it. Stored source frames and locally capped
+inverse-rounding bounds preserve boundary contact under affine frames.
+
+Viewshed coverage still samples rays and bins, strictly before the first contact;
+it does not claim exact visible-cell coverage. Known-wall intersections prevent
+skipping a thin barrier. Missing analysis bins never terminate physical rays.
+
+The view encoders and model forward the boundary choice; encoder provenance
+records it. Endpoint binning uses a one-sided limit in the retained cell-owner
+frame. Counts and occupancy share the resulting frame bins. Independently
+transformed combined children without one owner frame refuse physical wall-bin
+assignment; analysis mode remains explicit. Fixed-distance gaze is unchanged.
+Encoder/model searches cover the supplied geometry instead of a fixed range.
+
+Regression review caught two transformed-query defects after the first passing
+gate: a cue on a rotated wall became occluded, and an angular sweep encoded two
+bins beyond a closed wall. Source-frame contacts and owner lookup now resolve
+both; the suite covers offsets 0, 100 and 1e9, a clearly behind-wall cue,
+transformed subsets/clips and dict restoration.

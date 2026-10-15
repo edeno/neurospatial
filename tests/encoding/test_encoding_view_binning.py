@@ -108,6 +108,7 @@ class TestComputeViewOccupancy:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert isinstance(occupancy, np.ndarray)
@@ -126,6 +127,7 @@ class TestComputeViewOccupancy:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
@@ -143,6 +145,7 @@ class TestComputeViewOccupancy:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert np.all(occupancy >= 0)
@@ -165,6 +168,7 @@ class TestComputeViewOccupancy:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         total_duration = trajectory_data["times"][-1] - trajectory_data["times"][0]
@@ -190,6 +194,7 @@ class TestComputeViewOccupancy:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         # Compute position occupancy for comparison
@@ -218,6 +223,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         # Should run without error and return valid array
@@ -239,6 +245,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
@@ -257,6 +264,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="ray_cast",
+            boundary_source="analysis",
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
@@ -275,6 +283,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="boundary",
+            boundary_source="analysis",
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
@@ -294,6 +303,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         occ_ray = compute_occupancy(
@@ -302,6 +312,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="ray_cast",
+            boundary_source="analysis",
         )
 
         # Results should differ
@@ -322,6 +333,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=5.0,
+            boundary_source="analysis",
         )
 
         occ_long = compute_occupancy(
@@ -331,6 +343,7 @@ class TestComputeViewOccupancyGazeModels:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=20.0,
+            boundary_source="analysis",
         )
 
         # Results should differ
@@ -366,6 +379,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert isinstance(spike_counts, np.ndarray)
@@ -386,6 +400,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (simple_env.n_bins,)
@@ -405,6 +420,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert np.all(spike_counts >= 0)
@@ -428,6 +444,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         # Filter spikes to valid time range
@@ -456,6 +473,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (simple_env.n_bins,)
@@ -478,6 +496,7 @@ class TestBinViewSpikeTrain:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert np.sum(spike_counts) == 0
@@ -501,6 +520,7 @@ class TestBinViewSpikeTrainGazeModels:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (simple_env.n_bins,)
@@ -521,6 +541,7 @@ class TestBinViewSpikeTrainGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="ray_cast",
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (simple_env.n_bins,)
@@ -541,6 +562,7 @@ class TestBinViewSpikeTrainGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="boundary",
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (simple_env.n_bins,)
@@ -571,6 +593,7 @@ class TestBinViewSpikeTrainValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
     def test_insufficient_samples_raises_error(
@@ -595,6 +618,7 @@ class TestBinViewSpikeTrainValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
 
@@ -627,6 +651,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert isinstance(result, tuple)
@@ -650,6 +675,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         n_neurons = len(multiple_neuron_spikes)
@@ -670,6 +696,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
@@ -689,6 +716,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.dtype == np.float64
@@ -708,6 +736,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert occupancy.dtype == np.float64
@@ -727,6 +756,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         # Neuron 3 has no spikes (empty array)
@@ -750,6 +780,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         # Check each neuron matches single-neuron result
@@ -760,6 +791,7 @@ class TestBinViewSpikeTrains:
                 trajectory_data["times"],
                 trajectory_data["positions"],
                 trajectory_data["headings"],
+                boundary_source="analysis",
             )
             np.testing.assert_array_equal(spike_counts_batch[i], spike_counts_single)
 
@@ -779,6 +811,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["positions"],
             trajectory_data["headings"],
             n_jobs=1,
+            boundary_source="analysis",
         )
 
         spike_counts_parallel, occupancy_parallel = bin_view_spike_trains(
@@ -788,6 +821,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["positions"],
             trajectory_data["headings"],
             n_jobs=2,
+            boundary_source="analysis",
         )
 
         np.testing.assert_array_equal(spike_counts_serial, spike_counts_parallel)
@@ -810,6 +844,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (1, simple_env.n_bins)
@@ -838,6 +873,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            boundary_source="analysis",
         )
 
         assert spike_counts.shape == (3, simple_env.n_bins)
@@ -870,6 +906,7 @@ class TestViewBinningEdgeCases:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # Should have high occupancy in bins east of center
@@ -894,7 +931,8 @@ class TestViewBinningEdgeCases:
             positions,
             headings,
             gaze_model="fixed_distance",
-            view_distance=20.0,  # Would be at (-15, 50) - outside env
+            view_distance=20.0,
+            boundary_source="analysis",  # Would be at (-15, 50) - outside env
         )
 
         # Total occupancy should be less than duration due to invalid views
@@ -924,6 +962,7 @@ class TestViewBinningEdgeCases:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # All 5 spikes should be in one bin
@@ -946,7 +985,9 @@ class TestViewBinningInputValidation:
         headings = np.random.uniform(0, 2 * np.pi, 100)
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(
+                simple_env, times, positions, headings, boundary_source="analysis"
+            )
 
     def test_mismatched_times_headings_length(
         self,
@@ -960,7 +1001,9 @@ class TestViewBinningInputValidation:
         headings = np.random.uniform(0, 2 * np.pi, 50)  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(
+                simple_env, times, positions, headings, boundary_source="analysis"
+            )
 
     def test_invalid_gaze_model(
         self,
@@ -976,7 +1019,8 @@ class TestViewBinningInputValidation:
                 trajectory_data["times"],
                 trajectory_data["positions"],
                 trajectory_data["headings"],
-                gaze_model="invalid_model",  # type: ignore[arg-type]
+                gaze_model="invalid_model",
+                boundary_source="analysis",  # type: ignore[arg-type]
             )
 
     def test_insufficient_samples(
@@ -991,7 +1035,9 @@ class TestViewBinningInputValidation:
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match=r"2|samples"):
-            compute_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(
+                simple_env, times, positions, headings, boundary_source="analysis"
+            )
 
 
 # ==============================================================================
@@ -1033,6 +1079,7 @@ class TestViewOccupancyNonUniformSampling:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # Expected total: sum of all actual time deltas
@@ -1070,7 +1117,8 @@ class TestViewOccupancyNonUniformSampling:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            max_gap=None,  # Coarse sampling is incidental to this test.
+            max_gap=None,
+            boundary_source="analysis",  # Coarse sampling is incidental to this test.
         )
 
         # With 4 intervals of 1s each, total should be 4s (not 5s)
@@ -1105,6 +1153,7 @@ class TestTimesValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
     def test_duplicate_times_allowed(
@@ -1129,7 +1178,8 @@ class TestTimesValidation:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            max_gap=None,  # Coarse sampling is incidental to this test.
+            max_gap=None,
+            boundary_source="analysis",  # Coarse sampling is incidental to this test.
         )
 
         # 3 intervals: 1s, 0s, 1s = 2s total
@@ -1170,6 +1220,7 @@ class TestBinViewSpikeTrainsPrecomputation:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # Get sequential results
@@ -1182,6 +1233,7 @@ class TestBinViewSpikeTrainsPrecomputation:
                 trajectory_data["headings"],
                 gaze_model="fixed_distance",
                 view_distance=10.0,
+                boundary_source="analysis",
             )
             np.testing.assert_array_almost_equal(
                 batch_counts[i], single_counts, err_msg=f"Neuron {i} counts differ"
@@ -1208,6 +1260,7 @@ class TestBinViewSpikeTrainsPrecomputation:
             trajectory_data["headings"],
             gaze_model="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         # Should return bin indices for each timepoint
@@ -1239,6 +1292,7 @@ class TestBinViewSpikeTrainsValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
     def test_insufficient_samples_raises_error(
@@ -1260,6 +1314,7 @@ class TestBinViewSpikeTrainsValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
 
@@ -1293,12 +1348,14 @@ class TestGazeModelGeometry:
             view_distance=10.0,
             env=rectangular_env,
             max_distance=150.0,
+            boundary_source="analysis",
         )
         viewed_fixed = compute_viewed_location(
             positions,
             headings,
             method="fixed_distance",
             view_distance=10.0,
+            boundary_source="analysis",
         )
 
         bins_boundary = rectangular_env.bin_at(viewed_boundary)
@@ -1323,6 +1380,7 @@ class TestGazeModelGeometry:
             view_distance=10.0,
             env=rectangular_env,
             max_distance=150.0,
+            boundary_source="analysis",
         )
         viewed_ray = compute_viewed_location(
             positions,
@@ -1331,6 +1389,7 @@ class TestGazeModelGeometry:
             view_distance=10.0,
             env=rectangular_env,
             max_distance=150.0,
+            boundary_source="analysis",
         )
 
         # In a convex env with no obstacles both methods stop at the same wall.

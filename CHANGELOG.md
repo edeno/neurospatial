@@ -4,6 +4,15 @@
 
 ### Added
 
+- Ray casting and cue line of sight now intersect declared physical walls,
+  including holes and internal barriers. Analysis crops no longer occlude
+  physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for
+  analysis-cell boundaries when physical walls are unknown. No wall hit within
+  the search distance returns NaN. View encoding, shuffle tests and simulation
+  forward and record the choice; wall hits use observer-side cell ownership.
+  Stored frames retain bounded boundary-contact behavior after transforms.
+  Viewshed bin coverage remains sampled; unsupported wall/owner geometry refuses.
+
 - Border scores now use declared physical footprint rings and internal walls
   by default, with wall-length coverage and distances to actual walls.
   **Breaking:** explicitly choose `boundary_source="analysis"` for the legacy

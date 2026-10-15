@@ -59,7 +59,14 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
         return compute_directional_rates(trains, times, headings, **kwargs)
     if name == "view":
         return compute_view_rates(
-            env, trains, times, positions, headings, view_distance=10.0, **kwargs
+            env,
+            trains,
+            times,
+            positions,
+            headings,
+            view_distance=10.0,
+            **kwargs,
+            boundary_source="analysis",
         )
     if name == "egocentric":
         obj = np.array([[25.0, 25.0]])
@@ -541,7 +548,14 @@ def test_indexing_population_keeps_mixed_label_types(family):
             trains, times, headings, **options
         ),
         "view": lambda: compute_view_rates(
-            env, trains, times, positions, headings, method="binned", **options
+            env,
+            trains,
+            times,
+            positions,
+            headings,
+            method="binned",
+            **options,
+            boundary_source="analysis",
         ),
         "egocentric": lambda: compute_egocentric_rates(
             env, trains, times, positions, headings, np.array([[50.0, 50.0]]), **options
