@@ -245,6 +245,36 @@ def test_transformed_closed_boundaries_use_bounded_arithmetic_uncertainty(
             )
 
 
+@pytest.mark.parametrize("holes", [False, True])
+def test_transformed_polygon_rings_remain_closed_after_inverse(holes):
+    import shapely
+
+    polygon = box(0, 0, 1, 1)
+    if holes:
+        polygon = polygon.difference(box(0.1, 0.1, 0.2, 0.2)).difference(
+            box(0.1, 0.7, 0.2, 0.8)
+        )
+    arena = OpenArena(polygon)
+    angle = 0.3
+    matrix = np.array(
+        [
+            [-np.cos(angle), -np.sin(angle), 10.0],
+            [-np.sin(angle), np.cos(angle), -7.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    derived = arena.transformed(matrix).transformed(np.linalg.inv(matrix))
+    points = np.array([[0.5, 0.5], [0.15, 0.15], [0.15, 0.75], [2.0, 2.0]])
+    for restored in (derived, decode_arena(*encode_arena(derived))):
+        domain = restored.polygonal_domain()
+        assert domain.is_valid
+        assert len(domain.interiors) == len(polygon.interiors)
+        for ring in shapely.get_rings(domain):
+            vertices = shapely.get_coordinates(ring)
+            np.testing.assert_array_equal(vertices[0], vertices[-1])
+        np.testing.assert_array_equal(restored.contains(points), arena.contains(points))
+
+
 def test_reflected_mask_and_nested_nd_frame_preserve_domain():
     arena = MaskArena(
         (np.array([0.0, 1.0, 3.0]), np.arange(3.0)),
