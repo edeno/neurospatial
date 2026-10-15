@@ -2,7 +2,8 @@
 
 Candidate source: `1099bb6b`, stacked above Stage F `0206fe26`. Subsequent documentation
 edits do not change executable code. Findings and owner PRs are
-listed in [the tracker](TRACKER.md).
+listed in [the tracker](TRACKER.md). Final parent `236a2ef9` adds only the
+independently verified rotation-property CI setting; library code is unchanged.
 
 ## Setup and checks
 

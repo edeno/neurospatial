@@ -119,7 +119,7 @@ Their passing regressions remain part of the broader gate.
 
 ## Integration progress
 
-- Published owner heads: #67 `9436ae14`, #68 `6b8e530e`, #70 `31bc3ff2`,
+- Repair heads before the final CI-only merge: #67 `9436ae14`, #68 `6b8e530e`, #70 `31bc3ff2`,
   #71 `7dffa014`, #72 `43d671ab`, #73 `58a88588`, #74 `ec1aa183`,
   #76 `a2450fde`. Repairs are merged forward without rewriting published history.
 - Baseline fixes have separate PRs: polar count/circularity #78; dotted file
@@ -171,3 +171,7 @@ structural recommendations have implementations and regression evidence.
   **318 passed**. Typing, Ruff, dependency rules, strict documentation and all
   8,131 checked internal fragments pass. Both real-recording slices retain
   all 14 captured arrays exactly.
+
+The CI-only PR #82 repair is merged through every parent; final Stage F parent
+is `236a2ef9`. The structural branch includes that merge. Remote CI is rerunning
+on the updated heads; pending jobs are not claimed as passes.
