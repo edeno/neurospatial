@@ -224,7 +224,11 @@ def _from_bins(
     from neurospatial.environment._from_bins import prepare_bins
 
     snapshot, graph, ranges, category = prepare_bins(binning)
-    return cls._from_binning(
+    if arena is None and snapshot.outline is not None:
+        from neurospatial.arena import OpenArena
+
+        arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
+    result = cls._from_binning(
         snapshot,
         connectivity=graph,
         dimension_ranges=ranges,
@@ -238,6 +242,13 @@ def _from_bins(
         regions=regions,
         arena=arena,
     )
+
+    if not np.array_equal(result.edge_pairs, snapshot.bins.pairs):
+        raise ValueError(
+            "Supplied neighbor pairs cross physical walls. Remove those pairs "
+            "and their aligned face data explicitly before calling from_bins."
+        )
+    return result
 
 
 def _from_samples(
@@ -435,6 +446,7 @@ def _linear_track(
     node_positions: Sequence[Sequence[float]] | None = None,
     bin_size: float,
     edge_spacing: float | Sequence[float] = 0.0,
+    track_width: float | None = None,
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
@@ -490,6 +502,7 @@ def _linear_track(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
+        track_width=track_width,
         bin_size=bin_size,
         name=name,
         units=units,
@@ -505,6 +518,7 @@ def _maze(
     node_positions: dict[Any, Sequence[float]] | None = None,
     bin_size: float,
     edge_spacing: float | Sequence[float] = 0.0,
+    track_width: float | None = None,
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
@@ -573,6 +587,7 @@ def _maze(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
+        track_width=track_width,
         bin_size=bin_size,
         name=name,
         units=units,
@@ -754,7 +769,6 @@ def _from_layout(
             name=name,
             regions=regions,
             arena=arena,
-            component_diagonal=env._component_diagonal,
             _grid_index=GridIndex(
                 env.grid_edges or (), env.grid_shape or (env.n_bins,), env.active_mask
             ),

@@ -18,6 +18,7 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.layout._polygon import PolygonCells, _boundary_cell_indices
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -48,6 +49,9 @@ def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _cartesian_boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
     """Boundary IDs from retained logical indexing, including transformed subsets."""
+    shapes = env._binning.shapes
+    if isinstance(shapes, PolygonCells):
+        return _boundary_cell_indices(shapes.polygons)
     grid_shape, active_mask = env.grid_shape, env.active_mask
     locator = env._binning.locator
     selections = []

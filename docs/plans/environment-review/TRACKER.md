@@ -50,7 +50,6 @@ The review's severity and introduction claims are hypotheses until checked here.
 | R28 | Docs | Initialization examples match E1006 raised by direct `Environment()` construction. | #77 | Fixed: factory-only construction documented; new normal/raises examples execute. |
 | R29 | Docs | Contributor instructions describe the capability checks actually performed. | #77 | Fixed: guide now describes owned face inputs and actual grid/track extraction. |
 | R30 | Docs | Test descriptions explain current behavior rather than obsolete Phase 2/3/3.3 milestones. | #77 | Fixed: batch encoding, spike inputs and NWB test descriptions name their behavior; experimental trajectory phases are retained. |
-
 | R31 | Additional | Native grid diffusion faces remain valid in small coordinate units. | PR #80 against main | Fixed: `cacb3a73`; remove the absolute axis-displacement cutoff; physical published-face tests pass. |
 | R32 | Additional | Factor rebinning preserves independent named regions. | #67 | Fixed: `74a79a7b`; 18 failing ownership regressions reproduced, 166 tests pass. |
 | R33 | CI baseline | Generated UTF-8 animation HTML is read correctly on Windows. | PR #81 against main; merged into #78–#80 | Fixed: `b147b034`; two cp1252 failures reproduced; all 16 existing module tests pass normally and with cp1252 simulated. |

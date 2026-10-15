@@ -16,7 +16,6 @@ from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 import numpy as np
 import shapely
 from numpy.typing import NDArray
-from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
@@ -168,18 +167,11 @@ def _mapped(
 
 
 def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
-    _mapped(shapely.get_coordinates(geometry), matrix)
-    return affine_transform(
-        geometry,
-        [
-            matrix[0, 0],
-            matrix[0, 1],
-            matrix[1, 0],
-            matrix[1, 1],
-            matrix[0, -1],
-            matrix[1, -1],
-        ],
-    )
+    # Cell vertices use this same array arithmetic. A different affine
+    # implementation can round their common vertices differently, inventing
+    # slivers where a transformed arena boundary meets its cells.
+    coordinates = _mapped(shapely.get_coordinates(geometry), matrix)
+    return shapely.set_coordinates(geometry, coordinates)
 
 
 class _ArrayState:
@@ -1006,20 +998,28 @@ def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry
 
 
 def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
-    """Bound recursive domain records before entering the recursive decoder."""
-    stack: list[tuple[object, int]] = [(meta, 0)]
+    """Bound composite nesting without limiting valid affine histories."""
+    stack: list[tuple[object, int, bool]] = [(meta, 0, False)]
+    active: set[int] = set()
     while stack:
-        value, depth = stack.pop()
+        value, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(value))
+            continue
         if depth > 32:
             raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
         if not isinstance(value, Mapping):
             continue
+        if id(value) in active:
+            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
+        active.add(id(value))
+        stack.append((value, depth, True))
         if value.get("codec") == "_CombinedArena":
             children = value.get("children", ())
             if isinstance(children, (list, tuple)):
-                stack.extend((child, depth + 1) for child in children)
+                stack.extend((child, depth + 1, False) for child in children)
         elif value.get("codec") == "_TransformedArena":
-            stack.append((value.get("base", {}), depth + 1))
+            stack.append((value.get("base", {}), depth, False))
 
 
 def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) -> Arena:

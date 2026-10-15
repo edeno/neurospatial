@@ -187,11 +187,21 @@ format; publication runs the shared geometry checks once.
 `layout/_validation.py` checks positions, ordered faces and distances, measures,
 locator/component agreement, frames and immediate clip mappings. Center lookup
 is checked on a detached locator so publication does not warm the saved value's
-lookup cache. Native builders retain their previous coincident-track-center
-behavior; untrusted loaded and explicit bins retain strict center checks.
+lookup cache. Validated embedded tracks may revisit identical spatial centers; center
+lookup must still choose a bin at that same coordinate. Other bins retain
+strict center identity checks.
 Native mesh and hex logical indexing is distinct from a framed raster's source
 coordinates.
 Descriptive layout names and parameters never grant numerical capabilities.
+
+Stored node-link graphs use an optional `_neurospatial_reserved_attributes`
+sidecar to preserve user attributes named `id`, `source`, `target`, or multigraph
+`key`, which NetworkX otherwise overwrites with graph identities. Its rows must
+match the graph's identities and contain only these reserved attributes. Records
+without the sidecar retain their existing format. Older readers can still read
+the topology of new records, but retain their previous limitation of dropping
+these reserved user attributes; use a current reader to recover them.
+
 
 `subset` and `apply_transform` derive a binning through `layout/_derive.py` and
 publish it through the same owned-data path. Subsets select whole bins and restrict

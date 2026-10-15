@@ -151,12 +151,49 @@ class _ReadOnlyGraphAttributes(Mapping[str, Any]):
         return type(self), (self.copy(),)
 
 
+class _ReadOnlyGraphMetadata(dict[str, Any]):
+    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
+
+    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    clear = _ReadOnlyGraphAttributes._refuse_edit
+    pop = _ReadOnlyGraphAttributes._refuse_edit
+    popitem = _ReadOnlyGraphAttributes._refuse_edit
+    setdefault = _ReadOnlyGraphAttributes._refuse_edit
+    update = _ReadOnlyGraphAttributes._refuse_edit
+    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
+        return copy_module.deepcopy(dict(self), memo)
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return dict, (dict(self),)
+
+
 class _PublishedGraph(nx.Graph):
     """Freeze public graph bindings as well as topology and attribute values.
 
     NetworkX's cached views remain lazy. Copies construct an ordinary editable
     instance of this subclass; only environment publication seals its bindings.
     """
+
+    @property
+    def graph(self) -> dict[str, Any]:
+        # node_link_data retains this object directly, unlike node/edge
+        # attributes. Return a detached dict so standard JSON encoding works
+        # without exposing the authoritative metadata to base-dict mutation.
+        attributes = self.__dict__["graph"]
+        if not self.__dict__.get("_published", False):
+            return cast("dict[str, Any]", attributes)
+        return _ReadOnlyGraphMetadata(attributes.copy())
+
+    @graph.setter
+    def graph(self, attributes: dict[str, Any]) -> None:
+        if self.__dict__.get("_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        self.__dict__["graph"] = attributes
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
@@ -215,7 +252,6 @@ class _PublishedGeometry:
     arena: Arena | None = None
     clip_mapping: ClipMapping | None = None
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None
-    component_diagonal: bool = False
 
 
 class _GeometryView(Generic[_T]):
@@ -366,6 +402,21 @@ class Environment(Generic[_C]):
             )
         )
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Export owned state without copying or serializing transient analyses."""
+        state = self.__dict__.copy()
+        for name in ("_kernel_cache", "_kdtree_cache"):
+            state.pop(name, None)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, cached_property):
+                    state.pop(name, None)
+                elif isinstance(descriptor, versioned_cached_property):
+                    key = f"_versioned_cache__{name}"
+                    state.pop(key, None)
+                    state.pop(f"{key}__version", None)
+        return state
+
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore owned state and reset transient caches without a builder."""
         self.__dict__.update(state)
@@ -381,14 +432,9 @@ class Environment(Generic[_C]):
             from neurospatial.environment._ownership import own_arena
 
             assert self._geometry.arena is not None
-            diagonal = vars(self._geometry).get(
-                "component_diagonal",
-                bool(self._layout_params_used.get("connect_diagonal_neighbors", False)),
-            )
             self._geometry = replace(
                 self._geometry,
                 arena=own_arena(self._geometry.arena),
-                component_diagonal=diagonal,
             )
             _freeze_graph_attributes(self._geometry.connectivity)
             self._regions = self._validate_regions(self._regions)
@@ -425,11 +471,6 @@ class Environment(Generic[_C]):
         binning = self._geometry.binning
         assert binning is not None
         return binning
-
-    @property
-    def _component_diagonal(self) -> bool:
-        """Owned logical segmentation policy, normalized once for legacy files."""
-        return self._geometry.component_diagonal
 
     @property
     @check_fitted
@@ -1540,7 +1581,7 @@ class Environment(Generic[_C]):
         distance_bin_size: float,
         angle_bin_size: float,
         *,
-        circular_angle: bool = True,
+        circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
         units: str | None = None,
@@ -1565,10 +1606,11 @@ class Environment(Generic[_C]):
             Must be positive.
         angle_bin_size : float
             Size of each angle bin in radians. Must be positive.
-        circular_angle : bool, default=True
-            If True, the angle dimension wraps circularly, connecting the
-            first and last angle bins at each distance ring. Appropriate
-            when ``angle_range`` spans a full circle.
+        circular_angle : bool or None, default=None
+            Whether to join the first and last angle bins at each distance
+            ring. None wraps a full-circle range (2π radians) and leaves a
+            partial range open. True requires a full circle; False leaves
+            the angular axis open even for a full-circle range.
         connect_diagonal_neighbors : bool, default=True
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
@@ -1748,8 +1790,10 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        This method is optimized to avoid redundant KDTree queries by reusing
-        the bin index computation from `bin_at()` and checking for the -1 sentinel.
+        Tracks require a declared width: a centerline and topology alone do
+        not establish which off-track points are inside. Unknown width raises
+        NotImplementedError with guidance; bin_at() still projects to the track.
+        Other layouts reuse bin lookup and check for the -1 sentinel.
 
         Examples
         --------
@@ -1763,9 +1807,15 @@ class Environment(Generic[_C]):
         [ True False]  # First point in environment, second outside
 
         """
-        # Optimized: compute indices once and check for -1 sentinel
-        # This avoids redundant KDTree queries compared to calling bin_at() separately
         self._require_cartesian("contains()")
+        if self.is_linearized_track and not self.arena.domain_known:
+            raise NotImplementedError(
+                _format_error(
+                    "contains() requires a known track footprint.",
+                    why="A centerline and bin size do not determine the physical track width.",
+                    fix="supply track_width when constructing the track, or use bin_at() for nearest-track projection",
+                )
+            )
         indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
@@ -3331,6 +3381,7 @@ class Environment(Generic[_C]):
         node_positions: Sequence[Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -3360,6 +3411,9 @@ class Environment(Generic[_C]):
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
             For a single contiguous track this is typically 0.0.
+        track_width : float or None, optional
+            Full physical track width. Required for contains(); bin_at()
+            remains nearest-track projection when width is unknown.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -3414,6 +3468,7 @@ class Environment(Generic[_C]):
             node_positions=node_positions,
             bin_size=bin_size,
             edge_spacing=edge_spacing,
+            track_width=track_width,
             name=name,
             units=units,
             frame=frame,
@@ -3428,6 +3483,7 @@ class Environment(Generic[_C]):
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -3503,6 +3559,9 @@ class Environment(Generic[_C]):
             Length of each bin along the linearized track.
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
+        track_width : float or None, optional
+            Full physical track width. Required for contains(); bin_at()
+            remains nearest-track projection when width is unknown.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -3556,6 +3615,7 @@ class Environment(Generic[_C]):
             node_positions=node_positions,
             bin_size=bin_size,
             edge_spacing=edge_spacing,
+            track_width=track_width,
             name=name,
             units=units,
             frame=frame,
@@ -6821,7 +6881,6 @@ class Environment(Generic[_C]):
             units=units,
             frame=frame,
             arena=arena,
-            component_diagonal=bool(resolved.get("connect_diagonal_neighbors", False)),
             _grid_index=index,
             _check_center_lookup=index is None,
         )
@@ -6845,7 +6904,6 @@ class Environment(Generic[_C]):
         arena: Arena | None = None,
         clip_mapping: ClipMapping | None = None,
         restored_from: str | None = None,
-        component_diagonal: bool | None = None,
         _grid_index: object = None,
         _check_center_lookup: bool = True,
     ) -> Environment[Any]:
@@ -6939,11 +6997,6 @@ class Environment(Generic[_C]):
             arena=arena,
             clip_mapping=binning.clip_mapping,
             coordinates=coordinates,
-            component_diagonal=bool(
-                build_params.get("connect_diagonal_neighbors", False)
-            )
-            if component_diagonal is None
-            else component_diagonal,
         )
         env._freeze_geometry_arrays()
         env._regions = env._validate_regions(Regions() if regions is None else regions)

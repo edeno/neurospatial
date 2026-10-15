@@ -24,13 +24,19 @@ _POLAR_EXPLANATION = (
 )
 
 
+def _bin_count(span: float, bin_size: float) -> int:
+    """Cover a range without adding a bin for one-ULP division round-off."""
+    quotient = np.nextafter(span / bin_size, -np.inf)
+    return max(1, int(np.ceil(quotient)))
+
+
 def _create_polar_environment(
     distance_range: tuple[float, float],
     angle_range: tuple[float, float],
     distance_bin_size: float,
     angle_bin_size: float,
     *,
-    circular_angle: bool = True,
+    circular_angle: bool | None = None,
     connect_diagonal_neighbors: bool = True,
     name: str = "",
     units: str | None = None,
@@ -48,12 +54,20 @@ def _create_polar_environment(
     if angle_range[0] >= angle_range[1]:
         raise ValueError(f"angle_range must have min < max, got {angle_range}")
 
-    # Calculate number of bins in each dimension
-    n_distance = max(
-        1,
-        int(np.ceil((distance_range[1] - distance_range[0]) / distance_bin_size)),
+    angle_span = angle_range[1] - angle_range[0]
+    full_circle = bool(
+        np.isclose(angle_span, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
     )
-    n_angle = max(1, int(np.ceil((angle_range[1] - angle_range[0]) / angle_bin_size)))
+    if circular_angle is None:
+        circular_angle = full_circle
+    elif circular_angle and not full_circle:
+        raise ValueError(
+            "circular_angle=True requires a full circle (2π radians). "
+            "Use circular_angle=False or None for a partial angular range."
+        )
+
+    n_distance = _bin_count(distance_range[1] - distance_range[0], distance_bin_size)
+    n_angle = _bin_count(angle_span, angle_bin_size)
 
     # Create grid edges and an all-active mask
     distance_edges = np.linspace(distance_range[0], distance_range[1], n_distance + 1)

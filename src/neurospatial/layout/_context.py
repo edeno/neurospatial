@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.layout._binning import Binning, TrackLinearization
-from neurospatial.layout._locators import HexLocator
+from neurospatial.layout._locators import HexLocator, MeshLocator
 
 
 @dataclass(frozen=True, eq=False)
@@ -33,6 +33,10 @@ def grid_index(binning: Binning) -> GridIndex:
         mask = (locator.flat_to_active >= 0).reshape(locator.centers_shape)
         mask.setflags(write=False)
         return GridIndex((), locator.centers_shape, mask)
+    if isinstance(locator, MeshLocator):
+        mask = locator.simplex_to_active >= 0
+        mask.setflags(write=False)
+        return GridIndex((), (len(locator.simplices),), mask)
     flat_mask = np.ones(binning.bins.n_bins, dtype=bool)
     flat_mask.setflags(write=False)
     return GridIndex((), (binning.bins.n_bins,), flat_mask)
