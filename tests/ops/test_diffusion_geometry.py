@@ -16,7 +16,6 @@ from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
 from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.io import from_dict, from_file, to_dict, to_file
@@ -620,7 +619,6 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
 # ---------------------------------------------------------------------------
 def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env):
     for env in (_four_connected_grid(), _polar(), reloaded_graph_env):
-        assert not isinstance(env, FiniteVolumeGeometryProvider)
         assert env._binning.faces.available
         assert len(env._face_geometry.volumes) == env.n_bins
 

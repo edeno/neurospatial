@@ -13,10 +13,7 @@ from neurospatial.geometry._binning import (
     FacesSource,
     Locator,
     SpatialBins,
-)
-from neurospatial.geometry._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
+    TrackLinearization,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._context import GridIndex
@@ -30,6 +27,9 @@ from neurospatial.layout import (
     RegularGridLayout,
     ShapelyPolygonLayout,
     TriangularMeshLayout,
+)
+from neurospatial.layout._capabilities import (
+    RectilinearGridProvider,
 )
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines._polar import _PolarGridLayout
@@ -126,11 +126,11 @@ def _locator_of(layout: LayoutEngine) -> Locator:
     return cast("Locator", factory())
 
 
-def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None:
+def _linearization_of(layout: LayoutEngine) -> TrackLinearization | None:
     """Use owned track coordinates, retaining compatibility with custom layouts."""
     factory = getattr(layout, "linearization", None)
     if factory is not None:
-        return cast("TrackLinearizationProvider", factory())
+        return cast("TrackLinearization", factory())
     return None
 
 

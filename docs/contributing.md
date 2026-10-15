@@ -111,8 +111,8 @@ face source in `Binning.faces`:
   components.
 
 The construction adapter captures supported native face inputs once when
-publishing `env._binning`; it does not check the legacy
-`FiniteVolumeGeometryProvider` protocol. Environment operations read the
+publishing owned binning. The obsolete finite-volume provider protocol is
+removed; numerical capability comes from the stored faces source. Environment operations read the
 resulting components. Geometry without supported faces has a `MissingFaces`
 reason. Saved binnings use
 `KnownFaces` for validated geometry and retain that reason when geometry is absent.

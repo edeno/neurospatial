@@ -9,15 +9,14 @@ edge order; ``env.edge_pairs`` defines gradient and flux alignment in either
 case. ``DiffusionGeometry.from_faces`` assembles the conductance snapshot every
 diffusion consumer shares.
 
-A layout has the capability only if it defines the method, so ``isinstance``
-against ``FiniteVolumeGeometryProvider`` answers "can this layout supply it?".
-Published binnings retain this capability as a faces source. Unavailable stored
+Native construction captures owned face inputs once. Published binnings
+retain numerical capability as an explicit faces source. Unavailable stored
 geometry uses ``MissingFaces`` with the reason an operation cannot proceed.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple, Protocol, runtime_checkable
+from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
@@ -180,17 +179,3 @@ def _validate_volumes(volumes: NDArray[np.float64], n_bins: int) -> NDArray[np.f
             "volumes must be finite and strictly positive (per-bin cell volume)."
         )
     return measures
-
-
-@runtime_checkable
-class FiniteVolumeGeometryProvider(Protocol):
-    """Layout capability behind diffusion, edge gradients and flux divergence."""
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Return a graph copy with face measures and distances, plus cell measures.
-
-        Node labels and edge order and orientation match the layout's
-        connectivity. Each undirected edge defines the scalar, symmetric
-        two-point conductance ``A / distance`` used by the numerical operators.
-        """
-        ...

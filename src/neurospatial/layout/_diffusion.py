@@ -10,8 +10,5 @@ from neurospatial.geometry._diffusion import (
     FaceGeometry as FaceGeometry,
 )
 from neurospatial.geometry._diffusion import (
-    FiniteVolumeGeometryProvider as FiniteVolumeGeometryProvider,
-)
-from neurospatial.geometry._diffusion import (
     _validate_volumes as _validate_volumes,
 )

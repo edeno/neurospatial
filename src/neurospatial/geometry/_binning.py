@@ -13,7 +13,6 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.geometry._capabilities import (
     RectilinearGrid,
-    TrackLinearizationProvider,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import (
@@ -436,7 +435,7 @@ class Binning:
     locator: Locator
     faces: FacesSource
     rectilinear: RectilinearGrid | None = None
-    linearization: TrackLinearizationProvider | None = None
+    linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
     clip_mapping: ClipMapping | None = None

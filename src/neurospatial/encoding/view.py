@@ -85,7 +85,6 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import (
-    interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
 )

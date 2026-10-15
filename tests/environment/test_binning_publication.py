@@ -14,14 +14,10 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.geometry._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
-)
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._capabilities import RectilinearGridProvider
 from neurospatial.layout._construction import binning_from_layout
 
 _BuiltEnvironment = Environment | Environment
@@ -85,10 +81,10 @@ def test_binning_capabilities_match_layout_protocols(
     assert (binning.rectilinear is not None) == isinstance(
         layout, RectilinearGridProvider
     )
-    assert (binning.linearization is not None) == isinstance(
-        layout, TrackLinearizationProvider
+    assert (binning.linearization is not None) == layout.is_linearized_track
+    assert binning.faces.available == callable(
+        getattr(layout, "finite_volume_geometry", None)
     )
-    assert binning.faces.available == isinstance(layout, FiniteVolumeGeometryProvider)
     if not hasattr(layout, "bin_shapes"):
         assert binning.shapes is None
     if not hasattr(layout, "outline"):

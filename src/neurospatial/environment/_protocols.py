@@ -239,10 +239,6 @@ class QueryConsumer(Protocol):
     def regions(self) -> Regions: ...
 
 
-class SerializationConsumer(Protocol):
-    """Only the environment members read by serialization operations."""
-
-
 class RegionConsumer(Protocol):
     """Only the environment members read by regions operations."""
 
@@ -405,10 +401,6 @@ class FieldConsumer(Protocol):
     def n_bins(self) -> int:
         """Number of spatial bins in the environment."""
         ...
-
-
-class TrajectoryConsumer(Protocol):
-    """Only the environment members read by trajectory operations."""
 
 
 class AnimationConsumer(Protocol):
