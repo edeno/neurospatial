@@ -15,7 +15,10 @@ from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial.arena import _CombinedArena
 from neurospatial.layout._binning import Binning, KnownFaces, MissingFaces
 from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._combine_geometry import certify_components
+from neurospatial.layout._combine_geometry import (
+    certify_components,
+    segment_enters_component,
+)
 from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._diffusion import FaceGeometry
 from neurospatial.layout._polygon import (
@@ -152,6 +155,13 @@ def _combine(
                         raise NotImplementedError(
                             "Automatic bridges cannot certify wall crossings outside 2D; disable auto_bridge."
                         )
+                    segment = np.array([child.bins.centers[u], other.bins.centers[v]])
+                    if any(
+                        segment_enters_component(segment, third, arenas[k])
+                        for k, third in enumerate(children)
+                        if k not in (i, j)
+                    ):
+                        continue
                     pairs.append((int(offsets[i] + u), int(offsets[j] + v)))
                     distances.append(distance)
     bridge_pairs = np.array(pairs, dtype=np.intp).reshape(-1, 2)

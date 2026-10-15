@@ -426,9 +426,6 @@ class RebinConsumer(Protocol):
     """Layout, arena and metadata for re-binning rectangular grids."""
 
     @property
-    def regions(self) -> Regions: ...
-
-    @property
     def _binning(self) -> Binning: ...
 
     @property
@@ -448,6 +445,9 @@ class RebinConsumer(Protocol):
 
     @property
     def units(self) -> str | None: ...
+
+    @property
+    def regions(self) -> Regions: ...
 
 
 class SubsetConsumer(Protocol):

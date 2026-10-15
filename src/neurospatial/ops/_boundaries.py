@@ -73,7 +73,11 @@ def physical_walls(arena: Arena) -> shapely.Geometry:
     parts = collect(arena)
     if not parts:
         raise NotImplementedError(
-            "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. Supply an asserted OpenArena or MaskArena(physical_footprint_known=True), or explicitly choose boundary_source='analysis'."
+            "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
+            "Supply measured geometry with Environment.from_polygon(...) or an asserted OpenArena or "
+            "MaskArena(physical_footprint_known=True). Wall-based rate maps also need bin support at the "
+            "measured walls; attaching an arena does not extend bins or supply missing observations. "
+            "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."
         )
     return unary_union(parts)
 
@@ -224,7 +228,7 @@ def physical_clear_segments(
 def clear_segments(
     walls: shapely.Geometry, observer: NDArray[np.float64], targets: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
-    """Exact line of sight: contact at a target is visible; earlier contact blocks."""
+    """Keep terminal contact within coordinate rounding; earlier contact blocks."""
     targets = np.asarray(targets, dtype=np.float64)
     valid = np.all(np.isfinite(targets), axis=1) & np.all(np.isfinite(observer))
     result = np.zeros(len(targets), dtype=bool)
@@ -238,9 +242,35 @@ def clear_segments(
             )
         )
         contact = shapely.intersection(lines, walls)
-        # A cue on the wall itself remains visible from the observer side.
-        remainder = shapely.difference(contact, shapely.points(selected[~same]))
-        same[~same] = shapely.is_empty(remainder)
+        # Intersection and interpolation can cancel one endpoint coordinate
+        # to zero. Allow eight ULPs in the cue's own coordinates and project
+        # that rounding box onto the intersected wall's tangent. A coordinate
+        # perpendicular to the wall contributes no cross-axis allowance, and
+        # distant endpoints cannot widen gaps. Any positive wall overlap blocks.
+        coordinates, owners = shapely.get_coordinates(contact, return_index=True)
+        terminal = selected[~same]
+        allowance = 8 * np.spacing(np.abs(terminal[owners]))
+        if len(coordinates):
+            parts = shapely.get_parts(walls)
+            vertices, part_index = shapely.get_coordinates(parts, return_index=True)
+            adjacent = part_index[:-1] == part_index[1:]
+            wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
+            wall_segments = wall_segments[
+                np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
+            ]
+            nearest = shapely.STRtree(shapely.linestrings(wall_segments)).nearest(
+                shapely.points(coordinates)
+            )
+            tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
+            tangent /= np.hypot.reduce(tangent, axis=1)[:, None]
+            allowance += tangent * np.sum(tangent * allowance, axis=1)[:, None]
+        at_terminal = np.all(
+            np.abs(coordinates - terminal[owners]) <= allowance, axis=1
+        )
+        clear = np.ones(len(terminal), dtype=bool)
+        np.logical_and.at(clear, owners, at_terminal)
+        clear &= shapely.is_empty(contact) | (shapely.get_dimensions(contact) <= 0)
+        same[~same] = clear
     result[valid] = same
     return result
 

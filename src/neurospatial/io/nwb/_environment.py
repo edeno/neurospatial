@@ -181,9 +181,22 @@ def read_environment(
             metadata = json.loads(record[COL_METADATA][0])
         else:
             metadata = json.loads(record.description)
-    except (ValueError, TypeError, KeyError, IndexError, AttributeError) as error:
+        if not isinstance(metadata, dict):
+            raise ValueError("environment metadata must be a dictionary")
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        RecursionError,
+    ) as error:
         raise ValueError(
-            f"Invalid environment metadata in {source}: {error}"
+            _format_error(
+                f"Invalid environment metadata in {source}: {error}",
+                why="Why: the record must contain complete JSON metadata without excessive nesting.",
+                fix="restore the original environment record, or re-save the original environment",
+            )
         ) from error
     version = metadata.get("schema_version")
     if not isinstance(version, str) or version not in _READABLE_SCHEMA_VERSIONS:
