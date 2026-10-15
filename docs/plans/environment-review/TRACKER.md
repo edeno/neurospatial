@@ -75,8 +75,8 @@ for repairing numerical defects.
 
 | ID | Recommendation / acceptance criterion | Status |
 | --- | --- | --- |
-| A01 | Separate owned geometry, validation and codecs from native builders; preserve public import paths and enforce package-level dependency rules. | Implemented in the structural branch; see the verification record below. |
-| A02 | Expose read-only `env.binning`; numerical functions consume data while Environment owns analysis caches. Remove external private-state reads/writes and casts where feasible. | Public snapshots, nearest lookup and differential-operator boundaries implemented (`d4d9b145`, `2f5c8e2e`, `256e7f48`, `e2b2f946`). Approved coordinate/diffusion/MRF/Gaussian operations are in progress. |
+| A01 | Separate owned geometry, validation and codecs from native builders; preserve public import paths and enforce package-level dependency rules. | Fixed in `7d96f47b`: owned geometry/codecs separated from builders; package-level dependency rules and compatibility aliases verified. See the verification record below. |
+| A02 | Expose read-only `env.binning`; numerical functions consume data while Environment owns analysis caches. Remove external private-state reads/writes and casts where feasible. | Fixed: public snapshots, nearest lookup and differential operators (`d4d9b145`, `2f5c8e2e`, `256e7f48`, `e2b2f946`), plus all five approved numerical operations and scientific consumer migration (`bb0e7ef6`). Cache holders remain private; independent review approved. |
 | A03 | Behavior follows owned geometry/connectivity rather than descriptive type names or construction parameters. Includes segmentation, boundaries, circularity and rebin capability. | Fixed: graph-based segmentation/boundaries and owned polar circularity replace descriptive dispatch. Factor rebin uses geometric eligibility, preserves supported native navigation and refuses custom paths it cannot reconstruct (`6f6d1f2d`, `da94d99a`). |
 | A04 | Remove parallel/dead paths: duplicate rebin implementations, unused provider protocols/decorators/state versions/validators, inconsistent Cartesian guards and duplicate publication validation. | Audited and simplified: removed empty protocols, unused finite-volume/track provider protocols and constant environment state versions (`b9e43328`, `d9a5b66d`). Kept active public validators and legacy fitted-state guards; their contracts differ. Both rebin input policies share publication but retain distinct partition rules. Bound/unbound Cartesian refusal reasons now match (`a0f1c14b`), with both capability guards retained. |
 | A05 | Consolidate traversal/tolerances only where contracts match. | Clipped traversal is intentionally a certificate boundary, not a defect: `45a19995` documents and tests 66 certified/uncertified cases. Unwrapping to parent diffusion geometry would be incorrect. Other consolidation remains scoped to matching contracts; a universal visitor or tolerance would erase distinctions between lookup error bounds, physical contact and numerical certification. |
@@ -157,3 +157,17 @@ Their passing regressions remain part of the broader gate.
 - Environment's standard cached properties retain explicit `clear_cache()`
   control. The public versioned decorator remains available for mutable custom
   hosts; removing a live public utility is unnecessary for immutable environments.
+
+Final baseline differences, real-data checks, ownership/performance costs and
+verification scope are recorded in [validation.md](validation.md). Optional A07
+and A08 redesigns remain tracked; all confirmed review defects and approved core
+structural recommendations have implementations and regression evidence.
+
+- R36 (CI baseline): rotation composition can hit Hypothesis's draw-speed
+  health check on a busy runner. PR #82 (`3e8c97ac`) suppresses that check only for this
+  property; the CI delay reproduces before and passes after, with the same
+  mathematical assertions, example count and execution deadline.
+- Final clean CPU gate: **13,978 passed, 335 skipped**; optional JAX CPU gate:
+  **318 passed**. Typing, Ruff, dependency rules, strict documentation and all
+  8,131 checked internal fragments pass. Both real-recording slices retain
+  all 14 captured arrays exactly.
