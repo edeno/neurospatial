@@ -203,7 +203,7 @@ the topology of new records, but retain their previous limitation of dropping
 these reserved user attributes; use a current reader to recover them.
 
 
-`subset` and `apply_transform` derive a binning through `layout/_derive.py` and
+`subset` and `apply_transform` derive a binning through `geometry/_derive.py` and
 publish it through the same owned-data path. Subsets select whole bins and restrict
 ordered faces, locators and components. Translations and similarities preserve
 finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
@@ -236,7 +236,7 @@ Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
 They include a required Arena record. Version 2/`2.0` remains readable with an
 explicit `UnknownArena`, without inferring physical geometry from parameters,
 outlines or masks. Version 1/`1.x` records are refused with recreation guidance.
-Pure codecs in `layout/_codecs.py` and `arena.py` store typed arrays and JSON
+Pure codecs in `geometry/_codecs.py` and `geometry/_arena.py` store typed arrays and JSON
 metadata; polygon WKB bytes and offsets preserve ordered cells and holes.
 Shared snapshot references retain locator ownership without duplicating each
 record. Bounded KD-tree and Delaunay memos are rebuilt from saved data.
@@ -246,12 +246,12 @@ JSON metadata and canonical-key/shape/dtype mapping, without padding or a
 custom extension.
 
 `Environment._face_geometry` builds from `env._binning.faces` and caches the
-validated faces once per state version;
+validated faces once for the immutable environment;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
 operators all derive from it. Consumers read it through
 `_require_face_geometry(operation)`, which names the analysis when the layout
-has no cell faces. The existing state-version and `clear_cache()` mechanisms
-own every cache lifetime.
+has no cell faces. Private analyses use standard-library `cached_property`; `clear_cache()`
+ends their lifetime explicitly. Copies and saved environments omit these caches.
 
 Numerical consumers declare their small environment requirements in
 `ops._protocols`, so Cartesian and polar environments satisfy them without
@@ -260,6 +260,31 @@ MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
 libraries at runtime. The dense-operation warning threshold is
 `neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
 Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both coordinate variants of the common Environment against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
+
+### Owned geometry and builder boundaries
+
+`geometry/` holds immutable binning records, locators, arena evidence, coordinate
+semantics, validation and codecs. It does not import environment adapters,
+layout builders, numerical solvers, storage backends or rendering libraries.
+`neurospatial.binning` and `neurospatial.arena` retain their public import paths.
+Private aliases keep existing supported pickle records readable; new code imports
+geometry from its current package.
+
+`layout/` constructs native binnings. `ops/` implements numerical algorithms on
+explicit geometry and arrays. These packages are independent peers above
+`geometry/`. `environment/` coordinates them and owns cached analyses. Import
+contracts enforce these package boundaries without ignored dependency edges.
+Importing `neurospatial.binning` does not load native builders, `environment.core`
+or Matplotlib. Standalone validation functions retain their public contracts;
+publication additionally checks agreement between the graph and owned binning.
+
+Subset selection lives in `environment/_subset.py`; both supported rebin calls
+live in `environment/_rebin.py`. Factor rebin preserves its historical grid
+partitioning rules, while `rebin(bin_size=...)` uses the saved binning
+specification and frame. Both publish through the same owned-data path. Shared
+time-support calculations live in `_intervals.py`, and physical wall-frame
+evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
+`ops/_boundaries.py` calculation with explicit geometry inputs.
 
 ### Environment architecture
 
@@ -311,7 +336,8 @@ Shared code asks the owned coordinate descriptor about lengths, axes and
 circularity, or uses public `coordinate_kind` for metadata. Do not discriminate
 using environment classes or descriptive layout labels.
 
-Layout-specific operations read components from `env._binning`: faces for
+Environment adapters read components from the owned binning; other packages
+use `env.binning`: faces for
 smoothing, a rectilinear grid for grid interpolation and native N-D time
 allocation, exact planar cells for polygon time allocation, and linearization
 for track coordinate conversions. The construction adapter reads a
