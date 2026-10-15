@@ -1117,7 +1117,9 @@ class Environment(Generic[_C]):
             raise CartesianOnlyError(
                 type(self).__name__,
                 operation,
-                reason="Cartesian-coordinate operation",
+                reason="Cartesian-grid operation"
+                if operation.partition("(")[0] in CARTESIAN_GRID_OPERATIONS
+                else "Cartesian-coordinate operation",
                 explanation=_POLAR_EXPLANATION,
             )
         return cast("CartesianLookupConsumer", self)
