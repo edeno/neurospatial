@@ -54,7 +54,7 @@ def _freeze_metadata(value: Any) -> Any:
     return value
 
 
-def _thaw_metadata(value: Any) -> Any:
+def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
     """Recursively convert frozen metadata back into mutable, JSON-ready data.
 
     Inverse of :func:`_freeze_metadata`: :class:`~collections.abc.Mapping`
@@ -65,6 +65,9 @@ def _thaw_metadata(value: Any) -> Any:
     ----------
     value : Any
         A frozen metadata value (possibly nested).
+    _active : set of int, optional
+        Container identities on the current traversal path; detects cycles
+        without rejecting shared containers in an acyclic value.
 
     Returns
     -------
@@ -72,11 +75,19 @@ def _thaw_metadata(value: Any) -> Any:
         A mutable, JSON-serializable copy of ``value``.
 
     """
-    if isinstance(value, Mapping):
-        return {k: _thaw_metadata(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_thaw_metadata(item) for item in value]
-    return value
+    if not isinstance(value, (Mapping, list, tuple)):
+        return value
+    active = set() if _active is None else _active
+    identity = id(value)
+    if identity in active:
+        raise ValueError("Circular reference detected in Region metadata.")
+    active.add(identity)
+    try:
+        if isinstance(value, Mapping):
+            return {k: _thaw_metadata(v, _active=active) for k, v in value.items()}
+        return [_thaw_metadata(item, _active=active) for item in value]
+    finally:
+        active.remove(identity)
 
 
 # ---------------------------------------------------------------------

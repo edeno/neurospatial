@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject circular region metadata before exhausting the interpreter stack,
+  avoiding a test-worker crash on Windows/Python 3.10.
+
 - Compare point regions by coordinate values, avoiding ambiguous NumPy truth
   values on Python 3.10–3.12 and when comparing independent region copies.
 
