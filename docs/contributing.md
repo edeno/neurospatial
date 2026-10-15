@@ -168,10 +168,31 @@ independently of whether finite-volume faces remain valid for smoothing.
 Custom layout lookup and track conversions retain their delegated in-memory
 behavior through private adapters; saving them still requires a supported codec.
 
-Files and dictionaries use `Environment-v2`; NWB environment records use `2.0`.
-Older records are refused with instructions to recreate and re-save the
-environment. Pure codecs in `layout/_codecs.py` store typed arrays and JSON
-metadata; bounded KD-tree and Delaunay memos are rebuilt from saved data.
+`env.arena` describes continuous support independently of the active analysis
+bins. Samples, grid masks and image masks supply computational domains without
+asserting measured physical walls. Explicit polygons and measured track widths
+record known footprints; units, frame and regions remain environment-owned.
+Subsets preserve the parent arena, while affine transforms map its geometry
+with the bins. Exact lookup applies both the arena gate and locator ownership.
+
+`clip` intersects planar cells with the crop and known domain. Disconnected
+pieces become separate bins with an owned immediate-parent `ClipMapping`.
+Current polygon cells and each historical locator's cells/mapping retain their
+own immutable snapshots and coordinate frames through subset and transform.
+No fields or fitted models transfer automatically. Navigation retains allowed
+parent connections; explicit complete-face walls remove both navigation edges
+and finite-volume faces. Interior-cut or partially covered walls refuse.
+Numerical geometry is published only after convexity, interface and
+orthogonality checks; containment and plotting do not depend on certification.
+
+Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
+They include a required Arena record. Version 2/`2.0` remains readable with an
+explicit `UnknownArena`, without inferring physical geometry from parameters,
+outlines or masks. Version 1/`1.x` records are refused with recreation guidance.
+Pure codecs in `layout/_codecs.py` and `arena.py` store typed arrays and JSON
+metadata; polygon WKB bytes and offsets preserve ordered cells and holes.
+Shared snapshot references retain locator ownership without duplicating each
+record. Bounded KD-tree and Delaunay memos are rebuilt from saved data.
 Standard NWB containers reject slash-containing names, so a one-row ragged
 DynamicTable stores arrays under safe column names. Its description holds the
 JSON metadata and canonical-key/shape/dtype mapping, without padding or a
@@ -237,15 +258,17 @@ measures distance, chooses length scales or names axes asks
 persistence type tag `_POLAR`.
 
 Layout-specific operations read components from `env._binning`: faces for
-smoothing, a rectilinear grid for linear interpolation and time allocation,
-and linearization for track coordinate conversions. Only the layout-to-binning
+smoothing, a rectilinear grid for grid interpolation and native N-D time
+allocation, exact planar cells for polygon time allocation, and linearization
+for track coordinate conversions. Only the layout-to-binning
 factory checks `FiniteVolumeGeometryProvider`, `RectilinearGridProvider` and
 `TrackLinearizationProvider` on layouts. A layout supplies a capability when it
 defines the corresponding method. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Only `rebin` still uses a layout tag: its documented activity rule marks
-every coarse cell active, so widening it to masked arenas would change
-scientific support.
+alternative. Only `rebin` still uses a layout tag to retain its existing
+RegularGrid-family support restriction. It preserves the original arena and
+selects coarse bins by center; walls must remain representable by complete
+coarse faces. Extending rebinning to other layout families is separate work.
 
 A mixin is a plain class for one domain; `_BaseEnvironment` is the dataclass.
 Mixins keep no state except `versioned_cached_property` caches and annotate

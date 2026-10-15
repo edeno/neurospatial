@@ -136,9 +136,11 @@ def _interpolate(
 
     # Dispatch based on mode
     if mode == "nearest":
-        return _interpolate_nearest(env, field, points)
+        values = _interpolate_nearest(env, field, points)
     else:  # mode == "linear"
-        return _interpolate_linear(env._binning, field, points)
+        values = _interpolate_linear(env._binning, field, points)
+    values[env._locate(points) < 0] = np.nan
+    return values
 
 
 def _interpolate_nearest(

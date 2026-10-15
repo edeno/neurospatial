@@ -144,11 +144,24 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     np.testing.assert_array_equal(actual, expected)
     assert actual_warnings == expected_warnings
     if isinstance(env, Environment):
+        if env.arena.domain_known:
+            inside = env.arena.contains(points)
+            # Qhull can choose either triangle at a shared edge, depending
+            # on preceding queries. Compare the same arena-filtered batch.
+            expected = np.full_like(expected, -1)
+            expected[inside], expected_warnings = _lookup_with_warnings(
+                env._binning.locator.locate, points[inside]
+            )
         indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
-        contains, contains_warnings = _lookup_with_warnings(env.contains, points)
         np.testing.assert_array_equal(indices, expected)
-        np.testing.assert_array_equal(contains, expected != -1)
-        assert bin_warnings == contains_warnings == expected_warnings
+        assert bin_warnings == expected_warnings
+        if env.is_linearized_track and not env.arena.domain_known:
+            with pytest.raises(NotImplementedError, match="track_width"):
+                env.contains(points)
+        else:
+            contains, contains_warnings = _lookup_with_warnings(env.contains, points)
+            np.testing.assert_array_equal(contains, expected != -1)
+            assert contains_warnings == expected_warnings
     else:
         assert not hasattr(env, "bin_at")
         assert not hasattr(env, "contains")

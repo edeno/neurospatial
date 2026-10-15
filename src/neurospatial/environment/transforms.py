@@ -141,6 +141,25 @@ def _rebin(
     # Stack into (n_bins, n_dims)
     coarse_bin_centers = np.column_stack(center_coords)
 
+    # Finalize active cells before constructing the graph or publishing an
+    # environment. The original arena remains the continuous authority.
+    keep = np.ones(len(coarse_bin_centers), dtype=bool)
+    if env.arena.domain_known:
+        domain = env.arena.polygonal_domain()
+        if domain is not None:
+            from shapely import contains_xy
+
+            keep = contains_xy(
+                domain, coarse_bin_centers[:, 0], coarse_bin_centers[:, 1]
+            )
+        else:
+            keep = env.arena.contains(coarse_bin_centers)
+        if not np.any(keep):
+            raise ValueError(
+                "Rebinning retains no coarse bin center inside the original arena. "
+                "Use a smaller factor or rebuild a grid with centers in the domain."
+            )
+
     # --- Build new connectivity graph ---
 
     # A diagonal changes more than one coordinate. Inspect actual edges:
@@ -155,8 +174,8 @@ def _rebin(
         _create_regular_grid_connectivity_graph,
     )
 
-    # Build connectivity for the coarsened grid (all active)
-    active_mask_coarse = np.ones(coarse_shape, dtype=bool)
+    # Build connectivity only between eligible coarse cells.
+    active_mask_coarse = keep.reshape(coarse_shape)
 
     coarse_connectivity = _create_regular_grid_connectivity_graph(
         full_grid_bin_centers=coarse_bin_centers,
@@ -169,7 +188,7 @@ def _rebin(
 
     # Create new layout instance
     new_layout = RegularGridLayout()
-    new_layout.bin_centers = coarse_bin_centers
+    new_layout.bin_centers = coarse_bin_centers[keep]
     new_layout.connectivity = coarse_connectivity
     new_layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in coarse_edges)
     new_layout.grid_edges = coarse_edges
@@ -189,11 +208,12 @@ def _rebin(
 
     env_cls = cast("type[Environment]", env.__class__)
     coarse_env = env_cls(
+        name=f"{env.name}_rebinned" if env.name else "",
         layout=cast("LayoutEngine", new_layout),
         layout_type_used="RegularGrid",
         layout_params_used=new_layout._build_params_used,
-        name=f"{env.name}_rebinned" if env.name else "",
         regions=deepcopy(env.regions),
+        arena=env.arena,
     )
 
     # Preserve metadata

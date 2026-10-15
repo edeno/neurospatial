@@ -42,6 +42,7 @@ from neurospatial.layout.factories import _normalize_name as _normalize_layout_n
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
+    from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
     from neurospatial.layout.base import LayoutEngine
 
@@ -277,6 +278,7 @@ class EnvironmentFactories:
         close_gaps: bool = False,
         add_boundary_bins: bool = False,
         connect_diagonal_neighbors: bool = True,
+        arena: Arena | None = None,
         **layout_specific_kwargs: Any,
     ) -> Environment:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
@@ -314,6 +316,9 @@ class EnvironmentFactories:
             If True, only bins containing ≥ `bin_count_threshold` samples are "active."
         connect_diagonal_neighbors : bool, default True
             If True, connect grid bins diagonally when building connectivity.
+        arena : Arena, optional
+            Explicit continuous domain. Without one, infer an estimated domain
+            from the active cells; an unvisited patch is not a declared wall.
 
         Other Parameters
         ----------------
@@ -542,7 +547,9 @@ class EnvironmentFactories:
                     UserWarning,
                     stacklevel=2,
                 )
-        env = cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
+        env = cls.from_layout(
+            kind=layout_str, layout_params=layout_params, name=name, arena=arena
+        )
         if units is not None:
             env.units = units
         if frame is not None:
@@ -669,6 +676,7 @@ class EnvironmentFactories:
         node_positions: Sequence[Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -698,6 +706,10 @@ class EnvironmentFactories:
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
             For a single contiguous track this is typically 0.0.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -796,6 +808,7 @@ class EnvironmentFactories:
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            track_width=track_width,
         )
         if units is not None:
             env.units = units
@@ -812,6 +825,7 @@ class EnvironmentFactories:
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
+        track_width: float | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -887,6 +901,10 @@ class EnvironmentFactories:
             Length of each bin along the linearized track.
         edge_spacing : float or sequence of floats, default 0.0
             Spacing inserted between consecutive edges during linearization.
+        track_width : float or None, default None
+            Physical full width in coordinate units, with round end caps.
+            Required for ``contains``; omitting it keeps nearest-track
+            projection through ``bin_at`` available without asserting a width.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -996,6 +1014,7 @@ class EnvironmentFactories:
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            track_width=track_width,
         )
         if units is not None:
             env.units = units
@@ -1012,6 +1031,7 @@ class EnvironmentFactories:
         bin_size: float,
         *,
         name: str = "",
+        track_width: float | None = None,
     ) -> Environment:
         """Create an Environment from a user-defined graph structure.
 
@@ -1040,6 +1060,13 @@ class EnvironmentFactories:
             centimeters, bin_size=2.0 creates 2cm bins along the track.
         name : str, optional
             A name for the created environment. Defaults to "".
+        track_width : float, optional
+            Physical full width of the track in coordinate units. A positive
+            width limits containment to the union of round-ended segment
+            corridors. When omitted, the physical footprint stays unknown
+            and nearest-track projection through ``bin_at`` remains available.
+            ``contains`` requires a known footprint and raises when width is
+            omitted.
 
         Returns
         -------
@@ -1140,7 +1167,18 @@ class EnvironmentFactories:
             "edge_spacing": edge_spacing,
             "bin_size": bin_size,
         }
-        return cls.from_layout(kind="Graph", layout_params=layout_params, name=name)
+        from neurospatial.arena import TrackArena
+
+        segments = np.array(
+            [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
+            dtype=np.float64,
+        )
+        return cls.from_layout(
+            kind="Graph",
+            layout_params=layout_params,
+            name=name,
+            arena=TrackArena(segments, width=track_width),
+        )
 
     @classmethod
     def from_polygon(
@@ -1150,6 +1188,7 @@ class EnvironmentFactories:
         *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
+        arena: Arena | None = None,
     ) -> Environment:
         """Create a 2D grid Environment masked by a Shapely Polygon.
 
@@ -1170,6 +1209,11 @@ class EnvironmentFactories:
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
+        arena : Arena, optional
+            Continuous domain and asserted physical walls. Polygonal domains
+            retain whole bins by strict center inclusion; use ``env.clip``
+            to change cell areas. When omitted, the supplied polygon defines
+            the physical footprint.
 
         Returns
         -------
@@ -1223,6 +1267,7 @@ class EnvironmentFactories:
             kind="ShapelyPolygon",
             layout_params=layout_params,
             name=name,
+            arena=arena,
         )
 
     @classmethod
@@ -1233,6 +1278,7 @@ class EnvironmentFactories:
         *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
+        arena: Arena | None = None,
     ) -> Environment:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
@@ -1258,6 +1304,11 @@ class EnvironmentFactories:
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
+        arena : Arena, optional
+            Continuous domain and asserted physical walls. Polygonal domains
+            retain whole bins by strict center inclusion. When omitted, the
+            mask defines the computational domain without asserting physical
+            walls or a measured footprint.
 
         Returns
         -------
@@ -1301,6 +1352,7 @@ class EnvironmentFactories:
             kind="MaskedGrid",
             layout_params=layout_params,
             name=name,
+            arena=arena,
         )
 
     @classmethod
@@ -1311,6 +1363,7 @@ class EnvironmentFactories:
         *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
+        arena: Arena | None = None,
     ) -> Environment:
         """Create a 2D Environment from a binary image / pixel mask.
 
@@ -1333,6 +1386,11 @@ class EnvironmentFactories:
             Defaults to True.
         name : str, optional
             A name for the created environment. Defaults to "".
+        arena : Arena, optional
+            Continuous domain and asserted physical walls. Polygonal domains
+            retain whole pixels by strict center inclusion. When omitted, the
+            image mask defines a computational domain without asserting
+            physical walls or a measured footprint.
 
         Returns
         -------
@@ -1372,7 +1430,9 @@ class EnvironmentFactories:
             "connect_diagonal_neighbors": connect_diagonal_neighbors,
         }
 
-        return cls.from_layout(kind="ImageMask", layout_params=layout_params, name=name)
+        return cls.from_layout(
+            kind="ImageMask", layout_params=layout_params, name=name, arena=arena
+        )
 
     @classmethod
     def from_layout(
@@ -1382,6 +1442,7 @@ class EnvironmentFactories:
         *,
         name: str = "",
         regions: Regions | None = None,
+        arena: Arena | None = None,
     ) -> Environment:
         """Create an Environment with a specified layout type and its build parameters.
 
@@ -1398,6 +1459,8 @@ class EnvironmentFactories:
             A name for the created environment. Defaults to "".
         regions : Optional[Regions], optional
             A Regions instance to manage symbolic spatial regions within the environment.
+        arena : Arena, optional
+            Continuous domain. Otherwise inferred from the supplied layout.
 
         Returns
         -------
@@ -1421,7 +1484,33 @@ class EnvironmentFactories:
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
-        return env_cls(name, layout_instance, kind, layout_params, regions=regions)
+        env = env_cls(name, layout_instance, kind, layout_params, regions=regions)
+        if arena is not None and arena.domain_known and not env._POLAR:
+            keep = arena.contains(env.bin_centers)
+            # Whole-bin selection uses strict polygon-center inclusion in
+            # native and transformed arena frames alike.
+            domain = arena.polygonal_domain()
+            if domain is not None:
+                import shapely
+
+                keep = shapely.contains_xy(
+                    domain, env.bin_centers[:, 0], env.bin_centers[:, 1]
+                )
+            if not np.all(keep):
+                env = env.subset(bins=keep)
+                env.name = name
+                if regions is not None:
+                    env.regions = regions
+        if arena is not None:
+            env = env_cls(
+                name,
+                env.layout,
+                env._layout_type_used,
+                env._layout_params_used,
+                regions=regions,
+                arena=arena,
+            )
+        return env
 
     @classmethod
     def _create_layout(

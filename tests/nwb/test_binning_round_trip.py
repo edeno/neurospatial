@@ -77,7 +77,7 @@ def test_nwb_geometry_transport_is_a_single_typed_ragged_row(
         metadata = json.loads(record.description)
         expected = to_dict(env)
         assert len(record) == 1
-        assert metadata["schema_version"] == "2.0"
+        assert metadata["schema_version"] == "3.0"
         assert metadata["array_specs"].keys() == expected["array_specs"].keys()
         assert len(record.colnames) == len(metadata["array_specs"])
         for key, spec in metadata["array_specs"].items():

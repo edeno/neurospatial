@@ -59,9 +59,11 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
+    from neurospatial.arena import Arena
     from neurospatial.environment._coordinates import CoordinateSystem
     from neurospatial.environment._protocols import CartesianEnvironmentProtocol
     from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.layout._polygon import ClipMapping
     from neurospatial.ops._types import KernelMode
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,8 @@ class _PublishedGeometry:
     grid_edges: tuple[NDArray[np.float64], ...] | None
     grid_shape: tuple[int, ...] | None
     active_mask: NDArray[np.bool_] | None
+    arena: Arena | None = None
+    clip_mapping: ClipMapping | None = None
 
 
 class _GeometryView(Generic[_T]):
@@ -428,6 +432,8 @@ class _BaseEnvironment(
         regions: Regions | None = None,
         *,
         restored_from: str | None = None,
+        arena: Arena | None = None,
+        clip_mapping: ClipMapping | None = None,
     ) -> None:
         """Initialize the Environment.
 
@@ -455,6 +461,11 @@ class _BaseEnvironment(
         restored_from : str, optional
             Where a read-back environment's saved geometry came from; an invalid
             saved graph is then reported against that data.
+        arena : Arena, optional
+            Continuous domain. When omitted, infer a domain from the supplied
+            geometry without asserting walls from unvisited samples.
+        clip_mapping : ClipMapping, optional
+            Source-bin mapping for a clipped environment.
 
         """
         if layout is None:
@@ -496,7 +507,9 @@ class _BaseEnvironment(
         self._is_fitted = False  # Will be set by _setup_from_layout
         if layout_type_used is not None:
             # Populate attributes from the built layout
-            self._setup_from_layout(restored_from=restored_from)
+            self._setup_from_layout(
+                restored_from=restored_from, arena=arena, clip_mapping=clip_mapping
+            )
         if regions is not None:
             if not isinstance(regions, Regions):
                 raise TypeError(
@@ -510,10 +523,26 @@ class _BaseEnvironment(
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore published geometry from pickles predating binning snapshots."""
         self.__dict__.update(state)
-        if not hasattr(self._geometry, "binning"):
-            self._geometry = replace(self._geometry, binning=None)
-            if self._is_fitted:
-                self._setup_from_layout()
+        missing_binning = not hasattr(self._geometry, "binning")
+        if missing_binning or getattr(self._geometry, "arena", None) is None:
+            from neurospatial.arena import UnknownArena
+
+            n_dims = self._geometry.bin_centers.shape[1]
+            arena = (
+                UnknownArena(
+                    n_dims, coordinate_kind="polar" if self._POLAR else "cartesian"
+                )
+                if n_dims
+                else None
+            )
+            self._geometry = replace(
+                self._geometry,
+                binning=getattr(self._geometry, "binning", None),
+                arena=arena,
+                clip_mapping=getattr(self._geometry, "clip_mapping", None),
+            )
+            if missing_binning and self._is_fitted:
+                self._setup_from_layout(arena=arena)
 
     @property
     def _binning(self) -> Binning:
@@ -521,6 +550,36 @@ class _BaseEnvironment(
         binning = self._geometry.binning
         assert binning is not None
         return binning
+
+    @property
+    @check_fitted
+    def arena(self) -> Arena:
+        """Continuous domain, distinguished from the active analysis bins."""
+        arena = self._geometry.arena
+        assert arena is not None
+        return arena
+
+    @property
+    @check_fitted
+    def clip_mapping(self) -> ClipMapping | None:
+        """Most recent clip's source-bin mapping, or None before clipping."""
+        return self._geometry.clip_mapping
+
+    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Apply known arena containment before assigning active bins."""
+        if not self.arena.domain_known:
+            return self._binning.locator.locate(positions).astype(np.intp, copy=False)
+        positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
+        if positions.ndim != 2 or positions.shape[1] != self.n_dims:
+            raise ValueError(
+                f"Dimensionality mismatch: expected positions with shape "
+                f"(n_positions, {self.n_dims}), got {positions.shape}."
+            )
+        inside = self.arena.contains(positions)
+        indices = np.full(len(positions), -1, dtype=np.intp)
+        if np.any(inside):
+            indices[inside] = self._binning.locator.locate(positions[inside])
+        return indices
 
     # ------------------------------------------------------------------
     # Units validation
@@ -982,7 +1041,13 @@ class _BaseEnvironment(
 
         return "\n".join(lines)
 
-    def _setup_from_layout(self, *, restored_from: str | None = None) -> None:
+    def _setup_from_layout(
+        self,
+        *,
+        restored_from: str | None = None,
+        arena: Arena | None = None,
+        clip_mapping: ClipMapping | None = None,
+    ) -> None:
         """Refresh Environment geometry and caches from its built LayoutEngine.
 
         This internal method is called after the `LayoutEngine` is associated
@@ -1056,6 +1121,41 @@ class _BaseEnvironment(
             ) from e
 
         binning = binning_from_layout(self.layout, connectivity)
+        if clip_mapping is None:
+            clip_mapping = binning.clip_mapping
+        elif clip_mapping is not binning.clip_mapping:
+            binning = replace(binning, clip_mapping=clip_mapping)
+        from neurospatial.layout._binning_layout import _validate_clip_mapping
+
+        _validate_clip_mapping(binning)
+        from neurospatial.environment._arena import (
+            apply_walls,
+            infer_arena,
+            validate_arena,
+        )
+
+        if arena is None:
+            arena = infer_arena(binning, polar=self._POLAR, layout=self.layout)
+        validate_arena(arena, binning, polar=self._POLAR)
+        binning, wall_graph = apply_walls(binning, connectivity, arena)
+        if wall_graph is not connectivity:
+            from neurospatial.layout._binning_layout import BinningLayout
+
+            self.layout = BinningLayout(
+                binning,
+                connectivity=wall_graph,
+                dimension_ranges=self.layout.dimension_ranges,
+                layout_type_tag=self.layout._layout_type_tag,
+                layout_type=self.layout.layout_type,
+                build_params=self.layout._build_params_used,
+                is_linearized_track=self._is_linearized_track_env,
+                coordinate_kind="polar" if self._POLAR else "cartesian",
+            )
+            connectivity = self.layout.connectivity
+        if clip_mapping is not None and len(clip_mapping.parent_bin_indices) != len(
+            bin_centers
+        ):
+            raise ValueError("clip_mapping must have one source index per output bin.")
         grid_edges = getattr(self.layout, "grid_edges", ())
         grid_shape = getattr(self.layout, "grid_shape", None)
         active_mask = getattr(self.layout, "active_mask", None)
@@ -1087,6 +1187,8 @@ class _BaseEnvironment(
             grid_edges=grid_edges,
             grid_shape=grid_shape,
             active_mask=active_mask,
+            arena=arena,
+            clip_mapping=clip_mapping,
         )
 
         self._is_fitted = True
@@ -1422,6 +1524,7 @@ class _BaseEnvironment(
                 layout_type_used=self._layout_type_used,
                 layout_params_used=copy_module.deepcopy(self._layout_params_used),
                 regions=copy_module.deepcopy(self.regions),
+                arena=copy_module.deepcopy(self.arena),
             )
 
             # Copy metadata
@@ -1435,6 +1538,8 @@ class _BaseEnvironment(
                 layout_type_used=self._layout_type_used,
                 layout_params_used=self._layout_params_used,  # Shared reference
                 regions=self.regions,  # Shared reference
+                arena=self.arena,
+                clip_mapping=self.clip_mapping,
             )
 
             # Copy metadata

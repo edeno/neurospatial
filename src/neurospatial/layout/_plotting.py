@@ -15,6 +15,67 @@ if TYPE_CHECKING:
     from neurospatial.layout._binning import TrackLinearization
     from neurospatial.layout._capabilities import RectilinearGrid
     from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+    from neurospatial.layout._polygon import PolygonCells
+
+
+def polygon_patches(shapes: PolygonCells) -> list[Any]:
+    """Build compound paths whose interior rings remain unfilled."""
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+    from shapely.geometry.polygon import orient
+
+    patches = []
+    for cell in shapes.polygons:
+        polygon = orient(cell, sign=1.0)
+        paths = []
+        for ring in (polygon.exterior, *polygon.interiors):
+            vertices = np.asarray(ring.coords)
+            codes = np.full(len(vertices), Path.LINETO, dtype=np.uint8)
+            codes[0], codes[-1] = Path.MOVETO, Path.CLOSEPOLY
+            paths.append(Path(vertices, codes))
+        patches.append(PathPatch(Path.make_compound_path(*paths)))
+    return patches
+
+
+def plot_polygon_cells(
+    ax: Axes | None = None,
+    *,
+    shapes: PolygonCells,
+    title: str,
+    connectivity: nx.Graph,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    figsize: tuple[float, float] = (7, 7),
+    cmap: str = "bone_r",
+    alpha: float = 0.7,
+    show_connectivity: bool = True,
+    node_size: float = 20,
+    node_color: str = "blue",
+    **kwargs: Any,
+) -> Axes:
+    """Draw exact polygon cells, retaining holes and disconnected pieces."""
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PatchCollection
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+    collection = PatchCollection(
+        polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
+    )
+    collection.set_array(np.ones(len(shapes.polygons)))
+    ax.add_collection(collection)
+    ax.autoscale_view()
+    if show_connectivity:
+        positions = nx.get_node_attributes(connectivity, "pos")
+        nx.draw_networkx_nodes(
+            connectivity, positions, ax=ax, node_size=node_size, node_color=node_color
+        )
+        nx.draw_networkx_edges(connectivity, positions, ax=ax)
+    if dimension_ranges is not None:
+        ax.set_xlim(dimension_ranges[0])
+        ax.set_ylim(dimension_ranges[1])
+    ax.set_aspect("equal")
+    ax.set_title(title)
+    return ax
 
 
 def plot_grid(

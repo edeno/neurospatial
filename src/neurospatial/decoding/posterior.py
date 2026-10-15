@@ -35,6 +35,7 @@ from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
+    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
 
 
@@ -49,6 +50,47 @@ class SpatialRatesLike(Protocol):
 
     @property
     def firing_rates(self) -> NDArray[np.float64]: ...
+
+
+def _same_arena(first: Arena, second: Arena) -> bool:
+    """Compare continuous meaning independently of polygon ring storage order."""
+    from shapely.ops import unary_union
+
+    from neurospatial.arena import encode_arena
+
+    if first is second:
+        return True
+    if any(
+        getattr(first, name) != getattr(second, name)
+        for name in (
+            "n_dims",
+            "coordinate_kind",
+            "domain_known",
+            "physical_footprint_known",
+        )
+    ):
+        return False
+    first_domain, second_domain = first.polygonal_domain(), second.polygonal_domain()
+    if first_domain is not None or second_domain is not None:
+        return (
+            first_domain is not None
+            and second_domain is not None
+            and first_domain.equals(second_domain)
+            and unary_union(first.walls).equals(unary_union(second.walls))
+        )
+    try:
+        first_meta, first_arrays = encode_arena(first)
+        second_meta, second_arrays = encode_arena(second)
+    except ValueError:
+        return False
+    return (
+        first_meta == second_meta
+        and first_arrays.keys() == second_arrays.keys()
+        and all(
+            np.array_equal(value, second_arrays[key])
+            for key, value in first_arrays.items()
+        )
+    )
 
 
 def _validate_encoding_environment(
@@ -81,6 +123,43 @@ def _validate_encoding_environment(
             for u, v, data in source_graph.edges(data=True)
         ):
             mismatch = "weighted connectivity"
+    if mismatch is None:
+        from neurospatial.layout._polygon import PolygonCells, materialize_cells
+
+        if not _same_arena(source.arena, env.arena):
+            mismatch = "continuous arena or physical walls"
+        elif isinstance(source._binning.shapes, PolygonCells) or isinstance(
+            env._binning.shapes, PolygonCells
+        ):
+            source_cells, target_cells = (
+                materialize_cells(source._binning),
+                materialize_cells(env._binning),
+            )
+            if len(source_cells) != len(target_cells) or any(
+                not left.equals(right)
+                for left, right in zip(source_cells, target_cells, strict=True)
+            ):
+                mismatch = "polygon cell geometry"
+            else:
+                from neurospatial.layout._codecs import encode
+
+                try:
+                    source_meta, source_arrays = encode(
+                        source._binning.locator, "locator"
+                    )
+                    target_meta, target_arrays = encode(env._binning.locator, "locator")
+                except ValueError:
+                    mismatch = "bin-boundary ownership"
+                else:
+                    if (
+                        source_meta != target_meta
+                        or source_arrays.keys() != target_arrays.keys()
+                        or any(
+                            not np.array_equal(value, target_arrays[key])
+                            for key, value in source_arrays.items()
+                        )
+                    ):
+                        mismatch = "bin-boundary ownership"
     if mismatch is not None:
         raise IncompatibleEnvironmentError(
             f"{context}: the encoding result's environment differs from the "

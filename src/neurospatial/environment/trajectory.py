@@ -8,7 +8,7 @@ Key Features
 - Occupancy (time-in-bin) computation with speed filtering
 - Bin sequence extraction with run-length encoding
 - Transition matrix calculation (empirical, random walk, diffusion)
-- Linear time allocation for grid environments
+- Linear time allocation for grids and exact planar polygon cells
 
 Notes
 -----
@@ -357,16 +357,22 @@ def _occupancy(
         raise ValueError(
             f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
             "Use 'start' for simple allocation (all layouts) or 'linear' for "
-            "ray-grid intersection (grid layouts with rectangular cells only)."
+            "segment intersection with rectangular or exact planar polygon cells."
         )
 
     # Validate the capability before returning for empty input.
+    polygon_allocation = False
+    grid = None
     if time_allocation == "linear":
-        grid = require_rectilinear(
-            env._binning,
-            "occupancy(time_allocation='linear')",
-            fix="use time_allocation='start', which works on every layout",
-        )
+        from neurospatial.environment._polygon_trajectory import uses_polygon_allocation
+
+        polygon_allocation = uses_polygon_allocation(env)
+        if not polygon_allocation:
+            grid = require_rectilinear(
+                env._binning,
+                "occupancy(time_allocation='linear')",
+                fix="use time_allocation='start', which works on every layout",
+            )
 
     # Handle empty arrays
     if len(times) == 0:
@@ -390,18 +396,17 @@ def _occupancy(
     # Compute time intervals
     dt = np.diff(times)
 
-    # Build mask for valid intervals using the SHARED helper so that the
-    # occupancy denominator and the spike numerator drop the IDENTICAL set
-    # of intervals (max_gap ∪ low-speed ∪ out-of-bounds-start). See
-    # ``interval_valid_mask`` and ``encoding/_binning.py``.
+    # Default start allocation shares every interval gate with spike binning.
+    # Polygon linear allocation keeps observation validity separate from
+    # geometric support, allowing outside-to-inside and re-entry segments.
     valid_mask = interval_valid_mask(
         times,
         positions,
-        env,
+        None if polygon_allocation else env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=bin_indices,
+        start_bin=None if polygon_allocation else bin_indices,
         epochs=as_intervals(epochs, name="epochs"),
     )
 
@@ -419,10 +424,21 @@ def _occupancy(
         )
 
     elif time_allocation == "linear":
-        # Linear allocation: split time across bins traversed by ray
-        occupancy = _allocate_time_linear(
-            env, grid, positions, dt, valid_mask, bin_indices, return_seconds
-        )
+        if polygon_allocation:
+            from neurospatial.environment._polygon_trajectory import (
+                retained_linear_intervals,
+            )
+
+            for piece in retained_linear_intervals(env, times, positions, valid_mask):
+                weight = dt[piece.sample_index] if return_seconds else 1.0
+                occupancy[piece.bin_index] += (
+                    piece.stop_fraction - piece.start_fraction
+                ) * weight
+        else:
+            assert grid is not None
+            occupancy = _allocate_time_linear(
+                env, grid, positions, dt, valid_mask, bin_indices, return_seconds
+            )
 
     # Apply kernel smoothing if requested
     if bandwidth is not None:

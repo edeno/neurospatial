@@ -36,9 +36,8 @@ class TestRebin:
     def test_rebin_double_size(self, medium_2d_env: Environment) -> None:
         """Test rebinning with doubled bin size (factor=2).
 
-        Note: rebin() marks all bins as active in the coarsened grid,
-        so if the original environment has sparse active bins, the
-        rebinned environment may have MORE bins than the original.
+        Coarse centers stay inside the original arena; dense input supports
+        all of the coarse cells in this fixture.
         """
         # Get original grid shape
         original_shape = medium_2d_env.layout.grid_shape
@@ -164,13 +163,16 @@ class TestRebin:
         assert rebinned.units == "cm"
         assert rebinned.frame == "arena1"
 
-    def test_rebin_all_bins_active(self, medium_2d_env: Environment) -> None:
-        """Test that all bins in rebinned environment are active."""
+    def test_rebin_dense_domain_keeps_all_coarse_bins(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """A fully supported domain retains every coarse cell center."""
         rebinned = medium_2d_env.rebin(factor=2)
 
-        # All bins should be active (even if original had inactive regions)
+        assert rebinned.arena is medium_2d_env.arena
         assert rebinned.active_mask is not None
         assert np.all(rebinned.active_mask)
+        assert np.all(rebinned.arena.contains(rebinned.bin_centers))
 
     def test_rebin_non_divisible_warns(self, small_2d_env: Environment) -> None:
         """Test that non-divisible grid dimensions trigger warning."""
@@ -488,9 +490,8 @@ class TestRebinProperties:
     ) -> None:
         """Property: rebin reduces grid shape by factor.
 
-        Note: rebin() may increase bin count for sparse environments
-        (where original has many inactive bins), because all bins in
-        the rebinned grid are marked as active.
+        Coarse cell centers must also lie in the original continuous arena;
+        the total grid shape describes the candidate cells before selection.
         """
         original_shape = small_2d_env.layout.grid_shape
         original_grid_total = original_shape[0] * original_shape[1]
@@ -512,7 +513,7 @@ class TestRebinProperties:
     def test_rebin_maintains_connectivity(
         self, small_2d_env: Environment, factor: int
     ) -> None:
-        """Property: rebinned environment is always connected."""
+        """Property: coarsening this fully supported grid keeps connectivity."""
         rebinned = small_2d_env.rebin(factor=factor)
 
         # Should be a connected graph

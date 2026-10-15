@@ -85,10 +85,10 @@ class EnvironmentSerialization:
     """
 
     def to_file(self: SelfEnv, path: str | Path, *, overwrite: bool = False) -> None:
-        """Save complete Environment-v2 binning data to JSON and NPZ files.
+        """Save Environment-v3 binning and Arena data to JSON and NPZ files.
 
-        Loading restores bins, lookup, faces and drawing components without
-        rebuilding a layout. Older versions are refused. Creates two files:
+        Loading restores Arena, bins, lookup, faces, drawing components and clip
+        mapping without rebuilding a layout. Creates two files:
         `{path}.json` (metadata) and `{path}.npz` (arrays).
 
         Parameters
@@ -173,9 +173,11 @@ class EnvironmentSerialization:
 
         Notes
         -----
-        Only Environment-v2 files are accepted. Loading decodes bins, lookup,
-        faces and drawing components without rebuilding a layout. Recreate
-        older environments with a factory and save them again.
+        Environment-v3 restores Arena, bins, lookup, faces, drawing components
+        and clip mapping without rebuilding a layout. Environment-v2 remains
+        readable with an explicitly unknown Arena; old outlines and masks do
+        not establish a physical footprint. Recreate version 1 environments
+        with a factory and save them again.
 
         """
         from neurospatial.io import from_file as _from_file
@@ -185,9 +187,10 @@ class EnvironmentSerialization:
     def to_dict(self: SelfEnv) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
-        Stores complete Environment-v2 binning data with numerical arrays as
+        Stores Environment-v3 binning and Arena data with numerical arrays as
         lists and explicit shapes/dtypes. Loading decodes this data without
-        rebuilding a layout; older dictionary versions are refused.
+        rebuilding a layout. Version 2 remains readable with an unknown Arena;
+        version 1 must be recreated with a factory.
 
         Returns
         -------
@@ -220,10 +223,10 @@ class EnvironmentSerialization:
 
     @classmethod
     def from_dict(cls: type[EnvironmentProtocol], data: dict[str, Any]) -> Environment:
-        """Decode complete Environment-v2 data without rebuilding a layout.
+        """Decode Environment-v3 binning and Arena without rebuilding a layout.
 
-        Older dictionary formats are refused; recreate and re-save them with
-        an Environment factory.
+        Version 2 dictionaries retain bins with an explicitly unknown Arena.
+        Version 1 must be recreated and re-saved with an Environment factory.
 
         Parameters
         ----------
@@ -265,10 +268,11 @@ class EnvironmentSerialization:
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
-        Schema 2.0 stores bins, exact lookup, cell faces, drawing components,
-        track linearization, graph attributes, regions and coordinate metadata.
-        Loading restores this data without rebuilding a layout. Older NWB
-        environment records must be recreated with a factory and saved again.
+        Environment schema 3.0 stores Arena, explicit walls, bins, exact lookup,
+        cell faces, drawing components, clip mapping, track linearization, graph
+        attributes, regions and coordinate metadata. Loading does not rebuild a
+        layout. Schema 2.0 remains readable with an unknown Arena; schemas 1.0
+        and 1.1 must be recreated with a factory and saved again.
 
         Parameters
         ----------

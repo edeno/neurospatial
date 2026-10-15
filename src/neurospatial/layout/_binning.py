@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
 
 import networkx as nx
 import numpy as np
@@ -26,6 +26,9 @@ from neurospatial.layout._diffusion import (
     FiniteVolumeGeometryProvider,
 )
 from neurospatial.layout.base import LayoutEngine
+
+if TYPE_CHECKING:
+    from neurospatial.layout._polygon import ClipMapping, PolygonCells
 
 
 @dataclass(frozen=True, eq=False)
@@ -521,8 +524,9 @@ class Binning:
     faces: FacesSource
     rectilinear: RectilinearGrid | None = None
     linearization: TrackLinearizationProvider | None = None
-    shapes: HexagonShapes | TriangleShapes | None = None
+    shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
+    clip_mapping: ClipMapping | None = None
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:

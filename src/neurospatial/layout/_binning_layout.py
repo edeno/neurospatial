@@ -38,10 +38,20 @@ from neurospatial.layout._locators import (
 from neurospatial.layout._plotting import (
     plot_grid,
     plot_hexagons,
+    plot_polygon_cells,
     plot_polygon_grid,
     plot_track,
     plot_track_linear,
     plot_triangles,
+)
+from neurospatial.layout._polygon import (
+    ClipMapping,
+    ClippedLocator,
+    PolygonCells,
+    _representative,
+    cells_from_locator,
+    certify_faces,
+    transform_polygon_cells,
 )
 from neurospatial.layout.helpers.utils import get_centers
 
@@ -104,6 +114,120 @@ def _gap(points: NDArray[np.float64]) -> float:
     return float(np.min(distances))
 
 
+def _polygon_coordinate_errors(polygon: Polygon | MultiPolygon) -> NDArray[np.float64]:
+    """Bound each coordinate axis without hiding a thin, well-resolved axis."""
+    coordinates = shapely.get_coordinates(polygon)
+    # As for native grid edges, a feature needs at least 10,000 times the
+    # coordinate uncertainty. Normalize each axis independently: a long y
+    # edge does not make an exactly stored tiny x width unresolvable.
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        uncertainty = 4 * np.max(
+            np.spacing(np.abs(coordinates)), axis=0
+        ) + 64 * np.finfo(float).eps * np.ptp(coordinates, axis=0)
+        normalized = (coordinates - coordinates[0]) / uncertainty
+    # Overlay can insert consecutive vertices separated by less than the
+    # coordinate uncertainty at an otherwise well-resolved corner. Those
+    # redundant vertices are not the cell's width. Simplify only this temporary
+    # normalized clearance probe; retain the original geometry and every cell.
+    if (
+        not np.all(np.isfinite(normalized))
+        or shapely.set_coordinates(polygon, normalized)
+        .simplify(1.0, preserve_topology=True)
+        .minimum_clearance
+        < 1e4
+    ):
+        raise ValueError(
+            "Polygon features are not resolvable at the stored coordinate precision. "
+            "Rescale or recenter coordinates before clipping or transforming."
+        )
+    return np.asarray(uncertainty, dtype=np.float64)
+
+
+def _polygon_area_allowance(
+    polygon: Polygon | MultiPolygon,
+    *,
+    reference_clearance: float = math.inf,
+) -> float:
+    """Return a local, coordinate-ULP bounded polygon area comparison budget.
+
+    Parameters
+    ----------
+    polygon : Polygon or MultiPolygon
+        Stored finite polygon whose area is being checked.
+    reference_clearance : float, optional
+        Cached minimum clearance of a containing reference geometry. It further
+        limits the uncertainty without repeatedly traversing that geometry.
+
+    Returns
+    -------
+    float
+        Boundary variation times directional coordinate uncertainty, including
+        second-order corner terms. The budget is capped by the actual area and
+        by the containing reference's smallest feature.
+
+    Raises
+    ------
+    ValueError
+        If local features cannot be resolved at the stored coordinate origin.
+    """
+    uncertainty = _polygon_coordinate_errors(polygon)
+    coordinates = shapely.get_coordinates(polygon)
+    variation = np.sum(np.abs(np.diff(coordinates, axis=0)), axis=0)
+    # Varying each shoelace coordinate independently changes area by at most
+    # x-error * total y-variation + y-error * total x-variation, plus corner
+    # products. Ring-to-ring jumps only enlarge this conservative bound.
+    allowance = float(uncertainty @ variation[::-1])
+    allowance += 2 * len(coordinates) * float(np.prod(uncertainty))
+    return float(
+        min(
+            allowance,
+            polygon.area * 1e-4,
+            reference_clearance**2 / 16,
+        )
+    )
+
+
+def _current_clip_mapping(locator: Locator) -> ClipMapping | None:
+    """Recover the latest clip's mapping in the current active-bin order."""
+    if isinstance(locator, ClippedLocator):
+        return locator.mapping
+    if isinstance(locator, TransformedLocator):
+        return _current_clip_mapping(locator.base)
+    if isinstance(locator, SubsetLocator):
+        mapping = _current_clip_mapping(locator.base)
+        if mapping is None:
+            return None
+        if locator.parent_to_child.shape != mapping.parent_bin_indices.shape:
+            raise ValueError("clip_mapping and subset parent count disagree.")
+        active = _active_indices(
+            locator.parent_to_child,
+            int(np.count_nonzero(locator.parent_to_child >= 0)),
+            "clip_mapping subset ordering",
+        )
+        return ClipMapping(mapping.parent_bin_indices[active], mapping.n_parent_bins)
+    return None
+
+
+def _validate_clip_mapping(binning: Binning) -> None:
+    """Require the current published map to describe the latest clipped locator."""
+    expected = _current_clip_mapping(binning.locator)
+    actual = binning.clip_mapping
+    if (actual is None) != (expected is None):
+        raise ValueError(
+            "clip_mapping presence disagrees with the latest clipped locator."
+        )
+    if actual is not None and expected is not None:
+        if actual.n_parent_bins != expected.n_parent_bins:
+            raise ValueError(
+                "clip_mapping parent count disagrees with the latest clip."
+            )
+        _equal(
+            actual.parent_bin_indices,
+            expected.parent_bin_indices,
+            "clip_mapping parent_bin_indices and latest clip",
+        )
+
+
 def _computed_equal(
     actual: NDArray[np.float64],
     expected: NDArray[np.float64],
@@ -143,6 +267,12 @@ class _LocatorGeometry:
     orientation_error: float = 0.0
     computed: bool = False
     shapes_supported: bool = True
+    polygons: tuple[Polygon, ...] | None = None
+
+
+def _stored_cells(locator: Locator) -> tuple[Polygon, ...]:
+    """Recover parent cell bounds to validate a clipped locator's containment."""
+    return cells_from_locator(locator)
 
 
 def _rectilinear_geometry(
@@ -248,6 +378,39 @@ def _primitive_geometry(
     locator: Locator,
     coordinate_kind: Literal["cartesian", "polar"],
 ) -> _LocatorGeometry:
+    if isinstance(locator, ClippedLocator):
+        if coordinate_kind != "cartesian":
+            raise ValueError("polygon cells require Cartesian coordinates.")
+        parent = _locator_geometry(locator.base, coordinate_kind, 2)
+        if locator.mapping.n_parent_bins != len(parent.centers):
+            raise ValueError(
+                "clipped mapping parent count disagrees with its base locator."
+            )
+        source = _stored_cells(locator.base)
+        polygons = locator.cells.polygons
+        parent_clearances = [polygon.minimum_clearance for polygon in source]
+        clearances = [polygon.minimum_clearance for polygon in polygons]
+        for index, polygon in enumerate(polygons):
+            parent_index = locator.mapping.parent_bin_indices[index]
+            parent_cell = source[parent_index]
+            allowance = _polygon_area_allowance(
+                polygon,
+                reference_clearance=parent_clearances[parent_index],
+            )
+            if polygon.difference(parent_cell).area > allowance:
+                raise ValueError(
+                    f"polygon cell {index} extends outside its source parent."
+                )
+        centers = np.array([_representative(polygon) for polygon in polygons])
+        areas = np.array([polygon.area for polygon in polygons])
+        return _LocatorGeometry(
+            locator,
+            centers,
+            np.zeros_like(centers),
+            [(areas, np.zeros_like(areas))],
+            cell_gap=min(clearances, default=math.inf),
+            polygons=polygons,
+        )
     if isinstance(locator, RectilinearLocator):
         return _rectilinear_geometry(locator, coordinate_kind)
     if isinstance(locator, HexLocator):
@@ -418,6 +581,8 @@ def _locator_geometry(
         ]
         if geometry.triangles is not None:
             geometry.triangles = geometry.triangles[active]
+        if geometry.polygons is not None:
+            geometry.polygons = tuple(geometry.polygons[index] for index in active)
         # Whole-bin subsets do not retain an arena outline.
         geometry.boundary = None
         return geometry
@@ -469,6 +634,10 @@ def _locator_geometry(
         for value, error in geometry.measures
     ]
     geometry.cell_gap *= float(np.min(np.linalg.svd(linear, compute_uv=False)))
+    if geometry.polygons is not None:
+        geometry.polygons = transform_polygon_cells(
+            PolygonCells(geometry.polygons), matrix
+        ).polygons
     if geometry.points is not None:
         assert geometry.point_error is not None
         geometry.points, geometry.point_error = _mapped_geometry(
@@ -516,6 +685,7 @@ def _validate_components(
 ) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     bins, locator = binning.bins, binning.locator
+    _validate_clip_mapping(binning)
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(locator, coordinate_kind, bins.measure_dim)
     gap = min(_gap(geometry.centers), geometry.cell_gap)
@@ -622,6 +792,92 @@ def _validate_components(
             geometry.point_error,
             "shapes.points and mesh locator points",
             gap=_gap(geometry.points),
+        )
+    elif isinstance(shapes, PolygonCells):
+        if geometry.polygons is None or len(shapes.polygons) != len(geometry.polygons):
+            raise ValueError("polygon shapes need matching clipped locator cells.")
+        clearances = [polygon.minimum_clearance for polygon in shapes.polygons]
+        coordinate_errors = [
+            _polygon_coordinate_errors(polygon) for polygon in shapes.polygons
+        ]
+        for index, (actual, expected) in enumerate(
+            zip(shapes.polygons, geometry.polygons, strict=True)
+        ):
+            tolerance = np.minimum(
+                coordinate_errors[index],
+                _polygon_coordinate_errors(expected),
+            )
+            actual_normalized, expected_normalized = (
+                shapely.normalize(actual),
+                shapely.normalize(expected),
+            )
+            actual_rings = [actual_normalized.exterior, *actual_normalized.interiors]
+            expected_rings = [
+                expected_normalized.exterior,
+                *expected_normalized.interiors,
+            ]
+            if len(actual_rings) != len(expected_rings) or any(
+                np.shape(a.coords) != np.shape(b.coords)
+                or not np.all(
+                    np.abs(np.asarray(a.coords) - np.asarray(b.coords))
+                    <= np.minimum(tolerance, gap / 4)
+                )
+                for a, b in zip(actual_rings, expected_rings, strict=True)
+            ):
+                raise ValueError(f"polygon cell {index} disagrees with its locator.")
+            if not actual.contains(shapely.Point(bins.centers[index])):
+                raise ValueError(
+                    f"polygon cell {index} does not contain its bin center."
+                )
+            allowance = _polygon_area_allowance(actual)
+            if abs(actual.area - bins.sizes[index]) > allowance:
+                raise ValueError(
+                    f"polygon cell {index} area disagrees with bins.sizes."
+                )
+        if isinstance(binning.faces, KnownFaces):
+            stored = binning.faces.faces
+            contacts = [
+                shapes.polygons[u].boundary.intersection(shapes.polygons[v].boundary)
+                for u, v in bins.pairs
+            ]
+            certified = certify_faces(
+                shapes,
+                bins.centers,
+                bins.pairs,
+                path_only=np.array(
+                    [
+                        not contact.is_empty and contact.length == 0
+                        for contact in contacts
+                    ],
+                    dtype=bool,
+                ),
+            )
+            if not isinstance(certified, KnownFaces):
+                raise ValueError("stored polygon faces fail geometric certification.")
+            for name in ("A", "distance"):
+                expected = getattr(certified.faces, name)
+                actual = getattr(stored, name)
+                error = (
+                    256
+                    * np.finfo(float).eps
+                    * np.maximum(np.abs(expected), np.abs(actual))
+                )
+                for index, (u, v) in enumerate(bins.pairs):
+                    # Distances and face lengths subtract independently rounded
+                    # mapped endpoints. Bound that discrepancy locally, retaining
+                    # exact zero-area path-only interfaces.
+                    if name == "A" and expected[index] == 0:
+                        continue
+                    error[index] += 2 * float(
+                        np.linalg.norm(coordinate_errors[u] + coordinate_errors[v])
+                    )
+                    error[index] = min(
+                        error[index], min(clearances[u], clearances[v]) / 4
+                    )
+                _computed_equal(actual, expected, error, f"polygon faces.{name}")
+    elif geometry.polygons is not None:
+        raise ValueError(
+            "clipped locators require their matching PolygonCells component."
         )
     if isinstance(geometry.leaf, (MeshLocator, LayoutLocator)):
         outline = binning.outline
@@ -895,6 +1151,8 @@ class BinningLayout:
                 bin_centers=self.bin_centers,
                 **kwargs,
             )
+        if isinstance(data.shapes, PolygonCells):
+            return plot_polygon_cells(ax, shapes=data.shapes, **common, **kwargs)
         if data.rectilinear is not None:
             if data.outline is not None:
                 return plot_polygon_grid(

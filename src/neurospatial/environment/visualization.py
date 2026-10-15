@@ -34,6 +34,7 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.layout._binning import TrackLinearization
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
+from neurospatial.layout._polygon import PolygonCells
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -488,6 +489,10 @@ class EnvironmentVisualization:
             )
         elif isinstance(binning.shapes, TriangleShapes):
             mappable = _plot_trimesh_field(
+                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            )
+        elif isinstance(binning.shapes, PolygonCells):
+            mappable = _plot_polygon_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
         elif binning.linearization is not None or self.is_linearized_track:
@@ -974,6 +979,34 @@ def _plot_grid_field(
     )
 
     return mesh
+
+
+def _plot_polygon_field(
+    env: SelfEnv,
+    field: NDArray[np.float64],
+    ax: matplotlib.axes.Axes,
+    cmap: str | Colormap,
+    vmin: float,
+    vmax: float,
+    nan_color: str | None,
+    rasterized: bool,
+    **kwargs: Any,
+) -> Any:
+    """Render exact polygon rings with the standard missing-value colors."""
+    from neurospatial.layout._plotting import polygon_patches
+
+    shapes = env._binning.shapes
+    assert isinstance(shapes, PolygonCells)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(nan_color or "none")
+    collection = PatchCollection(
+        polygon_patches(shapes), cmap=cmap_obj, rasterized=rasterized, **kwargs
+    )
+    collection.set_array(np.ma.masked_invalid(field))
+    collection.set_clim(vmin, vmax)
+    ax.add_collection(collection)
+    ax.autoscale_view()
+    return collection
 
 
 def _plot_hex_field(

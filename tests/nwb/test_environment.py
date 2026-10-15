@@ -541,7 +541,7 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
         assert metadata["name"] == "test_arena"
-        assert metadata["schema_version"] == "2.0"
+        assert metadata["schema_version"] == "3.0"
 
     def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
         """Writing preserves every center value exactly."""
@@ -2148,7 +2148,7 @@ class TestCoordinateKindRoundTrip:
         metadata = json.loads(record.description)
         metadata.pop("coordinate_kind")
         record.fields["description"] = json.dumps(metadata)
-        with pytest.raises(ValueError, match=r"sizes|measures"):
+        with pytest.raises(ValueError, match=r"sizes|measures|coordinate_kind"):
             read_environment(empty_nwb, name="polar_env")
 
     def test_read_environment_missing_cartesian_coordinate_kind_defaults(

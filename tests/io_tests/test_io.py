@@ -81,7 +81,7 @@ class TestSerialization:
             data = json.load(f)
 
         assert "schema_version" in data
-        assert data["schema_version"] == "Environment-v2"
+        assert data["schema_version"] == "Environment-v3"
         assert "library_version" in data
         assert "created_at" in data
         assert data["name"] == "test_env"

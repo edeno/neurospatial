@@ -2709,6 +2709,7 @@ def compute_spatial_rate(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2845,6 +2846,21 @@ default="diffusion_kde"
         Longer intervals (dropped frames, pauses between sessions) are excluded
         from occupancy and their spikes are not counted. ``None`` disables the
         gap check.
+    time_allocation : {"start", "linear"}, default="start"
+        How trajectory intervals contribute dwell time. ``"start"`` assigns
+        each eligible interval to its starting bin and requires both endpoints
+        inside the environment. ``"linear"`` follows the straight segment
+        between finite endpoints and retains its exact portions inside the
+        effective planar cells and arena, including entry and re-entry. Spike
+        counts and occupancy use the same retained half-open time spans;
+        span entries are included, exits and the final trajectory timestamp
+        are excluded. Spatial boundaries retain ``env.bin_at`` ownership. Linear
+        allocation supports Cartesian 2-D area geometry; other dimensions
+        raise ``NotImplementedError``. Gap, speed and recording-window gates
+        still apply to each complete observation interval. Linear allocation
+        raises ``ValueError`` if a boundary-owned spike has zero dwell or if
+        absolute timestamps cannot represent a retained span. Adjust spatial
+        resolution or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2905,11 +2921,11 @@ default="diffusion_kde"
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The bounds check
-    requires both of the interval's samples to be tracked inside the
-    environment, so an interval ending in a tracking dropout is left out.
-    The same intervals are removed from the spike counts and the occupancy.
+    An interval is analyzed only if it passes the gap and speed checks and
+    lies inside ``epochs ∩ spike_window``. Both endpoints must be tracked.
+    With ``time_allocation="start"``, both must also be inside the environment.
+    Linear allocation instead retains the portions crossing effective cells.
+    Counts and occupancy always share the same retained temporal support.
 
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
@@ -2963,6 +2979,14 @@ default="diffusion_kde"
     True
     >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
     True
+
+    >>> # Follow straight segments through cells for both spikes and dwell.
+    >>> linear = compute_spatial_rate(
+    ...     env, spike_times, times, positions, method="binned",
+    ...     time_allocation="linear",
+    ... )
+    >>> linear.analysis_settings["time_allocation"]
+    'linear'
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -2973,6 +2997,7 @@ default="diffusion_kde"
         _resolve_spatial_time_support,
         bin_spike_train,
         compute_occupancy,
+        prepare_linear_spatial_intervals,
         resolve_speed,
     )
     from neurospatial.encoding._smoothing import (
@@ -2988,6 +3013,8 @@ default="diffusion_kde"
     validate_env_fitted(
         env, context="compute_spatial_rate", arguments="spike_times, times, positions"
     )
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3045,6 +3072,21 @@ default="diffusion_kde"
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
+    linear_intervals = (
+        prepare_linear_spatial_intervals(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+        if time_allocation == "linear"
+        else None
+    )
+
     time_support = _resolve_spatial_time_support(
         env,
         times,
@@ -3055,6 +3097,8 @@ default="diffusion_kde"
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     interval_mask = time_support.mask
@@ -3073,6 +3117,7 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
         pooled=pooled,
+        time_allocation=time_allocation,
     )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
@@ -3087,6 +3132,8 @@ default="diffusion_kde"
         interval_mask=interval_mask,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # Compute occupancy (always NumPy) using the SAME resolved speed gate and
@@ -3101,6 +3148,8 @@ default="diffusion_kde"
         max_gap=max_gap,
         interval_mask=interval_mask,
         context="compute_spatial_rate",
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset) and
@@ -3209,6 +3258,7 @@ def compute_spatial_rates(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     spike_window: Any = None,
     n_jobs: int = 1,
@@ -3323,6 +3373,21 @@ default="diffusion_kde"
         Longer intervals (dropped frames, pauses between sessions) are excluded
         from occupancy and their spikes are not counted. ``None`` disables the
         gap check.
+    time_allocation : {"start", "linear"}, default="start"
+        How trajectory intervals contribute dwell time. ``"start"`` assigns
+        each eligible interval to its starting bin and requires both endpoints
+        inside the environment. ``"linear"`` follows the straight segment
+        between finite endpoints and retains its exact portions inside the
+        effective planar cells and arena, including entry and re-entry. All
+        units and the shared occupancy use the same retained half-open spans;
+        span entries are included, exits and the final trajectory timestamp
+        are excluded. Spatial boundaries retain ``env.bin_at`` ownership.
+        Linear allocation supports Cartesian 2-D area geometry; other dimensions raise
+        ``NotImplementedError``. Gap, speed and recording-window gates still
+        apply to each complete observation interval. Linear allocation raises
+        ``ValueError`` if a boundary-owned spike has zero dwell or if absolute
+        timestamps cannot represent a retained span. Adjust spatial resolution
+        or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3414,11 +3479,11 @@ default="diffusion_kde"
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The bounds check
-    requires both of the interval's samples to be tracked inside the
-    environment, so an interval ending in a tracking dropout is left out.
-    The same intervals are removed from the spike counts and the occupancy.
+    An interval is analyzed only if it passes the gap and speed checks and
+    lies inside ``epochs ∩ spike_window``. Both endpoints must be tracked.
+    With ``time_allocation="start"``, both must also be inside the environment.
+    Linear allocation instead retains the portions crossing effective cells.
+    Counts and occupancy always share the same retained temporal support.
 
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
@@ -3506,6 +3571,14 @@ default="diffusion_kde"
     >>> result2 = compute_spatial_rates(env, spike_times_2d, times, positions)
     >>> len(result2)
     2
+
+    >>> # A decoder can consume rates fitted on retained linear support.
+    >>> linear = compute_spatial_rates(
+    ...     env, spike_times, times, positions, method="binned",
+    ...     time_allocation="linear",
+    ... )
+    >>> linear.analysis_settings["time_allocation"]
+    'linear'
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -3516,6 +3589,7 @@ default="diffusion_kde"
         _resolve_spatial_time_support,
         _warn_if_population_silent,
         bin_spike_trains,
+        prepare_linear_spatial_intervals,
         resolve_speed,
     )
     from neurospatial.encoding._smoothing import (
@@ -3532,6 +3606,8 @@ default="diffusion_kde"
     validate_env_fitted(
         env, context="compute_spatial_rates", arguments="spike_times, times, positions"
     )
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3628,6 +3704,21 @@ default="diffusion_kde"
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
+    linear_intervals = (
+        prepare_linear_spatial_intervals(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+        if time_allocation == "linear"
+        else None
+    )
+
     time_support = _resolve_spatial_time_support(
         env,
         times,
@@ -3638,6 +3729,8 @@ default="diffusion_kde"
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     interval_mask = time_support.mask
@@ -3659,6 +3752,7 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
         pooled=pooled,
+        time_allocation=time_allocation,
     )
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
@@ -3693,6 +3787,8 @@ default="diffusion_kde"
                 max_gap=max_gap,
                 interval_mask=interval_mask,
                 context="compute_spatial_rates",
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
             )
         else:
             spike_counts, occupancy = _bin_spike_trains(
@@ -3706,6 +3802,8 @@ default="diffusion_kde"
                 interval_mask=interval_mask,
                 n_jobs=n_jobs,
                 warn_on_drop=warn_on_drop,
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
             )
 
         glm_firing_rates, fit = _compute_glm_spatial_rates(
@@ -3773,6 +3871,8 @@ default="diffusion_kde"
             max_gap=max_gap,
             interval_mask=interval_mask,
             context="compute_spatial_rates",
+            time_allocation=time_allocation,
+            linear_intervals=linear_intervals,
         )
 
         # Convert to JAX if needed
@@ -3810,6 +3910,8 @@ default="diffusion_kde"
         interval_mask=interval_mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -4517,7 +4619,8 @@ def detect_place_fields(
     1. **Optional map-mean filter**: If an explicit finite cutoff is exceeded, return no fields
     2. **Peak detection**: Find global maximum in firing rate map
     3. **Field segmentation**: Threshold at fraction of peak to define boundary
-    4. **Connected component**: Extract bins above threshold connected to peak
+    4. **Connected component**: Follow ``env.connectivity`` edges between bins
+       above threshold to extract the component containing the peak
     5. **Size filtering**: Discard fields smaller than min_size
     6. **Subfield recursion**: If detect_subfields=True, recursively apply
        higher thresholds (0.5, 0.7) to discriminate coalescent fields
@@ -5221,115 +5324,15 @@ def is_place_cell(
     return result.is_place_cell(criterion="spatial_info", min_info=min_info)
 
 
-def _extract_connected_component_scipy(
-    seed_idx: int,
-    mask: NDArray[np.bool_],
-    env: Environment,
-) -> NDArray[np.int64]:
-    """Extract connected component using scipy.ndimage.label (fast path for grids).
-
-    This is the optimized path for grid-based environments, providing ~6× speedup
-    over graph-based flood-fill by leveraging scipy's optimized N-D labeling.
-
-    Parameters
-    ----------
-    seed_idx : int
-        Starting bin index in active bin indexing.
-    mask : array, shape (n_bins,)
-        Boolean mask of candidate bins (active bin indexing).
-    env : Environment
-        Spatial environment (must be grid-based with grid_shape and active_mask).
-
-    Returns
-    -------
-    component : array
-        Bin indices in connected component (active bin indexing, sorted).
-
-    Raises
-    ------
-    ValueError
-        If environment does not have grid_shape or active_mask attributes.
-
-    Notes
-    -----
-    This function only works for grid-based environments (RegularGridLayout,
-    MaskedGridLayout, etc.). For non-grid environments (1D tracks, irregular
-    graphs), use _extract_connected_component_graph() instead.
-
-    The algorithm:
-    1. Reshape flat mask to N-D grid using grid_shape
-    2. Apply scipy.ndimage.label to find connected components
-    3. Identify which component contains the seed
-    4. Convert back to flat active bin indices
-    """
-    from scipy import ndimage
-
-    # Validate environment has required attributes
-    if env.grid_shape is None or env.active_mask is None:
-        raise ValueError("scipy path requires grid_shape and active_mask")
-
-    # Reshape flat mask (active bin indexing) to N-D grid (original grid indexing)
-    grid_mask = np.zeros(env.grid_shape, dtype=bool)
-    grid_mask[env.active_mask] = mask
-
-    # Determine connectivity structure to match graph connectivity
-    # Check if environment uses diagonal neighbors
-    n_dims = len(env.grid_shape)
-    if hasattr(env.layout, "_build_params_used"):
-        params = env.layout._build_params_used
-        connect_diagonal = params.get("connect_diagonal_neighbors", False)
-    else:
-        # Default: no diagonal connections (4-connected in 2D, 6-connected in 3D)
-        connect_diagonal = False
-
-    # Create connectivity structure for scipy
-    if connect_diagonal:
-        # Full connectivity (includes diagonals): connectivity = n_dims
-        structure = ndimage.generate_binary_structure(n_dims, n_dims)
-    else:
-        # Axial connectivity only (no diagonals): connectivity = 1
-        structure = ndimage.generate_binary_structure(n_dims, 1)
-
-    # Label connected components in N-D grid
-    labeled, _n_components = ndimage.label(grid_mask, structure=structure)
-
-    # Convert seed from active bin index to grid coordinates
-    # active_mask.ravel() gives flat indices of active bins in original grid
-    active_flat_indices = np.where(env.active_mask.ravel())[0]
-    seed_grid_flat_idx = active_flat_indices[seed_idx]
-    seed_grid_coords = np.unravel_index(seed_grid_flat_idx, env.grid_shape)
-
-    # Get label of component containing seed
-    seed_label = labeled[seed_grid_coords]
-
-    if seed_label == 0:
-        # Seed not in any component (shouldn't happen if mask[seed_idx] is True)
-        return np.array([seed_idx], dtype=np.int64)
-
-    # Extract all grid positions in this component
-    component_grid_mask = labeled == seed_label
-
-    # Convert back to flat active bin indices
-    # Find which active bins correspond to this component
-    component_in_active_bins = component_grid_mask.ravel() & env.active_mask.ravel()
-    component_grid_flat_indices = np.where(component_in_active_bins)[0]
-
-    # Map from original grid flat indices to active bin indices
-    component_bins = np.searchsorted(active_flat_indices, component_grid_flat_indices)
-
-    return np.array(sorted(component_bins), dtype=np.int64)
-
-
 def _extract_connected_component_graph(
     seed_idx: int,
     mask: NDArray[np.bool_],
     env: Environment,
 ) -> NDArray[np.int64]:
-    """Extract connected component using graph-based flood-fill (fallback path).
+    """Extract the seed component using the environment's connectivity graph.
 
-    This is the fallback path for non-grid environments (1D tracks, irregular
-    graphs) and works for any graph structure. It uses breadth-first search
-    with direct graph.neighbors() queries.
+    Breadth-first search follows only published edges between candidate bins,
+    preserving diagonal connections and respecting physical walls.
 
     Parameters
     ----------
@@ -5344,13 +5347,6 @@ def _extract_connected_component_graph(
     -------
     component : array
         Bin indices in connected component (sorted).
-
-    Notes
-    -----
-    This is the original implementation, proven to be already optimal for
-    sparse connected components on arbitrary graphs. Benchmarking showed
-    this is faster than NetworkX's connected_components() due to avoiding
-    subgraph creation overhead.
     """
     # Flood fill using graph connectivity (BFS)
     component_set = {seed_idx}
@@ -5373,47 +5369,13 @@ def _extract_connected_component(
     mask: NDArray[np.bool_],
     env: Environment,
 ) -> NDArray[np.int64]:
-    """Extract connected component of bins from seed (routes to optimal method).
+    """Return sorted candidate bins connected to the seed by published edges.
 
-    Automatically selects the optimal algorithm based on environment type:
-    - Grid environments (2D/3D): Uses scipy.ndimage.label (~6× faster)
-    - Non-grid environments: Uses graph-based flood-fill
-
-    Parameters
-    ----------
-    seed_idx : int
-        Starting bin index.
-    mask : array, shape (n_bins,)
-        Boolean mask of candidate bins.
-    env : Environment
-        Spatial environment for connectivity.
-
-    Returns
-    -------
-    component : array
-        Bin indices in connected component (sorted).
-
-    Notes
-    -----
-    The routing logic checks for grid-based environments using:
-    - env.grid_shape is not None
-    - len(env.grid_shape) >= 2 (2D or 3D grids)
-    - env.active_mask is not None
-
-    For grid environments, uses scipy.ndimage.label for ~6× speedup.
-    For non-grid environments, uses graph-based flood-fill (already optimal).
+    Grid geometry does not establish connectivity: physical walls can remove
+    lattice edges, while subsets and restored grids can retain diagonal edges.
+    The environment graph is authoritative for every binning family.
     """
-    # Check if scipy fast path is applicable
-    if (
-        env.grid_shape is not None
-        and len(env.grid_shape) >= 2
-        and env.active_mask is not None
-    ):
-        # Fast path: scipy.ndimage.label for grid environments
-        return _extract_connected_component_scipy(seed_idx, mask, env)
-    else:
-        # Fallback path: graph-based flood-fill for non-grid environments
-        return _extract_connected_component_graph(seed_idx, mask, env)
+    return _extract_connected_component_graph(seed_idx, mask, env)
 
 
 def _detect_subfields(
