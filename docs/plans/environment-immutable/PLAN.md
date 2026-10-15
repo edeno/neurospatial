@@ -1,9 +1,11 @@
 # Stage B — Immutable environment values
 
-**Status:** Draft implementation plan. No Stage B implementation has started.
+**Status:** Implementation started. B0 behavior capture and API review are
+complete; B1 ownership and metadata work is next. See [validation.md](validation.md).
 The user approved immediate read-only metadata and mutable standalone region
 builders with immutable environment snapshots on 2026-10-14. Remaining API
-signatures and extension contracts need review before dependent code changes.
+extension contracts need review before dependent code changes. No Stage B PR
+publication is authorized.
 
 **Branch:** `feature/environment-immutable`, stacked on
 `feature/environment-arena` at `a88360e5`.
@@ -48,17 +50,20 @@ Several factories do not yet accept units/frame consistently.
 
 ## Proposed contracts and decisions
 
-The mutation policy and region collection model below are approved. Other
-public signatures and extension contracts remain proposals.
+The mutation policy, region collection model and custom-provider snapshot
+requirement below are approved. The two replacement methods have received an
+independent contract review. B3/B4 public types and extension contracts remain
+proposals.
 
 | Decision | Proposed default | Alternative or constraint |
 | --- | --- | --- |
 | Mutation compatibility | **Approved:** reject assignment to published metadata immediately; migrate internal callers, examples and tests together. | No deprecation period. |
-| Metadata replacement | Set units/frame/name at construction and add a copy-returning `with_metadata(...)`. Omitted arguments preserve values; explicit `None` clears nullable labels. | Final name/signature needs review before the public API snapshot changes. Replacements must not rebuild geometry. |
+| Metadata replacement | Set units/frame/name at construction and add `with_metadata(*, name=UNSET, units=UNSET, frame=UNSET)`. Omitted arguments preserve values; explicit `None` clears units/frame; name stays a string. | Independently reviewed contract. Replacements preserve concrete type and geometry without republication, with fresh environment-owned analysis caches. |
 | Unit meaning | Units and frame describe the supplied coordinates. Metadata replacement corrects declarations only and never scales coordinates. | Automatic coordinate conversion is outside Stage B. A future conversion API must transform all geometry, measures, walls and regions consistently; pixels require calibration. |
 | Region collection | **Approved:** keep standalone `Regions` usable as a mutable builder; an environment owns an immutable snapshot. | Standalone editing remains available; environment snapshots reject mutation and own their data. |
 | Region replacement | `with_regions(regions)` replaces the whole collection and returns a new environment. | Merging or updating names must be explicit; do not silently combine old and new regions. |
 | Name and provenance | Include the public name in immutable metadata. Own build provenance and expose immutable data or detached copies. | Keep provenance descriptive; it cannot become a recipe for rebuilding geometry. |
+| Custom scientific providers | **Approved:** require owned immutable snapshots for custom layouts, track converters and arenas, even when older providers need migration. | Live delegation and generic deepcopy are not proofs of immutable scientific state. Define supported data/codec contracts before admitting new provider roles. |
 
 The region choice affects the existing `.add`, `.set`, `.update_region`, mapping
 assignment and deletion APIs. Specify the returned collection's public type and
@@ -66,6 +71,12 @@ read helpers before implementation. An immutable snapshot must preserve ordered
 iteration and cannot contain caller-owned writable coordinate buffers or mutable
 nested metadata. Enforce or refine the documented JSON metadata contract with
 explicit regression cases; do not quietly accept mutable arbitrary objects.
+
+The snapshot remains a `Regions` instance, preserving existing read helpers and
+ordered iteration. `Regions(env.regions.values())` creates a mutable editing
+builder. Sharing immutable geometry also shares geometry-owned private lookup
+memos (KD-trees/Delaunay); replacement methods refresh environment-owned
+analysis caches, not the geometry or those memos.
 
 ## Implementation phases
 
