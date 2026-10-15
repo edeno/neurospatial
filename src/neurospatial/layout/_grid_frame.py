@@ -207,13 +207,22 @@ def require_grid_context(
     return require_rectilinear(binning, operation, fix=fix), None
 
 
-def frame_from_locator(locator: Locator) -> FramedGrid:
-    """Recover stored source axes, ordered mask and composed frame; no builder."""
+def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64]]:
+    """Recover stored axes/frame and propagated matrix roundoff; no builder."""
     if isinstance(locator, TransformedLocator):
-        base = frame_from_locator(locator.base)
-        return FramedGrid(base.source, np.linalg.inv(locator.inverse) @ base.forward)
+        base, parent_error = frame_from_locator(locator.base)
+        matrix = np.linalg.inv(locator.inverse)
+        rounding = 16 * len(matrix) * np.finfo(float).eps
+        inverse_error = rounding * (
+            np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
+        )
+        inverse_error += 4 * np.spacing(np.abs(matrix))
+        error = (np.abs(matrix) + inverse_error) @ parent_error
+        error += inverse_error @ np.abs(base.forward)
+        error += rounding * (np.abs(matrix) @ np.abs(base.forward))
+        return FramedGrid(base.source, matrix @ base.forward), error
     if isinstance(locator, SubsetLocator):
-        base = frame_from_locator(locator.base)
+        base, error = frame_from_locator(locator.base)
         indices = np.flatnonzero(base.source.active_mask)
         selected = np.flatnonzero(locator.parent_to_child >= 0)
         selected = selected[np.argsort(locator.parent_to_child[selected])]
@@ -224,7 +233,7 @@ def frame_from_locator(locator: Locator) -> FramedGrid:
         mask.flat[indices] = True
         return FramedGrid(
             RectilinearGrid(base.source.edges, base.source.shape, mask), base.forward
-        )
+        ), error
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("FramedGrid requires a matching rectangular locator.")
     mask = (
@@ -239,4 +248,4 @@ def frame_from_locator(locator: Locator) -> FramedGrid:
     return FramedGrid(
         RectilinearGrid(locator.edges, locator.shape, mask),
         np.eye(len(locator.shape) + 1),
-    )
+    ), np.zeros((len(locator.shape) + 1,) * 2)

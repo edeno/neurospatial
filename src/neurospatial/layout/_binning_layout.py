@@ -245,6 +245,18 @@ def _computed_equal(
         raise ValueError(f"{name} does not match the binning geometry.")
 
 
+def _same_ring(first: Any, second: Any, tolerance: NDArray[np.float64]) -> bool:
+    """Compare oriented rings without a rounding-sensitive starting vertex."""
+    actual, expected = np.asarray(first.coords)[:-1], np.asarray(second.coords)[:-1]
+    if actual.shape != expected.shape:
+        return False
+    starts = np.flatnonzero(np.all(np.abs(expected - actual[0]) <= tolerance, axis=1))
+    return any(
+        np.all(np.abs(actual - np.roll(expected, -start, axis=0)) <= tolerance)
+        for start in starts
+    )
+
+
 @dataclass(eq=False)
 class _LocatorGeometry:
     """Geometry recovered from a locator, including arithmetic error only."""
@@ -781,7 +793,7 @@ def _validate_components(
             )
         checked = FramedGrid(frame.source, frame.forward)
         _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
-        expected_frame = frame_from_locator(locator)
+        expected_frame, error = frame_from_locator(locator)
         _equal(
             frame.source.shape, expected_frame.source.shape, "grid_frame.source.shape"
         )
@@ -795,16 +807,28 @@ def _validate_components(
         ):
             _equal(actual, expected, f"grid_frame.source.edges[{axis}]")
         reference = expected_frame.forward
-        error = (
-            128
-            * np.finfo(float).eps
-            * (np.abs(reference) @ np.abs(expected_frame.inverse) @ np.abs(reference))
-        )
         _computed_equal(
             frame.forward,
             reference,
             error,
             "grid_frame.forward and locator frame",
+            gap=gap,
+        )
+        indices = np.unravel_index(
+            np.flatnonzero(frame.source.active_mask), frame.source.shape
+        )
+        source_centers = np.column_stack(
+            [
+                (edge[:-1] + np.diff(edge) / 2)[index]
+                for edge, index in zip(frame.source.edges, indices, strict=True)
+            ]
+        )
+        _computed_equal(
+            frame.to_world(source_centers),
+            expected_frame.to_world(source_centers),
+            np.column_stack((np.abs(source_centers), np.ones(len(source_centers))))
+            @ error[:-1].T,
+            "grid_frame.forward projected cells and locator frame",
             gap=gap,
         )
     if not isinstance(locator, CombinedLocator):
@@ -1011,14 +1035,25 @@ def _validate_components(
                 expected_normalized.exterior,
                 *expected_normalized.interiors,
             ]
-            if len(actual_rings) != len(expected_rings) or any(
-                np.shape(a.coords) != np.shape(b.coords)
-                or not np.all(
-                    np.abs(np.asarray(a.coords) - np.asarray(b.coords))
-                    <= np.minimum(tolerance, gap / 4)
+            ring_tolerance = np.minimum(tolerance, gap / 4)
+            same = len(actual_rings) == len(expected_rings) and _same_ring(
+                actual_rings[0], expected_rings[0], ring_tolerance
+            )
+            remaining = list(expected_rings[1:])
+            for ring in actual_rings[1:]:
+                match = next(
+                    (
+                        i
+                        for i, candidate in enumerate(remaining)
+                        if _same_ring(ring, candidate, ring_tolerance)
+                    ),
+                    None,
                 )
-                for a, b in zip(actual_rings, expected_rings, strict=True)
-            ):
+                if match is None:
+                    same = False
+                    break
+                remaining.pop(match)
+            if not same:
                 raise ValueError(f"polygon cell {index} disagrees with its locator.")
             if not actual.contains(shapely.Point(bins.centers[index])):
                 raise ValueError(
@@ -1041,6 +1076,7 @@ def _validate_components(
                 shapes,
                 bins.centers,
                 bins.pairs,
+                center_errors=geometry.center_error if geometry.computed else None,
                 path_only=np.array(
                     [
                         not contact.is_empty and contact.length == 0

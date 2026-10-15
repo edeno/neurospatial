@@ -160,3 +160,31 @@ native N-D start gates and count normalization remain compatible.
 Logs: `/private/tmp/stage-e-e4-roundoff-final.log`,
 `/private/tmp/stage-e-e4-source-owner.log`, `/private/tmp/stage-e-e4-wide-final.log`,
 `/private/tmp/stage-e-e4-scatter.log`, `/private/tmp/stage-e-final-typing.log`.
+
+## Final-gate repairs — inverse composition
+
+The first full CPU run passed 13,710 tests and skipped 31, but failed three
+existing Hypothesis coordinate-chain tests. Two validation bounds forgot
+historical affine uncertainty after translations cancelled; polygon
+normalization could also reorder starting vertices and holes with tied
+coordinates. These were validation defects, not intended capability refusals.
+
+Frame validation now propagates inversion/product error through the stored
+locator chain, including subnormal spacing, and checks projected source centers
+under the existing feature-gap cap. Polygon validation matches oriented rings
+cyclically and holes one-to-one under unchanged coordinate tolerances. Computed
+polygon face validation projects its already-propagated center uncertainty
+onto the face tangent; native/clipping certification remains unchanged. This
+never grants faces to a MissingFaces record.
+
+- 900 geometry/codec/file/NWB/derivation tests passed with RuntimeWarnings errors.
+- 47 frame tests pass, including 14 deterministic inverse-chain/hole regressions
+  and corrupted-frame/polygon rejection.
+- Independent recheck: 73 tests passed (four Hypothesis chain cases, frame and
+  affine-face suites); all eight multi-hole angle/reflection probes passed.
+- Source plus five typing contracts: 248 files passed; repository Ruff/format
+  and diff whitespace checks passed. A fresh full CPU run is required below.
+
+Logs: `/private/tmp/stage-e-final-cpu.log` (initial failure),
+`/private/tmp/stage-e-inverse-wide2.log`, `/private/tmp/stage-e-inverse-regressions.log`,
+`/private/tmp/stage-e-final-typing3.log`.

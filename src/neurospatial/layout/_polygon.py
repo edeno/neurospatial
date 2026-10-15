@@ -455,8 +455,14 @@ def certify_faces(
     *,
     walls: Sequence[shapely.Geometry] = (),
     path_only: NDArray[np.bool_] | None = None,
+    center_errors: NDArray[np.float64] | None = None,
 ) -> KnownFaces | MissingFaces:
-    """Certify conservative isotropic two-point fluxes, keeping geometry on refusal."""
+    """Certify two-point fluxes, optionally bounding recovered-center roundoff.
+
+    ``center_errors`` is used when validating geometry recovered from stored
+    affine locators. It propagates source arithmetic through cancelled shifts;
+    native/clipping certification keeps its existing current-coordinate bound.
+    """
     polygons = cells.polygons
     for index, polygon in enumerate(polygons):
         if polygon.interiors or not polygon.equals(polygon.convex_hull):
@@ -515,7 +521,13 @@ def certify_faces(
             return MissingFaces(
                 f"Pair ({u}, {v}) opening is not a resolvable straight face."
             )
-        if abs(float(delta @ unit)) > arithmetic:
+        orthogonality_error = arithmetic
+        if center_errors is not None:
+            orthogonality_error += float(
+                (center_errors[u] + center_errors[v]) @ np.abs(unit)
+            )
+            orthogonality_error = min(orthogonality_error, feature / 4)
+        if abs(float(delta @ unit)) > orthogonality_error:
             return MissingFaces(
                 f"Pair ({u}, {v}) loses orthogonality between its center link and face; two-point diffusion is not certified."
             )

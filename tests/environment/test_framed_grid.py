@@ -249,3 +249,96 @@ def test_frame_codec_version_and_legacy_v2_normal_data():
     np.testing.assert_array_equal(
         restored.face_normals.values, native._binning.face_normals.values
     )
+
+
+@pytest.mark.parametrize("kind", ["grid", "hexagonal"])
+@pytest.mark.parametrize("reflect", [False, True])
+@pytest.mark.parametrize(
+    "angle,scale", [(1.0, 1.0), (1.0, 0.25), (2.2250738585e-313, 1.9375)]
+)
+def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_storage(
+    kind, reflect, angle, scale
+):
+    from neurospatial.ops.transforms import translate
+
+    env = (
+        grid()
+        if kind == "grid"
+        else Environment.from_samples(
+            np.array([[0.0, 0.0], [4.0, 4.0]]),
+            bin_size=1.0,
+            layout="hexagonal",
+            infer_active_bins=False,
+        )
+    )
+    value = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 10.0],
+            [np.sin(angle), np.cos(angle), -7.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    value[:2, :2] *= scale
+    if reflect:
+        value[:2, 0] *= -1
+    mapping = Affine2D(value)
+    child = (
+        env.apply_transform(mapping)
+        .apply_transform(translate(3.0, 2.0))
+        .apply_transform(translate(-3.0, -2.0))
+        .apply_transform(mapping.inverse())
+    )
+    np.testing.assert_allclose(child.bin_centers, env.bin_centers, atol=1e-12)
+    np.testing.assert_array_equal(child.bin_at(env.bin_centers), np.arange(env.n_bins))
+    loaded = from_dict(to_dict(child))
+    np.testing.assert_array_equal(loaded.bin_at(env.bin_centers), np.arange(env.n_bins))
+    if kind == "grid":
+        bad = child._binning.grid_frame.forward.copy()
+        bad[0, -1] += 0.01
+        with pytest.raises(ValueError, match=r"grid_frame\.forward"):
+            Environment.from_bins(
+                replace(
+                    child._binning,
+                    grid_frame=FramedGrid(child._binning.grid_frame.source, bad),
+                ),
+                arena=child.arena,
+            )
+
+
+@pytest.mark.parametrize("angle,reflect", [(0.3, True), (1.7, False)])
+def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, reflect):
+    from neurospatial.ops.transforms import translate
+
+    polygon = (
+        box(0, 0, 1, 1)
+        .difference(box(0.1, 0.1, 0.2, 0.2))
+        .difference(box(0.1, 0.7, 0.2, 0.8))
+    )
+    env = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool), grid_edges=(np.arange(2.0),) * 2
+    ).clip(polygon)
+    value = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 10.0],
+            [np.sin(angle), np.cos(angle), -7.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    if reflect:
+        value[:2, 0] *= -1
+    mapping = Affine2D(value)
+    child = (
+        env.apply_transform(mapping)
+        .apply_transform(translate(3.0, 2.0))
+        .apply_transform(translate(-3.0, -2.0))
+        .apply_transform(mapping.inverse())
+    )
+    loaded = from_dict(to_dict(child))
+    points = np.array([[0.05, 0.15], [0.15, 0.15], [0.15, 0.75], [0.5, 0.5]])
+    np.testing.assert_array_equal(loaded.bin_at(points), env.bin_at(points))
+    corrupted = loaded._binning.shapes.polygons[0].difference(box(0.6, 0.6, 0.7, 0.7))
+    with pytest.raises(ValueError, match="polygon cell 0"):
+        Environment.from_bins(
+            replace(loaded._binning, shapes=PolygonCells((corrupted,))),
+            arena=loaded.arena,
+        )
