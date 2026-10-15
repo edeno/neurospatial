@@ -1,8 +1,31 @@
 # Encoding Refactor — Post-Review Cleanup Plan
 
 **Committed**: 2026-05-07
-**Status**: Proposed
-**Branch context**: `encoding-refactor-wip` vs `main`
+**Status**: Partially implemented historical plan; core cleanup delivered, residual deferred.
+**Status reviewed**: 2026-10-14
+**Historical branch context**: `encoding-refactor-wip` vs `main` (merged 2026-05-07)
+
+Validation/result reuse and backend dispatch are present in
+[_validation.py](../../../src/neurospatial/encoding/_validation.py),
+[_base.py](../../../src/neurospatial/encoding/_base.py), and
+[_metrics.py](../../../src/neurospatial/encoding/_metrics.py).
+[5cda6c6a](https://github.com/edeno/neurospatial/commit/5cda6c6a) delivered JIT,
+cached `vmap` and Gaussian kernels; these remain in
+[_core_jax.py](../../../src/neurospatial/encoding/_core_jax.py) and
+[_smoothing.py](../../../src/neurospatial/encoding/_smoothing.py).
+[3bcec9a9](https://github.com/edeno/neurospatial/commit/3bcec9a9) removed the four
+legacy modules. [Interpolation regression tests](../../../tests/encoding/test_encoding_binning.py)
+retain the intentional reversal of task 3.1; task 2.4 was deliberately skipped.
+
+Remaining: task 6.5's distance deduplication is still deferred. The renamed
+[`_compute_object_coords`](../../../src/neurospatial/encoding/_egocentric_binning.py#L172)
+delegates bearings to `ops.egocentric`, but still computes Euclidean/geodesic
+distances locally. M3/M5 before/after benchmark records in [TASKS.md](TASKS.md)
+also remain `TBD`; this review does not establish their performance gates.
+The old names and pre-merge statements below are historical. Current public
+names/results follow [public-api.md](../../../.claude/rules/public-api.md),
+[naming tests](../../../tests/encoding/test_naming_contract.py), and
+[result contracts](../../../tests/encoding/test_terminal_verbs_contract.py).
 
 ## Source
 

@@ -3,6 +3,7 @@
 **Committed**: 2026-10-13
 
 **Status:** Complete on `feature/environment-representation`.
+**Status reviewed:** 2026-10-14.
 
 | Phase | Status |
 | --- | --- |
@@ -13,6 +14,11 @@
 | 4 — Derived environments | Complete |
 
 Validation evidence: [validation.md](validation.md).
+
+These phases provide the foundation for continuous behavior's geometry
+follow-ons and dependent correspondence/snapshot slices. Initial observation
+and signal work can proceed independently. The continuous behavior plan does
+not supersede this refactor; its additional contracts remain separate work.
 
 Environments will store their bins, point lookup and optional structure as data,
 built once by a layout and then kept. An environment made by subsetting,
@@ -25,6 +31,13 @@ types as the focus. The continuous arena, an immutable environment value,
 stages, listed in the roadmap in [overview.md](overview.md#roadmap-after-phase-4).
 
 ## Reading order
+
+The [continuous behavior and neural analysis plan](../continuous-behavior/PLAN.md)
+uses this refactor as its spatial foundation. Its
+[environment follow-on workstream](../continuous-behavior/phase-2-environment-contracts.md)
+records scientific bin identity, correspondences, movement/face semantics, and
+feature/state alignment after the relevant prerequisites. Those additions have
+separate implementation slices; the five phases here retain their existing scope.
 
 When working with an agent, **load only the part you need**:
 

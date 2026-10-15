@@ -2,6 +2,25 @@
 
 **Committed**: 2025-11-19
 
+**Status**: Historical backlog; partly implemented and partly superseded.
+**Status reviewed**: 2026-10-14.
+
+The unchecked lists below are not a current implementation tracker. Population
+rate estimation and result objects now exist in
+[spatial encoding](../../../src/neurospatial/encoding/spatial.py), and
+[visibility analysis](../../../src/neurospatial/ops/visibility.py) has
+[tests](../../../tests/ops/test_visibility.py), despite their old unchecked
+entries. Historical names below must be checked against the
+[public API contract](../../../.claude/rules/public-api.md).
+
+Use the [continuous behavior plan](../continuous-behavior/PLAN.md) for observation
+support, exploration, paths, events/features, and conditioned comparisons, and
+the [environment representation plan](../environment-representation/PLAN.md) for
+geometry and persistence. These replace overlapping roadmap ideas, not this
+entire backlog. Unimplemented spatial statistics, general covariate GLMs,
+session/configuration pipelines, and scaling proposals remain unapproved ideas;
+they are not additions to the six accepted continuous-behavior workstreams.
+
 ### **1.1 Population-level computation**
 
 * [ ] **Shared occupancy & binning:**

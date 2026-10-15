@@ -3,9 +3,38 @@
 **Committed**: 2025-12-05
 **Created**: 2025-12-05
 **Revised**: 2025-12-05 (post code-review and UX-review)
-**Status**: Ready for implementation
+**Status**: Not implemented — historical proposal; redesign required before implementation
+**Status reviewed**: 2026-10-14
 **Scope**: Reachability/information theory, manifold embeddings, diffusion baselines, geodesic VTE
 **Dependencies**: BEHAV_PLAN.md (path efficiency, goal-directed, decision analysis, VTE)
+
+## Current status and evidence
+
+The four advanced families below remain proposals: reachability/future entropy,
+manifold trajectory embeddings, diffusion-deviation baselines, and geodesic or
+visibility VTE. Their proposed public functions, result classes, and dedicated
+test modules are absent from the current source and tests. Existing numerical
+primitives do not constitute implementation of these analyses.
+
+- Basic prerequisites are implemented in [behavior/navigation.py](../../../src/neurospatial/behavior/navigation.py),
+  [behavior/decisions.py](../../../src/neurospatial/behavior/decisions.py), and
+  [behavior/vte.py](../../../src/neurospatial/behavior/vte.py), with
+  [behavioral integration tests](../../../tests/behavior/test_behavioral_integration.py).
+- [ops/diffusion.py](../../../src/neurospatial/ops/diffusion.py),
+  [ops/basis.py](../../../src/neurospatial/ops/basis.py), and
+  [ops/distance.py](../../../src/neurospatial/ops/distance.py) provide current
+  building blocks, including spectral internals and `neighbors_within`.
+- History confirms the distinction: `c60ea62a` added these plans as Markdown
+  only; `57e3a528` completed integration of the basic path/goal/decision/VTE
+  metrics, not the advanced families proposed here.
+
+**Remaining scope:** all four advanced families and their scientific validation,
+exports, and examples. Refresh the historical module paths, result contracts,
+operator conventions, and assumptions before implementation. The active
+[continuous behavior plan](../continuous-behavior/PLAN.md) supplies related
+support and workflow contracts; it does not implement or replace these four
+analyses, and its accepted scope excludes new behavioral null-model work.
+The detailed recipe below is retained as historical design material.
 
 ---
 

@@ -5,6 +5,9 @@
 **Goal**: Transform Environment from a "God Object" (~70 methods via mixins) to a "Data Container" (~25 methods/properties) following Rhodes-Hettinger design principles.
 
 **Status**: Superseded on 2026-10-13 by [environment-representation/PLAN.md](../environment-representation/PLAN.md). Do not execute this plan.
+**Status reviewed**: 2026-10-14. The replacement retains the environment facade
+and stores binning data; this historical plan's reduced method surface and
+layout-parameter persistence are no longer the intended architecture.
 **Breaking Change**: Yes - Clean break, no deprecation period (no current users)
 **Target Version**: v1.0.0 or v2.0.0
 

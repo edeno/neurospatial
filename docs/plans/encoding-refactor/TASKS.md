@@ -2,6 +2,17 @@
 
 **Committed**: 2025-12-05
 
+**Status**: Completed historical implementation; current API vocabulary superseded.
+**Status reviewed**: 2026-10-14
+
+[Merge e6cc25c0](https://github.com/edeno/neurospatial/commit/e6cc25c0) and current
+[rate exports](../../../src/neurospatial/encoding/__init__.py),
+[backend tests](../../../tests/encoding/test_backend_dispatch.py), and
+[result contracts](../../../tests/encoding/test_terminal_verbs_contract.py)
+confirm the original implementation is delivered. Later APIs use
+`ObjectVectorRateResult(s)`, `unit_id`, `summary_table()`, boolean `classify()`,
+and `label_cell_types()`; historical task names/checkmarks remain unchanged.
+
 > **Superseded for current API vocabulary.** This historical task list predates
 > the v0.6 naming contract. Use the API contract in
 > `.claude/rules/public-api.md` for current terms such as
@@ -15,7 +26,7 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ## Current Status
 
-**Updated**: 2026-05-07
+**Historical tracker update**: 2026-05-07
 
 **Associated plan**: [PLAN.md](PLAN.md), the encoding module refactor plan.
 
@@ -26,7 +37,9 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 - Task 7.7 is complete.
 - Planning artifacts were moved from the repository root to `docs/plans/encoding-refactor/`.
 
-**Next step**: Review this branch against `main` for merge risks.
+**Remaining scope**: None from this refactor. The branch was merged on
+2026-05-07; consult the current API rules for new work rather than reopening
+the historical skipped tasks or repeating the old branch-merge review.
 
 ---
 

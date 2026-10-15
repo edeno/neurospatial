@@ -4,7 +4,24 @@
 **Source**: [PLAN.md](PLAN.md)
 **Created**: 2025-12-05
 **Revised**: 2025-12-05 (post code-review and UX-review)
-**Status**: Ready for implementation (after BEHAV_PLAN.md)
+**Status**: Not implemented — historical proposal; redesign required before implementation
+**Status reviewed**: 2026-10-14
+
+## Current status and remaining work
+
+The [status audit in PLAN.md](PLAN.md#current-status-and-evidence) distinguishes
+implemented basic behavior prerequisites from the four unimplemented advanced
+families. [Current VTE](../../../src/neurospatial/behavior/vte.py) and
+[basic behavior integration tests](../../../tests/behavior/test_behavioral_integration.py)
+do not complete geodesic VTE, reachability/entropy, manifold trajectories, or
+diffusion-deviation baselines. History `c60ea62a` added these plans only;
+`57e3a528` completed basic behavior integration.
+
+All advanced milestones remain outstanding. Replan their stale imports,
+numerical/operator assumptions, result contracts, and validation before using
+this checklist. Consult the [continuous behavior contracts](../continuous-behavior/shared-contracts.md)
+for related new work; that plan does not cover these advanced analyses.
+Historical checkboxes are preserved and do not certify implementation status.
 
 ---
 
