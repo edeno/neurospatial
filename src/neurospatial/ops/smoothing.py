@@ -44,7 +44,7 @@ True
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
 import numpy as np
@@ -58,6 +58,21 @@ __all__ = [
     "apply_kernel",
     "compute_diffusion_kernels",
 ]
+
+if TYPE_CHECKING:
+    from neurospatial.geometry._coordinates import CoordinateSystem
+
+
+def _gaussian_kernel(
+    bin_centers: NDArray[np.float64],
+    coordinates: CoordinateSystem,
+    bandwidth: float,
+) -> NDArray[np.float64]:
+    """Build unnormalized Gaussian weights from explicit coordinate data."""
+    two_sigma_sq = 2.0 * bandwidth**2
+    dist_sq = coordinates.squared_distances(bin_centers)
+    dist_sq = np.maximum(dist_sq, 0)
+    return np.exp(-dist_sq / two_sigma_sq).astype(np.float64, copy=False)
 
 
 def compute_diffusion_kernels(

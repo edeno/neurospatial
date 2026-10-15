@@ -1108,6 +1108,18 @@ class Environment(Generic[_C]):
         """Owned coordinate semantics, inferred from the construction factory."""
         return cast("_C", self._geometry.coordinates)
 
+    @property
+    @check_fitted
+    def coordinate_system(self) -> _C:
+        """Return this environment's immutable coordinate descriptor.
+
+        CartesianSystem describes position columns in length units.
+        EgocentricPolarSystem describes radius in length units and angle in
+        radians, including whether the angular axis wraps. The descriptor is
+        an independent frozen value; changing it cannot change the environment.
+        """
+        return copy_module.copy(self._coordinate_system)
+
     def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
         """Refuse Cartesian coordinate math for polar radius/angle bins."""
         if self._is_polar:
@@ -5992,6 +6004,86 @@ class Environment(Generic[_C]):
 
         return _compute_kernel(self, bandwidth, mode=mode, cache=cache)
 
+    @check_fitted
+    def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
+        """Return Gaussian weights between bin centers, ignoring walls.
+
+        Parameters
+        ----------
+        bandwidth : float
+            Finite positive standard deviation in environment length units.
+
+        Returns
+        -------
+        ndarray, shape (n_bins, n_bins)
+            Read-only weights ``exp(-distance**2 / (2 * bandwidth**2))``.
+            These weights are not normalized by row or by cell measure.
+
+        Notes
+        -----
+        Cartesian coordinates use Euclidean distances. Polar coordinates use
+        radial differences and mean-radius angular arc lengths, with angular
+        wrapping only for a circular coordinate system. Weights can cross
+        physical walls; use diffuse() for boundary-aware smoothing.
+
+        The dense matrix costs O(n_bins**2) memory. Repeated calls reuse an
+        environment-owned bounded cache and return independent array headers
+        without copying the matrix. Use .copy() for an editable matrix.
+        clear_cache(kernels=True) releases the cached weights.
+        """
+        from neurospatial.environment.fields import _compute_gaussian_kernel
+
+        return _compute_gaussian_kernel(self, bandwidth)
+
+    @check_fitted
+    def get_diffusion_geometry(self) -> DiffusionGeometry:
+        """Return read-only conductances, cell measures and diffusion components.
+
+        Returns
+        -------
+        DiffusionGeometry
+            Sparse symmetric conductances W, positive cell volumes, component
+            count and labels in active-bin order. Components follow positive
+            conductance, so navigation-only links do not transport a field.
+
+        Notes
+        -----
+        The environment builds this geometry once and owns its private cache.
+        Every export has independent sparse and NumPy headers over immutable
+        buffers. Replacing an exported matrix's buffers or changing an array's
+        shape cannot change the environment. Reading the export does not copy
+        O(n_edges) data. clear_cache(cached_properties=True) rebuilds on demand.
+
+        Raises
+        ------
+        NotImplementedError
+            If the stored binning cannot supply numerical diffusion geometry.
+        """
+        from neurospatial.environment._publication import _diffusion_geometry_header
+
+        return _diffusion_geometry_header(self._diffusion_geometry)
+
+    @check_fitted
+    def diffusion_accuracy(self, bandwidth: float) -> float:
+        """Return the relative numerical noise floor of diffuse() at a bandwidth.
+
+        Parameters
+        ----------
+        bandwidth : float
+            The physical bandwidth passed to diffuse().
+
+        Returns
+        -------
+        float
+            Relative truncation tolerance, or float64 roundoff when a full
+            basis was used. A bandwidth not yet resolved by diffuse() reports
+            the more conservative truncation tolerance. This query does not
+            build an eigenbasis.
+        """
+        from neurospatial.ops.diffusion import _diffusion_apply_rtol
+
+        return _diffusion_apply_rtol(self._diffusion_eigenbasis, self.n_bins, bandwidth)
+
     def smooth(
         self,
         field: NDArray[np.float64],
@@ -6314,43 +6406,49 @@ class Environment(Generic[_C]):
 
         return _mrf_eigenbasis(self)
 
-    def _mrf_basis(
+    @check_fitted
+    def get_mrf_basis(
         self,
         occupancy: NDArray[np.float64],
         *,
-        rank: int | None,
+        rank: int | None = None,
     ) -> MRFBasis:
-        """Reduced-rank MRF penalty basis for the penalized-Poisson GAM.
-
-        Reuses the cached finite-volume geometry (:meth:`_diffusion_geometry`)
-        and the symmetric eigensolver, growing the cached global eigenbasis
-        (:meth:`_mrf_eigenbasis`) only as far as needed, then masking it by
-        occupancy through the pure
-        :func:`neurospatial.ops.diffusion.select_live_basis`.
-
-        Because dead components also contribute low modes, the global ``G``
-        needed to expose ``r_eff`` *live* modes is not knowable up front, so
-        ``G`` is grown iteratively until enough strictly-positive live modes
-        appear (or the basis reaches full rank). Only this method eigensolves;
-        the selector is pure masking, so a repeat call at the same-or-smaller
-        rank / same live support (still in the sparse regime) is a cache hit.
+        """Build a reduced-rank Markov random field smoothness basis.
 
         Parameters
         ----------
-        occupancy : NDArray[np.float64], shape (n_bins,)
-            Time (or samples) spent per active bin, active-bin order.
-        rank : int or None
-            Requested rank cap ``R``; ``None`` resolves to the module default.
+        occupancy : ndarray, shape (n_bins,)
+            Nonnegative exposure per active bin. Positive exposure selects
+            the connected components retained in the basis.
+        rank : int or None, optional
+            Requested number of modes. None uses the default cap of 250;
+            the result is also capped by the occupied support. Each retained
+            component needs its constant mode, even when rank is smaller.
 
         Returns
         -------
         MRFBasis
-            The reduced-rank penalty basis in live-bin order. See
-            :class:`neurospatial.ops.diffusion.MRFBasis` for its invariants.
+            Independent editable arrays B, shape (n_live_bins, n_modes),
+            penalty weights d, shape (n_modes,), and live_bins, which maps rows
+            back to active bin IDs; also the number of retained components.
+
+        Notes
+        -----
+        The environment owns and reuses the expensive geometry and global
+        eigenbasis. Repeated requests at the same or smaller rank reuse that
+        work. Returned arrays cannot change the cache. Unoccupied components
+        contribute no basis rows; every occupied component has one unpenalized
+        constant mode, followed by modes with positive smoothness penalties.
         """
         from neurospatial.environment.fields import _mrf_basis
 
         return _mrf_basis(self, occupancy, rank=rank)
+
+    def _mrf_basis(
+        self, occupancy: NDArray[np.float64], *, rank: int | None
+    ) -> MRFBasis:
+        """Compatibility delegate for the former private penalty-basis adapter."""
+        return self.get_mrf_basis(occupancy, rank=rank)
 
     def transitions(
         self,

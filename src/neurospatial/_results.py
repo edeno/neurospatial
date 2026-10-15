@@ -572,7 +572,7 @@ def _bin_center_coords(
             "recompute the result against this environment."
         )
 
-    if isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem):
+    if isinstance(getattr(env, "coordinate_system", None), EgocentricPolarSystem):
         return {
             "bin_center_distance": ("bin", bin_centers[:, 0]),
             "bin_center_angle": ("bin", bin_centers[:, 1]),

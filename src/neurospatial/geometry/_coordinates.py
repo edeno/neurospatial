@@ -1,6 +1,6 @@
 """How an environment's coordinates measure distance and name their axes.
 
-Each environment type declares ``_coordinate_system`` so shared operations
+Each environment declares ``coordinate_system`` so shared operations
 ask it for coordinate math, length scales and plot labels.
 """
 

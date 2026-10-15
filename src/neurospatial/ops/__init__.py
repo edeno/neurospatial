@@ -58,6 +58,7 @@ from neurospatial.ops.calculus import (
     divergence,
     gradient,
 )
+from neurospatial.ops.diffusion import MRFBasis
 
 # Distance operations
 from neurospatial.ops.distance import (
@@ -156,6 +157,7 @@ def __dir__() -> list[str]:
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
+    "MRFBasis",
     # Alignment
     "ProbabilityMappingParams",
     "apply_similarity_transform",

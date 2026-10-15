@@ -107,7 +107,7 @@ def _validate_encoding_environment(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
     mismatch = None
-    if source._coordinate_system != env._coordinate_system:
+    if source.coordinate_system != env.coordinate_system:
         mismatch = "coordinate systems"
     elif source.units != env.units or source.frame != env.frame:
         mismatch = "units or coordinate frames"

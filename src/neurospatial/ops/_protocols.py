@@ -13,8 +13,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
-    from neurospatial.ops._types import DiffusionEigenbasisCache
+    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops.binning import TieBreakStrategy
     from neurospatial.ops.transforms import Affine2D, AffineND
 
@@ -59,18 +58,13 @@ class CacheClearConsumer(Protocol):
 class DiffusionGeometryConsumer(Protocol):
     """Access to an environment's cached conductances and cell measures."""
 
-    @property
-    def _diffusion_geometry(self) -> DiffusionGeometry: ...
+    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
 
 
 class DiffusionAccuracyConsumer(Protocol):
-    """Bin count and resolved eigenbasis ranks for reporting apply accuracy."""
+    """Report apply accuracy without exposing the mutable eigenbasis holder."""
 
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache: ...
+    def diffusion_accuracy(self, bandwidth: float) -> float: ...
 
 
 class FaceGeometryConsumer(Protocol):
@@ -106,7 +100,8 @@ class WaveletGeometryConsumer(DiffusionGeometryConsumer, Protocol):
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...
 
-    def _require_face_geometry(self, operation: str) -> FaceGeometry: ...
+    @property
+    def binning(self) -> Binning: ...
 
 
 class BoundaryConsumer(Protocol):

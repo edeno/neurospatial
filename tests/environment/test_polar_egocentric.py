@@ -1305,6 +1305,10 @@ _POLAR_INHERITED_MEMBERS = {
         "bin_sizes",
         "components",
         "compute_kernel",
+        "compute_gaussian_kernel",
+        "diffusion_accuracy",
+        "get_diffusion_geometry",
+        "get_mrf_basis",
         "diffuse",
         "distance_to",
         "get_differential_operator",
@@ -1320,6 +1324,7 @@ _POLAR_INHERITED_MEMBERS = {
     },
     "read-only geometry views in (distance, angle) coordinates": {
         "binning",
+        "coordinate_system",
         "active_mask",
         "arena",
         "clip_mapping",

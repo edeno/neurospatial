@@ -197,6 +197,42 @@ For compatibility, nearest-center queries on polar environments compare the
 stored radius and angle columns as ordinary Euclidean coordinates with mixed
 units. These values are not physical polar distances or containment tests.
 
+For a custom numerical analysis, use `env.coordinate_system` to interpret the
+columns and `env.get_diffusion_geometry()` to inspect conductances, cell measures
+and connected diffusion components. These are independent read-only exports.
+The environment keeps its expensive geometry and eigenbasis caches private.
+
+`env.compute_gaussian_kernel(bandwidth)` returns unnormalized Gaussian weights
+that ignore walls; `env.diffuse(field, bandwidth)` respects the numerical boundary
+geometry. After diffusion, `env.diffusion_accuracy(bandwidth)` reports its relative
+noise floor. A spatial model can request a Markov random field smoothness basis
+with `env.get_mrf_basis(occupancy, rank=...)`.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.environment import CartesianSystem
+
+env: Environment[CartesianSystem] = Environment.from_grid_mask(
+    np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+)
+geometry = env.get_diffusion_geometry()
+assert geometry.W.shape == (9, 9)
+assert geometry.n_components == 1
+weights = env.compute_gaussian_kernel(1.0)
+assert not weights.flags.writeable
+smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), 1.0)
+assert env.diffusion_accuracy(1.0) <= 1e-6
+basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
+assert basis.B.shape == (env.n_bins, 4)
+```
+
+Geometry and Gaussian exports have independent headers over immutable buffers;
+repeated reads reuse those buffers. Use `.copy()` for editable arrays or sparse
+matrices. MRF basis arrays are already independent and editable. Environment
+copies and restored files start with fresh private analysis caches.
+
 ## Add known geometry when available
 
 `env.arena` describes continuous support; `env.bin_at(positions)` and

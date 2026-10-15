@@ -62,6 +62,7 @@ if TYPE_CHECKING:
 # diffusion_component_labels, component_support_mask) are internal
 # machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
+    "MRFBasis",
     "diffusion_kernel",
     "heat_kernel_from_W",
 ]
@@ -1114,7 +1115,7 @@ def diffusion_component_labels(
     labels : NDArray[np.int_], shape (n_bins,)
         Per-bin component id (``0..n_components-1``).
     """
-    geometry = env._diffusion_geometry
+    geometry = env.get_diffusion_geometry()
     return geometry.n_components, geometry.labels
 
 
@@ -1139,9 +1140,15 @@ def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
         The relative noise floor. A bandwidth that ``env.diffuse`` has not yet
         resolved reports the truncation tolerance (the larger of the two).
     """
-    holder = env._diffusion_eigenbasis
+    return env.diffusion_accuracy(sigma)
+
+
+def _diffusion_apply_rtol(
+    holder: DiffusionEigenbasisCache, n_bins: int, sigma: float
+) -> float:
+    """Report a resolved apply rank without exposing the mutable holder."""
     rank = holder.get("resolved", {}).get((float(sigma), _HEAT_KERNEL_RANK_TOL))
-    if rank == "dense" or (isinstance(rank, int) and rank >= env.n_bins):
+    if rank == "dense" or (isinstance(rank, int) and rank >= n_bins):
         return _FULL_BASIS_APPLY_RTOL
     return _HEAT_KERNEL_RANK_TOL
 
@@ -1220,5 +1227,5 @@ def diffusion_kernel(
         On invalid ``sigma`` or ``mode``, or on provider geometry that violates
         the diffusion contract.
     """
-    geometry = env._diffusion_geometry
+    geometry = env.get_diffusion_geometry()
     return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)

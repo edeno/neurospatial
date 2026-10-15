@@ -61,14 +61,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial import _constants
-
 # Single shared high-bin warn threshold. Reuse the diffusion-kernel warn
 # threshold so both dense O(n_bins^2) smoothing paths (diffusion + gaussian)
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
-from neurospatial._lru import lru_get, lru_put
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
@@ -136,9 +133,9 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
                 ]
             )
             if lengths.size == 0:
-                lengths = env._coordinate_system.fallback_lengths(env)
+                lengths = env.coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
-    ranges = env._coordinate_system.length_ranges(env.dimension_ranges)
+    ranges = env.coordinate_system.length_ranges(env.dimension_ranges)
     extent = max(stop - start for start, stop in ranges)
     if extent > 0 and bandwidth >= extent:
         warnings.warn(
@@ -155,63 +152,8 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
 def _get_gaussian_kernel(
     env: SmoothingConsumer, bandwidth: float
 ) -> NDArray[np.float64]:
-    """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
-
-    The matrix is ``(n_bins, n_bins)`` and is cached by bandwidth on the
-    environment, which keeps the most recently used kernels
-    (``_constants.MAX_CACHED_KERNELS``). ``clear_cache(kernels=True)`` releases
-    them, and they are freed with the environment.
-
-    The weight matrix is dense ``(n_bins, n_bins)`` -- O(n_bins**2) memory --
-    so when ``n_bins`` exceeds ``LARGE_KERNEL_THRESHOLD`` a loud memory
-    ``UserWarning`` (with a GB estimate) is emitted and the matrix is built
-    anyway. There is no hard limit. The warning fires once per kernel *build*
-    (a cache hit returns before warning), mirroring the diffusion-kernel warning
-    in ``ops/smoothing.py``.
-
-    Parameters
-    ----------
-    env : Environment
-        The spatial environment whose bin centers define the kernel geometry.
-    bandwidth : float
-        Gaussian ``sigma`` in environment units.
-    """
-    kernels = env._gaussian_kernels
-    cached = lru_get(kernels, float(bandwidth))
-    if cached is not None:
-        return cached
-    bin_centers = env.bin_centers
-    n_bins = bin_centers.shape[0]
-
-    # Warn (never raise) for large environments. The dense weight matrix
-    # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
-    # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
-    # its threshold. Placed after the cache-hit check so it fires once per
-    # build, not per call.
-    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
-        estimated_gb = n_bins * n_bins * 8 / 1e9
-        warnings.warn(
-            f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
-            f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
-            f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
-            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
-            f"may be slow and memory-intensive. To avoid a dense kernel, use "
-            f"method='diffusion_kde' (matrix-free, boundary-aware, "
-            f"O(n * rank)) or increase bin_size (fewer bins).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
-    two_sigma_sq = 2.0 * bandwidth**2
-
-    dist_sq = env._coordinate_system.squared_distances(bin_centers)
-    dist_sq = np.maximum(dist_sq, 0)
-    kernel: NDArray[np.float64] = np.exp(-dist_sq / two_sigma_sq).astype(
-        np.float64, copy=False
-    )
-
-    lru_put(kernels, float(bandwidth), kernel, limit=_constants.MAX_CACHED_KERNELS)
-    return kernel
+    """Compatibility wrapper for environment-owned Gaussian weights."""
+    return env.compute_gaussian_kernel(bandwidth)
 
 
 def smooth_rate_map(

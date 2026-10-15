@@ -584,8 +584,10 @@ def _diffusion_generator(env: WaveletGeometryConsumer) -> sparse.csr_matrix:
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
 
     # Name this analysis, not "smoothing", if the layout has no cell faces.
-    env._require_face_geometry("heat_kernel_wavelet_basis")
-    geometry = env._diffusion_geometry
+    faces = env.binning.faces
+    if not faces.available:
+        raise faces.missing_error("heat_kernel_wavelet_basis")
+    geometry = env.get_diffusion_geometry()
     degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
     return (

@@ -457,12 +457,15 @@ def _require_face_geometry(env: FieldConsumer, operation: str) -> FaceGeometry:
 
 def _diffusion_geometry(env: FieldConsumer) -> DiffusionGeometry:
     """Implement Environment._diffusion_geometry using explicit fields inputs."""
+    from neurospatial.environment._publication import _freeze_diffusion_geometry
     from neurospatial.geometry._composition import combined_diffusion
 
     combined = combined_diffusion(env._binning)
     if combined is not None:
-        return combined
-    return DiffusionGeometry.from_faces(env._require_face_geometry("smoothing"))
+        return _freeze_diffusion_geometry(combined)
+    return _freeze_diffusion_geometry(
+        DiffusionGeometry.from_faces(env._require_face_geometry("smoothing"))
+    )
 
 
 def _diffusion_eigenbasis(env: FieldConsumer) -> DiffusionEigenbasisCache:
@@ -489,7 +492,7 @@ def _mrf_eigenbasis(env: FieldConsumer) -> MRFEigenbasisCache:
 def _mrf_basis(
     env: FieldConsumer, occupancy: NDArray[np.float64], *, rank: int | None
 ) -> MRFBasis:
-    """Implement Environment._mrf_basis using explicit fields inputs."""
+    """Implement Environment.get_mrf_basis using explicit fields inputs."""
     from neurospatial.ops.diffusion import (
         _ensure_global_modes,
         _live_components,
@@ -527,3 +530,50 @@ def _mrf_basis(
             break
         G = min(2 * Q.shape[1], S.shape[0])  # double, capped at full rank
     return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
+
+
+def _compute_gaussian_kernel(
+    env: FieldConsumer, bandwidth: float
+) -> NDArray[np.float64]:
+    """Build/cache Gaussian weights privately and export an immutable header."""
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+    from neurospatial.environment._publication import _array_header, _immutable_array
+    from neurospatial.ops.smoothing import _gaussian_kernel
+
+    if not np.isfinite(bandwidth) or bandwidth <= 0:
+        raise ValueError(f"bandwidth must be finite and positive (got {bandwidth}).")
+
+    kernels = env._gaussian_kernels
+    cached = lru_get(kernels, float(bandwidth))
+    if cached is not None:
+        return _array_header(cached)
+    bin_centers = env.bin_centers
+    n_bins = bin_centers.shape[0]
+
+    # Warn (never raise) for large environments. The dense weight matrix
+    # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
+    # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
+    # its threshold. Placed after the cache-hit check so it fires once per
+    # build, not per call.
+    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
+        estimated_gb = n_bins * n_bins * 8 / 1e9
+        warnings.warn(
+            f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
+            f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
+            f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
+            f"may be slow and memory-intensive. To avoid a dense kernel, use "
+            f"method='diffusion_kde' (matrix-free, boundary-aware, "
+            f"O(n * rank)) or increase bin_size (fewer bins).",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+    kernel = _immutable_array(
+        _gaussian_kernel(env.bin_centers, env.coordinate_system, bandwidth)
+    )
+
+    lru_put(kernels, float(bandwidth), kernel, limit=_constants.MAX_CACHED_KERNELS)
+    return _array_header(kernel)

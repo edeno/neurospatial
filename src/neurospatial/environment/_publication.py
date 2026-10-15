@@ -19,6 +19,7 @@ from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarS
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.geometry._polygon import ClipMapping
 
 _T = TypeVar("_T")
@@ -83,6 +84,47 @@ def _array_header(array: NDArray[Any]) -> NDArray[Any]:
         buffer = buffer.base
     assert isinstance(buffer, bytes)
     return np.frombuffer(buffer, dtype=array.dtype).reshape(array.shape)
+
+
+def _immutable_array(array: NDArray[Any]) -> NDArray[Any]:
+    """Own immutable bytes once so exported headers cannot change cached data."""
+    return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
+
+
+def _diffusion_geometry_header(geometry: DiffusionGeometry) -> DiffusionGeometry:
+    """Export independent sparse/array headers over immutable cached buffers."""
+    from scipy import sparse
+
+    from neurospatial.geometry._diffusion import DiffusionGeometry
+
+    weights = sparse.csr_matrix(geometry.W, copy=False)
+    weights.data = _array_header(geometry.W.data)
+    weights.indices = _array_header(geometry.W.indices)
+    weights.indptr = _array_header(geometry.W.indptr)
+    return DiffusionGeometry(
+        weights,
+        _array_header(geometry.volumes),
+        geometry.n_components,
+        _array_header(geometry.labels),
+    )
+
+
+def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry:
+    """Own diffusion buffers once before publishing their read-only headers."""
+    from scipy import sparse
+
+    from neurospatial.geometry._diffusion import DiffusionGeometry
+
+    weights = sparse.csr_matrix(geometry.W, copy=False)
+    weights.data = _immutable_array(geometry.W.data)
+    weights.indices = _immutable_array(geometry.W.indices)
+    weights.indptr = _immutable_array(geometry.W.indptr)
+    return DiffusionGeometry(
+        weights,
+        _immutable_array(geometry.volumes),
+        geometry.n_components,
+        _immutable_array(geometry.labels),
+    )
 
 
 class _ReadOnlyGraphAttributes(Mapping[str, Any]):
@@ -275,19 +317,16 @@ class _GeometryView(Generic[_T]):
 def _freeze_geometry_arrays(geometry: _PublishedGeometry) -> _PublishedGeometry:
     """Own immutable buffers; public descriptors expose separate array headers."""
 
-    def immutable(array: NDArray[Any]) -> NDArray[Any]:
-        return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
-
     return replace(
         geometry,
-        bin_centers=immutable(geometry.bin_centers),
+        bin_centers=_immutable_array(geometry.bin_centers),
         active_mask=(
-            immutable(geometry.active_mask)
+            _immutable_array(geometry.active_mask)
             if geometry.active_mask is not None
             else None
         ),
         grid_edges=(
-            tuple(immutable(edge) for edge in geometry.grid_edges)
+            tuple(_immutable_array(edge) for edge in geometry.grid_edges)
             if geometry.grid_edges is not None
             else None
         ),

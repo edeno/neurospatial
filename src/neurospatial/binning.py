@@ -19,7 +19,7 @@ from neurospatial.geometry._binning import (
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import (
@@ -37,6 +37,7 @@ __all__ = [
     "Binning",
     "ClipMapping",
     "ClippedLocator",
+    "DiffusionGeometry",
     "FaceGeometry",
     "FaceNormals",
     "FramedGrid",
