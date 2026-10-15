@@ -25,6 +25,7 @@ from neurospatial.layout._binning import (
 )
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.layout._composition import CombinedLocator
 from neurospatial.layout._diffusion import FaceGeometry
 from neurospatial.layout._locators import (
     HexLocator,
@@ -992,7 +993,66 @@ def _decode_binning(
     return Binning(kind=meta["kind"], **parts)
 
 
+def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
+    from neurospatial.arena import encode_arena
+
+    entries = []
+    arrays = _arrays(
+        prefix,
+        bridge_pairs=obj.bridge_pairs,
+        bridge_distances=obj.bridge_distances,
+        bridge_conductances=obj.bridge_conductances,
+    )
+    for index, (child, arena) in enumerate(zip(obj.children, obj.arenas, strict=True)):
+        path = f"{prefix}/children/{index}"
+        child_meta, child_arrays = encode(child, f"{path}/binning")
+        arena_meta, arena_arrays = encode_arena(arena)
+        entries.append({"binning": child_meta, "arena": arena_meta})
+        arrays.update(child_arrays)
+        arrays.update(
+            {f"{path}/arena/{key}": value for key, value in arena_arrays.items()}
+        )
+    return {"keys": list(obj.keys), "children": entries}, arrays
+
+
+def _decode_combined(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> CombinedLocator:
+    from neurospatial.arena import decode_arena
+
+    if prefix.count("/children/") > 32:
+        raise ValueError(
+            "Composition nesting exceeds 32 levels; flatten the components."
+        )
+    children, arenas = [], []
+    for index, entry in enumerate(meta["children"]):
+        path = f"{prefix}/children/{index}"
+        child = decode(entry["binning"], arrays, f"{path}/binning")
+        if not isinstance(child, Binning):
+            raise ValueError("Combined child must be a binning snapshot.")
+        children.append(child)
+        arenas.append(
+            decode_arena(
+                entry["arena"],
+                {
+                    key.removeprefix(f"{path}/arena/"): value
+                    for key, value in arrays.items()
+                    if key.startswith(f"{path}/arena/")
+                },
+            )
+        )
+    return CombinedLocator(
+        tuple(meta["keys"]),
+        tuple(children),
+        tuple(arenas),
+        _array(arrays, prefix, "bridge_pairs", np.intp),
+        _array(arrays, prefix, "bridge_distances", np.float64),
+        _array(arrays, prefix, "bridge_conductances", np.float64),
+    )
+
+
 _LOCATOR_TYPES = (
+    CombinedLocator,
     RectilinearLocator,
     HexLocator,
     MeshLocator,
@@ -1004,6 +1064,7 @@ _LOCATOR_TYPES = (
 
 
 _CODECS: dict[str, Codec] = {
+    "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
     "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins),
     "KnownFaces": Codec(KnownFaces, _encode_faces, _decode_faces),
     "MissingFaces": Codec(MissingFaces, _encode_missing, _decode_missing),

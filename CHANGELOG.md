@@ -9,6 +9,10 @@
   each face length must equal the shared cell edge (zero when cells share no
   edge) and each face distance the center-to-center distance. Inconsistent
   faces previously passed silently and changed smoothing and diffusion results.
+- Prevent automatic combined-environment bridges from crossing a third
+  component, including tiny and nearly collinear footprints. Long affine
+  histories retain their arena through storage without using the composite
+  nesting budget. Clipped diffusion keeps its own certification boundary.
 
 - Omit transient analysis caches before copy/pickle; retain JSON-compatible
   protected graph metadata. Explicit bins now reject wall-crossing supplied
@@ -48,6 +52,16 @@
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
+
+- Add `Environment.combine` for owned disjoint components, with stable keyed
+  bin sources, qualified regions and deterministic mutual-nearest-neighbor
+  bridges that respect known physical walls. Path-only bridges do not diffuse;
+  explicit geometric conductance couples certified child blocks. Exact lookup,
+  component geometry and bridge data survive copy, derivation and JSON/NWB
+  storage without live provider objects or bridge re-inference.
+  **Breaking:** remove `CompositeEnvironment`; use
+  `Environment.combine({"key": env, ...})` and the ordinary environment APIs.
+  Overlapping or uncertifiable support and incompatible declarations raise.
 
 - Add `Environment.with_metadata(...)` and `with_regions(...)` for immutable
   environment values. Metadata replacements share geometry and start fresh

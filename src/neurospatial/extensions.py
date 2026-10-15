@@ -88,6 +88,7 @@ def _arena_types() -> tuple[type[Any], ...]:
         OpenArena,
         TrackArena,
         UnknownArena,
+        _CombinedArena,
         _TransformedArena,
     )
 
@@ -98,6 +99,7 @@ def _arena_types() -> tuple[type[Any], ...]:
         TrackArena,
         EgocentricSurround,
         _TransformedArena,
+        _CombinedArena,
     )
 
 

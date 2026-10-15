@@ -12,7 +12,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.composite import CompositeEnvironment
 from neurospatial.io import to_file
 
 
@@ -117,7 +116,7 @@ class TestErrorCodeE1003DimensionMismatch:
 
         # Try to combine them
         with pytest.raises(ValueError, match=r"\[E1003\]"):
-            CompositeEnvironment(subenvs=[env_2d, env_3d])
+            Environment.combine({"first": env_2d, "second": env_3d})
 
     def test_e1003_error_includes_dimension_info(self):
         """Test that E1003 error includes actual dimension values."""
@@ -129,7 +128,7 @@ class TestErrorCodeE1003DimensionMismatch:
         env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
 
         with pytest.raises(ValueError) as exc_info:
-            CompositeEnvironment(subenvs=[env_2d, env_3d])
+            Environment.combine({"first": env_2d, "second": env_3d})
 
         error_msg = str(exc_info.value)
         # Check for error code
@@ -274,7 +273,6 @@ class TestErrorCodeConstants:
         """
         # This test will be enhanced after constants are added
         # For now, just verify we can import the modules
-        import neurospatial.composite
         import neurospatial.environment.decorators
         import neurospatial.io
         import neurospatial.layout.validation  # noqa: F401

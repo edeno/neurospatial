@@ -189,6 +189,19 @@ def _advance_wall_contact(
 
 def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
     """Use exact planar cells, retaining the native allocator for matching N-D masks."""
+    if env.n_dims != 2:
+        from neurospatial.layout._composition import composition_view
+
+        if composition_view(env._binning.locator) is not None:
+            from neurospatial.layout._combine_geometry import _boxes
+
+            try:
+                _boxes(env._binning.locator)
+            except ValueError as error:
+                raise NotImplementedError(
+                    "Linear allocation needs exact component cells; use time_allocation='start'."
+                ) from error
+            return True
     polygon_cells = isinstance(env._binning.shapes, PolygonCells)
     planar_cells = env.n_dims == 2 and env._binning.bins.measure_dim == 2
     arena = env.arena
@@ -260,6 +273,9 @@ def retained_linear_intervals(
         filtered intervals break this continuity.
         Wall endpoint contact and collinear boundary motion remain permitted.
     """
+    if env.n_dims != 2:
+        return _retained_box_intervals(env, times, positions, valid_mask)
+
     if positions.shape != (len(times), 2) or valid_mask.shape != (
         max(len(times) - 1, 0),
     ):
@@ -339,3 +355,73 @@ def retained_linear_intervals(
                     )
                 )
     return tuple(retained)
+
+
+def _retained_box_intervals(
+    env: TrajectoryBinningConsumer,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    valid_mask: NDArray[np.bool_],
+) -> tuple[RetainedLinearInterval, ...]:
+    """Partition N-D combined box trajectories at cell and domain planes."""
+    from neurospatial.arena import UnknownArena, _CombinedArena, _TransformedArena
+    from neurospatial.layout._combine_geometry import _arena_pieces, _boxes
+
+    boxes = _boxes(env._binning.locator)
+
+    def domain_boxes(arena):
+        if isinstance(arena, UnknownArena):
+            return []
+        if isinstance(arena, _CombinedArena):
+            return [box for child in arena.children for box in domain_boxes(child)]
+        if isinstance(arena, _TransformedArena):
+            matrix = arena.forward
+            return [
+                box @ matrix[:-1, :-1].T + matrix[:-1, -1]
+                for box in domain_boxes(arena.base)
+            ]
+        pieces = _arena_pieces(arena)
+        if any(piece.kind != "box" for piece in pieces):
+            raise NotImplementedError(
+                "Linear N-D allocation requires rectangular component domains; use start allocation."
+            )
+        return [piece.data for piece in pieces]
+
+    boxes.extend(domain_boxes(env.arena))
+    normals, offsets = [], []
+    for vertices in boxes:
+        dims = env.n_dims
+        edges = np.column_stack(
+            [vertices[1 << (dims - axis - 1)] - vertices[0] for axis in range(dims)]
+        )
+        inverse = np.linalg.inv(edges)
+        normals.extend([*inverse, *inverse])
+        origin = inverse @ vertices[0]
+        offsets.extend([*origin, *(origin + 1)])
+    normal_array = np.asarray(normals, dtype=np.float64).reshape(-1, env.n_dims)
+    offset_array = np.asarray(offsets, dtype=np.float64)
+    intervals = []
+    for sample in np.flatnonzero(valid_mask):
+        start, stop = positions[sample], positions[sample + 1]
+        if not np.all(np.isfinite([start, stop])):
+            continue
+        slopes = normal_array @ (stop - start)
+        moving = slopes != 0
+        fractions = (offset_array[moving] - normal_array[moving] @ start) / slopes[
+            moving
+        ]
+        fractions = np.unique(
+            np.concatenate(([0.0, 1.0], fractions[(fractions > 0) & (fractions < 1)]))
+        )
+        midpoints = start + ((fractions[:-1] + fractions[1:]) / 2)[:, None] * (
+            stop - start
+        )
+        bins = env.bin_at(midpoints)
+        for left, right, index in zip(fractions[:-1], fractions[1:], bins, strict=True):
+            if index >= 0 and right > left:
+                intervals.append(
+                    RetainedLinearInterval(
+                        int(sample), float(left), float(right), int(index)
+                    )
+                )
+    return tuple(intervals)

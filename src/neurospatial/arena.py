@@ -765,6 +765,11 @@ def _track_distances(
 
 def _feature_cap(arena: Arena) -> NDArray[np.float64]:
     """Keep arithmetic allowances below a quarter of local domain features."""
+    if isinstance(arena, _CombinedArena):
+        return np.asarray(
+            np.min([_feature_cap(child) for child in arena.children], axis=0),
+            dtype=np.float64,
+        )
     if isinstance(arena, MaskArena):
         return np.array([np.min(np.diff(edge)) / 4 for edge in arena.edges])
     if isinstance(arena, OpenArena):
@@ -810,6 +815,13 @@ def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -
 def _contains_with_error(
     arena: Arena, query: NDArray[np.float64], error: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
+    if isinstance(arena, _CombinedArena):
+        return np.asarray(
+            np.logical_or.reduce(
+                [_contains_with_error(child, query, error) for child in arena.children]
+            ),
+            dtype=np.bool_,
+        )
     if isinstance(arena, _TransformedArena):
         original, propagated = arena._project(query, error)
         return _contains_with_error(arena.base, original, propagated)
@@ -849,6 +861,56 @@ def _wkb(geometry: shapely.Geometry) -> NDArray[np.uint8]:
     return result
 
 
+@dataclass(frozen=True, eq=False)
+class _CombinedArena:
+    """Union of owned component domains without inventing physical walls."""
+
+    children: tuple[Arena, ...]
+    coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
+
+    def __post_init__(self) -> None:
+        children = tuple(self.children)
+        if not children or any(
+            child.n_dims != children[0].n_dims or child.coordinate_kind != "cartesian"
+            for child in children
+        ):
+            raise ValueError("Combined arenas require matching Cartesian dimensions.")
+        object.__setattr__(self, "children", children)
+
+    @property
+    def n_dims(self) -> int:
+        return self.children[0].n_dims
+
+    @property
+    def domain_known(self) -> bool:
+        return all(child.domain_known for child in self.children)
+
+    @property
+    def physical_footprint_known(self) -> bool:
+        return all(child.physical_footprint_known for child in self.children)
+
+    @property
+    def walls(self) -> tuple[LineString, ...]:
+        return tuple(wall for child in self.children for wall in child.walls)
+
+    def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
+        query, finite = _query(positions, self.n_dims)
+        return np.asarray(
+            finite
+            & np.logical_or.reduce([child.contains(query) for child in self.children]),
+            dtype=np.bool_,
+        )
+
+    def transformed(self, matrix: NDArray[np.float64]) -> Arena:
+        return _TransformedArena(self, matrix)
+
+    def polygonal_domain(self) -> Polygon | MultiPolygon | None:
+        polygons = [child.polygonal_domain() for child in self.children]
+        if any(polygon is None for polygon in polygons):
+            return None
+        return cast("Polygon | MultiPolygon", shapely.union_all(polygons))
+
+
 def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Encode built-in arena data with local array keys, without I/O.
 
@@ -866,7 +928,16 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     """
     meta: dict[str, Any] = {"codec": type(arena).__name__, "codec_version": 1}
     arrays: dict[str, NDArray[Any]] = {}
-    if type(arena) is UnknownArena:
+    if type(arena) is _CombinedArena:
+        entries = []
+        for index, child in enumerate(arena.children):
+            entry, values = encode_arena(child)
+            entries.append(entry)
+            arrays.update(
+                {f"children/{index}/{key}": value for key, value in values.items()}
+            )
+        meta["children"] = entries
+    elif type(arena) is UnknownArena:
         meta.update(n_dims=arena.n_dims, coordinate_kind=arena.coordinate_kind)
     elif type(arena) is OpenArena:
         meta.update(
@@ -926,6 +997,31 @@ def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry
     return cast("shapely.Geometry", shapely.from_wkb(data.tobytes()))
 
 
+def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
+    """Bound composite nesting without limiting valid affine histories."""
+    stack: list[tuple[object, int, bool]] = [(meta, 0, False)]
+    active: set[int] = set()
+    while stack:
+        value, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(value))
+            continue
+        if depth > 32:
+            raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
+        if not isinstance(value, Mapping):
+            continue
+        if id(value) in active:
+            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
+        active.add(id(value))
+        stack.append((value, depth, True))
+        if value.get("codec") == "_CombinedArena":
+            children = value.get("children", ())
+            if isinstance(children, (list, tuple)):
+                stack.extend((child, depth + 1, False) for child in children)
+        elif value.get("codec") == "_TransformedArena":
+            stack.append((value.get("base", {}), depth, False))
+
+
 def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) -> Arena:
     """Validate and own an arena payload, without builders or I/O.
 
@@ -946,6 +1042,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
     ValueError
         If a codec/version is unknown or stored geometry is malformed.
     """
+    _check_arena_nesting(meta)
     try:
         kind = meta.get("codec")
         if isinstance(kind, str) and kind not in {
@@ -955,6 +1052,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             "TrackArena",
             "EgocentricSurround",
             "_TransformedArena",
+            "_CombinedArena",
         }:
             from neurospatial.extensions import _decode_snapshot
 
@@ -968,6 +1066,20 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                 "read this record with a version that supports its arena codec",
             )
         kind = meta["codec"]
+        if kind == "_CombinedArena":
+            return _CombinedArena(
+                tuple(
+                    decode_arena(
+                        entry,
+                        {
+                            key.removeprefix(f"children/{index}/"): value
+                            for key, value in arrays.items()
+                            if key.startswith(f"children/{index}/")
+                        },
+                    )
+                    for index, entry in enumerate(meta["children"])
+                )
+            )
         if kind == "UnknownArena":
             return UnknownArena(
                 _count(meta, "n_dims", minimum=1),

@@ -15,6 +15,8 @@ from neurospatial.arena import (
     OpenArena,
     TrackArena,
     UnknownArena,
+    _CombinedArena,
+    encode_arena,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +30,9 @@ if TYPE_CHECKING:
 
 def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena:
     """Use declared shapes or an inferred cell domain, without asserting walls."""
+    combined = _composition_arena(binning.locator)
+    if combined is not None:
+        return combined
     n_dims = binning.bins.n_dims
     grid = binning.rectilinear
     if binning.bins.n_bins == 0:
@@ -74,8 +79,85 @@ def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena
     return UnknownArena(n_dims)
 
 
+def _composition_arena(locator: object) -> Arena | None:
+    from neurospatial.layout._composition import CombinedLocator
+    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
+    from neurospatial.layout._polygon import ClippedLocator
+
+    if isinstance(locator, CombinedLocator):
+        return _CombinedArena(locator.arenas)
+    if isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
+        arena = _composition_arena(locator.base)
+        if arena is not None and isinstance(locator, TransformedLocator):
+            arena = arena.transformed(
+                np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64)
+            )
+        return arena
+    return None
+
+
 def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
     """Reject a domain whose coordinate semantics disagree with its bins."""
+    combined_arena = _composition_arena(binning.locator)
+    if combined_arena is not None:
+        from neurospatial.arena import _TransformedArena
+        from neurospatial.layout._composition import CombinedLocator
+        from neurospatial.layout._locators import SubsetLocator, TransformedLocator
+        from neurospatial.layout._polygon import ClippedLocator
+
+        def matches(locator: object, candidate: Arena) -> bool:
+            if isinstance(locator, (SubsetLocator, ClippedLocator)):
+                return matches(locator.base, candidate)
+            if isinstance(locator, TransformedLocator):
+                return (
+                    isinstance(candidate, _TransformedArena)
+                    and np.array_equal(locator.inverse, candidate.inverse)
+                    and matches(locator.base, candidate.base)
+                )
+            if not isinstance(locator, CombinedLocator):
+                return False
+            for child, child_arena in zip(
+                locator.children, locator.arenas, strict=True
+            ):
+                validate_arena(child_arena, child, polar=False)
+                if child_arena.walls:
+                    graph = nx.Graph()
+                    graph.add_nodes_from(range(child.bins.n_bins))
+                    graph.add_edges_from((int(u), int(v)) for u, v in child.bins.pairs)
+                    checked, _graph = apply_walls(child, graph, child_arena)
+                    if not np.array_equal(checked.bins.pairs, child.bins.pairs):
+                        raise ValueError(
+                            "Component connectivity crosses its declared physical walls."
+                        )
+            if locator.children[0].bins.n_dims == 2:
+                from shapely.geometry import LineString
+
+                centers = locator.spatial_bins().centers
+                for pair in locator.bridge_pairs:
+                    link = LineString(centers[pair])
+                    if any(
+                        link.intersects(wall)
+                        for domain in locator.arenas
+                        for wall in domain.walls
+                    ):
+                        raise ValueError(
+                            "A stored navigation bridge crosses a known physical wall."
+                        )
+            actual_meta, actual_arrays = encode_arena(candidate)
+            expected_meta, expected_arrays = encode_arena(
+                _CombinedArena(locator.arenas)
+            )
+            return (
+                actual_meta == expected_meta
+                and actual_arrays.keys() == expected_arrays.keys()
+                and all(
+                    np.array_equal(actual_arrays[key], expected_arrays[key])
+                    for key in actual_arrays
+                )
+            )
+
+        if not matches(binning.locator, arena):
+            raise ValueError("Combined arena disagrees with stored component domains.")
     if arena.n_dims != binning.bins.n_dims:
         raise ValueError("Arena coordinate dimensions must match the binning.")
     kind = "polar" if polar else "cartesian"
@@ -89,7 +171,7 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
         )
     from neurospatial.layout._polygon import PolygonCells
 
-    if isinstance(binning.shapes, PolygonCells):
+    if isinstance(binning.shapes, PolygonCells) and combined_arena is None:
         domain = arena.polygonal_domain()
         if domain is not None:
             from neurospatial.layout._binning_layout import _polygon_area_allowance
@@ -252,6 +334,11 @@ def apply_walls(
     binning: Binning, graph: nx.Graph, arena: Arena
 ) -> tuple[Binning, nx.Graph]:
     """Remove complete blocked cell interfaces from paths and finite-volume faces."""
+    if _composition_arena(binning.locator) is not None:
+        # Each owned child already carries its certified wall geometry. Rechecking
+        # its independently rounded global polygons loses the native source frame.
+        # New bridge crossings are checked when constructing/validating the root.
+        return binning, graph
     if not arena.walls:
         return binning, graph
     from shapely.geometry import LineString

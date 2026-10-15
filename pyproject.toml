@@ -261,9 +261,6 @@ ignore = [
 "src/neurospatial/calibration.py" = [
     "N806",  # Allow A (affine matrix) - standard linear algebra notation
 ]
-"src/neurospatial/composite.py" = [
-    "N806",  # Allow M (adjacency matrix) - standard graph theory notation
-]
 "src/neurospatial/environment.py" = [
     "N806",  # Allow G (graph) - standard NetworkX convention
 ]

@@ -4,8 +4,9 @@
 remaining execution limits are recorded in [validation.md](validation.md).
 The user approved immediate read-only metadata, mutable standalone region
 builders with immutable environment snapshots, and migration of custom
-providers to immutable built-in snapshots. No Stage B PR publication is
-authorized.
+providers to immutable built-in snapshots. Publication was subsequently
+authorized; [PR #70](https://github.com/edeno/neurospatial/pull/70) is stacked
+on the arena branch.
 
 **Branch:** `feature/environment-immutable`, stacked on
 `feature/environment-arena` at `a88360e5`.

@@ -81,23 +81,17 @@ def test_is_environment_like_rejects_non_environment(obj: object) -> None:
     assert is_environment_like(obj) is False
 
 
-def test_composite_validate_subenvs_accepts_polar_regression(
-    polar_env: EgocentricPolarEnvironment,
-) -> None:
-    """Regression at the composite call site: the polar sibling is no longer
-    rejected by ``isinstance(env, Environment)`` (now duck-typed)."""
-    from neurospatial.composite import _validate_subenvs
-
-    validated = _validate_subenvs([polar_env])
-    assert validated == [polar_env]
+def test_combine_refuses_polar_charts(polar_env: EgocentricPolarEnvironment) -> None:
+    """A Cartesian union cannot interpret polar columns as Cartesian axes."""
+    with pytest.raises(TypeError, match="Cartesian"):
+        Environment.combine({"polar": polar_env})
+    with pytest.raises(TypeError, match="Cartesian"):
+        EgocentricPolarEnvironment.combine({"polar": polar_env})
 
 
-def test_composite_validate_subenvs_rejects_non_environment() -> None:
-    """The duck-typed check still rejects a genuinely non-environment object."""
-    from neurospatial.composite import _validate_subenvs
-
-    with pytest.raises(TypeError, match="Environment-like"):
-        _validate_subenvs([object()])
+def test_combine_rejects_non_environment() -> None:
+    with pytest.raises(TypeError, match="Environment"):
+        Environment.combine({"invalid": object()})
 
 
 def test_typing_import_is_light() -> None:

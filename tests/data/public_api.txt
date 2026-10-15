@@ -1,5 +1,4 @@
 neurospatial.BinIndexOutOfRangeError (class)
-neurospatial.CompositeEnvironment (class)
 neurospatial.DecodingResult (class)
 neurospatial.Environment (class)
 neurospatial.EnvironmentNotFittedError (class)

@@ -448,7 +448,7 @@ class _BaseEnvironment(
     See Also
     --------
     neurospatial.layout.factories.create_layout : Create custom layout engines
-    neurospatial.CompositeEnvironment : Merge multiple environments
+    Environment.combine : Combine disjoint owned environments
 
     Examples
     --------

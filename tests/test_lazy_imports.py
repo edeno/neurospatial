@@ -49,7 +49,6 @@ _EAGER_EXPORTS = (
     "Environment",
     "Region",
     "Regions",
-    "CompositeEnvironment",
 )
 
 

@@ -31,6 +31,7 @@ from neurospatial.environment.transforms import (
 )
 
 if TYPE_CHECKING:
+    import pandas as pd
     import shapely
 
     from neurospatial import Environment
@@ -51,6 +52,89 @@ class CartesianCoordinates:
     def _coordinate_system(self) -> CartesianSystem:
         """Cartesian distance and axis semantics shared by these environments."""
         return _CARTESIAN
+
+    @property
+    @check_fitted
+    def component_keys(self: SelfCartesianEnv) -> tuple[str, ...]:
+        """Stable combined component keys, or an empty tuple for a native environment."""
+        from neurospatial.layout._composition import composition_view
+
+        result = composition_view(self._binning.locator)
+        return () if result is None else result[0].keys
+
+    @property
+    @check_fitted
+    def bin_sources(self: SelfCartesianEnv) -> tuple[tuple[str, int], ...] | None:
+        """Original component key and local bin ID for each bin, or None when native.
+
+        Subsets and clips retain original source IDs; split cells may repeat an ID.
+        """
+        from neurospatial.layout._composition import composition_view
+
+        result = composition_view(self._binning.locator)
+        if result is None:
+            return None
+        root, indices, _scale = result
+        offsets = root.offsets
+        owners = np.searchsorted(offsets[1:], indices, side="right")
+        return tuple(
+            (root.keys[owner], int(index - offsets[owner]))
+            for index, owner in zip(indices, owners, strict=True)
+        )
+
+    @check_fitted
+    def get_bridge_attributes(self: SelfCartesianEnv) -> pd.DataFrame:
+        """Return an independent table of retained automatic navigation bridges.
+
+        Rows identify component/local endpoints, current bin IDs, path length
+        and geometric conductance. Native environments return an empty table.
+        Conductance units are length ** (measure_dim - 2).
+        """
+        import pandas as pd
+
+        from neurospatial.layout._composition import composition_view
+
+        columns = [
+            "source_component",
+            "source_local_bin",
+            "target_component",
+            "target_local_bin",
+            "source",
+            "target",
+            "distance",
+            "conductance",
+        ]
+        result = composition_view(self._binning.locator)
+        if result is None:
+            return pd.DataFrame(columns=columns)
+        root, indices, _scale = result
+        from neurospatial.layout._composition import bridge_values
+
+        by_pair = bridge_values(self._binning)
+        offsets = root.offsets
+        records = []
+        for (source, target), distance in zip(
+            self._binning.bins.pairs, self._binning.bins.pair_distances, strict=True
+        ):
+            pair = frozenset((int(source), int(target)))
+            if pair not in by_pair:
+                continue
+            owners = np.searchsorted(
+                offsets[1:], [indices[source], indices[target]], side="right"
+            )
+            records.append(
+                (
+                    root.keys[owners[0]],
+                    int(indices[source] - offsets[owners[0]]),
+                    root.keys[owners[1]],
+                    int(indices[target] - offsets[owners[1]]),
+                    int(source),
+                    int(target),
+                    float(distance),
+                    float(by_pair[pair]),
+                )
+            )
+        return pd.DataFrame(records, columns=columns)
 
     def _require_cartesian(self: SelfCartesianEnv, operation: str) -> SelfCartesianEnv:
         """Return this environment: its bin centers are Cartesian."""

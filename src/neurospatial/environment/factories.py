@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
@@ -260,6 +260,61 @@ class EnvironmentFactories:
     ... )
 
     """
+
+    @classmethod
+    def combine(
+        cls,
+        components: Mapping[str, Environment],
+        *,
+        auto_bridge: bool = True,
+        max_mnn_distance: float | None = None,
+        bridge_conductances: Mapping[tuple[tuple[str, int], tuple[str, int]], float]
+        | None = None,
+        name: str = "",
+    ) -> Environment:
+        """Combine disjoint components into an ordinary owned environment.
+
+        Parameters
+        ----------
+        components : mapping of str to Environment
+            Ordered, uniquely keyed Cartesian components in matching units and frame.
+        auto_bridge : bool, default=True
+            Infer mutual-nearest-neighbor navigation bridges that avoid physical
+            walls and third-component interiors. Boundary-only contact is allowed
+            unless it meets a physical wall. Bridges do not carry diffusion.
+        max_mnn_distance : float or None, optional
+            Inclusive maximum inferred bridge length, in coordinate units.
+        bridge_conductances : mapping or None, optional
+            Explicit geometric conductance for inferred bridges, keyed by pairs
+            of ``(component_key, local_bin_id)`` endpoints. Units are
+            ``length ** (measure_dim - 2)``, matching finite-volume diffusion.
+        name : str, default=""
+            Name of the resulting environment.
+
+        Returns
+        -------
+        Environment
+            Owned bins in component input order. Regions are qualified by key;
+            ``bin_sources`` and ``get_bridge_attributes()`` expose correspondence.
+
+        Raises
+        ------
+        ValueError
+            If coordinates disagree, components overlap, or support cannot be certified.
+        """
+        from neurospatial.environment._combine import _combine
+
+        if getattr(cls, "_POLAR", False):
+            raise TypeError(
+                "combine requires Cartesian components; polar charts cannot be combined."
+            )
+        return _combine(
+            components,
+            auto_bridge=auto_bridge,
+            max_mnn_distance=max_mnn_distance,
+            bridge_conductances=bridge_conductances,
+            name=name,
+        )
 
     @classmethod
     def from_bins(

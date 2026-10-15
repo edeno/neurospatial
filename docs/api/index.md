@@ -43,13 +43,13 @@ The main `Environment` class and related functionality (modular package).
 - `environment.fields`: Spatial field operations
 - `environment.metrics`: Environment metrics and properties
 
-### [neurospatial.composite](neurospatial/composite.md)
+### [Combining environments](../user-guide/composite-environments.md)
 
-Merge multiple environments into composite structures.
+Build one ordinary environment from disjoint component environments.
 
 **Key Classes:**
 
-- `CompositeEnvironment`: Combine multiple environments with automatic bridge inference
+- `Environment.combine`: Combine disjoint environments with automatic navigation bridges
 
 ### [neurospatial.regions](neurospatial/regions/index.md)
 
