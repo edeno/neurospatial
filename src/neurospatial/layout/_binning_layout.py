@@ -733,6 +733,19 @@ def _validate_components(
     validate_normals(binning)
     _validate_clip_mapping(binning)
     if isinstance(locator, CombinedLocator):
+        if binning.face_normals is not None:
+            from neurospatial.layout._composition import combined_normals
+
+            expected_normals = combined_normals(locator)
+            if expected_normals is None:
+                raise ValueError(
+                    "Combined normals require authoritative child normals."
+                )
+            _equal(
+                binning.face_normals.values,
+                expected_normals.values,
+                "combined face normals",
+            )
         expected_bins = locator.spatial_bins()
         _equal(bins.pairs, expected_bins.pairs, "combined neighbor pairs")
         _equal(
@@ -800,6 +813,26 @@ def _validate_components(
         composition = expected_composition_binning(locator)
         if composition is not None:
             expected_binning, computed = composition
+            if binning.face_normals is not None:
+                expected_normals = expected_binning.face_normals
+                if expected_normals is None:
+                    raise ValueError(
+                        "Derived combined normals require authoritative child normals."
+                    )
+                actual_normals = binning.face_normals.values
+                if computed:
+                    if not np.allclose(
+                        actual_normals, expected_normals.values, rtol=0, atol=1e-12
+                    ):
+                        raise ValueError(
+                            "Derived combined face normals disagree with child geometry."
+                        )
+                else:
+                    _equal(
+                        actual_normals,
+                        expected_normals.values,
+                        "derived combined face normals",
+                    )
             _equal(
                 bins.pairs,
                 expected_binning.bins.pairs,

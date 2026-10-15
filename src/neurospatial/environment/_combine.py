@@ -226,8 +226,11 @@ def _combine(
     from neurospatial._logging import log_environment_combine
 
     log_environment_combine(len(children), bins.n_bins, len(pairs))
+    from neurospatial.layout._composition import combined_normals
+
+    normals = combined_normals(locator) if not len(pairs) else None
     return Environment.from_bins(
-        Binning("combined", bins, locator, faces, shapes=shapes),
+        Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals),
         name=name,
         units=first.units,
         frame=first.frame,

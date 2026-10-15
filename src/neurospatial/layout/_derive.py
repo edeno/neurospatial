@@ -27,7 +27,11 @@ from neurospatial.layout._capabilities import (
 )
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import FaceGeometry
-from neurospatial.layout._face_normals import FaceNormals, _unit_rows
+from neurospatial.layout._face_normals import FaceNormals
+from neurospatial.layout._face_transform import (
+    certify_transformed_faces,
+    transform_normals,
+)
 from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
     AffineMatrix,
@@ -517,6 +521,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         frame = FramedGrid(frame.source, matrix @ frame.forward)
     elif grid is None and binning.rectilinear is not None and parent.n_dims in (2, 3):
         frame = FramedGrid(binning.rectilinear, matrix)
+    normal_data = (
+        transform_normals(binning.face_normals, linear)
+        if binning.face_normals is not None
+        else None
+    )
     faces: FacesSource = binning.faces
     if faces.available:
         old = faces.build()
@@ -548,10 +557,25 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                     bins.sizes,
                 )
             )
+        elif normal_data is not None:
+            faces = certify_transformed_faces(
+                binning,
+                old,
+                linear,
+                logdet,
+                normal_data[0],
+                normal_data[1],
+                bins.sizes,
+                kind=kind,
+            )
         else:
             faces = MissingFaces(
                 f"The {kind} (including shear for a general affine map) loses the right angle "
                 "between center links and shared cell faces; the two-point flux geometry is no longer valid."
+            )
+        if isinstance(faces, KnownFaces) and np.any((old.A > 0) & (faces.faces.A == 0)):
+            raise ValueError(
+                "Transformed positive face areas underflow; rescale coordinate units."
             )
     shapes = binning.shapes
     if isinstance(shapes, HexagonShapes):
@@ -618,11 +642,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         outline=outline,
         clip_mapping=binning.clip_mapping,
         grid_frame=frame,
-        face_normals=(
-            FaceNormals(_unit_rows(binning.face_normals.values @ np.linalg.inv(linear)))
-            if binning.face_normals is not None
-            else None
-        ),
+        face_normals=normal_data[0] if normal_data is not None else None,
         grid_spec=(
             type(binning.grid_spec)(
                 binning.grid_spec.origin,

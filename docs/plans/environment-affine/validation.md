@@ -84,13 +84,6 @@ merge through the immutable-region API. Those corrections are published across
 all existing PRs and formatted locally. Remote reruns are pending; neither that
 matrix nor an unpublished Stage E PR is described as passing.
 
-## Remaining phases
-
-E2 retains source grid axes and exact transformed shapes. E3 certifies additional
-numerical transforms. E4 migrates interpolation, linear time allocation and
-rendering. E5 supplies the user workflow documentation and final stage gate.
-
-
 ## E2 — Retained current grids and exact cells
 
 Completed with independent review. FramedGrid owns source axes/mask and a
@@ -109,3 +102,26 @@ no physical walls.
   rejected. No confirmed blockers.
 - Grid interpolation, allocation and rendering remain for E4; no new numerical
   face capability is claimed by E2.
+
+## E3 — Certified transformed faces
+
+Area-vector transforms use scaled normal directions and logarithmic area
+stretch. New numerical support requires source and transformed orthogonality
+within 1e-12 and a source flux distance matching the geometric center link.
+Retained source coordinates avoid large-origin cancellation, including combined
+components. Similarity/native diagonal formulas remain unchanged. Missing faces
+never regain authority through a later inverse transform.
+
+- The strict geometry/derivation suite passed 537 tests before the final
+  bridge-normal regression was added. The final affine suite passed 22 tests.
+- Source typing passed for 243 files; scoped Ruff checks passed.
+- Independent review confirmed the fixes for inconsistent combined normal
+  duplicates, large-origin component vectors and explicit bridge-zero normals.
+  Identity, similarity, subset and dict restoration probes passed.
+- Seeded independent 2-D tangent-length and 3-D cross-product oracles cover
+  100 maps per dimension; conservation, constants, zero net divergence and all
+  four skew-cell numerical refusals are tested.
+
+Logs: `/private/tmp/stage-e-e3-final.log` (contains the corrected test-oracle
+failure for accessing unavailable bridge faces),
+`/private/tmp/stage-e-e3-bridge-final.log`, `/private/tmp/stage-e-e3-mypy.log`.

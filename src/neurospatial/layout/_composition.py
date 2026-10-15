@@ -16,6 +16,7 @@ from neurospatial.layout._locators import _LocatorState
 if TYPE_CHECKING:
     from neurospatial.layout._binning import Locator
     from neurospatial.layout._diffusion import DiffusionGeometry
+    from neurospatial.layout._face_normals import FaceNormals
 
 
 @dataclass(frozen=True, eq=False)
@@ -158,6 +159,26 @@ class CombinedLocator(_LocatorState):
         return result
 
 
+def combined_normals(locator: CombinedLocator) -> FaceNormals | None:
+    """Combine authoritative child normals; bridges have no physical normal."""
+    from neurospatial.layout._face_normals import FaceNormals
+
+    if any(child.face_normals is None for child in locator.children):
+        return None
+    return FaceNormals(
+        np.concatenate(
+            [
+                *[
+                    child.face_normals.values
+                    for child in locator.children
+                    if child.face_normals is not None
+                ],
+                np.zeros((len(locator.bridge_pairs), locator.children[0].bins.n_dims)),
+            ]
+        )
+    )
+
+
 def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
     """Build scalar diffusion from child blocks and explicit geometric couplings.
 
@@ -285,7 +306,8 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
                     bins.sizes,
                 )
             )
-        return Binning("combined", bins, locator, faces), False
+        normals = combined_normals(locator)
+        return Binning("combined", bins, locator, faces, face_normals=normals), False
     if isinstance(locator, SubsetLocator):
         result = expected_composition_binning(locator.base)
         if result is None:
@@ -309,7 +331,16 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
             subset_faces = KnownFaces(
                 FaceGeometry(bins.pairs, old.A[kept], old.distance[kept], bins.sizes)
             )
-        return Binning("combined_subset", bins, locator, subset_faces), computed
+        from neurospatial.layout._face_normals import FaceNormals
+
+        normals = (
+            FaceNormals(parent.face_normals.values[kept])
+            if parent.face_normals is not None
+            else None
+        )
+        return Binning(
+            "combined_subset", bins, locator, subset_faces, face_normals=normals
+        ), computed
     if isinstance(locator, TransformedLocator):
         result = expected_composition_binning(locator.base)
         if result is None:
