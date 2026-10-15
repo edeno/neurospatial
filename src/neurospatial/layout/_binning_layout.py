@@ -1342,6 +1342,15 @@ class BinningLayout:
             )
         if isinstance(data.shapes, PolygonCells):
             return plot_polygon_cells(ax, shapes=data.shapes, **common, **kwargs)
+        if data.grid_frame is not None:
+            return plot_grid(
+                ax,
+                rectilinear=data.grid_frame.source,
+                frame=data.grid_frame,
+                bin_centers=self.bin_centers,
+                **common,
+                **kwargs,
+            )
         if data.rectilinear is not None:
             if data.outline is not None:
                 return plot_polygon_grid(

@@ -649,6 +649,11 @@ def shuffle_place_fields_circular_2d(
         )
 
     grid_shape = env.layout.grid_shape
+    if len(grid_shape) != 2:
+        raise ValueError(
+            "shuffle_place_fields_circular_2d requires a world-aligned 2D grid; "
+            "use shuffle_place_fields_circular for framed or non-grid environments."
+        )
 
     # Verify encoding models match expected size
     expected_bins = int(np.prod(grid_shape))

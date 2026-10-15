@@ -1,6 +1,6 @@
 # Stage E — Preserve geometry through affine transforms
 
-**Status:** E0–E3 complete on 2026-10-15. E4–E5 in progress.
+**Status:** E0–E4 complete on 2026-10-15. E5 validation in progress.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
 `feature/environment-wall-visibility` at `98bf9790` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
 This is a local implementation branch; opening another PR is a separate action.

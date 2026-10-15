@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import product
 from typing import TYPE_CHECKING, Any
@@ -94,7 +95,11 @@ class FramedGrid:
         self.inverse.setflags(write=False)
 
     def _map(
-        self, points: NDArray[np.float64], matrix: NDArray[np.float64]
+        self,
+        points: NDArray[np.float64],
+        matrix: NDArray[np.float64],
+        *,
+        inverse: bool = False,
     ) -> NDArray[np.float64]:
         values = np.asarray(points, dtype=np.float64)
         n_dims = len(self.source.shape)
@@ -104,12 +109,81 @@ class FramedGrid:
             )
         result = np.full(values.shape, np.nan)
         finite = np.all(np.isfinite(values), axis=1)
-        result[finite] = values[finite] @ matrix[:-1, :-1].T + matrix[:-1, -1]
+        if inverse:
+            result[finite] = (values[finite] - self.forward[:-1, -1]) @ matrix[
+                :-1, :-1
+            ].T
+        else:
+            result[finite] = values[finite] @ matrix[:-1, :-1].T + matrix[:-1, -1]
         return result
 
     def to_source(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` world points into source coordinates."""
-        return self._map(points, self.inverse)
+        return self._map(points, self.inverse, inverse=True)
+
+    def _project(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Project world queries with a forward-residual roundoff bound."""
+        original = self.to_source(points)
+        linear, inverse = self.forward[:-1, :-1], self.inverse[:-1, :-1]
+        dims = len(linear)
+        eps = np.finfo(float).eps
+        gamma = (dims + 4) * eps / (1 - (dims + 4) * eps)
+        residual = np.abs(np.eye(dims) - inverse @ linear)
+        residual += 2 * gamma * (np.abs(inverse) @ np.abs(linear))
+        if np.max(residual.sum(axis=1)) >= 0.5:
+            raise ValueError(
+                "Grid projection has unresolved precision; recenter or rescale coordinates."
+            )
+        sensitivity = 2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse))
+        remapped = self.to_world(original)
+        difference = np.abs(points - remapped)
+        error = difference + 0.5 * (
+            np.spacing(difference)
+            + np.spacing(np.abs(remapped))
+            + np.spacing(np.abs(points))
+        )
+        error += 2 * gamma * (np.abs(original) @ np.abs(linear).T)
+        return original, error @ sensitivity.T
+
+    def _project_to_planes(
+        self,
+        points: NDArray[np.float64],
+        planes: Sequence[NDArray[np.float64]],
+        *,
+        operation: str,
+    ) -> NDArray[np.float64]:
+        """Recover center/edge planes within bounded inverse-map roundoff.
+
+        Cap the bound at a quarter of the smallest source cell width on each
+        axis. A query too imprecise for that resolution refuses; meaningful
+        positive weights on inactive cells are never filled.
+        """
+        original, errors = self._project(points)
+        for axis, coordinates in enumerate(planes):
+            edges = self.source.edges[axis]
+            cap = float(np.min(np.diff(edges))) / 4
+            relevant = (original[:, axis] >= edges[0]) & (
+                original[:, axis] <= edges[-1]
+            )
+            if np.any(relevant & (errors[:, axis] >= cap)):
+                raise ValueError(
+                    f"{operation} cannot resolve source coordinate planes; recenter or rescale coordinates."
+                )
+            insertion = np.searchsorted(coordinates, original[:, axis])
+            lower = coordinates[np.clip(insertion - 1, 0, len(coordinates) - 1)]
+            upper = coordinates[np.clip(insertion, 0, len(coordinates) - 1)]
+            nearest = np.where(
+                np.abs(original[:, axis] - lower) <= np.abs(original[:, axis] - upper),
+                lower,
+                upper,
+            )
+            snap = np.abs(original[:, axis] - nearest) <= np.minimum(
+                errors[:, axis], cap
+            )
+            original[snap, axis] = nearest[snap]
+        return original
 
     def to_world(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` source points into world coordinates."""

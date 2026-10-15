@@ -125,3 +125,38 @@ never regain authority through a later inverse transform.
 Logs: `/private/tmp/stage-e-e3-final.log` (contains the corrected test-oracle
 failure for accessing unavailable bridge faces),
 `/private/tmp/stage-e-e3-bridge-final.log`, `/private/tmp/stage-e-e3-mypy.log`.
+
+## E4 — Source-grid consumers
+
+Linear interpolation, movement allocation and planar QuadMesh rendering now
+retain source axes. Nearest interpolation still uses world Euclidean distances.
+Native paths retain their arithmetic. Framed consumers share bounded recovery
+of source center/edge planes: a forward-residual bound with inverse sensitivity,
+capped at a quarter of the smallest source cell width per axis. Unresolved
+precision refuses; meaningful missing-cell weights remain missing.
+
+Independent review reproduced two roundoff defects during implementation:
+interpolation on source center planes returned NaN, and boundary-following
+trajectories could fill an inactive neighbor after a world lookup round trip.
+Both have regression tests at arbitrary rotation angles and offsets through
+1e9. Canonical source ownership now governs linear dwell and spike counts;
+native N-D start gates and count normalization remain compatible.
+
+- 116 strict consumer/frame/face/physical-wall tests passed.
+- Broader environment/layout/NWB/animation tests: 3,981 passed, with six old
+  tests failing because they used rotated grids to exercise scatter rendering.
+  Those fixtures now use explicit point-only bins; all six pass. Exact
+  transformed-grid rendering has its own corner/value/mask tests.
+- Source and five typing contracts: 248 files passed. Ruff checks passed.
+- Reviewer reran both original reproductions, 70 strict consumer/wall cases and
+  seeded nested 3-D transform/subset comparisons. Errors were about 2e-15 at
+  zero origin and at most 6.3e-7 at offset 1e9, consistent with stored coordinate
+  rounding; no filled support remained.
+- Matplotlib/video/HTML and widget QuadMesh updates use source shape/mask.
+  Napari raster helpers explicitly refuse framed grids. FFT/grid raster metrics
+  retain their existing restrictions; 2-D circular grid shuffling now explains
+  its world-aligned-grid requirement instead of indexing a flattened shape.
+
+Logs: `/private/tmp/stage-e-e4-roundoff-final.log`,
+`/private/tmp/stage-e-e4-source-owner.log`, `/private/tmp/stage-e-e4-wide-final.log`,
+`/private/tmp/stage-e-e4-scatter.log`, `/private/tmp/stage-e-final-typing.log`.

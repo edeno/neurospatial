@@ -664,6 +664,15 @@ class PersistentFigureRenderer:
         shape (nrows * ncols,). The array is flattened in row-major order
         from the transposed grid (grid_data.T.ravel()).
         """
+        frame = self._env._binning.grid_frame
+        if frame is not None:
+            from neurospatial.layout.helpers.utils import map_active_data_to_grid
+
+            grid = frame.source
+            data = map_active_data_to_grid(
+                grid.shape, grid.active_mask, field, fill_value=np.nan
+            )
+            return np.asarray(data.T.ravel(), dtype=np.float64)
         layout = self._env.layout
 
         # Only grid-compatible layouts can use set_array optimization

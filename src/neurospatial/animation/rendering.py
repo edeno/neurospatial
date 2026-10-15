@@ -524,6 +524,10 @@ def field_to_rgb_for_napari(
     >>> rgb.dtype
     dtype('uint8')
     """
+    if env._binning.grid_frame is not None:
+        raise NotImplementedError(
+            "Napari raster images do not support framed grids; use Matplotlib, video or HTML rendering."
+        )
     # Validate field shape early for clear error messages
     if len(field) != env.n_bins:
         raise ValueError(

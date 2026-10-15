@@ -482,7 +482,7 @@ class EnvironmentVisualization:
             unit_label = f" ({self.units})" if self.units else ""
             ax.set_xlabel(f"Position{unit_label}")
             ax.set_ylabel(colorbar_label or "Field Value")
-        elif binning.rectilinear is not None:
+        elif binning.rectilinear is not None or binning.grid_frame is not None:
             mappable = _plot_grid_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
@@ -949,11 +949,12 @@ def _plot_grid_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
+    from neurospatial.layout._grid_frame import require_grid_context
     from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
-    grid = env._binning.rectilinear
-    if grid is None:
-        raise RuntimeError("Grid field plotting requires rectangular cell geometry.")
+    grid, frame = require_grid_context(
+        env._binning, "plot_field()", fix="supply rectangular cells"
+    )
 
     # Validate 2D grid
     if len(grid.shape) != 2:
@@ -972,9 +973,14 @@ def _plot_grid_field(
         cmap_obj.set_bad(color=nan_color, alpha=1.0)
 
     # Plot
+    x, y = grid.edges
+    if frame is not None:
+        xx, yy = np.meshgrid(x, y, indexing="xy")
+        corners = frame.to_world(np.column_stack((xx.ravel(), yy.ravel())))
+        x, y = (corners[:, axis].reshape(xx.shape) for axis in range(2))
     mesh = ax.pcolormesh(
-        grid.edges[0],
-        grid.edges[1],
+        x,
+        y,
         grid_data.T,
         cmap=cmap_obj,
         vmin=vmin,

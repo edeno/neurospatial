@@ -89,6 +89,10 @@ class EnvScale:
         env : Environment
             Environment with dimension_ranges and layout.grid_shape.
         """
+        if getattr(getattr(env, "_binning", None), "grid_frame", None) is not None:
+            raise NotImplementedError(
+                "Napari raster coordinates do not support framed grids; use Matplotlib, video or HTML rendering."
+            )
         (self.x_min, self.x_max), (self.y_min, self.y_max) = env.dimension_ranges
         self.n_x, self.n_y = env.layout.grid_shape
 
