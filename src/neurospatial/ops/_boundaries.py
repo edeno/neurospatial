@@ -242,15 +242,24 @@ def clear_segments(
             )
         )
         contact = shapely.intersection(lines, walls)
-        # Intersection can return a point a few ULPs before a wall-mounted cue.
-        # Check every contact coordinate, including other walls and overlaps;
-        # only a terminal contact is visible. Per-axis endpoint ULPs prevent a
-        # long ray or an unrelated long coordinate axis from widening the gap.
+        # Intersection and interpolation can cancel one endpoint coordinate
+        # to zero. Bound those operations using the actual intersected wall's
+        # endpoint ULPs, separately per axis; neither a long ray nor an unrelated
+        # large coordinate may widen a resolved gap to an earlier blocker.
         coordinates, owners = shapely.get_coordinates(contact, return_index=True)
         terminal = selected[~same]
-        allowance = 4 * np.spacing(np.abs(terminal))
+        allowance = 4 * np.spacing(np.abs(terminal[owners]))
+        if len(coordinates):
+            parts = shapely.get_parts(walls)
+            vertices, part_index = shapely.get_coordinates(parts, return_index=True)
+            adjacent = part_index[:-1] == part_index[1:]
+            wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
+            nearest = shapely.STRtree(shapely.linestrings(wall_segments)).nearest(
+                shapely.points(coordinates)
+            )
+            allowance += 4 * np.max(np.spacing(np.abs(wall_segments[nearest])), axis=1)
         at_terminal = np.all(
-            np.abs(coordinates - terminal[owners]) <= allowance[owners], axis=1
+            np.abs(coordinates - terminal[owners]) <= allowance, axis=1
         )
         clear = np.ones(len(terminal), dtype=bool)
         np.logical_and.at(clear, owners, at_terminal)

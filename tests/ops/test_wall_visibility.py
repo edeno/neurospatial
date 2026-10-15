@@ -546,3 +546,27 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     assert result.occupancy.sum() == expected_occupancy
     rates = result.firing_rates[0] if population else result.firing_rate
     assert np.nansum(rates * result.occupancy) == 1.0
+
+
+@pytest.mark.parametrize(
+    "endpoints,fraction",
+    [([[-3.0, -2.0], [1.0, 0.2]], 0.75), ([[-1.0, -0.3], [1.0, 0.7]], 0.5)],
+)
+def test_slanted_wall_cues_with_cancelled_coordinates_remain_visible(
+    endpoints, fraction
+):
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString(endpoints)
+    target = np.array(wall.interpolate(fraction, normalized=True).coords[0])
+    assert target[0] == 0.0
+    assert clear_segments(wall, np.array([0.2, -1.0]), target[None])[0]
+
+
+def test_cue_rounding_does_not_borrow_precision_from_an_unrelated_wall_axis():
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString([(1.0, -1e12), (1.0, 1e12)])
+    assert not clear_segments(
+        wall, np.array([0.0, 0.0]), np.array([[1.0 + 1e-12, 0.0]])
+    )[0]
