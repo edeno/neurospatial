@@ -289,6 +289,11 @@ type.
 
 Geometry uses the [owned publication path](#diffusion-geometry-providers)
 described above. Derivations return new environments with fresh analysis caches.
+The environment owns its nearest-query tree and differential-operator caches.
+Compatibility functions delegate through public query, operator and cache-control
+methods. Numerical builders receive explicit centers, trees or face geometry;
+they do not inspect or mutate environment caches. `env.binning` is a detached
+public snapshot for consumers preparing geometry, and keeps native faces lazy.
 `geometry/_graph.py` projects newly constructed binning into standard navigation
 graph attributes for explicit bins and clipping. It preserves bin IDs and pair
 row IDs. Derivations such as subsets retain their existing graph metadata and

@@ -74,12 +74,10 @@ class DiffusionAccuracyConsumer(Protocol):
 
 
 class FaceGeometryConsumer(Protocol):
-    """Cell faces and the cached gradient operator, for building the operators."""
+    """Public access to an environment-owned differential operator."""
 
     @property
     def n_bins(self) -> int: ...
-
-    def _require_face_geometry(self, operation: str) -> FaceGeometry: ...
 
     def get_differential_operator(self) -> sparse.csc_matrix: ...
 

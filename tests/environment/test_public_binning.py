@@ -4,6 +4,7 @@ import copy
 import pickle
 from dataclasses import fields, is_dataclass, replace
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -83,3 +84,24 @@ def test_from_bins_requires_explicit_faces_for_native_binning():
     )
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(rebuilt.compute_kernel(0.5), env.compute_kernel(0.5))
+
+
+@pytest.mark.parametrize("restore", ["direct", "copy", "pickle"])
+def test_public_binning_detaches_nested_track_metadata(restore: str) -> None:
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(4.0, 0.0))
+    graph.add_edge(0, 1, distance=4.0)
+    graph.graph["recording"] = {"labels": ["original"], "samples": np.array([1.0, 2.0])}
+    env = Environment.from_graph(graph, [(0, 1)], 0.0, 1.0)
+    exported = env.binning
+    if restore == "copy":
+        exported = copy.deepcopy(exported)
+    elif restore == "pickle":
+        exported = pickle.loads(pickle.dumps(exported))
+    details = exported.linearization.graph.graph["recording"]
+    details["labels"].append("caller edit")
+    details["samples"].shape = (1, 2)
+    fresh = env.binning.linearization.graph.graph["recording"]
+    assert fresh["labels"] == ["original"]
+    np.testing.assert_array_equal(fresh["samples"], [1.0, 2.0])

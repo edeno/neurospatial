@@ -79,8 +79,8 @@ from neurospatial.layout.validation import (
 )
 from neurospatial.ops.binning import TieBreakStrategy
 from neurospatial.ops.calculus import (
+    _compute_differential_operator,
     _compute_divergence_operator,
-    compute_differential_operator,
 )
 from neurospatial.regions import Region, Regions
 
@@ -280,6 +280,13 @@ class Environment(Generic[_C]):
     def binning(self) -> Binning:
         """Return a detached snapshot of bins, lookup and geometry components.
 
+        Returns
+        -------
+        Binning
+            Independently owned geometry records in this environment's coordinates.
+
+        Notes
+        -----
         The returned records and NumPy array headers are independently owned.
         Editing their shapes or writable flags cannot change this environment.
         Native face recipes remain lazy; reading this property does not build
@@ -291,7 +298,7 @@ class Environment(Generic[_C]):
         the Cartesian from_bins() factory. Use environment storage to restore
         an unchanged polar environment.
         """
-        from neurospatial.environment._ownership import own_binning
+        from neurospatial.geometry._ownership import own_binning
 
         return own_binning(self._binning)
 
@@ -883,11 +890,13 @@ class Environment(Generic[_C]):
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        return compute_differential_operator(self)
+        faces = self._require_face_geometry("gradient/divergence")
+        return _compute_differential_operator(faces, self.n_bins)
 
     @versioned_cached_property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        return _compute_divergence_operator(self)
+        faces = self._require_face_geometry("gradient/divergence")
+        return _compute_divergence_operator(faces, self._differential_operator_cached)
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> Self:
@@ -1388,6 +1397,14 @@ class Environment(Generic[_C]):
         ndarray or tuple of ndarray
             Bin IDs, shape (n_points,). When return_dist=True, also return
             distances with infinity for rejected points.
+
+        Raises
+        ------
+        RuntimeError
+            If the environment is not fitted.
+        ValueError
+            If distance limits or tie-breaking settings are invalid, or query
+            points have the wrong coordinate width or nonfinite values.
 
         Notes
         -----

@@ -301,7 +301,17 @@ def _nearest_bin_query(
     max_distance: float | None = None,
     max_distance_factor: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Query explicit centers and their tree using validated distance controls."""
+    """Query explicit centers and their tree using validated distance controls.
+
+    Parameters
+    ----------
+    bin_centers : ndarray, shape (n_bins, n_dims)
+        Coordinates indexed by the already constructed kdtree.
+    kdtree : scipy.spatial.cKDTree
+        Tree over bin_centers; its lifetime belongs to the caller.
+    points : ndarray, shape (n_points, n_dims)
+        Query coordinates in the same stored coordinate columns.
+    """
     # Query KD-tree
     if tie_break == TieBreakStrategy.CLOSEST_CENTER:
         # Fast path: just use nearest neighbor
