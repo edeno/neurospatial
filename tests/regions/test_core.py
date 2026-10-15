@@ -84,6 +84,18 @@ def test_regions_add_point_and_remove():
     assert "pt" not in regs
 
 
+def test_region_point_value_equality():
+    """Equality compares coordinate values without coercing arrays to bool."""
+    region = Region("pt", "point", [1, 2, 3], metadata={"labels": ["goal"]})
+    assert region == region
+    assert region == Region.from_dict(region.to_dict())
+    assert region != Region("pt", "point", [1, 2, 4], metadata=region.metadata)
+    assert region != Region("pt", "point", [1, 2], metadata=region.metadata)
+    assert region != Region("other", "point", [1, 2, 3], metadata=region.metadata)
+    assert region != Region("pt", "point", [1, 2, 3])
+    assert region != object()
+
+
 @pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_add_polygon_and_area():
     regs = Regions()
