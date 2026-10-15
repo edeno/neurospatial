@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from itertools import pairwise, product
 from typing import Any
 
@@ -437,6 +438,52 @@ def _ball_segment_interval(
     offset = segment[0] - center
     along = -float(offset @ unit)
     distance = float(np.hypot.reduce(offset + along * unit))
+    uncertainty = (
+        32
+        * (len(offset) + 4)
+        * np.finfo(float).eps
+        * (np.hypot.reduce(offset) + length)
+    )
+    if distance <= uncertainty or abs(distance - radius) <= uncertainty:
+        # Normalized projection can leave an epsilon-sized residual even on
+        # an exactly collinear diagonal. Resolve ambiguous geometry using the
+        # exact dyadic input values, rather than treating that residual as a
+        # miss when the footprint is smaller than arithmetic round-off.
+        exact_offset = [
+            Fraction(float(point)) - Fraction(float(origin))
+            for point, origin in zip(segment[0], center, strict=True)
+        ]
+        exact_direction = [
+            Fraction(float(stop)) - Fraction(float(start))
+            for start, stop in zip(segment[0], segment[1], strict=True)
+        ]
+        square_length = sum((value * value for value in exact_direction), Fraction(0))
+        dot = sum(
+            (a * b for a, b in zip(exact_offset, exact_direction, strict=True)),
+            Fraction(0),
+        )
+        square_offset = sum((value * value for value in exact_offset), Fraction(0))
+        square_radius = Fraction(radius) ** 2
+        projection = -dot / square_length
+        closest = max(Fraction(0), min(Fraction(1), projection))
+        if (
+            square_offset + 2 * closest * dot + closest**2 * square_length
+            >= square_radius
+        ):
+            return None
+        perpendicular = square_offset - dot**2 / square_length
+        margin = float((square_radius - perpendicular) / square_radius)
+        span = (radius / length) * np.sqrt(margin)
+        low, high = (
+            max(0.0, float(projection) - span),
+            min(1.0, float(projection) + span),
+        )
+        if not low < high:
+            raise ValueError(
+                "Cannot resolve a bounded nearest footprint along an automatic bridge; "
+                "rescale the inputs or disable auto_bridge."
+            )
+        return low, high
     if distance >= radius:
         return None
     span = radius * np.sqrt((1 - distance / radius) * (1 + distance / radius))

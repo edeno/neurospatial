@@ -459,15 +459,34 @@ def test_unresolved_tiny_grid_obstacle_refuses_automatic_bridges():
     assert Environment.combine(components, auto_bridge=False).n_bins == 3
 
 
-def test_unresolved_tiny_nearest_obstacle_refuses_automatic_bridges():
+@pytest.mark.parametrize("direction", [[1.0, 0.0], [1.0, 1.0], [0.3, 0.7]])
+def test_unresolved_tiny_nearest_obstacle_refuses_automatic_bridges(direction):
+    direction = np.asarray(direction)
     components = {
-        "left": nearest([-1, 0], radius=0.1),
+        "left": nearest(-direction, radius=0.1),
         "tiny": nearest([0, 0], radius=1e-100),
-        "right": nearest([1, 0], radius=0.1),
+        "right": nearest(direction, radius=0.1),
     }
     with pytest.raises(ValueError, match=r"resolve.*footprint|disable auto_bridge"):
         Environment.combine(components)
     assert Environment.combine(components, auto_bridge=False).n_bins == 3
+
+
+@pytest.mark.parametrize(
+    "vertical_shift,clear", [(-0.1, False), (0.0, True), (0.1, True)]
+)
+def test_bounded_nearest_boundary_tangency_is_not_an_interior_crossing(
+    vertical_shift, clear
+):
+    # The exact integer line 7*x + 24*y = 625 is tangent to a radius-25
+    # circle because 7**2 + 24**2 == 25**2. Moving it inward must block.
+    components = {
+        "left": nearest([-65, 45 + vertical_shift], radius=0.1),
+        "middle": nearest([0, 0], radius=25.0),
+        "right": nearest([175, -25 + vertical_shift], radius=0.1),
+    }
+    joined = Environment.combine(components)
+    assert joined.connectivity.has_edge(0, 2) == clear
 
 
 @pytest.mark.parametrize("dims", [2, 3])
