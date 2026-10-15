@@ -175,6 +175,23 @@ class Region:
     def __str__(self) -> str:
         return self.name
 
+    def __eq__(self, other: object) -> bool:
+        """Compare region values, including point coordinates elementwise."""
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        assert isinstance(other, Region)
+        if self is other:
+            return True
+        if (self.name, self.kind, self.metadata) != (
+            other.name,
+            other.kind,
+            other.metadata,
+        ):
+            return False
+        if self.kind == "point":
+            return bool(np.array_equal(self.data, other.data))
+        return bool(self.data == other.data)
+
     # -----------------------------------------------------------------
     # Copy / pickle support
     # -----------------------------------------------------------------
