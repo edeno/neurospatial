@@ -277,8 +277,9 @@ def test_physical_wall_removes_the_matching_normal_rows():
 
     parent = _grid()
     wall = LineString([(1.0, 0.0), (1.0, 6.0)])
-    child = Environment.from_bins(
-        replace(parent._binning, faces=KnownFaces(parent._face_geometry)),
+    child = Environment.from_grid_mask(
+        parent.active_mask,
+        grid_edges=parent.grid_edges,
         arena=OpenArena(box(0.0, 0.0, 3.0, 6.0), walls=(wall,)),
     )
     expected = {
@@ -383,24 +384,16 @@ def test_non_geometric_bins_do_not_invent_normals():
 
 
 def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
-    from neurospatial.binning import FaceGeometry
-
-    env = _grid(diagonal=False)
+    env = _grid()
     old = env._face_geometry
-    areas = old.A.copy()
-    areas[0] = 0.0
-    values = env._binning.face_normals.values.copy()
-    values[0] = 0.0
-    parent = Environment.from_bins(
-        replace(
-            env._binning,
-            faces=KnownFaces(FaceGeometry(old.edges, areas, old.distance, old.volumes)),
-            face_normals=FaceNormals(values),
-        )
-    )
+    # Diagonal neighbors share only a corner, so their physical face really
+    # has zero area while their navigation connection remains present.
+    contact = np.flatnonzero(old.A == 0)[0]
+    parent = Environment.from_bins(replace(env._binning, faces=KnownFaces(old)))
     matrix = np.array([[1.0, 0.3, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     child = from_dict(to_dict(parent.apply_transform(Affine2D(matrix))))
-    np.testing.assert_array_equal(child._binning.face_normals.values[0], 0.0)
+    np.testing.assert_array_equal(child.edge_pairs, parent.edge_pairs)
+    np.testing.assert_array_equal(child._binning.face_normals.values[contact], 0.0)
     assert not child._binning.faces.available
     with pytest.raises(NotImplementedError):
         child.smooth(np.ones(child.n_bins), bandwidth=1.0)

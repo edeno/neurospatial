@@ -815,7 +815,11 @@ def test_legacy_tiny_grid_zero_faces_require_rebuilding():
     faces = source.faces.build()
     with pytest.raises(ValueError, match="Older tiny-grid records"):
         Environment.from_bins(
-            replace(source, faces=KnownFaces(faces._replace(A=np.zeros_like(faces.A))))
+            replace(
+                source,
+                faces=KnownFaces(faces._replace(A=np.zeros_like(faces.A))),
+                face_normals=None,
+            )
         )
 
 

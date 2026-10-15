@@ -53,7 +53,9 @@ def test_legacy_duplicate_mapping_tables_remain_validated(corrupt):
             record["arrays"][duplicate][1],
             record["arrays"][duplicate][0],
         )
-        with pytest.raises(ValueError, match=r"mapping|lookup|parent"):
+        # The wrong parent can be detected by mapping consistency or by the
+        # resulting disagreement between cell ownership and stored centers.
+        with pytest.raises(ValueError, match=r"mapping|lookup|parent|clipped centers"):
             Environment.from_dict(record)
     else:
         restored = Environment.from_dict(record)

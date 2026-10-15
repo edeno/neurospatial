@@ -114,21 +114,23 @@ def test_new_support_requires_located_flux_distances_and_normal_authority():
     linear = np.array(
         [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
     ) @ np.diag([2.0, 3.0])
-    for normals, distances in [
-        (None, old.distance),
-        (env._binning.face_normals, old.distance * 0.5),
-    ]:
-        source = Environment.from_bins(
+    source = Environment.from_bins(
+        replace(env._binning, faces=KnownFaces(old), face_normals=None)
+    )
+    child = source.apply_transform(affine(linear))
+    assert not child._binning.faces.available
+
+    # Explicit grid faces must already describe their physical cells before
+    # any transform can certify their numerical geometry.
+    with pytest.raises(ValueError, match=r"grid faces.distance"):
+        Environment.from_bins(
             replace(
                 env._binning,
                 faces=KnownFaces(
-                    FaceGeometry(old.edges, old.A, distances, old.volumes)
+                    FaceGeometry(old.edges, old.A, old.distance * 0.5, old.volumes)
                 ),
-                face_normals=normals,
             )
         )
-        child = source.apply_transform(affine(linear))
-        assert not child._binning.faces.available
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
