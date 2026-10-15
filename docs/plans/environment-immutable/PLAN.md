@@ -1,7 +1,9 @@
 # Stage B — Immutable environment values
 
-**Status:** Draft. No Stage B implementation has started. The API decisions
-below need approval before dependent code changes.
+**Status:** Draft implementation plan. No Stage B implementation has started.
+The user approved immediate read-only metadata and mutable standalone region
+builders with immutable environment snapshots on 2026-10-14. Remaining API
+signatures and extension contracts need review before dependent code changes.
 
 **Branch:** `feature/environment-immutable`, stacked on
 `feature/environment-arena` at `a88360e5`.
@@ -46,14 +48,15 @@ Several factories do not yet accept units/frame consistently.
 
 ## Proposed contracts and decisions
 
-These are proposals, not approved API changes.
+The mutation policy and region collection model below are approved. Other
+public signatures and extension contracts remain proposals.
 
 | Decision | Proposed default | Alternative or constraint |
 | --- | --- | --- |
-| Mutation compatibility | Reject assignment to published metadata immediately; migrate internal callers, examples and tests together. | A deprecation period would retain mutable behavior temporarily and needs a defined end point. |
+| Mutation compatibility | **Approved:** reject assignment to published metadata immediately; migrate internal callers, examples and tests together. | No deprecation period. |
 | Metadata replacement | Set units/frame/name at construction and add a copy-returning `with_metadata(...)`. Omitted arguments preserve values; explicit `None` clears nullable labels. | Final name/signature needs review before the public API snapshot changes. Replacements must not rebuild geometry. |
 | Unit meaning | Units and frame describe the supplied coordinates. Metadata replacement corrects declarations only and never scales coordinates. | Automatic coordinate conversion is outside Stage B. A future conversion API must transform all geometry, measures, walls and regions consistently; pixels require calibration. |
-| Region collection | Keep standalone `Regions` usable as a mutable builder; an environment owns an immutable snapshot. | Making every `Regions` value immutable gives one global model but changes standalone editing workflows as well. Choose before implementation. |
+| Region collection | **Approved:** keep standalone `Regions` usable as a mutable builder; an environment owns an immutable snapshot. | Standalone editing remains available; environment snapshots reject mutation and own their data. |
 | Region replacement | `with_regions(regions)` replaces the whole collection and returns a new environment. | Merging or updating names must be explicit; do not silently combine old and new regions. |
 | Name and provenance | Include the public name in immutable metadata. Own build provenance and expose immutable data or detached copies. | Keep provenance descriptive; it cannot become a recipe for rebuilding geometry. |
 
