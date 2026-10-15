@@ -24,7 +24,7 @@ from neurospatial._typing import (
     EnvironmentLike,
     is_environment_like,
 )
-from neurospatial.environment._protocols import EnvironmentProtocol
+from neurospatial.environment._protocols import FieldConsumer
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_environmentlike_is_narrow_protocol(
     # EnvironmentLike is now a purpose-built NARROW Protocol, no longer the
     # internal mixin ``EnvironmentProtocol`` re-export (which published ~14
     # private members and disagreed with the 3-attr runtime check).
-    assert EnvironmentLike is not EnvironmentProtocol
+    assert EnvironmentLike is not FieldConsumer
 
     # Environment and its polar sibling both structurally satisfy the narrow
     # surface (bin_centers / connectivity / neighbors), and it agrees with the

@@ -72,3 +72,22 @@ pushed through all affected parents; the Windows rerun is pending.
   existing common exports are added to its coverage. No extra polar export.
 - Independent review found no source correctness issues. The structural-input
   test and stale sibling-class documentation were migrated following review.
+
+## F4a — Remove mixin hosts
+
+- The common dataclass now owns its stable forwarding methods; domain algorithms
+  live in private module functions. No mixin classes, _BaseEnvironment or broad
+  EnvironmentProtocol host remains. Domain consumers expose their actual reads.
+- Source plus static consumer contracts: 250 files pass.
+- Environment/layout/NWB checks: 3,593 passed; one obsolete-host collection import
+  was then migrated. The complete repair target modules pass 75 tests; five
+  narrow-signature/warning checks also pass.
+- Numeric/refusal probes match the F3 capture. Six incidental docstring import
+  edits were reverted; all 85 public method/property signatures and docstrings
+  now compare identically against that capture.
+- Independent review checked extraction/cache parity and found one scale-bar
+  warning-location regression. Two tests failed first, and the warning helper
+  now computes stack depth at the actual warning site. Re-review passed all ten
+  focused repair checks with no remaining findings.
+- The layout bridge is the remaining F4 work; this checkpoint does not claim
+  final Stage F completion or a final full-suite gate.

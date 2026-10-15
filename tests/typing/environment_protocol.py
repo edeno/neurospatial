@@ -17,30 +17,26 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.environment._protocols import (
-        CartesianEnvironmentProtocol,
+        CartesianLookupConsumer,
         CellLengthConsumer,
-        EnvironmentProtocol,
+        FieldConsumer,
         InterpolationConsumer,
         RebinConsumer,
         SubsetConsumer,
         TrajectoryBinningConsumer,
         TransitionsConsumer,
     )
-    from neurospatial.environment.core import _BaseEnvironment
 
-    def _environment(env: EnvironmentProtocol) -> None: ...
+    def _environment(env: FieldConsumer) -> None: ...
 
     def _check(
         cartesian: Environment,
         polar: Environment[EgocentricPolarSystem],
-        base: _BaseEnvironment,
         field: NDArray[np.float64],
     ) -> None:
         _environment(cartesian)
         _environment(polar)
-        _environment(base)
-        assert_type(base.diffuse(field, 1.0), NDArray[np.float64])
-        _cartesian: CartesianEnvironmentProtocol = cartesian
+        _cartesian: CartesianLookupConsumer = cartesian
         _ = polar.bin_at  # type: ignore[misc]
         assert_type(cartesian.smooth(field, 1.0), NDArray[np.float64])
         assert_type(polar.smooth(field, 1.0), NDArray[np.float64])
@@ -50,7 +46,7 @@ if TYPE_CHECKING:
 
     def _check_signatures(
         cartesian: Environment,
-        protocol: CartesianEnvironmentProtocol,
+        protocol: CartesianLookupConsumer,
         points: NDArray[np.float64],
         times: NDArray[np.float64],
     ) -> None:
@@ -60,7 +56,9 @@ if TYPE_CHECKING:
         cartesian.bin_at(points, nonexistent_keyword=True)  # type: ignore[call-arg]
         cartesian.neighbors(0, 1, 2)  # type: ignore[call-arg]
         cartesian.occupancy(times)  # type: ignore[call-arg]
-        assert_type(protocol.occupancy(times, points, epochs=None), NDArray[np.float64])
+        assert_type(
+            cartesian.occupancy(times, points, epochs=None), NDArray[np.float64]
+        )
 
     def _check_trajectory(
         cartesian: Environment, polar: Environment[EgocentricPolarSystem]

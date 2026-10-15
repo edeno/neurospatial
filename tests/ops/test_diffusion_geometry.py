@@ -306,17 +306,17 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
 @pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     """Readers decode geometry and set the environment up exactly once."""
-    from neurospatial.environment.core import _BaseEnvironment
+    from neurospatial.environment.core import Environment
 
     original = _four_connected_grid()
-    setup = _BaseEnvironment._setup_from_layout
+    setup = Environment._setup_from_layout
     calls = []
 
     def counting_setup(env, **kwargs):
         calls.append(kwargs.get("restored_from"))
         setup(env, **kwargs)
 
-    monkeypatch.setattr(_BaseEnvironment, "_setup_from_layout", counting_setup)
+    monkeypatch.setattr(Environment, "_setup_from_layout", counting_setup)
     restored = _round_trip(original, how, tmp_path)
     assert len(calls) == 1 and calls[0] is not None
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())

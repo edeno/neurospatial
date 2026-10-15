@@ -11,11 +11,11 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import BorderConsumer
 
 
 def _physical_border_score(
-    env: EnvironmentProtocol,
+    env: BorderConsumer,
     field_bins: NDArray[np.int64],
     walls: shapely.Geometry,
     metric: Literal["geodesic", "euclidean"],

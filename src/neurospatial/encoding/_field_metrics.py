@@ -29,7 +29,7 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import FieldMetricsConsumer
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
@@ -47,14 +47,14 @@ __all__ = [
 
 
 def field_size(
-    env: EnvironmentProtocol,
+    env: FieldMetricsConsumer,
     field_bins: NDArray[np.int64],
 ) -> float:
     """Compute field size (area) in physical units.
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : FieldMetricsConsumer
         Spatial environment.
     field_bins : array
         Bin indices comprising the field.
@@ -324,7 +324,7 @@ def rate_map_coherence(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : FieldMetricsConsumer
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).

@@ -1412,24 +1412,14 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
         )
 
 
-def test_every_inherited_member_is_classified_for_polar():
-    """A new shared-base member must be checked on polar bins before polar inherits it."""
-    from neurospatial import Environment
-    from neurospatial.environment.core import _BaseEnvironment
-
-    public = {name for name in dir(_BaseEnvironment) if not name.startswith("_")}
-    inherited = public - set(Environment.__dict__)
-    classified = set().union(*_POLAR_INHERITED_MEMBERS.values())
-    assert not inherited - classified, (
-        f"Check {sorted(inherited - classified)} on a polar (distance, angle) "
-        "environment, then list them in _POLAR_INHERITED_MEMBERS, or move "
-        "them to CartesianCoordinates if they read bin centers as Cartesian "
-        "coordinates."
-    )
-    assert not classified - inherited, (
-        f"Remove {sorted(classified - inherited)} from _POLAR_INHERITED_MEMBERS: "
-        "polar now overrides them or the base no longer defines them."
-    )
+def test_every_public_member_is_classified_for_polar():
+    public = {name for name in dir(Environment) if not name.startswith("_")}
+    shared = public - CARTESIAN_OPERATIONS
+    classified = set().union(*_POLAR_INHERITED_MEMBERS.values()) | {
+        "coordinate_kind",
+        "from_polar_egocentric",
+    }
+    assert shared == classified, f"Review coordinate meaning for {shared ^ classified}"
 
 
 @pytest.mark.parametrize(
@@ -1484,7 +1474,6 @@ def test_cartesian_operations_are_the_capability_methods():
         CARTESIAN_GRID_OPERATIONS,
         CARTESIAN_OPERATIONS,
     )
-    from neurospatial.environment.core import _BaseEnvironment
 
     assert {
         "apply_transform",
@@ -1505,4 +1494,4 @@ def test_cartesian_operations_are_the_capability_methods():
         "to_linear",
     } == CARTESIAN_OPERATIONS
     assert CARTESIAN_GRID_OPERATIONS <= CARTESIAN_OPERATIONS
-    assert not CARTESIAN_OPERATIONS & set(dir(_BaseEnvironment))
+    assert set(dir(Environment)) >= CARTESIAN_OPERATIONS

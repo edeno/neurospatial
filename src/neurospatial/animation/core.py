@@ -19,7 +19,7 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import AnimationConsumer
 
 # Playback speed limits
 MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
@@ -101,7 +101,7 @@ def _compute_playback_fps(
     return playback_fps, actual_speed
 
 
-def _validate_env_pickleable(env: EnvironmentProtocol) -> None:
+def _validate_env_pickleable(env: AnimationConsumer) -> None:
     """Validate that environment can be pickled for parallel processing.
 
     Parameters
@@ -138,7 +138,7 @@ def _validate_env_pickleable(env: EnvironmentProtocol) -> None:
 
 
 def animate_fields(
-    env: EnvironmentProtocol,
+    env: AnimationConsumer,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",

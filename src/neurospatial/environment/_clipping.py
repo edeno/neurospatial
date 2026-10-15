@@ -8,7 +8,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
-from neurospatial.environment._protocols import CartesianEnvironmentProtocol
+from neurospatial.environment._protocols import ClipConsumer
 from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._polygon import clip_binning
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 def _clip(
-    env: CartesianEnvironmentProtocol,
+    env: ClipConsumer,
     polygon: Polygon | MultiPolygon,
     *,
     name: str | None = None,

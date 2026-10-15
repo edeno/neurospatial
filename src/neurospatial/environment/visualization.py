@@ -30,8 +30,8 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
-from neurospatial.environment._protocols import SelfEnv
-from neurospatial.environment.decorators import check_fitted
+from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.environment._protocols import VisualizationConsumer
 from neurospatial.layout._binning import TrackLinearization
 from neurospatial.layout._components import HexagonShapes, TriangleShapes
 from neurospatial.layout._polygon import PolygonCells
@@ -51,10 +51,9 @@ _MIN_EXTENT_FOR_SCALE_BAR = 1e-6
 
 
 def _add_scale_bar_if_requested(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     ax: matplotlib.axes.Axes,
     scale_bar: bool | ScaleBarConfig,
-    stacklevel: int = 2,
 ) -> None:
     """Add scale bar to axes if requested and valid.
 
@@ -69,8 +68,6 @@ def _add_scale_bar_if_requested(
         The axes to add the scale bar to.
     scale_bar : bool or ScaleBarConfig
         If truthy, adds a scale bar. If ScaleBarConfig, uses that configuration.
-    stacklevel : int, optional
-        Stack level for warnings (default 2, adjust if called from nested functions).
     """
     if not scale_bar:
         return
@@ -85,13 +82,13 @@ def _add_scale_bar_if_requested(
         warnings.warn(
             "Cannot add scale bar: dimension_ranges not available",
             UserWarning,
-            stacklevel=stacklevel,
+            stacklevel=_external_stacklevel(),
         )
     elif not np.isfinite(env.dimension_ranges[0]).all():
         warnings.warn(
             "Cannot add scale bar: dimension_ranges contains non-finite values",
             UserWarning,
-            stacklevel=stacklevel,
+            stacklevel=_external_stacklevel(),
         )
     else:
         extent_x = env.dimension_ranges[0][1] - env.dimension_ranges[0][0]
@@ -99,846 +96,17 @@ def _add_scale_bar_if_requested(
             warnings.warn(
                 f"Cannot add scale bar: extent too small ({extent_x})",
                 UserWarning,
-                stacklevel=stacklevel,
+                stacklevel=_external_stacklevel(),
             )
         else:
             add_scale_bar_to_axes(ax, extent_x, env.units, config)
-
-
-class EnvironmentVisualization:
-    """Mixin class providing visualization methods for Environment.
-
-    This mixin provides plotting functionality for Environment instances,
-    including both N-dimensional and 1D linearized visualizations.
-
-    Methods
-    -------
-    plot(ax=None, show_regions=False, layout_plot_kwargs=None, regions_plot_kwargs=None, **kwargs)
-        Plot the environment's layout and optionally defined regions.
-    plot_1d(ax=None, layout_plot_kwargs=None, **kwargs)
-        Plot a 1D representation of the environment, if applicable.
-
-    Notes
-    -----
-    This is a mixin class designed to be inherited by the Environment class.
-    It should NOT be decorated with @dataclass. Only Environment itself
-    should be a dataclass.
-
-    The methods assume the presence of the following attributes on self:
-    - layout : LayoutEngine instance
-    - name : str
-    - regions : Regions instance (optional)
-
-    See Also
-    --------
-    neurospatial.environment.core.Environment : Main Environment class.
-
-    """
-
-    @check_fitted
-    def plot(
-        self: SelfEnv,
-        ax: matplotlib.axes.Axes | None = None,
-        show_regions: bool = False,
-        layout_plot_kwargs: dict[str, Any] | None = None,
-        regions_plot_kwargs: dict[str, Any] | None = None,
-        scale_bar: bool | ScaleBarConfig = False,
-        **kwargs: Any,
-    ) -> matplotlib.axes.Axes:
-        """Plot the environment's layout and optionally defined regions.
-
-        This method delegates plotting of the base layout to the `plot` method
-        of the underlying `LayoutEngine`. If `show_regions` is True, it then
-        overlays any defined spatial regions managed by `self.regions`.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            The Matplotlib axes to plot on. If None, a new figure and axes
-            are created. Defaults to None.
-        show_regions : bool, optional
-            If True, plot defined spatial regions on top of the layout.
-            Defaults to False.
-        layout_plot_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments to pass to the `layout.plot()` method.
-            Defaults to None.
-        regions_plot_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments to pass to the `regions.plot_regions()` method.
-            Defaults to None.
-        scale_bar : bool or ScaleBarConfig, default=False
-            Whether to add a scale bar showing physical scale. If True, uses
-            auto-calculated length based on environment extent. If ScaleBarConfig,
-            uses the specified configuration. Default: False (no scale bar).
-        **kwargs : Any
-            Additional keyword arguments that are passed to `layout.plot()`.
-            These can be overridden by `layout_plot_kwargs`.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the environment was plotted.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> ax = env.plot()  # doctest: +SKIP
-
-        Plot with regions:
-
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
-        >>> env = env.with_regions(regions)
-        >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
-
-        """
-        l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
-        l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-
-        from neurospatial.layout._plotting_binning import plot_binning
-
-        ax = plot_binning(
-            self._binning,
-            self.connectivity,
-            self.dimension_ranges,
-            self.layout_type or "",
-            ax=ax,
-            **l_kwargs,
-        )
-        # layout.plot() always returns an Axes object, never None
-        assert ax is not None
-
-        if show_regions and hasattr(self, "regions") and self.regions is not None:
-            from neurospatial.regions.plot import plot_regions
-
-            r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
-            plot_regions(self.regions, ax=ax, **r_kwargs)
-
-        plot_title = self.name
-        if self.layout_type:
-            plot_title += f" ({self.layout_type})"
-
-        # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
-        if ax.get_title() == "":
-            ax.set_title(plot_title)
-
-        # Add scale bar if requested
-        _add_scale_bar_if_requested(self, ax, scale_bar, stacklevel=2)
-
-        return ax
-
-    @check_fitted
-    def plot_1d(
-        self: SelfEnv,
-        ax: matplotlib.axes.Axes | None = None,
-        layout_plot_kwargs: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> matplotlib.axes.Axes | None:
-        """Plot a 1D representation of the environment, if applicable.
-
-        This method is primarily for environments where `is_linearized_track` is True
-        (e.g., using `GraphLayout`). It calls the `plot_linear_layout`
-        method of the underlying layout if it exists and the layout is 1D.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            The Matplotlib axes to plot on. If None, a new figure and axes
-            are created. Defaults to None.
-        layout_plot_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments to pass to the layout's 1D plotting method.
-        **kwargs : Any
-            Additional keyword arguments passed to the layout's 1D plotting method.
-
-        Returns
-        -------
-        matplotlib.axes.Axes | None
-            The axes on which the 1D layout was plotted, or the original `ax`
-            (which may be None) if plotting was not applicable.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        AttributeError
-            If `self.layout.is_linearized_track` is True but the layout does not have a
-            `plot_linear_layout` method.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from track_linearization import make_track_graph  # doctest: +SKIP
-        >>> position = np.random.rand(100, 2) * 10  # doctest: +SKIP
-        >>> track_graph = make_track_graph(position, use_HMM=False)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     track_graph, track_graph_name="test_track"
-        ... )  # doctest: +SKIP
-        >>> if env.is_linearized_track:  # doctest: +SKIP
-        ...     ax = env.plot_1d()  # doctest: +SKIP
-
-        """
-        l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
-        l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-        if self.is_linearized_track:
-            linearization = self._binning.linearization
-            if isinstance(linearization, TrackLinearization):
-                from neurospatial.layout._plotting import plot_track_linear
-
-                ax = plot_track_linear(
-                    ax=ax,
-                    title=self.layout_type or "",
-                    linearization=linearization,
-                    grid_edges=linearization.grid_edges,
-                    **l_kwargs,
-                )
-            else:
-                warnings.warn(
-                    f"Layout '{self._layout_type_used}' is 1D but does not "
-                    "have a 'plot_linear_layout' method. Skipping 1D plot.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-        else:
-            warnings.warn(
-                "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        return ax
-
-    @check_fitted
-    def plot_field(
-        self: SelfEnv,
-        field: NDArray[np.float64],
-        ax: matplotlib.axes.Axes | None = None,
-        cmap: str | Colormap = "viridis",
-        vmin: float | None = None,
-        vmax: float | None = None,
-        colorbar: bool = True,
-        colorbar_label: str = "",
-        nan_color: str | None = "lightgray",
-        rasterized: bool = True,
-        scale_bar: bool | ScaleBarConfig = False,
-        **kwargs: Any,
-    ) -> matplotlib.axes.Axes:
-        """Plot spatial field data over the environment.
-
-        Automatically selects the appropriate visualization method based on the
-        layout type to render bins with their actual geometric shapes:
-
-        - **1D native grids**: Line plot over physical bin coordinates
-        - **2D grid layouts**: Uses ``pcolormesh`` for crisp rectangular bins
-        - **Hexagonal**: Colored hexagon patches via ``PatchCollection``
-        - **Triangular mesh**: Colored triangle faces via ``tripcolor``
-        - **1D tracks**: Line plot over physical linearized coordinates, with
-          breaks at missing values and artificial gaps between track segments
-        - **Other**: Scatter plot with markers sized in display points; override
-          their area with ``s=`` (in points squared, as in Matplotlib).
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Spatial field values for each bin (e.g., firing rate, probability,
-            decoded position density).
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, creates new figure and axes. Default: None.
-        cmap : str or matplotlib.colors.Colormap, default="viridis"
-            Matplotlib colormap name (e.g., "hot", "Blues", "viridis").
-        vmin : Optional[float], optional
-            Minimum value for colormap normalization. If None, uses
-            ``np.nanmin(field)``. Default: None.
-        vmax : Optional[float], optional
-            Maximum value for colormap normalization. If None, uses
-            ``np.nanmax(field)``. Default: None.
-        colorbar : bool, default=True
-            Whether to add a colorbar. Not applicable for 1D plots.
-        colorbar_label : str, default=""
-            Label text for the colorbar.
-        nan_color : Optional[str], default="lightgray"
-            Color for bins with NaN values. If None, NaN bins are not rendered
-            (skipped). Use "lightgray", "white", etc.
-        rasterized : bool, default=True
-            Rasterize output for better performance and smaller file sizes with
-            large grids. Recommended for environments with >1000 bins.
-        scale_bar : bool or ScaleBarConfig, default=False
-            Whether to add a scale bar showing physical scale. If True, uses
-            auto-calculated length based on environment extent. If ScaleBarConfig,
-            uses the specified configuration. Default: False (no scale bar).
-        **kwargs : Any
-            Additional keyword arguments passed to underlying plot function
-            (e.g., ``pcolormesh``, ``PatchCollection.set``).
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the field was plotted.
-
-        Raises
-        ------
-        ValueError
-            If ``field`` shape does not match ``(n_bins,)``.
-        NotImplementedError
-            If environment dimensionality is >2D (not supported for spatial plots).
-        NotImplementedError
-            If attempting to use ``pcolormesh`` on non-2D grid.
-
-        See Also
-        --------
-        compute_spatial_rate : Compute firing rate maps from spike trains.
-        plot : Plot environment structure (bins and connectivity).
-        plot_1d : Plot 1D linearized environment.
-
-        Notes
-        -----
-        **NaN Handling:**
-
-        - ``nan_color=None``: NaN bins are skipped (not rendered)
-        - ``nan_color="lightgray"``: NaN bins rendered with specified color
-        - If all field values are NaN and ``nan_color=None``, an empty plot is
-          produced (no colorbar will be added).
-
-        **Performance:**
-
-        For large environments (>10,000 bins), set ``rasterized=True`` (default)
-        to improve rendering performance and reduce file size.
-
-        **Colormaps:**
-
-        Common choices for neuroscience:
-
-        - ``"hot"``: Firing rate maps (black → red → yellow)
-        - ``"viridis"``: General purpose, perceptually uniform
-        - ``"Blues"``: Probability distributions
-        - ``"RdBu_r"``: Diverging data (e.g., correlation)
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
-        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> import matplotlib.pyplot as plt
-        >>> field = np.arange(env.n_bins, dtype=float)
-        >>> fig, ax = plt.subplots()
-        >>> _ = env.plot_field(field, ax=ax)
-        >>> fig.savefig("field.png")
-
-        """
-        # Validate field shape
-        if field.ndim != 1 or field.shape[0] != self.n_bins:
-            raise ValueError(
-                f"field must be 1D array with length n_bins={self.n_bins}, "
-                f"got shape {field.shape}"
-            )
-
-        # Check dimensionality for spatial plots
-        if not self.is_linearized_track and self.n_dims > 2:
-            raise NotImplementedError(
-                f"Cannot plot {self.n_dims}D fields spatially. "
-                "Only 1D and 2D environments are supported. "
-                "Consider using marginal plots, slicing, or 3D scatter plots instead."
-            )
-
-        # Polar envs render via the same dispatch but with polar-aware
-        # axis labels and aspect ratio: bin_centers[:, 0] is
-        # distance (env units), bin_centers[:, 1] is angle in radians.
-        # The label switch happens at the bottom of this method, after
-        # dispatch.
-
-        # Create axes if needed
-        if ax is None:
-            _, ax = plt.subplots(figsize=(8, 7))
-
-        # Auto vmin/vmax
-        if vmin is None:
-            vmin = np.nanmin(field)
-            if np.isnan(vmin) or np.isinf(vmin):
-                vmin = 0.0
-
-        if vmax is None:
-            vmax = np.nanmax(field)
-            if np.isnan(vmax) or np.isinf(vmax):
-                vmax = 1.0
-
-        # Ensure vmin < vmax
-        if vmin >= vmax:
-            vmax = vmin + 1.0
-
-        # Choose rendering from the structure published with the bins.
-        binning = self._binning
-        mappable = None
-        if self.n_dims == 1 and not self.is_linearized_track:
-            ax.plot(self.bin_centers[:, 0], field, **kwargs)
-            unit_label = f" ({self.units})" if self.units else ""
-            ax.set_xlabel(f"Position{unit_label}")
-            ax.set_ylabel(colorbar_label or "Field Value")
-        elif binning.rectilinear is not None or binning.grid_frame is not None:
-            mappable = _plot_grid_field(
-                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-            )
-        elif isinstance(binning.shapes, HexagonShapes):
-            mappable = _plot_hex_field(
-                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-            )
-        elif isinstance(binning.shapes, TriangleShapes):
-            mappable = _plot_trimesh_field(
-                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-            )
-        elif isinstance(binning.shapes, PolygonCells):
-            mappable = _plot_polygon_field(
-                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-            )
-        elif binning.linearization is not None or self.is_linearized_track:
-            # Legacy saved tracks retain their previous missing-grid refusal
-            # until loading restores their full linearization data.
-            mappable = _plot_1d_field(self, field, ax, colorbar_label, **kwargs)
-        else:
-            mappable = _plot_scatter_field(
-                self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-            )
-
-        # Add colorbar (not for 1D)
-        # Note: mappable can be None if all field values are NaN and nan_color=None
-        if colorbar and mappable is not None and not self.is_linearized_track:
-            cbar = plt.colorbar(mappable, ax=ax)
-            if colorbar_label:
-                cbar.set_label(colorbar_label, fontsize=12)
-            cbar.ax.tick_params(labelsize=10)
-
-        # Format axes. Polar envs (from from_polar_egocentric) carry
-        # bin_centers as (distance, angle in radians), not (x, y), so
-        # the default "X Position" / "Y Position" labels are silently
-        # wrong; relabel and skip the equal-aspect lock (a polar map's
-        # angular extent is fixed by bin_centers[:, 1] but its distance
-        # extent is independent and physical).
-        if not self.is_linearized_track and self.n_dims != 1:
-            system = self._coordinate_system
-            xlabel, ylabel = system.axis_labels(self.units)
-            if system.equal_aspect:
-                ax.set_aspect("equal")
-            ax.set_xlabel(xlabel, fontsize=12)
-            ax.set_ylabel(ylabel, fontsize=12)
-
-            if self.dimension_ranges and len(self.dimension_ranges) >= 2:
-                ax.set_xlim(self.dimension_ranges[0])
-                ax.set_ylim(self.dimension_ranges[1])
-
-        # Add scale bar if requested
-        _add_scale_bar_if_requested(self, ax, scale_bar, stacklevel=2)
-
-        return ax
-
-    @check_fitted
-    def animate_fields(
-        self: SelfEnv,
-        fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-        *,
-        frame_times: NDArray[np.float64],
-        backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
-        save_path: str | None = None,
-        overwrite: bool = False,
-        speed: float = 1.0,
-        cmap: str = "viridis",
-        vmin: float | None = None,
-        vmax: float | None = None,
-        frame_labels: Sequence[str] | None = None,
-        overlay_trajectory: NDArray[np.float64] | None = None,
-        title: str = "Spatial Field Animation",
-        dpi: int = 100,
-        codec: str = "h264",
-        bitrate: int = 5000,
-        n_workers: int | None = None,
-        dry_run: bool = False,
-        image_format: Literal["png", "jpeg"] = "png",
-        max_html_frames: int = 500,
-        contrast_limits: tuple[float, float] | None = None,
-        show_colorbar: bool = False,
-        colorbar_label: str = "",
-        overlays: list[OverlayProtocol] | None = None,
-        show_regions: bool | list[str] = False,
-        region_alpha: float = 0.3,
-        scale_bar: bool | ScaleBarConfig = False,
-        **kwargs: Any,
-    ) -> Any:
-        """Animate spatial fields over time with multiple backend options.
-
-        Creates animations of spatial field data across different time points,
-        with support for four different backends optimized for different use cases:
-        Napari (GPU-accelerated interactive viewing), Video (MP4/WebM export),
-        HTML (standalone shareable player), and Jupyter Widget (notebook integration).
-
-        Parameters
-        ----------
-        fields : Sequence[NDArray[np.float64]] or NDArray[np.float64]
-            Spatial field data to animate. Can be:
-            - List of arrays: Each array shape (n_bins,) represents one frame
-            - Single ndarray: Shape (n_frames, n_bins) with first dimension as time
-            Each field must match the number of bins in this environment.
-        backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
-            Animation backend to use:
-            - "auto": Automatically selects based on context and data size
-            - "napari": GPU-accelerated interactive viewer (best for large datasets)
-            - "video": Export MP4/WebM with parallel rendering (best for publications)
-            - "html": Standalone HTML player with instant scrubbing (best for sharing)
-            - "widget": Jupyter widget with slider control (best for notebooks)
-        save_path : str, optional
-            Output file path. If provided, file extension determines format:
-            - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
-            - .html: standalone HTML player (no dependencies)
-            - None: display interactively (napari or widget depending on context)
-        overwrite : bool, default=False
-            Allow replacing existing video/HTML files and nonempty HTML frames
-            directories. By default, an existing target raises before rendering.
-        speed : float, default=1.0
-            Playback speed relative to real-time:
-
-            - 1.0: Real-time playback (1 second of data = 1 second viewing)
-            - 0.1: 10% speed (slow motion, good for replay analysis)
-            - 2.0: 2x speed (fast forward)
-
-            The actual playback fps is computed as:
-            ``playback_fps = min(sample_rate_hz * speed, MAX_PLAYBACK_FPS)``
-
-            where sample_rate_hz is inferred from frame_times.
-            Playback is capped at MAX_PLAYBACK_FPS (60) for display compatibility.
-        cmap : str, default="viridis"
-            Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
-        vmin : float, optional
-            Minimum value for colormap normalization. If None, computed from all frames.
-        vmax : float, optional
-            Maximum value for colormap normalization. If None, computed from all frames.
-        frame_labels : Sequence[str], optional
-            Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
-            auto-generated as "Frame 1", "Frame 2", etc.
-        overlay_trajectory : NDArray[np.float64], optional
-            Trajectory to overlay on animation. Shape: (n_timepoints, n_dims).
-            For 2D environments: rendered as track line. For higher dimensions:
-            rendered as point cloud. Only supported by napari backend.
-        title : str, default="Spatial Field Animation"
-            Animation title shown in player controls or window title
-        dpi : int, default=100
-            Resolution for rendering frames (video and HTML backends). Higher values
-            produce sharper images but larger file sizes.
-        codec : str, default="h264"
-            Video codec for MP4 export. Options: "h264", "h265", "vp9", "mpeg4".
-            Only used with video backend.
-        bitrate : int, default=5000
-            Video bitrate in kbps. Higher values produce better quality but larger
-            files. Only used with video backend.
-        n_workers : int, optional
-            Number of parallel workers for video rendering. If None, uses
-            CPU count / 2. Set to 1 for serial rendering. Requires environment
-            to be pickle-able (call `env.clear_cache()` if pickle errors occur).
-            Only used with video backend.
-        dry_run : bool, default=False
-            If True, estimate rendering time and file size without actually rendering.
-            Only used with video backend.
-        image_format : {"png", "jpeg"}, default="png"
-            Image format for frame embedding in HTML. JPEG produces smaller files
-            but with lossy compression. Only used with HTML backend.
-        max_html_frames : int, default=500
-            Maximum number of frames allowed for HTML export. Prevents creating
-            huge files that crash browsers. Only used with HTML backend.
-        contrast_limits : tuple[float, float], optional
-            Napari contrast limits (min, max). If provided, overrides vmin/vmax.
-            Only used with napari backend.
-        show_colorbar : bool, default=False
-            Whether to include colorbar in rendered frames (not yet implemented)
-        colorbar_label : str, default=""
-            Label for colorbar axis (not yet implemented)
-        overlays : list of overlay objects, optional
-            List of overlay objects to render on top of the spatial field animation.
-            Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
-            Multiple overlays of the same type can be provided for multi-animal tracking.
-            See neurospatial.animation.overlays for details. Default: None (no overlays).
-        frame_times : NDArray[np.float64], shape (n_frames,)
-            Timestamps for each frame in seconds. **Required** - provides the
-            temporal structure of your data. Use timestamps from your data source
-            (e.g., position timestamps, decoding time bins).
-
-            Overlays with their own timestamps will be aligned via interpolation
-            to these frame times.
-        show_regions : bool or list of str, default=False
-            Whether to render region overlays. If True, all regions defined in
-            env.regions are rendered. If a list of region names, only those regions
-            are rendered. Regions are rendered as semi-transparent polygons.
-            Default: False (no region overlays).
-        region_alpha : float, default=0.3
-            Alpha transparency for region overlays. Range: [0.0, 1.0] where
-            0.0 is fully transparent and 1.0 is fully opaque. Only used when
-            show_regions is True or a list. Default: 0.3.
-        scale_bar : bool or ScaleBarConfig, default=False
-            Whether to add a scale bar to rendered frames. If True, uses default
-            ScaleBarConfig with auto-calculated length. If ScaleBarConfig instance,
-            uses provided configuration.
-
-            - **napari backend**: Configures napari's native scale bar
-            - **video/html/widget backends**: Adds scale bar to each rendered frame
-
-            Default: False (no scale bar).
-        **kwargs : dict
-            Backend-specific parameters. Common backend-specific options:
-
-            **Napari backend:**
-            - ``layout`` : {"horizontal", "vertical", "grid"}, optional
-              Layout for multi-field viewing (required when fields is a list of lists)
-            - ``layer_names`` : list of str, optional
-              Custom names for each layer in multi-field mode
-            - ``cache_size`` : int, default=1000
-              Maximum frames to cache (per-frame caching)
-            - ``chunk_size`` : int, default=10
-              Frames per chunk (chunked caching for >10K frames)
-            - ``max_chunks`` : int, default=100
-              Maximum chunks to cache
-
-            **Video backend:**
-            - ``crf`` : int, default=18
-              Constant rate factor for quality (0=lossless, 51=worst)
-            - ``preset`` : str, default="medium"
-              Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
-
-            **Widget backend:**
-            - ``initial_cache_size`` : int, optional
-              Number of frames to pre-render
-            - ``cache_limit`` : int, default=1000
-              Maximum cache size
-
-        Returns
-        -------
-        viewer or path or widget
-            Return value depends on backend:
-            - napari: napari.Viewer instance (blocking - shows window)
-            - video: Path to saved video file
-            - html: Path to saved HTML file
-            - widget: ipywidgets.interact instance (displays automatically in notebook)
-
-        Raises
-        ------
-        FileExistsError
-            If an output already exists and overwrite is False.
-        RuntimeError
-            If environment is not fitted (use factory methods like
-            Environment.from_samples())
-        ValueError
-            If field shapes don't match environment n_bins
-        ImportError
-            If required backend dependencies are not installed
-        RuntimeError
-            If ffmpeg is not available for video backend
-
-        See Also
-        --------
-        plot_field : Plot static spatial field
-        plot : Plot environment structure
-        neurospatial.animation.subsample_frames : Subsample frames for large datasets
-
-        Notes
-        -----
-        **Backend Selection (auto mode):**
-        When backend="auto", the selection logic is:
-        - If save_path has video extension (.mp4, .webm, etc.) → video backend
-        - If save_path is .html → HTML backend
-        - If >10,000 frames → napari backend (GPU acceleration needed)
-        - If in Jupyter notebook → widget backend
-        - Otherwise → napari backend (if available) or error
-
-        **Layout Support:**
-        All layout types are supported:
-        - Grid layouts (RegularGrid, MaskedGrid, etc.): Direct rendering
-        - Hexagonal/Triangular: Layout-aware rendering with proper shapes
-        - Graph layouts (1D): Rendered as 1D line plots
-        The animation automatically uses the appropriate renderer based on layout type.
-
-        **Performance Tips:**
-        - For large datasets (>10K frames), use memory-mapped arrays to avoid loading
-          all data into RAM
-        - Use napari backend for interactive exploration of large datasets
-        - For video export, increase n_workers for faster parallel rendering
-        - For HTML, use image_format="jpeg" to reduce file size (with quality loss)
-        - Use subsample_frames() utility to downsample high-frequency recordings
-
-        **Memory Considerations:**
-        - Napari backend: Frames loaded on-demand (LRU cache), handles 900K+ frames
-        - Video backend: Renders in chunks, temporary files cleaned up automatically
-        - HTML backend: All frames embedded in single file (limit: 500 frames default)
-        - Widget backend: Pre-renders first 500 frames, on-demand for rest
-
-        Examples
-        --------
-        Create a short evolving field on a complete grid:
-
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> x, y = np.meshgrid(np.arange(0.0, 24.0, 4.0), np.arange(0.0, 24.0, 4.0))
-        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
-        >>> distances = env.distance_to([env.n_bins // 2])
-        >>> fields = [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
-        >>> frame_times = np.arange(len(fields)) / 30.0
-
-        Interactive exploration requires a display; video export requires ffmpeg:
-
-        >>> viewer = env.animate_fields(
-        ...     fields, frame_times=frame_times, backend="napari"
-        ... )  # doctest: +SKIP
-        >>> env.clear_cache()  # Clear caches before using parallel video workers
-        >>> env.animate_fields(  # doctest: +SKIP
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="video",
-        ...     save_path="learning.mp4",
-        ...     speed=0.5,
-        ...     n_workers=4,
-        ...     frame_labels=[f"Trial {i + 1}" for i in range(len(fields))],
-        ... )
-
-        Share an HTML player, or use an interactive notebook widget:
-
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="html",
-        ...     save_path="exploration.html",
-        ... )
-        >>> widget_viewer = env.animate_fields(
-        ...     fields, frame_times=frame_times, backend="widget"
-        ... )
-        VBox(...)
-
-        Position, pose and heading overlays use coordinates in the environment frame:
-
-        >>> from neurospatial.animation import (
-        ...     PositionOverlay,
-        ...     BodypartOverlay,
-        ...     Skeleton,
-        ...     HeadDirectionOverlay,
-        ... )
-        >>> trajectory = np.c_[
-        ...     np.linspace(2.0, 18.0, len(fields)), np.full(len(fields), 10.0)
-        ... ]
-        >>> position_overlay = PositionOverlay(
-        ...     positions=trajectory, color="red", trail_length=3
-        ... )
-        >>> skeleton = Skeleton.from_edge_list([("nose", "tail")], name="rodent")
-        >>> bodypart_overlay = BodypartOverlay(
-        ...     data={"nose": trajectory + [0.5, 0.0], "tail": trajectory - [0.5, 0.0]},
-        ...     skeleton=skeleton,
-        ...     colors={"nose": "red", "tail": "blue"},
-        ... )
-        >>> heading_overlay = HeadDirectionOverlay(
-        ...     headings=np.linspace(0.0, np.pi, len(fields)), color="yellow"
-        ... )
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> _ = regions.add("goal", point=(18.0, 10.0))
-        >>> env = env.with_regions(regions)
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="html",
-        ...     save_path="overlays.html",
-        ...     overlays=[position_overlay, bodypart_overlay, heading_overlay],
-        ...     show_regions=True,
-        ... )
-
-        Multiple animals can have separate position overlays:
-
-        >>> second_animal = PositionOverlay(
-        ...     positions=trajectory + [1.0, 1.0], color="blue"
-        ... )
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="html",
-        ...     save_path="animals.html",
-        ...     overlays=[position_overlay, second_animal],
-        ... )
-
-        Subsample a memory-mapped field array before rendering:
-
-        >>> from neurospatial.animation import subsample_frames
-        >>> fields_mmap = np.lib.format.open_memmap(
-        ...     "fields.npy",
-        ...     mode="w+",
-        ...     dtype="float64",
-        ...     shape=(len(fields), env.n_bins),
-        ... )
-        >>> fields_mmap[:] = np.asarray(fields)
-        >>> fields_sub = subsample_frames(fields_mmap, target_fps=15, source_fps=30)
-        >>> frame_times_sub = np.arange(len(fields_sub)) / 15.0
-        >>> path = env.animate_fields(
-        ...     fields_sub,
-        ...     frame_times=frame_times_sub,
-        ...     backend="html",
-        ...     save_path="subsampled.html",
-        ... )
-
-        Timestamps align overlays recorded at a different sampling rate:
-
-        >>> overlay_times = np.arange(60) / 250.0
-        >>> trajectory_250hz = np.c_[np.linspace(2.0, 18.0, 60), np.full(60, 10.0)]
-        >>> aligned_overlay = PositionOverlay(
-        ...     positions=trajectory_250hz, times=overlay_times
-        ... )
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     overlays=[aligned_overlay],
-        ...     backend="html",
-        ...     save_path="aligned.html",
-        ... )
-
-        """
-        from neurospatial.animation.core import animate_fields as _animate
-
-        # frame_times is now required (no synthesis from fps)
-        # The core animate_fields() handles validation
-        return _animate(
-            env=self,
-            fields=fields,
-            backend=backend,
-            save_path=save_path,
-            overwrite=overwrite,
-            speed=speed,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            frame_labels=frame_labels,
-            overlay_trajectory=overlay_trajectory,
-            title=title,
-            dpi=dpi,
-            codec=codec,
-            bitrate=bitrate,
-            n_workers=n_workers,
-            dry_run=dry_run,
-            image_format=image_format,
-            max_html_frames=max_html_frames,
-            contrast_limits=contrast_limits,
-            show_colorbar=show_colorbar,
-            colorbar_label=colorbar_label,
-            overlays=overlays,
-            frame_times=frame_times,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
-        )
 
 
 # Helper functions for layout-specific rendering
 
 
 def _plot_grid_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -994,7 +162,7 @@ def _plot_grid_field(
 
 
 def _plot_polygon_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -1022,7 +190,7 @@ def _plot_polygon_field(
 
 
 def _plot_hex_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -1072,7 +240,7 @@ def _plot_hex_field(
 
 
 def _plot_trimesh_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -1111,7 +279,7 @@ def _plot_trimesh_field(
 
 
 def _plot_1d_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     ylabel: str,
@@ -1146,7 +314,7 @@ def _plot_1d_field(
 
 
 def _plot_scatter_field(
-    env: SelfEnv,
+    env: VisualizationConsumer,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -1225,3 +393,274 @@ def _plot_scatter_field(
     )
 
     return scatter
+
+
+def _plot(
+    env: VisualizationConsumer,
+    ax: matplotlib.axes.Axes | None = None,
+    show_regions: bool = False,
+    layout_plot_kwargs: dict[str, Any] | None = None,
+    regions_plot_kwargs: dict[str, Any] | None = None,
+    scale_bar: bool | ScaleBarConfig = False,
+    **kwargs: Any,
+) -> matplotlib.axes.Axes:
+    """Implement Environment.plot using explicit visualization inputs."""
+    l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
+    l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
+
+    from neurospatial.layout._plotting_binning import plot_binning
+
+    ax = plot_binning(
+        env._binning,
+        env.connectivity,
+        env.dimension_ranges,
+        env.layout_type or "",
+        ax=ax,
+        **l_kwargs,
+    )
+    # layout.plot() always returns an Axes object, never None
+    assert ax is not None
+
+    if show_regions and hasattr(env, "regions") and env.regions is not None:
+        from neurospatial.regions.plot import plot_regions
+
+        r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
+        plot_regions(env.regions, ax=ax, **r_kwargs)
+
+    plot_title = env.name
+    if env.layout_type:
+        plot_title += f" ({env.layout_type})"
+
+    # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
+    if ax.get_title() == "":
+        ax.set_title(plot_title)
+
+    # Add scale bar if requested
+    _add_scale_bar_if_requested(env, ax, scale_bar)
+
+    return ax
+
+
+def _plot_1d(
+    env: VisualizationConsumer,
+    ax: matplotlib.axes.Axes | None = None,
+    layout_plot_kwargs: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> matplotlib.axes.Axes | None:
+    """Implement Environment.plot_1d using explicit visualization inputs."""
+    l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
+    l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
+    if env.is_linearized_track:
+        linearization = env._binning.linearization
+        if isinstance(linearization, TrackLinearization):
+            from neurospatial.layout._plotting import plot_track_linear
+
+            ax = plot_track_linear(
+                ax=ax,
+                title=env.layout_type or "",
+                linearization=linearization,
+                grid_edges=linearization.grid_edges,
+                **l_kwargs,
+            )
+        else:
+            warnings.warn(
+                f"Layout '{env._layout_type_used}' is 1D but does not "
+                "have a 'plot_linear_layout' method. Skipping 1D plot.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+    else:
+        warnings.warn(
+            "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+    return ax
+
+
+def _plot_field(
+    env: VisualizationConsumer,
+    field: NDArray[np.float64],
+    ax: matplotlib.axes.Axes | None = None,
+    cmap: str | Colormap = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    colorbar: bool = True,
+    colorbar_label: str = "",
+    nan_color: str | None = "lightgray",
+    rasterized: bool = True,
+    scale_bar: bool | ScaleBarConfig = False,
+    **kwargs: Any,
+) -> matplotlib.axes.Axes:
+    """Implement Environment.plot_field using explicit visualization inputs."""
+    if field.ndim != 1 or field.shape[0] != env.n_bins:
+        raise ValueError(
+            f"field must be 1D array with length n_bins={env.n_bins}, "
+            f"got shape {field.shape}"
+        )
+
+    # Check dimensionality for spatial plots
+    if not env.is_linearized_track and env.n_dims > 2:
+        raise NotImplementedError(
+            f"Cannot plot {env.n_dims}D fields spatially. "
+            "Only 1D and 2D environments are supported. "
+            "Consider using marginal plots, slicing, or 3D scatter plots instead."
+        )
+
+    # Polar envs render via the same dispatch but with polar-aware
+    # axis labels and aspect ratio: bin_centers[:, 0] is
+    # distance (env units), bin_centers[:, 1] is angle in radians.
+    # The label switch happens at the bottom of this method, after
+    # dispatch.
+
+    # Create axes if needed
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 7))
+
+    # Auto vmin/vmax
+    if vmin is None:
+        vmin = np.nanmin(field)
+        if np.isnan(vmin) or np.isinf(vmin):
+            vmin = 0.0
+
+    if vmax is None:
+        vmax = np.nanmax(field)
+        if np.isnan(vmax) or np.isinf(vmax):
+            vmax = 1.0
+
+    # Ensure vmin < vmax
+    if vmin >= vmax:
+        vmax = vmin + 1.0
+
+    # Choose rendering from the structure published with the bins.
+    binning = env._binning
+    mappable = None
+    if env.n_dims == 1 and not env.is_linearized_track:
+        ax.plot(env.bin_centers[:, 0], field, **kwargs)
+        unit_label = f" ({env.units})" if env.units else ""
+        ax.set_xlabel(f"Position{unit_label}")
+        ax.set_ylabel(colorbar_label or "Field Value")
+    elif binning.rectilinear is not None or binning.grid_frame is not None:
+        mappable = _plot_grid_field(
+            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+        )
+    elif isinstance(binning.shapes, HexagonShapes):
+        mappable = _plot_hex_field(
+            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+        )
+    elif isinstance(binning.shapes, TriangleShapes):
+        mappable = _plot_trimesh_field(
+            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+        )
+    elif isinstance(binning.shapes, PolygonCells):
+        mappable = _plot_polygon_field(
+            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+        )
+    elif binning.linearization is not None or env.is_linearized_track:
+        # Legacy saved tracks retain their previous missing-grid refusal
+        # until loading restores their full linearization data.
+        mappable = _plot_1d_field(env, field, ax, colorbar_label, **kwargs)
+    else:
+        mappable = _plot_scatter_field(
+            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+        )
+
+    # Add colorbar (not for 1D)
+    # Note: mappable can be None if all field values are NaN and nan_color=None
+    if colorbar and mappable is not None and not env.is_linearized_track:
+        cbar = plt.colorbar(mappable, ax=ax)
+        if colorbar_label:
+            cbar.set_label(colorbar_label, fontsize=12)
+        cbar.ax.tick_params(labelsize=10)
+
+    # Format axes. Polar envs (from from_polar_egocentric) carry
+    # bin_centers as (distance, angle in radians), not (x, y), so
+    # the default "X Position" / "Y Position" labels are silently
+    # wrong; relabel and skip the equal-aspect lock (a polar map's
+    # angular extent is fixed by bin_centers[:, 1] but its distance
+    # extent is independent and physical).
+    if not env.is_linearized_track and env.n_dims != 1:
+        system = env._coordinate_system
+        xlabel, ylabel = system.axis_labels(env.units)
+        if system.equal_aspect:
+            ax.set_aspect("equal")
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+
+        if env.dimension_ranges and len(env.dimension_ranges) >= 2:
+            ax.set_xlim(env.dimension_ranges[0])
+            ax.set_ylim(env.dimension_ranges[1])
+
+    # Add scale bar if requested
+    _add_scale_bar_if_requested(env, ax, scale_bar)
+
+    return ax
+
+
+def _animate_fields(
+    env: VisualizationConsumer,
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    *,
+    frame_times: NDArray[np.float64],
+    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+    save_path: str | None = None,
+    overwrite: bool = False,
+    speed: float = 1.0,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    frame_labels: Sequence[str] | None = None,
+    overlay_trajectory: NDArray[np.float64] | None = None,
+    title: str = "Spatial Field Animation",
+    dpi: int = 100,
+    codec: str = "h264",
+    bitrate: int = 5000,
+    n_workers: int | None = None,
+    dry_run: bool = False,
+    image_format: Literal["png", "jpeg"] = "png",
+    max_html_frames: int = 500,
+    contrast_limits: tuple[float, float] | None = None,
+    show_colorbar: bool = False,
+    colorbar_label: str = "",
+    overlays: list[OverlayProtocol] | None = None,
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
+    scale_bar: bool | ScaleBarConfig = False,
+    **kwargs: Any,
+) -> Any:
+    """Implement Environment.animate_fields using explicit visualization inputs."""
+    from neurospatial.animation.core import animate_fields as _animate
+
+    # frame_times is now required (no synthesis from fps)
+    # The core animate_fields() handles validation
+    return _animate(
+        env=env,
+        fields=fields,
+        backend=backend,
+        save_path=save_path,
+        overwrite=overwrite,
+        speed=speed,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        frame_labels=frame_labels,
+        overlay_trajectory=overlay_trajectory,
+        title=title,
+        dpi=dpi,
+        codec=codec,
+        bitrate=bitrate,
+        n_workers=n_workers,
+        dry_run=dry_run,
+        image_format=image_format,
+        max_html_frames=max_html_frames,
+        contrast_limits=contrast_limits,
+        show_colorbar=show_colorbar,
+        colorbar_label=colorbar_label,
+        overlays=overlays,
+        frame_times=frame_times,
+        show_regions=show_regions,
+        region_alpha=region_alpha,
+        scale_bar=scale_bar,
+        **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
+    )
