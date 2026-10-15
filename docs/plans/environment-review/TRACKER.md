@@ -65,7 +65,7 @@ The review's severity and introduction claims are hypotheses until checked here.
   raises `RecursionError`. An iterative preflight now rejects container cycles
   before decoding while allowing shared acyclic records and long valid affine
   histories. Verification: 478 IO tests and 15 Python 3.10 ingress tests pass;
-  independent review and publication are in progress.
+  independent review approved; published as `9436ae14` and merged forward without rewriting history.
 
 ## Architecture recommendations
 
@@ -75,16 +75,16 @@ for repairing numerical defects.
 
 | ID | Recommendation / acceptance criterion | Status |
 | --- | --- | --- |
-| A01 | Separate owned geometry, validation and codecs from native builders; preserve public import paths and enforce package-level dependency rules. | User approved implementation after correctness repairs, in a new stacked PR. |
-| A02 | Expose read-only `env.binning`; numerical functions consume data while Environment owns analysis caches. Remove external private-state reads/writes and casts where feasible. | User approved implementation after correctness repairs, in a new stacked PR. |
-| A03 | Behavior follows owned geometry/connectivity rather than descriptive type names or construction parameters. Includes segmentation, boundaries, circularity and rebin capability. | R01/R02/R06/R12 cover defects; audit remaining cases. |
-| A04 | Remove parallel/dead paths: duplicate rebin implementations, unused provider protocols/decorators/state versions/validators, inconsistent Cartesian guards and duplicate publication validation. | Reported; verify each path is actually dead before removal. |
-| A05 | Consolidate traversal/tolerances only where contracts match. | Clipped traversal is intentionally a certificate boundary, not a defect: `45a19995` documents and tests 66 certified/uncertified cases. Unwrapping to parent diffusion geometry would be incorrect. Other consolidation remains scoped to matching contracts. |
-| A06a | Put subset/rebin in appropriately named derivation modules. | Design. |
-| A06b | Move shared time-support helpers from environment trajectory into `_intervals.py`. | Design. |
-| A06c | Remove the `ops.transforms` / `environment._affine` dependency cycle and import-linter exception. | Design. |
-| A06d | Consolidate wall evidence and place wall-hit ownership with geometry consumers. | Design; coordinate with R04/R23. |
-| A06e | Extract publication and summary formatting from public core without changing ownership or public signatures. | Design. |
+| A01 | Separate owned geometry, validation and codecs from native builders; preserve public import paths and enforce package-level dependency rules. | Implemented in the structural branch; see the verification record below. |
+| A02 | Expose read-only `env.binning`; numerical functions consume data while Environment owns analysis caches. Remove external private-state reads/writes and casts where feasible. | Public snapshots, nearest lookup and differential-operator boundaries implemented (`d4d9b145`, `2f5c8e2e`, `256e7f48`, `e2b2f946`). Approved coordinate/diffusion/MRF/Gaussian operations are in progress. |
+| A03 | Behavior follows owned geometry/connectivity rather than descriptive type names or construction parameters. Includes segmentation, boundaries, circularity and rebin capability. | Fixed: graph-based segmentation/boundaries and owned polar circularity replace descriptive dispatch. Factor rebin uses geometric eligibility, preserves supported native navigation and refuses custom paths it cannot reconstruct (`6f6d1f2d`, `da94d99a`). |
+| A04 | Remove parallel/dead paths: duplicate rebin implementations, unused provider protocols/decorators/state versions/validators, inconsistent Cartesian guards and duplicate publication validation. | Audited and simplified: removed empty protocols, unused finite-volume/track provider protocols and constant environment state versions (`b9e43328`, `d9a5b66d`). Kept active public validators and legacy fitted-state guards; their contracts differ. Both rebin input policies share publication but retain distinct partition rules. |
+| A05 | Consolidate traversal/tolerances only where contracts match. | Clipped traversal is intentionally a certificate boundary, not a defect: `45a19995` documents and tests 66 certified/uncertified cases. Unwrapping to parent diffusion geometry would be incorrect. Other consolidation remains scoped to matching contracts; a universal visitor or tolerance would erase distinctions between lookup error bounds, physical contact and numerical certification. |
+| A06a | Put subset/rebin in appropriately named derivation modules. | Fixed in `00b0327b`: `_subset.py` and `_rebin.py`; six moved algorithm bodies unchanged, 4,006 probes identical, independent review approved. |
+| A06b | Move shared time-support helpers from environment trajectory into `_intervals.py`. | Fixed in `78d67b89`; old private aliases retained for compatibility. |
+| A06c | Remove the `ops.transforms` / `environment._affine` dependency cycle and import-linter exception. | Fixed in `3999fb28`; numerical transform wrappers delegate to the public environment method. No ignored dependency edges remain. |
+| A06d | Consolidate wall evidence and place wall-hit ownership with geometry consumers. | Fixed in `128b41ee`: geometry owns wall-frame evidence, ops owns hit-bin resolution; 4,006 general and 96 wall probes identical, independent review approved. |
+| A06e | Extract publication and summary formatting from public core without changing ownership or public signatures. | Fixed in `b031f3a7` and `20a91cd0`: `_publication.py` and `_summary.py`; 4,004 probes and 56 summary strings identical, independent review approved. |
 | A07 | Reconsider read-only graph implementation based on measured costs and JSON compatibility. | Optional design; R26 is the concrete compatibility defect. |
 | A08 | Consider an `env.plot.*` accessor. | Optional API redesign; tracked, not selected. |
 | A09 | Audit function-local imports; change only those needed for dependency clarity or measured import cost. | Optional cleanup; not a correctness defect. |
@@ -124,3 +124,25 @@ Their passing regressions remain part of the broader gate.
 - The stack is being merged forward without rewriting published history. Source
   repairs listed above still require downstream integration and final CI before
   the overall task is complete.
+
+
+## Structural verification
+
+- `geometry/` owns data, validation and codecs; `layout/` and `ops/` are
+  independent peers above it, with environment adapters above both. Package-level
+  import rules pass without exceptions. Public imports and legacy private pickle
+  aliases remain covered by compatibility tests.
+- Mechanical geometry separation passed 4,004 identical baseline probes,
+  5,089 broader tests and independent review. Later nearest/operator/API additions
+  preserve all existing numerical probes; intended changes are documented API
+  records and rebin behavior for geometrically supported analysis selections.
+- Factor rebin additionally refuses unknown path weights or omitted custom
+  connections. It no longer silently reconstructs incompatible navigation.
+  This safety check adds measured work (approximately 15–24 ms on the recorded
+  30-by-30 examples); no speed improvement is claimed.
+- The compatibility transform wrapper retains its older ValueError wording.
+  The Environment API uses its named Cartesian-only exception, including unbound
+  calls; removing this distinction would change the wrapper's tested contract.
+- Environment's standard cached properties retain explicit `clear_cache()`
+  control. The public versioned decorator remains available for mutable custom
+  hosts; removing a live public utility is unnecessary for immutable environments.
