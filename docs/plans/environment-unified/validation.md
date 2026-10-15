@@ -315,3 +315,37 @@ Independent review found no remaining source or architecture issues and passed
 parent CI refresh confirms that #67, #68, #70, #71, #72, #73, #74 and #76 each
 have 24 successful checks and one skipped check. Superseded cancelled duplicates
 are excluded. Stage F remains local; no new PR is implied by these parent results.
+
+
+## Supplied review repairs, 2026-10-15
+
+Review issues and their owning PRs are recorded in
+[the tracker](../environment-review/TRACKER.md). Parent fixes were merged
+forward without rewriting published history. The additional structural work
+uses a separate branch above Stage F.
+
+An isolated CPU environment was created from `uv.lock` with `dev`, `nwb` and
+`xarray` extras, then the widget dependencies installed by CI. It deliberately
+has no napari plugin, so GUI fixtures cannot affect unrelated CPU tests.
+The exact full-suite command at `8c35617e` was:
+
+```bash
+PYTHONPATH=src MPLBACKEND=Agg OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  python -m pytest tests -n4 -q -m 'not slow and not napari and not wallclock'
+```
+
+Result: **13,846 passed, 335 skipped** in 287 seconds. Warnings remain enabled,
+including established numerical edge-case warnings. Three affine regressions
+found in the earlier clean run were fixed on the owning Stage E PR and rerun
+before this gate. Optional widget/docstring checks also pass with CI's widget
+installation. A subsequent metadata-cycle preflight has separate complete IO
+and Python 3.10 ingress verification. This is CPU validation; GUI/GPU checks
+are not claimed.
+
+
+After the cycle-preflight merge, the complete IO gate passed **590 tests** with
+seven optional skips and RuntimeWarnings treated as errors. Source and all
+static contracts passed for 257 files. Repository Ruff, formatting and whitespace
+checks passed. Python 3.10 ingress tests passed 15 tests with two optional skips;
+independent cycle probes included shared references and 50,000-level acyclic
+nesting in the iterative helper.
