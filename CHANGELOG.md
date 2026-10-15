@@ -8,6 +8,9 @@
   coverage, distinguishing missing measurements from measured zero firing.
   Unsupported scores and batch summaries provide setup guidance rather than
   treating an unobserved wall as zero activity.
+  When the border score is unavailable, `summary_table()` labels a spatially
+  tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
+  border cell; single-unit and population tables agree.
 
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
