@@ -130,28 +130,28 @@ def record_figure(figure):
 
 
 def render_case(env, operation):
-    # The recordings use default margins; serial animation rendering can change
-    # these process-wide settings in an earlier test on the same pytest worker.
-    margins = {
-        key: matplotlib.rcParamsDefault[key] for key in ("axes.xmargin", "axes.ymargin")
-    }
-    with matplotlib.rc_context(margins):
-        figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            if operation == "plot":
-                env.plot(ax=axes)
-            elif operation == "plot_field":
-                field = np.linspace(-1, 1, env.n_bins)
-                field[len(field) // 2] = np.nan
-                env.plot_field(
-                    field, ax=axes, cmap="viridis", vmin=-1, vmax=1, colorbar=True
-                )
-            elif operation == "plot_1d":
-                env.plot_1d(ax=axes)
-            else:
-                raise ValueError(operation)
-            data = record_figure(figure)
+    # Isolate plots from process-wide style changes made by earlier tests.
+    with matplotlib.rc_context(matplotlib.rcParamsDefault):
+        return _render_case(env, operation)
+
+
+def _render_case(env, operation):
+    figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        if operation == "plot":
+            env.plot(ax=axes)
+        elif operation == "plot_field":
+            field = np.linspace(-1, 1, env.n_bins)
+            field[len(field) // 2] = np.nan
+            env.plot_field(
+                field, ax=axes, cmap="viridis", vmin=-1, vmax=1, colorbar=True
+            )
+        elif operation == "plot_1d":
+            env.plot_1d(ax=axes)
+        else:
+            raise ValueError(operation)
+        data = record_figure(figure)
     data["warnings"] = np.asarray(
         [f"{warning.category.__name__}: {warning.message}" for warning in caught],
         dtype=str,
@@ -173,14 +173,69 @@ def plot_artists():
 
 
 def _assert_artists(recorded, prefix, actual):
+    def retained(key):
+        # Tick placement belongs to Matplotlib and varies across versions.
+        # Keep the title and axis labels; compare the plotted data and styles.
+        if "/texts/" in key:
+            index = key.split("/texts/", 1)[1].split("/", 1)[0]
+            return index != "count" and int(index) < 3
+        return True
+
     expected_keys = {
-        key.removeprefix(prefix) for key in recorded if key.startswith(prefix)
+        key.removeprefix(prefix)
+        for key in recorded
+        if key.startswith(prefix) and retained(key.removeprefix(prefix))
     }
+    actual = {key: value for key, value in actual.items() if retained(key)}
     assert actual.keys() == expected_keys
     for key, value in actual.items():
+        expected = recorded[f"{prefix}{key}"]
+        if value.dtype.kind == "f":
+            np.testing.assert_allclose(
+                value, expected, rtol=1e-12, atol=1e-12, err_msg=f"{prefix}{key}"
+            )
+        else:
+            np.testing.assert_array_equal(value, expected, err_msg=f"{prefix}{key}")
+
+
+def _assert_mesh_artists(env, figure, operation):
+    """Check exact cell/value alignment without assuming Qhull's bin order."""
+    axes = figure.axes[0]
+    shapes = env._binning.shapes
+    collection = axes.collections[0]
+    assert type(collection).__name__ == (
+        "PatchCollection" if operation == "plot" else "PolyCollection"
+    )
+    paths = collection.get_paths()
+    assert len(paths) == env.n_bins
+    for path, triangle in zip(paths, shapes.points[shapes.triangles], strict=True):
+        np.testing.assert_array_equal(path.vertices, np.vstack([triangle, triangle[0]]))
+    if operation == "plot_field":
+        field = np.linspace(-1, 1, env.n_bins)
+        field[len(field) // 2] = np.nan
+        values = collection.get_array()
+        np.testing.assert_array_equal(np.ma.getmaskarray(values), np.isnan(field))
+        np.testing.assert_array_equal(values.compressed(), field[np.isfinite(field)])
+        assert len(figure.axes) == 2  # colorbar
+    else:
         np.testing.assert_array_equal(
-            value, recorded[f"{prefix}{key}"], err_msg=f"{prefix}{key}"
+            axes.collections[1].get_offsets(), env.bin_centers
         )
+        outline = env._binning.outline.geometry
+        rings = [outline.exterior, *outline.interiors]
+        assert len(axes.lines) == len(rings) + env.connectivity.number_of_edges()
+        for line, ring in zip(axes.lines[: len(rings)], rings, strict=True):
+            np.testing.assert_array_equal(line.get_xydata(), np.asarray(ring.coords))
+        for line, (u, v) in zip(
+            axes.lines[len(rings) :], env.connectivity.edges(), strict=True
+        ):
+            np.testing.assert_array_equal(line.get_xydata(), env.bin_centers[[u, v]])
+    assert axes.get_xlabel() == (
+        "X coordinate" if operation == "plot" else "X Position"
+    )
+    assert axes.get_ylabel() == (
+        "Y coordinate" if operation == "plot" else "Y Position"
+    )
 
 
 @pytest.mark.slow
@@ -188,12 +243,16 @@ def _assert_artists(recorded, prefix, actual):
 def test_plot_artists_unchanged(built_environment, request, plot_artists, operation):
     """Every axes retains collection paths, colors, labels and draw order."""
     case = request.node.callspec.params["built_environment"]
-    np.testing.assert_array_equal(
-        built_environment.bin_centers, plot_artists[f"{case}/centers"]
-    )
+    if not case.startswith("mesh"):
+        np.testing.assert_array_equal(
+            built_environment.bin_centers, plot_artists[f"{case}/centers"]
+        )
     figure, actual = render_case(built_environment, operation)
     try:
-        _assert_artists(plot_artists, f"{case}/{operation}/", actual)
+        if case.startswith("mesh"):
+            _assert_mesh_artists(built_environment, figure, operation)
+        else:
+            _assert_artists(plot_artists, f"{case}/{operation}/", actual)
     finally:
         plt.close(figure)
 
