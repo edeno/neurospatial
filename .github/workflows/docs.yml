@@ -13,10 +13,10 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
+# Isolate PR builds; keep main deployments serial and never cancel them.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
