@@ -417,6 +417,9 @@ class RebinConsumer(Protocol):
     @property
     def units(self) -> str | None: ...
 
+    @property
+    def regions(self) -> Regions: ...
+
 
 class SubsetConsumer(Protocol):
     """Published geometry, regions and metadata for selecting spatial bins."""
