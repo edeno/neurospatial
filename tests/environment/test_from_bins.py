@@ -874,3 +874,22 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
         Environment.from_bins(
             replace(transformed, faces=KnownFaces(faces._replace(A=faces.A * 7)))
         )
+
+
+@pytest.mark.parametrize("scale", [1e200, 1e-200])
+def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
+    centers = np.array([[0.5], [1.5]]) * scale
+    sizes = np.full(2, scale)
+    pairs = np.array([[0, 1]], dtype=np.intp)
+    edges = (np.arange(3.0) * scale,)
+    mask = np.ones(2, dtype=bool)
+    source = Binning(
+        "finite_extreme_grid",
+        SpatialBins.from_arrays(centers, sizes, 1, pairs, [scale]),
+        RectilinearLocator(edges, (2,), mask, None),
+        KnownFaces(FaceGeometry(pairs, np.ones(1), np.array([scale]), sizes)),
+        rectilinear=RectilinearGrid(edges, (2,), mask),
+    )
+    env = Environment.from_bins(source)
+    np.testing.assert_array_equal(env._face_geometry.distance, [scale])
+    np.testing.assert_array_equal(env.bin_at(centers), [0, 1])

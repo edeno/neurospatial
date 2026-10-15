@@ -746,7 +746,7 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
         # A matrix perturbation bounds each singular-value perturbation, so
         # source-frame projection errors stay independent of the world origin.
         singular = np.linalg.svd(basis, compute_uv=False)
-        perturbation = float(np.linalg.norm(basis_error))
+        perturbation = float(np.hypot.reduce(basis_error.ravel(), initial=0.0))
         stretch = float(np.prod(singular))
         stretch_error = (
             max(
@@ -768,7 +768,7 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
             if np.any(
                 np.abs(vector @ basis)
                 > normal_error
-                + 1e-12 * np.linalg.norm(vector) * np.linalg.norm(basis, axis=0)
+                + 1e-12 * np.hypot.reduce(vector) * np.hypot.reduce(basis, axis=0)
             ):
                 raise ValueError(
                     "grid faces need center links normal to shared cell faces."
@@ -821,9 +821,9 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
             "incorrect zero-area faces must be regenerated."
         )
     vectors = geometry.centers[pairs[:, 1]] - geometry.centers[pairs[:, 0]]
-    distances = np.linalg.norm(vectors, axis=1)
+    distances = np.hypot.reduce(vectors, axis=1)
     distance_error = (
-        np.linalg.norm(
+        np.hypot.reduce(
             geometry.center_error[pairs[:, 0]] + geometry.center_error[pairs[:, 1]],
             axis=1,
         )
