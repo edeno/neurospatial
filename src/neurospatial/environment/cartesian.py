@@ -843,7 +843,7 @@ class CartesianCoordinates:
 
         Evaluates bin-valued fields at continuous query points using either
         nearest-neighbor or linear interpolation. Nearest mode works on all
-        layout types; linear mode requires grid layouts with rectangular cells.
+        layout types; linear mode requires native or retained source grid axes.
 
         Parameters
         ----------
@@ -861,6 +861,8 @@ class CartesianCoordinates:
             - 'linear': Bilinear (2D) or trilinear (3D) interpolation for
               grids with rectangular cells: ``from_samples``, ``from_grid_mask``,
               ``from_pixel_mask``, ``from_polygon``, and grids read from NWB.
+              Rotated, reflected and sheared 2-D/3-D grids use their source axes;
+              queries remain in world coordinates.
               Inactive cells return NaN.
               Points outside grid bounds return NaN.
 
@@ -876,7 +878,7 @@ class CartesianCoordinates:
         ValueError
             If field has wrong shape, wrong dimensionality, contains NaN/Inf,
             points have wrong dimensionality, mode is invalid, or dimensions
-            don't match.
+            don't match, or affine projection cannot resolve source cell widths.
         NotImplementedError
             If mode='linear' is requested for non-grid layout.
 
@@ -894,6 +896,9 @@ class CartesianCoordinates:
         **Linear mode**: Uses scipy.interpolate.RegularGridInterpolator for
         smooth interpolation on rectangular grids. For linear functions
         f(x,y) = ax + by + c, interpolation is exact up to numerical precision.
+        Retained grids recover source center planes only within a bounded
+        projection error below one quarter of the smallest source cell width.
+        Positive interpolation weight on a resolved inactive corner returns NaN.
 
         **Outside handling**: Points outside the environment bounds return NaN
         in both modes. This prevents extrapolation errors.
@@ -1281,14 +1286,14 @@ class CartesianCoordinates:
         dimensionality.
 
         Translation and similarity transforms retain finite-volume smoothing
-        and differential operators. Positive diagonal scaling also retains grid
-        faces and rectilinear interpolation, with updated edges. Reflections
-        preserve bin identity through inverse lookup and drop rectilinear
-        interpolation. General affine maps keep containment and scale cell
-        measures; smoothing refuses when the map loses the right angles needed
-        by finite-volume faces. Triangle plots retain their exact mapped vertices
-        under every invertible affine map. Tracks accept translation and
-        similarity only.
+        and differential operators. Cartesian 2-D/3-D grids retain source axes
+        for linear interpolation and movement allocation under rotations,
+        reflections and shear. Planar grids draw exact cell corners. New numerical
+        transforms need stored face normals, certified source flux distances and
+        perpendicular transformed center links (normalized residual at most 1e-12). Smoothing
+        refuses when those right angles are lost; exact cells remain available.
+        Triangle vertices and deformed hexagon polygons retain their exact mapped
+        shapes. Tracks accept translation and similarity only.
 
         Parameters
         ----------
@@ -1316,7 +1321,9 @@ class CartesianCoordinates:
             - `regions`: Point and polygon regions are transformed
             - `metadata`: Units preserved, frame updated with "_transformed" suffix
 
-            All other properties are copied from the source environment.
+            Bin IDs and edge ordering are retained. Cell/face measures and
+            available numerical capabilities follow the transformed geometry.
+            Bin-aligned values and fitted models are not rescaled or refitted.
 
         Raises
         ------

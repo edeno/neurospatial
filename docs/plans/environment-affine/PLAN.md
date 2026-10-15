@@ -1,6 +1,8 @@
 # Stage E — Preserve geometry through affine transforms
 
-**Status:** E0–E4 complete on 2026-10-15. E5 validation in progress.
+**Status:** E0–E5 complete on 2026-10-15. Independently reviewed; final CPU
+gate: 13,727 passed, 31 skipped. See [validation.md](validation.md) for evidence
+and validation limits.
 **Branch:** `feature/environment-affine`, stacked on the repaired Stage D
 `feature/environment-wall-visibility` at `98bf9790` ([PR #74](https://github.com/edeno/neurospatial/pull/74)).
 This is a local implementation branch; opening another PR is a separate action.
@@ -51,7 +53,7 @@ This stage changes geometry capabilities, not firing rates or fitted models.
 Users still decide whether existing bin-aligned values retain their scientific
 meaning after changing units or deforming an arena.
 
-## Evidence from the current implementation
+## Baseline evidence before Stage E
 
 The deterministic planning probe uses a 3-by-4 grid, query `(1.25, 1.75)` and
 field `2*x + 3*y`; native linear interpolation returns `7.75`.
@@ -63,10 +65,11 @@ field `2*x + 3*y`; native linear interpolation returns `7.75`.
 | x shear by 0.3*y | Preserved | Refused | `PathCollection` | No |
 
 Observed at `21b2c5f4`; local output is
-`/private/tmp/stage-e-plan-probe.log`. These are confirmed capability gaps,
-not evidence that current rotation/reflection lookup or diffusion is broken.
+`/private/tmp/stage-e-plan-probe.log`. These were the confirmed capability gaps
+that motivated Stage E. Final behavior and checks are recorded in
+[validation.md](validation.md).
 
-Relevant implementation:
+Implementation at that baseline:
 
 - [`_derive.py`](../../../src/neurospatial/layout/_derive.py):
   `_transform_binning` drops the rectilinear component except for positive

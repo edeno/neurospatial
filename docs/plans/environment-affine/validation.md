@@ -183,8 +183,75 @@ never grants faces to a MissingFaces record.
 - Independent recheck: 73 tests passed (four Hypothesis chain cases, frame and
   affine-face suites); all eight multi-hole angle/reflection probes passed.
 - Source plus five typing contracts: 248 files passed; repository Ruff/format
-  and diff whitespace checks passed. A fresh full CPU run is required below.
+  and diff whitespace checks passed. The fresh full CPU run below passes.
 
 Logs: `/private/tmp/stage-e-final-cpu.log` (initial failure),
 `/private/tmp/stage-e-inverse-wide2.log`, `/private/tmp/stage-e-inverse-regressions.log`,
 `/private/tmp/stage-e-final-typing3.log`.
+
+## E5 — User workflows and final compatibility gate
+
+The alignment guide executes a simulated image-mask/landmark calibration workflow
+through public `compute_spatial_rates`, interpolation, exact plotting and dict
+restoration. A separate position-only example verifies that inferred domains
+assert no physical walls. The migration/capability table distinguishes planar
+rendering and linear spike encoding from 3-D interpolation/linear occupancy,
+legacy records, partial clipping, numerical refusals and raster restrictions.
+Independent documentation review and both focused guide executions passed.
+
+The local isolated environment is `.venv` (Python 3.13.5), with dev, NWB, xarray
+and animation extras. Commands use `uv run --no-sync`, `MPLBACKEND=Agg`,
+`MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache` and
+`UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache`. The final standalone Markdown
+check also sets `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`,
+`VECLIB_MAXIMUM_THREADS` and `NUMEXPR_NUM_THREADS` to 1, matching the CPU workers'
+thread discipline. An earlier standalone run was interrupted in an eigenvalue
+calculation after six passing documents; the controlled rerun passed all 26
+document/API checks. The CPU runner selects
+`not slow and not napari and not gui and not wallclock`, disables the napari
+pytest plugin and runs four workers. It retains the prior 51 explicit GUI-node
+exclusions in `/private/tmp/immutable-gui-exclusions.json`; those require a
+display and are not counted as CPU passes. The runner is
+`/private/tmp/run_immutable_cpu.py`. Slow plotting/storage cases run separately.
+
+| Check | Result |
+| --- | --- |
+| Final full CPU rerun | 13,727 passed, 31 skipped |
+| Geometry/derivation/file/NWB after inverse repairs, RuntimeWarnings as errors | 900 passed |
+| Final normal/frame/face/consumer/NWB gate before inverse repairs | 174 passed |
+| Slow-inclusive plotting and saved geometry | 143 passed |
+| Source doctests after inverse repairs | 596 passed, 126 skipped |
+| Complete executable Markdown and API checks | 26 passed |
+| Source and five typing contracts | 248 files passed |
+| Repository Ruff, formatting and diff whitespace | Passed |
+
+The final 4,072-probe snapshot at
+`/private/tmp/environment-stage-e-final-rechecked.npz` matches the baseline
+exactly in every numerical and behavioral probe. Four public docstrings differ:
+two deterministic region examples inherited from the parent repair, plus
+`apply_transform` and `interpolate` documenting the new capabilities. There are
+no signature changes in this comparison. Intentional affine-probe changes are
+rotation/reflection/shear interpolation returning 7.75 and planar QuadMesh
+rendering. Native results, IDs, sizes, face availability and retained smoothing
+arrays are unchanged. Shear still refuses uncertified numerical operations.
+
+The repeated affine probe observed 0.216132 seconds and peak RSS 196,214,784 bytes
+on this macOS runner, compared with E0's 0.245267 seconds and 195,117,056 bytes.
+These are individual observations of a small plotting workflow, not evidence of
+a performance improvement.
+
+No real recording/image-mask slice is cached under `data/` (only its README and
+loader), so real-recording validation was not run. GUI/GPU and the remote CI
+matrix are outside this local gate. The branch remains local; no Stage E PR is
+opened by this implementation. A general skew diffusion solver, 3-D linear
+spike encoding, 3-D clipping and new track deformation rules remain out of scope.
+
+Logs/captures:
+
+- `/private/tmp/stage-e-final-cpu2.log`
+- `/private/tmp/stage-e-final-doctests2.log`
+- `/private/tmp/stage-e-final-docs-api2.log`
+- `/private/tmp/stage-e-final-slow-geometry.log`
+- `/private/tmp/stage-e-final-seeded-chains.log` (seed 417; four passed)
+- `/private/tmp/stage-e-final-rechecked-compare.log`
+- `/private/tmp/environment-affine-final.json`

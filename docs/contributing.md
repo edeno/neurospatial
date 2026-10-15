@@ -132,10 +132,26 @@ their current behavior; the normal need not align with a centroid link.
 `MissingFaces` retains no areas, so zero rows there may conservatively suppress
 contacts as navigation-only edges. Loading can verify nonzero directions against
 available geometry but cannot recover discarded area/activity information.
-Numerical operations must continue to honor the missing-face reason. Binning
-codec version 2 stores normals; version 1 loads without them. New stored geometry
-components require a codec version increment so older readers cannot silently
-ignore a capability they do not understand.
+Numerical operations must continue to honor the missing-face reason. New affine
+numerical support requires stored normal authority, source orthogonality and
+geometric flux distances, and transformed orthogonality residuals at most 1e-12.
+Area vectors transform by `abs(det(L)) * inverse(L).T`; log/scaled arithmetic
+protects representability. Native approximate meshes retain their existing
+similarity behavior; a normal alone does not certify a new deformation.
+
+`Binning.grid_frame` optionally stores an owned `FramedGrid`: current source
+`RectilinearGrid` axes/mask plus their forward world map. Migrate consumers via
+`require_grid_context` and map coordinates explicitly. Keep `rectilinear` and
+legacy world-grid properties truthful. Framed interpolation/allocation share
+bounded source-plane recovery capped at a quarter of the smallest cell width.
+QuadMesh consumers transform corners and reshape values with the source mask.
+Partial clipping drops the tensor-grid component. `GridBinningSpec` separately
+describes future rebin construction and must not replace current-cell geometry.
+
+Binning codec version 3 stores frames and normals; readers accept version 2
+(normals only) and version 1 (neither component). New stored geometry components
+require a codec version increment so older readers cannot silently ignore a
+capability they do not understand. Environment-v3/NWB 3.0 envelopes are unchanged.
 
 Combined environments retain child binnings instead of inventing physical faces
 for navigation bridges. Scalar diffusion assembles the certified child blocks
