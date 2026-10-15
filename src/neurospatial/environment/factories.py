@@ -279,7 +279,9 @@ class EnvironmentFactories:
         components : mapping of str to Environment
             Ordered, uniquely keyed Cartesian components in matching units and frame.
         auto_bridge : bool, default=True
-            Infer mutual-nearest-neighbor navigation bridges. These do not carry diffusion.
+            Infer mutual-nearest-neighbor navigation bridges that avoid physical
+            walls and third-component interiors. Boundary-only contact is allowed
+            unless it meets a physical wall. Bridges do not carry diffusion.
         max_mnn_distance : float or None, optional
             Inclusive maximum inferred bridge length, in coordinate units.
         bridge_conductances : mapping or None, optional

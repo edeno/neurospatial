@@ -274,6 +274,219 @@ def test_complementary_unbounded_nearest_subsets_are_valid():
     np.testing.assert_array_equal(combined.bin_at([[-100, 0], [100, 0]]), [0, 1])
 
 
+@pytest.mark.parametrize("dims", [1, 2, 3])
+def test_automatic_bridges_do_not_bypass_a_third_grid_component(dims):
+    joined = Environment.combine(
+        {
+            key: grid(shift, count=1, dims=dims)
+            for key, shift in (("a", 0), ("b", 2), ("c", 4))
+        }
+    )
+    assert not joined.connectivity.has_edge(0, 2)
+    assert joined.path_between(0, 2) == [0, 1, 2]
+
+
+@pytest.mark.parametrize("dims", [1, 2, 3])
+@pytest.mark.parametrize("finite", [False, True])
+def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
+    centers = np.array([[shift, *([0.0] * (dims - 1))] for shift in (0.0, 2.0, 4.0)])
+    parent = Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(
+                centers, np.ones(3), dims, np.empty((0, 2), dtype=int), []
+            ),
+            NearestBinLocator(centers, max_distance=0.25 if finite else None),
+            MissingFaces("Sites lack faces."),
+        )
+    )
+    components = {
+        key: parent.subset(bins=np.arange(3) == index)
+        for index, key in enumerate(("a", "b", "c"))
+    }
+    joined = Environment.combine(components)
+    assert not joined.connectivity.has_edge(0, 2)
+    assert joined.path_between(0, 2) == [0, 1, 2]
+
+
+@pytest.mark.parametrize("angle", [0.0, 0.1, 0.3, 0.37, 0.7])
+def test_automatic_bridge_can_follow_a_third_components_exterior_boundary(angle):
+    from neurospatial.ops.transforms import Affine2D
+
+    third = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.array([2.0, 3.0]), np.array([0.5, 1.5])),
+        units="cm",
+        frame="lab",
+    )
+    transform = Affine2D(
+        np.array(
+            [
+                [np.cos(angle), -np.sin(angle), 0.0],
+                [np.sin(angle), np.cos(angle), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+    )
+    joined = Environment.combine(
+        {
+            key: component.apply_transform(transform)
+            for key, component in (
+                ("a", grid(count=1)),
+                ("b", third),
+                ("c", grid(4, count=1)),
+            )
+        }
+    )
+    assert joined.connectivity.has_edge(0, 2)
+
+
+def test_automatic_bridge_cannot_follow_an_internal_voxel_face():
+    def end(shift):
+        return Environment.from_grid_mask(
+            np.ones((1, 1, 1), dtype=bool),
+            grid_edges=(
+                np.array([shift, shift + 1]),
+                np.array([0.5, 1.5]),
+                np.array([0.0, 1.0]),
+            ),
+        )
+
+    middle = Environment.from_grid_mask(
+        np.ones((1, 2, 1), dtype=bool),
+        grid_edges=(np.array([2.0, 3.0]), np.arange(3.0), np.arange(2.0)),
+    )
+    joined = Environment.combine({"a": end(0.0), "b": middle, "c": end(4.0)})
+    assert not joined.connectivity.has_edge(0, 3)
+
+
+@pytest.mark.parametrize("angle", [0.0, 0.3])
+def test_bridge_can_follow_an_external_voxel_face_after_rotation(angle):
+    from neurospatial.ops.transforms import AffineND
+
+    transform = np.eye(4)
+    transform[:2, :2] = [
+        [np.cos(angle), -np.sin(angle)],
+        [np.sin(angle), np.cos(angle)],
+    ]
+    components = {
+        key: Environment.from_grid_mask(
+            np.ones((1, 1, 1), dtype=bool),
+            grid_edges=(
+                np.array([shift, shift + 1]),
+                np.array([low, low + 1]),
+                np.arange(2.0),
+            ),
+        ).apply_transform(AffineND(transform))
+        for key, shift, low in (("a", 0.0, 0.5), ("b", 2.0, 1.0), ("c", 4.0, 0.5))
+    }
+    joined = Environment.combine(components)
+    assert joined.connectivity.has_edge(0, 2)
+
+
+def test_physical_wall_still_blocks_a_boundary_following_bridge():
+    from shapely.geometry import LineString
+
+    from neurospatial.arena import OpenArena
+
+    third = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.array([2.0, 3.0]), np.array([0.5, 1.5])),
+        arena=OpenArena(box(2, 0.5, 3, 1.5), walls=(LineString([(2, 0.5), (3, 0.5)]),)),
+        units="cm",
+        frame="lab",
+    )
+    joined = Environment.combine(
+        {"a": grid(count=1), "b": third, "c": grid(4, count=1)}
+    )
+    assert not joined.connectivity.has_edge(0, 2)
+
+
+def test_bounded_nearest_clearance_uses_its_retained_partition():
+    centers = np.array([[2.0, 1.0], [2.0, -1.0]])
+    parent = Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(
+                centers, [1, 1], 2, np.empty((0, 2), dtype=int), []
+            ),
+            NearestBinLocator(centers, max_distance=2.0),
+            MissingFaces("Sites lack faces."),
+        )
+    )
+    middle = parent.subset(bins=np.array([True, False]))
+    # The radius ball extends across this bridge, but its retained Voronoi
+    # cell does not: the dropped site owns the whole y=-0.5 line.
+    joined = Environment.combine(
+        {
+            "a": nearest([-1, -0.5], radius=0.1).with_metadata(units=None, frame=None),
+            "b": middle,
+            "c": nearest([5, -0.5], radius=0.1).with_metadata(units=None, frame=None),
+        }
+    )
+    assert joined.connectivity.has_edge(0, 2)
+
+
+def test_third_component_point_contact_is_not_a_crossing():
+    from shapely.geometry import Polygon
+
+    middle = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.array([2.0, 3.0]), np.array([0.5, 1.5])),
+        units="cm",
+        frame="lab",
+    ).clip(Polygon([(2, 0.5), (3, 1.5), (2, 1.5)]))
+    joined = Environment.combine(
+        {"a": grid(count=1), "b": middle, "c": grid(4, count=1)}
+    )
+    assert joined.connectivity.has_edge(0, 2)
+
+
+def test_unresolved_tiny_grid_obstacle_refuses_automatic_bridges():
+    components = {
+        "left": Environment.from_grid_mask(
+            np.ones((1,), bool), grid_edges=(np.array([-2.0, -1.0]),)
+        ),
+        "tiny": Environment.from_grid_mask(
+            np.ones((1,), bool), grid_edges=(np.array([-1e-100, 1e-100]),)
+        ),
+        "right": Environment.from_grid_mask(
+            np.ones((1,), bool), grid_edges=(np.array([1.0, 2.0]),)
+        ),
+    }
+    with pytest.raises(ValueError, match=r"resolve.*crossings|disable auto_bridge"):
+        Environment.combine(components)
+    assert Environment.combine(components, auto_bridge=False).n_bins == 3
+
+
+def test_unresolved_tiny_nearest_obstacle_refuses_automatic_bridges():
+    components = {
+        "left": nearest([-1, 0], radius=0.1),
+        "tiny": nearest([0, 0], radius=1e-100),
+        "right": nearest([1, 0], radius=0.1),
+    }
+    with pytest.raises(ValueError, match=r"resolve.*footprint|disable auto_bridge"):
+        Environment.combine(components)
+    assert Environment.combine(components, auto_bridge=False).n_bins == 3
+
+
+@pytest.mark.parametrize("dims", [2, 3])
+def test_automatic_bridges_do_not_bypass_a_measured_track(dims):
+    import networkx as nx
+
+    def track(shift):
+        graph = nx.Graph()
+        graph.add_node(0, pos=(shift, *([0.0] * (dims - 1))))
+        graph.add_node(1, pos=(shift + 1, *([0.0] * (dims - 1))))
+        graph.add_edge(0, 1, distance=1.0)
+        return Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.25)
+
+    joined = Environment.combine(
+        {key: track(shift) for key, shift in (("a", 0), ("b", 2), ("c", 4))}
+    )
+    assert not joined.connectivity.has_edge(0, 2)
+
+
 def test_automatic_bridges_do_not_cross_known_walls():
     from shapely.geometry import LineString
 
