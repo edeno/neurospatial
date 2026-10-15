@@ -2,13 +2,21 @@
 
 **Committed**: 2025-10-31
 
+**Status**: Archived; associated implementation complete, API vocabulary superseded.
+**Status reviewed**: 2026-10-14.
+
+The [refactor plan](PLAN.md) was merged in `e6cc25c0` on 2026-05-07.
+The branch-review instruction below records the earlier snapshot; it is no
+longer a pending task. Use the reviewed plan and current public API rules for
+new work, and retain these notes as implementation history.
+
 > **Superseded for current API vocabulary.** This historical scratchpad predates
 > the v0.6 naming contract. Use the API contract in
 > `.claude/rules/public-api.md` for current terms such as
 > `unit_id`, `summary_table()`, `classify()`, `label_cell_types()`, and
 > `peak_location()`.
 
-## Current Status
+## Historical status (2026-05-07)
 
 **Date**: 2026-05-07
 **Associated Plan**: [PLAN.md](PLAN.md)

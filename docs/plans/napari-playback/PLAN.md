@@ -1,10 +1,37 @@
 # PLAN3: Napari Playback Interface Enhancement
 
 **Committed**: 2025-11-22
+**Status**: Partially implemented — historical proposal; dropdown and extended shortcuts remain
+**Status reviewed**: 2026-10-14
 
 **Goal**: Replace the FPS slider with an intuitive speed dropdown and add keyboard shortcuts for efficient neural data exploration, particularly for millisecond-scale replay analysis.
 
 **Branch**: `feat/napari-speed-dropdown`
+
+## Current status and evidence
+
+The implemented playback behavior differs from this proposal. The current
+[napari widget](../../../src/neurospatial/animation/backends/napari_backend.py#L2342)
+uses an FPS slider, Play/Pause, a frame counter/labels, and a Space binding.
+Speed-based initialization exists in [animation/core.py](../../../src/neurospatial/animation/core.py#L47).
+[PlaybackController](../../../src/neurospatial/animation/backends/napari_backend.py#L439)
+adds frame skipping, navigation, and scrubbing support, with
+[controller tests](../../../tests/animation/test_playback_controller.py) and
+[rendering integration tests](../../../tests/animation/test_playback_controller_integration.py).
+These establish related functionality, not the proposed dropdown behavior.
+
+**Remaining scope:** the preset ComboBox, preset-specific conversion/label
+helpers, bracket speed shortcuts, explicit Home/End bindings, and the associated
+GUI/event-loop validation. Those APIs and the proposed speed-control test file
+are absent; the listed `pytest-qt` dependency is also absent. Napari's own arrow
+navigation does not complete the proposed custom shortcut set. Current user
+controls are described in the [animation guide](../../user-guide/animation.md#controls).
+
+History `bd646d9b`, despite its dropdown implementation message, changed only
+planning Markdown. `82e75d4d` and `7d0fa42e` introduced and integrated the current
+controller. No completion or manual high-rate playback validation is inferred
+from those messages. Preserve this proposal for a future refreshed UI plan;
+the recipe and old verification commands below are historical, not current APIs.
 
 ---
 

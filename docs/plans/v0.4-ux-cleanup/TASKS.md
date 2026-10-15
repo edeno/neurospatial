@@ -1,6 +1,44 @@
 # v0.4 UX Cleanup — Task Breakdown
 
 **Committed**: 2026-05-08
+**Status**: Superseded after v0.4.0 release; M0–M6 complete, M7 partial
+**Status reviewed**: 2026-10-14
+
+## Reviewed task disposition
+
+The annotated `v0.4.0` tag points to
+[55bc0851](https://github.com/edeno/neurospatial/commit/55bc08518adfe5f730f71963f20d8cba0d26ed66)
+(2026-05-26) and explicitly describes **M0–M6 plus M7 partial**. The
+[0.4.0 changelog](../../../CHANGELOG.md#040---2026-05-26) documents the shipped
+API, validation, error and example work. The checklist below is historical:
+checkboxes are preserved, not a new assertion that every old acceptance gate
+was fulfilled or rerun during this review.
+
+- **M0–M6 delivered within their recorded scopes.** Current
+  [API/argument tests](../../../tests/test_argument_conventions.py),
+  [exception implementations](../../../src/neurospatial/_exceptions.py),
+  [field-exclusion metadata](../../../src/neurospatial/encoding/spatial.py#L110),
+  and [batch failure masks](../../../src/neurospatial/encoding/_metrics.py#L48)
+  retain that work. See [PLAN.md](PLAN.md#current-disposition) for the milestone
+  evidence and scope qualifications.
+- **7.1 was not delivered.** The named v0.4 migration page and cross-check script
+  are absent at the release tag and in the current tree. Keep its unchecked
+  history; retire the obsolete deliverable rather than claiming it was completed.
+  The migration-checker portion of checked **7.5** is consequently unsupported.
+- **7.2–7.4 shipped; 7.6 is only partially verified.** Release notes, the version
+  cut and example styling landed, and the local release tag exists. Local
+  repository inspection does not establish the rest of 7.6's artifact upload or
+  remote-release actions. Its checkbox remains unchanged.
+- **Follow the current successors.** [Executable Markdown tests](../../../tests/docs/test_executable_docs.py)
+  replace M0's removed manifest/script; the [nine-workflow collection](../../../examples/README.md)
+  and [notebook CI](../../../.github/workflows/test_notebooks.yml) replace the
+  old notebook-numbering targets. Use [current API rules](../../../.claude/rules/public-api.md)
+  and the [migration guide](../../migration/v0.6.md), not old names in this list.
+- **No active tasks remain under this roadmap.** Current geometry defects are
+  tracked in [environment representation](../environment-representation/PLAN.md).
+  [Read-only geometry publication](../../../src/neurospatial/environment/core.py#L1009)
+  supersedes task 5.1's old manual-mutation/cache-clear instructions; they are
+  preserved as history, not a supported current workflow.
 
 Reference: see [PLAN.md](PLAN.md) for design rationale, milestone ordering, and gating criteria. This document tracks per-task progress with file paths, concrete change descriptions, and acceptance criteria.
 

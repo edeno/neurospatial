@@ -1,12 +1,29 @@
 # TASKS.md - Napari Playback Interface Enhancement
 
 **Committed**: 2025-11-03
+**Status**: Partially implemented — historical proposal; dropdown and extended shortcuts remain
+**Status reviewed**: 2026-10-14
 
 **Goal**: Replace FPS slider with speed dropdown and add keyboard shortcuts for neural data exploration.
 
 **Branch**: `feat/napari-speed-dropdown`
 
 **Source**: [PLAN.md](PLAN.md)
+
+## Current status and remaining work
+
+See the [PLAN.md audit](PLAN.md#current-status-and-evidence): the current
+[playback widget](../../../src/neurospatial/animation/backends/napari_backend.py#L2342)
+provides an FPS slider, Play/Pause, Space, and frame information. Speed-based
+initialization and a tested [PlaybackController](../../../tests/animation/test_playback_controller.py)
+provide part of the intended workflow, but not the preset dropdown.
+
+Preset constants/helpers, ComboBox selection, bracket and Home/End bindings,
+`pytest-qt`, and the proposed dedicated GUI tests remain absent. Reassess this
+UI design and its high-rate event-loop validation against the current controller
+before implementation. Commit `bd646d9b` changed planning documents only;
+it is not evidence that these tasks completed. Historical checkboxes and commands
+are retained without blanket completion marks.
 
 ---
 
