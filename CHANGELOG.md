@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Label place fields from actual graph connections, preserving diagonal links
+  and physical walls after derivation and storage. Polygon clipping now retains
+  per-parent ownership at floating-point precision and exposes analysis boundary
+  bins. Wall-crossing checks also handle exact on-wall trajectory samples.
+- Require declared track width for containment; nearest-track projection stays
+  available through `bin_at`. Track and maze presets accept `track_width`.
+
 - Preserve coincident track centers, native mesh indexing and reserved user
   graph attributes through environment storage. Malformed JSON/NWB/NPZ records
   now report contextual recovery guidance.
