@@ -381,3 +381,65 @@ def test_joined_rooms_keep_their_separating_wall_for_rays_and_cues(restore):
     )
     visible, _, _ = visible_cues(env, np.array([2.5, 2.5]), 0.0, np.array([[7.5, 2.5]]))
     assert not visible[0]
+
+
+@pytest.mark.parametrize("scale", [0.01, 1.0, 100.0])
+@pytest.mark.parametrize("offset", [0.0, 1000.0])
+def test_slanted_wall_cues_remain_visible_at_interpolated_contacts(scale, offset):
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString(np.array([[0.0, 0.0], [3.0, 2.0]]) * scale + offset)
+    observer = np.array([0.2, -1.0]) * scale + offset
+    targets = np.array(
+        [
+            wall.interpolate(t, normalized=True).coords[0]
+            for t in np.linspace(0.1, 0.9, 9)
+        ]
+    )
+    np.testing.assert_array_equal(clear_segments(wall, observer, targets), True)
+
+
+def test_wall_cue_rounding_does_not_hide_an_earlier_occluder():
+    import shapely
+
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString([(0.0, 0.0), (3.0, 2.0)])
+    observer = np.array([0.2, -1.0])
+    target = np.array(wall.interpolate(0.6, normalized=True).coords[0])
+    # Both the distant blocker and a blocker close to the cue remain resolved.
+    for fraction in (0.5, 1.0 - 1e-12):
+        middle = observer + fraction * (target - observer)
+        direction = target - observer
+        normal = np.array([-direction[1], direction[0]])
+        blocker = LineString([middle - 0.1 * normal, middle + 0.1 * normal])
+        assert not clear_segments(
+            shapely.union_all([wall, blocker]), observer, target[None]
+        )[0]
+
+
+def test_wall_cue_rounding_does_not_allow_collinear_wall_overlap():
+    from neurospatial.ops._boundaries import clear_segments
+
+    wall = LineString([(0.0, 0.0), (3.0, 2.0)])
+    assert not clear_segments(wall, np.array([0.0, 0.0]), np.array([[3.0, 2.0]]))[0]
+
+
+def test_visible_cues_accepts_cues_on_a_slanted_measured_arena_wall():
+    from shapely.geometry import Polygon
+
+    polygon = Polygon([(0.0, 0.0), (3.0, 2.0), (3.0, -2.0), (0.0, -2.0)])
+    env = Environment.from_polygon(polygon, bin_size=0.2)
+    wall = LineString([(0.0, 0.0), (3.0, 2.0)])
+    targets = np.array(
+        [
+            wall.interpolate(t, normalized=True).coords[0]
+            for t in np.linspace(0.1, 0.9, 9)
+        ]
+    )
+    visible, distances, bearings = visible_cues(
+        env, np.array([0.2, -1.0]), 0.0, targets
+    )
+    np.testing.assert_array_equal(visible, True)
+    assert np.all(np.isfinite(distances))
+    assert np.all(np.isfinite(bearings))

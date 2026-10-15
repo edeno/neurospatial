@@ -228,7 +228,7 @@ def physical_clear_segments(
 def clear_segments(
     walls: shapely.Geometry, observer: NDArray[np.float64], targets: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
-    """Exact line of sight: contact at a target is visible; earlier contact blocks."""
+    """Keep terminal contact within coordinate rounding; earlier contact blocks."""
     targets = np.asarray(targets, dtype=np.float64)
     valid = np.all(np.isfinite(targets), axis=1) & np.all(np.isfinite(observer))
     result = np.zeros(len(targets), dtype=bool)
@@ -242,9 +242,19 @@ def clear_segments(
             )
         )
         contact = shapely.intersection(lines, walls)
-        # A cue on the wall itself remains visible from the observer side.
-        remainder = shapely.difference(contact, shapely.points(selected[~same]))
-        same[~same] = shapely.is_empty(remainder)
+        # Intersection can return a point a few ULPs before a wall-mounted cue.
+        # Check every contact coordinate, including other walls and overlaps;
+        # only a terminal contact is visible. Per-axis endpoint ULPs prevent a
+        # long ray or an unrelated long coordinate axis from widening the gap.
+        coordinates, owners = shapely.get_coordinates(contact, return_index=True)
+        terminal = selected[~same]
+        allowance = 4 * np.spacing(np.abs(terminal))
+        at_terminal = np.all(
+            np.abs(coordinates - terminal[owners]) <= allowance[owners], axis=1
+        )
+        clear = np.ones(len(terminal), dtype=bool)
+        np.logical_and.at(clear, owners, at_terminal)
+        same[~same] = clear
     result[valid] = same
     return result
 
