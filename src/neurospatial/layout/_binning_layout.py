@@ -1269,9 +1269,9 @@ class BinningLayout:
         if isinstance(track, (TrackLinearization, _LegacyTrackLinearization)):
             return track.active_mask
         if isinstance(self._binning.locator, HexLocator):
-            locator = self._binning.locator
-            hex_mask: NDArray[np.bool_] = (locator.flat_to_active >= 0).reshape(
-                locator.centers_shape
+            hex_locator = self._binning.locator
+            hex_mask: NDArray[np.bool_] = (hex_locator.flat_to_active >= 0).reshape(
+                hex_locator.centers_shape
             )
             hex_mask.setflags(write=False)
             return hex_mask

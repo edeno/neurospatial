@@ -42,8 +42,6 @@ def test_tiny_axis_does_not_turn_diagonal_contacts_into_physical_faces():
     assert areas[frozenset((0, 3))] == 0.0  # a corner has no physical interface
 
 
-
-
 def test_tiny_native_grid_keeps_faces_and_diffusion_under_uniform_scaling():
     from neurospatial.ops.transforms import Affine2D
 

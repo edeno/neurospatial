@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Omit transient analysis caches before copy/pickle; retain JSON-compatible
+  protected graph metadata. Explicit bins now reject wall-crossing supplied
+  pairs, keep drawing outlines separate from physical evidence, and validate
+  finite-volume faces against their grid geometry across coordinate scales.
+  Clipping preserves declared navigation paths and stores equal parent maps once.
+
 - Reject circular region metadata before exhausting the interpreter stack,
   avoiding a test-worker crash on Windows/Python 3.10.
 

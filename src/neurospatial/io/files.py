@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Mapping
 import zlib
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
