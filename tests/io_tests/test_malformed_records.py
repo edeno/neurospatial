@@ -1,6 +1,8 @@
 """Expected storage corruption produces contextual, actionable value errors."""
 
 from datetime import datetime, timezone
+from struct import unpack_from
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import numpy as np
 import pytest
@@ -45,6 +47,15 @@ def test_malformed_file_metadata_has_a_contextual_value_error(tmp_path, metadata
     assert "Fix:" in str(error.value)
 
 
+def test_non_utf8_file_metadata_has_a_contextual_value_error(tmp_path):
+    prefix = tmp_path / "environment"
+    _environment().to_file(prefix)
+    prefix.with_suffix(".json").write_bytes(b"\xff")
+    with pytest.raises(ValueError, match="Invalid environment metadata") as error:
+        Environment.from_file(prefix)
+    assert "Fix:" in str(error.value)
+
+
 @pytest.mark.parametrize(
     "archive", [b"PK\x03\x04broken-archive", b"not-an-array"], ids=["zip", "bytes"]
 )
@@ -52,6 +63,23 @@ def test_malformed_numpy_archive_has_a_contextual_value_error(tmp_path, archive)
     prefix = tmp_path / "environment"
     _environment().to_file(prefix)
     prefix.with_suffix(".npz").write_bytes(archive)
+    with pytest.raises(ValueError, match="Invalid environment array archive") as error:
+        Environment.from_file(prefix)
+    assert "Fix:" in str(error.value)
+
+
+def test_corrupt_compressed_array_has_a_contextual_value_error(tmp_path):
+    prefix = tmp_path / "environment"
+    _environment().to_file(prefix)
+    path = prefix.with_suffix(".npz")
+    with ZipFile(path) as archive:
+        entry = archive.infolist()[0]
+    assert entry.compress_type == ZIP_DEFLATED
+    payload = bytearray(path.read_bytes())
+    name_length, extra_length = unpack_from("<HH", payload, entry.header_offset + 26)
+    start = entry.header_offset + 30 + name_length + extra_length
+    payload[start : start + 2] = b"\xff\xff"
+    path.write_bytes(payload)
     with pytest.raises(ValueError, match="Invalid environment array archive") as error:
         Environment.from_file(prefix)
     assert "Fix:" in str(error.value)

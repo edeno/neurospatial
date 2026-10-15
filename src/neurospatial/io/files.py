@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -409,7 +410,7 @@ def from_file(path: PathLike) -> Environment:
     try:
         with json_path.open("r") as f:
             metadata = json.load(f)
-    except (json.JSONDecodeError, RecursionError) as error:
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError) as error:
         raise ValueError(
             _format_error(
                 f"Invalid environment metadata in {json_path}: {error}",
@@ -427,7 +428,7 @@ def from_file(path: PathLike) -> Environment:
             )
         with archive:
             arrays = {key: archive[key] for key in archive.files}
-    except (BadZipFile, EOFError, ValueError) as error:
+    except (BadZipFile, EOFError, ValueError, zlib.error) as error:
         raise ValueError(
             _format_error(
                 f"Invalid environment array archive in {npz_path}: {error}",
