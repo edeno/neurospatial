@@ -423,7 +423,7 @@ class TransitionsConsumer(Protocol):
 
 
 class RebinConsumer(Protocol):
-    """Layout, connectivity and metadata for coarsening a regular grid."""
+    """Layout, arena and metadata for re-binning rectangular grids."""
 
     @property
     def _binning(self) -> Binning: ...

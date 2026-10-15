@@ -53,6 +53,7 @@ from neurospatial.layout._locators import (
     TransformedLocator,
 )
 from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 _NATIVE_LAYOUTS = (
@@ -129,6 +130,7 @@ def _check_binning(binning: Binning) -> None:
         (binning.linearization, (TrackLinearization,)),
         (binning.shapes, (HexagonShapes, TriangleShapes, PolygonCells)),
         (binning.outline, (Outline,)),
+        (binning.grid_spec, (GridBinningSpec,)),
     ):
         if component is not None and type(component) not in allowed:
             _migration(component)

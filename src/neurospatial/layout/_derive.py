@@ -251,6 +251,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         linearization=track,
         shapes=shapes,
         outline=None,
+        grid_spec=binning.grid_spec,
         clip_mapping=(
             ClipMapping(
                 binning.clip_mapping.parent_bin_indices[keep],
@@ -586,4 +587,13 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         shapes=shapes,
         outline=outline,
         clip_mapping=binning.clip_mapping,
+        grid_spec=(
+            type(binning.grid_spec)(
+                binning.grid_spec.origin,
+                matrix @ binning.grid_spec.forward,
+                binning.grid_spec.connect_diagonal,
+            )
+            if binning.grid_spec is not None
+            else None
+        ),
     )

@@ -208,6 +208,7 @@ def _rebin(
 
     # Create new layout instance
     new_layout = RegularGridLayout()
+    new_layout._grid_spec = env._binning.grid_spec
     new_layout.bin_centers = coarse_bin_centers[keep]
     new_layout.connectivity = coarse_connectivity
     new_layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in coarse_edges)

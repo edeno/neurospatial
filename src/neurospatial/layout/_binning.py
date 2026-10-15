@@ -25,6 +25,7 @@ from neurospatial.layout._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import LayoutEngine
 
 if TYPE_CHECKING:
@@ -528,6 +529,7 @@ class Binning:
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
     clip_mapping: ClipMapping | None = None
+    grid_spec: GridBinningSpec | None = None
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:
@@ -559,17 +561,44 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
         pairs=pairs,
         pair_distances=distances,
     )
+    grid = (
+        layout.rectilinear_grid()
+        if isinstance(layout, RectilinearGridProvider)
+        else None
+    )
+    track = _linearization_of(layout)
+    from neurospatial.layout.engines._polar import _PolarGridLayout
+
+    spec = None
+    if (
+        not isinstance(cast("object", layout), _PolarGridLayout)
+        and grid is not None
+        and len(grid.edges) == bins.n_dims
+        and track is None
+        and np.allclose(
+            bins.sizes,
+            np.prod([edge[1] - edge[0] for edge in grid.edges]),
+            rtol=64 * np.finfo(float).eps,
+            atol=0,
+        )
+    ):
+        spec = getattr(layout, "_grid_spec", None)
+        if spec is None:
+            # Manually constructed legacy layouts only establish their current
+            # edge pattern; native builders supply the actual choice above.
+            spec = GridBinningSpec(
+                np.array([edge[0] for edge in grid.edges]),
+                np.eye(bins.n_dims + 1),
+                any(np.count_nonzero(centers[u] != centers[v]) > 1 for u, v in pairs),
+            )
     return Binning(
         kind=getattr(layout, "_layout_type_tag", type(layout).__name__),
         bins=bins,
         locator=_locator_of(layout),
         faces=LayoutFaces(layout, connectivity),
-        rectilinear=(
-            layout.rectilinear_grid()
-            if isinstance(layout, RectilinearGridProvider)
-            else None
-        ),
-        linearization=_linearization_of(layout),
+        rectilinear=grid,
+        linearization=track,
+        grid_spec=spec,
         shapes=_shapes_of(layout),
         outline=_outline_of(layout),
     )

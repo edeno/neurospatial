@@ -29,12 +29,14 @@ from neurospatial.layout._locators import (
     TransformedLocator,
 )
 from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.layout._rebin_spec import GridBinningSpec
 
 __all__ = [
     "Binning",
     "ClipMapping",
     "ClippedLocator",
     "FaceGeometry",
+    "GridBinningSpec",
     "HexLocator",
     "HexagonShapes",
     "KnownFaces",

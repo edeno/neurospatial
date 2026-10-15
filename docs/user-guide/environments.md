@@ -362,6 +362,42 @@ Other common queries are `env.neighbors(bin_index)`,
 `env.distance_between(point_a, point_b)`. See the
 [API reference](../api/index.md) for their coordinate and distance conventions.
 
+## Change bin size while retaining the arena
+
+`env.rebin(bin_size=...)` builds a new rectangular lattice over the retained
+arena. It keeps the original grid frame, lattice anchor, units, frame label and
+regions. The argument is a physical length along each retained grid axis;
+a tuple gives different lengths along different axes. It can refine or coarsen.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+env = Environment.from_grid_mask(
+    np.ones((6, 6), dtype=bool),
+    grid_edges=(np.arange(7.0),) * 2, units="cm", frame="lab",
+)
+crop = env.subset(bins=env.bin_centers[:, 0] < 2)
+coarse = crop.rebin(bin_size=2.0)
+assert coarse.n_bins == 9  # rebuild the whole retained arena
+np.testing.assert_allclose(coarse.bin_sizes, 4.0)
+assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
+```
+
+Whole-bin selection keeps centers inside the arena; it does not promise complete
+coverage or exact clipped areas. Physical walls must still follow complete new
+cell faces. Use `clip()` separately, or a finer grid, where needed. Re-binning
+creates new bin IDs and does not copy rates, counts or fitted models.
+
+New rectangular environments store an owned `GridBinningSpec` independently of
+provenance. It survives cropping, clipping, transforms and JSON/NWB storage.
+Hexagons, tracks, meshes, combined environments and older records without a
+supported specification refuse new-size re-binning. Explicit-bin providers can
+supply a `GridBinningSpec` describing future rectangular construction.
+The existing `env.rebin(factor=2)` remains available for uniform regular grids,
+including its truncation warning. Supply exactly one of `factor` and `bin_size`.
+
 ## Save the environment with the analysis
 
 `env.to_file(path)` writes JSON metadata and NPZ arrays;

@@ -53,6 +53,13 @@
 
 ### Added
 
+- Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
+  the retained arena with an owned `GridBinningSpec` separate from provenance.
+  Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB
+  storage; new sizes are physical lengths along those axes. Other families and
+  records without a specification refuse this mode. Integer-factor coarsening
+  retains its existing behavior. Fields and fitted models are not transferred.
+
 - Add `Environment.combine` for owned disjoint components, with stable keyed
   bin sources, qualified regions and deterministic mutual-nearest-neighbor
   bridges that respect known physical walls. Path-only bridges do not diffuse;

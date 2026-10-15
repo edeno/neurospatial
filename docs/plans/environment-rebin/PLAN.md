@@ -1,0 +1,126 @@
+# Stage D — Re-binning and physical-wall consumers
+
+**Status:** D0/D1 complete and validated on 2026-10-15.
+D2/D3 remain to be implemented.
+**Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
+**First branch:** `feature/environment-rebin`.
+
+The representation roadmap calls for separate changes per consumer: arena
+re-binning, border scores, and visibility/ray casting. Implement and validate
+these in order, with separate logical commits and stacked branches. Creating
+Stage D PRs requires a later publication instruction.
+
+## Scientific contract
+
+- An analysis crop, absent position sample, or inactive bin does not create a
+  physical wall. Use the retained arena rather than the active-bin outline.
+- Explicit physical footprints establish their exterior/hole boundaries;
+  explicit internal walls are additional barriers. Position-inferred domains
+  and analysis masks do not establish measured walls.
+- Re-binning returns new geometry and bin IDs. It does not automatically copy
+  fields, counts, rates or fitted encoders. Center-based whole-bin selection
+  remains distinct from exact clipping.
+- Construction specifications are owned typed data, independent of descriptive
+  provenance. Loading must not replay historical build parameters or infer
+  missing measured geometry.
+- Preserve existing factor-based coarsening, including truncation warnings and
+  refusal when cells cannot represent an existing physical wall.
+- Native behavior outside the intentional consumer changes must match the
+  recorded Stage C baseline.
+
+## Approved decisions
+
+1. Physical-wall operations also offer an explicitly requested analysis-boundary
+   approximation. There is no silent fallback to analysis boundaries.
+2. New-size re-binning preserves supported binning families and grid frames;
+   unsupported families or missing specifications refuse. The first supported
+   family is rectangular grids from samples, masks, images and polygon grids.
+   The grid origin, affine frame and diagonal-navigation choice are typed owned
+   data; the known arena supplies the domain. New sizes are physical lengths
+   along the retained axes, including after unequal scaling.
+
+## Implementation sequence
+
+### D0 — Baseline and design
+
+Captured 4,072 environment probes, including 584 expected refusals, in
+`/private/tmp/environment-stage-d-base-1699ff1e.npz`. Relevant existing tests:
+**130 passed**, with 14 existing warnings, in
+`/private/tmp/stage-d-base-tests.log`.
+
+The deterministic [probe](probe_stage_d.py), run on `1699ff1e`, constructs a
+10-by-10 physical arena with an internal wall at x=5 and a crop ending at x=4.
+A ray starting at (2.5, 4.5) should hit the physical wall at (5, 4.5). Existing
+code instead returns approximately x=10 on the full environment and x=4 on the
+crop. A field at x=3.5 changes border score from -0.4359 to 1.0 solely because of
+the crop. `rebin(bin_size=...)` is currently rejected as an unknown keyword.
+Full probe output: `/private/tmp/stage-d-observations-1699ff1e.json`.
+
+### D1 — Stored construction specification and arena re-binning
+
+- Specify the supported initial families and new bin-size units/alignment.
+- Own and serialize the construction specification independently of provenance.
+- Preserve it through supported subset, clipping and transforms; a combine does
+  not invent one shared specification.
+- Construct candidate bins over the retained arena, select centers, and apply
+  existing complete-face wall constraints before publication.
+- Verify repeated re-binning, copies, dict/file/NWB round trips, transformed
+  frames, holes, disconnected domains, partial cells, invalid sizes, and missing
+  specifications. Never infer a specification from a descriptive layout name.
+
+### D2 — Physical-wall border scores
+
+- Derive wall evidence from asserted arena geometry, not `boundary_bins`.
+- Define contact, distance, normalization and missing support explicitly while
+  keeping the estimator's scientific interpretation documented.
+- Test internal walls, holes, analysis crops, resolution changes, unavailable
+  footprints, disconnected graphs and population/result wrappers.
+- Keep the general `boundary_bins` query as an analysis-geometry query.
+
+### D3 — Physical-wall rays and visibility
+
+- Use geometric intersections with retained walls, rather than stepping until
+  `bin_at` first returns -1. Preserve first-hit occlusion by physical barriers.
+- Share wall semantics across viewed location, viewshed and cue line of sight.
+- Specify rays starting outside/on walls, no hit before maximum distance,
+  tangent/corner contacts and nonfinite observations.
+- Preserve analysis-bin support when exporting visible-bin IDs; absence of an
+  analysis bin must not occlude a ray to a known wall or cue.
+
+## Validation
+
+Use the existing isolated environment, without installing into the base:
+
+```bash
+MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache \
+UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache \
+uv run --no-sync pytest -p no:napari -n 0 -q ...
+```
+
+Add independent geometry oracles on deterministic simulated inputs. Recheck
+confirmed defects before fixes and preserve permanent regressions. Run relevant
+source doctests, typing, API/convention checks, Ruff and the behavior comparison
+at consumer boundaries. Real recordings are downloaded separately; no recording
+is currently cached under `data/`. GUI/GPU coverage must not be inferred from CPU
+checks.
+
+## D1 validation
+
+New-size regressions failed before implementation (`stage-d1-before.log`). The
+accepted gate passed **779 tests**, including the 22 new rebin/specification
+cases, existing factor/arena tests, polar classification, binning/codecs,
+JSON and NWB round trips, API and argument conventions. Runtime warnings were
+errors; the 70 warnings were existing user/dependency warnings. Source/contract
+mypy passed (242 files). The Cartesian doctests and runnable environment guide
+passed **10 cases**, with 4 explicit skips and 20 unrelated cases deselected.
+
+The Stage C baseline comparison reports only the intended `Environment.rebin`
+signature/docstring change; all other probes match. `GridBinningSpec` is the
+intentional public export snapshot addition. No performance improvement is
+claimed. No real recording was cached, and GUI/GPU checks were not run.
+
+Local evidence: `/private/tmp/stage-d1-accepted.log`,
+`/private/tmp/stage-d1-docs.log`, `/private/tmp/stage-d1-types.log`,
+`/private/tmp/stage-d1-compare.log`. The new-size family scope is rectangular;
+other families refuse until a reviewed specification is implemented. Native
+integer coarsening remains unchanged.
