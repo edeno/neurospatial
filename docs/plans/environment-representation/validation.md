@@ -285,3 +285,22 @@ environment-validation, state-version and binning-publication tests pass with
 numerical RuntimeWarnings treated as errors. Ruff, formatting and whitespace
 checks pass. GitHub CI will rerun on the updated PR head; these local checks do
 not claim completion of that remote run.
+
+
+## CI portability follow-up (2026-10-15)
+
+The published matrix exposed test assumptions that did not hold across systems:
+mesh triangle numbering differed on Linux/Windows, plot coordinates differed by
+roughly 1e-16 and automatic tick placement varied, and Windows read generated
+UTF-8 HTML with its default cp1252 encoding. The HTML writer already specifies
+UTF-8; the test readers now do too. Mesh assertions check independent geometric
+membership and exact cell/value alignment instead of a macOS-specific bin order.
+Other plot snapshots retain structural/style checks and compare floating arrays
+with rtol=atol=1e-12; generated tick labels are left to Matplotlib.
+
+All **272** affected locator, plotting (including slow snapshots) and HTML overlay
+tests pass locally on this branch; its isolated import path was verified. Ruff,
+formatting and whitespace checks pass. All seven PR workflows now include PRs
+against feature branches while keeping the existing push filters and the
+main-only documentation deployment guard. Workflow YAML checks passed. Remote
+Linux/Windows verification is required before claiming the matrix is green.
