@@ -96,7 +96,6 @@ from neurospatial.encoding._significance import (
     check_mode_keywords,
     resolve_shuffle_settings,
 )
-from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2407,7 +2406,7 @@ def spatial_view_cell_significance(
     )
     from neurospatial.encoding._view_binning import (
         _precompute_view_bins,
-        _view_observation_support,
+        _view_observation_mask,
     )
 
     trains, input_ids = as_spike_trains_with_ids(spike_times)
@@ -2456,6 +2455,12 @@ def spatial_view_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="spatial_view_cell_significance")
+    mask = _view_observation_mask(
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
     frame_bins = _precompute_view_bins(
         env,
         positions,
@@ -2464,20 +2469,9 @@ def spatial_view_cell_significance(
         view_distance=view_distance,
         gaze_offsets=options["gaze_offsets"],
         boundary_source=boundary_source,
-        support=_view_observation_support(
-            times,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-        ),
+        interval_mask=mask,
     )
-    mask = interval_valid_mask(
-        times,
-        start_bin=frame_bins,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-    )
+    mask &= frame_bins[:-1] >= 0
     windows = run_time_bounds(times, mask)
 
     # The gaze geometry depends only on the trajectory, so every shuffle
