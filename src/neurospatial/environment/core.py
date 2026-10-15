@@ -147,6 +147,9 @@ class _ReadOnlyGraphMetadata(dict[str, Any]):
     def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
         return copy_module.deepcopy(dict(self), memo)
 
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return dict, (dict(self),)
+
 
 class _PublishedGraph(nx.Graph):
     """Freeze public graph bindings as well as topology and attribute values.

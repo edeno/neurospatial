@@ -49,3 +49,18 @@ def test_json_compatible_metadata_exports_cannot_change_owned_graph_state():
     metadata["session"]["tags"].append("caller")
     assert "caller" not in env.connectivity.graph
     assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
+
+
+@pytest.mark.parametrize("method", ["copy", "pickle"])
+def test_graph_metadata_exports_support_copy_and_pickle(method):
+    env = _environment()
+    original = env.connectivity.graph
+    exported = (
+        copy.copy(original)
+        if method == "copy"
+        else pickle.loads(pickle.dumps(original))
+    )
+    assert exported == original
+    assert json.loads(json.dumps(exported)) == original
+    exported["session"]["tags"].append("caller")
+    assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
