@@ -50,6 +50,7 @@ Create a spatial view cell with visibility requirements:
 ...     preferred_view_location=np.array([50.0, 50.0]),
 ...     view_field_width=10.0,
 ...     require_visibility=True,
+...     boundary_source="analysis",
 ...     fov=FieldOfView.primate(),  # ~180 degree forward FOV
 ... )
 
@@ -119,6 +120,9 @@ class SpatialViewCellModel:
         - 'fixed_distance': Point at fixed distance in gaze direction
         - 'ray_cast': Intersection with environment boundary
         - 'boundary': Nearest boundary point in gaze direction
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls or explicitly selected analysis boundaries for
+        ray casting and line of sight. Unknown physical walls refuse.
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
@@ -217,6 +221,7 @@ class SpatialViewCellModel:
         baseline_rate: float = 0.01,
         require_visibility: bool = False,
         fov: FieldOfView | None = None,
+        boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> None:
         # Convert and validate preferred_view_location
         preferred_view_location = np.asarray(preferred_view_location, dtype=np.float64)
@@ -275,6 +280,9 @@ class SpatialViewCellModel:
         self.view_field_width = view_field_width
         self.view_distance = view_distance
         self.gaze_model = gaze_model
+        if boundary_source not in ("physical", "analysis"):
+            raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+        self.boundary_source = boundary_source
         self.max_rate = max_rate
         self.baseline_rate = baseline_rate
         self.require_visibility = require_visibility
@@ -328,11 +336,21 @@ class SpatialViewCellModel:
 
         headings = np.asarray(headings, dtype=np.float64)
 
+        max_distance = 100.0
+        if self.gaze_model != "fixed_distance":
+            from neurospatial.ops._boundaries import boundary_geometry, search_distance
+
+            max_distance = search_distance(
+                boundary_geometry(self.env, self.boundary_source), positions
+            )
+
         # Compute viewed location
         viewed_locations = compute_viewed_location(
             positions,
             headings,
             method=self.gaze_model,
+            max_distance=max_distance,
+            boundary_source=self.boundary_source,
             view_distance=self.view_distance,
             env=self.env if self.gaze_model != "fixed_distance" else None,
         )
@@ -375,7 +393,10 @@ class SpatialViewCellModel:
             candidates = np.flatnonzero(~nan_mask & in_fov & (response > 0.0))
             for i in candidates:
                 if not _line_of_sight_clear(
-                    self.env, positions[i], self.preferred_view_location
+                    self.env,
+                    positions[i],
+                    self.preferred_view_location,
+                    boundary_source=self.boundary_source,
                 ):
                     response[i] = 0.0
 
@@ -442,6 +463,7 @@ class SpatialViewCellModel:
             "view_field_width": self.view_field_width,
             "view_distance": self.view_distance,
             "gaze_model": self.gaze_model,
+            "boundary_source": self.boundary_source,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
             "require_visibility": self.require_visibility,

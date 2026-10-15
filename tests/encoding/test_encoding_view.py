@@ -1874,6 +1874,7 @@ class TestIsSpatialViewCellParamOrder:
             headings,
             gaze_model="ray_cast",
             view_distance=15.0,
+            boundary_source="analysis",
         )
         assert isinstance(result, bool)
 

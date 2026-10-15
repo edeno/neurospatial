@@ -1,15 +1,19 @@
 # Stage D — Re-binning and physical-wall consumers
 
-**Status:** D0/D1 complete and validated on 2026-10-15.
-D2 is complete and validated on `feature/environment-border-walls`,
-stacked on rebin commit `bf5121e5`. D3 remains to be implemented.
+**Status:** D0–D3 complete and validated on 2026-10-15.
+Three published stacked branches separate rebinning, border scoring and visibility;
+the current branch is `feature/environment-wall-visibility`.
+**PR stack:** [#72](https://github.com/edeno/neurospatial/pull/72) (rebinning) →
+[#73](https://github.com/edeno/neurospatial/pull/73) (border scoring) →
+[#74](https://github.com/edeno/neurospatial/pull/74) (visibility).
 **Base:** `feature/environment-combine` at `1699ff1e` ([PR #71](https://github.com/edeno/neurospatial/pull/71)).
 **First branch:** `feature/environment-rebin`.
 
 The representation roadmap calls for separate changes per consumer: arena
 re-binning, border scores, and visibility/ray casting. Implement and validate
-these in order, with separate logical commits and stacked branches. Creating
-Stage D PRs requires a later publication instruction.
+these in order, with separate logical commits and stacked branches. Stage D PRs
+were opened on 2026-10-15 following the user’s publication instruction; each
+targets its immediate predecessor, starting with Stage C PR #71.
 
 ## Scientific contract
 
@@ -170,3 +174,154 @@ The API snapshot changes only the intended `boundary_source` argument.
 Logs: `/private/tmp/stage-d2-release.log`,
 `/private/tmp/stage-d2-release-types.log`, `/private/tmp/stage-d2-doctests.log`,
 `/private/tmp/stage-d2-guide.log`.
+
+## D3 delivered behavior and limits
+
+Wall hits and cue occlusion use exact planar geometric intersections. Physical
+mode reads asserted footprint rings and internal walls; explicit analysis mode
+uses the effective analysis-cell domain and known internal walls. A maximum
+search endpoint is not a wall. No hit or invalid/outside observer returns NaN;
+starting on a wall returns the origin. A target at first contact is visible,
+while an earlier contact blocks it. Stored source frames and locally capped
+inverse-rounding bounds preserve boundary contact under affine frames.
+
+Viewshed coverage still samples rays and bins, strictly before the first contact;
+it does not claim exact visible-cell coverage. Known-wall intersections prevent
+skipping a thin barrier. Missing analysis bins never terminate physical rays.
+
+The view encoders and model forward the boundary choice; encoder provenance
+records it. Endpoint binning uses a one-sided limit in the retained cell-owner
+frame. Counts and occupancy share the resulting frame bins. Independently
+transformed combined children without one owner frame refuse physical wall-bin
+assignment; analysis mode remains explicit. Fixed-distance gaze is unchanged.
+Encoder/model searches cover the supplied geometry instead of a fixed range.
+
+Regression review caught two transformed-query defects after the first passing
+gate: a cue on a rotated wall became occluded, and an angular sweep encoded two
+bins beyond a closed wall. Source-frame contacts and owner lookup now resolve
+both; the suite covers offsets 0, 100 and 1e9, a clearly behind-wall cue,
+transformed subsets/clips and dict restoration.
+
+## Final construction-choice correction
+
+A one-row grid has no diagonal edge even when diagonal neighbors were requested.
+Inferring its construction specification from current edges lost that choice
+when refining to multiple rows. The native grid builders now capture the actual
+choice with their locator snapshot; legacy identity coarsening retains it too.
+No descriptive provenance is replayed. Four regressions cover mask/regular
+families and true/false choices, including refinement after identity coarsening.
+They failed before the fix for both true cases.
+
+The correction was made on `feature/environment-rebin` in an isolated checkout,
+with its import path verified. **202 tests passed**, source mypy passed (238
+files), and Ruff/formatting passed. Commit `6534db5f` follows `bf5121e5`. Border
+and visibility branches were then restacked locally; no published branch was
+rewritten. The final stack is rebin → border → visibility.
+
+The first broad CPU run had **13,534 passed, 31 skipped and one failed** legacy
+threshold comparison. That fixture now explicitly requests analysis boundaries;
+its full summary-test module passed **34 tests**. The final broad rerun below
+also includes the construction-choice correction.
+
+
+## Final validation scope
+
+All final checks use the restacked source at `3b32c9ea`; the completion commit
+only updates documentation. The branch sequence is:
+
+1. `feature/environment-rebin` at `6534db5f`, based on Stage C `1699ff1e`.
+2. `feature/environment-border-walls` at `bb7df1ce`, based on rebinning.
+3. `feature/environment-wall-visibility`, based on border scoring.
+
+The broad CPU gate runs:
+
+```bash
+MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/neurospatial-mpl-cache \
+UV_CACHE_DIR=/private/tmp/neurospatial-uv-cache \
+uv run --no-sync pytest tests -p no:napari -n 4 -q \
+  -m 'not slow and not napari and not gui and not wallclock' --tb=short
+```
+
+It additionally deselects the same 51 GUI-dependent node IDs used by the prior
+immutable-environment validation: their Napari cache operations require access
+outside this sandbox. The exact list is recorded locally in
+`/private/tmp/immutable-gui-exclusions.json`. This is a CPU validation result;
+GUI, GPU, slow and wallclock checks were not run. No real recording is cached,
+so the new functionality is validated with deterministic synthetic geometry,
+not a new real-data experiment. No speed or memory improvement is claimed.
+
+
+## Final accepted results
+
+| Check | Result | Local evidence |
+| --- | --- | --- |
+| Broad CPU suite, final restacked source | **13,539 passed, 31 skipped**, no failures; 430.03 s | `/private/tmp/stage-d-cpu-final.log` |
+| Full source doctests | **596 passed, 126 skipped**; 276.06 s | `/private/tmp/stage-d-doctests-final.log` |
+| Source/contract typing | **244 files passed** | `/private/tmp/stage-d-types-restacked.log` |
+| Environment baseline | **4,071 probes identical**; only the intended `Environment.rebin` signature/docstring differs out of 4,072 | `/private/tmp/environment-stage-d-restacked.npz` |
+| Ruff lint and format | **54 changed Python files passed** | Final scoped invocation, `1699ff1e...HEAD` |
+| Documentation examples | **2 passed**, 20 unrelated examples deselected | `/private/tmp/stage-d-guide-final.log` |
+| Relative documentation links | **40 resolved** across the four completion documents | Local path check |
+
+The broad suite reports 6,551 warnings and the doctests report 203 warnings;
+these runs do not establish warning-free execution. Focused new-feature gates
+also passed with `RuntimeWarning` treated as an error, as recorded above.
+`git diff --check` passes, and each local branch is an ancestor of the next.
+The user guide describes construction, migration to explicit analysis mode,
+wall-aware view encoding, and the supported geometry limits.
+
+
+## Independent review and repairs (2026-10-15)
+
+Independent review found two defects after the original passing gate:
+
+1. Combining adjacent asserted rooms took the boundary of their union and lost
+   the separating wall. Wall extraction now retains each component's declared
+   outline and internal walls, including partial measured evidence alongside
+   children whose physical footprint is unknown. Five border regressions and
+   two ray/cue regressions cover the repair and dictionary restoration.
+2. A single representable step toward the observer could leave a slanted-wall
+   hit outside an exact clipped cell. Fallback assignment now intersects the
+   approach with retained cells that reach declared wall contact. It queries a
+   terminal interior segment, bounded by stored coordinate precision, and
+   preserves resolvable parent-cell ownership. The reviewer caught and verified
+   a further near-corner safeguard: a hit in a dropped grid cell cannot move
+   along the wall into its retained neighbor.
+
+Before the repairs, all five shared-wall cases and both initial slanted-wall
+cases failed. The corner safeguard failed at a 1e-14 offset before the parent
+check. Afterwards, **67 dedicated Stage D tests** passed with RuntimeWarning
+as an error. The independent reviewer also reran 5,000-heading geometry sweeps,
+rotations and translations through offsets 0, 100 and 1e9, missing strips down
+through 1e-14, dropped-parent corners and partial wall evidence. No confirmed
+review findings remain.
+
+The combined locator/plot/HTML/view/model/API gate passed **543 tests** (including
+slow plot snapshots), with RuntimeWarning as an error. Source and typing-contract
+mypy passed **245 files**. Repository-wide Ruff and formatting checks passed
+(779 Python files). The broad CPU rerun and remote matrix status are tracked
+separately; these focused results do not establish that remote CI is green.
+
+Local evidence: `/private/tmp/stage-d-wall-review-before.log`,
+`/private/tmp/stage-d-slanted-review-before.log`,
+`/private/tmp/stage-d-owner-guard-before.log`,
+`/private/tmp/stage-d-review-fixes.log`, `/private/tmp/stage-d-review-gate.log`,
+`/private/tmp/stage-d-review-mypy-final.log`.
+
+
+The final reviewed-source CPU rerun passed **13,556 tests, 31 skipped**, with
+6,545 warnings (299.54 seconds). Full source doctests passed **596 cases,
+126 skipped**, with 203 warnings. All **4,072** environment baseline probes
+match the previous Stage D snapshot exactly. These checks include both repaired
+review findings; no API baseline allowances were needed for the repairs.
+Evidence: `/private/tmp/stage-d-review-full-final.log`,
+`/private/tmp/stage-d-review-doctests.log`,
+`/private/tmp/environment-stage-d-reviewed.npz`.
+
+CI now runs for all feature-branch PR bases and cancels superseded checks per PR;
+documentation builds use separate PR groups while main-only deployments remain
+serial. Follow-up matrix execution exposed one Stage B-only formatting issue;
+that call was formatted and all 770 Stage B Python files passed the formatter.
+The subsequent merges carry this repair forward without changing Stage D's
+source tree. Remote matrix verification remains in progress; local passes do
+not substitute for Linux/Windows results.

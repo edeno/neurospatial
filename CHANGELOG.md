@@ -9,6 +9,24 @@
   each face length must equal the shared cell edge (zero when cells share no
   edge) and each face distance the center-to-center distance. Inconsistent
   faces previously passed silently and changed smoothing and diffusion results.
+
+- Ray-cast view rates no longer refuse when cells clipped to a curved or
+  slanted wall reach it: a hit is owned by the cell within that cell's
+  coordinate rounding of the hit, instead of an overlay of nearly coincident
+  edges. Cells that stop short of the wall still refuse, and the message names
+  the route that builds wall-reaching cells:
+  `Environment.from_bins(grid.clip(polygon).layout.binning(), arena=OpenArena(polygon))`.
+
+- Observers tracked exactly on a wall no longer view their own position. A ray
+  or cue sight line that leaves the wall into the room reaches the next wall;
+  only facing out through the wall or exactly along it gives a zero-distance
+  contact. Standing on an internal wall views the side faced. Gaze hits,
+  viewsheds, visible cues, view-rate bins and simulated view cells agree.
+
+- Check physical view-map ownership only for samples with selected exposure.
+  Missing wall bins raise actionable guidance; excluded/final samples and raw
+  geometric hits retain their meanings. Slanted wall cues tolerate local cue
+  rounding while earlier crossings and wall overlaps remain blocked.
 - Physical border scores require complete represented and observed wall
   coverage, distinguishing missing measurements from measured zero firing.
   Unsupported scores and batch summaries provide setup guidance rather than
@@ -63,6 +81,15 @@
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
+
+- Ray casting and cue line of sight now intersect declared physical walls,
+  including holes and internal barriers. Analysis crops no longer occlude
+  physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for
+  analysis-cell boundaries when physical walls are unknown. No wall hit within
+  the search distance returns NaN. View encoding, shuffle tests and simulation
+  forward and record the choice; wall hits use observer-side cell ownership.
+  Stored frames retain bounded boundary-contact behavior after transforms.
+  Viewshed bin coverage remains sampled; unsupported wall/owner geometry refuses.
 
 - Border scores now use declared physical footprint rings and internal walls
   by default, with wall-length coverage and distances to actual walls.
@@ -345,6 +372,9 @@
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
 ### Fixed
+
+- Keep valid gaze hits on slanted physical walls during view encoding, using
+  retained wall contact and parent-bin ownership to avoid crossing missing bins.
 
 - Preserve each component’s declared physical walls when environments are combined,
   including shared room boundaries and measured walls alongside unknown domains.

@@ -273,10 +273,22 @@ factory checks `FiniteVolumeGeometryProvider`, `RectilinearGridProvider` and
 `TrackLinearizationProvider` on layouts. A layout supplies a capability when it
 defines the corresponding method. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Only `rebin` still uses a layout tag to retain its existing
-RegularGrid-family support restriction. It preserves the original arena and
-selects coarse bins by center; walls must remain representable by complete
-coarse faces. Extending rebinning to other layout families is separate work.
+alternative. Integer-factor `rebin` retains its existing RegularGrid-family
+restriction, truncation warnings and complete-face wall constraints.
+`rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
+provenance. It re-bins the retained known arena, preserving the grid anchor and
+affine frame; requested sizes are physical lengths along those axes. Subset and
+clipping preserve the specification; combining does not invent a shared one.
+Unsupported families and old records without a specification refuse new-size
+re-binning. Fields and models do not transfer automatically.
+
+Border and visibility consumers use shared planar wall evidence in
+`ops/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
+analysis mode is explicit. Analysis cuts never create physical walls. Boundary
+contacts and wall-hit bin ownership use retained source frames with locally
+bounded inverse rounding. Viewshed bin coverage remains sampled, while first
+contacts and cue occlusion use geometric intersections. Unsupported geometry
+must refuse instead of silently switching boundary sources.
 
 A mixin is a plain class for one domain; `_BaseEnvironment` is the dataclass.
 Mixins keep no state except `versioned_cached_property` caches and annotate

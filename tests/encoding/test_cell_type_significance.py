@@ -227,7 +227,14 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
     near_target = np.linalg.norm(viewed - [70.0, 70.0], axis=1) < 12.0
     spikes = _inhomogeneous_poisson(times, np.where(near_target, 20.0, 0.5), seed=4)
     result = encoding.spatial_view_cell_significance(
-        ou_env, [spikes], times, positions, headings, n_shuffles=200, rng=0
+        ou_env,
+        [spikes],
+        times,
+        positions,
+        headings,
+        n_shuffles=200,
+        rng=0,
+        boundary_source="analysis",
     )[0]
     assert result.p_value == 1 / 201
 

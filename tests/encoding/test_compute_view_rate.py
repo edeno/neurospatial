@@ -117,6 +117,7 @@ class TestComputeViewRateReturnsResult:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert isinstance(result, ViewRateResult)
 
@@ -136,6 +137,7 @@ class TestComputeViewRateReturnsResult:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert np.asarray(result.firing_rate).shape == (simple_env.n_bins,)
 
@@ -155,6 +157,7 @@ class TestComputeViewRateReturnsResult:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert np.asarray(result.occupancy).shape == (simple_env.n_bins,)
 
@@ -174,6 +177,7 @@ class TestComputeViewRateReturnsResult:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result.env is simple_env
 
@@ -205,6 +209,7 @@ class TestComputeViewRateGazeModel:
             positions,
             headings,
             gaze_model=gaze_model,
+            boundary_source="analysis",
         )
         assert result.gaze_model == gaze_model
 
@@ -224,6 +229,7 @@ class TestComputeViewRateGazeModel:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result.gaze_model == "fixed_distance"
 
@@ -244,7 +250,8 @@ class TestComputeViewRateGazeModel:
                 times,
                 positions,
                 headings,
-                gaze_model="invalid_model",  # type: ignore[arg-type]
+                gaze_model="invalid_model",
+                boundary_source="analysis",  # type: ignore[arg-type]
             )
 
 
@@ -273,6 +280,7 @@ class TestComputeViewRateViewDistance:
             positions,
             headings,
             view_distance=15.0,
+            boundary_source="analysis",
         )
         assert result.view_distance == 15.0
 
@@ -292,6 +300,7 @@ class TestComputeViewRateViewDistance:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result.view_distance == 10.0
 
@@ -323,6 +332,7 @@ class TestComputeViewRateSmoothing:
             positions,
             headings,
             method=method,
+            boundary_source="analysis",
         )
         assert result.method == method
 
@@ -342,6 +352,7 @@ class TestComputeViewRateSmoothing:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result.method == "diffusion_kde"
 
@@ -362,6 +373,7 @@ class TestComputeViewRateSmoothing:
             positions,
             headings,
             bandwidth=8.0,
+            boundary_source="analysis",
         )
         assert result.bandwidth == 8.0
 
@@ -385,6 +397,7 @@ class TestComputeViewRateSmoothing:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result.bandwidth == expected
 
@@ -413,6 +426,7 @@ class TestComputeViewRateEmptySpikes:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         firing_rate = np.asarray(result.firing_rate)
         # All values should be 0 or NaN (low occupancy bins are NaN)
@@ -436,6 +450,7 @@ class TestComputeViewRateEmptySpikes:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         occupancy = np.asarray(result.occupancy)
         # Should have some positive occupancy from trajectory
@@ -466,6 +481,7 @@ class TestComputeViewRateCorrectness:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         firing_rate = np.asarray(result.firing_rate)
         valid_mask = ~np.isnan(firing_rate)
@@ -487,6 +503,7 @@ class TestComputeViewRateCorrectness:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         occupancy = np.asarray(result.occupancy)
         assert np.all(occupancy >= 0)
@@ -512,6 +529,7 @@ class TestComputeViewRateCorrectness:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
 
         # Compute standard spatial occupancy
@@ -548,6 +566,7 @@ class TestComputeViewRateResultMethods:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert hasattr(result, "plot")
         assert callable(result.plot)
@@ -568,6 +587,7 @@ class TestComputeViewRateResultMethods:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         peak = result.peak_location()
         assert isinstance(peak, np.ndarray)
@@ -589,6 +609,7 @@ class TestComputeViewRateResultMethods:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         info = result.view_spatial_information()
         assert isinstance(info, float)
@@ -610,6 +631,7 @@ class TestComputeViewRateResultMethods:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         is_cell = result.is_spatial_view_cell()
         assert isinstance(is_cell, bool)
@@ -639,7 +661,8 @@ class TestComputeViewRateMinOccupancy:
             times,
             positions,
             headings,
-            min_occupancy=1.0,  # High threshold
+            min_occupancy=1.0,
+            boundary_source="analysis",  # High threshold
         )
         result_low = compute_view_rate(
             simple_env,
@@ -647,7 +670,8 @@ class TestComputeViewRateMinOccupancy:
             times,
             positions,
             headings,
-            min_occupancy=0.0,  # No threshold
+            min_occupancy=0.0,
+            boundary_source="analysis",  # No threshold
         )
         # High threshold should have more NaNs
         high_nan_count = np.sum(np.isnan(np.asarray(result_high.firing_rate)))
@@ -671,6 +695,7 @@ class TestComputeViewRateMinOccupancy:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         # With zero threshold, we should get computed rates for all bins with data
         assert result is not None
@@ -703,6 +728,7 @@ class TestComputeViewRateInputValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
     def test_mismatched_times_headings_raises(
@@ -724,6 +750,7 @@ class TestComputeViewRateInputValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
 
@@ -747,6 +774,7 @@ class TestComputeViewRateSignature:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result is not None
 
@@ -813,7 +841,12 @@ class TestComputeViewRatesReturnsResult:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert isinstance(result, ViewRatesResult)
@@ -834,7 +867,12 @@ class TestComputeViewRatesReturnsResult:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert result.firing_rates.shape == (3, simple_env.n_bins)
@@ -854,7 +892,12 @@ class TestComputeViewRatesReturnsResult:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert result.occupancy.shape == (simple_env.n_bins,)
@@ -878,7 +921,12 @@ class TestComputeViewRatesSpikeTimeFormats:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert len(result) == 2
@@ -900,7 +948,12 @@ class TestComputeViewRatesSpikeTimeFormats:
         )
 
         result = compute_view_rates(
-            simple_env, spike_times_2d, times, positions, headings
+            simple_env,
+            spike_times_2d,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert len(result) == 2
@@ -927,6 +980,7 @@ class TestComputeViewRatesParameters:
             positions,
             headings,
             gaze_model="ray_cast",
+            boundary_source="analysis",
         )
 
         assert result.gaze_model == "ray_cast"
@@ -949,6 +1003,7 @@ class TestComputeViewRatesParameters:
             positions,
             headings,
             view_distance=20.0,
+            boundary_source="analysis",
         )
 
         assert result.view_distance == 20.0
@@ -971,6 +1026,7 @@ class TestComputeViewRatesParameters:
             positions,
             headings,
             method="gaussian_kde",
+            boundary_source="analysis",
         )
 
         assert result.method == "gaussian_kde"
@@ -993,6 +1049,7 @@ class TestComputeViewRatesParameters:
             positions,
             headings,
             bandwidth=10.0,
+            boundary_source="analysis",
         )
 
         assert result.bandwidth == 10.0
@@ -1020,6 +1077,7 @@ class TestComputeViewRatesParameters:
             positions,
             headings,
             n_jobs=2,
+            boundary_source="analysis",
         )
 
         assert len(result) == 3
@@ -1044,7 +1102,12 @@ class TestComputeViewRatesNeuronIteration:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert len(result) == 3
@@ -1064,7 +1127,12 @@ class TestComputeViewRatesNeuronIteration:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         single = result[0]
@@ -1086,7 +1154,12 @@ class TestComputeViewRatesNeuronIteration:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         count = 0
@@ -1112,7 +1185,12 @@ class TestComputeViewRatesEdgeCases:
         spike_times_list: list[np.ndarray] = []
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert len(result) == 0
@@ -1135,7 +1213,8 @@ class TestComputeViewRatesEdgeCases:
                 times,
                 positions,
                 headings,
-                method="invalid",  # type: ignore[arg-type]
+                method="invalid",
+                boundary_source="analysis",  # type: ignore[arg-type]
             )
 
     def test_single_neuron(
@@ -1150,7 +1229,12 @@ class TestComputeViewRatesEdgeCases:
         spike_times_list = [np.array([1.0, 2.5, 4.0])]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         assert len(result) == 1
@@ -1171,7 +1255,12 @@ class TestComputeViewRatesEdgeCases:
         ]
 
         result = compute_view_rates(
-            simple_env, spike_times_list, times, positions, headings
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         # Second neuron should have all zeros
@@ -1199,7 +1288,8 @@ class TestComputeViewRatesInputValidation:
                 times,
                 positions,
                 headings,
-                gaze_model="invalid_model",  # type: ignore[arg-type]
+                gaze_model="invalid_model",
+                boundary_source="analysis",  # type: ignore[arg-type]
             )
 
     def test_mismatched_times_positions_raises(
@@ -1221,6 +1311,7 @@ class TestComputeViewRatesInputValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
     def test_mismatched_times_headings_raises(
@@ -1242,6 +1333,7 @@ class TestComputeViewRatesInputValidation:
                 times,
                 positions,
                 headings,
+                boundary_source="analysis",
             )
 
 
@@ -1261,12 +1353,22 @@ class TestComputeViewRatesConsistencyWithSingle:
 
         # Compute with single function
         single_result = compute_view_rate(
-            simple_env, spike_times, times, positions, headings
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         # Compute with batch function
         batch_result = compute_view_rates(
-            simple_env, [spike_times], times, positions, headings
+            simple_env,
+            [spike_times],
+            times,
+            positions,
+            headings,
+            boundary_source="analysis",
         )
 
         # Should match
@@ -1299,6 +1401,7 @@ class TestComputeViewRatesSignature:
             times,
             positions,
             headings,
+            boundary_source="analysis",
         )
         assert result is not None
 
@@ -1356,6 +1459,7 @@ class TestComputeViewRateGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         assert result is not None
@@ -1397,6 +1501,7 @@ class TestComputeViewRateGazeOffsets:
             positions,
             headings,
             gaze_offsets=None,
+            boundary_source="analysis",
         )
 
         # 90-degree gaze offset (looking left)
@@ -1408,6 +1513,7 @@ class TestComputeViewRateGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # View occupancy should be different (looking in different directions)
@@ -1434,6 +1540,7 @@ class TestComputeViewRateGazeOffsets:
                 positions,
                 headings,
                 gaze_offsets=gaze_offsets,
+                boundary_source="analysis",
             )
 
     def test_gaze_offsets_with_different_gaze_models(
@@ -1457,6 +1564,7 @@ class TestComputeViewRateGazeOffsets:
                 headings,
                 gaze_model=gaze_model,  # type: ignore[arg-type]
                 gaze_offsets=gaze_offsets,
+                boundary_source="analysis",
             )
             assert result is not None
 
@@ -1479,6 +1587,7 @@ class TestComputeViewRateGazeOffsets:
             positions,
             headings,
             gaze_offsets=None,
+            boundary_source="analysis",
         )
 
         # Explicit zero offsets
@@ -1490,6 +1599,7 @@ class TestComputeViewRateGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # Should be identical
@@ -1538,6 +1648,7 @@ class TestComputeViewRatePrecomputation:
             headings,
             gaze_model="ray_cast",
             method="binned",
+            boundary_source="analysis",
         )
 
         assert call_count == 1
@@ -1568,6 +1679,7 @@ class TestComputeViewRatesGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         assert result is not None
@@ -1604,6 +1716,7 @@ class TestComputeViewRatesGazeOffsets:
             positions,
             headings,
             gaze_offsets=None,
+            boundary_source="analysis",
         )
 
         # 90-degree gaze offset
@@ -1615,6 +1728,7 @@ class TestComputeViewRatesGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # View occupancy should differ
@@ -1640,6 +1754,7 @@ class TestComputeViewRatesGazeOffsets:
                 positions,
                 headings,
                 gaze_offsets=gaze_offsets,
+                boundary_source="analysis",
             )
 
     def test_gaze_offsets_consistency_with_single(
@@ -1662,6 +1777,7 @@ class TestComputeViewRatesGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # Batch with one neuron
@@ -1672,6 +1788,7 @@ class TestComputeViewRatesGazeOffsets:
             positions,
             headings,
             gaze_offsets=gaze_offsets,
+            boundary_source="analysis",
         )
 
         # Should match
@@ -1718,6 +1835,7 @@ class TestComputeViewRatesGazeOffsets:
             headings,
             gaze_offsets=gaze_offsets,
             n_jobs=2,
+            boundary_source="analysis",
         )
 
         assert len(result) == 3
@@ -1773,6 +1891,7 @@ class TestComputeViewRateNaNHandling:
             view_distance=10.0,
             gaze_model="fixed_distance",
             method="binned",
+            boundary_source="analysis",
         )
 
         # Did not raise; produced a usable (not all-NaN) map with a finite peak.
