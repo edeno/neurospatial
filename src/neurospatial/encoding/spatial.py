@@ -610,9 +610,12 @@ def _spatial_summary_frame(
         **_glm_summary_columns(result),
     }
     if include_classification:
-        columns["cell_type"] = _label_from_scores(
-            info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS
-        )
+        labels = _label_from_scores(info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS)
+        if border_unavailable is not None:
+            # Without a border score, a tuned non-grid cell may be a border
+            # cell; do not report it as a place cell.
+            labels[labels == "place"] = "undetermined"
+        columns["cell_type"] = labels
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
     if border_unavailable is not None:
@@ -800,11 +803,16 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             Border geometry source. Unsupported physical metrics are NaN and
             explained in ``df.attrs['unavailable_metrics']``; other metrics
             remain available. The source is recorded in table attributes.
+            When the border score is unavailable, a cell that passes the
+            information gate but not the grid threshold is labeled
+            ``"undetermined"``: it could be a place or a border cell.
 
         Returns
         -------
         pandas.DataFrame
             One row indexed by this unit label, or <NA> when no label was supplied.
+            ``cell_type`` is ``"grid"``, ``"border"``, ``"place"``,
+            ``"unclassified"`` or ``"undetermined"``.
 
         Notes
         -----
@@ -2472,6 +2480,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Border geometry source. Unsupported physical metrics are NaN and
             explained in ``df.attrs['unavailable_metrics']``; other metrics
             remain available. The source is recorded in table attributes.
+            When the border score is unavailable, a cell that passes the
+            information gate but not the grid threshold is labeled
+            ``"undetermined"``: it could be a place or a border cell.
 
         Returns
         -------
@@ -2485,7 +2496,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             - sparsity: sparsity measure (0-1)
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)
-            - cell_type: classification label (if include_classification=True)
+            - cell_type: classification label (if include_classification=True):
+              a ``label_cell_types()`` label, or ``"undetermined"`` when the
+              border score needed to decide place versus border is unavailable
             - method: estimator used to compute the rate map
 
         Notes

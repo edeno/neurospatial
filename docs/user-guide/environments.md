@@ -510,13 +510,17 @@ The same choice is available on `result.border_score()`, population
 `border_scores()` and `label_cell_types()`, and `summary_table()`. Tables retain
 other metrics when wall geometry is unavailable: border scores are NaN, with a
 reason in `table.attrs["unavailable_metrics"]` and the chosen source in
-`table.attrs["border_boundary_source"]`. No analysis approximation is selected
-implicitly. With an unavailable border metric, cell-type labels reflect the
-remaining scores and do not rule out border tuning. Physical border coverage
-currently requires exact planar cells and polygonal walls; curved track footprints require a separate representation.
+`table.attrs["border_boundary_source"]`. A spatially tuned cell that is not a
+grid cell is then labeled `"undetermined"` rather than `"place"`, because it may
+be a border cell. No analysis approximation is selected
+implicitly. Physical border coverage currently requires exact planar cells and
+polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
+A combined environment also needs declared walls for every component: a field
+in a component without them would otherwise be scored against walls in other
+components, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 
@@ -556,8 +560,11 @@ np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
 
 `compute_viewed_location()` returns the first wall contact. No hit within
 `max_distance`, a nonfinite observation, or an observer outside an asserted
-footprint yields NaN. Starting on a wall gives a zero-distance contact. A cue at
-the first contact is visible; a cue behind it is occluded. Stored affine frames
+footprint yields NaN. An observer tracked exactly on a wall sees the next wall
+when it faces into the room; facing out through the wall, or exactly along it,
+gives a zero-distance contact at the observer. On an internal wall, the
+observer sees the side it faces. A cue at the first contact is visible; a cue
+behind it is occluded. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 
@@ -577,8 +584,12 @@ recording windows, long gaps or zero-duration intervals cannot change the map.
 Supplying wall geometry cannot add missing bins, and
 assigning a distant wall to a nearby bin would change the measured location.
 Build cells that reach the wall, or explicitly request the analysis-boundary
-approximation. The geometry-only `compute_viewed_location()` still returns the
-known physical hit even when its location has no analysis bin.
+approximation. `from_polygon()` keeps whole cells whose centers lie inside, so
+its cells stop short of a curved or slanted wall. To reach such a wall, clip a
+grid that covers the arena to the measured polygon and attach its walls:
+`Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
+The geometry-only `compute_viewed_location()` still returns the known physical
+hit even when its location has no analysis bin.
 
 View encoding requires a retained bin for each observed finite hit; it does not
 require gaze observations at every wall. Unviewed bins remain missing, and rays

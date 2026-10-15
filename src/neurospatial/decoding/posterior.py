@@ -36,6 +36,7 @@ from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.geometry._arena import Arena
 
 
@@ -1440,7 +1441,7 @@ def _decode_and_reduce_block(
 
 
 def decode_position_summary(
-    env: Environment,
+    env: Environment[CartesianSystem],
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64] | SpatialRatesLike,
     dt: float,
@@ -1515,6 +1516,10 @@ def decode_position_summary(
         If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
         conditions as :func:`decode_position` (invalid method, no finite bins,
         bin-count mismatch, bad ``times`` length, validation failures).
+    CartesianOnlyError
+        If ``env`` is polar: the summary's ``mean_position`` would average
+        ``(distance, angle)`` bin centers. Use :func:`decode_position` and its
+        ``map_position`` instead.
 
     Notes
     -----
@@ -1543,6 +1548,16 @@ def decode_position_summary(
     >>> summary.map_position.shape
     (4, 2)
     """
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "decode_position_summary()",
+        instead=(
+            "Its mean_position averages Cartesian bin centers. Use "
+            "decode_position(env, ...) and its map_position or posterior instead."
+        ),
+    )
     if time_chunk is None:
         raise ValueError(
             "time_chunk=None is not allowed for decode_position_summary: this "

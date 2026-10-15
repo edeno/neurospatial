@@ -188,3 +188,44 @@ def polar_circularity(
     # while regular angular edges do not.
     threshold = 1.5 * min_step
     return any(dt > threshold for dt in same_ring_dtheta)
+
+
+_POLAR_COORDINATES = (
+    "this is a polar environment whose bin_centers[:, 0] is distance and "
+    "bin_centers[:, 1] is angle in radians, so operations that assume Cartesian "
+    "(x, y[, z]) coordinates or a Cartesian grid would silently return "
+    "geometric nonsense."
+)
+
+
+def _require_cartesian_coordinates(
+    env: object, operation: str, *, instead: str
+) -> None:
+    """Refuse a domain function that reads polar bin centers as Cartesian.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose bin centers the operation reads. Duck-typed
+        objects without owned coordinates are treated as Cartesian.
+    operation : str
+        The refused call as the caller wrote it, e.g. ``"mean_position()"``
+        or ``"rate_map_centroid(method='euclidean')"``.
+    instead : str
+        One sentence naming the polar-safe alternative.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` stores polar ``(distance, angle)`` bins.
+    """
+    # Duck-typed environments without owned coordinates are Cartesian arrays.
+    if isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem):
+        from neurospatial._exceptions import CartesianOnlyError
+
+        raise CartesianOnlyError(
+            type(env).__name__,
+            operation,
+            reason="Cartesian-coordinate operation",
+            explanation=f"{_POLAR_COORDINATES} {instead}",
+        )

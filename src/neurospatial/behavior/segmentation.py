@@ -87,6 +87,7 @@ from neurospatial._validation import validate_finite
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
 
 
 def _safe_gather(
@@ -583,6 +584,9 @@ def detect_runs_between_regions(
         If times contains non-finite values, or if a run's frame times are
         not strictly increasing when ``min_speed`` filtering is applied
         (duplicate frame times would yield ``inf`` velocity).
+    CartesianOnlyError
+        If ``min_speed`` is given and ``env`` is polar: run speed comes from
+        Cartesian distances between bin centers.
 
     See Also
     --------
@@ -647,6 +651,17 @@ def detect_runs_between_regions(
     >>> len(runs) > 0
     True
     """
+    if min_speed is not None:
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "detect_runs_between_regions(min_speed=...)",
+            instead=(
+                "Run speed needs Cartesian bin centers; pass min_speed=None to "
+                "detect runs from region entries alone."
+            ),
+        )
     # Validate inputs
     if source not in env.regions:
         available = list(env.regions.keys())
@@ -1114,7 +1129,7 @@ def _detect_lap_direction(
 def detect_laps(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     method: Literal["auto", "reference", "region"] = "auto",
     min_overlap: float = 0.8,
@@ -1182,6 +1197,9 @@ def detect_laps(
         If method='region' but start_region not provided.
     ValueError
         If start_region not in env.regions.
+    CartesianOnlyError
+        If ``env`` is polar: each lap's clockwise or counter-clockwise
+        direction is the signed area of Cartesian bin centers.
 
     See Also
     --------
@@ -1313,6 +1331,16 @@ def detect_laps(
            The reorganization and reactivation of hippocampal maps predict
            spatial memory performance. Nature Neuroscience, 13(8), 995-1002.
     """
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "detect_laps()",
+        instead=(
+            "Lap direction needs Cartesian bin centers; detect laps on an "
+            "allocentric Cartesian environment."
+        ),
+    )
     # Validate method
     if method not in ("auto", "reference", "region"):
         raise ValueError(
@@ -2257,6 +2285,9 @@ def trajectory_similarity(
         If trajectories are empty.
     ValueError
         If method is not one of the supported options.
+    CartesianOnlyError
+        If ``method`` is ``"hausdorff"`` or ``"dtw"`` and ``env`` is polar:
+        both measure Cartesian distances between bin centers.
 
     See Also
     --------
@@ -2325,6 +2356,14 @@ def trajectory_similarity(
     valid_methods = ["jaccard", "correlation", "hausdorff", "dtw"]
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+    if method in ("hausdorff", "dtw"):
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            f"trajectory_similarity(method={method!r})",
+            instead="Use method='jaccard' or method='correlation', which compare bins.",
+        )
 
     if method == "jaccard":
         # Spatial overlap (set-based)

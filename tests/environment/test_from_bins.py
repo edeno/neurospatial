@@ -16,6 +16,7 @@ from neurospatial.arena import OpenArena
 from neurospatial.binning import (
     Binning,
     FaceGeometry,
+    FaceNormals,
     KnownFaces,
     MissingFaces,
     NearestBinLocator,
@@ -897,3 +898,173 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env._face_geometry.distance, [scale])
     np.testing.assert_array_equal(env.bin_at(centers), [0, 1])
+
+
+_CELL_FACE_LABELS = {"hex": "hexagon faces", "mesh": "triangle faces"}
+
+
+def _cell_face_source(kind, history):
+    from neurospatial.ops.transforms import Affine2D
+
+    if kind == "hex":
+        env = Environment.from_layout(
+            "Hexagonal",
+            {"hexagon_width": 4.0, "dimension_ranges": [(1e6, 1e6 + 12)] * 2}
+            if history == "large_offset"
+            else {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+        )
+    else:
+        origin = 1e6 if history == "large_offset" else 0.0
+        env = Environment.from_layout(
+            "TriangularMesh",
+            {
+                "boundary_polygon": box(origin, origin, origin + 12, origin + 12),
+                "point_spacing": 4.0,
+            },
+        )
+    if history == "subset":
+        env = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+    elif history in {"similarity", "reflection"}:
+        angle, scale = 0.3, 2.5
+        rotation = np.array(
+            [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+        )
+        linear = (
+            scale
+            * rotation
+            @ (np.diag([-1.0, 1.0]) if history == "reflection" else np.eye(2))
+        )
+        matrix = np.eye(3)
+        matrix[:2, :2] = linear
+        matrix[:2, 2] = [100.0, -50.0]
+        env = env.apply_transform(Affine2D(matrix))
+    source = env._binning
+    return env, replace(source, faces=KnownFaces(source.faces.build()))
+
+
+@pytest.mark.filterwarnings("ignore:Triangular mesh is non-K-orthogonal")
+@pytest.mark.parametrize("kind", ["hex", "mesh"])
+@pytest.mark.parametrize(
+    "history", ["native", "subset", "similarity", "reflection", "large_offset"]
+)
+def test_explicit_cell_faces_from_native_layouts_round_trip(kind, history):
+    env, source = _cell_face_source(kind, history)
+    restored = Environment.from_bins(source)
+    np.testing.assert_array_equal(restored._face_geometry.A, env._face_geometry.A)
+    np.testing.assert_array_equal(
+        restored._face_geometry.distance, env._face_geometry.distance
+    )
+
+
+@pytest.mark.parametrize("kind", ["hex", "mesh"])
+@pytest.mark.parametrize(
+    ("field", "factor"), [("A", 10.0), ("distance", 10.0), ("A", np.sqrt(3.0))]
+)
+@pytest.mark.parametrize("history", ["native", "similarity"])
+def test_explicit_cell_faces_must_match_cell_geometry(kind, field, factor, history):
+    _, source = _cell_face_source(kind, history)
+    faces = source.faces.build()
+    invalid = replace(
+        source,
+        faces=KnownFaces(faces._replace(**{field: getattr(faces, field) * factor})),
+    )
+    with pytest.raises(ValueError, match=rf"{_CELL_FACE_LABELS[kind]}\.{field}"):
+        Environment.from_bins(invalid)
+
+
+@pytest.mark.parametrize("kind", ["hex", "mesh"])
+@pytest.mark.parametrize("change", ["missing_face", "invented_face"])
+def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
+    _, source = _cell_face_source(kind, "native")
+    bins = source.bins
+    faces = source.faces.build()
+    if change == "missing_face":
+        areas = faces.A.copy()
+        areas[0] = 0.0
+        normals = source.face_normals.values.copy()
+        normals[0] = 0.0
+        invalid = replace(
+            source,
+            faces=KnownFaces(faces._replace(A=areas)),
+            face_normals=FaceNormals(normals),
+        )
+    else:
+        # Link the two farthest-apart bins, which cannot share a cell face.
+        separation = np.linalg.norm(
+            bins.centers[:, None, :] - bins.centers[None, :, :], axis=-1
+        )
+        u, v = np.unravel_index(np.argmax(separation), separation.shape)
+        pairs = np.vstack([bins.pairs, [[u, v]]]).astype(np.intp)
+        distance = separation[u, v]
+        invalid = replace(
+            source,
+            bins=replace(
+                bins,
+                pairs=pairs,
+                pair_distances=np.append(bins.pair_distances, distance),
+            ),
+            faces=KnownFaces(
+                FaceGeometry(
+                    pairs,
+                    np.append(faces.A, faces.A[0]),
+                    np.append(faces.distance, distance),
+                    faces.volumes,
+                )
+            ),
+            face_normals=FaceNormals(
+                np.vstack(
+                    [
+                        source.face_normals.values,
+                        (bins.centers[v] - bins.centers[u]) / distance,
+                    ]
+                )
+            ),
+        )
+    # A face without a physical counterpart fails the normal-direction check
+    # first; a missing face fails the shared-edge check.
+    with pytest.raises(
+        ValueError,
+        match=rf"{_CELL_FACE_LABELS[kind]}\.A|face normals disagree with the locator",
+    ):
+        Environment.from_bins(invalid)
+
+
+def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
+    from neurospatial.layout._locators import TransformedLocator
+
+    _, source = _cell_face_source("hex", "native")
+    matrix = np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])
+    bins = source.bins
+    centers = bins.centers @ matrix[:2, :2].T
+    distances = np.linalg.norm(
+        centers[bins.pairs[:, 1]] - centers[bins.pairs[:, 0]], axis=1
+    )
+    faces = source.faces.build()
+    sheared = replace(
+        source,
+        bins=SpatialBins.from_arrays(
+            centers, bins.sizes * 6.0, 2, bins.pairs, distances
+        ),
+        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        faces=KnownFaces(
+            FaceGeometry(
+                bins.pairs, faces.A * np.sqrt(6.0), distances, bins.sizes * 6.0
+            )
+        ),
+        shapes=None,
+    )
+    with pytest.raises(
+        ValueError, match=r"hexagon faces|face normals disagree with the locator"
+    ):
+        Environment.from_bins(sheared)
+
+
+@pytest.mark.filterwarnings("ignore:Triangular mesh is non-K-orthogonal")
+@pytest.mark.parametrize("kind", ["hex", "mesh"])
+def test_stored_cell_faces_cannot_bypass_publication_geometry_checks(kind):
+    env, _ = _cell_face_source(kind, "native")
+    payload = env.to_dict()
+    key = "binning/faces/A"
+    payload["arrays"][key] = (np.asarray(payload["arrays"][key]) * 7.0).tolist()
+    with pytest.raises(ValueError, match=rf"{_CELL_FACE_LABELS[kind]}\.A"):
+        Environment.from_dict(payload)

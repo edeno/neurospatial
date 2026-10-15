@@ -4,6 +4,43 @@
 
 ### Fixed
 
+- Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
+  raise `CartesianOnlyError` on polar environments instead of returning wrong
+  numbers. For example, a posterior split across the angle seam behind the
+  animal no longer has a `mean_position` of straight ahead. The refusals cover
+  `mean_position` (including `DecodingResult.mean_position` and
+  `to_dataframe()`), `decode_position_summary`, `field_shape_metrics`,
+  `field_shift_distance`, `spatial_autocorrelation`, `map_points_to_bins`,
+  `resample_field`, `map_probabilities`, `spatial_basis`,
+  `graph_turn_sequence` and `detect_laps`. Type checkers reject polar
+  environments for these functions. Some functions refuse only their Cartesian
+  mode and keep a graph-based mode for polar environments:
+  `rate_map_centroid(method="euclidean")`,
+  `compute_field_emd(metric="euclidean")`,
+  `select_basis_centers(method="kmeans")` (also the default `center_method` of
+  the basis functions), `path_progress` and `distance_to_region` with
+  `metric="euclidean"`, `trajectory_similarity` with `"hausdorff"` or `"dtw"`,
+  and `detect_runs_between_regions` with `min_speed`.
+
+- `Environment.from_bins` and environment loading now check supplied
+  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
+  each face length must equal the shared cell edge (zero when cells share no
+  edge) and each face distance the center-to-center distance. Inconsistent
+  faces previously passed silently and changed smoothing and diffusion results.
+
+- Ray-cast view rates no longer refuse when cells clipped to a curved or
+  slanted wall reach it: a hit is owned by the cell within that cell's
+  coordinate rounding of the hit, instead of an overlay of nearly coincident
+  edges. Cells that stop short of the wall still refuse, and the message names
+  the route that builds wall-reaching cells:
+  `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
+
+- Observers tracked exactly on a wall no longer view their own position. A ray
+  or cue sight line that leaves the wall into the room reaches the next wall;
+  only facing out through the wall or exactly along it gives a zero-distance
+  contact. Standing on an internal wall views the side faced. Gaze hits,
+  viewsheds, visible cues, view-rate bins and simulated view cells agree.
+
 - Preserve static attribute and protocol checking for the common Environment;
   runtime Cartesian/polar capability filtering no longer admits missing methods.
 
@@ -11,12 +48,17 @@
   Missing wall bins raise actionable guidance; excluded/final samples and raw
   geometric hits retain their meanings. Slanted wall cues tolerate local cue
   rounding while earlier crossings and wall overlaps remain blocked.
-
 - Physical border scores require complete represented and observed wall
   coverage, distinguishing missing measurements from measured zero firing.
   Unsupported scores and batch summaries provide setup guidance rather than
   treating an unobserved wall as zero activity.
-
+  When the border score is unavailable, `summary_table()` labels a spatially
+  tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
+  border cell; single-unit and population tables agree.
+  Physical border scores refuse combined environments in which a component has
+  no declared walls, naming the component, instead of scoring its fields
+  against walls in other components (euclidean returned -1 for a wall-hugging
+  field). Declare walls for each component or use `boundary_source="analysis"`.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite

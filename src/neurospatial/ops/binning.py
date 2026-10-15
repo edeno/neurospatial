@@ -21,6 +21,7 @@ from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.ops._protocols import CacheClearConsumer, NearestBinConsumer
 
 
@@ -112,7 +113,7 @@ def _typical_bin_spacing(env: Environment) -> float:
 
 
 def map_points_to_bins(
-    env: Environment,
+    env: Environment[CartesianSystem],
     points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy
@@ -184,6 +185,9 @@ def map_points_to_bins(
     ValueError
         If both max_distance and max_distance_factor are specified, or if either
         is negative, or if invalid tie_break mode.
+    CartesianOnlyError
+        If ``env`` is polar: nearest centers in ``(distance, angle)`` space
+        mix units and ignore the angle seam.
 
     Examples
     --------
@@ -247,6 +251,17 @@ def map_points_to_bins(
       processing.
 
     """
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "map_points_to_bins()",
+        instead=(
+            "Nearest-center lookup needs Cartesian bin centers; map points on "
+            "an allocentric Cartesian environment."
+        ),
+    )
+
     consumer: NearestBinConsumer = env
     return consumer.nearest_bin(
         points,
@@ -669,8 +684,8 @@ def regions_to_mask(
 
 def resample_field(
     field: NDArray[np.float64],
-    src_env: Environment,
-    dst_env: Environment,
+    src_env: Environment[CartesianSystem],
+    dst_env: Environment[CartesianSystem],
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
     bandwidth: float | None = None,
@@ -716,6 +731,9 @@ def resample_field(
         if method is invalid,
         if bandwidth is missing/invalid for diffuse method,
         or if environments have different dimensions.
+    CartesianOnlyError
+        If either environment is polar: bins are matched by nearest Cartesian
+        bin center.
 
     See Also
     --------
@@ -819,6 +837,17 @@ def resample_field(
     >>> np.allclose(resampled_identity, field)
     True
     """
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    for env in (src_env, dst_env):
+        _require_cartesian_coordinates(
+            env,
+            "resample_field()",
+            instead=(
+                "Bins are matched by nearest Cartesian center; resample between "
+                "allocentric Cartesian environments."
+            ),
+        )
     # Validate inputs
     if field.shape[0] != src_env.n_bins:
         raise ValueError(

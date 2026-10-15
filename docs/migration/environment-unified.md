@@ -34,8 +34,12 @@ Polar coordinates are `(distance, angle)`: distance uses the declared length
 unit and angle is in radians. Zero angle is ahead of the animal; positive angles
 point to its left. Shared graph and field operations keep their existing polar
 math. Cartesian lookup, affine transforms, clipping and Cartesian trajectory
-operations still refuse polar inputs. Type checkers infer that restriction from
-the factory return type; runtime checks also cover explicit unbound calls.
+operations still refuse polar inputs. Domain functions that read bin centers as
+Cartesian coordinates, such as `mean_position`, `map_points_to_bins` and
+`spatial_autocorrelation`, refuse them too; functions with a graph-based mode,
+such as `rate_map_centroid(method="geodesic")`, keep that mode for polar bins.
+Type checkers infer that restriction from the factory return type; runtime
+checks also cover explicit unbound calls.
 
 An unparameterized `Environment` annotation accepts either coordinate kind for
 shared operations. Loading from a file, dictionary or NWB record also returns

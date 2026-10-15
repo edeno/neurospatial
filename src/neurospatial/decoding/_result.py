@@ -386,6 +386,12 @@ class DecodingResult(ResultMixin):
         NDArray[np.float64]
             Mean positions of shape (n_time_bins, n_dims).
 
+        Raises
+        ------
+        CartesianOnlyError
+            If the environment is polar, where averaging ``(distance, angle)``
+            bin centers is not a position. Use :attr:`map_position` instead.
+
         Notes
         -----
         Computed as: ``posterior @ bin_centers``
@@ -397,6 +403,12 @@ class DecodingResult(ResultMixin):
         --------
         map_position : MAP position (mode of posterior)
         """
+        from neurospatial.decoding.estimates import _POLAR_MEAN_INSTEAD
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            self.env, "mean_position", instead=_POLAR_MEAN_INSTEAD
+        )
         return self.posterior @ self.env.bin_centers
 
     @cached_property

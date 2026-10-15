@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from neurospatial.geometry._coordinates import EgocentricPolarSystem
+from neurospatial.geometry._coordinates import (
+    _POLAR_COORDINATES,
+    EgocentricPolarSystem,
+)
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 if TYPE_CHECKING:
@@ -14,10 +17,7 @@ if TYPE_CHECKING:
     from neurospatial.layout.base import LayoutEngine
 
 _POLAR_EXPLANATION = (
-    "this is a polar environment whose bin_centers[:, 0] is distance and "
-    "bin_centers[:, 1] is angle in radians, so operations that assume Cartesian "
-    "(x, y[, z]) coordinates or a Cartesian grid would silently return "
-    "geometric nonsense. Use connectivity-graph operations instead (neighbors, "
+    f"{_POLAR_COORDINATES} Use connectivity-graph operations instead (neighbors, "
     "path_between, reachable_from, smooth, or distance_to(metric='geodesic')), "
     "or build an allocentric Cartesian env via Environment.from_samples / "
     "from_polygon / from_grid_mask."

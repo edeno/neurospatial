@@ -106,6 +106,7 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.ops._protocols import WaveletGeometryConsumer
 
 __all__ = [
@@ -168,6 +169,10 @@ def select_basis_centers(
         If n_centers > n_bins.
         If n_centers < 1.
         If method="grid" but environment is not grid-based.
+    CartesianOnlyError
+        If method="kmeans" and ``env`` is polar: k-means would cluster
+        ``(distance, angle)`` bin centers as ``(x, y)``. Use
+        ``method="farthest_point"`` or ``method="random"``.
 
     Examples
     --------
@@ -200,6 +205,17 @@ def select_basis_centers(
         generator = np.random.default_rng(rng)
 
     if method == "kmeans":
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "select_basis_centers(method='kmeans')",
+            instead=(
+                "Use method='farthest_point', which spreads centers by graph "
+                "distance, or method='random' (center_method= in the basis "
+                "functions)."
+            ),
+        )
         return _select_centers_kmeans(env, n_centers, generator)
     elif method == "farthest_point":
         return _select_centers_farthest_point(env, n_centers, generator)
@@ -1020,7 +1036,7 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
 
 
 def spatial_basis(
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     coverage: Literal["local", "medium", "global"] = "medium",
     n_features: int = 100,
@@ -1059,6 +1075,12 @@ def spatial_basis(
     basis : NDArray[np.float64], shape (n_basis, n_bins)
         Ready-to-use basis matrix.
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar: the automatic scale multiplies distance and angle
+        extents, and centers come from k-means on Cartesian bin centers.
+
     Examples
     --------
     >>> from neurospatial import Environment  # doctest: +SKIP
@@ -1078,6 +1100,17 @@ def spatial_basis(
     The function creates a multi-scale basis with 3 octave-spaced sigma
     values centered around the coverage-determined scale.
     """
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "spatial_basis()",
+        instead=(
+            "Its automatic scale assumes Cartesian extents. Use "
+            "geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
+            "with sigma in distance units."
+        ),
+    )
     # Compute environment extent
     # dimension_ranges is a sequence of tuples: [(min1, max1), (min2, max2), ...]
     dim_ranges = env.dimension_ranges
