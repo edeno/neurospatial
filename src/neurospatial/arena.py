@@ -947,6 +947,21 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
         If a codec/version is unknown or stored geometry is malformed.
     """
     try:
+        kind = meta.get("codec")
+        if isinstance(kind, str) and kind not in {
+            "UnknownArena",
+            "OpenArena",
+            "MaskArena",
+            "TrackArena",
+            "EgocentricSurround",
+            "_TransformedArena",
+        }:
+            from neurospatial.extensions import _decode_snapshot
+
+            snapshot = _decode_snapshot(meta, arrays, "")
+            if not isinstance(snapshot, Arena):
+                raise ValueError("The installed adapter must decode an arena snapshot.")
+            return snapshot
         if _count(meta, "codec_version", minimum=1) != 1:
             raise _error(
                 "Unsupported arena codec version.",

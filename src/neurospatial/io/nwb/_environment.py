@@ -452,14 +452,9 @@ def environment_from_position(
         )
 
     # Create Environment from position samples
-    env = Environment.from_samples(positions, bin_size=bin_size, **kwargs)
-
-    # Set metadata
-    env.units = units
-    if frame is not None:
-        env.frame = frame
-
-    return env
+    return Environment.from_samples(
+        positions, bin_size=bin_size, units=units, frame=frame, **kwargs
+    )
 
 
 def _get_position_units(

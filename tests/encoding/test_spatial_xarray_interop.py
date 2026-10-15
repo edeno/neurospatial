@@ -76,7 +76,7 @@ def rates_result() -> SpatialRatesResult:
     rng = np.random.default_rng(0)
     positions = rng.uniform(0, 50, (500, 2))
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     n_neurons = 3
     firing_rates = rng.uniform(0.0, 10.0, (n_neurons, env.n_bins))
     occupancy = rng.uniform(0.5, 2.0, env.n_bins)
@@ -237,7 +237,7 @@ def test_view_rates_to_xarray():
     rng = np.random.default_rng(2)
     positions = rng.uniform(0, 50, (300, 2))
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     n_neurons = 3
     result = ViewRatesResult(
         firing_rates=rng.uniform(0, 10, (n_neurons, env.n_bins)),
@@ -353,7 +353,7 @@ def test_spatial_rates_units_none_omits_none_string():
     rng = np.random.default_rng(13)
     positions = rng.uniform(0, 50, (300, 2))
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = None
+    env = env.with_metadata(units=None)
     result = SpatialRatesResult(
         firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),

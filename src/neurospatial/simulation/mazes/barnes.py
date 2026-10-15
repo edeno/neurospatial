@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
@@ -171,21 +171,23 @@ def make_barnes_maze(
         name="barnes_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Calculate hole positions on perimeter
     # Holes sit slightly inside the edge
     hole_placement_radius = radius - dims.hole_radius
 
+    region_builder = Regions()
     for i in range(dims.n_holes):
         angle = 2 * np.pi * i / dims.n_holes
         x = hole_placement_radius * np.cos(angle)
         y = hole_placement_radius * np.sin(angle)
-        env_2d.regions.add(f"hole_{i}", point=(x, y))
+        region_builder.add(f"hole_{i}", point=(x, y))
 
     # Mark the escape hole
-    escape_hole_pos = env_2d.regions[f"hole_{escape_hole_index}"].data
-    env_2d.regions.add("escape_hole", point=tuple(escape_hole_pos))
+    escape_hole_pos = region_builder[f"hole_{escape_hole_index}"].data
+    region_builder.add("escape_hole", point=tuple(escape_hole_pos))
+    env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field
     env_track = None

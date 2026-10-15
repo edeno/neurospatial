@@ -59,7 +59,7 @@ def _make_sim(
 
     sample_positions = np.random.default_rng(seed).uniform(0.0, 50.0, (400, 2))
     env = Environment.from_samples(sample_positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     positions, times = simulate_trajectory_ou(
         env, duration=duration, seed=seed, speed_units="cm"
@@ -101,7 +101,7 @@ def _make_linear_sim(
     from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
 
     env = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     times = np.linspace(0.0, 20.0, 1000)
     x = 50.0 + 50.0 * np.sin(2 * np.pi * times / 20.0)

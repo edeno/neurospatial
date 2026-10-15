@@ -4,6 +4,23 @@
 
 ### Fixed
 
+- `Environment.from_bins` and environment loading now check supplied
+  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
+  each face length must equal the shared cell edge (zero when cells share no
+  edge) and each face distance the center-to-center distance. Inconsistent
+  faces previously passed silently and changed smoothing and diffusion results.
+
+- Omit transient analysis caches before copy/pickle; retain JSON-compatible
+  protected graph metadata. Explicit bins now reject wall-crossing supplied
+  pairs, keep drawing outlines separate from physical evidence, and validate
+  finite-volume faces against their grid geometry across coordinate scales.
+  Clipping preserves declared navigation paths and stores equal parent maps once.
+
+- Reject circular region metadata before exhausting the interpreter stack,
+  avoiding a test-worker crash on Windows/Python 3.10.
+
+- Compare point regions by coordinate values, avoiding ambiguous NumPy truth
+  values on Python 3.10–3.12 and when comparing independent region copies.
 - Label place fields from actual graph connections, preserving diagonal links
   and physical walls after derivation and storage. Polygon clipping now retains
   per-parent ownership at floating-point precision and exposes analysis boundary
@@ -31,6 +48,26 @@
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
+
+- Add `Environment.with_metadata(...)` and `with_regions(...)` for immutable
+  environment values. Metadata replacements share geometry and start fresh
+  analysis caches. **Breaking:** assign units/frame/name at construction or use
+  a replacement; edit a standalone `Regions` builder, then publish it with
+  `with_regions`. Environment snapshots own caller data and protect geometry,
+  provenance, regions and cached numerical exports through copy and persistence.
+- Add `Environment.from_bins(...)` with public `neurospatial.binning` records,
+  explicit lookup and explicit face availability. `env.edge_pairs` preserves
+  supplied neighbor order and defines gradient/flux order. `to_networkx()`
+  returns an independent editable graph. Declared navigation path lengths are
+  preserved by rigid transforms and scaled by uniform scaling; other affine
+  maps require known paths or rebuilt distances.
+- Add installed `SnapshotAdapter` objects in the versioned
+  `neurospatial.snapshot_adapters.v1` entry-point group, plus
+  `neurospatial.testing.assert_environment_contract`. Custom providers must
+  convert into supported built-in data snapshots. Original custom saved records
+  require their adapter package; canonical resaves use built-in codecs.
+- Preserve hexagonal grid shape and active mask across explicit-bin construction
+  and persistence, keeping grid-based spatial autocorrelation available.
 
 - Add continuous Arena domains alongside spatial bins. Tracked positions,
   grid masks and image masks remain direct inputs and infer computational

@@ -474,7 +474,8 @@ class TestGraphLinearization:
         stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
         samples = starts * (1 - t) + stops * t
 
-        via_linear = env.layout.linear_point_to_bin_ind(env.to_linear(samples))
+        layout = type(env)._create_layout(env.layout_type, env.layout_parameters)
+        via_linear = layout.linear_point_to_bin_ind(env.to_linear(samples))
         assert np.mean(via_linear != env.bin_at(samples)) == 0.0
 
     def test_from_graph_ignores_input_edge_ids(self):

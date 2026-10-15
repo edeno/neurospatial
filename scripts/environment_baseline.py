@@ -356,8 +356,10 @@ def record(path: Path) -> None:
                 (variant_name, variant),
                 (f"{variant_name}|copy", variant.copy()),
             ):
-                env.regions.add("baseline_point", point=x["point"])
-                env.regions.add("baseline_box", polygon=x["polygon"])
+                regions = type(env.regions)(env.regions.values())
+                regions.add("baseline_point", point=x["point"])
+                regions.add("baseline_box", polygon=x["polygon"])
+                env = env.with_regions(regions)
                 _probe(out, tag, env, x)
     np.savez(path, **out)
     n_errors = sum(key.endswith(_ERROR_SUFFIX) for key in out)

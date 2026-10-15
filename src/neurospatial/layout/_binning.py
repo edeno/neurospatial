@@ -45,7 +45,8 @@ class SpatialBins:
         Dimension of the bin measures: one for track lengths, otherwise the
         coordinate dimension for areas or volumes.
     pairs : ndarray of intp, shape (n_pairs, 2)
-        Neighbor pairs in connectivity edge order and orientation.
+        Neighbor pairs in authoritative edge order and orientation, exposed as
+        ``env.edge_pairs``. NetworkX edge iteration may use a different order.
     pair_distances : ndarray of float64, shape (n_pairs,)
         Finite, non-negative navigation distances, distinct from the flux
         distances used by finite-volume faces at track junctions.

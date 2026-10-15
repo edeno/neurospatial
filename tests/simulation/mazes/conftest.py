@@ -24,5 +24,5 @@ def sample_positions(rng):
 def sample_env(sample_positions):
     """Create a simple 2D environment for testing."""
     env = Environment.from_samples(sample_positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return env

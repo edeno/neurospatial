@@ -6,7 +6,7 @@ Following TDD: Tests written FIRST, then implementation.
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestDetectRegionCrossings:
@@ -22,7 +22,9 @@ class TestDetectRegionCrossings:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Add a region in the middle
-        env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        env = env.with_regions(region_builder)
 
         # Create trajectory that enters and exits region
         # Start outside, enter, stay inside, exit, enter again
@@ -62,7 +64,9 @@ class TestDetectRegionCrossings:
         xx, yy = np.meshgrid(x, y)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        env = env.with_regions(region_builder)
 
         x_traj = np.array([20.0, 40.0, 50.0, 55.0, 50.0, 40.0, 50.0])
         y_traj = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
@@ -91,7 +95,9 @@ class TestDetectRegionCrossings:
         xx, yy = np.meshgrid(x, y)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        env = env.with_regions(region_builder)
 
         # Start inside region
         x_traj = np.array([50.0, 55.0, 50.0, 40.0, 20.0, 50.0, 40.0])
@@ -121,7 +127,9 @@ class TestDetectRegionCrossings:
         xx, yy = np.meshgrid(x, y)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
+        env = env.with_regions(region_builder)
 
         # Stay far from region
         x_traj = np.array([10.0, 15.0, 20.0, 15.0, 10.0])
@@ -158,8 +166,10 @@ class TestDetectRunsBetweenRegions:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Add source and target regions at opposite ends
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Create trajectory: start in source, travel to target
         x_traj = np.linspace(10.0, 90.0, 50)
@@ -206,8 +216,10 @@ class TestDetectRunsBetweenRegions:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Trajectory leaves source (10, 50), moves to mid-arena (50, 50)
         # over 1.5 s, then dwells there. ``max_duration=1.0`` < dwell
@@ -251,8 +263,10 @@ class TestDetectRunsBetweenRegions:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Very fast run (0.1 seconds)
         x_traj = np.linspace(10.0, 90.0, 10)
@@ -290,8 +304,10 @@ class TestDetectRunsBetweenRegions:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Leave source, move steadily toward (but never reaching) target,
         # so the run times out partway with a non-trivial moving path.
@@ -492,8 +508,10 @@ class TestRegionSegmentationIntegration:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+        env = env.with_regions(region_builder)
 
         # Create trajectory: rest at source, move to target, rest at target
         rest_source_x = np.ones(50) * 10.0

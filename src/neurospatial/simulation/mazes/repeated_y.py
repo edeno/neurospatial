@@ -34,7 +34,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_buffered_line, union_polygons
 
@@ -268,11 +268,13 @@ def make_repeated_y_maze(
         name="repeated_y_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions
+    region_builder = Regions()
     for region_name, region_pos in regions.items():
-        env_2d.regions.add(region_name, point=tuple(region_pos))
+        region_builder.add(region_name, point=tuple(region_pos))
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -408,6 +410,6 @@ def _create_repeated_y_track_graph(
         bin_size=bin_size,
         name="repeated_y_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

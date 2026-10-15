@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -198,12 +198,14 @@ def make_w_maze(
         name="w_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations - wells at top of each vertical corridor
+    region_builder = Regions()
     for i, x_pos in enumerate(well_x_positions, start=1):
         well_top_pos = (x_pos, dims.height)
-        env_2d.regions.add(f"well_{i}", point=well_top_pos)
+        region_builder.add(f"well_{i}", point=well_top_pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -305,6 +307,6 @@ def _create_w_maze_track_graph(
         bin_size=bin_size,
         name="w_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

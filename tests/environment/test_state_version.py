@@ -30,11 +30,10 @@ def env() -> Environment:
 
 
 class TestStateVersionField:
-    """Environment._state_version must increment on documented mutation paths."""
+    """Published values retain their state; restored values own fresh caches."""
 
-    def test_restored_layout_graph_refreshes_views_and_all_caches(self) -> None:
-        """Restoring a saved graph onto the layout, as the readers do, refreshes
-        the environment's views and every cache."""
+    def test_restoration_publishes_saved_geometry_with_fresh_caches(self) -> None:
+        """Reading a different saved graph does not change an existing value."""
         from scipy.spatial import cKDTree
 
         grid = (np.ones((3, 3), dtype=bool), (np.arange(4.0),) * 2)
@@ -52,26 +51,29 @@ class TestStateVersionField:
         old_mrf_cache = env._mrf_eigenbasis
         version = env._state_version
 
-        env.layout.connectivity = (
-            expected.connectivity
-        )  # e.g. a saved 4-connected graph
-        env._setup_from_layout()
+        restored = Environment.from_dict(expected.to_dict())
 
-        assert env._state_version == version + 1
-        assert env.connectivity is env.layout.connectivity
-        assert env.bin_centers is env.layout.bin_centers
-        assert env._kernel_cache == {}
-        assert env._kdtree_cache is None
-        assert env._diffusion_geometry is not old_geometry
-        assert env._diffusion_eigenbasis is not old_diffusion_cache
-        assert env._mrf_eigenbasis is not old_mrf_cache
+        assert env._state_version == version
+        assert env._kernel_cache
+        assert env._diffusion_geometry is old_geometry
+        assert env._diffusion_eigenbasis is old_diffusion_cache
+        assert env._mrf_eigenbasis is old_mrf_cache
+        assert restored._kernel_cache == {}
+        assert restored._kdtree_cache is None
+        assert restored._diffusion_geometry is not old_geometry
+        assert restored._diffusion_eigenbasis is not old_diffusion_cache
+        assert restored._mrf_eigenbasis is not old_mrf_cache
+        assert list(restored.connectivity.edges) == list(expected.connectivity.edges)
+        np.testing.assert_array_equal(restored.bin_centers, expected.bin_centers)
         np.testing.assert_allclose(
-            env.get_differential_operator().toarray(),
+            restored.get_differential_operator().toarray(),
             expected.get_differential_operator().toarray(),
         )
 
     def test_invalid_layout_graph_leaves_environment_unchanged(self) -> None:
         """Validation runs before any environment state changes."""
+        from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+
         env = Environment.from_grid_mask(
             np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
         )
@@ -80,10 +82,15 @@ class TestStateVersionField:
         broken = connectivity.copy()
         for _, _, data in broken.edges(data=True):
             del data["edge_id"]
-        env.layout.connectivity = broken
+        layout = MaskedGridLayout()
+        layout.build(
+            active_mask=np.ones((2, 2), dtype=bool),
+            grid_edges=(np.arange(3.0),) * 2,
+        )
+        layout.connectivity = broken
 
         with pytest.raises(ValueError, match="layout engine bug"):
-            env._setup_from_layout()
+            Environment("invalid", layout, "MaskedGrid", {})
 
         assert env.connectivity is connectivity
         assert env._state_version == version
@@ -209,12 +216,12 @@ class TestPublishedGeometryIsReadOnly:
     def test_published_graph_owns_coordinate_index_and_vector_values(
         self, container
     ) -> None:
-        import copy
+        from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
-        env = Environment.from_grid_mask(
-            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        layout = MaskedGridLayout()
+        layout.build(
+            active_mask=np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
         )
-        layout = copy.deepcopy(env.layout)
         graph = layout.connectivity.copy()
         pos = container(graph.nodes[0]["pos"])
         index = container(graph.nodes[0]["original_grid_nd_index"])
@@ -270,7 +277,14 @@ class TestPublishedGeometryIsReadOnly:
         before = getattr(env, name)
         with pytest.raises(AttributeError, match=f"Environment.{name} is read-only"):
             setattr(env, name, None)
-        assert getattr(env, name) is before
+        after = getattr(env, name)
+        if isinstance(before, np.ndarray):
+            np.testing.assert_array_equal(after, before)
+        elif name == "grid_edges":
+            for edge, original in zip(after, before, strict=True):
+                np.testing.assert_array_equal(edge, original)
+        else:
+            assert after == before
 
 
 class TestVersionedCachedProperty:

@@ -106,7 +106,10 @@ def region_reward_field(
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> # Add goal region (use polygon, not point)
     >>> goal_polygon = Point([0.0, 0.0]).buffer(5.0)
-    >>> _ = env.regions.add("goal", polygon=goal_polygon)
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("goal", polygon=goal_polygon)
+    >>> env = env.with_regions(regions)
     >>> # Binary reward (sparse RL)
     >>> reward_binary = region_reward_field(env, "goal", decay="constant")
     >>> # Smooth Gaussian reward shaping

@@ -108,16 +108,10 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     descriptor does **not** fingerprint the underlying state. To keep that
     sound, ``_setup_from_layout`` is the only place geometry changes: it
     swaps in a whole new ``_PublishedGeometry`` and bumps the version in the
-    same step. The environment's geometry attributes cannot be reassigned,
-    the ``bin_centers``, ``active_mask`` and ``grid_edges`` arrays reject
-    writes, and ``connectivity`` is frozen (``nx.freeze``), so adding or
-    removing nodes or edges raises. Edge and node attribute values remain writable
-    (networkx cannot freeze them), and editing them in place is unsupported:
-    versioned-cached values would keep returning the pre-edit result. Build a
-    new environment to change geometry. A first-access fingerprint check was
-    considered and dropped: it would catch the first stale read but still
-    miss later mutations, so it would not actually deliver the invariant the
-    user wants.
+    same step. The host must own and protect geometry so edits cannot bypass
+    invalidation. Build a new environment to change geometry. Assigning or
+    deleting a cached property raises rather than shadowing its descriptor and
+    bypassing future version checks.
 
     Cache layout
     ------------
@@ -125,10 +119,9 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     ``instance.__dict__[f"_versioned_cache__{attr_name}"]`` and the
     captured version at
     ``instance.__dict__[f"_versioned_cache__{attr_name}__version"]``.
-    These keys are intentionally not the bare attribute name so the
-    descriptor is invoked on every access (Python only short-circuits
-    a non-data descriptor when an instance attribute of the same name
-    exists).
+    These private keys keep computed values separate from the read-only
+    descriptor's attribute name. The descriptor checks the version on every
+    access.
 
     Examples
     --------
@@ -183,10 +176,7 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
                 "Cannot use versioned_cached_property without calling __set_name__ on it."
             )
         cache = instance.__dict__
-        # Use distinct keys so the descriptor is always invoked.
-        # Setting `cache[self.attrname]` directly would shadow the
-        # descriptor on subsequent attribute access (because non-data
-        # descriptors lose to instance __dict__ in MRO lookup).
+        # Keep cache storage separate from the read-only descriptor's name.
         value_key = f"_versioned_cache__{self.attrname}"
         version_key = f"{value_key}__version"
         current_version = getattr(instance, "_state_version", 0)
@@ -196,3 +186,9 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
         cache[value_key] = value
         cache[version_key] = current_version
         return value
+
+    def __set__(self, instance: object, value: T) -> None:
+        raise AttributeError(f"{type(instance).__name__}.{self.attrname} is read-only.")
+
+    def __delete__(self, instance: object) -> None:
+        raise AttributeError(f"{type(instance).__name__}.{self.attrname} is read-only.")

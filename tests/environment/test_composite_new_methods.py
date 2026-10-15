@@ -15,7 +15,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.composite import CompositeEnvironment
 
 
@@ -26,12 +26,12 @@ def two_simple_2d_envs():
     # Environment 1: left side
     data1 = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
     env1 = Environment.from_samples(data1, bin_size=1.5)
-    env1.name = "env1"
+    env1 = env1.with_metadata(name="env1")
 
     # Environment 2: right side
     data2 = np.array([[10, 0], [11, 0], [10, 1], [11, 1]])
     env2 = Environment.from_samples(data2, bin_size=1.5)
-    env2.name = "env2"
+    env2 = env2.with_metadata(name="env2")
 
     return env1, env2
 
@@ -271,8 +271,12 @@ class TestSaveLoad:
         env1, env2 = two_simple_2d_envs
 
         # Add regions to sub-environments (will be preserved through save/load)
-        env1.regions.add("env1_region", point=env1.bin_centers[0].tolist())
-        env2.regions.add("env2_region", point=env2.bin_centers[0].tolist())
+        region_builder = Regions(env1.regions.values())
+        region_builder.add("env1_region", point=env1.bin_centers[0].tolist())
+        env1 = env1.with_regions(region_builder)
+        region_builder = Regions(env2.regions.values())
+        region_builder.add("env2_region", point=env2.bin_centers[0].tolist())
+        env2 = env2.with_regions(region_builder)
 
         comp = CompositeEnvironment([env1, env2], auto_bridge=True)
 
@@ -320,7 +324,9 @@ class TestIntegration:
         env1, env2 = two_simple_2d_envs
 
         # Add regions to sub-environments before creating composite
-        env1.regions.add("test_point", point=env1.bin_centers[0].tolist())
+        region_builder = Regions(env1.regions.values())
+        region_builder.add("test_point", point=env1.bin_centers[0].tolist())
+        env1 = env1.with_regions(region_builder)
 
         comp = CompositeEnvironment([env1, env2], auto_bridge=True)
 

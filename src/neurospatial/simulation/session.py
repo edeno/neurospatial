@@ -73,7 +73,7 @@ class SimulationSession:
 
     >>> # Create environment
     >>> env = Environment.from_samples(arena_data, bin_size=2.0)  # doctest: +SKIP
-    >>> env.units = "cm"  # doctest: +SKIP
+    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
 
     >>> # Generate trajectory
     >>> positions, times = simulate_trajectory_ou(
@@ -305,7 +305,7 @@ def simulate_session(
     >>> from neurospatial import Environment
     >>> arena_data = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(arena_data, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>> session = simulate_session(env, duration=2.0, n_cells=3, show_progress=False)
     >>> positions = session.positions  # Typed access
     >>> spike_times = session.spike_times  # IDE autocomplete

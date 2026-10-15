@@ -27,7 +27,7 @@ from dataclasses import dataclass
 
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 
 
@@ -153,17 +153,19 @@ def make_square_maze(
         name="square_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add center region
-    env_2d.regions.add("center", point=(0.0, 0.0))
+    region_builder = Regions()
+    region_builder.add("center", point=(0.0, 0.0))
 
     # Add corner regions at quarter positions (like watermaze quadrants)
     quarter = half_side / 2.0
-    env_2d.regions.add("NE", point=(quarter, quarter))
-    env_2d.regions.add("NW", point=(-quarter, quarter))
-    env_2d.regions.add("SE", point=(quarter, -quarter))
-    env_2d.regions.add("SW", point=(-quarter, -quarter))
+    region_builder.add("NE", point=(quarter, quarter))
+    region_builder.add("NW", point=(-quarter, quarter))
+    region_builder.add("SE", point=(quarter, -quarter))
+    region_builder.add("SW", point=(-quarter, -quarter))
+    env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field
     env_track = None

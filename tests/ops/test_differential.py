@@ -65,7 +65,11 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
     from neurospatial.ops.calculus import divergence
 
     operator = fv_env.get_divergence_operator()
-    assert fv_env.get_divergence_operator() is operator
+    cached = fv_env._divergence_operator_cached
+    exported = fv_env.get_divergence_operator()
+    assert exported is not operator
+    assert fv_env._divergence_operator_cached is cached
+    np.testing.assert_array_equal(exported.toarray(), operator.toarray())
     np.testing.assert_allclose(
         operator.toarray(), _compute_divergence_operator(fv_env).toarray()
     )
@@ -76,7 +80,11 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
 def test_divergence_is_negative_adjoint_of_gradient(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
 
-    graph, volumes = fv_env.layout.finite_volume_geometry()
+    graph, volumes = (
+        type(fv_env)
+        ._create_layout(fv_env.layout_type, fv_env.layout_parameters)
+        .finite_volume_geometry()
+    )
     rng = np.random.default_rng(3)
     field = rng.normal(size=fv_env.n_bins)
     flux = rng.normal(size=graph.number_of_edges())
@@ -103,7 +111,11 @@ def test_goal_is_a_sink(uniform_grid, spacing):
 def test_operator_edge_order_matches_connectivity(fv_env):
     from neurospatial.ops.calculus import gradient
 
-    graph, _ = fv_env.layout.finite_volume_geometry()
+    graph, _ = (
+        type(fv_env)
+        ._create_layout(fv_env.layout_type, fv_env.layout_parameters)
+        .finite_volume_geometry()
+    )
     assert list(graph.edges()) == list(fv_env.connectivity.edges())
     field = np.random.default_rng(5).normal(size=fv_env.n_bins)
     expected = [
@@ -240,7 +252,7 @@ class TestEnvironmentCachedProperty:
         assert callable(env.get_differential_operator)
 
     def test_differential_operator_caching(self):
-        """Test that differential_operator is cached (same object on repeated access)."""
+        """The internal operator is cached and public exports are detached."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
@@ -249,7 +261,8 @@ class TestEnvironmentCachedProperty:
         D2 = env.get_differential_operator()
 
         # Should be the same object (cached)
-        assert D1 is D2
+        assert D1 is not D2
+        np.testing.assert_array_equal(D1.toarray(), D2.toarray())
 
     def test_differential_operator_correct_shape(self):
         """Test that cached property returns correct shape."""

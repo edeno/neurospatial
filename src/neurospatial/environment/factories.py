@@ -262,6 +262,74 @@ class EnvironmentFactories:
     """
 
     @classmethod
+    def from_bins(
+        cls,
+        binning: object,
+        *,
+        name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
+        regions: Regions | None = None,
+        arena: Arena | None = None,
+    ) -> Environment:
+        """Construct an environment from explicit Cartesian binning data.
+
+        Parameters
+        ----------
+        binning : neurospatial.binning.Binning or registered provider
+            Bin centers, measures and ordered neighbor pairs, with an explicit
+            supported locator. KnownFaces enables finite-volume operations;
+            MissingFaces explicitly refuses them. Shapes are required for exact
+            clipping. Centers and sizes alone cannot establish these capabilities.
+        name : str, default=""
+            Environment name.
+        units, frame : str or None, optional
+            Coordinate declarations; they do not convert coordinates.
+        regions : Regions or None, optional
+            Named regions to snapshot at construction.
+        arena : Arena or None, optional
+            Continuous domain. Omission infers only what the supplied geometry
+            establishes, without inventing physical walls.
+
+        Returns
+        -------
+        Environment
+            Owned environment preserving bin IDs and supplied pair order.
+            ``edge_pairs`` defines gradient and flux order; NetworkX iteration
+            may use a different order.
+        """
+        from neurospatial.environment._from_bins import layout_from_bins
+
+        if getattr(cls, "_POLAR", False):
+            raise TypeError(
+                "from_bins accepts Cartesian data; use the polar factory for polar coordinates."
+            )
+        layout = layout_from_bins(binning)
+        if arena is None and layout._binning.outline is not None:
+            from neurospatial.arena import OpenArena
+
+            arena = OpenArena(
+                layout._binning.outline.geometry, physical_footprint_known=False
+            )
+        env_cls = cast("type[Environment]", cls)
+        result = env_cls(
+            name=name,
+            layout=layout,
+            layout_type_used=layout._layout_type_tag,
+            layout_params_used={},
+            units=units,
+            frame=frame,
+            regions=regions,
+            arena=arena,
+        )
+        if not np.array_equal(result.edge_pairs, layout._binning.bins.pairs):
+            raise ValueError(
+                "Supplied neighbor pairs cross physical walls. Remove those pairs "
+                "and their aligned face data explicitly before calling from_bins."
+            )
+        return result
+
+    @classmethod
     def from_samples(
         cls,
         positions: NDArray[np.float64],
@@ -270,6 +338,7 @@ class EnvironmentFactories:
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
@@ -306,6 +375,8 @@ class EnvironmentFactories:
         frame : str or None, default None
             Coordinate frame identifier for the environment (e.g. a session
             label). If provided, sets ``env.frame`` on the returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             Layout engine type to use. Can be a LayoutType enum member (recommended
             for IDE autocomplete) or a case-insensitive string. For RegularGrid and
@@ -547,14 +618,15 @@ class EnvironmentFactories:
                     UserWarning,
                     stacklevel=2,
                 )
-        env = cls.from_layout(
-            kind=layout_str, layout_params=layout_params, name=name, arena=arena
+        return cls.from_layout(
+            kind=layout_str,
+            layout_params=layout_params,
+            name=name,
+            units=units,
+            frame=frame,
+            regions=regions,
+            arena=arena,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     # ------------------------------------------------------------------
     # Experiment-shaped presets
@@ -802,19 +874,16 @@ class EnvironmentFactories:
                 f"{points}."
             )
 
-        env = cls.from_graph(
+        return cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            units=units,
+            frame=frame,
             track_width=track_width,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     @classmethod
     def maze(
@@ -1008,19 +1077,16 @@ class EnvironmentFactories:
                 f"Got node positions: {node_pos}."
             )
 
-        env = cls.from_graph(
+        return cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
+            units=units,
+            frame=frame,
             track_width=track_width,
         )
-        if units is not None:
-            env.units = units
-        if frame is not None:
-            env.frame = frame
-        return env
 
     @classmethod
     def from_graph(
@@ -1031,6 +1097,8 @@ class EnvironmentFactories:
         bin_size: float,
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         track_width: float | None = None,
     ) -> Environment:
         """Create an Environment from a user-defined graph structure.
@@ -1060,6 +1128,10 @@ class EnvironmentFactories:
             centimeters, bin_size=2.0 creates 2cm bins along the track.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         track_width : float, optional
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
@@ -1177,6 +1249,8 @@ class EnvironmentFactories:
             kind="Graph",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=TrackArena(segments, width=track_width),
         )
 
@@ -1187,6 +1261,8 @@ class EnvironmentFactories:
         bin_size: float | Sequence[float],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1206,6 +1282,10 @@ class EnvironmentFactories:
             bin size per dimension.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -1267,6 +1347,8 @@ class EnvironmentFactories:
             kind="ShapelyPolygon",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=arena,
         )
 
@@ -1277,6 +1359,8 @@ class EnvironmentFactories:
         grid_edges: tuple[NDArray[np.float64], ...],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         connect_diagonal_neighbors: bool = True,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1301,6 +1385,10 @@ class EnvironmentFactories:
             axis; axes may differ.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -1352,6 +1440,8 @@ class EnvironmentFactories:
             kind="MaskedGrid",
             layout_params=layout_params,
             name=name,
+            units=units,
+            frame=frame,
             arena=arena,
         )
 
@@ -1363,6 +1453,8 @@ class EnvironmentFactories:
         *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         arena: Arena | None = None,
     ) -> Environment:
         """Create a 2D Environment from a binary image / pixel mask.
@@ -1386,6 +1478,10 @@ class EnvironmentFactories:
             Defaults to True.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
@@ -1431,7 +1527,12 @@ class EnvironmentFactories:
         }
 
         return cls.from_layout(
-            kind="ImageMask", layout_params=layout_params, name=name, arena=arena
+            kind="ImageMask",
+            layout_params=layout_params,
+            name=name,
+            units=units,
+            frame=frame,
+            arena=arena,
         )
 
     @classmethod
@@ -1441,6 +1542,8 @@ class EnvironmentFactories:
         layout_params: dict[str, Any],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
     ) -> Environment:
@@ -1457,6 +1560,10 @@ class EnvironmentFactories:
             method of the chosen `LayoutEngine`.
         name : str, optional
             A name for the created environment. Defaults to "".
+        units : str, optional
+            Unit label for the supplied coordinates; does not scale them.
+        frame : str, optional
+            Coordinate frame label for the supplied coordinates.
         regions : Optional[Regions], optional
             A Regions instance to manage symbolic spatial regions within the environment.
         arena : Arena, optional
@@ -1480,11 +1587,23 @@ class EnvironmentFactories:
         # and the saved layout parameters must not change if the caller edits
         # their arrays (or the base of a view) afterwards.
         layout_params = _owned_copy(layout_params)
+        if arena is not None:
+            from neurospatial.environment._ownership import own_arena
+
+            arena = own_arena(arena)
         layout_instance = cls._create_layout(kind, layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
-        env = env_cls(name, layout_instance, kind, layout_params, regions=regions)
+        env = env_cls(
+            name,
+            layout_instance,
+            kind,
+            layout_params,
+            regions=regions,
+            units=units,
+            frame=frame,
+        )
         if arena is not None and arena.domain_known and not env._POLAR:
             keep = arena.contains(env.bin_centers)
             # Whole-bin selection uses strict polygon-center inclusion in
@@ -1498,9 +1617,6 @@ class EnvironmentFactories:
                 )
             if not np.all(keep):
                 env = env.subset(bins=keep)
-                env.name = name
-                if regions is not None:
-                    env.regions = regions
         if arena is not None:
             env = env_cls(
                 name,
@@ -1509,6 +1625,8 @@ class EnvironmentFactories:
                 env._layout_params_used,
                 regions=regions,
                 arena=arena,
+                units=units,
+                frame=frame,
             )
         return env
 

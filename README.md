@@ -213,7 +213,7 @@ from neurospatial.simulation.trajectory import simulate_trajectory_ou
 xx, yy = np.meshgrid(np.linspace(0, 60, 31), np.linspace(0, 60, 31))
 arena_corners = np.column_stack([xx.ravel(), yy.ravel()])
 env = Environment.from_samples(arena_corners, bin_size=2.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # 2. Simulate ten minutes of foraging.
 positions_t, times = simulate_trajectory_ou(
@@ -429,6 +429,8 @@ position_2d_reconstructed = env.linear_to_nd(position_1d)
 ### 4. Defining Regions of Interest
 
 ```python
+from neurospatial import Regions
+
 from shapely.geometry import Point
 
 # Create environment
@@ -438,11 +440,13 @@ env = Environment.from_samples(position_data, bin_size=3.0)
 reward1_polygon = Point(10.0, 10.0).buffer(5.0)  # 5 cm radius circle
 reward2_polygon = Point(30.0, 30.0).buffer(5.0)
 
-env.regions.add("RewardZone1", polygon=reward1_polygon)
-env.regions.add("RewardZone2", polygon=reward2_polygon)
+region_builder = Regions(env.regions.values())
+region_builder.add("RewardZone1", polygon=reward1_polygon)
+region_builder.add("RewardZone2", polygon=reward2_polygon)
 
 # Or add a point region
-env.regions.add("StartLocation", point=(0.0, 0.0))
+region_builder.add("StartLocation", point=(0.0, 0.0))
+env = env.with_regions(region_builder)
 
 # Access region information
 print(f"Number of regions: {len(env.regions)}")
@@ -476,7 +480,7 @@ arena_data = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
 
 # Create environment
 env = Environment.from_samples(arena_data, bin_size=5.0)
-env.units = "cm"  # Required for trajectory simulation
+env = env.with_metadata(units="cm")  # Required for trajectory simulation
 
 # Generate realistic trajectory using Ornstein-Uhlenbeck process.
 # speed_units must match env.units exactly (no auto-conversion).

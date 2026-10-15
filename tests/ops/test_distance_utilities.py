@@ -71,7 +71,7 @@ class TestDistanceToBasic:
         # Box covering roughly 1/4 of environment
         polygon = box(xmin, ymin, mid_x, mid_y)
         _ = regions.add("center", polygon=polygon)
-        env.regions = regions
+        env = env.with_regions(regions)
 
         distances = env.distance_to("center", metric="geodesic")
 
@@ -229,7 +229,7 @@ class TestDistanceToEdgeCases:
         # Box covering roughly 1/4 of environment
         polygon = box(xmin, ymin, mid_x, mid_y)
         _ = regions.add("quarter", polygon=polygon)
-        env.regions = regions
+        env = env.with_regions(regions)
 
         distances = env.distance_to("quarter", metric="geodesic")
 

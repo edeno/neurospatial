@@ -113,7 +113,7 @@ recording visits only the first bin, so decoding excludes the other bins::
     >>> env = Environment.from_grid_mask(
     ...     np.ones(4, dtype=bool), grid_edges=(np.arange(5.0) * 10,)
     ... )
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>> result = decode_session(env, spike_times, times, positions, dt=0.1)
     >>> result.map_position.shape
     (100, 1)

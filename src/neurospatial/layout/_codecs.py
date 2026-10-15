@@ -119,6 +119,10 @@ def decode(
     name = meta.get("codec")
     codec = _CODECS.get(name) if isinstance(name, str) else None
     if codec is None:
+        if isinstance(name, str):
+            from neurospatial.extensions import _decode_snapshot
+
+            return _decode_snapshot(meta, arrays, prefix)
         raise ValueError(
             f"cannot load {name!r}: no codec is registered for it.\n"
             "Fix: use a neurospatial version supporting this geometry codec."
@@ -673,8 +677,20 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
 
     def reference(value: PolygonCells | ClipMapping) -> dict[str, int]:
         snapshots: list[Any] = cells if isinstance(value, PolygonCells) else mappings
+        # Owned binnings may keep separate copies of the same immutable mapping.
         index = next(
-            (i for i, snapshot in enumerate(snapshots) if snapshot is value),
+            (
+                i
+                for i, snapshot in enumerate(snapshots)
+                if snapshot is value
+                or (
+                    isinstance(value, ClipMapping)
+                    and snapshot.n_parent_bins == value.n_parent_bins
+                    and np.array_equal(
+                        snapshot.parent_bin_indices, value.parent_bin_indices
+                    )
+                )
+            ),
             len(snapshots),
         )
         if index == len(snapshots):

@@ -320,7 +320,11 @@ class TestGraphOperationPerformance:
     def test_compute_diffusion_kernels(self, benchmark, medium_env):
         """Benchmark diffusion kernel computation."""
         # Resolve the finite-volume geometry once; benchmark just the primitive.
-        graph_fv, volumes = medium_env.layout.finite_volume_geometry()
+        graph_fv, volumes = (
+            type(medium_env)
+            ._create_layout(medium_env.layout_type, medium_env.layout_parameters)
+            .finite_volume_geometry()
+        )
         result = benchmark(
             compute_diffusion_kernels,
             graph_fv,

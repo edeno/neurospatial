@@ -492,15 +492,21 @@ def regions_to_mask(
 
     Use region names from environment:
 
-    >>> _ = env.regions.add("test", polygon=box(3, 3, 7, 7))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("test", polygon=box(3, 3, 7, 7))
+    >>> env = env.with_regions(regions)
     >>> mask = regions_to_mask(env, "test")
     >>> mask.shape
     (36,)
 
     Multiple regions (union):
 
-    >>> _ = env.regions.add("left", polygon=box(0, 0, 4, 10))
-    >>> _ = env.regions.add("right", polygon=box(6, 0, 10, 10))
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("left", polygon=box(0, 0, 4, 10))
+    >>> _ = regions.add("right", polygon=box(6, 0, 10, 10))
+    >>> env = env.with_regions(regions)
     >>> mask = regions_to_mask(env, ["left", "right"])
     >>> bool(np.any(mask))
     True
@@ -531,7 +537,9 @@ def regions_to_mask(
             raise KeyError(
                 f"Region '{regions}' not found in environment. "
                 f"Available regions: {available}. "
-                f"Use env.regions.add('{regions}', polygon=...) to create this region first."
+                "Create a builder with regions = Regions(env.regions.values()), "
+                f"call regions.add({regions!r}, polygon=...), then use "
+                "env = env.with_regions(regions)."
             )
         regions_obj = Regions([env.regions[regions]])
     elif isinstance(regions, list):
@@ -543,7 +551,9 @@ def regions_to_mask(
                 raise KeyError(
                     f"Region '{name}' not found in environment. "
                     f"Available regions: {available}. "
-                    f"Use env.regions.add('{name}', polygon=...) to create this region first."
+                    "Create a builder with regions = Regions(env.regions.values()), "
+                    f"call regions.add({name!r}, polygon=...), then use "
+                    "env = env.with_regions(regions)."
                 )
             region_list.append(env.regions[name])
         regions_obj = Regions(region_list)
@@ -597,8 +607,10 @@ def regions_to_mask(
             warnings.warn(
                 f"Region '{region.name}' is a point region and has no area. "
                 f"Point regions always return empty masks (no bins selected). "
-                f"Consider using env.regions.buffer('{region.name}', distance=...) "
-                f"to create a small polygon around the point if you want to select nearby bins.",
+                "Create a builder with regions = Regions(env.regions.values()), "
+                f"then regions.buffer({region.name!r}, distance=..., "
+                "new_name='point_area') and env = env.with_regions(regions) "
+                "to select nearby bins with a polygon.",
                 UserWarning,
                 stacklevel=2,
             )

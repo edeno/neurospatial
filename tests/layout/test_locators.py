@@ -72,7 +72,7 @@ def test_locator_matches_previous_lookup(
         np.testing.assert_array_equal(
             env.bin_centers, locator_parity[f"{case}/centers"]
         )
-    locator = env.layout.locator()
+    locator = env._binning.locator
     assert isinstance(
         locator, (RectilinearLocator, HexLocator, MeshLocator, NearestBinLocator)
     )
@@ -110,7 +110,7 @@ def test_locator_non_finite_rows(built_environment):
     points[2, -1] = np.inf
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always", RuntimeWarning)
-        actual = env.layout.locator().locate(points)
+        actual = env._binning.locator.locate(points)
     np.testing.assert_array_equal(actual, [0, -1, -1, 0])
 
 
@@ -118,7 +118,7 @@ def test_locator_bin_centers_map_to_themselves(built_environment):
     """Every active-bin identity survives its own geometric lookup."""
     env = built_environment
     np.testing.assert_array_equal(
-        env.layout.locator().locate(env.bin_centers), np.arange(env.n_bins)
+        env._binning.locator.locate(env.bin_centers), np.arange(env.n_bins)
     )
 
 
@@ -135,7 +135,7 @@ def test_wrong_coordinate_width_is_rejected_before_row_filtering(
     env = built_environment
     points = np.full((n_rows, env.n_dims + width_offset), fill)
     with pytest.raises(ValueError):
-        env.layout.locator().locate(points)
+        env._binning.locator.locate(points)
     with pytest.raises(ValueError):
         env.layout.point_to_bin_index(points)
 
@@ -222,7 +222,7 @@ def test_mesh_locator_respects_boundary(built_environment, locator_parity):
     prefix = "mesh_boundary/lookup/boundary_exclusions"
     points = locator_parity[f"{prefix}/points"]
     expected = locator_parity[f"{prefix}/values"]
-    actual = built_environment.layout.locator().locate(points)
+    actual = built_environment._binning.locator.locate(points)
     _assert_mesh_membership(built_environment._binning.locator, points, actual)
     np.testing.assert_array_equal(actual < 0, expected < 0)
     np.testing.assert_array_equal(actual[:2], [-1, -1])
@@ -348,11 +348,12 @@ def test_legacy_layout_rebuilds_missing_locator(
 ):
     """Saved layout data can recreate a missing memoized locator."""
     env = copy.deepcopy(built_environment)
-    previous = env.layout.locator()
-    del env.layout._locator
-    restored = env.layout.locator()
+    layout = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    previous = layout.locator()
+    del layout._locator
+    restored = layout.locator()
     assert restored is not previous
-    assert restored is env.layout.locator()
+    assert restored is layout.locator()
     case = request.node.callspec.params["built_environment"]
     points = locator_parity[f"{case}/lookup/random/points"]
     np.testing.assert_array_equal(

@@ -87,12 +87,14 @@ class TestComputeKernel:
         """Test that kernel caching works when enabled."""
         # First call - computes and caches
         kernel1 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
+        cached = small_2d_env._kernel_cache[(5.0, "density")]
 
         # Second call - should return cached result
         kernel2 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
 
-        # Should be identical (same object from cache)
-        assert kernel1 is kernel2
+        # Cache reuse does not expose its mutable array to callers.
+        assert small_2d_env._kernel_cache[(5.0, "density")] is cached
+        assert kernel1 is not kernel2
         np.testing.assert_array_equal(kernel1, kernel2)
 
     def test_compute_kernel_caching_disabled(self, small_2d_env):

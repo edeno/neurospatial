@@ -7,11 +7,12 @@ Pure data layer for *continuous* regions of interest (ROIs).
 from __future__ import annotations
 
 import copy
+import json
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,7 +32,7 @@ def _freeze_metadata(value: Any) -> Any:
     """Recursively wrap mappings in read-only proxies to prevent mutation.
 
     Mappings (at any nesting depth) become :class:`types.MappingProxyType`
-    instances; lists become tuples; other values are passed through.
+    instances; lists and tuples become tuples; other values are passed through.
     The input should already be a deep copy so the proxies wrap data the
     Region exclusively owns.
 
@@ -48,12 +49,12 @@ def _freeze_metadata(value: Any) -> Any:
     """
     if isinstance(value, Mapping):
         return MappingProxyType({k: _freeze_metadata(v) for k, v in value.items()})
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return tuple(_freeze_metadata(item) for item in value)
     return value
 
 
-def _thaw_metadata(value: Any) -> Any:
+def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
     """Recursively convert frozen metadata back into mutable, JSON-ready data.
 
     Inverse of :func:`_freeze_metadata`: :class:`~collections.abc.Mapping`
@@ -64,6 +65,9 @@ def _thaw_metadata(value: Any) -> Any:
     ----------
     value : Any
         A frozen metadata value (possibly nested).
+    _active : set of int, optional
+        Container identities on the current traversal path; detects cycles
+        without rejecting shared containers in an acyclic value.
 
     Returns
     -------
@@ -71,11 +75,19 @@ def _thaw_metadata(value: Any) -> Any:
         A mutable, JSON-serializable copy of ``value``.
 
     """
-    if isinstance(value, Mapping):
-        return {k: _thaw_metadata(v) for k, v in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw_metadata(item) for item in value]
-    return value
+    if not isinstance(value, (Mapping, list, tuple)):
+        return value
+    active = set() if _active is None else _active
+    identity = id(value)
+    if identity in active:
+        raise ValueError("Circular reference detected in Region metadata.")
+    active.add(identity)
+    try:
+        if isinstance(value, Mapping):
+            return {k: _thaw_metadata(v, _active=active) for k, v in value.items()}
+        return [_thaw_metadata(item, _active=active) for item in value]
+    finally:
+        active.remove(identity)
 
 
 # ---------------------------------------------------------------------
@@ -130,7 +142,11 @@ class Region:
         # This isolates the Region from external mutation of the source dict
         # *and* forbids mutating the stored metadata (at any nesting depth)
         # after construction.
-        thawed = _thaw_metadata(self.metadata)
+        try:
+            thawed = _thaw_metadata(self.metadata)
+            json.dumps(thawed)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise TypeError("Region metadata must be JSON-serializable.") from exc
         object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
 
         if self.kind == "point":
@@ -143,7 +159,9 @@ class Region:
             arr = np.asarray(self.data, dtype=float)
             if arr.ndim != 1:
                 raise ValueError("Point data must be a 1-D array-like.")
-            object.__setattr__(self, "data", arr)
+            # Immutable bytes prevent callers from re-enabling NumPy writes.
+            # The buffer is independent even when arr is a caller-held view.
+            object.__setattr__(self, "data", np.frombuffer(arr.tobytes(), dtype=float))
             object.__setattr__(self, "n_dims", arr.shape[0])
 
         elif self.kind == "polygon":
@@ -157,8 +175,33 @@ class Region:
     # -----------------------------------------------------------------
     # Convenience
     # -----------------------------------------------------------------
+    def __getattribute__(self, name: str) -> Any:
+        value = object.__getattribute__(self, name)
+        if name == "data" and isinstance(value, np.ndarray) and hasattr(self, "n_dims"):
+            # A read-only array still has a mutable shape/dtype header. Export
+            # a new header over the immutable bytes, with no shared ndarray base.
+            return np.frombuffer(cast("bytes", value.base), dtype=np.float64)
+        return value
+
     def __str__(self) -> str:
         return self.name
+
+    def __eq__(self, other: object) -> bool:
+        """Compare region values, including point coordinates elementwise."""
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        assert isinstance(other, Region)
+        if self is other:
+            return True
+        if (self.name, self.kind, self.metadata) != (
+            other.name,
+            other.kind,
+            other.metadata,
+        ):
+            return False
+        if self.kind == "point":
+            return bool(np.array_equal(self.data, other.data))
+        return bool(self.data == other.data)
 
     # -----------------------------------------------------------------
     # Copy / pickle support
@@ -264,6 +307,8 @@ class Regions(MutableMapping[str, Region]):
 
     Provides the usual mapping API plus a few helpers
     (`add`, `remove`, `list_names`, `buffer`, …).
+    Published snapshots preserve the read API and reject mutation; construct
+    ``Regions(snapshot.values())`` to obtain a mutable editing container.
 
     Parameters
     ----------
@@ -283,10 +328,49 @@ class Regions(MutableMapping[str, Region]):
 
     # -------------- Mapping interface --------------------------------
     def __init__(self, items: Iterable[Region] | None = None) -> None:
-        self._store: dict[str, Region] = {}
+        self._store: Mapping[str, Region] = {}
         if items is not None:
             for reg in items:
                 self[reg.name] = reg
+
+    def _mutable_store(self) -> dict[str, Region]:
+        """Return the builder's store, refusing edits to a published snapshot."""
+        if not isinstance(self._store, dict):
+            raise TypeError(
+                "Published regions are read-only. Create a mutable builder with "
+                "Regions(regions.values()), then call env.with_regions(builder)."
+            )
+        return self._store
+
+    def _snapshot(self) -> Regions:
+        """Own an ordered, immutable store while sharing immutable Region values."""
+        return type(self)._restore(tuple(self.values()), frozen=True)
+
+    @classmethod
+    def _restore(cls, items: tuple[Region, ...], frozen: bool) -> Regions:
+        regions = cls(items)
+        if frozen:
+            regions._store = MappingProxyType(regions._store)
+        return regions
+
+    def __copy__(self) -> Regions:
+        return type(self)._restore(
+            tuple(self.values()), frozen=not isinstance(self._store, dict)
+        )
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Regions:
+        regions = type(self)._restore(
+            copy.deepcopy(tuple(self.values()), memo),
+            frozen=not isinstance(self._store, dict),
+        )
+        memo[id(self)] = regions
+        return regions
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        return type(self)._restore, (
+            tuple(self.values()),
+            not isinstance(self._store, dict),
+        )
 
     def __getitem__(self, key: str) -> Region:
         return self._store[key]
@@ -337,6 +421,7 @@ class Regions(MutableMapping[str, Region]):
         add : Build a new Region and insert it; raises if already exists.
 
         """
+        store = self._mutable_store()
         if key != value.name:
             raise ValueError(
                 f"Key {key!r} must match Region.name {value.name!r}. "
@@ -348,10 +433,35 @@ class Regions(MutableMapping[str, Region]):
                 "Use Regions.update_region(...) to modify it in place, or "
                 "Regions.set(name, region) for the idempotent replace path."
             )
-        self._store[key] = value
+        store[key] = value
 
     def __delitem__(self, key: str) -> None:
-        self._store.pop(key)
+        self._mutable_store().pop(key)
+
+    def clear(self) -> None:
+        """Remove every region from a mutable builder."""
+        self._mutable_store()
+        super().clear()
+
+    def pop(self, key: str, *default: Any) -> Any:
+        """Remove a region from a mutable builder, optionally returning a default."""
+        self._mutable_store()
+        return super().pop(key, *default)
+
+    def popitem(self) -> tuple[str, Region]:
+        """Remove and return an item from a mutable builder."""
+        self._mutable_store()
+        return super().popitem()
+
+    def setdefault(self, key: str, default: Region | None = None) -> Region:
+        """Return a region, inserting a supplied default into a mutable builder."""
+        self._mutable_store()
+        return super().setdefault(key, cast("Region", default))
+
+    def update(self, *args: Any, **kwargs: Region) -> None:
+        """Insert regions into a mutable builder using the strict assignment path."""
+        self._mutable_store()
+        super().update(*args, **kwargs)
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._store)
@@ -398,6 +508,7 @@ class Regions(MutableMapping[str, Region]):
             If name already exists in the collection.
 
         """
+        self._mutable_store()
         if (point is None) == (polygon is None):
             raise ValueError("Specify **one** of 'point' or 'polygon'.")
         if name in self:
@@ -466,6 +577,7 @@ class Regions(MutableMapping[str, Region]):
         'red'
 
         """
+        store = self._mutable_store()
         if (point is None) == (polygon is None):
             raise ValueError("Specify **one** of 'point' or 'polygon'.")
         if name not in self:
@@ -477,9 +589,6 @@ class Regions(MutableMapping[str, Region]):
         old_region = self._store[name]
         effective_metadata = metadata if metadata is not None else old_region.metadata
 
-        # Remove the old region and add the new one
-        del self._store[name]
-
         if point is not None:
             # Accept either a coordinate array or a Shapely Point
             coords = np.asarray(
@@ -489,8 +598,9 @@ class Regions(MutableMapping[str, Region]):
         else:
             region = Region(name, "polygon", polygon, effective_metadata)
 
-        # Use direct store access to bypass __setitem__ duplicate check
-        self._store[name] = region
+        # Validate before removing the old value, then preserve replacement order.
+        del store[name]
+        store[name] = region
         return region
 
     def set(self, name: str, region: Region) -> Region:
@@ -525,10 +635,11 @@ class Regions(MutableMapping[str, Region]):
         update_region : Replace an existing region's geometry/metadata
             in place; raises if ``name`` does not exist.
         """
+        store = self._mutable_store()
         if name != region.name:
             raise ValueError(f"Key {name!r} must match Region.name {region.name!r}.")
         # Bypass __setitem__'s duplicate check; this is the idempotent path.
-        self._store[name] = region
+        store[name] = region
         return region
 
     def remove(self, name: str) -> None:
@@ -548,7 +659,7 @@ class Regions(MutableMapping[str, Region]):
             ``remove``) raises rather than silently absorbing the case where
             the caller's mental model of the collection disagrees with reality.
         """
-        del self._store[name]
+        del self._mutable_store()[name]
 
     def list_names(self) -> list[str]:
         """Get list of region names in insertion order.
@@ -643,6 +754,7 @@ class Regions(MutableMapping[str, Region]):
             The newly created buffered region.
 
         """
+        self._mutable_store()
         # derive geometry in cm space
         if isinstance(source, str):
             src = self[source]

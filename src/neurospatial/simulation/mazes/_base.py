@@ -77,7 +77,7 @@ class MazeEnvironments:
     >>> from neurospatial.simulation.mazes._base import MazeEnvironments
     >>> positions = np.random.default_rng(42).uniform(0, 100, (500, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>> maze = MazeEnvironments(env_2d=env)
     >>> maze.env_2d.units
     'cm'

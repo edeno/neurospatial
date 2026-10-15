@@ -94,7 +94,7 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
     ... except KeyError as exc:
     ...     print(str(exc))
     Region 'goal' not found.
-    Fix: add it first: env.regions.add('goal', point=(x, y)) (or polygon=...), then pass region_name='goal'.
+    Fix: create regions = Regions(env.regions.values()); regions.add('goal', point=(x, y)) (or polygon=...); env = env.with_regions(regions), then pass region_name='goal'.
     """
 
     def __init__(
@@ -121,7 +121,12 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
             what = f"{argument}={name!r} was not found; region names must be strings."
             suggested = available[0] if available else "home"
             value = f"[{suggested!r}]" if argument == "end_regions" else repr(suggested)
-            fix = f"pass {argument}={value}; add it first with env.regions.add({suggested!r}, point=(x, y)) if needed"
+            fix = (
+                f"pass {argument}={value}; if a new region is needed, create "
+                "regions = Regions(env.regions.values()); "
+                f"regions.add({suggested!r}, point=(x, y)); "
+                "env = env.with_regions(regions)"
+            )
         elif matches:
             value = (
                 f"[{matches[0]!r}]" if argument == "end_regions" else repr(matches[0])
@@ -130,8 +135,9 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         else:
             value = f"[{name!r}]" if argument == "end_regions" else repr(name)
             fix = (
-                f"add it first: env.regions.add({name!r}, point=(x, y)) "
-                f"(or polygon=...), then pass {argument}={value}."
+                "create regions = Regions(env.regions.values()); "
+                f"regions.add({name!r}, point=(x, y)) (or polygon=...); "
+                f"env = env.with_regions(regions), then pass {argument}={value}."
             )
         super().__init__(_format_error(what, fix=fix))
         self.region_name = name

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_almost_equal
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.reward import goal_reward_field, region_reward_field
 
 
@@ -25,10 +25,12 @@ class TestRegionRewardField:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Add a goal region at center (buffer to create polygon with area)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal_point", point=np.array([50.0, 50.0]))
+        env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
+        region_builder.buffer("goal_point", distance=15.0, new_name="goal")
+        env = env.with_regions(region_builder)  # Create polygon around point
 
         # Generate constant reward field
         reward = region_reward_field(env, "goal", reward_value=1.0, decay="constant")
@@ -56,10 +58,12 @@ class TestRegionRewardField:
             ]
         )
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal_point", point=np.array([50.0, 50.0]))
+        env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
+        region_builder.buffer("goal_point", distance=15.0, new_name="goal")
+        env = env.with_regions(region_builder)  # Create polygon around point
 
         reward_value = 10.0
         reward = region_reward_field(
@@ -82,10 +86,12 @@ class TestRegionRewardField:
             ]
         )
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal_point", point=np.array([50.0, 50.0]))
+        env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
+        region_builder.buffer("goal_point", distance=15.0, new_name="goal")
+        env = env.with_regions(region_builder)  # Create polygon around point
 
         # Generate linear decay reward field
         reward = region_reward_field(env, "goal", reward_value=1.0, decay="linear")
@@ -117,10 +123,12 @@ class TestRegionRewardField:
             ]
         )
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal_point", point=np.array([50.0, 50.0]))
+        env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
+        region_builder.buffer("goal_point", distance=15.0, new_name="goal")
+        env = env.with_regions(region_builder)  # Create polygon around point
 
         # Generate Gaussian reward field
         bandwidth = 10.0
@@ -157,10 +165,12 @@ class TestRegionRewardField:
             ]
         )
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal_point", point=np.array([50.0, 50.0]))
+        env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
+        region_builder.buffer("goal_point", distance=15.0, new_name="goal")
+        env = env.with_regions(region_builder)  # Create polygon around point
 
         # Should raise ValueError when bandwidth not provided for Gaussian
         with pytest.raises(ValueError, match=r"bandwidth.*required.*gaussian|Gaussian"):

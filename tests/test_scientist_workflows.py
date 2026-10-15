@@ -25,7 +25,7 @@ def partial_recording():
     env = Environment.from_grid_mask(
         np.ones(10, dtype=bool), grid_edges=(np.arange(11.0) * 10,)
     )
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     times = np.arange(101) / 10
     positions = np.full((len(times), 1), 5.0)
     spikes = [np.arange(0.05, 10.0, 0.1)]
@@ -168,7 +168,7 @@ def test_default_smoothing_is_invariant_to_physical_units(method):
         env = Environment.from_grid_mask(
             np.ones(20, dtype=bool), grid_edges=(np.arange(21.0) * 5 * scale,)
         )
-        env.units = units
+        env = env.with_metadata(units=units)
         result = compute_spatial_rate(
             env, spikes, times, positions * scale, method=method
         )

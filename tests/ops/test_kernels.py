@@ -274,7 +274,8 @@ class TestEnvironmentComputeKernel:
         env = Environment.from_samples(data, bin_size=1.0)
         kernel1 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
         kernel2 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
-        assert kernel1 is kernel2
+        assert kernel1 is not kernel2
+        np.testing.assert_array_equal(kernel1, kernel2)
         kernel3 = env.compute_kernel(bandwidth=2.0, mode="transition", cache=True)
         assert kernel3 is not kernel1
         kernel4 = env.compute_kernel(bandwidth=1.0, mode="density", cache=True)

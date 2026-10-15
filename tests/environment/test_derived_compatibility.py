@@ -1,4 +1,4 @@
-"""Custom layouts and small subsets retain their supported in-memory behavior."""
+"""Custom layouts require owned-data migration; derived geometry stays exact."""
 
 from __future__ import annotations
 
@@ -12,8 +12,21 @@ import pytest
 from matplotlib.patches import RegularPolygon
 
 from neurospatial import Environment
-from neurospatial.io import to_dict
+from neurospatial.io import from_dict, to_dict
+from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.ops.transforms import Affine2D
+
+
+def _owned_layout(parent, tag):
+    return BinningLayout(
+        parent._binning,
+        connectivity=parent.connectivity,
+        dimension_ranges=parent.dimension_ranges,
+        layout_type_tag=tag,
+        layout_type=parent.layout.layout_type,
+        build_params={},
+        is_linearized_track=parent.is_linearized_track,
+    )
 
 
 class _ExternalGridLayout:
@@ -92,12 +105,19 @@ class _ExternalTrackLayout:
 def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     operation, has_linear_grid
 ):
-    """Custom tracks retain conversion semantics and owned linear metadata."""
+    """A custom track migrates to explicit owned data before derivation."""
     native = Environment.linear_track(endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0)
     layout = _ExternalTrackLayout(native)
     if not has_linear_grid:
         layout.grid_edges = ()
-    parent = Environment("external_track", layout, "ExternalTrack", {})
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment("external_track", layout, "ExternalTrack", {})
+    parent = Environment(
+        "external_track", _owned_layout(native, "ExternalTrack"), "ExternalTrack", {}
+    )
     source_writeability = tuple(
         array.flags.writeable for array in (*layout.grid_edges, layout.active_mask)
     )
@@ -161,31 +181,19 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
             rtol=0.0,
             atol=1e-14,
         )
-        if has_linear_grid:
-            np.testing.assert_array_equal(restored.grid_edges[0], expected_edges)
-            np.testing.assert_array_equal(restored.active_mask, expected_mask)
-        else:
-            assert restored.grid_edges == ()
-            np.testing.assert_array_equal(
-                restored.active_mask, np.ones(len(indices), dtype=bool)
-            )
+        np.testing.assert_array_equal(restored.grid_edges[0], expected_edges)
+        np.testing.assert_array_equal(restored.active_mask, expected_mask)
         component = restored._binning.linearization
-        for array in (
-            *component.grid_edges,
-            component.active_mask,
-            component.forward,
-            component.inverse,
-        ):
+        for array in (*component.grid_edges, component.active_mask):
             assert not array.flags.writeable
             with pytest.raises(ValueError, match="read-only"):
                 array.flat[0] = array.flat[0]
         if has_linear_grid:
             assert not np.shares_memory(component.grid_edges[0], layout.grid_edges[0])
         assert not np.shares_memory(component.active_mask, layout.active_mask)
-        with pytest.raises(ValueError) as caught:
-            to_dict(restored)
-        assert "_ExternalTrackLayout" in str(caught.value)
-        assert "Fix:" in str(caught.value)
+        loaded = from_dict(to_dict(restored))
+        np.testing.assert_allclose(loaded.to_linear(expected_centers), expected_linear)
+
     assert (
         tuple(
             array.flags.writeable for array in (*layout.grid_edges, layout.active_mask)
@@ -195,13 +203,20 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
 
 
 @pytest.mark.parametrize("operation", ["subset", "translation", "chain"])
-def test_custom_layout_supports_in_memory_derivations_but_requires_save_codec(
+def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     operation,
 ):
     native = Environment.from_grid_mask(
         np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0) * 10.0,) * 2
     )
-    parent = Environment("external", _ExternalGridLayout(native), "ExternalGrid", {})
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment("external", _ExternalGridLayout(native), "ExternalGrid", {})
+    parent = Environment(
+        "external", _owned_layout(native, "ExternalGrid"), "ExternalGrid", {}
+    )
     transform = Affine2D(
         np.array([[1.0, 0.0, 1.25], [0.0, 1.0, -2.5], [0.0, 0.0, 1.0]])
     )
@@ -227,10 +242,9 @@ def test_custom_layout_supports_in_memory_derivations_but_requires_save_codec(
     np.testing.assert_allclose(
         child.smooth(field, 5.0), expected.smooth(field, 5.0), rtol=1e-12, atol=1e-12
     )
-    with pytest.raises(ValueError) as caught:
-        to_dict(child)
-    assert "_ExternalGridLayout" in str(caught.value)
-    assert "Fix:" in str(caught.value)
+    loaded = from_dict(to_dict(child))
+    np.testing.assert_array_equal(loaded.bin_at(points), expected.bin_at(points))
+    np.testing.assert_array_equal(loaded.bin_sizes, expected.bin_sizes)
 
 
 @pytest.mark.parametrize("built_environment", ["grid8", "hex", "mesh"], indirect=True)

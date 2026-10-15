@@ -45,7 +45,7 @@ from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 
@@ -124,8 +124,8 @@ def analysis_invariant_env(request):
         if request.param == "masked":
             mask[1, 1] = False
         env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
-    env.units = "cm"
-    env.frame = "arena"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="arena")
     return env
 
 
@@ -204,7 +204,7 @@ def _make_recording(
 ) -> Recording:
     positions = np.c_[50 + 40 * np.sin(times / 3.1), 50 + 40 * np.cos(times / 4.7)]
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return Recording(
         times,
         positions,
@@ -765,8 +765,8 @@ def simple_3d_env() -> Environment:
         name="Simple3DEnv",
         connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)
     )
-    env.units = "cm"
-    env.frame = "session1"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="session1")
     return env
 
 
@@ -1077,20 +1077,41 @@ def built_environment(request) -> Environment | EgocentricPolarEnvironment:
 def environment_round_trip(built_environment, request, tmp_path):
     """Save labelled geometry once and expose an independently repeatable loader."""
     from neurospatial.io.files import from_dict, from_file, to_dict, to_file
+    from neurospatial.layout._binning_layout import BinningLayout
 
     original = copy.deepcopy(built_environment)
-    original.name = "saved_arena"
-    original.units = "cm"
-    original.frame = "recording"
-    original.regions.add("goal", point=tuple(original.bin_centers[0]))
+    original = original.with_metadata(name="saved_arena")
+    original = original.with_metadata(units="cm")
+    original = original.with_metadata(frame="recording")
+    region_builder = Regions(original.regions.values())
+    region_builder.add("goal", point=tuple(original.bin_centers[0]))
+    original = original.with_regions(region_builder)
     # Graph metadata is scientifically relevant and must survive beyond topology.
     graph = original.connectivity.copy()
     graph.graph["recording"] = "session-a"
     graph.nodes[0]["label"] = "start"
     first_edge = next(iter(graph.edges))
     graph.edges[first_edge]["annotation"] = ["measured", 7]
-    original.layout.connectivity = graph
-    original._setup_from_layout()
+    layout = BinningLayout(
+        original._binning,
+        connectivity=graph,
+        dimension_ranges=original.dimension_ranges,
+        layout_type_tag=original.layout._layout_type_tag,
+        layout_type=original.layout.layout_type,
+        build_params=original.layout_parameters,
+        is_linearized_track=original.is_linearized_track,
+        coordinate_kind=original.arena.coordinate_kind,
+    )
+    original = type(original)(
+        original.name,
+        layout,
+        original.layout_type,
+        original.layout_parameters,
+        original.regions,
+        units=original.units,
+        frame=original.frame,
+        arena=original.arena,
+    )
 
     if request.param == "file":
         path = tmp_path / "environment"

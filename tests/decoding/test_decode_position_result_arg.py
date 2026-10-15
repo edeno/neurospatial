@@ -23,8 +23,8 @@ def small_rates() -> SpatialRatesResult:
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0) * 10,) * 2
     )
-    env.units = "cm"
-    env.frame = "world"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="world")
     return SpatialRatesResult(
         firing_rates=np.array([[1.0, 2.0, 3.0, 4.0]]),
         occupancy=np.ones(4),
@@ -49,25 +49,48 @@ def test_rate_result_rejects_different_environment(
             np.ones((2, 2), dtype=bool),
             grid_edges=(1000 + np.arange(3.0) * 10,) * 2,
         )
-        env.units, env.frame = "cm", "world"
+        env = env.with_metadata(units="cm", frame="world")
     elif mismatch == "topology":
         env = Environment.from_grid_mask(
             np.ones((2, 2), dtype=bool),
             grid_edges=(np.arange(3.0) * 10,) * 2,
             connect_diagonal_neighbors=False,
         )
-        env.units, env.frame = "cm", "world"
+        env = env.with_metadata(units="cm", frame="world")
     elif mismatch == "measures":
-        monkeypatch.setattr(
-            env.layout, "bin_sizes", lambda: small_rates.env.bin_sizes * 2
+        from dataclasses import replace
+
+        from neurospatial.layout._binning import KnownFaces
+        from neurospatial.layout._binning_layout import BinningLayout
+        from neurospatial.layout._locators import NearestBinLocator
+
+        bins = replace(env._binning.bins, sizes=env.bin_sizes * 2)
+        faces = env._face_geometry._replace(volumes=bins.sizes)
+        binning = replace(
+            env._binning,
+            bins=bins,
+            locator=NearestBinLocator(bins.centers),
+            faces=KnownFaces(faces),
+            rectilinear=None,
         )
-        # Measures are snapshotted at publication, rather than read lazily.
+        layout = BinningLayout(
+            binning,
+            connectivity=env.connectivity,
+            dimension_ranges=env.dimension_ranges,
+            layout_type_tag="UnequalCells",
+            layout_type="graph",
+            build_params={},
+            is_linearized_track=False,
+        )
         env = Environment(
-            layout=env.layout, layout_type_used=env.layout._layout_type_tag
+            layout=layout,
+            layout_type_used="UnequalCells",
+            arena=env.arena,
+            units="cm",
+            frame="world",
         )
-        env.units, env.frame = "cm", "world"
     else:
-        setattr(env, mismatch, "m" if mismatch == "units" else "camera")
+        env = env.with_metadata(**{mismatch: "m" if mismatch == "units" else "camera"})
 
     with pytest.raises(
         IncompatibleEnvironmentError, match=r"encoding result.*environment"

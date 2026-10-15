@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
 
@@ -28,12 +28,14 @@ def simple_environment_with_regions():
     positions = np.column_stack([xx.ravel(), yy.ravel()])
 
     env = Environment.from_samples(positions, bin_size=2.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Add regions at bin centers (0, 2, 4, 6, 8, 10 in each dimension)
-    env.regions.add("start", point=(0.0, 0.0))  # Bottom-left bin
-    env.regions.add("goal1", point=(10.0, 10.0))  # Top-right bin
-    env.regions.add("goal2", point=(10.0, 0.0))  # Bottom-right bin
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(0.0, 0.0))  # Bottom-left bin
+    region_builder.add("goal1", point=(10.0, 10.0))  # Top-right bin
+    region_builder.add("goal2", point=(10.0, 0.0))
+    env = env.with_regions(region_builder)  # Bottom-right bin
 
     return env
 
@@ -50,14 +52,16 @@ def environment_with_polygon_regions():
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
 
     # Add polygon regions that cover multiple bins
     start_polygon = Polygon([(0, 0), (4, 0), (4, 4), (0, 4)])
     goal_polygon = Polygon([(16, 16), (20, 16), (20, 20), (16, 20)])
 
-    env.regions.add("start_zone", polygon=start_polygon)
-    env.regions.add("goal_zone", polygon=goal_polygon)
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start_zone", polygon=start_polygon)
+    region_builder.add("goal_zone", polygon=goal_polygon)
+    env = env.with_regions(region_builder)
 
     return env
 
@@ -249,7 +253,9 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
     # A wide, off-origin rectangular region spanning several bins so its
     # centroid sits well away from the lowest-index bin.
     region_polygon = Polygon([(4, 4), (12, 4), (12, 8), (4, 8)])
-    env.regions.add("zone", polygon=region_polygon)
+    region_builder = Regions(env.regions.values())
+    region_builder.add("zone", polygon=region_polygon)
+    env = env.with_regions(region_builder)
 
     region_bins = env.bins_in_region("zone")
     assert len(region_bins) > 1, "Need a genuinely multi-bin region"
@@ -480,8 +486,10 @@ def test_path_progress_edge_case_disconnected():
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Add regions in different components
-    env.regions.add("start", point=(0.0, 0.0))
-    env.regions.add("goal", point=(12.0, 10.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(0.0, 0.0))
+    region_builder.add("goal", point=(12.0, 10.0))
+    env = env.with_regions(region_builder)
 
     start_bin = env.bins_in_region("start")[0]
     goal_bin = env.bins_in_region("goal")[0]
@@ -535,8 +543,10 @@ def test_path_progress_large_environment():
         pytest.skip(f"Environment has only {env.n_bins} bins, need >5000")
 
     # Add regions
-    env.regions.add("start", point=(10.0, 10.0))
-    env.regions.add("goal", point=(190.0, 190.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(10.0, 10.0))
+    region_builder.add("goal", point=(190.0, 190.0))
+    env = env.with_regions(region_builder)
 
     start_bin = env.bins_in_region("start")[0]
     goal_bin = env.bins_in_region("goal")[0]
@@ -676,8 +686,10 @@ def test_distance_to_region_multiple_goal_bins():
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Add region covering multiple bins
-    env.regions.add("start", point=(0.0, 0.0))
-    env.regions.add("goal", point=(7.0, 0.0))  # Should cover both bins 3 and 4
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(0.0, 0.0))
+    region_builder.add("goal", point=(7.0, 0.0))
+    env = env.with_regions(region_builder)  # Should cover both bins 3 and 4
 
     start_bin = env.bins_in_region("start")[0]
     goal_bins = env.bins_in_region("goal")
@@ -715,8 +727,10 @@ def test_distance_to_region_large_environment():
         pytest.skip(f"Environment has only {env.n_bins} bins, need ≥5000")
 
     # Add regions
-    env.regions.add("start", point=(10.0, 10.0))
-    env.regions.add("goal", point=(190.0, 190.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(10.0, 10.0))
+    region_builder.add("goal", point=(190.0, 190.0))
+    env = env.with_regions(region_builder)
 
     start_bin = env.bins_in_region("start")[0]
     goal_bin = env.bins_in_region("goal")[0]

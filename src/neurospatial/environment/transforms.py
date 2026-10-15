@@ -40,6 +40,26 @@ def _rebin(
             "For other layout types, consider using smooth() for field smoothing "
             "or subset() for spatial cropping."
         )
+    grid = env._binning.rectilinear
+    if (
+        grid is None
+        or any(
+            np.max(np.abs(np.diff(edge) - np.diff(edge)[0]))
+            > 1e-7 * np.diff(edge)[0] + 4 * np.spacing(np.max(np.abs(edge)))
+            for edge in grid.edges
+        )
+        or not np.allclose(
+            env._binning.bins.sizes,
+            np.prod([edge[1] - edge[0] for edge in grid.edges]),
+            rtol=64 * np.finfo(np.float64).eps,
+            atol=0.0,
+        )
+    ):
+        raise NotImplementedError(
+            "rebin() requires a uniform rectilinear grid; descriptive layout "
+            "names cannot establish cell geometry. Supply uniform grid data "
+            "or use subset() for spatial cropping."
+        )
 
     # Parse factor
     # Cast to RegularGridLayout to access grid-specific attributes
@@ -214,13 +234,9 @@ def _rebin(
         layout_params_used=new_layout._build_params_used,
         regions=deepcopy(env.regions),
         arena=env.arena,
+        units=env.units,
+        frame=env.frame,
     )
-
-    # Preserve metadata
-    if hasattr(env, "units") and env.units is not None:
-        coarse_env.units = env.units
-    if hasattr(env, "frame") and env.frame is not None:
-        coarse_env.frame = env.frame
 
     return coarse_env
 

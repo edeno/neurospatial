@@ -46,7 +46,7 @@ from neurospatial.simulation import (
 env = Environment.from_samples(
     np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
 )
@@ -72,6 +72,105 @@ assert np.array_equal(prediction.posterior, result.posterior)  # byte-for-byte
 error = decoder.score(spike_times, times, positions, metric="median_error")
 print(f"BayesianDecoder.score median error: {error:.1f} cm")
 ```
+
+## Installed snapshot adapters
+
+An external package can supply an installed `SnapshotAdapter` object that
+converts its data into the [explicit binning records](environments.md#bring-explicit-bins).
+Publication validates and owns the resulting built-in data. It retains no
+provider callbacks and does not register custom query algorithms or builders.
+
+| Role | Required result |
+| --- | --- |
+| `"locator"` | A built-in locator, such as `NearestBinLocator` |
+| `"track"` | `TrackLinearization` |
+| `"arena"` | Built-in Arena data |
+| `"binning"` | `Binning` with supported built-in components |
+
+For example, a package module `my_lab.adapters` could expose this object.
+`snapshot` and `decode` must be pure: they return data without changing their
+inputs. `provider_type` matches the exact external type; subclasses need their
+own declaration.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.binning import NearestBinLocator
+from neurospatial.extensions import SnapshotAdapter
+
+class RecordedSites:
+    def __init__(self, centers):
+        self.centers = np.asarray(centers, dtype=float)
+
+def snapshot_sites(provider):
+    return NearestBinLocator(provider.centers, max_distance=0.25)
+
+def decode_sites(metadata, arrays, prefix):
+    return NearestBinLocator(
+        arrays[f"{prefix}/centers"], max_distance=metadata["max_distance"]
+    )
+
+adapter = SnapshotAdapter(
+    name="my_lab.recorded_sites",
+    version=1,
+    role="locator",
+    provider_type=RecordedSites,
+    snapshot=snapshot_sites,
+    decode=decode_sites,
+)
+assert adapter.role == "locator"
+provider = RecordedSites([[0.0, 0.0], [2.0, 0.0]])
+snapshot = adapter.snapshot(provider)
+np.testing.assert_array_equal(snapshot.locate(np.array([[0.0, 0.0]])), [0])
+restored = adapter.decode(
+    {"max_distance": 0.25}, {"sites/centers": provider.centers}, "sites"
+)
+np.testing.assert_array_equal(restored.locate(np.array([[2.0, 0.0]])), [1])
+```
+
+Declare the object in that package's `pyproject.toml`, then install the package:
+
+```toml
+[project.entry-points."neurospatial.snapshot_adapters.v1"]
+recorded_sites = "my_lab.adapters:adapter"
+```
+
+The entry point exposes an object, rather than a factory. Its group versions
+the adapter API; `version` identifies the custom stored payload that `decode`
+accepts. Custom records use the adapter's `name` as `codec` and its version as
+`codec_version`. The decoder receives the supplied array namespace and prefix.
+Names must not collide with built-in codecs or other installed adapters; only
+one adapter may handle a given provider type and role.
+
+The package is required to publish its external providers or load its original
+custom records. After loading and saving an environment, the saved data use
+canonical built-in codecs and can be loaded without that package. Missing
+adapters and unsupported versions raise with installation guidance.
+
+Use the public contract helper with boundary answers derived independently
+from the intended geometry. It checks lookup, outside sentinels, ownership,
+missing-face refusal and copy/storage round trips. This native grid example
+specifies the internal boundary owner and excludes the upper outer edge:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.testing import assert_environment_contract
+
+env = Environment.from_grid_mask(
+    np.ones((2, 1), dtype=bool),
+    grid_edges=(np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0])),
+)
+assert_environment_contract(
+    env,
+    points=[[0.0, 0.5], [1.0, 0.5], [2.0, 0.5], [-0.1, 0.5]],
+    expected_bins=[0, 1, -1, -1],
+)
+```
+
+Run the same helper on environments published by an installed adapter, using
+that geometry's own hand-checked boundary and outside points.
 
 ## Simulator attributes feed analyses
 

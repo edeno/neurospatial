@@ -272,7 +272,11 @@ def test_sigma_recovery_graph():
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
         env = build_track(bin_size, straight=False)
-        graph_fv, _ = env.layout.finite_volume_geometry()
+        graph_fv, _ = (
+            type(env)
+            ._create_layout(env.layout_type, env.layout_parameters)
+            .finite_volume_geometry()
+        )
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
         junction_edges = [
@@ -355,7 +359,11 @@ def test_density_integrates_to_one(polar_env):
 
 def test_low_level_average_row_stochastic(polar_env):
     """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
-    graph_fv, volumes = polar_env.layout.finite_volume_geometry()
+    graph_fv, volumes = (
+        type(polar_env)
+        ._create_layout(polar_env.layout_type, polar_env.layout_parameters)
+        .finite_volume_geometry()
+    )
     kernel = compute_diffusion_kernels(
         graph_fv, volumes=volumes, sigma=5.0, mode="average"
     )
@@ -366,7 +374,11 @@ def test_low_level_average_row_stochastic(polar_env):
 def test_raw_heat_operator_m_self_adjoint(polar_env):
     """Raw operator (pre clip/normalize): H @ 1 = 1 and M_i H_ij = M_j H_ji on a
     non-uniform-M (polar) env -- the C1 invariants the mode outputs no longer expose."""
-    graph_fv, volumes = polar_env.layout.finite_volume_geometry()
+    graph_fv, volumes = (
+        type(polar_env)
+        ._create_layout(polar_env.layout_type, polar_env.layout_parameters)
+        .finite_volume_geometry()
+    )
     W = build_W_from_graph(graph_fv)
     H = _raw_heat_operator(W, volumes, sigma=5.0)
 
@@ -391,7 +403,11 @@ def test_corner_split_gives_two_diffusion_components():
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"
 
-    graph_fv, _ = env.layout.finite_volume_geometry()
+    graph_fv, _ = (
+        type(env)
+        ._create_layout(env.layout_type, env.layout_parameters)
+        .finite_volume_geometry()
+    )
     assert graph_fv.edges[0, 1]["A"] == 0.0, "corner-touching edge must have A == 0"
     assert env._diffusion_geometry.n_components == 2, (
         "corner-only pair must be two W-components"
@@ -587,7 +603,7 @@ def test_mesh_skew_guard_warns():
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
-        env_ok.layout.finite_volume_geometry()
+        _ = env_ok._face_geometry
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
     # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
@@ -601,4 +617,4 @@ def test_mesh_skew_guard_warns():
         layout_params={"boundary_polygon": Polygon(sheared), "point_spacing": 4.0},
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
-        env_skew.layout.finite_volume_geometry()
+        _ = env_skew._face_geometry

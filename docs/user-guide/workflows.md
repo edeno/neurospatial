@@ -115,7 +115,7 @@ from neurospatial.simulation import (
 # sparse random points). Duration=300 s gives ~90% arena coverage at 15 cm/s
 # while keeping CI runtime well under 60 s.
 env_seed = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
-env_seed.units = "cm"  # Required by simulate_trajectory_ou
+env_seed = env_seed.with_metadata(units="cm")  # Required by simulate_trajectory_ou
 positions, times = simulate_trajectory_ou(
     env_seed,
     duration=300.0,   # 5-minute session — full arena coverage
@@ -135,7 +135,7 @@ env = Environment.from_samples(
     fill_holes=True,
     name="OpenFieldSession1",
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 print(f"Created environment with {env.n_bins} active bins")
 print(f"Spatial extent: {env.dimension_ranges}")
@@ -254,7 +254,7 @@ from neurospatial.simulation import (
 env = Environment.from_samples(
     np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     env, duration=600.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
 )
@@ -465,6 +465,8 @@ Analyzing behavior across experimentally-defined spatial zones.
 ### Complete Example
 
 ```python
+from neurospatial import Regions
+
 from neurospatial import Environment
 from shapely.geometry import Point
 import numpy as np
@@ -475,7 +477,8 @@ env = Environment.from_samples(position_data, bin_size=3.0)
 # Define experimental regions
 # Center zone (15 cm radius circle)
 center_point = Point(50.0, 50.0)  # Arena center
-env.regions.add("Center", polygon=center_point.buffer(15.0))
+region_builder = Regions(env.regions.values())
+region_builder.add("Center", polygon=center_point.buffer(15.0))
 
 # Corner zones (10x10 cm squares)
 corners = {
@@ -487,7 +490,8 @@ corners = {
 
 for name, coords in corners.items():
     from shapely.geometry import Polygon
-    env.regions.add(name, polygon=Polygon(coords))
+    region_builder.add(name, polygon=Polygon(coords))
+env = env.with_regions(region_builder)
 
 # Find which bins belong to each region
 region_bins = {}
@@ -666,6 +670,8 @@ experiment. The two panels share the same environment.
 
 <!-- docs-test: run -->
 ```python
+from neurospatial import Regions
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -682,7 +688,7 @@ graph.add_node(0, pos=(0.0, 0.0))
 graph.add_node(1, pos=(100.0, 0.0))
 graph.add_edge(0, 1, distance=100.0)
 env = Environment.from_graph(graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 repeated = np.array([[25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [50.0, 0.0], [25.0, 0.0]])
 np.testing.assert_allclose(env.to_linear(repeated), repeated[:, 0])
 repeated_bins = env.bin_at(repeated)
@@ -698,8 +704,10 @@ intensity = 0.5 + 25.0 * np.exp(-0.5 * ((x - planted_center) / 10.0) ** 2)
 spikes = generate_poisson_spikes(intensity, times, seed=7)
 
 # Explicit trials supply the direction labels; both maps use the same graph.
-env.regions.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
-env.regions.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
+region_builder = Regions(env.regions.values())
+region_builder.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
+region_builder.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
+env = env.with_regions(region_builder)
 position_bins = env.bin_sequence(times, positions, dedup=False)
 outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
 inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
@@ -758,7 +766,7 @@ from neurospatial.simulation import (
 )
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     env, duration=180.0, dt=1 / 30, speed_units="cm", seed=7
 )

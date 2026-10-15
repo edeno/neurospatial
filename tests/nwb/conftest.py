@@ -21,6 +21,8 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
+from neurospatial import Regions
+
 # Mark all tests in this directory as integration tests
 pytestmark = pytest.mark.integration
 
@@ -460,12 +462,14 @@ def sample_environment():
     positions = rng.uniform(0, 100, (1000, 2))
 
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
-    env.frame = "test_session"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="test_session")
 
     # Add sample regions
-    env.regions.add("start", point=(10.0, 10.0))
-    env.regions.add("goal", point=(90.0, 90.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(10.0, 10.0))
+    region_builder.add("goal", point=(90.0, 90.0))
+    env = env.with_regions(region_builder)
 
     return env
 
@@ -488,8 +492,8 @@ def sample_polar_environment():
         distance_bin_size=10.0,
         angle_bin_size=np.pi / 6,
     )
-    env.units = "cm"
-    env.frame = "egocentric"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="egocentric")
     return env
 
 

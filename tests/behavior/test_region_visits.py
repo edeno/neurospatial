@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.behavior import (
     RegionTransition,
     RegionVisit,
@@ -24,7 +24,9 @@ def region_env() -> Environment:
         grid_edges=(np.arange(7, dtype=float), np.array([0.0, 1.0])),
     )
     for name, left in [("A", 0), ("B", 3), ("C", 5)]:
-        env.regions.add(name, polygon=box(left, 0, left + 1, 1))
+        region_builder = Regions(env.regions.values())
+        region_builder.add(name, polygon=box(left, 0, left + 1, 1))
+        env = env.with_regions(region_builder)
     return env
 
 
@@ -188,7 +190,9 @@ def test_fractional_epoch_limits_do_not_interpolate_dwell(region_env):
 
 
 def test_selected_region_overlap_rejected_even_when_unvisited(region_env):
-    region_env.regions.add("overlap", polygon=box(0.4, 0, 1.4, 1))
+    region_builder = Regions(region_env.regions.values())
+    region_builder.add("overlap", polygon=box(0.4, 0, 1.4, 1))
+    region_env = region_env.with_regions(region_builder)
     with pytest.raises(ValueError, match=r"overlap.*A.*active bin"):
         detect_region_visits(
             np.array([4]),

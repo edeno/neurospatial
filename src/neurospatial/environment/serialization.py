@@ -313,7 +313,7 @@ class EnvironmentSerialization:
         >>> # Create environment
         >>> positions = np.random.rand(1000, 2) * 100  # doctest: +SKIP
         >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-        >>> env.units = "cm"  # doctest: +SKIP
+        >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
         >>>
         >>> # Save to NWB
         >>> nwbfile = NWBFile(  # doctest: +SKIP

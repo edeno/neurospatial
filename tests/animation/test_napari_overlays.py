@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from neurospatial import Regions
 from neurospatial.animation.skeleton import Skeleton
 
 if TYPE_CHECKING:
@@ -654,7 +655,9 @@ def test_region_overlay_creates_shapes_layer(
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
     # Add region to environment (just a point)
-    simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([5.0, 5.0]))
+    simple_env = simple_env.with_regions(region_builder)
 
     # Render with show_regions=True
     render_napari(simple_env, simple_fields, show_regions=True, region_alpha=0.3)
@@ -674,7 +677,9 @@ def test_region_overlay_applies_alpha(mock_viewer_class, simple_env, simple_fiel
     mock_viewer.dims.ndim = 4
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
-    simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([5.0, 5.0]))
+    simple_env = simple_env.with_regions(region_builder)
 
     render_napari(simple_env, simple_fields, show_regions=True, region_alpha=0.5)
 
@@ -699,8 +704,10 @@ def test_region_overlay_filters_by_list(mock_viewer_class, simple_env, simple_fi
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
     # Add multiple regions
-    simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
-    simple_env.regions.add("start", point=np.array([15.0, 15.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([5.0, 5.0]))
+    region_builder.add("start", point=np.array([15.0, 15.0]))
+    simple_env = simple_env.with_regions(region_builder)
 
     # Render with specific region filter
     render_napari(simple_env, simple_fields, show_regions=["goal"], region_alpha=0.3)
@@ -722,7 +729,9 @@ def test_region_overlay_disabled_by_default(
     mock_viewer.dims.ndim = 4
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
-    simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+    region_builder = Regions(simple_env.regions.values())
+    region_builder.add("goal", point=np.array([5.0, 5.0]))
+    simple_env = simple_env.with_regions(region_builder)
 
     # Render WITHOUT show_regions (default False)
     render_napari(simple_env, simple_fields)

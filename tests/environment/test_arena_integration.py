@@ -9,9 +9,15 @@ import pytest
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
-from neurospatial.arena import MaskArena, OpenArena
+from neurospatial.arena import MaskArena, OpenArena, encode_arena
 from neurospatial.decoding.posterior import _validate_encoding_environment
 from neurospatial.ops.transforms import translate
+
+
+def _arena_record(arena):
+    """Compare domain values independently of detached public export identity."""
+    metadata, arrays = encode_arena(arena)
+    return metadata, {name: array.tolist() for name, array in arrays.items()}
 
 
 def grid(shape=(4, 4)):
@@ -42,7 +48,7 @@ def test_polygon_gate_and_inactive_support_are_distinct():
     np.testing.assert_array_equal(env.bin_at(probes), [-1, -1, 10])
     np.testing.assert_array_equal(env.contains(probes), env.bin_at(probes) >= 0)
     child = env.subset(bins=np.arange(env.n_bins) != 10)
-    assert child.arena is env.arena
+    assert _arena_record(child.arena) == _arena_record(env.arena)
     assert child.arena.contains(np.array([[0.0, 0.0]]))[0]
     assert not child.contains(np.array([[0.0, 0.0]]))[0]
 
@@ -87,7 +93,7 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     kernel = env.compute_kernel(1.0)
     assert np.all(kernel[np.ix_(left, ~left)] == 0)
     child = env.subset(bins=env.bin_centers[:, 1] < 2)
-    assert child.arena is arena
+    assert _arena_record(child.arena) == _arena_record(arena)
     assert child.arena.walls[0].equals(arena.walls[0])
 
 
@@ -109,8 +115,13 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     assert child.n_bins == 2
     np.testing.assert_allclose(child.bin_sizes, [0.2, 0.2])
     np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, [0, 0])
-    assert child.clip_mapping is child._binning.clip_mapping
-    assert child.arena is parent.arena
+    assert child.clip_mapping is not child._binning.clip_mapping
+    assert child.clip_mapping.n_parent_bins == child._binning.clip_mapping.n_parent_bins
+    np.testing.assert_array_equal(
+        child.clip_mapping.parent_bin_indices,
+        child._binning.clip_mapping.parent_bin_indices,
+    )
+    assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert not child.connectivity.edges
     for variant in (
         child.copy(),
@@ -172,7 +183,7 @@ def test_seeded_clipped_arena_occupancy_rates_decoding_workflow():
     from neurospatial.decoding import BayesianDecoder
 
     env = grid((2, 2)).clip(box(0.25, 0, 2, 2))
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     rng = np.random.default_rng(20261014)
     bins = rng.integers(0, env.n_bins, 401)
     times = np.arange(len(bins)) * 0.05
@@ -229,13 +240,24 @@ def test_analytic_domain_needs_materialization_for_exact_clipping():
         def polygonal_domain(self):
             return None
 
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment.from_grid_mask(
+            np.ones((1, 1), bool),
+            grid_edges=(np.array([-1.0, 1.0]),) * 2,
+            arena=Disk(),
+        )
+    from shapely.geometry import Point
+
     env = Environment.from_grid_mask(
         np.ones((1, 1), bool),
         grid_edges=(np.array([-1.0, 1.0]),) * 2,
-        arena=Disk(),
+        arena=OpenArena(Point(0, 0).buffer(1)),
     )
     np.testing.assert_array_equal(
         env.contains(np.array([[0, 0], [0.9, 0.9]])), [True, False]
     )
-    with pytest.raises(NotImplementedError, match="polygonal representation"):
-        env.clip(box(-2, -2, 2, 2))
+    clipped = env.clip(box(-2, -2, 2, 2))
+    assert clipped.arena.polygonal_domain().equals(env.arena.polygonal_domain())

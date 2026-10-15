@@ -26,7 +26,7 @@ def linear_track_env():
     env = Environment.from_graph(
         graph=g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
     )
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return env
 
 
@@ -160,7 +160,7 @@ class TestSimulateTrajectoryOU:
     def test_requires_env_units(self, simple_2d_env):
         """Test that ValueError is raised if env.units is not set."""
         # Remove units
-        simple_2d_env.units = None
+        simple_2d_env = simple_2d_env.with_metadata(units=None)
 
         with pytest.raises(ValueError, match="units must be set"):
             simulate_trajectory_ou(simple_2d_env, duration=1.0, speed_units="cm")

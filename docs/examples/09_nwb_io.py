@@ -91,7 +91,7 @@ sim_env = Environment.from_grid_mask(
     np.ones((20, 20), dtype=bool),
     grid_edges=(np.arange(0, 105, 5.0), np.arange(0, 105, 5.0)),
 )
-sim_env.units = "cm"
+sim_env = sim_env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
     sim_env, duration=180.0, dt=0.02, speed_units="cm", speed_mean=15.0, seed=42
 )

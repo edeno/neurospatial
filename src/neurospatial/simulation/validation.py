@@ -126,7 +126,7 @@ def validate_simulation(
     >>> # Create environment
     >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
     >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env.units = "cm"  # doctest: +SKIP
+    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
     >>>
     >>> # Simulate session with place cells
     >>> session = simulate_session(  # doctest: +SKIP
@@ -532,7 +532,7 @@ def plot_session_summary(
     >>> # Create environment
     >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
     >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env.units = "cm"  # doctest: +SKIP
+    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
     >>>
     >>> # Simulate session
     >>> session = simulate_session(  # doctest: +SKIP

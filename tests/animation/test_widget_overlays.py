@@ -38,7 +38,7 @@ def simple_env():
     """Create a simple 2D environment for testing."""
     positions = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], dtype=np.float64)
     env = Environment.from_samples(positions, bin_size=5.0)
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     return env
 
 

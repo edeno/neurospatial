@@ -7,7 +7,7 @@ environments in polar coordinates (distance, angle) centered on the animal.
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
@@ -973,7 +973,9 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     def test_refuses_cartesian_modes_of_shared_methods(
         self, polar_env, call, operation
     ):
-        polar_env.regions.add("p", point=(25.0, 0.0))
+        region_builder = Regions(polar_env.regions.values())
+        region_builder.add("p", point=(25.0, 0.0))
+        polar_env = polar_env.with_regions(region_builder)
         with pytest.raises(CartesianOnlyError) as caught:
             call(polar_env)
         assert str(caught.value).startswith(
@@ -1311,6 +1313,8 @@ _POLAR_INHERITED_MEMBERS = {
         "distance_to",
         "get_differential_operator",
         "get_divergence_operator",
+        "edge_pairs",
+        "to_networkx",
         "neighbors",
         "path_between",
         "reachable_from",
@@ -1327,6 +1331,7 @@ _POLAR_INHERITED_MEMBERS = {
         "dimension_ranges",
         "grid_edges",
         "grid_shape",
+        "layout",
     },
     "bin bookkeeping, metadata and diagnostics": {
         "bin_center_of",
@@ -1342,6 +1347,10 @@ _POLAR_INHERITED_MEMBERS = {
         "linearization_properties",
         "n_bins",
         "n_dims",
+        "name",
+        "regions",
+        "with_metadata",
+        "with_regions",
         "units",
     },
     "serialization, which restores the polar type": {
@@ -1354,6 +1363,7 @@ _POLAR_INHERITED_MEMBERS = {
     },
     "constructors: only the masked grid builds; others refuse (tested below)": {
         "from_graph",
+        "from_bins",
         "from_grid_mask",
         "from_layout",
         "from_pixel_mask",
@@ -1375,6 +1385,29 @@ _POLAR_INHERITED_MEMBERS = {
         "plot_field",
     },
 }
+
+
+def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
+    """Value replacements and graph copies do not interpret angles as lengths."""
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+    env = Environment.from_polar_egocentric((0, 4), (-np.pi, np.pi), 1, np.pi / 2)
+    regions = Regions()
+    regions.add("goal", point=tuple(env.bin_centers[0]))
+    changed = env.with_metadata(
+        name="polar", units="cm", frame="egocentric"
+    ).with_regions(regions)
+    assert isinstance(changed, EgocentricPolarEnvironment)
+    assert (changed.name, changed.units, changed.frame) == ("polar", "cm", "egocentric")
+    assert len(env.regions) == 0 and "goal" in changed.regions
+    np.testing.assert_array_equal(changed.bin_centers, env.bin_centers)
+    np.testing.assert_array_equal(changed.edge_pairs, env.edge_pairs)
+    graph = changed.to_networkx()
+    assert list(graph.edges) == list(changed.connectivity.edges)
+    graph.remove_node(0)
+    assert changed.connectivity.number_of_nodes() == env.n_bins
+    with pytest.raises(TypeError, match=r"Cartesian data.*polar factory"):
+        EgocentricPolarEnvironment.from_bins(env._binning)
 
 
 def test_every_inherited_member_is_classified_for_polar():

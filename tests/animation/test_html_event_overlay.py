@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.backends.html_backend import render_html
 from neurospatial.animation.overlays import EventData, OverlayData, PositionData
 
@@ -191,7 +191,9 @@ class TestHTMLEventOverlayWithOtherOverlays:
         self, simple_env, simple_fields, event_data_instant, tmp_path
     ):
         """Test events render alongside region overlays."""
-        simple_env.regions.add("goal", point=np.array([5.0, 5.0]))
+        region_builder = Regions(simple_env.regions.values())
+        region_builder.add("goal", point=np.array([5.0, 5.0]))
+        simple_env = simple_env.with_regions(region_builder)
 
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_instant])

@@ -20,20 +20,32 @@ while maintaining clean code organization.
 
 from __future__ import annotations
 
+import copy as copy_module
 import logging
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, NoReturn, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Generic,
+    NoReturn,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
+from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created, log_graph_validation
+from neurospatial.environment._metadata import UNSET, _Metadata, _MetadataView, _Unset
 from neurospatial.environment.cartesian import CartesianCoordinates
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
@@ -44,7 +56,7 @@ from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
 from neurospatial.environment.trajectory import EnvironmentTrajectory
 from neurospatial.environment.visualization import EnvironmentVisualization
-from neurospatial.layout._binning import Binning, binning_from_layout
+from neurospatial.layout._binning import Binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.validation import (
     GraphValidationError,
@@ -71,8 +83,32 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
-class _ReadOnlyGraphAttributes(dict[str, Any]):
+def _array_header(array: NDArray[Any]) -> NDArray[Any]:
+    """Expose immutable bytes through a header independent of private arrays."""
+    buffer: Any = array.base
+    while isinstance(buffer, np.ndarray):
+        buffer = buffer.base
+    assert isinstance(buffer, bytes)
+    return np.frombuffer(buffer, dtype=array.dtype).reshape(array.shape)
+
+
+class _ReadOnlyGraphAttributes(Mapping[str, Any]):
     """Published graph attributes, with pickle and editable-copy support."""
+
+    def __init__(self, attributes: Mapping[str, Any], **kwargs: Any) -> None:
+        self._data = copy_module.deepcopy({**attributes, **kwargs})
+
+    def __getitem__(self, key: str) -> Any:
+        return copy_module.deepcopy(self._data[key])
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def copy(self) -> dict[str, Any]:
+        return copy_module.deepcopy(self._data)
 
     def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise TypeError(
@@ -93,11 +129,71 @@ class _ReadOnlyGraphAttributes(dict[str, Any]):
     __ior__ = _refuse_edit
 
     def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return type(self), (dict(self),)
+        return type(self), (self.copy(),)
+
+
+class _ReadOnlyGraphMetadata(dict[str, Any]):
+    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
+
+    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
+    clear = _ReadOnlyGraphAttributes._refuse_edit
+    pop = _ReadOnlyGraphAttributes._refuse_edit
+    popitem = _ReadOnlyGraphAttributes._refuse_edit
+    setdefault = _ReadOnlyGraphAttributes._refuse_edit
+    update = _ReadOnlyGraphAttributes._refuse_edit
+    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
+        return copy_module.deepcopy(dict(self), memo)
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return dict, (dict(self),)
+
+
+class _PublishedGraph(nx.Graph):
+    """Freeze public graph bindings as well as topology and attribute values.
+
+    NetworkX's cached views remain lazy. Copies construct an ordinary editable
+    instance of this subclass; only environment publication seals its bindings.
+    """
+
+    @property
+    def graph(self) -> dict[str, Any]:
+        # node_link_data retains this object directly, unlike node/edge
+        # attributes. Return a detached dict so standard JSON encoding works
+        # without exposing the authoritative metadata to base-dict mutation.
+        attributes = self.__dict__["graph"]
+        if not self.__dict__.get("_published", False):
+            return cast("dict[str, Any]", attributes)
+        return _ReadOnlyGraphMetadata(attributes.copy())
+
+    @graph.setter
+    def graph(self, attributes: dict[str, Any]) -> None:
+        if self.__dict__.get("_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        self.__dict__["graph"] = attributes
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if not name.startswith("_") and getattr(self, "_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name: str) -> None:
+        if not name.startswith("_") and getattr(self, "_published", False):
+            raise AttributeError(
+                "Environment.connectivity is read-only; copy the graph to edit it."
+            )
+        super().__delattr__(name)
 
 
 def _freeze_graph_attributes(graph: nx.Graph) -> None:
     """Protect node, edge and graph attributes when publishing connectivity."""
+    graph._published = False
     # NetworkX's freeze protects topology only. Replace its attribute mappings
     # in place so the layout and environment keep sharing the same graph.
     for node, attrs in graph.nodes(data=True):
@@ -115,6 +211,8 @@ def _freeze_graph_attributes(graph: nx.Graph) -> None:
         graph._adj[u][v] = graph._adj[v][u] = frozen
     graph.graph = _ReadOnlyGraphAttributes(graph.graph)
     nx.freeze(graph)
+    graph.__class__ = _PublishedGraph
+    graph._published = True
 
 
 @dataclass(frozen=True)
@@ -155,6 +253,10 @@ class _GeometryView(Generic[_T]):
         if obj is None:
             return self
         value: _T = getattr(obj._geometry, self._name)
+        if isinstance(value, np.ndarray):
+            return cast("_T", _array_header(value))
+        if isinstance(value, tuple) and self._name == "grid_edges":
+            return cast("_T", tuple(_array_header(edge) for edge in value))
         return value
 
     def __set__(self, obj: object, value: object) -> NoReturn:
@@ -172,6 +274,9 @@ class _GeometryView(Generic[_T]):
                 ),
             )
         )
+
+    def __delete__(self, obj: object) -> NoReturn:
+        self.__set__(obj, None)
 
 
 @dataclass
@@ -358,8 +463,24 @@ class _BaseEnvironment(
     2
     """
 
-    name: str
-    layout: LayoutEngine
+    name = _MetadataView[str]()
+
+    @property
+    def layout(self) -> LayoutEngine:
+        """Read-only compatibility bridge over the published geometry."""
+        return self._layout if self._is_fitted else copy_module.deepcopy(self._layout)
+
+    @layout.setter
+    def layout(self, value: LayoutEngine) -> NoReturn:
+        raise AttributeError(
+            "Environment.layout is read-only; build a new environment."
+        )
+
+    @layout.deleter
+    def layout(self) -> NoReturn:
+        raise AttributeError(
+            "Environment.layout is read-only; build a new environment."
+        )
 
     # --- Attributes populated from the layout instance ---
     # Read-only views of the published geometry (see _PublishedGeometry). Not
@@ -375,11 +496,26 @@ class _BaseEnvironment(
     active_mask = _GeometryView["NDArray[np.bool_] | None"]()
 
     # Region Management
-    regions: Regions = field(init=False, repr=False)
+    @property
+    def regions(self) -> Regions:
+        """Owned immutable named regions; edit a standalone Regions builder."""
+        return self._regions
+
+    @regions.setter
+    def regions(self, value: Regions) -> NoReturn:
+        raise AttributeError(
+            "Environment.regions is read-only; use env.with_regions(regions)."
+        )
+
+    @regions.deleter
+    def regions(self) -> NoReturn:
+        raise AttributeError(
+            "Environment.regions is read-only; use env.with_regions(regions)."
+        )
 
     # Units and coordinate frames
-    units: str | None = field(init=False, default=None)
-    frame: str | None = field(init=False, default=None)
+    units = _MetadataView[str | None]()
+    frame = _MetadataView[str | None]()
 
     # Persistence type tag: io readers use it to restore the concrete class.
     # Analysis and plotting ask _coordinate_system for coordinate semantics.
@@ -431,6 +567,8 @@ class _BaseEnvironment(
         layout_params_used: dict[str, Any] | None = None,
         regions: Regions | None = None,
         *,
+        units: str | None = None,
+        frame: str | None = None,
         restored_from: str | None = None,
         arena: Arena | None = None,
         clip_mapping: ClipMapping | None = None,
@@ -458,6 +596,10 @@ class _BaseEnvironment(
 
         regions : Regions or None, optional
             Initial named regions; an empty container is created when omitted.
+        units : str or None, optional
+            Label for the supplied coordinate units; never scales coordinates.
+        frame : str or None, optional
+            Coordinate frame label for the supplied coordinates.
         restored_from : str, optional
             Where a read-back environment's saved geometry came from; an invalid
             saved graph is then reported against that data.
@@ -477,21 +619,37 @@ class _BaseEnvironment(
                 )
             )
 
-        self.name = name
-        self.layout = layout
+        if layout_type_used is not None:
+            from neurospatial.environment._ownership import (
+                _NATIVE_LAYOUTS,
+                _OwnedLayout,
+                own_layout,
+            )
+            from neurospatial.layout._binning_layout import BinningLayout
+
+            if type(layout) not in (*_NATIVE_LAYOUTS, BinningLayout, _OwnedLayout):
+                layout = own_layout(layout)
+                layout_type_used = layout._layout_type_tag
+                layout_params_used = layout._build_params_used
+
+        self._metadata = _Metadata(name, units, frame)
+        type(self)._validate_units(units)
+        self._layout = (
+            layout if layout_type_used is not None else copy_module.deepcopy(layout)
+        )
 
         self._layout_type_used = (
             layout_type_used
             if layout_type_used
             else getattr(layout, "_layout_type_tag", None)
         )
-        self._layout_params_used = (
+        self._layout_params_used = copy_module.deepcopy(
             layout_params_used
             if layout_params_used is not None
             else getattr(layout, "_build_params_used", {})
         )
 
-        self._is_linearized_track_env = self.layout.is_linearized_track
+        self._is_linearized_track_env = layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
         # Placeholder geometry until _setup_from_layout publishes the layout's
@@ -504,6 +662,7 @@ class _BaseEnvironment(
             grid_shape=None,
             active_mask=None,
         )
+        self._freeze_geometry_arrays()
         self._is_fitted = False  # Will be set by _setup_from_layout
         if layout_type_used is not None:
             # Populate attributes from the built layout
@@ -515,14 +674,42 @@ class _BaseEnvironment(
                 raise TypeError(
                     f"Expected 'regions' to be a Regions instance, got {type(regions)}.",
                 )
-            self.regions = regions
+            self._regions = self._validate_regions(regions)
         else:
             # Initialize with an empty Regions instance if not provided
-            self.regions = Regions()
+            self._regions = Regions()._snapshot()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Export owned state without copying or serializing transient analyses."""
+        state = self.__dict__.copy()
+        for name in ("_kernel_cache", "_kdtree_cache"):
+            state.pop(name, None)
+        for cls in type(self).__mro__:
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, cached_property):
+                    state.pop(name, None)
+                elif isinstance(descriptor, versioned_cached_property):
+                    key = f"_versioned_cache__{name}"
+                    state.pop(key, None)
+                    state.pop(f"{key}__version", None)
+        return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore published geometry from pickles predating binning snapshots."""
         self.__dict__.update(state)
+        if "_layout" not in state:
+            self._layout = state["layout"]
+        self.__dict__.pop("layout", None)
+        if "_metadata" not in state:
+            self._metadata = _Metadata(
+                state.get("name", ""), state.get("units"), state.get("frame")
+            )
+        for key in ("name", "units", "frame"):
+            self.__dict__.pop(key, None)
+        self._regions = self._validate_regions(
+            state.get("_regions", state.get("regions", Regions()))
+        )
+        self.__dict__.pop("regions", None)
         missing_binning = not hasattr(self._geometry, "binning")
         if missing_binning or getattr(self._geometry, "arena", None) is None:
             from neurospatial.arena import UnknownArena
@@ -543,6 +730,41 @@ class _BaseEnvironment(
             )
             if missing_binning and self._is_fitted:
                 self._setup_from_layout(arena=arena)
+        if self._is_fitted:
+            from neurospatial.environment._ownership import own_arena, own_layout
+
+            self._layout = own_layout(self._layout)
+            assert self._geometry.arena is not None
+            self._geometry = replace(
+                self._geometry, arena=own_arena(self._geometry.arena)
+            )
+            _freeze_graph_attributes(self._geometry.connectivity)
+            self._reset_analysis_caches()
+        self._freeze_geometry_arrays()
+
+    def _freeze_geometry_arrays(self) -> None:
+        """Own immutable buffers; public descriptors expose separate array headers."""
+
+        def immutable(array: NDArray[Any]) -> NDArray[Any]:
+            return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(
+                array.shape
+            )
+
+        geometry = self._geometry
+        self._geometry = replace(
+            geometry,
+            bin_centers=immutable(geometry.bin_centers),
+            active_mask=(
+                immutable(geometry.active_mask)
+                if geometry.active_mask is not None
+                else None
+            ),
+            grid_edges=(
+                tuple(immutable(edge) for edge in geometry.grid_edges)
+                if geometry.grid_edges is not None
+                else None
+            ),
+        )
 
     @property
     def _binning(self) -> Binning:
@@ -557,17 +779,46 @@ class _BaseEnvironment(
         """Continuous domain, distinguished from the active analysis bins."""
         arena = self._geometry.arena
         assert arena is not None
-        return arena
+        return copy_module.deepcopy(arena)
 
     @property
     @check_fitted
     def clip_mapping(self) -> ClipMapping | None:
         """Most recent clip's source-bin mapping, or None before clipping."""
-        return self._geometry.clip_mapping
+        return copy_module.deepcopy(self._geometry.clip_mapping)
+
+    @property
+    @check_fitted
+    def edge_pairs(self) -> NDArray[np.intp]:
+        """Oriented neighbor pairs in gradient and flux order, shape (n_edges, 2).
+
+        This order preserves explicit bin input, and can differ from NetworkX
+        edge iteration. The returned array is independent and read-only.
+        """
+        pairs: NDArray[np.intp] = self._binning.bins.pairs.copy()
+        pairs.setflags(write=False)
+        return pairs
+
+    @check_fitted
+    def to_networkx(self) -> nx.Graph:
+        """Return a detached editable graph with bin IDs and weighted edges.
+
+        Nested graph, node and edge attributes are independently owned. Node
+        identities are the bin IDs; ``edge_pairs`` defines numerical edge order.
+        Standard NetworkX drawing, editing and JSON conversion can use this graph.
+
+        Returns
+        -------
+        networkx.Graph
+            Editable navigation graph, independent of the environment.
+        """
+        return nx.Graph(self.connectivity)
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        if not self.arena.domain_known:
+        arena = self._geometry.arena
+        assert arena is not None
+        if not arena.domain_known:
             return self._binning.locator.locate(positions).astype(np.intp, copy=False)
         positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
         if positions.ndim != 2 or positions.shape[1] != self.n_dims:
@@ -575,7 +826,7 @@ class _BaseEnvironment(
                 f"Dimensionality mismatch: expected positions with shape "
                 f"(n_positions, {self.n_dims}), got {positions.shape}."
             )
-        inside = self.arena.contains(positions)
+        inside = arena.contains(positions)
         indices = np.full(len(positions), -1, dtype=np.intp)
         if np.any(inside):
             indices[inside] = self._binning.locator.locate(positions[inside])
@@ -596,7 +847,7 @@ class _BaseEnvironment(
     def _validate_units(cls, value: object) -> None:
         """Warn if ``value`` is not in :attr:`_UNITS_REGISTRY`.
 
-        Called automatically when ``env.units`` is assigned. The
+        Called when constructing or replacing the units declaration. The
         registry is intentionally small and advisory; the goal is to
         catch typos (``"centimeters"``, ``"px "``) without preventing
         legitimate free-form values.
@@ -617,10 +868,87 @@ class _BaseEnvironment(
                 stacklevel=3,
             )
 
-    def __setattr__(self, name: str, value: object) -> None:
-        if name == "units":
-            type(self)._validate_units(value)
-        super().__setattr__(name, value)
+    def _reset_analysis_caches(self) -> None:
+        """Discard this instance's memoized analyses without clearing shared values."""
+        for legacy_name in ("bin_sizes", "boundary_bins", "linearization_properties"):
+            self.__dict__.pop(legacy_name, None)
+        if self._is_fitted:
+            self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        self._kernel_cache = {}
+        self._kdtree_cache = None
+
+    def _replace_value(self) -> Self:
+        """Share published values while giving the new environment fresh caches."""
+        result = type(self).__new__(type(self))
+        result.__dict__.update(self.__dict__)
+        result._reset_analysis_caches()
+        return result
+
+    def __copy__(self) -> Self:
+        return self._replace_value()
+
+    @check_fitted
+    def with_metadata(
+        self,
+        *,
+        name: str | _Unset = UNSET,
+        units: str | None | _Unset = UNSET,
+        frame: str | None | _Unset = UNSET,
+    ) -> Self:
+        """Return a new environment with corrected coordinate declarations.
+
+        Parameters
+        ----------
+        name : str, optional
+            New name. Omission preserves the current name.
+        units, frame : str or None, optional
+            New labels. Omission preserves the label; None clears it.
+            Labels describe existing coordinates and never rescale them.
+
+        Returns
+        -------
+        Environment or EgocentricPolarEnvironment
+            Same concrete type and geometry, with fresh analysis caches.
+        """
+        metadata = _Metadata(
+            self.name if isinstance(name, _Unset) else name,
+            self.units if isinstance(units, _Unset) else units,
+            self.frame if isinstance(frame, _Unset) else frame,
+        )
+        if not isinstance(units, _Unset):
+            type(self)._validate_units(metadata.units)
+        result = self._replace_value()
+        result._metadata = metadata
+        return result
+
+    def _validate_regions(self, regions: Regions) -> Regions:
+        if not isinstance(regions, Regions):
+            raise TypeError("regions must be a Regions instance.")
+        n_dims = self._geometry.bin_centers.shape[1]
+        if any(region.n_dims != n_dims for region in regions.values()):
+            raise ValueError("Region coordinate dimensions must match the environment.")
+        return regions._snapshot()
+
+    @check_fitted
+    def with_regions(self, regions: Regions) -> Self:
+        """Return a new environment owning a snapshot of a region collection.
+
+        Parameters
+        ----------
+        regions : Regions
+            Complete replacement, in iteration order. An empty builder clears
+            all regions. Coordinates must match this environment's dimension;
+            regions may extend outside the arena.
+
+        Returns
+        -------
+        Environment or EgocentricPolarEnvironment
+            Same concrete type and geometry, with fresh analysis caches.
+        """
+        snapshot = self._validate_regions(regions)
+        result = self._replace_value()
+        result._regions = snapshot
+        return result
 
     def __eq__(self, other: object) -> bool:
         """Check equality with another Environment or string.
@@ -1076,8 +1404,8 @@ class _BaseEnvironment(
             The environment is left unchanged.
 
         """
-        bin_centers = self.layout.bin_centers
-        connectivity = getattr(self.layout, "connectivity", nx.Graph())
+        bin_centers = self._layout.bin_centers
+        connectivity = getattr(self._layout, "connectivity", nx.Graph())
 
         # Validate the graph before touching any environment state, so a failure
         # leaves the previous geometry, version and caches consistent.
@@ -1115,12 +1443,18 @@ class _BaseEnvironment(
                 ) from e
             raise ValueError(
                 f"Invalid connectivity graph from layout engine "
-                f"'{self.layout._layout_type_tag}': {e}\n\n"
+                f"'{self._layout._layout_type_tag}': {e}\n\n"
                 f"This is a layout engine bug. Please report it at "
                 f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
-        binning = binning_from_layout(self.layout, connectivity)
+        from neurospatial.environment._ownership import own_arena, own_layout
+
+        self._layout = own_layout(self._layout)
+        self._is_linearized_track_env = self._layout.is_linearized_track
+        binning = self._layout._binning
+        connectivity = self._layout._owned_connectivity  # type: ignore[attr-defined]
+        bin_centers = binning.bins.centers
         if clip_mapping is None:
             clip_mapping = binning.clip_mapping
         elif clip_mapping is not binning.clip_mapping:
@@ -1135,30 +1469,33 @@ class _BaseEnvironment(
         )
 
         if arena is None:
-            arena = infer_arena(binning, polar=self._POLAR, layout=self.layout)
+            arena = infer_arena(binning, polar=self._POLAR, layout=self._layout)
+        arena = own_arena(arena)
         validate_arena(arena, binning, polar=self._POLAR)
         binning, wall_graph = apply_walls(binning, connectivity, arena)
         if wall_graph is not connectivity:
             from neurospatial.layout._binning_layout import BinningLayout
 
-            self.layout = BinningLayout(
-                binning,
-                connectivity=wall_graph,
-                dimension_ranges=self.layout.dimension_ranges,
-                layout_type_tag=self.layout._layout_type_tag,
-                layout_type=self.layout.layout_type,
-                build_params=self.layout._build_params_used,
-                is_linearized_track=self._is_linearized_track_env,
-                coordinate_kind="polar" if self._POLAR else "cartesian",
+            self._layout = own_layout(
+                BinningLayout(
+                    binning,
+                    connectivity=wall_graph,
+                    dimension_ranges=self._layout.dimension_ranges,
+                    layout_type_tag=self._layout._layout_type_tag,
+                    layout_type=self._layout.layout_type,
+                    build_params=self._layout._build_params_used,
+                    is_linearized_track=self._is_linearized_track_env,
+                    coordinate_kind="polar" if self._POLAR else "cartesian",
+                )
             )
-            connectivity = self.layout.connectivity
+            connectivity = self._layout._owned_connectivity  # type: ignore[attr-defined]
         if clip_mapping is not None and len(clip_mapping.parent_bin_indices) != len(
             bin_centers
         ):
             raise ValueError("clip_mapping must have one source index per output bin.")
-        grid_edges = getattr(self.layout, "grid_edges", ())
-        grid_shape = getattr(self.layout, "grid_shape", None)
-        active_mask = getattr(self.layout, "active_mask", None)
+        grid_edges = getattr(self._layout, "grid_edges", ())
+        grid_shape = getattr(self._layout, "grid_shape", None)
+        active_mask = getattr(self._layout, "active_mask", None)
 
         # If it's not a grid layout, grid_shape might be (n_active_bins,),
         # and active_mask might be 1D all True. This is fine.
@@ -1183,7 +1520,7 @@ class _BaseEnvironment(
             binning=binning,
             bin_centers=bin_centers,
             connectivity=connectivity,
-            dimension_ranges=self.layout.dimension_ranges,
+            dimension_ranges=self._layout.dimension_ranges,
             grid_edges=grid_edges,
             grid_shape=grid_shape,
             active_mask=active_mask,
@@ -1191,6 +1528,7 @@ class _BaseEnvironment(
             clip_mapping=clip_mapping,
         )
 
+        self._freeze_geometry_arrays()
         self._is_fitted = True
         # Bump the state version so any downstream cache (including the
         # versioned_cached_property values from this and other mixins)
@@ -1201,7 +1539,7 @@ class _BaseEnvironment(
         # Log environment creation
         n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
         log_environment_created(
-            env_type=self.layout._layout_type_tag,
+            env_type=self._layout._layout_type_tag,
             n_bins=n_bins,
             n_dims=n_dims,
             env_name=self.name,
@@ -1295,7 +1633,7 @@ class _BaseEnvironment(
             If called before the environment is fitted.
 
         """
-        return self._layout_params_used
+        return copy_module.deepcopy(self._layout_params_used)
 
     @property
     @check_fitted
@@ -1379,7 +1717,7 @@ class _BaseEnvironment(
         (4, 3)
         >>> # Subsequent access reuses cached matrix
         >>> D2 = env.get_differential_operator()
-        >>> D is D2
+        >>> np.array_equal(D.toarray(), D2.toarray())
         True
 
         See Also
@@ -1393,14 +1731,14 @@ class _BaseEnvironment(
         .. [2] Shuman et al. (2013). "The emerging field of signal processing on graphs."
                IEEE Signal Processing Magazine, 30(3), 83-98.
         """
-        return self._differential_operator_cached
+        return self._differential_operator_cached.copy()
 
     @check_fitted
     def get_divergence_operator(self) -> sparse.csc_matrix:
         """Return the cached finite-volume divergence operator.
 
         The divergence operator maps a flux on each oriented edge (in
-        ``connectivity.edges()`` order) to the net outward flux per cell volume:
+        ``edge_pairs`` order) to the net outward flux per cell volume:
         ``-M**-1 D diag(A * d)``, the negative volume-weighted adjoint of
         :meth:`get_differential_operator`. ``divergence(env, edge_field)``
         applies it.
@@ -1433,7 +1771,7 @@ class _BaseEnvironment(
         get_differential_operator : The edge gradient operator it is adjoint to.
         neurospatial.ops.calculus.divergence : Apply it to an edge field.
         """
-        return self._divergence_operator_cached
+        return self._divergence_operator_cached.copy()
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
@@ -1498,7 +1836,7 @@ class _BaseEnvironment(
         >>> # Create environment
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> env.units = "cm"
+        >>> env = env.with_metadata(units="cm")
         >>>
         >>> # Deep copy (default): separate, equal geometry
         >>> env_copy = env.copy()
@@ -1507,47 +1845,12 @@ class _BaseEnvironment(
         >>>
         >>> # Shallow copy: the same geometry objects
         >>> env_shallow = env.copy(deep=False)
-        >>> env_shallow.bin_centers is env.bin_centers
+        >>> bool(np.shares_memory(env_shallow.bin_centers, env.bin_centers))
         True
         """
-        import copy as copy_module
-
-        # Preserve the concrete type (Environment or
-        # EgocentricPolarEnvironment) so a polar env copies as a polar env.
-        cls = type(self)
-
         if deep:
-            # Deep copy: arrays, graph, regions, layout
-            env_copy = cls(
-                name=self.name,
-                layout=copy_module.deepcopy(self.layout),
-                layout_type_used=self._layout_type_used,
-                layout_params_used=copy_module.deepcopy(self._layout_params_used),
-                regions=copy_module.deepcopy(self.regions),
-                arena=copy_module.deepcopy(self.arena),
-            )
-
-            # Copy metadata
-            env_copy.units = self.units
-            env_copy.frame = self.frame
-        else:
-            # Shallow copy: share references
-            env_copy = cls(
-                name=self.name,
-                layout=self.layout,  # Shared reference
-                layout_type_used=self._layout_type_used,
-                layout_params_used=self._layout_params_used,  # Shared reference
-                regions=self.regions,  # Shared reference
-                arena=self.arena,
-                clip_mapping=self.clip_mapping,
-            )
-
-            # Copy metadata
-            env_copy.units = self.units
-            env_copy.frame = self.frame
-
-        # Construction (_setup_from_layout) already cleared every cache.
-        return env_copy
+            return copy_module.deepcopy(self)
+        return self._replace_value()
 
     def _clear_explicit_caches(
         self, *, kdtree: bool = True, kernels: bool = True
@@ -1730,6 +2033,8 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
         circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
     ) -> EgocentricPolarEnvironment:
         """Create an egocentric polar coordinate environment.
 
@@ -1801,4 +2106,6 @@ class Environment(CartesianCoordinates, _BaseEnvironment):
             circular_angle=circular_angle,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
             name=name,
+            units=units,
+            frame=frame,
         )

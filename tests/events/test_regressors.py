@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
+from neurospatial import Regions
+
 # =============================================================================
 # Test time_to_nearest_event
 # =============================================================================
@@ -1362,7 +1364,9 @@ class TestDistanceToBoundary:
 
         # Add a region (simple polygon using shapely)
         goal_polygon = shapely_box(7.0, 7.0, 9.0, 9.0)  # minx, miny, maxx, maxy
-        env.regions.add("goal", polygon=goal_polygon)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", polygon=goal_polygon)
+        env = env.with_regions(region_builder)
 
         # Positions: one far from region, one near region
         positions = np.array([[1.0, 1.0], [6.0, 6.0]])

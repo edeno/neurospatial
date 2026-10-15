@@ -283,6 +283,8 @@ an error instead of choosing a region by its order in the argument.
 
 <!-- docs-test: run -->
 ```python
+from neurospatial import Regions
+
 import numpy as np
 import pandas as pd
 from shapely.geometry import box
@@ -294,9 +296,11 @@ env = Environment.from_grid_mask(
     active_mask=np.ones((6, 1), dtype=bool),
     grid_edges=(np.arange(7, dtype=float), np.array([0.0, 1.0])),
 )
-env.units = "cm"
+env = env.with_metadata(units="cm")
+region_builder = Regions(env.regions.values())
 for name, left in [("A", 0), ("B", 3), ("C", 5)]:
-    env.regions.add(name, polygon=box(left, 0, left + 1, 1))
+    region_builder.add(name, polygon=box(left, 0, left + 1, 1))
+env = env.with_regions(region_builder)
 
 position_bins = np.array([0, 1, 0, 1, 3, 4, 5])
 times = np.arange(len(position_bins), dtype=float) / 10.0
@@ -496,9 +500,13 @@ laps = detect_laps(
 Define laps as segments between start region crossings.
 
 ```python
+from neurospatial import Regions
+
 # Add start region (crossing point on track)
 from shapely.geometry import Point
-env.regions.add("start", polygon=Point(50, 50).buffer(5.0))
+region_builder = Regions(env.regions.values())
+region_builder.add("start", polygon=Point(50, 50).buffer(5.0))
+env = env.with_regions(region_builder)
 
 # Detect laps as inter-crossing intervals
 laps = detect_laps(
@@ -561,12 +569,16 @@ Segment behavioral tasks into discrete trials based on region entries.
 ### T-maze Trials
 
 ```python
+from neurospatial import Regions
+
 from neurospatial.behavior.segmentation import segment_trials
 
 # Define regions
-env.regions.add("start", polygon=Point(50, 10).buffer(8))
-env.regions.add("left", polygon=Point(20, 90).buffer(8))
-env.regions.add("right", polygon=Point(80, 90).buffer(8))
+region_builder = Regions(env.regions.values())
+region_builder.add("start", polygon=Point(50, 10).buffer(8))
+region_builder.add("left", polygon=Point(20, 90).buffer(8))
+region_builder.add("right", polygon=Point(80, 90).buffer(8))
+env = env.with_regions(region_builder)
 
 # Segment into trials
 trials = segment_trials(
@@ -601,11 +613,15 @@ print(f"Timeouts: {sum(1 for t in trials if not t.success)}")
 Y-maze spontaneous alternation task.
 
 ```python
+from neurospatial import Regions
+
 # Define Y-maze arms
-env.regions.add("center", polygon=Point(50, 50).buffer(10))
-env.regions.add("arm_a", polygon=Point(50, 90).buffer(8))
-env.regions.add("arm_b", polygon=Point(20, 30).buffer(8))
-env.regions.add("arm_c", polygon=Point(80, 30).buffer(8))
+region_builder = Regions(env.regions.values())
+region_builder.add("center", polygon=Point(50, 50).buffer(10))
+region_builder.add("arm_a", polygon=Point(50, 90).buffer(8))
+region_builder.add("arm_b", polygon=Point(20, 30).buffer(8))
+region_builder.add("arm_c", polygon=Point(80, 30).buffer(8))
+env = env.with_regions(region_builder)
 
 # Segment into arm visits
 trials = segment_trials(
@@ -635,13 +651,17 @@ print(f"Spontaneous alternation: {alternation_rate:.1%}")
 8-arm radial maze for reference/working memory.
 
 ```python
+from neurospatial import Regions
+
 # Define center and 8 arms
-env.regions.add("center", polygon=Point(50, 50).buffer(10))
+region_builder = Regions(env.regions.values())
+region_builder.add("center", polygon=Point(50, 50).buffer(10))
 for i in range(8):
     angle = i * 2 * np.pi / 8
     x = 50 + 40 * np.cos(angle)
     y = 50 + 40 * np.sin(angle)
-    env.regions.add(f"arm_{i}", polygon=Point(x, y).buffer(8))
+    region_builder.add(f"arm_{i}", polygon=Point(x, y).buffer(8))
+env = env.with_regions(region_builder)
 
 # Segment into arm choices
 trials = segment_trials(

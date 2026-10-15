@@ -49,7 +49,7 @@ def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matri
     Returns
     -------
     D : scipy.sparse.csc_matrix, shape (n_bins, n_edges)
-        Sparse operator, with columns in ``env.connectivity.edges()`` order.
+        Sparse operator, with columns in ``env.edge_pairs`` order.
 
     Raises
     ------
@@ -120,7 +120,7 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     -------
     gradient_field : NDArray[np.float64], shape (n_edges,)
         ``(field[j] - field[i]) / d_e`` on each oriented edge i -> j, in
-        field units per length unit. Edge order is ``env.connectivity.edges()``.
+        field units per length unit. Edge order is ``env.edge_pairs``.
 
     Raises
     ------
@@ -171,7 +171,7 @@ def divergence(
     env : Environment or EgocentricPolarEnvironment
         Fitted environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
-        Flux density along each oriented edge in ``env.connectivity.edges()``
+        Flux density along each oriented edge in ``env.edge_pairs``
         order. Positive values flow from the first endpoint to the second.
 
     Returns
@@ -215,7 +215,7 @@ def divergence(
         raise ValueError(
             f"edge_field must have shape ({n_edges},) to match connectivity graph edges, "
             f"but got shape {edge_field.shape}; a flux is needed for each edge.\n"
-            "Fix: pass a 1-D edge_field in env.connectivity.edges() order."
+            "Fix: pass a 1-D edge_field in env.edge_pairs order."
         )
     return np.asarray(
         env.get_divergence_operator() @ edge_field, dtype=np.float64

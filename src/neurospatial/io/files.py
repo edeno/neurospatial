@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -62,7 +62,7 @@ def _convert_arrays_to_lists(obj: Any) -> Any:
     """
     if isinstance(obj, np.ndarray):
         return obj.tolist()
-    elif isinstance(obj, dict):
+    elif isinstance(obj, Mapping):
         return {k: _convert_arrays_to_lists(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [_convert_arrays_to_lists(item) for item in obj]
@@ -659,10 +659,9 @@ def _restore_environment(
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
             restored_from=source,
             arena=arena,
+            units=metadata.get("units"),
+            frame=metadata.get("frame"),
         )
-        for attribute in ("units", "frame"):
-            if attribute in metadata:
-                setattr(env, attribute, metadata[attribute])
         return cast("Environment", env)
     except (
         ValueError,

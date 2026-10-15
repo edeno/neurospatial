@@ -251,7 +251,7 @@ import matplotlib.pyplot as plt
 
 # Create environment
 env = Environment.from_samples(trajectory_data, bin_size=2.5)
-env.units = "cm"
+env = env.with_metadata(units="cm")
 
 # Define goal location
 goal_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]

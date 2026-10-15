@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 # =============================================================================
 # Test: VTE uses decision_analysis functions correctly
@@ -70,7 +70,9 @@ class TestVTEDecisionAnalysisIntegration:
 
         # Create decision region at center
         center = np.array([30.0, 30.0])
-        env.regions.add("decision", point=center)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("decision", point=center)
+        env = env.with_regions(region_builder)
 
         # Create trajectory that crosses decision region (passes through center)
         times = np.linspace(0, 4, 201)
@@ -141,7 +143,9 @@ class TestVTERoundTrip:
 
         # Create decision region
         center = np.array([50.0, 50.0])
-        env.regions.add("decision", point=center)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("decision", point=center)
+        env = env.with_regions(region_builder)
 
         # Create multiple trials
         n_trials = 10

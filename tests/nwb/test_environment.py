@@ -14,6 +14,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from neurospatial import Regions
+
 # Skip all tests if pynwb is not installed
 pynwb = pytest.importorskip("pynwb")
 
@@ -66,8 +68,8 @@ def test_transformed_grid_nwb_round_trip_preserves_binning(empty_nwb, kind):
         grid_edges=(np.arange(4.0) * 2, np.arange(4.0)),
         name="arena",
     )
-    env.units = "cm"
-    env.frame = "recording"
+    env = env.with_metadata(units="cm")
+    env = env.with_metadata(frame="recording")
     matrices = {
         "translation": [[1, 0, 10], [0, 1, 20], [0, 0, 1]],
         "rotation": [[0, -1, 10], [1, 0, 20], [0, 0, 1]],
@@ -413,7 +415,7 @@ class TestWriteEnvironment:
         """Test units attribute is stored on group."""
         from neurospatial.io.nwb import write_environment
 
-        sample_environment.units = "cm"
+        sample_environment = sample_environment.with_metadata(units="cm")
         write_environment(empty_nwb, sample_environment)
 
         scratch_data = empty_nwb.scratch["spatial_environment"]
@@ -426,7 +428,7 @@ class TestWriteEnvironment:
         """Test frame attribute is stored on group."""
         from neurospatial.io.nwb import write_environment
 
-        sample_environment.frame = "session_001"
+        sample_environment = sample_environment.with_metadata(frame="session_001")
         write_environment(empty_nwb, sample_environment)
 
         scratch_data = empty_nwb.scratch["spatial_environment"]
@@ -481,7 +483,7 @@ class TestWriteEnvironment:
 
         # Modify environment
         modified_env = sample_environment
-        modified_env.units = "meters"
+        modified_env = modified_env.with_metadata(units="meters")
 
         # Should succeed with overwrite=True
         write_environment(empty_nwb, modified_env, overwrite=True)
@@ -494,7 +496,9 @@ class TestWriteEnvironment:
         """Point regions use the canonical Region JSON schema."""
         from neurospatial.io.nwb import write_environment
 
-        sample_environment.regions.add("center", point=(50.0, 50.0))
+        region_builder = Regions(sample_environment.regions.values())
+        region_builder.add("center", point=(50.0, 50.0))
+        sample_environment = sample_environment.with_regions(region_builder)
         write_environment(empty_nwb, sample_environment)
         metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
         expected = sample_environment.regions["center"].to_dict()
@@ -511,7 +515,9 @@ class TestWriteEnvironment:
             np.random.default_rng(42).uniform(0, 100, (1000, 2)), bin_size=5.0
         )
         triangle = Polygon([(10, 10), (30, 10), (20, 30)])
-        env.regions.add("reward_zone", polygon=triangle)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("reward_zone", polygon=triangle)
+        env = env.with_regions(region_builder)
         write_environment(empty_nwb, env)
         metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
         expected = json.loads(json.dumps(env.regions["reward_zone"].to_dict()))
@@ -537,7 +543,7 @@ class TestWriteEnvironment:
         """The description stores versioned JSON metadata, separate from arrays."""
         from neurospatial.io.nwb import write_environment
 
-        sample_environment.name = "test_arena"
+        sample_environment = sample_environment.with_metadata(name="test_arena")
         write_environment(empty_nwb, sample_environment)
         metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
         assert metadata["name"] == "test_arena"
@@ -645,7 +651,7 @@ class TestReadEnvironment:
         """Test units attribute is restored."""
         from neurospatial.io.nwb import read_environment, write_environment
 
-        sample_environment.units = "cm"
+        sample_environment = sample_environment.with_metadata(units="cm")
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
 
@@ -655,7 +661,7 @@ class TestReadEnvironment:
         """Test frame attribute is restored."""
         from neurospatial.io.nwb import read_environment, write_environment
 
-        sample_environment.frame = "session_001"
+        sample_environment = sample_environment.with_metadata(frame="session_001")
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
 
@@ -692,7 +698,9 @@ class TestReadEnvironment:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         triangle = Polygon([(10, 10), (30, 10), (20, 30)])
-        env.regions.add("reward_zone", polygon=triangle)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("reward_zone", polygon=triangle)
+        env = env.with_regions(region_builder)
 
         write_environment(empty_nwb, env)
         loaded_env = read_environment(empty_nwb)
@@ -743,7 +751,7 @@ class TestReadEnvironment:
         """Test environment name attribute is restored from metadata."""
         from neurospatial.io.nwb import read_environment, write_environment
 
-        sample_environment.name = "test_arena"
+        sample_environment = sample_environment.with_metadata(name="test_arena")
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
 
@@ -917,9 +925,9 @@ class TestEnvironmentRoundTrip:
 
         from neurospatial.io.nwb import read_environment, write_environment
 
-        sample_environment.name = "test_arena"
-        sample_environment.units = "cm"
-        sample_environment.frame = "session_001"
+        sample_environment = sample_environment.with_metadata(name="test_arena")
+        sample_environment = sample_environment.with_metadata(units="cm")
+        sample_environment = sample_environment.with_metadata(frame="session_001")
 
         nwb_path = tmp_path / "test_metadata.nwb"
 
@@ -951,11 +959,13 @@ class TestEnvironmentRoundTrip:
         rng = np.random.default_rng(3)
         positions = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.regions.add(
+        region_builder = Regions(env.regions.values())
+        region_builder.add(
             "goal",
             point=(50.0, 50.0),
             metadata={"color": "red", "reward": 1.0, "tags": ["target"]},
         )
+        env = env.with_regions(region_builder)
 
         nwb_path = tmp_path / "region_metadata.nwb"
         with NWBHDF5IO(str(nwb_path), "w") as io:
@@ -988,8 +998,10 @@ class TestEnvironmentRoundTrip:
         rng = np.random.default_rng(4)
         positions = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.units = "cm"
-        env.frame = "unknown"  # legitimate frame name that collides with old default
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(
+            frame="unknown"
+        )  # legitimate frame name that collides with old default
 
         nwb_path = tmp_path / "frame_unknown.nwb"
         with NWBHDF5IO(str(nwb_path), "w") as io:
@@ -1017,7 +1029,9 @@ class TestEnvironmentRoundTrip:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         triangle = Polygon([(10, 10), (30, 10), (20, 30)])
-        env.regions.add("reward_zone", polygon=triangle)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("reward_zone", polygon=triangle)
+        env = env.with_regions(region_builder)
 
         nwb_path = tmp_path / "test_polygon.nwb"
 
@@ -1054,12 +1068,16 @@ class TestEnvironmentRoundTrip:
         rng = np.random.default_rng(7)
         positions = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
 
         # One point region and one polygon region in the same environment.
-        env.regions.add("home", point=(5.0, 5.0))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("home", point=(5.0, 5.0))
+        env = env.with_regions(region_builder)
         arm = Polygon([(10, 10), (40, 10), (40, 40), (10, 40)])
-        env.regions.add("arm", polygon=arm)
+        region_builder = Regions(env.regions.values())
+        region_builder.add("arm", polygon=arm)
+        env = env.with_regions(region_builder)
 
         nwb_path = tmp_path / "polygon_regions.nwb"
         with NWBHDF5IO(str(nwb_path), "w") as io:
@@ -1637,9 +1655,9 @@ class TestAllLayoutsRoundTrip:
         from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
-        env.name = f"test_{layout_name}"
-        env.units = "cm"
-        env.frame = "session_001"
+        env = env.with_metadata(name=f"test_{layout_name}")
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session_001")
 
         nwb_path = tmp_path / f"test_{layout_name}_metadata.nwb"
 
@@ -1672,8 +1690,10 @@ class TestAllLayoutsRoundTrip:
         # Add point regions at locations within the environment bounds
         # Use bin centers to ensure points are within valid range
         if env.n_bins >= 2:
-            env.regions.add("start", point=tuple(env.bin_centers[0]))
-            env.regions.add("goal", point=tuple(env.bin_centers[-1]))
+            region_builder = Regions(env.regions.values())
+            region_builder.add("start", point=tuple(env.bin_centers[0]))
+            region_builder.add("goal", point=tuple(env.bin_centers[-1]))
+            env = env.with_regions(region_builder)
 
         nwb_path = tmp_path / f"test_{layout_name}_point_regions.nwb"
 
@@ -1714,8 +1734,8 @@ class TestAllLayoutsRoundTrip:
 
         env = env_factory()
 
-        # Skip 1D layouts for polygon regions (they use 2D projected coordinates)
-        if env.n_dims >= 2:
+        # Polygon regions have exactly two coordinates.
+        if env.n_dims == 2:
             # Create a small polygon region within the environment bounds
             center = env.bin_centers.mean(axis=0)[:2]  # Use first 2 dims
             size = 5.0  # Small region
@@ -1726,7 +1746,9 @@ class TestAllLayoutsRoundTrip:
                     (center[0], center[1] + size),
                 ]
             )
-            env.regions.add("reward_zone", polygon=triangle)
+            region_builder = Regions(env.regions.values())
+            region_builder.add("reward_zone", polygon=triangle)
+            env = env.with_regions(region_builder)
 
         nwb_path = tmp_path / f"test_{layout_name}_polygon_regions.nwb"
 
@@ -2054,7 +2076,7 @@ class TestEnvironmentToNwb:
             sample_environment.to_nwb(empty_nwb)
 
         # Should succeed with overwrite=True
-        sample_environment.units = "meters"
+        sample_environment = sample_environment.with_metadata(units="meters")
         sample_environment.to_nwb(empty_nwb, overwrite=True)
 
         assert "meters" in empty_nwb.scratch["spatial_environment"].description
@@ -2087,9 +2109,9 @@ class TestEnvironmentToNwb:
         """Test that to_nwb preserves environment metadata."""
         from neurospatial.io.nwb import read_environment
 
-        sample_environment.name = "test_arena"
-        sample_environment.units = "cm"
-        sample_environment.frame = "session_001"
+        sample_environment = sample_environment.with_metadata(name="test_arena")
+        sample_environment = sample_environment.with_metadata(units="cm")
+        sample_environment = sample_environment.with_metadata(frame="session_001")
 
         sample_environment.to_nwb(empty_nwb)
 

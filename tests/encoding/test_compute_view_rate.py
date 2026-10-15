@@ -377,7 +377,7 @@ class TestComputeViewRateSmoothing:
         """Use 5 cm with metric units, otherwise 2.5 of the 10-unit grid steps."""
         from neurospatial.encoding.view import compute_view_rate
 
-        simple_env.units = units
+        simple_env = simple_env.with_metadata(units=units)
         times, positions, headings = trajectory_data
         result = compute_view_rate(
             simple_env,
@@ -1740,7 +1740,7 @@ class TestComputeViewRateNaNHandling:
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
         env = Environment.from_samples(samples, bin_size=2.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )

@@ -329,11 +329,15 @@ env.animate_fields(
 Display named spatial regions (from `env.regions`) during animation.
 
 ```python
+from neurospatial import Regions
+
 from neurospatial.regions import Region
 
 # Add regions to environment
-env.regions.add("goal", point=np.array([50.0, 50.0]))
-env.regions.add("start", polygon=start_polygon)
+region_builder = Regions(env.regions.values())
+region_builder.add("goal", point=np.array([50.0, 50.0]))
+region_builder.add("start", polygon=start_polygon)
+env = env.with_regions(region_builder)
 
 # Show all regions
 env.animate_fields(
@@ -526,6 +530,8 @@ Video overlay only works with 2D environments. Linearized tracks (1D) have no me
 Combine all overlay types for comprehensive behavioral visualization:
 
 ```python
+from neurospatial import Regions
+
 from neurospatial import Environment
 from neurospatial.animation import (
     PositionOverlay,
@@ -545,7 +551,9 @@ spike_times = ...  # list of per-cell spike-time arrays (length 50 here)
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.5, units="cm")
-env.regions.add("goal", point=np.array([80.0, 80.0]))
+region_builder = Regions(env.regions.values())
+region_builder.add("goal", point=np.array([80.0, 80.0]))
+env = env.with_regions(region_builder)
 
 # Batch-encode all cells at once (e.g., place fields for the population)
 fields = compute_spatial_rates(env, spike_times, timestamps, positions).firing_rates  # (50, n_bins)

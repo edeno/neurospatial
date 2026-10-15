@@ -140,7 +140,7 @@ Create environment from position data::
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> env.units = 'cm'
+    >>> env = env.with_metadata(units='cm')
     >>> assert env.n_bins > 0  # Number of bins depends on data coverage
 
 Map trajectory to bins::
@@ -165,8 +165,11 @@ Compute a spatial firing-rate map from spikes::
 
 Add and query regions::
 
-    >>> _ = env.regions.add('goal', point=[50, 50])
-    >>> _ = env.regions.add('start', point=[10, 10])
+    >>> from neurospatial.regions import Regions
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add('goal', point=[50, 50])
+    >>> _ = regions.add('start', point=[10, 10])
+    >>> env = env.with_regions(regions)
     >>> membership = env.region_membership()
 
 Save and load::
@@ -199,7 +202,7 @@ Create 2D environment and compute shortest path::
     ...     positions, bin_size=5.0,
     ...     connect_diagonal_neighbors=True,
     ... )
-    >>> env.units = 'cm'
+    >>> env = env.with_metadata(units='cm')
     >>> path = env.path_between(0, 100)
     >>> # distance_between takes coordinates; for graph distance between bin
     >>> # indices use distance_to([target_bin]) and index by the source bin.
@@ -211,7 +214,7 @@ Create 3D environment::
     >>> env_3d = Environment.from_samples(
     ...     positions_3d, bin_size=5.0,
     ... )
-    >>> env_3d.units = 'cm'
+    >>> env_3d = env_3d.with_metadata(units='cm')
     >>> env_3d.n_dims
     3
 
@@ -220,7 +223,7 @@ Create environment from polygon::
     >>> from shapely.geometry import box
     >>> polygon = box(0, 0, 100, 100)
     >>> env = Environment.from_polygon(polygon, bin_size=5.0)
-    >>> env.units = 'cm'
+    >>> env = env.with_metadata(units='cm')
 """
 
 import logging

@@ -94,7 +94,7 @@ class PlaceCellModel:
     >>> # Create environment
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Create place cell at center of environment
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
@@ -407,7 +407,7 @@ class PlaceCellModel:
         >>> from neurospatial.simulation import PlaceCellModel
         >>> samples = np.random.uniform(0, 100, (100, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0)
-        >>> env.units = "cm"
+        >>> env = env.with_metadata(units="cm")
         >>> pc = PlaceCellModel(env, center=[50.0, 50.0], width=10.0, max_rate=20.0)
         >>> np.allclose(pc.ground_truth["center"], [50.0, 50.0])
         True

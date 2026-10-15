@@ -1994,7 +1994,7 @@ def _object_vector_rate(
     from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
 
     # Polar graph distances are physical lengths; angles remain radians.
-    polar_env.units = env.units if env is not None else None
+    polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
     bandwidth = (
         resolve_spatial_bandwidth(polar_env, bandwidth)
         if method != "binned"
@@ -2722,7 +2722,7 @@ def _object_vector_rates(
     from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
 
     # Polar graph distances are physical lengths; angles remain radians.
-    polar_env.units = env.units if env is not None else None
+    polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
     bandwidth = (
         resolve_spatial_bandwidth(polar_env, bandwidth)
         if method != "binned"

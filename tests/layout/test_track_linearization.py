@@ -42,11 +42,13 @@ def _assert_previous_projection(component, layout, prefix, recorded):
 @pytest.mark.parametrize("built_environment", ["track"], indirect=True)
 def test_track_linearization_matches_previous(built_environment, locator_parity):
     """On- and off-track points retain their recorded branching-track projections."""
-    layout = built_environment.layout
-    component = layout.linearization()
+    layout = type(built_environment)._create_layout(
+        built_environment.layout_type, built_environment.layout_parameters
+    )
+    component = built_environment._binning.linearization
     assert isinstance(component, TrackLinearization)
     assert built_environment._binning.linearization is component
-    assert component is layout.linearization()
+    assert component is built_environment._binning.linearization
     _assert_previous_projection(component, layout, "track/projection", locator_parity)
 
 

@@ -174,7 +174,7 @@ def profile_full_animation_breakdown():
     # Create environment
     start = time.perf_counter()
     env = Environment.from_samples(positions_2d, bin_size=4.0, name="Maze")
-    env.units = "cm"
+    env = env.with_metadata(units="cm")
     env_time = time.perf_counter() - start
     print(f"\n2. Create environment: {env_time * 1000:.0f}ms")
     print(f"   Bins: {env.n_bins}")

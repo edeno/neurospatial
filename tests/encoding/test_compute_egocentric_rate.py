@@ -1083,7 +1083,7 @@ class TestEgocentricRateConvention:
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
         env = Environment.from_samples(samples, bin_size=2.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
             env, duration=1500.0, speed_units="cm", seed=7
         )
@@ -1172,7 +1172,7 @@ class TestEgocentricRateNaNHandling:
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
         env = Environment.from_samples(samples, bin_size=2.0)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )

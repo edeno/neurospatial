@@ -78,7 +78,7 @@ class BoundaryCellModel:
     >>> # Create environment
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Create omnidirectional boundary cell
     >>> bc = BoundaryCellModel(env, preferred_distance=5.0, distance_tolerance=3.0)
@@ -382,7 +382,7 @@ class BoundaryCellModel:
         >>> from neurospatial.simulation import BoundaryCellModel
         >>> samples = np.random.uniform(0, 100, (100, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0)
-        >>> env.units = "cm"
+        >>> env = env.with_metadata(units="cm")
         >>> bc = BoundaryCellModel(env, preferred_distance=5.0, distance_tolerance=3.0)
         >>> bc.ground_truth["preferred_distance"]
         5.0

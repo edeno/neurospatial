@@ -288,7 +288,7 @@ def decode_session(
     >>> rng = np.random.default_rng(0)
     >>> positions_raw = np.column_stack([np.linspace(0.0, 100.0, 500), np.zeros(500)])
     >>> env = Environment.from_samples(positions_raw, bin_size=5.0)
-    >>> env.units = "cm"  # required by simulate_trajectory_ou
+    >>> env = env.with_metadata(units="cm")  # required by simulate_trajectory_ou
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=10.0, speed_units="cm", seed=0
     ... )

@@ -105,7 +105,7 @@ class GridCellModel:
     >>> # Create 2D environment
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Create grid cell
     >>> gc = GridCellModel(env, grid_spacing=50.0, grid_orientation=0.0)
@@ -236,7 +236,7 @@ class GridCellModel:
         >>> from neurospatial.simulation import GridCellModel
         >>> samples = np.random.uniform(0, 100, (500, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0)
-        >>> env.units = "cm"
+        >>> env = env.with_metadata(units="cm")
         >>> gc = GridCellModel(env, grid_spacing=40.0)
         >>> positions = np.array([[50.0, 50.0], [55.0, 50.0]])
         >>> rates = gc.firing_rate(positions)

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 
 class TestSubsetBasic:
@@ -43,7 +43,9 @@ class TestSubsetBasic:
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add a region covering left half
-        env.regions.add("left_half", polygon=box(0, 0, 50, 100))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("left_half", polygon=box(0, 0, 50, 100))
+        env = env.with_regions(region_builder)
 
         # Subset to region
         sub_env = env.subset(region_names=["left_half"])
@@ -264,7 +266,9 @@ class TestSubsetValidation:
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add a point region
-        env.regions.add("goal", point=[50, 50])
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=[50, 50])
+        env = env.with_regions(region_builder)
 
         # Should raise error with clear message
         with pytest.raises(ValueError, match=r"point-type region"):
@@ -296,7 +300,9 @@ class TestSubsetInvert:
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add region
-        env.regions.add("center", polygon=box(40, 40, 60, 60))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("center", polygon=box(40, 40, 60, 60))
+        env = env.with_regions(region_builder)
 
         # Subset and inverted subset
         sub_env = env.subset(region_names=["center"])
@@ -313,8 +319,8 @@ class TestSubsetMetadataHandling:
         """Subset preserves units and frame metadata."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-        env.units = "cm"
-        env.frame = "session1"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session1")
 
         # Subset
         mask = np.ones(env.n_bins // 2, dtype=bool)
@@ -329,8 +335,10 @@ class TestSubsetMetadataHandling:
         """Subset drops all regions."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-        env.regions.add("goal", point=[50, 50])
-        env.regions.add("start", point=[10, 10])
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=[50, 50])
+        region_builder.add("start", point=[10, 10])
+        env = env.with_regions(region_builder)
 
         # Subset
         mask = env.bin_centers[:, 0] < 50
@@ -511,8 +519,8 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         from neurospatial.io.files import from_file, to_file
 
         env = self._build_grid_env()
-        env.units = "cm"
-        env.frame = "session1"
+        env = env.with_metadata(units="cm")
+        env = env.with_metadata(frame="session1")
 
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
@@ -566,22 +574,22 @@ class TestSubsetKeepsParentConnectivity:
     def test_wall_in_saved_graph_survives_subset_and_round_trip(self):
         """Edges a saved graph omits are not restored from mask adjacency."""
         from neurospatial.io import from_dict, to_dict
+        from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
-        env = Environment.from_grid_mask(
-            np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0), np.arange(7.0))
+        layout = MaskedGridLayout()
+        layout.build(
+            active_mask=np.ones((6, 6), dtype=bool),
+            grid_edges=(np.arange(7.0), np.arange(7.0)),
         )
-        centers = np.asarray(env.bin_centers)
+        centers = np.asarray(layout.bin_centers)
 
         def crosses_wall(u: int, v: int) -> bool:
             (x0, y0), (x1, y1) = centers[u], centers[v]
             return (x0 - 3.0) * (x1 - 3.0) < 0 and min(y0, y1) > 2.0
 
-        graph = env.connectivity.copy()
+        graph = layout.connectivity
         graph.remove_edges_from([(u, v) for u, v in graph.edges if crosses_wall(u, v)])
-        env.layout.connectivity = graph
-        walled = Environment(
-            layout=env.layout, layout_type_used=env.layout._layout_type_tag
-        )
+        walled = Environment(layout=layout, layout_type_used="MaskedGrid")
         walled = from_dict(to_dict(walled))
         assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())
 

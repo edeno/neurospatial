@@ -1,4 +1,4 @@
-"""Subset lookup reuses the parent's nearest-neighbor memo and bin ownership."""
+"""Owned subset lookup reuses its nearest-neighbor memo and parent ownership."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def linearized_parent_and_subset() -> tuple[Environment, Environment, np.ndarray
 
 
 class TestSubsetKDTreeCaching:
-    """Repeated subset queries keep the already-built memo of the parent locator."""
+    """Repeated queries reuse the subset's owned parent-locator memo."""
 
     def test_kdtree_built_at_most_once_over_many_queries(
         self, linearized_parent_and_subset
@@ -42,16 +42,18 @@ class TestSubsetKDTreeCaching:
         pts = rng.uniform(0, 19, size=(1000, n_dims))
         locator = child._binning.locator
         assert isinstance(locator, SubsetLocator)
-        assert locator.base is parent._binning.locator
-        memo = locator.base._tree
-        assert memo is not None
+        assert locator.base is not parent._binning.locator
+        np.testing.assert_array_equal(locator.base.centers, parent.bin_centers)
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
         expected = child_of[parent.bin_at(pts)]
         assert np.any(expected == -1)
 
         with patch("neurospatial.layout._locators.cKDTree", wraps=cKDTree) as mock_ckdt:
+            np.testing.assert_array_equal(child.bin_at(pts), expected)
+            memo = locator.base._tree
+            assert memo is not None
             for _ in range(10):
                 np.testing.assert_array_equal(child.bin_at(pts), expected)
-        assert mock_ckdt.call_count == 0
-        assert locator.base._tree is memo
+                assert locator.base._tree is memo
+        assert mock_ckdt.call_count <= 1

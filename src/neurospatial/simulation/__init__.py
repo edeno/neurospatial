@@ -22,7 +22,7 @@ Low-level API for custom simulations:
 >>> # Create sample environment
 >>> data = np.random.uniform(0, 100, (1000, 2))
 >>> env = Environment.from_samples(data, bin_size=2.0)
->>> env.units = "cm"
+>>> env = env.with_metadata(units="cm")
 >>>
 >>> # Generate trajectory
 >>> positions, times = simulate_trajectory_ou(

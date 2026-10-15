@@ -10,7 +10,7 @@ import matplotlib.image as mpimg
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation._parallel import parallel_render_frames
 from neurospatial.animation.backends.html_backend import render_html
 from neurospatial.animation.overlays import (
@@ -107,7 +107,9 @@ def test_html_exports_visible_overlays_in_both_modes(
     elif kind == "decay":
         overlays = OverlayData(events=all_overlays.events)
     else:
-        env.regions.add("goal", point=np.array([75.0, 25.0]))
+        region_builder = Regions(env.regions.values())
+        region_builder.add("goal", point=np.array([75.0, 25.0]))
+        env = env.with_regions(region_builder)
         overlays = None  # Regions must work even without another overlay.
         show_regions = True
 

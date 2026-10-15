@@ -23,7 +23,7 @@ from neurospatial.layout._capabilities import (
     TrackLinearizationProvider,
 )
 from neurospatial.layout._diffusion import FaceGeometry, FiniteVolumeGeometryProvider
-from neurospatial.layout._locators import MeshLocator, RectilinearLocator
+from neurospatial.layout._locators import HexLocator, MeshLocator, RectilinearLocator
 
 
 def _facade(env, *, binning=None, connectivity=None):
@@ -68,6 +68,13 @@ def test_facade_exposes_the_decoded_snapshot(built_environment):
             facade.active_mask, binning.linearization.active_mask
         )
         assert facade.grid_shape == facade.active_mask.shape
+    elif isinstance(binning.locator, HexLocator):
+        locator = binning.locator
+        assert facade.grid_edges == ()
+        assert facade.grid_shape == locator.centers_shape
+        expected = (locator.flat_to_active >= 0).reshape(locator.centers_shape)
+        np.testing.assert_array_equal(facade.active_mask, expected)
+        assert np.count_nonzero(facade.active_mask) == env.n_bins
     elif isinstance(binning.locator, MeshLocator):
         assert facade.grid_shape == env.grid_shape
         np.testing.assert_array_equal(facade.active_mask, env.active_mask)
@@ -92,8 +99,6 @@ def grid_env():
         "node_labels",
         "node_position",
         "distance",
-        "pair_order",
-        "pair_orientation",
         "face_edges",
         "face_volumes",
         "active_count",
@@ -117,13 +122,6 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
     elif mismatch == "distance":
         graph.edges[next(iter(graph.edges))]["distance"] += 0.01
         pattern = "distance"
-    elif mismatch in {"pair_order", "pair_orientation"}:
-        graph = nx.Graph()
-        nodes = list(env.connectivity.nodes(data=True))
-        graph.add_nodes_from(nodes[::-1] if mismatch == "pair_orientation" else nodes)
-        graph.add_edges_from(list(env.connectivity.edges(data=True))[::-1])
-        assert list(graph.edges) != list(env.connectivity.edges)
-        pattern = "pairs|order|orientation"
     elif mismatch.startswith("face_"):
         faces = binning.faces.build()
         if mismatch == "face_edges":
@@ -162,6 +160,62 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
         pattern = "edges|centers|geometry"
     with pytest.raises(ValueError, match=pattern):
         _facade(env, binning=binning, connectivity=graph)
+
+
+@pytest.mark.parametrize("graph_order", ["pair_order", "pair_orientation"])
+def test_graph_iteration_order_preserves_authoritative_pairs_and_weights(
+    grid_env, graph_order
+):
+    """Graph iteration cannot change bin IDs or ordered gradient/flux values."""
+    from neurospatial.ops.calculus import divergence, gradient
+
+    env = grid_env
+    graph = nx.Graph()
+    nodes = list(env.connectivity.nodes(data=True))
+    graph.add_nodes_from(nodes[::-1] if graph_order == "pair_orientation" else nodes)
+    graph.add_edges_from(list(env.connectivity.edges(data=True))[::-1])
+    assert list(graph.edges) != list(env.connectivity.edges)
+    facade = _facade(env, connectivity=graph)
+    bins = facade.binning().bins
+    np.testing.assert_array_equal(bins.centers, env.bin_centers)
+    np.testing.assert_array_equal(bins.pairs, env.edge_pairs)
+    np.testing.assert_array_equal(bins.pair_distances, env._binning.bins.pair_distances)
+    for (u, v), distance in zip(bins.pairs, bins.pair_distances, strict=True):
+        assert facade.connectivity.edges[u, v]["distance"] == distance
+    for actual, expected in zip(
+        facade.binning().faces.build(), env._face_geometry, strict=True
+    ):
+        np.testing.assert_array_equal(actual, expected)
+
+    published = Environment(layout=facade, layout_type_used=facade._layout_type_tag)
+    np.testing.assert_array_equal(
+        published.bin_at(env.bin_centers), np.arange(env.n_bins)
+    )
+    np.testing.assert_array_equal(published.edge_pairs, env.edge_pairs)
+    attributes = published.get_edge_attributes()
+    np.testing.assert_array_equal(
+        attributes[["source", "target"]].to_numpy(), published.edge_pairs
+    )
+    vectors = (
+        published.bin_centers[published.edge_pairs[:, 1]]
+        - published.bin_centers[published.edge_pairs[:, 0]]
+    )
+    np.testing.assert_array_equal(np.asarray(attributes["vector"].tolist()), vectors)
+    np.testing.assert_array_equal(
+        attributes[["vector_dim0", "vector_dim1"]].to_numpy(), vectors
+    )
+    np.testing.assert_array_equal(attributes["distance"], bins.pair_distances)
+    np.testing.assert_array_equal(
+        attributes["angle_2d"], np.arctan2(vectors[:, 1], vectors[:, 0])
+    )
+    field = np.arange(env.n_bins, dtype=float) ** 2
+    flux = np.arange(len(env.edge_pairs), dtype=float) + 0.5
+    np.testing.assert_array_equal(gradient(published, field), gradient(env, field))
+    np.testing.assert_array_equal(divergence(published, flux), divergence(env, flux))
+    np.testing.assert_allclose(
+        published.compute_kernel(1.0, mode="average"),
+        env.compute_kernel(1.0, mode="average"),
+    )
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)

@@ -4,8 +4,9 @@ This foundation module knows no Environment or solver. A layout that supports
 diffusion and differential operators defines ``finite_volume_geometry()``: a
 copy of its connectivity graph with face measures (``A``) and edge distances,
 plus cell measures. ``FaceGeometry.from_graph`` validates that into per-edge
-arrays in connectivity edge order, from which gradient and divergence are built
-and ``DiffusionGeometry.from_faces`` assembles the conductance snapshot every
+arrays in the supplied graph's order. Explicit binning data can supply another
+edge order; ``env.edge_pairs`` defines gradient and flux alignment in either
+case. ``DiffusionGeometry.from_faces`` assembles the conductance snapshot every
 diffusion consumer shares.
 
 A layout has the capability only if it defines the method, so ``isinstance``
@@ -26,10 +27,12 @@ from scipy.sparse.csgraph import connected_components
 
 
 class FaceGeometry(NamedTuple):
-    """Validated, read-only cell faces in connectivity edge order.
+    """Validated, read-only cell faces in authoritative edge order.
 
-    ``edges[k] = (u, v)`` is the ``k``-th edge as the graph iterates it, so edge
-    fields from gradient and divergence line up with ``env.connectivity``.
+    ``edges[k] = (u, v)`` defines the orientation of edge field entry ``k``.
+    Published faces align exactly with ``env.edge_pairs``. ``from_graph``
+    captures the supplied graph's iteration order; explicit faces may use a
+    different order from NetworkX iteration.
     """
 
     edges: NDArray[np.intp]

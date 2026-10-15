@@ -12,10 +12,14 @@ from shapely.geometry import Polygon
 from neurospatial import Environment, _constants
 from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout._binning import Binning, KnownFaces, LayoutFaces, SpatialBins
+from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._diffusion import (
     DiffusionGeometry,
+    FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._locators import NearestBinLocator
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.factories import _LAYOUT_MAP
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
@@ -24,36 +28,47 @@ from neurospatial.ops.smoothing import compute_diffusion_kernels
 from neurospatial.ops.transforms import Affine2D
 
 
-class FaceLayout(MaskedGridLayout):
-    """Hand-chosen cell faces for three 1-D bins, outside the built-in engines."""
-
-    builds = 0
-    scale = 1.0
+def _face_environment(scale=1.0):
+    """Publish owned data for unequal cells, independently of a layout callback."""
+    layout = MaskedGridLayout()
+    layout.build(active_mask=np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),))
+    graph = layout.connectivity.copy()
     volumes = np.array([1.0, 2.0, 4.0])
-
-    def bin_sizes(self):
-        return self.volumes
-
-    def finite_volume_geometry(self):
-        self.builds += 1
-        graph = self.connectivity.copy()
-        for (u, v), area in zip(graph.edges(), (2.0, 3.0), strict=True):
-            graph.edges[u, v]["A"] = area * self.scale
-        return graph, self.volumes
+    for (u, v), area in zip(graph.edges(), (2.0, 3.0), strict=True):
+        graph.edges[u, v]["A"] = area * scale
+    faces = FaceGeometry.from_graph(graph, volumes)
+    bins = SpatialBins.from_arrays(
+        layout.bin_centers, volumes, 1, faces.edges, np.ones(2)
+    )
+    binning = Binning("Faces", bins, NearestBinLocator(bins.centers), KnownFaces(faces))
+    owned = BinningLayout(
+        binning,
+        connectivity=graph,
+        dimension_ranges=layout.dimension_ranges,
+        layout_type_tag="Faces",
+        layout_type="Graph",
+        build_params={},
+        is_linearized_track=False,
+    )
+    return Environment(layout=owned, layout_type_used="Faces")
 
 
 @pytest.fixture
-def face_env(monkeypatch):
-    monkeypatch.setitem(_LAYOUT_MAP, "Faces", FaceLayout)
-    return Environment.from_layout(
-        "Faces",
-        {"active_mask": np.ones(3, dtype=bool), "grid_edges": (np.arange(4.0),)},
-    )
+def face_env():
+    return _face_environment()
 
 
-def test_all_diffusion_consumers_share_provider_snapshot(face_env):
-    """A new layout works without registering its name in any solver."""
+def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
+    """Owned unequal-cell data drives every solver without solver registration."""
     env = face_env
+    builds = []
+    build = KnownFaces.build
+
+    def counting_build(provider):
+        builds.append(provider)
+        return build(provider)
+
+    monkeypatch.setattr(KnownFaces, "build", counting_build)
     mass = np.diag([1.0, 2.0, 4.0])
     stiffness = np.array([[2, -2, 0], [-2, 5, -3], [0, -3, 3]])
     generator = np.linalg.solve(mass, stiffness)
@@ -84,7 +99,7 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env):
     np.testing.assert_allclose(
         divergence(env, gradient(env, field)), -generator @ field, atol=1e-12
     )
-    assert env.layout.builds == 1  # one face build serves every consumer
+    assert len(builds) == 1  # one face build serves every consumer
 
 
 def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
@@ -96,20 +111,21 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     old_diffusion_cache = env._diffusion_eigenbasis
     old_mrf_cache = env._mrf_eigenbasis
 
-    env.layout.scale = 2.0
     env.clear_cache()
-    after = env.compute_kernel(1.0, mode="average")
+    np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
+    replacement = _face_environment(scale=2.0)
+    after = replacement.compute_kernel(1.0, mode="average")
     np.testing.assert_allclose(after, before @ before, atol=1e-12)
     np.testing.assert_allclose(
-        env.diffuse(np.arange(3.0), 1.0, mode="average"), after @ np.arange(3.0)
+        replacement.diffuse(np.arange(3.0), 1.0, mode="average"), after @ np.arange(3.0)
     )
     assert env._diffusion_geometry is not old_geometry
     assert env._diffusion_eigenbasis is not old_diffusion_cache
     assert env._mrf_eigenbasis is not old_mrf_cache
-    assert env.layout.builds == 2
+    np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
 
 
-def test_existing_layout_subclass_inherits_geometry_without_registration(monkeypatch):
+def test_layout_subclass_requires_owned_data_migration(monkeypatch):
     class RenamedGrid(MaskedGridLayout):
         pass
 
@@ -119,9 +135,23 @@ def test_existing_layout_subclass_inherits_geometry_without_registration(monkeyp
         "grid_edges": (np.arange(3.0), np.arange(4.0)),
     }
     original = Environment.from_layout("MaskedGrid", params)
-    subclass = Environment.from_layout("Renamed", params)
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment.from_layout("Renamed", params)
+    layout = BinningLayout(
+        original._binning,
+        connectivity=original.connectivity,
+        dimension_ranges=original.dimension_ranges,
+        layout_type_tag="Renamed",
+        layout_type=original.layout.layout_type,
+        build_params=params,
+        is_linearized_track=False,
+    )
+    migrated = Environment(layout=layout, layout_type_used="Renamed")
     np.testing.assert_array_equal(
-        subclass.compute_kernel(1.0), original.compute_kernel(1.0)
+        migrated.compute_kernel(1.0), original.compute_kernel(1.0)
     )
 
 
@@ -232,10 +262,13 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
     expected_divergence = divergence(original, gradient(original, field))
     restored = _round_trip(original, how, tmp_path)
     for env in (restored, restored.copy()):
-        assert env.connectivity is env.layout.connectivity
-        assert env.bin_centers is env.layout.bin_centers
-        assert env.grid_edges is env.layout.grid_edges
-        assert env.active_mask is env.layout.active_mask
+        assert list(env.connectivity.edges(data=True)) == list(
+            env.layout.connectivity.edges(data=True)
+        )
+        np.testing.assert_array_equal(env.bin_centers, env.layout.bin_centers)
+        for actual, expected in zip(env.grid_edges, env.layout.grid_edges, strict=True):
+            np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(env.active_mask, env.layout.active_mask)
         assert list(env.connectivity.edges()) == list(original.connectivity.edges())
         np.testing.assert_allclose(gradient(env, field), gradient(original, field))
         np.testing.assert_allclose(
@@ -384,14 +417,18 @@ def test_invalid_saved_graph_names_the_saved_data():
 def test_finite_volume_geometry_refuses_a_layout_graph_out_of_sync():
     """A layout graph that diverged from env.connectivity fails loudly."""
     edges = (np.arange(4.0), np.arange(4.0))
-    env = Environment.from_grid_mask(
-        np.ones((3, 3), dtype=bool), grid_edges=edges, connect_diagonal_neighbors=False
+    layout = MaskedGridLayout()
+    layout.build(
+        active_mask=np.ones((3, 3), dtype=bool),
+        grid_edges=edges,
+        connect_diagonal_neighbors=False,
     )
-    env.layout.connectivity = Environment.from_grid_mask(
-        np.ones((3, 3), dtype=bool), grid_edges=edges, connect_diagonal_neighbors=True
-    ).connectivity
+    faces = LayoutFaces(layout, layout.connectivity)
+    diagonal = MaskedGridLayout()
+    diagonal.build(active_mask=np.ones((3, 3), dtype=bool), grid_edges=edges)
+    layout.connectivity = diagonal.connectivity
     with pytest.raises(ValueError, match=r"out of sync with env\.connectivity"):
-        gradient(env, np.ones(env.n_bins))
+        faces.build()
 
 
 # ---------------------------------------------------------------------------
@@ -400,12 +437,16 @@ def test_finite_volume_geometry_refuses_a_layout_graph_out_of_sync():
 def test_polar_layout_supplies_annular_sector_geometry():
     """Asking the layout directly gives sector areas, not Cartesian dr*dtheta."""
     env = _polar()
-    assert isinstance(env.layout, MaskedGridLayout)
+    assert env._binning.rectilinear is not None
     distance_edges, angle_edges = env.grid_edges
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
     np.testing.assert_allclose(env.layout.bin_sizes(), sectors)
     np.testing.assert_allclose(env.bin_sizes, sectors)
-    graph, volumes = env.layout.finite_volume_geometry()
+    graph, volumes = (
+        type(env)
+        ._create_layout(env.layout_type, env.layout_parameters)
+        .finite_volume_geometry()
+    )
     np.testing.assert_allclose(volumes, sectors)
     geometry = DiffusionGeometry.from_graph(graph, volumes)
     assert (geometry.W != env._diffusion_geometry.W).nnz == 0
@@ -430,7 +471,11 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
         circular_angle=circular,
         connect_diagonal_neighbors=diagonal,
     )
-    graph, _ = env.layout.finite_volume_geometry()
+    graph, _ = (
+        type(env)
+        ._create_layout(env.layout_type, env.layout_parameters)
+        .finite_volume_geometry()
+    )
     for ring in range(3):
         assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
     for u, v, data in graph.edges(data=True):
@@ -565,9 +610,10 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
 # Capability protocols and actionable errors.
 # ---------------------------------------------------------------------------
 def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env):
-    for layout in (_four_connected_grid().layout, _polar().layout):
-        assert isinstance(layout, FiniteVolumeGeometryProvider)
-    assert not isinstance(reloaded_graph_env.layout, FiniteVolumeGeometryProvider)
+    for env in (_four_connected_grid(), _polar(), reloaded_graph_env):
+        assert not isinstance(env.layout, FiniteVolumeGeometryProvider)
+        assert env._binning.faces.available
+        assert len(env._face_geometry.volumes) == env.n_bins
 
 
 @pytest.mark.parametrize(
@@ -653,16 +699,19 @@ def test_mesh_skew_warning_is_raised_once_per_geometry_at_the_callers_line():
 # Invalid layout geometry fails at the environment boundary.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
-    ("attribute", "value", "match"),
+    ("volumes", "scale", "match"),
     [
-        ("volumes", np.ones(4), r"volumes must have shape \(3,\)"),
-        ("volumes", np.array([1.0, -2.0, 4.0]), "strictly positive"),
-        ("scale", -1.0, "invalid face measure"),
+        (np.ones(4), 1.0, r"volumes must have shape \(3,\)"),
+        (np.array([1.0, -2.0, 4.0]), 1.0, "strictly positive"),
+        (np.array([1.0, 2.0, 4.0]), -1.0, "invalid face measure"),
     ],
 )
-def test_invalid_layout_faces_fail_at_the_environment(
-    face_env, monkeypatch, attribute, value, match
-):
-    monkeypatch.setattr(FaceLayout, attribute, value)
+def test_invalid_layout_faces_fail_before_publication(volumes, scale, match):
+    """Invalid provider data must be repaired before an owned snapshot is made."""
+    layout = MaskedGridLayout()
+    layout.build(active_mask=np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),))
+    graph = layout.connectivity.copy()
+    for (u, v), area in zip(graph.edges(), (2.0, 3.0), strict=True):
+        graph.edges[u, v]["A"] = area * scale
     with pytest.raises(ValueError, match=match):
-        face_env.compute_kernel(1.0)
+        FaceGeometry.from_graph(graph, volumes)

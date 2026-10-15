@@ -351,7 +351,8 @@ def decision_region_entry_time(
         raise ValueError(
             f"Region '{region}' not found in environment. "
             f"Available regions: {available}. "
-            f"Add the region using env.regions.add_region()."
+            "Create regions = Regions(env.regions.values()), add the region "
+            "with regions.add(...), then use env = env.with_regions(regions)."
         )
 
     # Get bins in the region

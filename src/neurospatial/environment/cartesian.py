@@ -1126,9 +1126,15 @@ class CartesianCoordinates:
             is_linearized_track=self.is_linearized_track,
         )
         env_cls = cast("type[Environment]", self.__class__)
-        result = env_cls("", layout, tag, params, arena=self.arena)
-        result.units = self.units
-        result.frame = self.frame
+        result = env_cls(
+            "",
+            layout,
+            tag,
+            params,
+            arena=self.arena,
+            units=self.units,
+            frame=self.frame,
+        )
         return result
 
     @check_fitted
@@ -1346,7 +1352,10 @@ class CartesianCoordinates:
 
         With regions (regions are automatically transformed):
 
-        >>> env.regions.add("goal", point=[80, 90])  # doctest: +SKIP
+        >>> from neurospatial.regions import Regions
+        >>> regions = Regions(env.regions.values())
+        >>> regions.add("goal", point=[80, 90])  # doctest: +SKIP
+        >>> env = env.with_regions(regions)
         >>> env_transformed = env.apply_transform(translate(10, 10))  # doctest: +SKIP
         >>> # Region is transformed along with environment
         >>> goal_region = env_transformed.regions["goal"]  # doctest: +SKIP

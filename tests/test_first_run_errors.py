@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.encoding._validation import validate_spike_times, validate_trajectory
 
@@ -256,7 +256,9 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     bins = r.env.bin_at(r.positions)
     # A local environment avoids mutating the shared fixture's regions.
     env = r.env.copy()
-    env.regions.add("home", point=tuple(env.bin_centers[0]))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("home", point=tuple(env.bin_centers[0]))
+    env = env.with_regions(region_builder)
     models = np.ones((2, env.n_bins))
     calls = {
         "direct_environment": lambda: Environment(),
@@ -379,7 +381,9 @@ def test_segmentation_unknown_region(site, recording):
 
     r = recording
     env = r.env.copy()
-    env.regions.add("known", point=tuple(env.bin_centers[0]))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("known", point=tuple(env.bin_centers[0]))
+    env = env.with_regions(region_builder)
     bins = env.bin_at(r.positions)
     calls = {
         "crossing": lambda: detect_region_crossings(
@@ -410,7 +414,7 @@ def test_segmentation_unknown_region(site, recording):
     }
     with pytest.raises(RegionNotFoundError) as caught:
         calls[site]()
-    assert "env.regions.add('home'" in str(caught.value)
+    assert "regions.add('home'" in str(caught.value)
     assert str(caught.value).splitlines()[-1].startswith("Fix: ")
 
 

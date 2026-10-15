@@ -68,12 +68,13 @@ class TestBoundaryBins:
         """Test that boundary_bins is cached (computed only once)."""
         # First access computes
         boundary1 = small_2d_env.boundary_bins
+        cached = small_2d_env._boundary_bins_cached
 
-        # Second access should return same object (cached)
+        # Second access reuses detection and exports a detached array.
         boundary2 = small_2d_env.boundary_bins
 
-        # Should be the exact same object
-        assert boundary1 is boundary2
+        assert small_2d_env._boundary_bins_cached is cached
+        assert boundary1 is not boundary2
 
         # Should have same values
         np.testing.assert_array_equal(boundary1, boundary2)
@@ -166,10 +167,12 @@ class TestBinAttributes:
     def test_bin_attributes_cached(self, medium_2d_env: Environment) -> None:
         """Test that bin_attributes is cached."""
         df1 = medium_2d_env.get_bin_attributes()
+        cached = medium_2d_env._bin_attributes_cached
         df2 = medium_2d_env.get_bin_attributes()
 
-        # Should be the same object
-        assert df1 is df2
+        assert medium_2d_env._bin_attributes_cached is cached
+        assert df1 is not df2
+        pd.testing.assert_frame_equal(df1, df2)
 
     def test_bin_attributes_1d_env(self, small_1d_env: Environment) -> None:
         """Test bin_attributes for 1D environment."""
@@ -242,10 +245,12 @@ class TestEdgeAttributes:
     def test_edge_attributes_cached(self, medium_2d_env: Environment) -> None:
         """Test that edge_attributes is cached."""
         df1 = medium_2d_env.get_edge_attributes()
+        cached = medium_2d_env._edge_attributes_cached
         df2 = medium_2d_env.get_edge_attributes()
 
-        # Should be the same object
-        assert df1 is df2
+        assert medium_2d_env._edge_attributes_cached is cached
+        assert df1 is not df2
+        pd.testing.assert_frame_equal(df1, df2)
 
     def test_edge_attributes_has_vector_columns(
         self, small_2d_env: Environment
@@ -430,10 +435,12 @@ class TestLinearizationProperties:
     def test_linearization_properties_cached(self, graph_env: Environment) -> None:
         """Test that linearization_properties is cached."""
         props1 = graph_env.linearization_properties
+        cached = graph_env._linearization_properties_cached
         props2 = graph_env.linearization_properties
 
-        # Should be the same object
-        assert props1 is props2
+        assert graph_env._linearization_properties_cached is cached
+        assert props1 is not props2
+        assert props1["is_linearized_track"] == props2["is_linearized_track"]
 
     def test_linearization_properties_has_linear_bin_edges(
         self, graph_env: Environment

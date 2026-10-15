@@ -305,17 +305,16 @@ class _CustomArena:
         return self
 
 
-def test_decoder_accepts_shared_custom_arena_without_requiring_a_codec():
-    arena = _CustomArena()
-    source, target = _grid(arena=arena), _grid(arena=arena)
+def test_custom_arena_requires_owned_data_before_publication():
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        _grid(arena=_CustomArena())
+    source, target = _grid(arena=UnknownArena(2)), _grid(arena=UnknownArena(2))
     _validate_encoding_environment(
         target, SimpleNamespace(env=source), context="review"
     )
-    other = _grid(arena=_CustomArena())
-    with pytest.raises(IncompatibleEnvironmentError, match="continuous arena"):
-        _validate_encoding_environment(
-            other, SimpleNamespace(env=source), context="review"
-        )
 
 
 class _CustomHexLayout:
@@ -355,8 +354,23 @@ class _CustomHexLayout:
 def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
     built_environment,
 ):
-    env = Environment("custom", _CustomHexLayout(built_environment), "CustomHex", {})
-    assert isinstance(env.arena, UnknownArena)
+    with pytest.raises(
+        TypeError,
+        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+    ):
+        Environment("custom", _CustomHexLayout(built_environment), "CustomHex", {})
+    layout = BinningLayout(
+        built_environment._binning,
+        connectivity=built_environment.connectivity,
+        dimension_ranges=built_environment.dimension_ranges,
+        layout_type_tag="CustomHex",
+        layout_type="custom",
+        build_params={},
+        is_linearized_track=False,
+    )
+    env = Environment("custom", layout, "CustomHex", {})
+    assert env.arena.domain_known
+    assert not env.arena.physical_footprint_known
     np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
 
 

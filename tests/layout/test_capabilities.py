@@ -38,7 +38,7 @@ def grid_layout(request):
             distance_bin_size=1.0,
             angle_bin_size=np.pi / 2,
         )
-    return env.layout
+    return type(env)._create_layout(env.layout_type, env.layout_parameters)
 
 
 def test_grid_capability_matches_cell_centers(grid_layout):

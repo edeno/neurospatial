@@ -17,7 +17,15 @@ except NeurospatialError as exc:
     print(exc)
 ```
 
-If the environment contains a region named `home`, the error suggests `Fix: pass targets='home'`. If the region is missing, it shows how to add it with `env.regions.add('hom', point=(x, y))` or a polygon.
+If the environment contains a region named `home`, the error suggests `Fix: pass targets='home'`. If the region is missing, build a replacement collection:
+
+```python
+from neurospatial import Regions
+
+regions = Regions(env.regions.values())
+regions.add("home", point=(x, y))  # Or pass polygon=... instead.
+env = env.with_regions(regions)
+```
 
 Concrete exceptions inherit their standard Python type first, followed by `NeurospatialError`, so existing catch blocks continue to work:
 
@@ -357,7 +365,7 @@ import numpy as np
 
 # ✓ Use factory method
 env = Environment.from_samples(positions, bin_size=5.0)
-env.units = 'cm'
+env = env.with_metadata(units='cm')
 bin_indices = env.bin_at(positions[:1])
 ```
 
@@ -366,7 +374,7 @@ bin_indices = env.bin_at(positions[:1])
 ```python
 # For sample data
 env = Environment.from_samples(positions, bin_size=5.0)
-env.units = 'cm'
+env = env.with_metadata(units='cm')
 
 # For 1D track graphs
 env = Environment.from_graph(
@@ -375,19 +383,19 @@ env = Environment.from_graph(
     edge_spacing=0.0,
     bin_size=1.0,
 )
-env.units = 'cm'
+env = env.with_metadata(units='cm')
 
 # For polygon boundaries
 env = Environment.from_polygon(polygon, bin_size=5.0)
-env.units = 'cm'
+env = env.with_metadata(units='cm')
 
 # For pre-built N-D boolean masks (use grid_edges to describe geometry)
 env = Environment.from_grid_mask(active_mask, grid_edges=grid_edges)
-env.units = 'cm'
+env = env.with_metadata(units='cm')
 
 # For 2-D pixel / image masks (boolean array)
 env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)
-env.units = 'pixels'
+env = env.with_metadata(units='pixels')
 ```
 
 #### Solution 3: Load from file

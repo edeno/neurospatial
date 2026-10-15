@@ -49,7 +49,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -285,33 +285,35 @@ def make_repeated_t_maze(
         name="repeated_t_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # === Add regions ===
 
     # Start and goal at ends of upper horizontal arms
-    env_2d.regions.add("start", point=(left_x - dims.arm_length, upper_y))
-    env_2d.regions.add("goal", point=(right_x + dims.arm_length, upper_y))
+    region_builder = Regions()
+    region_builder.add("start", point=(left_x - dims.arm_length, upper_y))
+    region_builder.add("goal", point=(right_x + dims.arm_length, upper_y))
 
     # Top spur (center stem above upper horizontal)
-    env_2d.regions.add("top_spur", point=(center_x, top_y))
+    region_builder.add("top_spur", point=(center_x, top_y))
 
     # Bottom of stems
-    env_2d.regions.add("left_stem_bottom", point=(left_x, bottom_y))
-    env_2d.regions.add("center_stem_bottom", point=(center_x, bottom_y))
-    env_2d.regions.add("right_stem_bottom", point=(right_x, bottom_y))
+    region_builder.add("left_stem_bottom", point=(left_x, bottom_y))
+    region_builder.add("center_stem_bottom", point=(center_x, bottom_y))
+    region_builder.add("right_stem_bottom", point=(right_x, bottom_y))
 
     # Lower arm ends
-    env_2d.regions.add("lower_left_arm", point=(left_x - dims.arm_length, lower_y))
-    env_2d.regions.add(
+    region_builder.add("lower_left_arm", point=(left_x - dims.arm_length, lower_y))
+    region_builder.add(
         "lower_center_left_arm", point=(center_x - dims.arm_length, lower_y)
     )
 
     # T-junction points (where decisions are made)
-    env_2d.regions.add("upper_junction", point=(center_x, upper_y))
-    env_2d.regions.add("lower_left_junction", point=(left_x, lower_y))
-    env_2d.regions.add("lower_center_junction", point=(center_x, lower_y))
-    env_2d.regions.add("upper_right_junction", point=(right_x, upper_y))
+    region_builder.add("upper_junction", point=(center_x, upper_y))
+    region_builder.add("lower_left_junction", point=(left_x, lower_y))
+    region_builder.add("lower_center_junction", point=(center_x, lower_y))
+    region_builder.add("upper_right_junction", point=(right_x, upper_y))
+    env_2d = env_2d.with_regions(region_builder)
 
     # Store stem positions for track graph creation
     stem_positions = {
@@ -461,6 +463,6 @@ def _create_repeated_t_maze_track_graph(
         bin_size=bin_size,
         name="repeated_t_maze_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track

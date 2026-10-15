@@ -27,7 +27,7 @@ class TestSimulateSessionIntegration:
 
     def test_simulate_session_place_cells_end_to_end(self, simple_2d_env):
         """Test complete place cell simulation workflow."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         # Create session
         session = simulate_session(
@@ -54,7 +54,7 @@ class TestSimulateSessionIntegration:
     @pytest.mark.slow
     def test_simulate_session_boundary_cells_end_to_end(self, simple_2d_env):
         """Test complete boundary cell simulation workflow."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -71,7 +71,7 @@ class TestSimulateSessionIntegration:
 
     def test_simulate_session_grid_cells_end_to_end(self, simple_2d_env):
         """Test complete grid cell simulation workflow."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -88,7 +88,7 @@ class TestSimulateSessionIntegration:
 
     def test_simulate_session_mixed_cells_end_to_end(self, simple_2d_env):
         """Test complete mixed cell simulation workflow."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -120,7 +120,7 @@ class TestValidateSimulationIntegration:
 
     def test_validate_simulation_detects_place_fields_correctly(self, simple_2d_env):
         """Test that validate_simulation() detects place fields with good accuracy."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         # Create session with place cells
         # speed_mean=10.0 with speed_units="cm" ensures good spatial coverage
@@ -158,7 +158,7 @@ class TestValidateSimulationIntegration:
     @pytest.mark.slow
     def test_validate_simulation_with_custom_thresholds(self, simple_2d_env):
         """Test validate_simulation() with custom validation thresholds."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
             simple_2d_env,
@@ -309,7 +309,7 @@ class TestPlaceFieldDetectionAccuracy:
         bin_size = 2.0
         data = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(data, bin_size=bin_size)
-        env.units = "cm"
+        env = env.with_metadata(units="cm")
 
         from neurospatial.simulation.models import PlaceCellModel
         from neurospatial.simulation.spikes import generate_poisson_spikes
@@ -376,7 +376,7 @@ class TestSimulationReproducibility:
 
     def test_full_pipeline_reproducibility(self, simple_2d_env):
         """Test that entire simulation pipeline is reproducible with same seed."""
-        simple_2d_env.units = "cm"
+        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         seed = 42
 

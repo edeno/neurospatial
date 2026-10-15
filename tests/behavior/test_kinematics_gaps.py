@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from neurospatial import Regions
 from neurospatial.behavior import Trial
 from neurospatial.behavior.decisions import (
     compute_pre_decision_metrics,
@@ -242,7 +243,9 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     positions, times = r.positions[:601:50], r.times[:601:50]
     env = r.env.copy()
     bins = env.bin_at(positions)
-    env.regions.add("decision", point=tuple(env.bin_centers[bins[-1]]))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("decision", point=tuple(env.bin_centers[bins[-1]]))
+    env = env.with_regions(region_builder)
     entry = decision_region_entry_time(bins, times, env, region="decision")
     duration = 6.0
     selected = (times >= entry - duration) & (times < entry)

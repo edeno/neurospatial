@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 
 # =============================================================================
 # Test Fixtures
@@ -67,10 +67,12 @@ def t_maze_environment():
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Add regions (point regions - the bin containing each point)
-    env.regions.add("start", point=(50.0, 5.0))
-    env.regions.add("center", point=(50.0, 55.0))
-    env.regions.add("left", point=(10.0, 55.0))
-    env.regions.add("right", point=(90.0, 55.0))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("start", point=(50.0, 5.0))
+    region_builder.add("center", point=(50.0, 55.0))
+    region_builder.add("left", point=(10.0, 55.0))
+    region_builder.add("right", point=(90.0, 55.0))
+    env = env.with_regions(region_builder)
 
     return env
 
@@ -930,7 +932,9 @@ def zig_zag_then_run(simple_2d_environment):
     from shapely.geometry import box
 
     env = simple_2d_environment
-    env.regions.add("decision", polygon=box(45, 40, 60, 60))
+    region_builder = Regions(env.regions.values())
+    region_builder.add("decision", polygon=box(45, 40, 60, 60))
+    env = env.with_regions(region_builder)
     times = np.arange(0, 10, 1 / 30)
     phase = (times * 3.0 + 0.5) % 1.0
     zig_zag = 34 + 6 * (1 - np.abs(2 * phase - 1))  # x in [34, 40], 3 Hz

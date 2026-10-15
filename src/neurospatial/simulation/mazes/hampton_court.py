@@ -34,7 +34,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -232,16 +232,18 @@ def make_hampton_court_maze(
         name="hampton_court_maze",
         connect_diagonal_neighbors=True,
     )
-    env_2d.units = "cm"
+    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions
     # Start at the entry (outside the maze)
     start_pos = (0.0, -outer_r * 1.2)
-    env_2d.regions.add("start", point=start_pos)
+    region_builder = Regions()
+    region_builder.add("start", point=start_pos)
 
     # Goal at the center
     goal_pos = (0.0, 0.0)
-    env_2d.regions.add("goal", point=goal_pos)
+    region_builder.add("goal", point=goal_pos)
+    env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
@@ -379,6 +381,6 @@ def _create_hampton_court_track_graph(
         bin_size=bin_size,
         name="hampton_court_1d",
     )
-    env_track.units = "cm"
+    env_track = env_track.with_metadata(units="cm")
 
     return env_track
