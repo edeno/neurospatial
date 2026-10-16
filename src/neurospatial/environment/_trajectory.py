@@ -620,13 +620,14 @@ def _empirical_transitions(
             why="It assigns each Cartesian position sample to the cell that "
             "contains it.",
             fix="find each sample's bin, with -1 outside env.dimension_ranges, "
-            "split the sequence at the outside samples, and add the transitions "
-            "of each run",
+            "and count the steps whose two samples are both inside",
             example="low, high = np.asarray(env.dimension_ranges).T; "
             "inside = ((positions >= low) & (positions <= high)).all(axis=1); "
             "bins = np.where(inside, env.nearest_bin(positions), -1); "
-            "runs = [run[run >= 0] for run in np.split(bins, np.flatnonzero(bins < 0))]; "
-            "sum(env.transitions(run, normalize=False) for run in runs if run.size > 1)",
+            "keep = (bins[:-1] >= 0) & (bins[1:] >= 0); "
+            "counts = np.zeros((env.n_bins, env.n_bins)); "
+            "np.add.at(counts, (bins[:-1][keep], bins[1:][keep]), 1); "
+            "counts",
         )
         bins = _bin_sequence(
             times,
