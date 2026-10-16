@@ -185,3 +185,29 @@ def test_bin_sequence_marks_or_drops_a_missing_sample(cartesian_env):
     np.testing.assert_array_equal(marked, bins)
     assert marked[10] == -1
     np.testing.assert_array_equal(dropped, np.delete(bins, 10))
+
+
+@pytest.mark.parametrize("lag", [1, 2])
+def test_transitions_skip_pairs_with_a_missing_or_outside_sample(cartesian_env, lag):
+    times, positions = _trajectory(cartesian_env)
+    positions[10] = np.nan
+    positions[20] = cartesian_env.bin_centers.max(axis=0) + 100.0
+    counts = cartesian_env.transitions(
+        times=times, positions=positions, lag=lag, normalize=False, allow_teleports=True
+    )
+
+    # Count the pairs whose two samples are both inside, by hand.
+    bins = cartesian_env.bin_at(positions)
+    expected = np.zeros((cartesian_env.n_bins, cartesian_env.n_bins))
+    for source, target in zip(bins[:-lag], bins[lag:], strict=True):
+        if source >= 0 and target >= 0:
+            expected[source, target] += 1
+    np.testing.assert_array_equal(counts.toarray(), expected)
+    # The missing sample removes the pair it starts and the one it ends.
+    assert bins[10] == -1
+    assert counts.sum() <= len(bins) - lag - 2
+
+
+def test_a_precomputed_sequence_with_minus_one_is_still_refused(cartesian_env):
+    with pytest.raises(ValueError, match="Invalid bin indices"):
+        cartesian_env.transitions(np.array([0, -1, 0], dtype=np.int32))

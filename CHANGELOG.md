@@ -429,6 +429,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   a rate map with unvisited bins, and returns NaN only where a point needs a
   NaN bin's value; it used to refuse the whole field.
 
+- `env.transitions(times=..., positions=...)` counts a pair only when both of
+  its samples are inside the environment, so a sample outside or with a NaN
+  coordinate adds no transition. It used to raise "Invalid bin indices ...
+  -1 (outside) values are not allowed" for any such sample, although the
+  docstring said the trajectory input handles outside samples. A precomputed
+  `bins=` sequence that holds `-1` is still refused.
+
 - Track environments (`from_graph`, `linear_track`, `maze`) store each
   connectivity edge's `vector` and `angle_2d` from the lower to the higher bin
   ID, as every other layout does. They pointed the other way, so

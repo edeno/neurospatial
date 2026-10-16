@@ -1526,7 +1526,10 @@ class Environment(Generic[_C]):
         times : NDArray[np.float64], shape (n_samples,)
             Timestamps in seconds. Must be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
+            Position coordinates matching environment dimensions. An interval
+            that starts at a sample outside the environment, or at a sample
+            with a NaN coordinate (missing; see Missing data in the class
+            Notes), adds no occupancy.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
@@ -1697,7 +1700,8 @@ class Environment(Generic[_C]):
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
             If False, return a bin index for every retained sample.
         outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds.
+            Bin index for samples outside environment bounds or with a NaN
+            coordinate (missing; see Missing data in the class Notes).
             - If -1 (default), outside samples are marked with -1.
             - If None, outside samples are dropped from the sequence entirely.
         max_gap : float or None, default=0.5
@@ -6187,7 +6191,9 @@ class Environment(Generic[_C]):
             with positions.
         positions : NDArray[np.float64], shape (n_samples, n_dims), optional
             [Empirical mode] Position coordinates matching environment dimensions.
-            Must be provided together with times.
+            Must be provided together with times. A sample outside the
+            environment or with a NaN coordinate (missing; see Missing data in
+            the class Notes) adds no transition to or from it.
         lag : int, default=1
             [Empirical mode] Temporal lag for transitions: count bins[t] → bins[t+lag].
             Must be positive. lag=1 counts consecutive transitions, lag=2 skips one bin.
@@ -6253,8 +6259,9 @@ class Environment(Generic[_C]):
         is analyzed as a separate recording; no segment spans a pause.
 
         When times are supplied, a pair (k, k + lag) counts only if every
-        interval from k through k + lag - 1 is valid. Raw bin-only inputs
-        and model-based transitions have no time gate.
+        interval from k through k + lag - 1 is valid and samples k and
+        k + lag are both inside the environment. Raw bin-only inputs and
+        model-based transitions have no time gate.
 
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using

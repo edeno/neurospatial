@@ -491,6 +491,8 @@ def _empirical_transitions(
         Cannot be provided together with times/positions.
         Must contain valid bin indices in range [0, n_bins). Outside values
         (-1) are not allowed; use times/positions input to handle outside samples.
+        From times/positions, a pair counts only when both of its samples are
+        inside the environment; outside and NaN samples add no transition.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps in seconds. Required if bins is None.
         Must be provided together with positions.
@@ -615,9 +617,9 @@ def _empirical_transitions(
         # Return empty sparse matrix
         return scipy.sparse.csr_matrix((n_bins, n_bins), dtype=float)
 
-    # Validate bin indices (must be in [0, n_bins))
-    # Note: -1 is used for outside values, which is invalid for transitions
-    if np.any(bins < 0) or np.any(bins >= n_bins):
+    # Validate bin indices (must be in [0, n_bins)). A precomputed sequence
+    # must not hold -1; samples from times/positions may be outside or missing.
+    if bins_provided and (np.any(bins < 0) or np.any(bins >= n_bins)):
         invalid_mask = (bins < 0) | (bins >= n_bins)
         invalid_indices = np.where(invalid_mask)[0]
         invalid_values = bins[invalid_mask]
@@ -633,8 +635,11 @@ def _empirical_transitions(
     source_bins = bins[:-lag]
     target_bins = bins[lag:]
     if trajectory_provided:
+        # A pair counts when no excluded interval separates its two samples
+        # and both lie inside the environment (bin -1: outside or NaN).
         invalid_before = np.r_[0, np.cumsum(~mask)]
         pair_ok = invalid_before[lag:] == invalid_before[:-lag]
+        pair_ok &= (source_bins >= 0) & (target_bins >= 0)
         source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
 
     # Filter non-adjacent transitions if requested
