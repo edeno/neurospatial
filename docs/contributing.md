@@ -250,9 +250,10 @@ custom extension.
 `Environment._face_geometry` builds from `env._binning.faces` and caches the
 validated faces once for the immutable environment;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
-operators all derive from it. Consumers read it through
-`_require_face_geometry(operation)`, which names the analysis when the layout
-has no cell faces. Private analyses live in one `AnalysisCache`
+operators all derive from it. Builders read it through
+`require_face_geometry(cache, binning, operation)` in
+`environment/_fields.py`, which names the analysis when the layout has no cell
+faces. Private analyses live in one `AnalysisCache`
 (`environment/_cache.py`) with a lock per entry, so concurrent first requests
 compute each value once. `with_metadata` and `with_regions` share their
 parent's cache; derivations, readers and unpickled environments start with an

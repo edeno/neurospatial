@@ -77,9 +77,11 @@ Import-linter checks these package boundaries without exceptions.
 
 An environment captures construction output once, owns its geometry, and starts
 fresh caches when derived or restored. Public methods delegate to domain
-functions. Numerical builders take explicit data and arrays; callers use public
-operations for cached analyses. Small consumer protocols describe the operations
-each adapter actually needs.
+functions with the components they read (bins, graph, arena, coordinate
+descriptor and the analysis cache), and those functions do not call back into
+the environment. Numerical builders take explicit data and arrays; callers use
+public operations for cached analyses. Packages that consume an environment,
+such as `ops`, declare small consumer protocols of the operations they need.
 
 ## Custom construction
 
