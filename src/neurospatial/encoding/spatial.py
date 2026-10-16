@@ -2993,7 +2993,7 @@ default="diffusion_kde"
     Linear allocation instead retains the portions crossing effective cells.
     Counts and occupancy always share the same retained temporal support.
 
-    The function uses the binning layer (``_binning.py``) to convert spike
+    The function uses the binning layer (``_spatial_counts.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
     compute the smoothed firing rate.
 
@@ -3059,16 +3059,16 @@ default="diffusion_kde"
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._binning import (
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_map,
+    )
+    from neurospatial.encoding._spatial_counts import (
         _resolve_spatial_time_support,
         bin_spike_train,
         compute_occupancy,
         prepare_linear_spatial_intervals,
         resolve_speed,
-    )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
         validate_env_argument,
@@ -3651,16 +3651,16 @@ default="diffusion_kde"
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._binning import (
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_maps_batch,
+    )
+    from neurospatial.encoding._spatial_counts import (
         _resolve_spatial_time_support,
         _warn_if_population_silent,
         bin_spike_trains,
         prepare_linear_spatial_intervals,
         resolve_speed,
-    )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
@@ -3835,10 +3835,10 @@ default="diffusion_kde"
     # it sits before the ratio no-neurons short-circuit and returns early, leaving
     # the ratio path below untouched.
     if method == "glm":
-        from neurospatial.encoding._binning import (
+        from neurospatial.encoding._spatial_counts import (
             bin_spike_trains as _bin_spike_trains,
         )
-        from neurospatial.encoding._binning import (
+        from neurospatial.encoding._spatial_counts import (
             compute_occupancy as _compute_occupancy,
         )
 
@@ -3925,7 +3925,7 @@ default="diffusion_kde"
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
-        from neurospatial.encoding._binning import compute_occupancy
+        from neurospatial.encoding._spatial_counts import compute_occupancy
 
         # Use compute_occupancy which handles 1D position reshaping
         occupancy = compute_occupancy(
@@ -5747,11 +5747,14 @@ def place_cell_significance(
     from neurospatial._exceptions import _format_error
     from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._binning import _spatial_interval_mask, resolve_speed
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         snapshot_options,
         to_shuffle_results,
+    )
+    from neurospatial.encoding._spatial_counts import (
+        _spatial_interval_mask,
+        resolve_speed,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (

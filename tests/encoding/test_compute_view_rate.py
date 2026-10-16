@@ -519,7 +519,7 @@ class TestComputeViewRateCorrectness:
         This test verifies that compute_view_rate uses VIEW occupancy
         (time viewing each bin) not standard occupancy (time at each bin).
         """
-        from neurospatial.encoding._binning import compute_occupancy
+        from neurospatial.encoding._spatial_counts import compute_occupancy
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -1622,12 +1622,12 @@ class TestComputeViewRatePrecomputation:
         spike_times: np.ndarray,
     ) -> None:
         """compute_view_rate should reuse viewed locations for counts and occupancy."""
-        from neurospatial.encoding import _view_binning
+        from neurospatial.encoding import _view_counts
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
         call_count = 0
-        original = _view_binning.compute_viewed_location
+        original = _view_counts.compute_viewed_location
 
         def counting_compute_viewed_location(*args, **kwargs):
             nonlocal call_count
@@ -1635,7 +1635,7 @@ class TestComputeViewRatePrecomputation:
             return original(*args, **kwargs)
 
         monkeypatch.setattr(
-            _view_binning,
+            _view_counts,
             "compute_viewed_location",
             counting_compute_viewed_location,
         )

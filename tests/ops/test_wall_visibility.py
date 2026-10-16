@@ -119,7 +119,7 @@ def wall_observer_rays():
 @pytest.mark.parametrize("source", ["physical", "analysis"])
 @pytest.mark.parametrize("restore", [False, True])
 def test_observer_on_outer_wall_sees_the_room_it_faces(source, restore):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
     if restore:
@@ -345,7 +345,7 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
 
 
 def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.ops.transforms import Affine2D
 
     a = 0.3
@@ -367,7 +367,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
 
 
 def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.ops.transforms import Affine2D
 
     a = 0.3
@@ -399,7 +399,7 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
 def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
     from shapely.geometry import Polygon
 
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
     grid = Environment.from_grid_mask(
@@ -461,7 +461,7 @@ CURVED_AND_SLANTED_ARENAS = {
 
 @pytest.mark.parametrize("name", list(CURVED_AND_SLANTED_ARENAS))
 def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.encoding.view import compute_view_rate
 
     polygon = CURVED_AND_SLANTED_ARENAS[name]
@@ -513,7 +513,7 @@ def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
 def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
     from shapely.geometry import Polygon
 
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
     grid = Environment.from_grid_mask(
@@ -531,7 +531,7 @@ def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
 
 @pytest.mark.parametrize("offset", [1e-14, 1e-13, 1e-12, 1e-7])
 def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     full = Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool),
@@ -672,7 +672,7 @@ def test_unowned_physical_wall_hit_refuses_view_encoding_without_fabricating_rat
 
 
 def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import prepare_view_binning
 
     full = room(wall=False)
     cropped = full.subset(mask=full.bin_centers[:, 0] < 4)

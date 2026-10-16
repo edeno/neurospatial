@@ -264,14 +264,14 @@ warn_on_drop
         stored as read-only copies, so editing the arrays a decoder was built
         from (for example ``rates.firing_rates`` after :meth:`from_rates`)
         cannot change its predictions. Reuses the core
-        :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
+        :func:`~neurospatial.decoding._time_bins.validate_dt` so ``dt`` semantics
         cannot drift from the decode entry points, and the encoder's
         :func:`~neurospatial.encoding._smoothing.validate_spatial_method_params`
         so ``method`` / ``bandwidth`` / ``min_occupancy`` / ``penalty`` / ``rank``
         errors mirror ``compute_spatial_rate`` exactly (one validator, no
         duplicate allow-set).
         """
-        from neurospatial.decoding._binning import validate_dt
+        from neurospatial.decoding._time_bins import validate_dt
         from neurospatial.encoding._smoothing import validate_spatial_method_params
 
         # Config domain: dt (shared core validator) and dtype.

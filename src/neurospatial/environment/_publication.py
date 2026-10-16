@@ -24,7 +24,7 @@ from neurospatial._logging import log_environment_created
 from neurospatial.arena import EgocentricSurround
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.geometry import _validation
-from neurospatial.geometry._arena_binning import (
+from neurospatial.geometry._arena_fit import (
     apply_walls,
     infer_arena,
     validate_arena,

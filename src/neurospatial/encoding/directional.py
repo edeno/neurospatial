@@ -70,13 +70,13 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._binning import (
-    _warn_if_population_silent,
-)
 from neurospatial.encoding._significance import (
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+)
+from neurospatial.encoding._spatial_counts import (
+    _warn_if_population_silent,
 )
 
 __all__ = [
@@ -1967,7 +1967,7 @@ def compute_directional_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the binning layer (``_directional_binning.py``) to convert
+    The function uses the binning layer (``_directional_counts.py``) to convert
     spike times to spike counts and compute occupancy, then optionally applies
     Gaussian smoothing.
 
@@ -2016,7 +2016,7 @@ def compute_directional_rate(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._directional_binning import (
+    from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
     )
     from neurospatial.encoding._validation import (
@@ -2322,7 +2322,7 @@ def compute_directional_rates(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._directional_binning import (
+    from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -3007,7 +3007,7 @@ def head_direction_cell_significance(
     """
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._directional_binning import directional_frame_bins
+    from neurospatial.encoding._directional_counts import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         snapshot_options,

@@ -38,7 +38,7 @@ from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
 )
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
@@ -159,7 +159,7 @@ def compute_directional_occupancy(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._directional_binning import (
+    >>> from neurospatial.encoding._directional_counts import (
     ...     compute_directional_occupancy,
     ... )
 
@@ -297,7 +297,7 @@ def bin_directional_spike_train(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._directional_binning import (
+    >>> from neurospatial.encoding._directional_counts import (
     ...     bin_directional_spike_train,
     ... )
 
@@ -432,7 +432,7 @@ def bin_directional_spike_trains(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._directional_binning import (
+    >>> from neurospatial.encoding._directional_counts import (
     ...     bin_directional_spike_trains,
     ... )
 

@@ -979,7 +979,7 @@ def bin_spike_train(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._binning import bin_spike_train
+    >>> from neurospatial.encoding._spatial_counts import bin_spike_train
 
     >>> # Create environment
     >>> positions = np.random.rand(1000, 2) * 100
@@ -1142,7 +1142,7 @@ def compute_occupancy(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._binning import compute_occupancy
+    >>> from neurospatial.encoding._spatial_counts import compute_occupancy
 
     >>> # Create environment
     >>> positions = np.random.rand(1000, 2) * 100
@@ -1309,7 +1309,7 @@ def bin_spike_trains(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._binning import bin_spike_trains
+    >>> from neurospatial.encoding._spatial_counts import bin_spike_trains
 
     >>> # Create environment
     >>> positions = np.random.rand(1000, 2) * 100

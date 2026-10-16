@@ -8,7 +8,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.encoding._binning import bin_spike_trains
+from neurospatial.encoding._spatial_counts import bin_spike_trains
 from neurospatial.io import from_dict, to_dict
 from neurospatial.ops.transforms import AffineND
 

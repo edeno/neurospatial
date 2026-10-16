@@ -39,7 +39,7 @@ def test_family_kernel_shares_window_mask(
 ):
     f, r = frame_family, short_frame_recording
     from neurospatial import _intervals as trajectory
-    from neurospatial.encoding import _binning as encoding_binning
+    from neurospatial.encoding import _spatial_counts as encoding_binning
 
     original = trajectory.interval_valid_mask
     masks = []
@@ -71,7 +71,7 @@ def test_family_kernel_shares_window_mask(
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
 def test_frame_counts_half_open_boundaries(offset):
-    from neurospatial.encoding._binning import count_spikes_by_frame
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
 
     times = offset + np.array([0.1, 0.2, 0.3])
     spikes = np.r_[times[0] - 1, times, times[-1] + 1]
@@ -87,7 +87,7 @@ def test_frame_counts_half_open_boundaries(offset):
 
 
 def test_frame_counts_match_interval_reference_and_chunks():
-    from neurospatial.encoding._binning import count_spikes_by_frame
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
 
     rng = np.random.default_rng(52)
     times = np.cumsum(rng.uniform(0.02, 1, 3000))
@@ -109,7 +109,7 @@ def test_frame_counts_match_interval_reference_and_chunks():
 
 @pytest.mark.parametrize("spikes", [[], [-1, 3], [0, 0.5, 1]])
 def test_frame_counts_exclude_invalid_intervals_and_bins(spikes):
-    from neurospatial.encoding._binning import count_spikes_by_frame
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
 
     times = np.array([0.0, 0.5, 1.0, 1.5])
     counts = count_spikes_by_frame(

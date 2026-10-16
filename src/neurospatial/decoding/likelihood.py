@@ -34,7 +34,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from neurospatial._exceptions import _format_error
-from neurospatial.decoding._binning import validate_dt
+from neurospatial.decoding._time_bins import validate_dt
 
 
 def log_poisson_likelihood(

@@ -170,7 +170,7 @@ def test_frame_analysis_mask_is_shared_once(
 ):
     f, r = frame_family, continuous_recording
     from neurospatial import _intervals as trajectory
-    from neurospatial.encoding import _binning as encoding_binning
+    from neurospatial.encoding import _spatial_counts as encoding_binning
 
     original = trajectory.interval_valid_mask
     seen = []

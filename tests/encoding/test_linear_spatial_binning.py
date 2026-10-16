@@ -5,7 +5,7 @@ import pytest
 from shapely.geometry import Polygon, box
 
 from neurospatial import Environment
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     _resolve_spatial_time_support,
     bin_spike_train,
     bin_spike_trains,

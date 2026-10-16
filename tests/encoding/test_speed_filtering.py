@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     bin_spike_train,
     compute_occupancy,
     resolve_speed,

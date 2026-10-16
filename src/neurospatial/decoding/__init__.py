@@ -161,8 +161,8 @@ The implementation is based on standard Bayesian methods for neural decoding,
 with numerical stability considerations for log-domain computation.
 """
 
-from neurospatial.decoding._binning import bin_spikes_in_time
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
+from neurospatial.decoding._time_bins import bin_spikes_in_time
 from neurospatial.decoding.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,

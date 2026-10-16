@@ -57,9 +57,6 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._binning import (
-    _warn_if_population_silent,
-)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -67,6 +64,9 @@ from neurospatial.encoding._significance import (
     resolve_shuffle_settings,
 )
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
+from neurospatial.encoding._spatial_counts import (
+    _warn_if_population_silent,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1573,7 +1573,7 @@ def compute_egocentric_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the egocentric binning layer (``_egocentric_binning.py``)
+    The function uses the egocentric binning layer (``_egocentric_counts.py``)
     to convert spike times to spike counts based on distance and direction to
     the nearest object, then the smoothing layer (``_smoothing.py``) to compute
     the smoothed firing rate.
@@ -1797,7 +1797,7 @@ def compute_object_vector_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the allocentric binning layer (``_egocentric_binning.py``)
+    The function uses the allocentric binning layer (``_egocentric_counts.py``)
     to convert spike times to spike counts based on distance and direction to
     the nearest object, then the smoothing layer (``_smoothing.py``) to compute
     the smoothed firing rate.
@@ -1913,7 +1913,7 @@ def _object_vector_rate(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         normalize_object_positions,
         prepare_egocentric_binning,
     )
@@ -2618,7 +2618,7 @@ def _object_vector_rates(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         normalize_object_positions,
         prepare_egocentric_binning,
     )
@@ -3562,7 +3562,7 @@ def _object_vector_significance(
     )
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         _compute_object_coords,
         _coords_to_flat_bin_idx,
         _create_egocentric_environment,

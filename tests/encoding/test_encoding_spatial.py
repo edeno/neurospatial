@@ -5089,7 +5089,7 @@ class TestComputeSpatialRatesThroughputContract:
 
     def test_occupancy_computed_once_regardless_of_neuron_count(self) -> None:
         """compute_occupancy fires exactly once per call, for n=1 and n=25."""
-        import neurospatial.encoding._binning as binning_mod
+        import neurospatial.encoding._spatial_counts as binning_mod
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         def run(n_neurons: int) -> int:

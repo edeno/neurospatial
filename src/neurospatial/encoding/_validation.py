@@ -11,7 +11,7 @@ This module centralizes:
 
 - ``validate_times`` — monotonic-non-decreasing + min-length check on a
   timestamp array (previously duplicated byte-for-byte in
-  ``_view_binning.py`` and ``_egocentric_binning.py``).
+  ``_view_counts.py`` and ``_egocentric_counts.py``).
 - ``validate_trajectory`` — joint length + dimensionality check on
   ``(times, positions?, headings?)``.
 

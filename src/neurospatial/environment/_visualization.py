@@ -22,12 +22,12 @@ from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._grid_frame import require_grid_context
 from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.layout._plot_cells import plot_binning
 from neurospatial.layout._plotting import (
     hexagon_patches,
     plot_track_linear,
     polygon_patches,
 )
-from neurospatial.layout._plotting_binning import plot_binning
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.regions import Regions
 from neurospatial.regions.plot import plot_regions

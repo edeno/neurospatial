@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
-from neurospatial.decoding._binning import (
+from neurospatial.decoding._time_bins import (
     _time_bin_rounding,
     count_spikes_in_time_bins,
     time_bins_in_windows,

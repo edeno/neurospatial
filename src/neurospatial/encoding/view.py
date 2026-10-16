@@ -90,14 +90,14 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._binning import (
-    _warn_if_population_silent,
-)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+)
+from neurospatial.encoding._spatial_counts import (
+    _warn_if_population_silent,
 )
 
 if TYPE_CHECKING:
@@ -1315,7 +1315,7 @@ def compute_view_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the view binning layer (``_view_binning.py``) to convert
+    The function uses the view binning layer (``_view_counts.py``) to convert
     spike times to spike counts based on *viewed* location, then the smoothing
     layer (``_smoothing.py``) to compute the smoothed firing rate.
 
@@ -1393,7 +1393,7 @@ def compute_view_rate(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import prepare_view_binning
 
     validate_env_argument(
         env,
@@ -1834,7 +1834,7 @@ def _compute_view_rates(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import prepare_view_binning
 
     validate_env_argument(
         env,
@@ -2407,7 +2407,7 @@ def spatial_view_cell_significance(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import (
+    from neurospatial.encoding._view_counts import (
         _precompute_view_bins,
         _view_observation_mask,
     )

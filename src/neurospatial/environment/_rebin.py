@@ -26,7 +26,7 @@ from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import (
     Arena,
 )
-from neurospatial.geometry._arena_binning import apply_walls
+from neurospatial.geometry._arena_fit import apply_walls
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._derive import transform_binning
 from neurospatial.geometry._explicit import prepare_bins

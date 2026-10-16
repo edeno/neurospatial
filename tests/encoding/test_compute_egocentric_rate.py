@@ -644,12 +644,12 @@ class TestComputeEgocentricRatePrecomputation:
         spike_times: np.ndarray,
     ) -> None:
         """compute_egocentric_rate should reuse coordinates for counts and occupancy."""
-        from neurospatial.encoding import _egocentric_binning
+        from neurospatial.encoding import _egocentric_counts
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
         call_count = 0
-        original = _egocentric_binning._compute_object_coords
+        original = _egocentric_counts._compute_object_coords
 
         def counting_compute_object_coords(*args, **kwargs):
             nonlocal call_count
@@ -657,7 +657,7 @@ class TestComputeEgocentricRatePrecomputation:
             return original(*args, **kwargs)
 
         monkeypatch.setattr(
-            _egocentric_binning,
+            _egocentric_counts,
             "_compute_object_coords",
             counting_compute_object_coords,
         )

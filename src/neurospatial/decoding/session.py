@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
-from neurospatial.decoding._binning import count_spikes_in_time_bins
+from neurospatial.decoding._time_bins import count_spikes_in_time_bins
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -48,7 +48,7 @@ def _warn_if_spikes_out_of_window(
     legitimate, so an empty input never warns.
 
     The message mirrors the wording of the encoding-path warning
-    (``_emit_time_window_warning`` in ``neurospatial.encoding._binning``):
+    (``_emit_time_window_warning`` in ``neurospatial.encoding._spatial_counts``):
     it names the dropped count and total, the percentage, the decode time
     window, the spike range, the units hypothesis, and the escape hatch.
 
@@ -408,7 +408,7 @@ def _prepare_session_decode(
     NDArray[np.float64],
 ]:
     """Normalize spike inputs/models and tile bins inside observed runs."""
-    from neurospatial.decoding._binning import validate_dt
+    from neurospatial.decoding._time_bins import validate_dt
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
 
@@ -445,7 +445,7 @@ def _prepare_session_decode(
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
     from neurospatial._intervals import TimeSupport, interval_valid_mask
-    from neurospatial.decoding._binning import time_bins_in_windows
+    from neurospatial.decoding._time_bins import time_bins_in_windows
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
     # spike_window gates. The speed and out-of-bounds gates restrict only the
@@ -607,7 +607,7 @@ def _build_encoding_model(
     SpatialRatesResult,
 ]:
     """Fit tracking data, then tile decode bins for a functional session."""
-    from neurospatial.decoding._binning import validate_dt
+    from neurospatial.decoding._time_bins import validate_dt
 
     dt = validate_dt(dt)
     trains, firing_rates, rates_result = _fit_encoding_model(

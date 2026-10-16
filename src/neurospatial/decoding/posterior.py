@@ -30,8 +30,8 @@ from numpy.typing import NDArray
 from scipy.special import gammaln
 
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
-from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
+from neurospatial.decoding._time_bins import validate_dt
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:

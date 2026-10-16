@@ -3,7 +3,7 @@
 This module converts spike trains and gaze data into discrete spike counts
 and view occupancy arrays that can be processed by the smoothing layer.
 
-The key difference from spatial binning (_binning.py) is that:
+The key difference from spatial binning (``_spatial_counts.py``) is that:
 - Position binning: bins spikes by *where the animal was*
 - View binning: bins spikes by *where the animal was looking*
 
@@ -36,7 +36,7 @@ from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
 )
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
@@ -286,7 +286,7 @@ def compute_occupancy(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._view_binning import compute_occupancy
+    >>> from neurospatial.encoding._view_counts import compute_occupancy
 
     >>> # Create environment
     >>> positions = np.random.rand(100, 2) * 100
@@ -454,7 +454,7 @@ def bin_view_spike_train(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._view_binning import bin_view_spike_train
+    >>> from neurospatial.encoding._view_counts import bin_view_spike_train
 
     >>> # Create environment
     >>> positions = np.random.rand(100, 2) * 100
@@ -656,7 +656,7 @@ def bin_view_spike_trains(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._view_binning import bin_view_spike_trains
+    >>> from neurospatial.encoding._view_counts import bin_view_spike_trains
 
     >>> # Create environment
     >>> positions = np.random.rand(100, 2) * 100

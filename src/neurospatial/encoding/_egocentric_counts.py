@@ -4,7 +4,7 @@ This module converts spike trains and trajectory data into discrete spike counts
 and occupancy arrays in egocentric polar coordinates (distance, direction to
 nearest object).
 
-The key difference from spatial binning (_binning.py) is that:
+The key difference from spatial binning (``_spatial_counts.py``) is that:
 - Spatial binning: bins by *where the animal was*
 - Egocentric binning: bins by *distance/direction to nearest object*
 
@@ -56,7 +56,7 @@ from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
 )
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
@@ -111,7 +111,7 @@ def normalize_object_positions(
     Single object (common user input):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._egocentric_binning import normalize_object_positions
+    >>> from neurospatial.encoding._egocentric_counts import normalize_object_positions
     >>> obj = [50.0, 50.0]  # Plain list
     >>> normalized = normalize_object_positions(obj)
     >>> normalized.shape
@@ -472,7 +472,7 @@ def compute_egocentric_occupancy(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._egocentric_binning import (
+    >>> from neurospatial.encoding._egocentric_counts import (
     ...     compute_egocentric_occupancy,
     ... )
 
@@ -651,7 +651,7 @@ def bin_egocentric_spike_train(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._egocentric_binning import (
+    >>> from neurospatial.encoding._egocentric_counts import (
     ...     bin_egocentric_spike_train,
     ... )
 
@@ -902,7 +902,7 @@ def bin_egocentric_spike_trains(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding._egocentric_binning import (
+    >>> from neurospatial.encoding._egocentric_counts import (
     ...     bin_egocentric_spike_trains,
     ... )
 
