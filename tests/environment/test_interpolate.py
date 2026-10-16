@@ -257,18 +257,18 @@ class TestInterpolateValidation:
         with pytest.raises(ValueError, match=r"mode.*nearest.*linear"):
             env.interpolate(field, points, mode="cubic")
 
-    def test_interpolate_nan_in_field(self):
-        """NaN values in field should raise ValueError."""
+    def test_interpolate_nan_in_field_reads_nan_only_there(self):
+        """A NaN bin value is missing: only points that need it read NaN."""
         rng = np.random.default_rng(42)
         data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
-        field = np.ones(env.n_bins)
+        field = np.arange(env.n_bins, dtype=float)
         field[0] = np.nan
-        points = np.array([[5.0, 5.0]])
+        values = env.interpolate(field, env.bin_centers, mode="nearest")
 
-        with pytest.raises(ValueError, match=r"NaN"):
-            env.interpolate(field, points, mode="nearest")
+        assert np.isnan(values[0])
+        np.testing.assert_array_equal(values[1:], field[1:])
 
     def test_interpolate_inf_in_field(self):
         """Inf values in field should raise ValueError."""
@@ -296,29 +296,22 @@ class TestInterpolateValidation:
 
         assert result.shape == (0,)
 
-    def test_interpolate_nan_in_points(self):
-        """NaN values in points should raise ValueError."""
+    @pytest.mark.parametrize("bad", [np.nan, np.inf])
+    @pytest.mark.parametrize("mode", ["nearest", "linear"])
+    def test_interpolate_nonfinite_points_read_nan(self, bad, mode):
+        """A NaN point is a missing sample and an inf point is outside: both NaN."""
         rng = np.random.default_rng(42)
         data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
-        field = np.ones(env.n_bins)
-        points = np.array([[5.0, 5.0], [np.nan, 3.0]])
+        field = rng.random(env.n_bins)
+        points = np.array([[5.0, 5.0], [bad, 3.0], [2.5, 7.5]])
+        values = env.interpolate(field, points, mode=mode)
 
-        with pytest.raises(ValueError, match=r"non-finite.*NaN"):
-            env.interpolate(field, points, mode="nearest")
-
-    def test_interpolate_inf_in_points(self):
-        """Inf values in points should raise ValueError."""
-        rng = np.random.default_rng(42)
-        data = rng.uniform(0, 10, size=(50, 2))
-        env = Environment.from_samples(data, bin_size=1.0)
-
-        field = np.ones(env.n_bins)
-        points = np.array([[5.0, 5.0], [np.inf, 3.0]])
-
-        with pytest.raises(ValueError, match=r"non-finite.*Inf"):
-            env.interpolate(field, points, mode="nearest")
+        assert np.isnan(values[1])
+        np.testing.assert_array_equal(
+            values[[0, 2]], env.interpolate(field, points[[0, 2]], mode=mode)
+        )
 
 
 class TestInterpolateEdgeCases:
@@ -518,6 +511,31 @@ class TestInterpolateLinearHoledGrid:
         # The interpolated plane should match the analytic plane where defined.
         expected = 2.0 * query_points[:, 0] + 3.0 * query_points[:, 1]
         np.testing.assert_allclose(values[finite], expected[finite], rtol=1e-6)
+
+    def test_nan_field_value_is_masked_like_a_hole(self, full_grid_env):
+        """A NaN bin reads NaN exactly where its interpolation weight is positive."""
+        env = full_grid_env
+        plane = 2.0 * env.bin_centers[:, 0] + 3.0 * env.bin_centers[:, 1]
+        missing = env.n_bins // 2
+        field = plane.copy()
+        field[missing] = np.nan
+        indicator = np.zeros(env.n_bins)
+        indicator[missing] = 1.0
+
+        lo, hi = env.bin_centers.min(axis=0), env.bin_centers.max(axis=0)
+        query = np.vstack(
+            [env.bin_centers, np.random.default_rng(3).uniform(lo, hi, (200, 2))]
+        )
+        values = env.interpolate(field, query, mode="linear")
+        weight = env.interpolate(indicator, query, mode="linear")
+        reference = env.interpolate(plane, query, mode="linear")
+
+        needs_missing = weight > 0
+        assert needs_missing.any() and (~needs_missing).any()
+        assert np.isnan(values[needs_missing]).all()
+        np.testing.assert_allclose(
+            values[~needs_missing], reference[~needs_missing], rtol=1e-12
+        )
 
 
 def test_linear_interpolation_on_polygon_preserves_inactive_cells():

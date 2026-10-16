@@ -90,14 +90,7 @@ def _interpolate(
             f"Expected shape (n_bins,) = ({n_bins},), got ({field.shape[0]},)."
         )
 
-    # Check for NaN/Inf values in field
-    if np.any(np.isnan(field)):
-        raise ValueError(
-            "Field contains NaN values. "
-            f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
-            "NaN values are not supported in interpolation operations."
-        )
-
+    # NaN marks a missing bin value; infinity has no interpolation meaning.
     if np.any(np.isinf(field)):
         raise ValueError(
             "Field contains infinite values. "
@@ -124,15 +117,6 @@ def _interpolate(
             f"got shape {points.shape}."
         )
 
-    # Check for NaN/Inf values in points
-    if np.any(~np.isfinite(points)):
-        n_invalid = np.sum(~np.isfinite(points))
-        raise ValueError(
-            f"Points array contains {n_invalid} non-finite value(s) (NaN or Inf). "
-            f"All point coordinates must be finite. Check your input data for "
-            f"missing values or infinities."
-        )
-
     # Validate mode
     valid_modes = {"nearest", "linear"}
     if mode not in valid_modes:
@@ -146,7 +130,28 @@ def _interpolate(
     if points.shape[0] == 0:
         return np.array([], dtype=np.float64)
 
-    # Dispatch based on mode
+    # A NaN coordinate is a missing sample and an infinite one lies outside:
+    # both read NaN, and only finite points are interpolated.
+    finite = np.isfinite(points).all(axis=1)
+    if not finite.all():
+        values = np.full(points.shape[0], np.nan)
+        if finite.any():
+            values[finite] = _interpolate_points(
+                field, points[finite], binning, arena, cache, mode
+            )
+        return values
+    return _interpolate_points(field, points, binning, arena, cache, mode)
+
+
+def _interpolate_points(
+    field: NDArray[np.float64],
+    points: NDArray[np.float64],
+    binning: Binning,
+    arena: Arena,
+    cache: AnalysisCache,
+    mode: Literal["nearest", "linear"],
+) -> NDArray[np.float64]:
+    """Interpolate at finite points; points outside the environment read NaN."""
     if mode == "nearest":
         values = _interpolate_nearest(cache, binning, field, points)
     else:  # mode == "linear"
@@ -228,10 +233,11 @@ def _interpolate_linear(
 
     Notes
     -----
-    On a holed/masked grid (where ``n_bins < prod(grid_shape)``), a missing
-    corner contributes NaN only when its interpolation weight is positive.
-    Active-bin centers therefore retain their known values, while points
-    requiring an inactive cell's value and out-of-bounds points return NaN.
+    A missing corner (an inactive cell of a holed/masked grid, or a bin whose
+    field value is NaN) contributes NaN only when its interpolation weight is
+    positive. Other bin centers therefore retain their known values, while
+    points requiring a missing corner's value and out-of-bounds points return
+    NaN.
 
     """
     # Deferred: scipy.interpolate adds about 40 ms to importing neurospatial.
@@ -253,15 +259,21 @@ def _interpolate_linear(
     # so a direct reshape would raise. Use finite placeholders for inactive
     # cells and mask their positive-weight contributions separately below:
     # 0 * NaN would otherwise erase even exact active-bin center values.
+    # NaN (missing) field values are handled the same way as inactive cells.
     n_full = int(np.prod(grid_shape))
     active_mask = grid.active_mask
-    if field.shape[0] == n_full:
+    missing_values = np.isnan(field)
+    has_missing = field.shape[0] != n_full or bool(missing_values.any())
+    if not has_missing:
         # Fully-active grid: field already covers every cell.
         field_grid = field.reshape(grid_shape)
     else:
+        active_cells = np.flatnonzero(active_mask.ravel())
         full_field = np.zeros(n_full, dtype=np.float64)
-        full_field[np.flatnonzero(active_mask.ravel())] = field
+        full_field[active_cells] = np.where(missing_values, 0.0, field)
         field_grid = full_field.reshape(grid_shape)
+        missing_cells = ~active_mask.ravel()
+        missing_cells[active_cells[missing_values]] = True
 
     # Create grid points for each dimension (bin centers)
     grid_points: list[NDArray[np.float64]] = []
@@ -288,10 +300,10 @@ def _interpolate_linear(
 
     # Evaluate at query points
     result: NDArray[np.float64] = interpolator(points)
-    if field.shape[0] != n_full:
+    if has_missing:
         missing_weight = RegularGridInterpolator(
             grid_points,
-            (~active_mask).astype(np.float64),
+            missing_cells.reshape(grid_shape).astype(np.float64),
             method="linear",
             bounds_error=False,
             fill_value=1.0,

@@ -474,15 +474,6 @@ class TestInterpolate:
         with pytest.raises(ValueError, match=r"mode must be"):
             medium_2d_env.interpolate(field, query_points, mode="invalid")
 
-    def test_interpolate_field_with_nan_raises(self, medium_2d_env):
-        """Test that field with NaN raises ValueError."""
-        field = np.ones(medium_2d_env.n_bins)
-        field[0] = np.nan
-        query_points = medium_2d_env.bin_centers[:5]
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            medium_2d_env.interpolate(field, query_points)
-
     def test_interpolate_field_with_inf_raises(self, medium_2d_env):
         """Test that field with Inf raises ValueError."""
         field = np.ones(medium_2d_env.n_bins)
@@ -490,26 +481,6 @@ class TestInterpolate:
         query_points = medium_2d_env.bin_centers[:5]
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            medium_2d_env.interpolate(field, query_points)
-
-    def test_interpolate_points_with_nan_raises(self, medium_2d_env):
-        """Test that points with NaN raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        query_points = medium_2d_env.bin_centers[:5].copy()
-        query_points[0, 0] = np.nan
-
-        with pytest.raises(ValueError, match=r"non-finite value"):
-            medium_2d_env.interpolate(field, query_points)
-
-    def test_interpolate_points_with_inf_raises(self, medium_2d_env):
-        """Test that points with Inf raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        query_points = medium_2d_env.bin_centers[:5].copy()
-        query_points[0, 0] = np.inf
-
-        with pytest.raises(ValueError, match=r"non-finite value"):
             medium_2d_env.interpolate(field, query_points)
 
     def test_interpolate_linear_on_graph_raises(self, graph_env):

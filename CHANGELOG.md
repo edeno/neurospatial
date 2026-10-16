@@ -420,6 +420,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- A position sample with a NaN coordinate is a missing sample in every
+  per-sample query. `env.nearest_bin` and `map_points_to_bins` give it bin
+  `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to
+  raise, `nearest_bin` with a SciPy error about finite values. A point with an
+  infinite coordinate is outside: bin `-1` and distance `inf`, or NaN from
+  `interpolate`. `env.interpolate` also accepts a field with NaN bins, such as
+  a rate map with unvisited bins, and returns NaN only where a point needs a
+  NaN bin's value; it used to refuse the whole field.
+
 - Track environments (`from_graph`, `linear_track`, `maze`) store each
   connectivity edge's `vector` and `angle_2d` from the lower to the higher bin
   ID, as every other layout does. They pointed the other way, so

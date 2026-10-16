@@ -194,6 +194,21 @@ class Environment(Generic[_C]):
     length units and angle in radians. Cartesian-only methods refuse polar
     instances before interpreting those coordinates.
 
+    Notes
+    -----
+    **Missing data.** NaN marks a missing value, never zero.
+
+    - Per-sample inputs (``bin_at``, ``contains``, ``nearest_bin``,
+      ``interpolate``, and the positions given to ``occupancy``,
+      ``bin_sequence`` and ``transitions``): a sample with a NaN coordinate
+      is missing. It gets bin ``-1``, ``False`` or a NaN value, and adds no
+      occupancy time and no transition. ``-1`` also marks samples outside the
+      environment.
+    - Explicit targets (``points=`` in ``distance_between``, ``distance_to``,
+      ``neighbors`` and the other target queries) refuse NaN with an error,
+      because a missing target has no answer. ``inf`` from
+      ``distance_between`` only ever means "unreachable".
+
     Examples
     --------
     >>> import numpy as np
@@ -1110,7 +1125,8 @@ class Environment(Generic[_C]):
         NDArray[np.intp], shape (n_points,)
             An array of active bin indices (0 to `n_active_bins - 1`).
             A value of -1 indicates that the corresponding point did not map
-            to any active bin (e.g., it's outside the environment).
+            to any active bin: it is outside the environment, or a coordinate
+            is NaN (a missing sample; see Missing data in the class Notes).
 
         Raises
         ------
@@ -1185,13 +1201,16 @@ class Environment(Generic[_C]):
         -------
         ndarray or tuple of ndarray
             Bin IDs, shape (n_points,). When return_dist=True, also return
-            distances with infinity for rejected points.
+            distances with infinity for rejected points. A point with a NaN
+            coordinate is a missing sample: bin -1 and distance NaN. A point
+            with an infinite coordinate is rejected: bin -1 and distance
+            infinity. See Missing data in the class Notes.
 
         Raises
         ------
         ValueError
             If distance limits or tie-breaking settings are invalid, or query
-            points have the wrong coordinate width or nonfinite values.
+            points have the wrong coordinate width.
 
         Notes
         -----
@@ -1227,7 +1246,9 @@ class Environment(Generic[_C]):
         -------
         NDArray[np.bool_], shape (n_points,)
             A boolean array where `True` indicates the corresponding point
-            maps to an active bin, and `False` indicates it does not.
+            maps to an active bin, and `False` indicates it does not. A point
+            with a NaN coordinate is a missing sample and reads `False` (see
+            Missing data in the class Notes).
 
         Raises
         ------
@@ -1839,10 +1860,12 @@ class Environment(Generic[_C]):
         ----------
         field : NDArray[np.float64], shape (n_bins,)
             Field values per bin. Must be a 1-D array with length equal to n_bins.
-            Must not contain NaN or Inf values.
+            NaN marks a bin with no value (for example an unvisited bin of a
+            rate map). Must not contain Inf values.
         points : NDArray[np.float64], shape (n_points, n_dims)
             Query points in environment coordinates. Must be a 2-D array where
             each row is a point with dimensionality matching the environment.
+            A point with a NaN coordinate is a missing sample and reads NaN.
         mode : {'nearest', 'linear'}, default='nearest'
             Interpolation mode:
 
@@ -1853,18 +1876,20 @@ class Environment(Generic[_C]):
               ``from_pixel_mask``, ``from_polygon``, and grids read from NWB.
               Rotated, reflected and sheared 2-D/3-D grids use their source axes;
               queries remain in world coordinates.
-              Inactive cells return NaN.
+              Inactive cells and NaN field values return NaN.
               Points outside grid bounds return NaN.
 
         Returns
         -------
         values : NDArray[np.float64], shape (n_points,)
-            Interpolated field values. Points outside environment → NaN.
+            Interpolated field values. Points outside the environment, points
+            with NaN coordinates and points that need a NaN field value read
+            NaN (see Missing data in the class Notes).
 
         Raises
         ------
         ValueError
-            If field has wrong shape, wrong dimensionality, contains NaN/Inf,
+            If field has wrong shape, wrong dimensionality, contains Inf,
             points have wrong dimensionality, mode is invalid, or dimensions
             don't match, or affine projection cannot resolve source cell widths.
         NotImplementedError
@@ -1886,7 +1911,8 @@ class Environment(Generic[_C]):
         f(x,y) = ax + by + c, interpolation is exact up to numerical precision.
         Retained grids recover source center planes only within a bounded
         projection error below one quarter of the smallest source cell width.
-        Positive interpolation weight on a resolved inactive corner returns NaN.
+        Positive interpolation weight on a resolved inactive corner, or on a
+        bin whose field value is NaN, returns NaN.
 
         **Outside handling**: Points outside the environment bounds return NaN
         in both modes. This prevents extrapolation errors.

@@ -184,9 +184,12 @@ def map_points_to_bins(
         purposes use :meth:`Environment.bin_at` (geometric containment,
         always returns ``-1`` for outside points). Use this function
         for nearest-neighbor *interpolation* queries where assigning
-        points to the closest in-env bin is the goal.
+        points to the closest in-env bin is the goal. A point with a NaN
+        coordinate is a missing sample and gets ``-1``, as does a point with
+        an infinite coordinate.
     distances : NDArray[np.float64], shape (n_points,), optional
-        Distance from each point to its assigned bin center.
+        Distance from each point to its assigned bin center: ``inf`` for a
+        rejected point and NaN for a missing one.
         Only returned if `return_dist=True`.
 
     Raises

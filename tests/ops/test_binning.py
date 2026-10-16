@@ -290,17 +290,22 @@ class TestMapPointsToBinsBehavior:
         # closest_center returns one of the two equidistant bins.
         assert bins_closest[0] in (idx_00, idx_20)
 
-    def test_nan_in_points_raises(self, regular_grid_env):
-        """NaN coordinates raise a ValueError from the KDTree query.
-
-        Pinned to current behavior: the underlying scipy cKDTree query rejects
-        non-finite inputs rather than returning the -1 sentinel.
-        """
+    def test_nan_points_are_missing_and_infinite_points_outside(self, regular_grid_env):
+        """A NaN row is a missing sample (-1, NaN); an inf row is outside (-1, inf)."""
         from neurospatial.ops.binning import map_points_to_bins
 
-        points = np.array([[np.nan, np.nan], [50.0, 50.0]])
-        with pytest.raises(ValueError, match="finite"):
-            map_points_to_bins(regular_grid_env, points)
+        finite = np.array([[50.0, 50.0], [12.0, 30.0]])
+        points = np.array([[np.nan, 50.0], finite[0], [np.inf, 0.0], finite[1]])
+        bins, dist = map_points_to_bins(regular_grid_env, points, return_dist=True)
+        expected_bins, expected_dist = map_points_to_bins(
+            regular_grid_env, finite, return_dist=True
+        )
+        np.testing.assert_array_equal(
+            bins, [-1, expected_bins[0], -1, expected_bins[1]]
+        )
+        np.testing.assert_array_equal(
+            dist, [np.nan, expected_dist[0], np.inf, expected_dist[1]]
+        )
 
     def test_returns_correct_bin_on_regular_grid(self, regular_grid_env):
         """A point maps to the bin whose center is nearest (round-to-center)."""
