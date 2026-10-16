@@ -97,7 +97,7 @@ def test_bin_centers_are_views_of_the_one_published_copy():
 
 
 @pytest.mark.parametrize(
-    "name", ["bin_centers", "connectivity", "grid_edges", "name", "regions", "extra"]
+    "name", ["bin_centers", "connectivity", "grid_edges", "name", "regions"]
 )
 def test_public_attributes_cannot_be_set_or_deleted(name):
     env = _grid()
@@ -105,3 +105,10 @@ def test_public_attributes_cannot_be_set_or_deleted(name):
         setattr(env, name, None)
     with pytest.raises(AttributeError, match=f"Environment.{name} is read-only"):
         delattr(env, name)
+
+
+def test_new_attributes_are_refused_with_where_to_keep_labels():
+    env = _grid()
+    with pytest.raises(AttributeError, match="no attribute 'session_id'") as error:
+        env.session_id = "s1"
+    assert "dict keyed by env.name" in str(error.value)

@@ -344,10 +344,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   saved environment whose `layout_parameters` hold anything other than such
   choices is refused when it is read.
 
-- Assigning or deleting any public attribute of an `Environment` raises an
-  `AttributeError` that says what to call instead, including names the class
-  does not define: `env.session_id = "s1"` used to attach a value silently.
-  Keep your own labels next to the environment, for example in a dict keyed by
+- Assigning or deleting a public attribute of an `Environment` raises an
+  `AttributeError` that says what to call instead. That includes new names:
+  `env.session_id = "s1"` used to attach a value silently and now says to keep
+  your own labels next to the environment, for example in a dict keyed by
   `env.name`.
 
 - Every layout, including a custom engine, now has each bin center located by

@@ -166,8 +166,19 @@ else:
 _METADATA_FIELDS = frozenset({"name", "units", "frame"})
 
 
-def _read_only(name: str) -> AttributeError:
+def _read_only(cls: type, name: str) -> AttributeError:
     """The error for assigning or deleting a public Environment attribute."""
+    if not hasattr(cls, name):
+        return AttributeError(
+            _format_error(
+                f"Environment has no attribute {name!r} and does not accept new ones.",
+                why="Why: an environment never changes after it is built.",
+                fix=(
+                    "keep your own labels next to it, e.g. in a dict keyed by "
+                    "env.name, or rename it with env.with_metadata(name=...)"
+                ),
+            )
+        )
     if name in _METADATA_FIELDS:
         return AttributeError(
             f"Environment.{name} is read-only; use env.with_metadata({name}=...)."
@@ -266,13 +277,13 @@ class Environment(Generic[_C]):
     def __setattr__(self, name: str, value: object) -> None:
         """Refuse public attribute assignment: an environment never changes."""
         if not name.startswith("_"):
-            raise _read_only(name)
+            raise _read_only(type(self), name)
         object.__setattr__(self, name, value)
 
     def __delattr__(self, name: str) -> None:
         """Refuse public attribute deletion: an environment never changes."""
         if not name.startswith("_"):
-            raise _read_only(name)
+            raise _read_only(type(self), name)
         object.__delattr__(self, name)
 
     @property
