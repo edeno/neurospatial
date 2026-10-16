@@ -299,7 +299,7 @@ class TestSpatialQueryPerformance:
         start_bin = rng.integers(0, medium_env.n_bins)
         end_bin = rng.integers(0, medium_env.n_bins)
 
-        result = benchmark(medium_env.path_between, start_bin, end_bin)
+        result = benchmark(medium_env.path_between, bins=[start_bin, end_bin])
 
         assert isinstance(result, list)
 
@@ -343,7 +343,7 @@ class TestGraphOperationPerformance:
         rng = np.random.default_rng(42)
         bin_id = rng.integers(0, medium_env.n_bins)
 
-        result = benchmark(medium_env.neighbors, bin_id)
+        result = benchmark(medium_env.neighbors, bins=bin_id)
 
         assert isinstance(result, list)
 
