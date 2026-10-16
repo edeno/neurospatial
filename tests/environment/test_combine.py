@@ -932,3 +932,14 @@ def test_touching_grid_certification_tests_no_cell_pairs(monkeypatch):
     with pytest.raises(ValueError, match=r"[Oo]verlap"):
         Environment.combine({"a": square(0.0), "b": square(29.5)})
     assert len(calls) == 1
+
+
+def test_subclass_combine_accepts_plain_environment_components():
+    class Room(Environment):
+        pass
+
+    a = Environment.from_polygon(box(0, 0, 4, 4), bin_size=1.0)
+    b = Environment.from_polygon(box(6, 0, 10, 4), bin_size=1.0)
+    combined = Room.combine({"a": a, "b": b})
+    assert combined.n_bins == a.n_bins + b.n_bins
+    assert combined.layout_type == "Combined"

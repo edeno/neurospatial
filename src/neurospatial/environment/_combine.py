@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def _combine(
-    cls: type[Environment[Any]],
+    environment_type: type[Environment[Any]],
     components: Mapping[str, Environment],
     *,
     auto_bridge: bool,
@@ -30,8 +30,9 @@ def _combine(
     """Validate components and join their bins into one derivation.
 
     The result is published as a derivation of the first component, whose
-    units and frame every component shares. ``cls`` is the environment class
-    each component must be an instance of.
+    units and frame every component shares. ``environment_type`` is the
+    ``Environment`` class, passed in because ``core`` imports this module;
+    every component must be an instance of it.
     """
     if not isinstance(components, Mapping) or not components:
         raise ValueError(
@@ -40,7 +41,7 @@ def _combine(
     keys, values = tuple(components), tuple(components.values())
     if any(not isinstance(key, str) or not key or "/" in key for key in keys):
         raise ValueError("Component keys must be nonempty strings without '/'.")
-    if any(not isinstance(env, cls) for env in values):
+    if any(not isinstance(env, environment_type) for env in values):
         raise TypeError("Environment.combine() takes Environment values.")
     for key, env in zip(keys, values, strict=True):
         require_cartesian(

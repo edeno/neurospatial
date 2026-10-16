@@ -2675,7 +2675,7 @@ class Environment(Generic[_C]):
             If coordinates disagree, components overlap, or support cannot be certified.
         """
         derivation = _combine(
-            cls,
+            Environment,
             components,
             auto_bridge=auto_bridge,
             max_mnn_distance=max_mnn_distance,
