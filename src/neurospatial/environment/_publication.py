@@ -49,7 +49,6 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._context import GridIndex
     from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.layout.base import LayoutEngine
 
@@ -556,7 +555,6 @@ def publish(
     arena: Arena | None = None,
     clip_mapping: ClipMapping | None = None,
     restored_from: str | None = None,
-    grid_index: GridIndex | None = None,
     check_center_lookup: bool = True,
 ) -> _EnvironmentT:
     """Validate owned geometry and publish it as one new environment.
@@ -593,8 +591,6 @@ def publish(
         Source-bin mapping of a clip.
     restored_from : str or None, optional
         Source of a read-back record, named in graph errors.
-    grid_index : GridIndex or None, optional
-        Precomputed grid lookup context; computed from ``binning`` if omitted.
     check_center_lookup : bool, default=True
         Whether to verify that every bin center locates its own bin.
 
@@ -626,7 +622,7 @@ def publish(
         binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
         _validation._validate_clip_mapping(binning)
     polar = coordinate_kind == "polar"
-    index = grid_index if grid_index is not None else compute_grid_index(binning)
+    index = compute_grid_index(binning)
     coordinates: CartesianSystem | EgocentricPolarSystem
     if polar:
         if not isinstance(arena, EgocentricSurround):
@@ -804,7 +800,7 @@ class _Derivation:
         Replacement regions; ``None`` keeps the parent's regions.
     arena : Arena or None, optional
         Replacement arena; ``None`` keeps the parent's arena.
-    clip_mapping, grid_index, check_center_lookup
+    clip_mapping, check_center_lookup
         As for :func:`publish`.
     """
 
@@ -815,7 +811,6 @@ class _Derivation:
     regions: Regions | None = None
     arena: Arena | None = None
     clip_mapping: ClipMapping | None = None
-    grid_index: GridIndex | None = None
     check_center_lookup: bool = True
 
 
@@ -866,6 +861,5 @@ def publish_derived(
         regions=parent.regions if derivation.regions is None else derivation.regions,
         arena=parent._geometry.arena if derivation.arena is None else derivation.arena,
         clip_mapping=derivation.clip_mapping,
-        grid_index=derivation.grid_index,
         check_center_lookup=derivation.check_center_lookup,
     )
