@@ -377,6 +377,27 @@ class TestEnvironmentFromPosition:
         assert env.regions.list_names() == ["goal"]
         assert env.layout_parameters == expected.layout_parameters
 
+    def test_binning_options_match_from_samples(self):
+        """Every from_samples option exists here with the same default."""
+        import inspect
+
+        from neurospatial import Environment
+        from neurospatial.io.nwb import environment_from_position
+
+        def options(function, data):
+            parameters = inspect.signature(function).parameters
+            return {
+                name: str(getattr(p.default, "value", p.default))
+                for name, p in parameters.items()
+                if name not in data
+            }
+
+        builder = options(
+            environment_from_position,
+            {"nwbfile", "processing_module", "position_name"},
+        )
+        assert builder == options(Environment.from_samples, {"positions"})
+
     def test_inapplicable_option_is_refused(self, sample_nwb_with_position):
         from neurospatial.io.nwb import environment_from_position
 
