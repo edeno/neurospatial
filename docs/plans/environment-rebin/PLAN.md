@@ -53,7 +53,8 @@ Captured 4,072 environment probes, including 584 expected refusals, in
 **130 passed**, with 14 existing warnings, in
 `/private/tmp/stage-d-base-tests.log`.
 
-The deterministic [probe](probe_stage_d.py), run on `1699ff1e`, constructs a
+The deterministic probe `probe_stage_d.py` (removed after the work landed;
+it remains in git history), run on `1699ff1e`, constructs a
 10-by-10 physical arena with an internal wall at x=5 and a crop ending at x=4.
 A ray starting at (2.5, 4.5) should hit the physical wall at (5, 4.5). Existing
 code instead returns approximately x=10 on the full environment and x=4 on the
