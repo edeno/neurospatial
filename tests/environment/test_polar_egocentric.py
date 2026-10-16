@@ -919,21 +919,6 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         assert caught.value.name == "bin_att"
         assert caught.value.obj is polar_env
 
-    @pytest.mark.parametrize("name", sorted(CARTESIAN_OPERATIONS))
-    def test_refuses_each_cartesian_operation(self, polar_env, name):
-        assert not hasattr(polar_env, name)
-        with pytest.raises(CartesianOnlyError) as caught:
-            getattr(polar_env, name)
-        message = str(caught.value)
-        assert message.startswith(f"Environment.{name}() is not available")
-        reason = (
-            "Cartesian-grid operation"
-            if name in CARTESIAN_GRID_OPERATIONS
-            else "Cartesian-coordinate operation"
-        )
-        assert f"({reason})" in message
-        assert isinstance(caught.value, NotImplementedError)
-
     @pytest.mark.parametrize(
         "call, operation",
         [

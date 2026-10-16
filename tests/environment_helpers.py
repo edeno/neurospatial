@@ -1,6 +1,7 @@
 """Test construction helpers using owned geometry publication."""
 
 import copy
+import inspect
 import weakref
 from unittest import mock
 
@@ -133,3 +134,23 @@ def native_layout(env):
     tests rebuild the engine from the same deterministic recipe.
     """
     return layout_of(_BUILD_RECIPES[env])
+
+
+def call_unbound(env, name):
+    """Call an Environment member through the class, as ``Environment.f(env, ...)``.
+
+    Required arguments are passed as None, and a property's getter is called
+    directly, so a refusal must come before any argument is read.
+    """
+    member = inspect.getattr_static(Environment, name)
+    if isinstance(member, property):
+        return member.fget(env)
+    args, kwargs = [env], {}
+    for parameter in list(inspect.signature(member).parameters.values())[1:]:
+        if parameter.default is not inspect.Parameter.empty:
+            continue
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY:
+            kwargs[parameter.name] = None
+        else:
+            args.append(None)
+    return member(*args, **kwargs)

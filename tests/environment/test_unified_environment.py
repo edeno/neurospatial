@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import copy
-import inspect
 import pickle
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial._exceptions import CartesianOnlyError
-from neurospatial.environment.core import CARTESIAN_OPERATIONS
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 
@@ -36,31 +33,6 @@ def test_one_runtime_class_with_owned_coordinate_meanings():
         polar._coordinate_system.squared_distances(polar.bin_centers),
         cartesian._coordinate_system.squared_distances(polar.bin_centers),
     )
-
-
-@pytest.mark.parametrize("name", sorted(CARTESIAN_OPERATIONS))
-def test_bound_and_unbound_cartesian_operations_refuse_polar(name):
-    polar = _polar()
-    assert not hasattr(polar, name)
-    with pytest.raises(CartesianOnlyError):
-        getattr(polar, name)
-    member = inspect.getattr_static(Environment, name)
-    if isinstance(member, property):
-        with pytest.raises(CartesianOnlyError):
-            member.fget(polar)
-        return
-    signature = inspect.signature(member)
-    args = [polar]
-    kwargs = {}
-    for parameter in list(signature.parameters.values())[1:]:
-        if parameter.default is not inspect.Parameter.empty:
-            continue
-        if parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
-            args.append(None)
-        elif parameter.kind is inspect.Parameter.KEYWORD_ONLY:
-            kwargs[parameter.name] = None
-    with pytest.raises(CartesianOnlyError):
-        member(*args, **kwargs)
 
 
 @pytest.mark.parametrize(
