@@ -131,6 +131,12 @@ class MRFBasis(NamedTuple):
 # not value-equal to the dense path, which is part of the truncation contract).
 _DIFFUSE_DENOM_EPS = 1e-12
 
+# A smoothed weight is resolved when it exceeds this many times the diffusion
+# apply's noise floor (``diffusion_apply_rtol``) relative to the largest value
+# in its W-component. A ratio of two smoothed values at a resolved bin then has
+# an error of at most about 1/1000 = 0.1% of its value.
+_RESOLUTION_MARGIN = 1e3
+
 
 # ---------------------------------------------------------------------------
 # Core operator (W -> H) for the DENSE path (compute_kernel). The matrix-free
@@ -1187,6 +1193,37 @@ def component_support_mask(
     np.logical_or.at(comp_has_valid, (rows, cols), flat)
     support = comp_has_valid[:, labels]  # (B, n_bins)
     return support.reshape(*lead, valid.shape[-1])
+
+
+def above_component_floor(
+    labels: NDArray[np.int_],
+    n_components: int,
+    values: NDArray[np.float64],
+    floor: float,
+) -> NDArray[np.bool_]:
+    """``values > floor`` times the maximum of ``values`` in each bin's component.
+
+    Parameters
+    ----------
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin ``W``-component id.
+    n_components : int
+        Number of components.
+    values : NDArray[np.float64], shape (..., n_bins)
+        Smoothed weights; a leading batch axis is handled row by row.
+    floor : float
+        Relative floor, a fraction of each component's largest value.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (..., n_bins)
+        True where the value is resolved above the apply's noise.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    flat = values.reshape(-1, values.shape[-1])  # (B, n_bins)
+    component_max = np.zeros((flat.shape[0], n_components))
+    np.maximum.at(component_max, (np.arange(flat.shape[0])[:, None], labels), flat)
+    return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
 
 
 # ---------------------------------------------------------------------------

@@ -69,16 +69,12 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
+    _RESOLUTION_MARGIN,
+    above_component_floor,
     component_support_mask,
     diffusion_apply_rtol,
     diffusion_component_labels,
 )
-
-# A smoothed denominator is resolved when it exceeds this many times the
-# diffusion apply's noise floor (``diffusion_apply_rtol``) relative to the
-# largest value in its W-component. The ratio's error at a resolved bin is then
-# at most about 1/1000 = 0.1% of its value.
-_RESOLUTION_MARGIN = 1e3
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -809,41 +805,10 @@ def _resolved_density_mask(
     """
     n_components, labels = diffusion_component_labels(env)
     support = component_support_mask(labels, n_components, occupancy > 0)
-    resolved = _above_component_floor(
+    resolved = above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
     )
     return support & resolved
-
-
-def _above_component_floor(
-    labels: NDArray[np.int_],
-    n_components: int,
-    values: NDArray[np.float64],
-    floor: float,
-) -> NDArray[np.bool_]:
-    """``values > floor`` times the maximum of ``values`` in each bin's component.
-
-    Parameters
-    ----------
-    labels : NDArray[np.int_], shape (n_bins,)
-        Per-bin ``W``-component id.
-    n_components : int
-        Number of components.
-    values : NDArray[np.float64], shape (..., n_bins)
-        Smoothed weights; a leading batch axis is handled row by row.
-    floor : float
-        Relative floor (see :func:`_resolution_floor`).
-
-    Returns
-    -------
-    NDArray[np.bool_], shape (..., n_bins)
-        True where the value is resolved above the apply's noise.
-    """
-    values = np.asarray(values, dtype=np.float64)
-    flat = values.reshape(-1, values.shape[-1])  # (B, n_bins)
-    component_max = np.zeros((flat.shape[0], n_components))
-    np.maximum.at(component_max, (np.arange(flat.shape[0])[:, None], labels), flat)
-    return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
 
 
 def _resolved_density_mask_jax(
@@ -1046,8 +1011,8 @@ def _binned_gate(
     approach the truncated apply's noise, and their ratio is noise (it reached
     295,658 Hz from raw rates of at most 50 Hz). Bins whose smoothed weight is
     below :func:`_resolution_floor` of the largest in their component are
-    therefore NaN (see :func:`_above_component_floor`); elsewhere the result
-    matches the dense masked average.
+    therefore NaN (see :func:`~neurospatial.ops.diffusion.above_component_floor`);
+    elsewhere the result matches the dense masked average.
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
@@ -1074,7 +1039,7 @@ def _binned_gate(
     support = component_support_mask(labels, n_components, valid)
     # Far from every valid bin both smoothed sums approach the apply's
     # truncation noise; leave those bins NaN rather than report noise/noise.
-    support &= _above_component_floor(
+    support &= above_component_floor(
         labels, n_components, weights_smoothed, _resolution_floor(env, bandwidth)
     )
     den = np.maximum(weights_smoothed, _DIFFUSE_DENOM_EPS)
