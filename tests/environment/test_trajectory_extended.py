@@ -7,7 +7,7 @@ Covers:
 - Temporal binning with overlapping/non-overlapping windows
 - Integration: Complete trajectory analysis workflow
 
-Target: 36% → 85% coverage for src/neurospatial/environment/trajectory.py
+Target: 36% → 85% coverage for src/neurospatial/environment/_trajectory.py
 
 Priority 2.1 from TEST_PLAN2.md
 """

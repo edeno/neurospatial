@@ -21,6 +21,16 @@
 - `neurospatial.environment._HAS_SHAPELY` is removed. Shapely is a required
   dependency.
 
+- The modules that implement `Environment` methods are private:
+  `neurospatial.environment.fields`, `.queries`, `.metrics`, `.trajectory`,
+  `.regions`, `.visualization`, `.polar`, `.cartesian` and `.factories` are
+  now `_fields`, `_queries` and so on, and
+  `neurospatial.environment.serialization` is removed. Call the `Environment`
+  methods (for example `env.smooth`, `env.occupancy`, `env.to_file`) instead
+  of the functions in these modules. Import `BinSequenceWithRuns` from
+  `neurospatial.environment`. See the
+  [migration page](docs/migration/environment-architecture.md#removed-import-paths).
+
 - `Environment` is now a plain immutable value. Two environments are equal only
   when they are the same object (`env == other` used to be true for an
   environment and its name string, and `env == "name"` no longer works), and
@@ -131,6 +141,12 @@
   file went from 7.5 MB to 0.46 MB, the same size as a 10-sample one). The
   track graph is still owned by the environment: read it from
   `env.binning.linearization.graph` (and `.edge_order`).
+
+### Added
+
+- `neurospatial.environment.BinSequenceWithRuns`, the result type of
+  `Environment.bin_sequence_with_runs()`, is importable from a public path for
+  type annotations and `isinstance` checks.
 
 ### Fixed
 

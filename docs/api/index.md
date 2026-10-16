@@ -37,11 +37,11 @@ The main `Environment` class and related functionality (modular package).
 **Modules:**
 
 - `environment.core`: Core dataclass with state and properties
-- `environment.factories`: Factory classmethods for creating environments
-- `environment.queries`: Spatial query methods
-- `environment.trajectory`: Trajectory analysis methods
-- `environment.fields`: Spatial field operations
-- `environment.metrics`: Environment metrics and properties
+- `environment._factories`: Factory classmethods for creating environments
+- `environment._queries`: Spatial query methods
+- `environment._trajectory`: Trajectory analysis methods
+- `environment._fields`: Spatial field operations
+- `environment._metrics`: Environment metrics and properties
 
 ### [Combining environments](../user-guide/composite-environments.md)
 

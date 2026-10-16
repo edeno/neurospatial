@@ -244,7 +244,7 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     from neurospatial.decoding import bin_spikes_in_time, decode_position
     from neurospatial.decoding.likelihood import log_poisson_likelihood
     from neurospatial.decoding.posterior import normalize_to_posterior
-    from neurospatial.environment.factories import _assemble_maze_graph
+    from neurospatial.environment._factories import _assemble_maze_graph
     from neurospatial.events import (
         align_events,
         align_spikes_to_events,

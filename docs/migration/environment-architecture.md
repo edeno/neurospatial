@@ -37,6 +37,14 @@ public API.
 | `neurospatial.environment.transforms` | `Environment.subset`, `Environment.rebin` |
 | `neurospatial.layout._binning`, `_locators`, `_polygon`, ... | `neurospatial.geometry` (same module names) |
 | `neurospatial.layout._capabilities` (`RectilinearGridProvider`) | `layout.binning().rectilinear` |
+| `neurospatial.environment.trajectory.BinSequenceWithRuns` | `neurospatial.environment.BinSequenceWithRuns` |
+| `neurospatial.environment.fields`, `.queries`, `.metrics`, `.trajectory`, `.regions`, `.visualization` | the matching `Environment` method, such as `env.smooth`, `env.neighbors`, `env.boundary_bins`, `env.occupancy`, `env.region_mask` or `env.plot_field` |
+| `neurospatial.environment.serialization` | `env.to_file`, `Environment.from_file`, `env.to_dict`, `Environment.from_dict`, `env.to_nwb` (or `neurospatial.io`) |
+| `neurospatial.environment.factories`, `.polar`, `.cartesian` | the `Environment` factories, such as `Environment.from_samples` and `Environment.from_polar_egocentric` |
+
+The modules that implement `Environment` methods now have private names
+(`neurospatial.environment._fields` and so on) and may change without notice.
+Use the methods; the result they return is the same.
 
 `neurospatial.arena` still provides the public arena classes (`Arena`,
 `OpenArena`, `MaskArena`, `TrackArena`, `UnknownArena`, `EgocentricSurround`).

@@ -461,12 +461,12 @@ def test_layout_engine_protocol_adherence(
 
 
 def test_normalize_layout_name_consistency():
-    """Ensure environment.factories._normalize_layout_name matches layout.factories._normalize_name.
+    """Ensure environment._factories._normalize_layout_name matches layout.factories._normalize_name.
 
     This test prevents drift between the two normalization implementations.
     Both functions should produce identical output for the same input.
     """
-    from neurospatial.environment.factories import _normalize_layout_name
+    from neurospatial.environment._factories import _normalize_layout_name
     from neurospatial.layout.factories import _normalize_name
 
     test_cases = [
@@ -499,7 +499,7 @@ def test_point_to_bin_index_dtype_is_intp():
     """Layout index arrays are ``np.intp`` (portable), never int32/int_.
 
     Tripwire for the index-dtype convention documented in
-    ``neurospatial.environment.trajectory``: point/region *index* arrays are
+    ``neurospatial.environment._trajectory``: point/region *index* arrays are
     ``np.intp``, while trajectory *sequence* arrays (``bin_sequence`` /
     ``BinSequenceWithRuns``) deliberately stay ``int32`` (pinned in
     ``tests/environment/test_bin_sequence.py``). On 64-bit ``np.intp`` equals

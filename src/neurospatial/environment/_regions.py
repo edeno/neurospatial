@@ -16,8 +16,8 @@ from numpy.typing import NDArray
 from shapely import contains, covers
 from shapely import points as shapely_points
 
+from neurospatial.environment._cartesian import require_cartesian
 from neurospatial.environment._lookup import locate
-from neurospatial.environment.cartesian import require_cartesian
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops.binning import polygon_regions_mask

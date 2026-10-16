@@ -161,6 +161,19 @@ class TestBinSequenceDeduplication:
 class TestBinSequenceRuns:
     """Test run-length encoding functionality."""
 
+    def test_result_type_is_public(self):
+        """The returned record is the type exported by neurospatial.environment."""
+        from neurospatial.environment import BinSequenceWithRuns
+
+        env = Environment.from_samples(np.array([[0.0], [5.0]]), bin_size=5.0)
+        result = env.bin_sequence_with_runs(
+            np.arange(3.0), np.array([[0.5], [1.0], [5.5]]), max_gap=None
+        )
+        assert type(result) is BinSequenceWithRuns
+        assert_array_equal(result.bins, [0, 1])
+        assert_array_equal(result.run_starts, [0, 2])
+        assert_array_equal(result.run_lengths, [2, 1])
+
     def test_return_runs_basic(self):
         """Test that return_runs=True returns run boundaries."""
         env = Environment.from_samples(

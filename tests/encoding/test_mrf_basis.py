@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial.environment import fields
+from neurospatial.environment import _fields
 from neurospatial.ops import diffusion as diff
 from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
@@ -400,7 +400,7 @@ def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
             return q_full[:, sel], lam_full[sel], mc_full[sel]
         return q_full, lam_full, mc_full  # growth exposes the full basis
 
-    monkeypatch.setattr(fields, "_ensure_global_modes", fake_ensure)
+    monkeypatch.setattr(_fields, "_ensure_global_modes", fake_ensure)
 
     basis = env.get_mrf_basis(occ, rank=5)  # must NOT raise
 

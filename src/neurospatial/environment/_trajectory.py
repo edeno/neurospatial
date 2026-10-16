@@ -32,14 +32,14 @@ from neurospatial._intervals import (
 )
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._cartesian import require_cartesian
+from neurospatial.environment._fields import _compute_kernel
 from neurospatial.environment._lookup import locate
 from neurospatial.environment._polygon_trajectory import (
     _source_grid,
     retained_linear_intervals,
     uses_polygon_allocation,
 )
-from neurospatial.environment.cartesian import require_cartesian
-from neurospatial.environment.fields import _compute_kernel
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem

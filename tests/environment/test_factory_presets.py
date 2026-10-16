@@ -363,7 +363,7 @@ class TestMaze:
 
     def test_assemble_maze_graph_unknown_kind_raises(self):
         """Direct call with a bad kind raises instead of returning empty graph."""
-        from neurospatial.environment.factories import _assemble_maze_graph
+        from neurospatial.environment._factories import _assemble_maze_graph
 
         with pytest.raises(ValueError, match="Unknown maze kind"):
             _assemble_maze_graph("circle", {"a": (0, 0)})

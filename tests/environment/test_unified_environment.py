@@ -11,7 +11,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial._exceptions import CartesianOnlyError
-from neurospatial.environment.cartesian import CARTESIAN_OPERATIONS
+from neurospatial.environment._cartesian import CARTESIAN_OPERATIONS
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 
@@ -84,7 +84,7 @@ def test_common_class_restoration_keeps_polar_units_and_kernels(restore):
 
 def test_old_polar_class_is_not_a_public_alias():
     import neurospatial.environment as public
-    import neurospatial.environment.polar as adapter
+    import neurospatial.environment._polar as adapter
 
     assert not hasattr(public, "EgocentricPolarEnvironment")
     assert not hasattr(adapter, "EgocentricPolarEnvironment")

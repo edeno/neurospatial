@@ -35,9 +35,33 @@ from neurospatial.environment._cache import (
     EDGE_ATTRIBUTES,
     AnalysisCache,
 )
+from neurospatial.environment._cartesian import (
+    CARTESIAN_OPERATIONS,
+    require_cartesian,
+)
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
+from neurospatial.environment._fields import (
+    _compute_gaussian_kernel,
+    _compute_kernel,
+    _diffuse,
+    _interpolate,
+    _mrf_basis,
+    _smooth,
+    diffusion_eigenbasis,
+    diffusion_geometry,
+    face_geometry,
+    mrf_eigenbasis,
+    require_face_geometry,
+)
 from neurospatial.environment._lookup import locate, nearest_bin
+from neurospatial.environment._metrics import (
+    _bin_attributes,
+    _cartesian_boundary_bins,
+    _copy_attributes,
+    _edge_attributes,
+    _get_bridge_attributes,
+)
 from neurospatial.environment._publication import (
     UNSET,
     _Derivation,
@@ -51,34 +75,7 @@ from neurospatial.environment._publication import (
     _Unset,
     publish_derived,
 )
-from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
-from neurospatial.environment._subset import _subset
-from neurospatial.environment._summary import _info, _repr, _repr_html
-from neurospatial.environment.cartesian import (
-    CARTESIAN_OPERATIONS,
-    require_cartesian,
-)
-from neurospatial.environment.fields import (
-    _compute_gaussian_kernel,
-    _compute_kernel,
-    _diffuse,
-    _interpolate,
-    _mrf_basis,
-    _smooth,
-    diffusion_eigenbasis,
-    diffusion_geometry,
-    face_geometry,
-    mrf_eigenbasis,
-    require_face_geometry,
-)
-from neurospatial.environment.metrics import (
-    _bin_attributes,
-    _cartesian_boundary_bins,
-    _copy_attributes,
-    _edge_attributes,
-    _get_bridge_attributes,
-)
-from neurospatial.environment.queries import (
+from neurospatial.environment._queries import (
     _bin_center_of,
     _components,
     _distance_to,
@@ -87,12 +84,15 @@ from neurospatial.environment.queries import (
     _rings,
     resolve_bin,
 )
-from neurospatial.environment.regions import (
+from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
+from neurospatial.environment._regions import (
     _bins_in_region,
     _region_mask,
     _region_membership,
 )
-from neurospatial.environment.trajectory import (
+from neurospatial.environment._subset import _subset
+from neurospatial.environment._summary import _info, _repr, _repr_html
+from neurospatial.environment._trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
     _occupancy,
@@ -123,8 +123,8 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment.factories import PolygonType
-    from neurospatial.environment.visualization import PlotComponents
+    from neurospatial.environment._factories import PolygonType
+    from neurospatial.environment._visualization import PlotComponents
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.geometry._polygon import ClipMapping
@@ -1001,7 +1001,7 @@ class Environment(Generic[_C]):
         Environment.from_samples : Build Cartesian position bins.
         """
 
-        from neurospatial.environment.polar import _create_polar_environment
+        from neurospatial.environment._polar import _create_polar_environment
 
         return _create_polar_environment(
             distance_range=distance_range,
@@ -2505,7 +2505,7 @@ class Environment(Generic[_C]):
             ``edge_pairs`` defines gradient and flux order; NetworkX iteration
             may use a different order.
         """
-        from neurospatial.environment.factories import _from_bins
+        from neurospatial.environment._factories import _from_bins
 
         return _from_bins(
             cls,
@@ -2686,7 +2686,7 @@ class Environment(Generic[_C]):
 
         """
         # Convert and validate positions array with helpful error messages
-        from neurospatial.environment.factories import _from_samples
+        from neurospatial.environment._factories import _from_samples
 
         return _from_samples(
             cls,
@@ -2793,7 +2793,7 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         False
         """
-        from neurospatial.environment.factories import _open_field
+        from neurospatial.environment._factories import _open_field
 
         return _open_field(
             cls,
@@ -2899,7 +2899,7 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         True
         """
-        from neurospatial.environment.factories import _linear_track
+        from neurospatial.environment._factories import _linear_track
 
         return _linear_track(
             cls,
@@ -3045,7 +3045,7 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         True
         """
-        from neurospatial.environment.factories import _maze
+        from neurospatial.environment._factories import _maze
 
         return _maze(
             cls,
@@ -3203,7 +3203,7 @@ class Environment(Generic[_C]):
         ...     bin_size=2.0,
         ... )
         """
-        from neurospatial.environment.factories import _from_graph
+        from neurospatial.environment._factories import _from_graph
 
         return _from_graph(
             cls,
@@ -3301,7 +3301,7 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        from neurospatial.environment.factories import _from_polygon
+        from neurospatial.environment._factories import _from_polygon
 
         return _from_polygon(
             cls,
@@ -3392,7 +3392,7 @@ class Environment(Generic[_C]):
         16
 
         """
-        from neurospatial.environment.factories import _from_grid_mask
+        from neurospatial.environment._factories import _from_grid_mask
 
         return _from_grid_mask(
             cls,
@@ -3480,7 +3480,7 @@ class Environment(Generic[_C]):
         2
 
         """
-        from neurospatial.environment.factories import _from_pixel_mask
+        from neurospatial.environment._factories import _from_pixel_mask
 
         return _from_pixel_mask(
             cls,
@@ -3545,7 +3545,7 @@ class Environment(Generic[_C]):
         """
         # The layout is built from copies of the inputs, so editing the caller's
         # arrays (or the base of a view) afterwards cannot change it.
-        from neurospatial.environment.factories import _from_layout
+        from neurospatial.environment._factories import _from_layout
 
         return _from_layout(
             cls,
@@ -3637,7 +3637,7 @@ class Environment(Generic[_C]):
 
         """
         # Validate arguments
-        from neurospatial.environment.factories import _from_nwb
+        from neurospatial.environment._factories import _from_nwb
 
         return _from_nwb(
             cls, nwbfile, scratch_name=scratch_name, bin_size=bin_size, **kwargs
@@ -4756,7 +4756,7 @@ class Environment(Generic[_C]):
 
     def _plot_components(self) -> PlotComponents:
         """Owned components the plotting functions read."""
-        from neurospatial.environment.visualization import PlotComponents
+        from neurospatial.environment._visualization import PlotComponents
 
         return PlotComponents(
             binning=self._binning,
@@ -4831,7 +4831,7 @@ class Environment(Generic[_C]):
         >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
 
         """
-        from neurospatial.environment.visualization import _plot
+        from neurospatial.environment._visualization import _plot
 
         return _plot(
             self._plot_components(),
@@ -4891,7 +4891,7 @@ class Environment(Generic[_C]):
         ...     ax = env.plot_1d()  # doctest: +SKIP
 
         """
-        from neurospatial.environment.visualization import _plot_1d
+        from neurospatial.environment._visualization import _plot_1d
 
         return _plot_1d(self._plot_components(), ax, layout_plot_kwargs, **kwargs)
 
@@ -5012,7 +5012,7 @@ class Environment(Generic[_C]):
         >>> fig.savefig("field.png")
 
         """
-        from neurospatial.environment.visualization import _plot_field
+        from neurospatial.environment._visualization import _plot_field
 
         return _plot_field(
             self._plot_components(),

@@ -9,7 +9,7 @@ import pytest
 
 from neurospatial import Environment, Regions
 from neurospatial._exceptions import CartesianOnlyError
-from neurospatial.environment.cartesian import (
+from neurospatial.environment._cartesian import (
     CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
 )
@@ -1489,7 +1489,7 @@ def test_boundary_bins_respect_the_angular_seam(circular, n_angle, tmp_path):
 
 def test_cartesian_operations_are_the_capability_methods():
     """Every Cartesian method belongs to the capability and is absent from the base."""
-    from neurospatial.environment.cartesian import (
+    from neurospatial.environment._cartesian import (
         CARTESIAN_GRID_OPERATIONS,
         CARTESIAN_OPERATIONS,
     )

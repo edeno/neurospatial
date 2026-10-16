@@ -1285,18 +1285,18 @@ class TestCacheManagement:
         self, cache_test_env, monkeypatch
     ):
         """The diffusion-kernel cache drops the least recently used kernel."""
-        from neurospatial.environment import fields
+        from neurospatial.environment import _fields
         from neurospatial.environment._cache import DIFFUSION_KERNELS
 
         monkeypatch.setattr(DIFFUSION_KERNELS, "limit", 2)
         built = []
-        original = fields.heat_kernel_from_W
+        original = _fields.heat_kernel_from_W
 
         def counted(W, volumes, bandwidth, **kwargs):
             built.append(bandwidth)
             return original(W, volumes, bandwidth, **kwargs)
 
-        monkeypatch.setattr(fields, "heat_kernel_from_W", counted)
+        monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
         first = cache_test_env.compute_kernel(1.0, mode="density")
         cache_test_env.compute_kernel(2.0, mode="density")
         np.testing.assert_array_equal(

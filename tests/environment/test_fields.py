@@ -1,4 +1,4 @@
-"""Comprehensive tests for Environment field operations (fields.py module).
+"""Comprehensive tests for Environment field operations (_fields.py module).
 
 This module tests the field operations mixin for Environment, covering:
 - compute_kernel() method (diffusion kernel computation)
@@ -7,7 +7,7 @@ This module tests the field operations mixin for Environment, covering:
 - Edge cases and validation
 - Property-based tests for smoothing invariants
 
-Target coverage: 8% → 90% for src/neurospatial/environment/fields.py
+Target coverage: 8% → 90% for src/neurospatial/environment/_fields.py
 
 See Also
 --------
@@ -87,17 +87,17 @@ class TestComputeKernel:
 
     def test_compute_kernel_caching_enabled(self, small_2d_env, monkeypatch):
         """Test that kernel caching works when enabled."""
-        from neurospatial.environment import fields
+        from neurospatial.environment import _fields
 
         env = pickle.loads(pickle.dumps(small_2d_env))  # own empty cache
         calls = []
-        original = fields.heat_kernel_from_W
+        original = _fields.heat_kernel_from_W
 
         def counted(*args, **kwargs):
             calls.append(1)
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(fields, "heat_kernel_from_W", counted)
+        monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
         kernel1 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
         kernel2 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
 

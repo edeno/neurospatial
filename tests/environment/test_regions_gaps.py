@@ -9,7 +9,7 @@ focusing on:
 - Error handling paths
 - Integration with other Environment operations
 
-Target coverage: 45% → 85% for src/neurospatial/environment/regions.py
+Target coverage: 45% → 85% for src/neurospatial/environment/_regions.py
 
 See Also
 --------

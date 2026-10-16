@@ -7,7 +7,7 @@ Covers:
 - Advanced spatial queries (distance_to, reachable_from, rings, components)
 - Property tests for query invariants
 
-Target: 21% → 90% coverage for src/neurospatial/environment/queries.py
+Target: 21% → 90% coverage for src/neurospatial/environment/_queries.py
 """
 
 import numpy as np

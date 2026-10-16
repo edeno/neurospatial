@@ -213,13 +213,13 @@ def test_concurrent_first_kdtree_lookup_builds_one_tree(env, monkeypatch):
 
 
 def test_concurrent_first_diffusion_geometry_builds_once(env, monkeypatch):
-    from neurospatial.environment import fields
+    from neurospatial.environment import _fields
 
     calls: list[int] = []
     monkeypatch.setattr(
-        fields,
+        _fields,
         "_build_diffusion_geometry",
-        _slow_counted(fields._build_diffusion_geometry, calls),
+        _slow_counted(_fields._build_diffusion_geometry, calls),
     )
 
     results = _run_concurrently(env.get_diffusion_geometry)
@@ -231,19 +231,19 @@ def test_concurrent_first_diffusion_geometry_builds_once(env, monkeypatch):
 
 def test_concurrent_kernels_build_nested_geometry_once(env, monkeypatch):
     """A kernel needs the diffusion geometry; neither is built twice or deadlocks."""
-    from neurospatial.environment import fields
+    from neurospatial.environment import _fields
 
     geometry_calls: list[int] = []
     kernel_calls: list[int] = []
     monkeypatch.setattr(
-        fields,
+        _fields,
         "_build_diffusion_geometry",
-        _slow_counted(fields._build_diffusion_geometry, geometry_calls),
+        _slow_counted(_fields._build_diffusion_geometry, geometry_calls),
     )
     monkeypatch.setattr(
-        fields,
+        _fields,
         "heat_kernel_from_W",
-        _slow_counted(fields.heat_kernel_from_W, kernel_calls),
+        _slow_counted(_fields.heat_kernel_from_W, kernel_calls),
     )
 
     results = _run_concurrently(lambda: env.compute_kernel(1.0))
@@ -329,7 +329,7 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
     env, monkeypatch
 ):
     """Relabelled copies share locks as well as values: one build in total."""
-    from neurospatial.environment import _lookup, fields
+    from neurospatial.environment import _fields, _lookup
     from neurospatial.ops import diffusion
 
     field = np.linspace(0.0, 1.0, env.n_bins)
@@ -342,9 +342,9 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
     eigensolve_calls: list[int] = []
     tree_calls: list[int] = []
     monkeypatch.setattr(
-        fields,
+        _fields,
         "_build_diffusion_geometry",
-        _counted(fields._build_diffusion_geometry, geometry_calls),
+        _counted(_fields._build_diffusion_geometry, geometry_calls),
     )
     monkeypatch.setattr(
         diffusion,
@@ -377,20 +377,20 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     env, monkeypatch
 ):
     """Clearing while a smoothing call holds the eigenbasis returns at once."""
-    from neurospatial.environment import fields
+    from neurospatial.environment import _fields
 
     field = np.linspace(0.0, 1.0, env.n_bins)
     expected = pickle.loads(pickle.dumps(env)).smooth(field, 4.0)
     applying = threading.Event()
     cleared = threading.Event()
-    original = fields.diffusion_apply
+    original = _fields.diffusion_apply
 
     def apply_after_clear(*args, **kwargs):
         applying.set()
         assert cleared.wait(timeout=60), "clear_cache() did not return"
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(fields, "diffusion_apply", apply_after_clear)
+    monkeypatch.setattr(_fields, "diffusion_apply", apply_after_clear)
     smoothed: list[np.ndarray] = []
     smoothing = threading.Thread(
         target=lambda: smoothed.append(env.smooth(field, 4.0)), daemon=True
@@ -408,5 +408,5 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     assert not clearing.is_alive(), "clear_cache() deadlocked"
     assert not smoothing.is_alive(), "smoothing deadlocked"
     np.testing.assert_array_equal(smoothed[0], expected)
-    monkeypatch.setattr(fields, "diffusion_apply", original)
+    monkeypatch.setattr(_fields, "diffusion_apply", original)
     np.testing.assert_array_equal(env.smooth(field, 4.0), expected)

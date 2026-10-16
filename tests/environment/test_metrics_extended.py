@@ -1,7 +1,7 @@
 """Comprehensive tests for environment metrics.
 
 This module provides extensive test coverage for the EnvironmentMetrics mixin,
-targeting 80% coverage for src/neurospatial/environment/metrics.py.
+targeting 80% coverage for src/neurospatial/environment/_metrics.py.
 
 Test Coverage
 -------------
