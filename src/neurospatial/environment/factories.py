@@ -717,7 +717,6 @@ def _from_layout(
     """Implement Environment.from_layout using explicit construction inputs."""
     from neurospatial.environment._publication import (
         declared_metadata,
-        publish,
         publish_layout,
     )
 
@@ -726,47 +725,18 @@ def _from_layout(
         from neurospatial.geometry._ownership import own_arena
 
         arena = own_arena(arena)
-    layout_instance = cls._create_layout(kind, layout_params)
     metadata = declared_metadata(cls, name=name, units=units, frame=frame)
-    env = publish_layout(
+    layout_instance = cls._create_layout(kind, layout_params)
+    return publish_layout(
         cls,
         layout_instance,
         metadata=metadata,
         layout_type=kind,
         build_params=layout_params,
         regions=regions,
+        arena=arena,
+        within_arena=True,
     )
-    if arena is not None and arena.domain_known and not env._is_polar:
-        keep = arena.contains(env.bin_centers)
-        # Whole-bin selection uses strict polygon-center inclusion in
-        # native and transformed arena frames alike.
-        domain = arena.polygonal_domain()
-        if domain is not None:
-            keep = shapely.contains_xy(
-                domain, env.bin_centers[:, 0], env.bin_centers[:, 1]
-            )
-        if not np.all(keep):
-            env = env.subset(bins=keep)
-    if arena is not None:
-        from neurospatial.geometry._context import GridIndex
-
-        assert env.active_mask is not None
-        env = publish(
-            cls,
-            env._binning,
-            connectivity=env.connectivity,
-            dimension_ranges=env.dimension_ranges,
-            provenance=env._provenance,
-            metadata=metadata,
-            is_linearized_track=env.is_linearized_track,
-            regions=regions,
-            arena=arena,
-            grid_index=GridIndex(
-                env.grid_edges or (), env.grid_shape or (env.n_bins,), env.active_mask
-            ),
-            check_center_lookup=False,
-        )
-    return env
 
 
 def _create_layout(

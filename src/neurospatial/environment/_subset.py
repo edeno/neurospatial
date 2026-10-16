@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from neurospatial.environment._protocols import SubsetConsumer
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._binning import Binning
 
 
 def _subset_mask(
@@ -148,40 +149,49 @@ def _subset_mask(
     return mask
 
 
-def _subset(
-    env: SubsetConsumer,
-    *,
-    bins: NDArray[np.bool_] | None = None,
-    region_names: Sequence[str] | None = None,
-    polygon: shapely.Polygon | None = None,
-    invert: bool = False,
-    name: str | None = None,
-) -> Environment:
-    """Derive selected bins and their graph, bounds and preserved metadata."""
-    mask = _subset_mask(
-        env, bins=bins, region_names=region_names, polygon=polygon, invert=invert
-    )
+def select_bins(
+    binning: Binning, connectivity: nx.Graph, mask: NDArray[np.bool_]
+) -> tuple[Binning, nx.Graph, list[tuple[float, float]]]:
+    """Keep the selected bins of a binning, with their graph and bounds.
+
+    Parameters
+    ----------
+    binning : Binning
+        Bins to select from.
+    connectivity : networkx.Graph
+        Navigation graph over the bins of ``binning``; it is not modified.
+    mask : ndarray of bool, shape (n_bins,)
+        Bins to keep.
+
+    Returns
+    -------
+    binning : Binning
+        The kept bins, renumbered ``0..n_kept-1`` in their original order.
+    graph : networkx.Graph
+        Induced graph, in the parent's node and edge order. Grid selections
+        number ``edge_id`` from 0.
+    dimension_ranges : list of (float, float)
+        Grid extent for grids; otherwise the kept cells' bounds.
+    """
     from neurospatial.geometry._components import HexagonShapes, TriangleShapes
     from neurospatial.geometry._derive import subset_binning
 
-    binning = subset_binning(env._binning, mask)
+    binning = subset_binning(binning, mask)
     selected = np.flatnonzero(mask)
     child_of = {int(old): new for new, old in enumerate(selected)}
     graph = nx.Graph()
-    graph.graph.update(env.connectivity.graph)
+    graph.graph.update(connectivity.graph)
     # Retain the parent's node iteration order as well as edge order and
     # orientation; edge fields index that order even on loaded graphs.
-    for old, data in env.connectivity.nodes(data=True):
+    for old, data in connectivity.nodes(data=True):
         if old in child_of:
             graph.add_node(child_of[old], **data)
     for index, (u, v) in enumerate(binning.bins.pairs):
         old_u, old_v = selected[u], selected[v]
-        data = dict(env.connectivity.edges[old_u, old_v])
+        data = dict(connectivity.edges[old_u, old_v])
         if binning.rectilinear is not None:
             data["edge_id"] = index
         graph.add_edge(int(u), int(v), **data)
-    params = {"source": "subset", "original_n_bins": env.n_bins}
-    tag = "MaskedGrid" if binning.rectilinear is not None else "subset"
     if binning.rectilinear is not None:
         ranges = [
             (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
@@ -211,6 +221,25 @@ def _subset(
             low, high = float(axis.min()), float(axis.max())
             margin = 0.05 * (high - low) if shapes is not None else 0.0
             ranges.append((low - margin, high + margin))
+    return binning, graph, ranges
+
+
+def _subset(
+    env: SubsetConsumer,
+    *,
+    bins: NDArray[np.bool_] | None = None,
+    region_names: Sequence[str] | None = None,
+    polygon: shapely.Polygon | None = None,
+    invert: bool = False,
+    name: str | None = None,
+) -> Environment:
+    """Derive selected bins and their graph, bounds and preserved metadata."""
+    mask = _subset_mask(
+        env, bins=bins, region_names=region_names, polygon=polygon, invert=invert
+    )
+    binning, graph, ranges = select_bins(env._binning, env.connectivity, mask)
+    params = {"source": "subset", "original_n_bins": env.n_bins}
+    tag = "MaskedGrid" if binning.rectilinear is not None else "subset"
     from neurospatial.environment._publication import _Provenance, publish_derived
 
     return publish_derived(

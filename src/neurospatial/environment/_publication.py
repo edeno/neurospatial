@@ -621,6 +621,7 @@ def publish_layout(
     regions: Regions | None = None,
     arena: Arena | None = None,
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
+    within_arena: bool = False,
 ) -> _EnvironmentT:
     """Consume a built layout once and publish only its owned data.
 
@@ -642,6 +643,12 @@ def publish_layout(
         Continuous domain. Omission infers one from the binning.
     coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
         Coordinate meaning; ``None`` means Cartesian.
+    within_arena : bool, default=False
+        Keep only the bins whose centers lie in a known Cartesian ``arena``
+        (strictly inside a polygonal one). The bins are selected on the
+        layout's binning, as ``subset`` selects them, before the single
+        publication, so the recorded layout and build choices do not depend
+        on whether the arena dropped a bin.
 
     Returns
     -------
@@ -652,6 +659,21 @@ def publish_layout(
 
     binning, graph, ranges, tag, category, resolved, index = built_layout_data(layout)
     polar = isinstance(coordinates, EgocentricPolarSystem)
+    if within_arena and arena is not None and arena.domain_known and not polar:
+        import shapely
+
+        from neurospatial.environment._subset import select_bins
+
+        centers = binning.bins.centers
+        domain = arena.polygonal_domain()
+        keep = (
+            shapely.contains_xy(domain, centers[:, 0], centers[:, 1])
+            if domain is not None
+            else arena.contains(centers)
+        )
+        if not np.all(keep):
+            binning, graph, ranges = select_bins(binning, graph, keep)
+            index = None
     if polar and arena is None:
         from neurospatial.environment._arena import infer_arena
 

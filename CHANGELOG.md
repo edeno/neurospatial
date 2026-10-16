@@ -86,6 +86,16 @@
   and `neurospatial.ops.apply_transform_to_environment` accepts `frame=`.
   Derived environments no longer repeat the warning about unrecognized units.
 
+- A factory given an `arena=` that leaves out some bins (for example
+  `from_grid_mask(..., arena=OpenArena(polygon))`) now selects the bins before
+  building the environment, instead of building it, subsetting it and building
+  it again. The bins, graph and ranges are unchanged, but `layout_type` and
+  `layout_parameters` now describe the factory's layout (for example
+  `"MaskedGrid"` with `connect_diagonal_neighbors`) whether or not the arena
+  dropped a bin; they used to switch to a subset record. Together with the
+  faster graph publication, a 200 × 200 grid mask cropped by an arena builds
+  about 2.7 times faster.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid
