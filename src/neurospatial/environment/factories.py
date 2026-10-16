@@ -719,8 +719,7 @@ def _from_layout(
 
         arena = own_arena(arena)
     layout_instance = cls._create_layout(kind, layout_params)
-    env_cls = cls
-    env = env_cls._from_built_layout(
+    env = cls._from_built_layout(
         layout_instance,
         name=name,
         layout_type_used=kind,
@@ -744,7 +743,7 @@ def _from_layout(
         from neurospatial.geometry._context import GridIndex
 
         assert env.active_mask is not None
-        env = env_cls._from_binning(
+        env = cls._from_binning(
             env._binning,
             connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
