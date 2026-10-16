@@ -283,7 +283,9 @@ Importing `neurospatial.binning` does not load native builders, `environment.cor
 or Matplotlib. Standalone validation functions retain their public contracts;
 publication additionally checks agreement between the graph and owned binning.
 
-Subset selection lives in `environment/_subset.py`; both supported rebin calls
+Subset requests are validated in `environment/_subset.py`, and the selection of
+whole bins with their graph and ranges is `geometry/_derive.py:select_bins`,
+which `from_layout(arena=...)` also uses. Both supported rebin calls
 live in `environment/_rebin.py`. Factor rebin preserves its historical grid
 partitioning rules, while `rebin(bin_size=...)` uses the saved binning
 specification and frame. Both publish through the same owned-data path. Shared
@@ -370,7 +372,7 @@ native grid navigation, allowing physical walls to remove connections. It
 refuses custom path lengths or topology that cell geometry cannot reconstruct,
 and retains truncation warnings and complete-face wall constraints.
 Both rebin modes live in `environment/_rebin.py`; selection of existing bins
-lives in `environment/_subset.py`. Rebin construction policies remain distinct:
+lives in `geometry/_derive.py:select_bins`. Rebin construction policies remain distinct:
 factor mode retains native lazy faces and its recorded grid parameters, while
 resolution mode prepares faces for the retained affine frame. Both use the
 same atomic `publish` function for owned data, walls and

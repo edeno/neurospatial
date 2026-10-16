@@ -36,6 +36,7 @@ from neurospatial.geometry._arena_binning import (
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._context import grid_index as compute_grid_index
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.layout._construction import built_layout_data
@@ -734,8 +735,6 @@ def publish_layout(
     binning, graph, ranges, tag, category, resolved, index = built_layout_data(layout)
     polar = isinstance(coordinates, EgocentricPolarSystem)
     if within_arena and arena is not None and arena.domain_known and not polar:
-        from neurospatial.environment._subset import select_bins  # imports this module
-
         centers = binning.bins.centers
         domain = arena.polygonal_domain()
         keep = (

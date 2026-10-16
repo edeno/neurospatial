@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import math
 
+import networkx as nx
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
@@ -36,6 +38,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
 )
+from neurospatial.geometry._polygon import PolygonCells
 
 
 def _refusal(what: str, why: str, fix: str) -> ValueError:
@@ -172,6 +175,73 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
             else None
         ),
     )
+
+
+def select_bins(
+    binning: Binning, connectivity: nx.Graph, mask: NDArray[np.bool_]
+) -> tuple[Binning, nx.Graph, list[tuple[float, float]]]:
+    """Keep the selected bins of a binning, with their graph and bounds.
+
+    Parameters
+    ----------
+    binning : Binning
+        Bins to select from.
+    connectivity : networkx.Graph
+        Navigation graph over the bins of ``binning``; it is not modified.
+    mask : ndarray of bool, shape (n_bins,)
+        Bins to keep.
+
+    Returns
+    -------
+    binning : Binning
+        The kept bins, renumbered ``0..n_kept-1`` in their original order.
+    graph : networkx.Graph
+        Induced graph, in the parent's node and edge order. Grid selections
+        number ``edge_id`` from 0.
+    dimension_ranges : list of (float, float)
+        Grid extent for grids; otherwise the kept cells' bounds.
+    """
+    binning = subset_binning(binning, mask)
+    selected = np.flatnonzero(mask)
+    child_of = {int(old): new for new, old in enumerate(selected)}
+    graph = nx.Graph()
+    graph.graph.update(connectivity.graph)
+    # Retain the parent's node iteration order as well as edge order and
+    # orientation; edge fields index that order even on loaded graphs.
+    for old, data in connectivity.nodes(data=True):
+        if old in child_of:
+            graph.add_node(child_of[old], **data)
+    for index, (u, v) in enumerate(binning.bins.pairs):
+        old_u, old_v = selected[u], selected[v]
+        data = dict(connectivity.edges[old_u, old_v])
+        if binning.rectilinear is not None:
+            data["edge_id"] = index
+        graph.add_edge(int(u), int(v), **data)
+    if binning.rectilinear is not None:
+        ranges = [
+            (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
+        ]
+    else:
+        shapes = binning.shapes
+        vertices = binning.bins.centers
+        if binning.grid_frame is not None:
+            vertices = binning.grid_frame.corners()
+        elif isinstance(shapes, HexagonShapes):
+            angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
+            offsets = shapes.radius * np.column_stack((np.cos(angles), np.sin(angles)))
+            vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
+        elif isinstance(shapes, TriangleShapes):
+            vertices = shapes.points[shapes.triangles].reshape(-1, 2)
+        elif isinstance(shapes, PolygonCells):
+            vertices = np.concatenate(
+                [shapely.get_coordinates(cell) for cell in shapes.polygons]
+            )
+        ranges = []
+        for axis in vertices.T:
+            low, high = float(axis.min()), float(axis.max())
+            margin = 0.05 * (high - low) if shapes is not None else 0.0
+            ranges.append((low - margin, high + margin))
+    return binning, graph, ranges
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
