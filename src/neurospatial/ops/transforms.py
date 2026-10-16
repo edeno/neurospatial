@@ -41,7 +41,7 @@ Notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -49,8 +49,9 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import CartesianOnlyError
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
     from neurospatial.ops._protocols import AffineTransformConsumer
+
+_TransformedT = TypeVar("_TransformedT")
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
@@ -1347,12 +1348,12 @@ def estimate_transform(
 
 
 def apply_transform_to_environment(
-    env: Environment,
+    env: AffineTransformConsumer[_TransformedT],
     transform: AffineND | Affine2D,
     *,
     name: str | None = None,
     frame: str | None = None,
-) -> Environment:
+) -> _TransformedT:
     """Apply N-D affine transformation to an Environment, returning a new instance.
 
     This function creates a new Environment with transformed bin_centers,
@@ -1454,9 +1455,8 @@ def apply_transform_to_environment(
     For 2D environments, edge 'angle_2d' attributes are also recomputed.
 
     """
-    consumer: AffineTransformConsumer = env
     try:
-        return consumer.apply_transform(transform, name=name, frame=frame)
+        return env.apply_transform(transform, name=name, frame=frame)
     except CartesianOnlyError:
         raise ValueError(
             "apply_transform requires a Cartesian environment but got an "

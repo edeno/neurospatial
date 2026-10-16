@@ -88,7 +88,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
+    from neurospatial.ops._protocols import (
+        BinCentersConsumer,
+        ObserverConsumer,
+        ViewshedConsumer,
+    )
 
 __all__ = [
     "FieldOfView",
@@ -468,7 +472,7 @@ class ViewshedResult:
             self.cue_bearings[mask],
         )
 
-    def visible_bin_centers(self, env: Environment) -> NDArray[np.float64]:
+    def visible_bin_centers(self, env: BinCentersConsumer) -> NDArray[np.float64]:
         """Get allocentric positions of visible bin centers.
 
         Parameters
@@ -491,7 +495,7 @@ def compute_viewed_location(
     method: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    env: Environment | None = None,
+    env: ObserverConsumer | None = None,
     max_distance: float = 100.0,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
@@ -599,7 +603,7 @@ def compute_viewed_location(
 
 
 def _ray_cast_to_boundary(
-    env: Environment,
+    env: ObserverConsumer,
     origin: NDArray[np.float64],
     direction: float,
     max_distance: float = 100.0,
@@ -646,7 +650,7 @@ def _ray_cast_to_boundary(
 
 
 def _line_of_sight_clear(
-    env: Environment,
+    env: ObserverConsumer,
     observer: NDArray[np.float64],
     target: NDArray[np.float64],
     n_samples: int = 20,
@@ -688,7 +692,7 @@ def _line_of_sight_clear(
 
 
 def _batch_line_of_sight_clear(
-    env: Environment,
+    env: ObserverConsumer,
     observer: NDArray[np.float64],
     targets: NDArray[np.float64],
     n_samples: int = 20,
@@ -743,7 +747,7 @@ def _batch_line_of_sight_clear(
 
 
 def compute_viewshed(
-    env: Environment,
+    env: ViewshedConsumer,
     position: NDArray[np.float64],
     heading: float,
     *,
@@ -983,7 +987,7 @@ def compute_viewshed(
 
 
 def compute_view_field(
-    env: Environment,
+    env: ViewshedConsumer,
     position: NDArray[np.float64],
     heading: float,
     *,
@@ -1039,7 +1043,7 @@ def compute_view_field(
 
 
 def visible_cues(
-    env: Environment,
+    env: ObserverConsumer,
     position: NDArray[np.float64],
     heading: float,
     cue_positions: NDArray[np.float64],
@@ -1146,7 +1150,7 @@ def visible_cues(
 
 
 def compute_viewshed_trajectory(
-    env: Environment,
+    env: ViewshedConsumer,
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
@@ -1202,7 +1206,7 @@ def compute_viewshed_trajectory(
 
 
 def visibility_occupancy(
-    env: Environment,
+    env: ViewshedConsumer,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],

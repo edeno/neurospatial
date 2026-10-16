@@ -61,8 +61,7 @@ from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
-    from neurospatial.environment import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.ops._protocols import BinsConsumer, CartesianBinsConsumer
 
 __all__ = [
     "ProbabilityMappingParams",
@@ -100,8 +99,8 @@ class ProbabilityMappingParams:
 
     """
 
-    source_env: Environment
-    target_env: Environment
+    source_env: BinsConsumer
+    target_env: BinsConsumer
     source_probs: NDArray[np.float64]
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest"
     n_neighbors: int = 1
@@ -433,8 +432,8 @@ def _map_inverse_distance_weighted(
 
 
 def map_probabilities(
-    source_env: Environment[CartesianSystem],
-    target_env: Environment[CartesianSystem],
+    source_env: CartesianBinsConsumer,
+    target_env: CartesianBinsConsumer,
     source_probs: NDArray[np.float64],
     *,
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",

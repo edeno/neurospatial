@@ -23,9 +23,13 @@ from scipy.spatial import cKDTree
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
-    from neurospatial.ops._protocols import NearestBinConsumer
+    from neurospatial.ops._protocols import (
+        BinSpacingConsumer,
+        CartesianNearestBinConsumer,
+        RegionMaskConsumer,
+        ResampleSourceConsumer,
+        ResampleTargetConsumer,
+    )
     from neurospatial.regions import Regions
 
 
@@ -92,7 +96,7 @@ def _estimate_typical_bin_spacing(
     return float(np.median(nn_dists[:, 1]))
 
 
-def _typical_bin_spacing(env: Environment) -> float:
+def _typical_bin_spacing(env: BinSpacingConsumer) -> float:
     """Typical distance between neighbouring bins, measured along the space.
 
     On a linearized track this is the median bin length along the track
@@ -117,7 +121,7 @@ def _typical_bin_spacing(env: Environment) -> float:
 
 
 def map_points_to_bins(
-    env: Environment[CartesianSystem],
+    env: CartesianNearestBinConsumer,
     points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy
@@ -266,8 +270,7 @@ def map_points_to_bins(
         ),
     )
 
-    consumer: NearestBinConsumer = env
-    return consumer.nearest_bin(
+    return env.nearest_bin(
         points,
         tie_break=tie_break,
         return_dist=return_dist,
@@ -416,7 +419,7 @@ def _nearest_bin_query(
 
 
 def regions_to_mask(
-    env: Environment,
+    env: RegionMaskConsumer,
     regions: str | list[str] | object,  # Will be Region | Regions after import
     *,
     include_boundary: bool = True,
@@ -682,8 +685,8 @@ def _polygon_regions_mask(
 
 def resample_field(
     field: NDArray[np.float64],
-    src_env: Environment[CartesianSystem],
-    dst_env: Environment[CartesianSystem],
+    src_env: ResampleSourceConsumer,
+    dst_env: ResampleTargetConsumer,
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
     bandwidth: float | None = None,

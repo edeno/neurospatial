@@ -105,9 +105,13 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from scipy import sparse
 
-    from neurospatial import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
-    from neurospatial.ops._protocols import WaveletGeometryConsumer
+    from neurospatial.ops._protocols import (
+        BasisCentersConsumer,
+        FieldPlotConsumer,
+        SpatialBasisConsumer,
+        WaveletBasisConsumer,
+        WaveletGeometryConsumer,
+    )
 
 __all__ = [
     "chebyshev_filter_basis",
@@ -120,7 +124,7 @@ __all__ = [
 
 
 def select_basis_centers(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
     *,
     method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
@@ -231,7 +235,7 @@ def select_basis_centers(
 
 
 def _select_centers_kmeans(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
@@ -255,7 +259,7 @@ def _select_centers_kmeans(
 
 
 def _select_centers_random(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
@@ -265,7 +269,7 @@ def _select_centers_random(
 
 
 def _select_centers_farthest_point(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
@@ -310,7 +314,7 @@ def _select_centers_farthest_point(
 
 
 def _select_centers_grid(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
 ) -> NDArray[np.int_]:
     """Select centers using regular grid subsampling."""
@@ -366,7 +370,7 @@ def _normalize_basis(
 
 
 def geodesic_rbf_basis(
-    env: Environment,
+    env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     sigma: float | Sequence[float] = 5.0,
@@ -612,7 +616,7 @@ def _diffusion_generator(env: WaveletGeometryConsumer) -> sparse.csr_matrix:
 
 
 def heat_kernel_wavelet_basis(
-    env: Environment,
+    env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     scales: Sequence[float] = (0.5, 1.0, 2.0, 4.0),
@@ -783,7 +787,7 @@ def heat_kernel_wavelet_basis(
 
 
 def chebyshev_filter_basis(
-    env: Environment,
+    env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     max_degree: int = 5,
@@ -1036,7 +1040,7 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
 
 
 def spatial_basis(
-    env: Environment[CartesianSystem],
+    env: SpatialBasisConsumer,
     *,
     coverage: Literal["local", "medium", "global"] = "medium",
     n_features: int = 100,
@@ -1148,7 +1152,7 @@ def spatial_basis(
 
 
 def plot_basis_functions(
-    env: Environment,
+    env: FieldPlotConsumer,
     basis: NDArray[np.float64],
     indices: list[int] | None = None,
     n_examples: int = 6,

@@ -78,7 +78,7 @@ from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.ops._protocols import BinLookupConsumer
 
 __all__ = [
     "EgocentricFrame",
@@ -501,7 +501,7 @@ def compute_egocentric_distance(
     targets: NDArray[np.float64],
     *,
     metric: str = "euclidean",
-    env: Environment | None = None,
+    env: BinLookupConsumer | None = None,
 ) -> NDArray[np.float64]:
     """Compute distance to targets from animal position.
 
