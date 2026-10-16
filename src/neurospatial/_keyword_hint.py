@@ -32,18 +32,19 @@ def keyword_hint(
 
     Python refuses an extra positional argument before the function runs, with
     a message that does not say which keyword was meant. The wrapped function
-    raises a ``TypeError`` that maps each extra positional value onto the
-    keyword-only parameters, in ``order`` or else in signature order, and
-    shows the corrected call. Every other call, including other argument
-    errors, runs the function unchanged. The signature, docstring and
-    ``__wrapped__`` are the function's own.
+    raises a ``TypeError`` instead. When an earlier version took options in a
+    known positional ``order``, it maps each extra positional value onto those
+    keywords and shows the corrected call; otherwise it lists the keyword-only
+    options without guessing which one was meant. Every other call, including
+    other argument errors, runs the function unchanged. The signature,
+    docstring and ``__wrapped__`` are the function's own.
 
     Parameters
     ----------
     *order : str
         Keyword-only parameters that extra positional values stand for, in
-        the order an earlier version took them positionally. Defaults to the
-        keyword-only parameters in signature order.
+        the order an earlier version took them positionally. Leave it empty
+        for a function that never took options by position.
     redirect : str, optional
         Dotted path of the function that takes options this one does not,
         such as the builder for a function that only loads. A call whose
@@ -66,9 +67,10 @@ def keyword_hint(
         positional = [name for name, p in parameters.items() if p.kind in _POSITIONAL]
         if any(p.kind is p.VAR_POSITIONAL for p in parameters.values()):
             raise TypeError("keyword_hint needs a function without *args.")
-        keywords = list(order) or [
-            name for name, p in parameters.items() if p.kind is p.KEYWORD_ONLY
-        ]
+        options = [name for name, p in parameters.items() if p.kind is p.KEYWORD_ONLY]
+        unknown = [name for name in order if name not in options]
+        if unknown:
+            raise TypeError(f"keyword_hint order names unknown options {unknown}.")
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
         # A classmethod's first parameter is bound by the class; the caller
@@ -85,7 +87,7 @@ def keyword_hint(
             args: tuple[Any, ...], kwargs: dict[str, Any]
         ) -> TypeError:
             extra = args[len(positional) :]
-            free = [name for name in keywords if name not in kwargs]
+            free = [name for name in order if name not in kwargs]
             mapped = dict(zip(free, extra, strict=False))
             count = len(shown)
             given_count = len(args) - len(positional) + count
@@ -98,8 +100,8 @@ def keyword_hint(
             if fix is not None:
                 advice = fix
             elif len(mapped) < len(extra):
-                advice = (
-                    f"pass every option after {', '.join(shown) or 'none'} by keyword"
+                advice = "options are keyword-only; pass them by name: " + ", ".join(
+                    f"{name}=" for name in options
                 )
             else:
                 listed = ", ".join(

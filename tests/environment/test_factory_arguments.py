@@ -313,13 +313,49 @@ def test_from_layout_refuses_an_unbuilt_engine():
         Environment.from_layout(MaskedGridLayout())
 
 
-@pytest.mark.parametrize("factory", _DATA_ARGUMENTS)
-def test_misuse_guard_keeps_the_factory_signature_and_docstring(factory):
+# The option each factory took first by position on earlier versions; the
+# others never took an option by position.
+_FORMER_FIRST_POSITIONAL_OPTION = {
+    "from_samples": "bin_size",
+    "open_field": "bin_size",
+    "from_graph": "edge_spacing",
+    "maze": "kind",
+    "from_polygon": "bin_size",
+    "from_pixel_mask": "pixel_size",
+    "from_polar_egocentric": "distance_range",
+}
+
+
+@pytest.mark.parametrize(("factory", "data"), _DATA_ARGUMENTS.items())
+def test_positional_option_guard_names_the_keyword_or_lists_the_options(factory, data):
     method = getattr(Environment, factory)
-    wrapped = method.__func__.__wrapped__
-    assert inspect.signature(wrapped) == inspect.signature(method.__func__)
-    assert method.__doc__ == wrapped.__doc__
-    assert method.__name__ == wrapped.__name__ == factory
+    # The guard wraps the factory, yet the published signature is the
+    # factory's own: data positional, every option keyword-only.
+    wrapper = inspect.signature(method.__func__, follow_wrapped=False)
+    assert [p.kind for p in wrapper.parameters.values()] == [
+        inspect.Parameter.VAR_POSITIONAL,
+        inspect.Parameter.VAR_KEYWORD,
+    ]
+    parameters = inspect.signature(method).parameters
+    options = [name for name in parameters if name not in data]
+    assert all(
+        parameters[name].kind is inspect.Parameter.KEYWORD_ONLY for name in options
+    )
+    assert method.__doc__ == method.__func__.__wrapped__.__doc__
+
+    # One value too many; the guard refuses before the factory reads anything.
+    with pytest.raises(TypeError, match="positional argument") as caught:
+        method(*([None] * len(data)), 7)
+    fix = str(caught.value).split("Fix: ")[1]
+    former = _FORMER_FIRST_POSITIONAL_OPTION.get(factory)
+    if factory == "from_layout":
+        assert "create_layout(" in fix
+    elif former is not None:
+        assert fix.startswith(f"pass {former}=7 by keyword")
+    else:
+        assert fix.startswith("options are keyword-only; pass them by name:")
+        assert all(f"{name}=" in fix for name in options)
+        assert "=7" not in fix
 
 
 def _graph():

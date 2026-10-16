@@ -392,7 +392,7 @@ def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
     return Regions(regions_list)
 
 
-@keyword_hint()
+@keyword_hint("bin_size")
 def environment_from_position(
     nwbfile: NWBFile,
     *,

@@ -960,7 +960,9 @@ class Environment(Generic[_C]):
         return self._cache.get(BOUNDARY_BINS, build)
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint(
+        "distance_range", "angle_range", "distance_bin_size", "angle_bin_size"
+    )
     def from_polar_egocentric(
         cls,
         *,
@@ -2527,7 +2529,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint("bin_size")
     def from_samples(
         cls,
         positions: NDArray[np.float64],
@@ -2730,7 +2732,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint("bin_size")
     def open_field(
         cls,
         positions: NDArray[np.float64],
@@ -2855,7 +2857,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint("endpoints", "bin_size")
+    @keyword_hint()
     def linear_track(
         cls,
         *,
@@ -2959,7 +2961,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint("kind")
     def maze(
         cls,
         *,
@@ -3270,7 +3272,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint("bin_size")
     def from_polygon(
         cls,
         polygon: PolygonType,
@@ -3464,7 +3466,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint()
+    @keyword_hint("pixel_size")
     def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
