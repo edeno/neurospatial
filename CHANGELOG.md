@@ -153,6 +153,11 @@
   track without a width or a polar surround). `Environment.rebin(bin_size=...)`
   uses it to lay out the new grid.
 
+- `neurospatial.ops.geodesic_distance_between_points` accepts `weight=`, the
+  edge attribute that measures length (`"distance"` by default; `None` counts
+  edges). `Environment.distance_between` now calls it, so the two always
+  agree.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

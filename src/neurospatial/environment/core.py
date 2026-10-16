@@ -137,6 +137,7 @@ from neurospatial.ops.calculus import (
     _compute_divergence_operator,
 )
 from neurospatial.ops.diffusion import _diffusion_apply_rtol
+from neurospatial.ops.distance import geodesic_distance_between_points
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -1298,17 +1299,9 @@ class Environment(Generic[_C]):
                 )
             return np.inf
 
-        try:
-            return float(
-                nx.shortest_path_length(
-                    self.connectivity,
-                    source=source_bin,
-                    target=target_bin,
-                    weight=edge_weight,
-                )
-            )
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return np.inf
+        return geodesic_distance_between_points(
+            self.connectivity, source_bin, target_bin, weight=edge_weight
+        )
 
     def to_linear(
         self: Environment[CartesianSystem],
