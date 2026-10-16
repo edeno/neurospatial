@@ -308,11 +308,11 @@ final_result = combine_results(results)
 coarse_env = large_env.rebin(factor=4)  # Reduce from 100k to 6k bins
 coarse_result = analyze(coarse_env)
 
-# Identify regions of interest
+# Identify regions of interest as a boolean mask over large_env's bins
 roi_mask = identify_interesting_regions(coarse_result)
 
 # Refine only interesting regions
-refined_env = large_env.subset(roi_mask)
+refined_env = large_env.subset(bins=roi_mask)
 refined_result = analyze(refined_env)
 ```
 

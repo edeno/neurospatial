@@ -24,6 +24,7 @@ OPT_IN = (
     "docs/user-guide/composite-environments.md",
     "docs/user-guide/environments.md",
     "docs/user-guide/layout-engines.md",
+    "docs/user-guide/spatial-analysis.md",
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",
     "docs/user-guide/interoperability.md",

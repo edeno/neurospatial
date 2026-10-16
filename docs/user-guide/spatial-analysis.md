@@ -807,32 +807,34 @@ Coarsen the environment grid by integer subsampling (geometry-only operation).
 ```python
 def rebin(
     self,
-    factor: int | tuple[int, ...],
+    factor: int | tuple[int, ...] | None = None,
+    *,
+    bin_size: float | tuple[float, ...] | None = None,
+    name: str | None = None,
 ) -> Environment:
     """
-    Create coarser environment by integer subsampling.
+    Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
-    This is a geometry-only operation that reduces spatial resolution
-    by subsampling the grid at integer factors. It does NOT remap or
-    aggregate field values - use separate field processing for that.
+    This is a geometry-only operation: it does NOT remap or aggregate
+    field values - use separate field processing for that.
 
     Parameters
     ----------
-    factor : int or tuple of int
-        Integer subsampling factor(s):
+    factor : int or tuple of int, optional
+        Integer coarsening factor(s):
         - int: Apply same factor to all dimensions
         - tuple: Per-dimension factors (length must match n_dims)
-
-        Examples:
-        - factor=2: Keep every 2nd bin (halve resolution)
-        - factor=3: Keep every 3rd bin (third resolution)
-        - factor=(2, 3): Different factors per dimension
+    bin_size : float or tuple of float, optional
+        New bin lengths in environment units, rebuilt over the arena.
+        Pass exactly one of ``factor`` or ``bin_size``.
+    name : str, optional
+        Name of the new environment; defaults to this environment's name.
 
     Returns
     -------
     coarse_env : Environment
-        New environment with reduced spatial resolution.
-        Number of bins reduced by product of factors.
+        New environment with the new spatial resolution. It keeps the
+        name, units, frame and regions.
     """
 ```
 
@@ -916,46 +918,54 @@ Extract a sub-environment containing only specified bins.
 ```python
 def subset(
     self,
-    bin_indices: Union[List[int], NDArray[np.int64], Set[int]],
     *,
-    name: Optional[str] = None,
+    bins: NDArray[np.bool_] | None = None,
+    region_names: Sequence[str] | None = None,
+    polygon: shapely.Polygon | None = None,
+    invert: bool = False,
+    name: str | None = None,
 ) -> Environment:
     """
-    Create sub-environment from bin subset.
+    Create new environment containing subset of bins.
 
     Parameters
     ----------
-    bin_indices : list, array, or set of int
-        Bins to include in subset.
+    bins : NDArray[np.bool_], shape (n_bins,), optional
+        Boolean mask of bins to keep. True = keep, False = discard.
+    region_names : Sequence[str], optional
+        Keep bins whose centers lie inside these named polygon regions.
+    polygon : shapely.Polygon, optional
+        Keep bins whose centers lie inside this polygon (2D only).
+    invert : bool, default=False
+        If True, keep the complement of the selection.
     name : str, optional
-        Name for new environment.
-        If None, uses f"{original_name}_subset".
+        Name of the new environment; defaults to this environment's name.
 
     Returns
     -------
     subset_env : Environment
-        New environment containing only specified bins.
-        Bin indices are remapped (starting from 0).
+        New environment containing only the selected bins. Bin indices are
+        renumbered from 0; name, units, frame and regions are kept.
     """
 ```
 
 **Example:**
 
+<!-- docs-test: run -->
 ```python
-# Extract region of interest
-# Get bins in north arm
+# Extract region of interest: the bins within 15 cm of the north arm's center
 north_center = np.array([50.0, 75.0])
 distances = np.linalg.norm(env.bin_centers - north_center, axis=1)
-north_bins = np.where(distances < 15.0)[0]
+north_bins = distances < 15.0  # boolean mask, one entry per bin
 
 # Create subset environment
-env_north = env.subset(north_bins, name='NorthArm')
+env_north = env.subset(bins=north_bins, name="NorthArm")
 
 print(f"Original: {env.n_bins} bins")
 print(f"North arm: {env_north.n_bins} bins")
 
-# Analyze just this region
-occupancy_north = env_north.occupancy(timestamps, positions)
+# Analyze just this region: time outside the north arm is not counted
+occupancy_north = env_north.occupancy(times, positions)
 ```
 
 **Use Cases:**
@@ -1396,8 +1406,7 @@ T = env.transitions(positions, normalize=False)  # Sparse CSR format
 # T_dense = T.toarray()  # Only if env.n_bins is small (<1000)
 
 # Subset environment for region-specific analysis
-region_bins = get_region_bins(env, region_name)
-env_region = env.subset(region_bins)
+env_region = env.subset(region_names=[region_name])
 # Now all operations faster on smaller env_region
 ```
 
