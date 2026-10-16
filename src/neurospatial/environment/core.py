@@ -122,13 +122,13 @@ from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.layout._labels import LayoutType
-from neurospatial.ops.binning import TieBreakStrategy, _regions_mask
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
     _compute_divergence_operator,
 )
 from neurospatial.ops.diffusion import _diffusion_apply_rtol
 from neurospatial.ops.distance import geodesic_distance_between_points
+from neurospatial.ops.mapping import TieBreakStrategy, _regions_mask
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -4903,7 +4903,7 @@ class Environment(Generic[_C]):
         region covers the bins whose centers lie inside it. This is the same
         rule as :meth:`bins_in_region`, :meth:`region_membership`,
         ``distance_to(region=...)`` and
-        :func:`neurospatial.ops.binning.regions_to_mask`.
+        :func:`neurospatial.ops.mapping.regions_to_mask`.
 
         Parameters
         ----------
@@ -4961,7 +4961,7 @@ class Environment(Generic[_C]):
         --------
         region_membership : Bins-by-regions membership table.
         bins_in_region : Bin indices for one named region.
-        neurospatial.ops.binning.regions_to_mask : Free-function form.
+        neurospatial.ops.mapping.regions_to_mask : Free-function form.
         """
         return _regions_mask(
             regions,

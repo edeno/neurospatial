@@ -1,28 +1,28 @@
-"""Tests for neurospatial.ops.binning module."""
+"""Tests for neurospatial.ops.mapping module."""
 
 import numpy as np
 import pytest
 
 
-class TestBinningImports:
-    """Test that binning module exports are available from new location."""
+class TestMappingImports:
+    """The mapping module exports its public names."""
 
     def test_import_tie_break_strategy(self):
-        """Test TieBreakStrategy can be imported from ops.binning."""
-        from neurospatial.ops.binning import TieBreakStrategy
+        """Test TieBreakStrategy can be imported from ops.mapping."""
+        from neurospatial.ops.mapping import TieBreakStrategy
 
         assert hasattr(TieBreakStrategy, "LOWEST_INDEX")
         assert hasattr(TieBreakStrategy, "CLOSEST_CENTER")
 
     def test_import_regions_to_mask(self):
-        """Test regions_to_mask can be imported from ops.binning."""
-        from neurospatial.ops.binning import regions_to_mask
+        """Test regions_to_mask can be imported from ops.mapping."""
+        from neurospatial.ops.mapping import regions_to_mask
 
         assert callable(regions_to_mask)
 
     def test_import_resample_field(self):
-        """Test resample_field can be imported from ops.binning."""
-        from neurospatial.ops.binning import resample_field
+        """Test resample_field can be imported from ops.mapping."""
+        from neurospatial.ops.mapping import resample_field
 
         assert callable(resample_field)
 
@@ -57,7 +57,7 @@ class TestNearestBin:
 
     def test_tie_break_strategy_enum(self, grid_env):
         """Test using TieBreakStrategy enum from new location."""
-        from neurospatial.ops.binning import TieBreakStrategy
+        from neurospatial.ops.mapping import TieBreakStrategy
 
         points = np.array([[5.0, 5.0]])
         bins = grid_env.nearest_bin(points, tie_break=TieBreakStrategy.LOWEST_INDEX)
@@ -172,7 +172,7 @@ class TestMapPointsToBinsBehavior:
         from scipy.spatial import cKDTree
 
         from neurospatial import Environment
-        from neurospatial.ops.binning import _estimate_typical_bin_spacing
+        from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
         kdtree = cKDTree(regular_grid_env.bin_centers)
         spacing = _estimate_typical_bin_spacing(kdtree, regular_grid_env.bin_centers)
@@ -217,7 +217,7 @@ class TestMapPointsToBinsBehavior:
         Monkeypatch the spacing estimator to a known K; a point at 9.5*K is
         inside while a point at 10.5*K is rejected. Pins the 10x heuristic.
         """
-        import neurospatial.ops.binning as binning
+        import neurospatial.ops.mapping as mapping
         from neurospatial import Environment
 
         x = np.arange(0.0, 21.0, 1.0)
@@ -227,7 +227,7 @@ class TestMapPointsToBinsBehavior:
 
         K = 1.0
         monkeypatch.setattr(
-            binning, "_estimate_typical_bin_spacing", lambda kdtree, bc: K
+            mapping, "_estimate_typical_bin_spacing", lambda kdtree, bc: K
         )
 
         env_in = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
@@ -248,7 +248,7 @@ class TestMapPointsToBinsBehavior:
         (2, 0). lowest_index must return the lower of the two bin indices;
         closest_center returns one of the two equidistant bins.
         """
-        from neurospatial.ops.binning import TieBreakStrategy
+        from neurospatial.ops.mapping import TieBreakStrategy
 
         tie_point = np.array([[1.0, 0.0]])
 
@@ -312,7 +312,7 @@ class TestResampleFieldOutOfBounds:
         positions must instead be NaN.
         """
         from neurospatial import Environment
-        from neurospatial.ops.binning import resample_field
+        from neurospatial.ops.mapping import resample_field
 
         # Source: a small region covering only x,y in roughly [0, 20].
         src_data = np.array(
@@ -338,7 +338,7 @@ class TestResampleFieldOutOfBounds:
         assert resampled.shape == (dst_env.n_bins,)
 
         # Identify which destination bins fall outside the source coverage.
-        from neurospatial.ops.binning import TieBreakStrategy
+        from neurospatial.ops.mapping import TieBreakStrategy
 
         dst_to_src = src_env.nearest_bin(
             dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
@@ -357,7 +357,7 @@ class TestResampleFieldOutOfBounds:
     def test_identity_resample_unchanged(self):
         """Resampling onto the same environment preserves all values (no NaN)."""
         from neurospatial import Environment
-        from neurospatial.ops.binning import resample_field
+        from neurospatial.ops.mapping import resample_field
 
         data = np.array(
             [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],
@@ -403,7 +403,7 @@ class TestResampleFieldDiffuseNaN:
         (a forward diffusion matmul) and wiped out every reachable bin, leaving
         an all-NaN field.
         """
-        from neurospatial.ops.binning import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
@@ -431,7 +431,7 @@ class TestResampleFieldDiffuseNaN:
 
     def test_resample_diffuse_outside_bins_remain_nan(self):
         """Out-of-source bins are re-imposed as NaN after smoothing."""
-        from neurospatial.ops.binning import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
@@ -453,7 +453,7 @@ class TestResampleFieldDiffuseNaN:
     def test_resample_diffuse_matches_nearest_when_fully_covered(self):
         """When every dst bin is inside the source, diffuse has no NaNs."""
         from neurospatial import Environment
-        from neurospatial.ops.binning import resample_field
+        from neurospatial.ops.mapping import resample_field
 
         data = np.array(
             [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],

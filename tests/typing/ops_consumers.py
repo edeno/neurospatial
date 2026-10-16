@@ -52,7 +52,7 @@ if TYPE_CHECKING:
         WaveletBasisConsumer,
     )
     from neurospatial.ops.basis import _diffusion_generator
-    from neurospatial.ops.binning import _pull_back_nearest
+    from neurospatial.ops.mapping import _pull_back_nearest
     from neurospatial.ops.transforms import AffineND
     from neurospatial.ops.visibility import (
         ViewshedResult,

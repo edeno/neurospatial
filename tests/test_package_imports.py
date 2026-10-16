@@ -37,7 +37,7 @@ ALL_BEARING_MODULES = [
     "neurospatial.behavior.vte",
     "neurospatial.behavior.reward",
     "neurospatial.ops",
-    "neurospatial.ops.binning",
+    "neurospatial.ops.mapping",
     "neurospatial.ops.distance",
     "neurospatial.ops.normalize",
     "neurospatial.ops.smoothing",

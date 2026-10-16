@@ -6,7 +6,7 @@ that can be composed into higher-level functionality.
 
 Submodules
 ----------
-binning : Point-to-bin mapping, region masks
+mapping : Point-to-bin mapping, region masks, field resampling
 distance : Distance fields, pairwise distances
 normalize : Field normalization, clamping
 diffusion : Finite-volume heat operator and its eigenbasis apply-path
@@ -44,13 +44,6 @@ from neurospatial.ops.basis import (
     spatial_basis,
 )
 
-# Binning operations
-from neurospatial.ops.binning import (
-    TieBreakStrategy,
-    regions_to_mask,
-    resample_field,
-)
-
 # Calculus operations (gradient, divergence)
 from neurospatial.ops.calculus import (
     divergence,
@@ -83,6 +76,13 @@ from neurospatial.ops.egocentric import (
 from neurospatial.ops.graph import (
     graph_convolve,
     neighbor_reduce,
+)
+
+# Point-to-bin mapping, region masks and field resampling
+from neurospatial.ops.mapping import (
+    TieBreakStrategy,
+    regions_to_mask,
+    resample_field,
 )
 
 # Normalize operations

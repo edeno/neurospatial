@@ -216,7 +216,7 @@ def validate_simulation(
     if max_center_error is None:
         # 2 bin spacings (accounts for discretization). ``env.bin_sizes`` is a
         # per-bin volume, not a length.
-        from neurospatial.ops.binning import _typical_bin_spacing
+        from neurospatial.ops.mapping import _typical_bin_spacing
 
         max_center_error = 2.0 * _typical_bin_spacing(
             env.bin_centers, env.bin_sizes, is_linearized_track=env.is_linearized_track

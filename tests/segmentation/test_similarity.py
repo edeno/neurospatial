@@ -424,8 +424,8 @@ class TestGoalDirectedRunsEquivalence:
         """Vectorized distance_field output equals the double-loop reference."""
         from shapely.geometry import Point
 
-        from neurospatial.ops.binning import regions_to_mask
         from neurospatial.ops.distance import distance_field
+        from neurospatial.ops.mapping import regions_to_mask
 
         x = np.linspace(0, 50, 12)
         y = np.linspace(0, 50, 12)

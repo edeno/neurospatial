@@ -615,7 +615,7 @@ def _diffusion_generator(
     from scipy import sparse
     from scipy.spatial import cKDTree
 
-    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
     degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(cKDTree(bin_centers), bin_centers)

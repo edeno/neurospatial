@@ -7,8 +7,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment import Environment
-from neurospatial.ops.binning import _typical_bin_spacing
 from neurospatial.ops.distance import distance_field
+from neurospatial.ops.mapping import _typical_bin_spacing
 
 
 class PlaceCellModel:

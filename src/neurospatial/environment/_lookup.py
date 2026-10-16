@@ -10,7 +10,7 @@ from scipy.spatial import cKDTree
 
 from neurospatial.environment._cache import KDTREE, AnalysisCache
 from neurospatial.geometry._binning import Binning
-from neurospatial.ops.binning import (
+from neurospatial.ops.mapping import (
     TieBreakStrategy,
     _nearest_bin_query,
     _validate_nearest_options,

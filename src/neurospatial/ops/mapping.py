@@ -1,5 +1,4 @@
-"""binning.py - Point-to-bin mapping utilities for neurospatial.
-================================================================
+"""Point-to-bin mapping utilities for neurospatial.
 
 This module provides high-performance spatial query utilities including:
 - Batch mapping of points to bins with KD-tree caching
@@ -53,7 +52,7 @@ class TieBreakStrategy(Enum):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.binning import TieBreakStrategy
+    >>> from neurospatial.ops.mapping import TieBreakStrategy
     >>> env = Environment.from_samples(np.zeros((1, 2)), bin_size=1.0)
     >>> # Use enum for autocomplete and type safety
     >>> env.nearest_bin(
@@ -333,7 +332,7 @@ def regions_to_mask(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.binning import regions_to_mask
+    >>> from neurospatial.ops.mapping import regions_to_mask
     >>> from neurospatial.regions import Regions
     >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
     >>> env = Environment.from_samples(data, bin_size=2.0)
@@ -533,7 +532,7 @@ def resample_field(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.binning import resample_field
+    >>> from neurospatial.ops.mapping import resample_field
     >>> # Source: coarse resolution
     >>> src_data = np.array([[i, j] for i in range(21) for j in range(21)])
     >>> src_env = Environment.from_samples(src_data, bin_size=4.0)

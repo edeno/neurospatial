@@ -28,6 +28,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   and import `BinSequenceWithRuns` from `neurospatial.environment`. The public
   arena classes in `neurospatial.arena` are unchanged.
 
+- `neurospatial.ops.binning` is renamed `neurospatial.ops.mapping`, so it is
+  no longer confused with `neurospatial.binning`, which holds the `Binning`
+  records. It maps points to bins, regions to bin masks and fields between
+  environments. Import `regions_to_mask`, `resample_field` and
+  `TieBreakStrategy` from `neurospatial.ops` or `neurospatial.ops.mapping`.
+
 - `Environment` is an immutable value. Two environments are equal only when
   they are the same object. `env == "name"` used to compare the environment's
   name; it now returns `False` without an error, so a check such as
@@ -189,7 +195,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `include_boundary=False` to count only centers strictly inside. The rule is
   shared by `bins_in_region`, `region_mask`, `region_membership`,
   `distance_to` with a region name, `subset(region_names=...)`,
-  `subset(polygon=...)` and `neurospatial.ops.binning.regions_to_mask`, so
+  `subset(polygon=...)` and `neurospatial.ops.mapping.regions_to_mask`, so
   they agree on every layout. Before, they disagreed:
   - `region_membership()` and `regions_to_mask()` gave a point region no bins
     (`regions_to_mask` also warned). They now give the bin that contains the

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     )
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
-    from neurospatial.ops.binning import TieBreakStrategy
+    from neurospatial.ops.mapping import TieBreakStrategy
     from neurospatial.regions import Regions
 
 

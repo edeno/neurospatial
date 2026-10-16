@@ -23,8 +23,8 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial import Environment
 
-from neurospatial.ops.binning import regions_to_mask
 from neurospatial.ops.distance import distance_field
+from neurospatial.ops.mapping import regions_to_mask
 
 __all__ = [
     "goal_reward_field",

@@ -15,7 +15,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _binned
-from neurospatial.ops.binning import TieBreakStrategy, resample_field
+from neurospatial.ops.mapping import TieBreakStrategy, resample_field
 from neurospatial.ops.smoothing import apply_kernel
 
 

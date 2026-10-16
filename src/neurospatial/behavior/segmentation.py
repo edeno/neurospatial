@@ -469,7 +469,7 @@ def _detect_region_crossings_contiguous(
 ) -> list[Crossing]:
     """Detect crossings within one recording, after public input validation."""
     # Get bins in region using existing regions_to_mask functionality
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     region_mask = regions_to_mask(env, [region_name])
 
@@ -711,7 +711,7 @@ def _detect_runs_between_regions_contiguous(
 ) -> list[Run]:
     """Analyze one recording after the public input validation."""
     # Get region masks
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     source_mask = regions_to_mask(env, [source])
     target_mask = regions_to_mask(env, [target])
@@ -2131,7 +2131,7 @@ def _segment_trials_contiguous(
 ) -> list[Trial]:
     """Analyze one recording after the public input validation."""
     # Get region masks using existing functionality
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     start_mask = regions_to_mask(env, [start_region])
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
@@ -2638,8 +2638,8 @@ def detect_goal_directed_runs(
     position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
 
-    from neurospatial.ops.binning import regions_to_mask
     from neurospatial.ops.distance import distance_field
+    from neurospatial.ops.mapping import regions_to_mask
 
     goal_bin_indices = np.flatnonzero(regions_to_mask(env, [goal_region]))
     if len(goal_bin_indices) == 0:

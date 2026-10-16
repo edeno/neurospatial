@@ -73,6 +73,20 @@ assert isinstance(runs, BinSequenceWithRuns)
 `neurospatial.arena` still provides the public arena classes (`Arena`,
 `OpenArena`, `MaskArena`, `TrackArena`, `UnknownArena`, `EgocentricSurround`).
 
+## `neurospatial.ops.binning` is now `neurospatial.ops.mapping`
+
+`neurospatial.binning` holds the `Binning` records that describe an
+environment's bins. The point-to-bin utilities had a confusingly similar
+name, so `neurospatial.ops.binning` is renamed `neurospatial.ops.mapping`.
+The functions are unchanged:
+
+<!-- docs-test: run -->
+```python
+# Before: from neurospatial.ops.binning import regions_to_mask
+from neurospatial.ops.mapping import regions_to_mask, resample_field
+from neurospatial.ops import TieBreakStrategy  # also exported from ops
+```
+
 ## Environments are immutable values
 
 An `Environment` cannot be changed after it is built, so it now behaves like a
@@ -135,7 +149,7 @@ in one cache per environment.
 
 **`clear_cache()` takes no arguments.** It releases every cached analysis. The
 `kdtree=`, `kernels=` and `cached_properties=` options are removed, together
-with `neurospatial.ops.binning.clear_kdtree_cache`. Clearing only frees
+with `neurospatial.ops.mapping.clear_kdtree_cache`. Clearing only frees
 memory: the next analysis computes what it needs again and gives the same
 result.
 

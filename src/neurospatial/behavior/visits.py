@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import as_intervals, intervals_contain
-from neurospatial.ops.binning import regions_to_mask
+from neurospatial.ops.mapping import regions_to_mask
 
 if TYPE_CHECKING:
     from neurospatial import Environment

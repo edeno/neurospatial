@@ -371,7 +371,7 @@ def test_resample_diffuse_numerator_not_floored_signed():
     """resample_field(method='diffuse') carries a SIGNED intensive field: its
     numerator is not floored, so negative lobes survive on covered bins (a
     separate code copy from _binned_gate -- must be covered independently)."""
-    from neurospatial.ops.binning import resample_field
+    from neurospatial.ops.mapping import resample_field
 
     src_env, _ = build_grid_2d_split()
     dst_env, _ = build_grid_2d_split()

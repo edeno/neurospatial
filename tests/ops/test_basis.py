@@ -40,7 +40,7 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     from scipy.sparse.linalg import expm_multiply
     from scipy.spatial import cKDTree
 
-    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
     weights, volumes, _, _ = fv_env._diffusion_geometry
     spacing = _estimate_typical_bin_spacing(

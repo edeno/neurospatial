@@ -10,7 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.binning import _typical_bin_spacing
+from neurospatial.ops.mapping import _typical_bin_spacing
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,
