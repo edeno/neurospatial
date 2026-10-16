@@ -92,16 +92,30 @@ _BY_KEY: dict[str, LayoutType] = {
 def find_layout_type(name: object) -> LayoutType | None:
     """Return the layout that ``name`` spells, or None.
 
+    The same match is used by ``create_layout``, the ``layout=`` option of
+    the sample factories and the readers of saved environments.
+
     Parameters
     ----------
     name : object
         A ``LayoutType`` or a string; the match ignores case and characters
-        that are not letters or digits.
+        that are not letters or digits, and accepts the short names
+        ``"grid"``, ``"polygon"`` and ``"mesh"``.
 
     Returns
     -------
     LayoutType or None
         The named layout, or None when ``name`` names none.
+
+    Examples
+    --------
+    >>> from neurospatial.layout import LayoutType, find_layout_type
+    >>> find_layout_type("regular-grid") is LayoutType.REGULAR_GRID
+    True
+    >>> find_layout_type("grid").value
+    'RegularGrid'
+    >>> find_layout_type("mask") is None  # a masked grid or an image mask
+    True
     """
     if isinstance(name, LayoutType):
         return name

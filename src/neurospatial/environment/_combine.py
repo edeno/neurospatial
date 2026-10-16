@@ -12,7 +12,7 @@ from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import _CombinedArena
 from neurospatial.geometry._combine_geometry import BridgeKey, combine_binnings
 from neurospatial.geometry._coordinates import require_cartesian
-from neurospatial.layout._labels import LayoutType
+from neurospatial.layout import LayoutType
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:

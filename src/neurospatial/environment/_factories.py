@@ -21,7 +21,7 @@ from neurospatial.geometry._arena import OpenArena, TrackArena
 from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._ownership import own_arena
-from neurospatial.layout._labels import LayoutType, canonical_label, find_layout_type
+from neurospatial.layout import LayoutType, find_layout_type
 from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
@@ -68,7 +68,9 @@ def _from_bins(
     """Implement Environment.from_bins using explicit construction inputs."""
     snapshot = prepare_bins(binning)
     # A label naming a LayoutType is spelled canonically; others are kept.
-    snapshot = replace(snapshot, kind=canonical_label(snapshot.kind))
+    member = find_layout_type(snapshot.kind)
+    if member is not None:
+        snapshot = replace(snapshot, kind=member.value)
     if arena is None and snapshot.outline is not None:
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
     result = _publication.publish(

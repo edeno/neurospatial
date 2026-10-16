@@ -1,4 +1,4 @@
-from ._labels import LayoutType
+from ._labels import LayoutType, find_layout_type
 from .base import LayoutEngine
 from .engines.graph import GraphLayout
 from .engines.hexagonal import HexagonalLayout
@@ -25,6 +25,7 @@ __all__ = [
     "ShapelyPolygonLayout",
     "TriangularMeshLayout",
     "create_layout",
+    "find_layout_type",
     "get_centers",
     "get_layout_parameters",
     "get_n_bins",

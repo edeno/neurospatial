@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.geometry._arena import Arena
-    from neurospatial.layout._labels import LayoutType
+    from neurospatial.layout import LayoutType
     from neurospatial.regions import Regions
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"

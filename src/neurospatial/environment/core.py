@@ -121,7 +121,7 @@ from neurospatial.geometry._coordinates import (
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.geometry._region_bins import region_bin_mask
-from neurospatial.layout._labels import LayoutType
+from neurospatial.layout import LayoutType
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
     _compute_divergence_operator,

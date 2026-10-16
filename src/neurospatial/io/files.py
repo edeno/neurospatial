@@ -627,7 +627,7 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
         TransformedLocator,
     )
     from neurospatial.geometry._polygon import ClippedLocator
-    from neurospatial.layout._labels import LayoutType, canonical_label
+    from neurospatial.layout import LayoutType, find_layout_type
 
     if polar:
         return LayoutType.POLAR.value
@@ -635,7 +635,8 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
     while kind.endswith(_TRANSFORMED):
         kind = kind.removesuffix(_TRANSFORMED)
     if kind not in ("subset", "PolygonCells"):
-        return canonical_label(kind)
+        member = find_layout_type(kind)
+        return kind if member is None else member.value
     locator = binning.locator
     while isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
         locator = locator.base
@@ -686,7 +687,7 @@ def _saved_history(
         If ``layout_parameters`` is not a dictionary or ``derivations`` is not
         a list of names.
     """
-    from neurospatial.layout._labels import LayoutType
+    from neurospatial.layout import LayoutType
     from neurospatial.layout.base import build_choices
 
     params = metadata["layout_parameters"]
