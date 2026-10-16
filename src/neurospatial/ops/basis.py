@@ -103,6 +103,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    import networkx as nx
     from scipy import sparse
 
     from neurospatial.ops._protocols import (
@@ -220,13 +221,15 @@ def select_basis_centers(
                 "functions)."
             ),
         )
-        return _select_centers_kmeans(env, n_centers, generator)
+        return _select_centers_kmeans(env.bin_centers, n_centers, generator)
     elif method == "farthest_point":
-        return _select_centers_farthest_point(env, n_centers, generator)
+        return _select_centers_farthest_point(
+            env.connectivity, env.n_bins, n_centers, generator
+        )
     elif method == "random":
-        return _select_centers_random(env, n_centers, generator)
+        return _select_centers_random(env.n_bins, n_centers, generator)
     elif method == "grid":
-        return _select_centers_grid(env, n_centers)
+        return _select_centers_grid()
     else:
         raise ValueError(
             f"Unknown method: {method!r}. "
@@ -235,11 +238,11 @@ def select_basis_centers(
 
 
 def _select_centers_kmeans(
-    env: BasisCentersConsumer,
+    bin_centers: NDArray[np.float64],
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
-    """Select centers using k-means clustering on bin_centers."""
+    """Select centers by k-means on ``bin_centers``, shape (n_bins, n_dims)."""
     from scipy.spatial import cKDTree
     from sklearn.cluster import KMeans
 
@@ -249,27 +252,28 @@ def _select_centers_kmeans(
         random_state=int(rng.integers(0, 2**31)),
         n_init=10,
     )
-    kmeans.fit(env.bin_centers)
+    kmeans.fit(bin_centers)
 
     # Find nearest bin to each cluster centroid
-    tree = cKDTree(env.bin_centers)
+    tree = cKDTree(bin_centers)
     _, centers = tree.query(kmeans.cluster_centers_)
 
     return np.asarray(centers, dtype=np.int_)
 
 
 def _select_centers_random(
-    env: BasisCentersConsumer,
+    n_bins: int,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
     """Select centers uniformly at random."""
-    centers = rng.choice(env.n_bins, size=n_centers, replace=False)
+    centers = rng.choice(n_bins, size=n_centers, replace=False)
     return np.asarray(centers, dtype=np.int_)
 
 
 def _select_centers_farthest_point(
-    env: BasisCentersConsumer,
+    connectivity: nx.Graph,
+    n_bins: int,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
@@ -278,12 +282,10 @@ def _select_centers_farthest_point(
     from scipy.sparse.csgraph import shortest_path
 
     # Get adjacency matrix for shortest path computation
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, weight="distance", format="csr"
-    )
+    adjacency = nx.to_scipy_sparse_array(connectivity, weight="distance", format="csr")
 
     # Start with a random point
-    centers = [int(rng.integers(0, env.n_bins))]
+    centers = [int(rng.integers(0, n_bins))]
 
     # Compute distances from first center
     distances_from_centers = shortest_path(
@@ -313,10 +315,7 @@ def _select_centers_farthest_point(
     return np.asarray(centers, dtype=np.int_)
 
 
-def _select_centers_grid(
-    env: BasisCentersConsumer,
-    n_centers: int,
-) -> NDArray[np.int_]:
+def _select_centers_grid() -> NDArray[np.int_]:
     """Select centers using regular grid subsampling."""
     # For now, raise NotImplementedError - grid method requires
     # knowing the grid structure which not all environments have
