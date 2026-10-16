@@ -15,6 +15,7 @@ from environment_helpers import (
     built_from,
     face_graph,
     native_layout,
+    publish_binning,
     publish_environment,
 )
 
@@ -348,4 +349,27 @@ def test_require_rectilinear_message_unchanged() -> None:
         "interpolate(mode='linear') needs a grid of axis-aligned rectangular cells; this environment's Hexagonal layout does not have one.\n"
         "Why: it reads the cell edges along each axis, which grids built by from_samples, from_grid_mask, from_pixel_mask and from_polygon provide.\n"
         "Fix: use mode='nearest', which works on every layout"
+    )
+
+
+def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 10.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 2,
+    )
+    assert env.arena.circular
+    with pytest.raises(ValueError, match="circular=True") as error:
+        publish_binning(
+            env._binning,
+            layout_type=env.layout_type,
+            category=env._provenance.category,
+            coordinates=EgocentricPolarSystem(False),
+            arena=env.arena,
+        )
+    assert "Fix: pass coordinates matching the arena's circular flag" in str(
+        error.value
     )

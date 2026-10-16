@@ -561,10 +561,9 @@ def _restore_environment(
                     raise ValueError(f"stored {key} differs from the binning")
         coordinates: CartesianSystem | EgocentricPolarSystem = CartesianSystem()
         if coordinate_kind == "polar":
-            # The arena records whether the angle wraps; publish refuses a
-            # polar record whose arena is not an EgocentricSurround.
-            circular = not isinstance(arena, EgocentricSurround) or arena.circular
-            coordinates = EgocentricPolarSystem(circular)
+            coordinates = EgocentricPolarSystem(
+                arena.circular if isinstance(arena, EgocentricSurround) else True
+            )
         env = publish(
             Environment,
             binning,

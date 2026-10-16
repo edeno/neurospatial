@@ -328,8 +328,14 @@ def _validate_coordinates(
         )
     if arena.circular != coordinates.circular:
         raise ValueError(
-            f"A polar environment's arena has circular={arena.circular}, but its "
-            f"coordinates have circular={coordinates.circular}; they must agree."
+            _format_error(
+                f"A polar environment's arena has circular={arena.circular}, but "
+                f"its coordinates have circular={coordinates.circular}.",
+                why="Why: both describe whether the angle wraps around, which "
+                "decides the seam neighbors and angular distances.",
+                fix="pass coordinates matching the arena's circular flag, e.g. "
+                "EgocentricPolarSystem(arena.circular)",
+            )
         )
 
 
@@ -379,6 +385,8 @@ def publish(
             "coordinates must be a CartesianSystem or EgocentricPolarSystem."
         )
     polar = isinstance(coordinates, EgocentricPolarSystem)
+    # Whether the angular axis wraps; False for Cartesian coordinates.
+    circular = isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
     binning = own_binning(binning)
     # The published binning carries the environment's ranges, so the two
     # never disagree after a derivation or a read-back.
@@ -389,12 +397,7 @@ def publish(
         "polar" if polar else "cartesian",
     )
     if arena is None:
-        arena = infer_arena(
-            binning,
-            polar=polar,
-            circular=isinstance(coordinates, EgocentricPolarSystem)
-            and coordinates.circular,
-        )
+        arena = infer_arena(binning, polar=polar, circular=circular)
     arena = own_arena(arena)
     _validate_coordinates(coordinates, arena)
     validate_arena(arena, binning, polar=polar)
