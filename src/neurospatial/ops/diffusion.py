@@ -81,7 +81,7 @@ _HEAT_KERNEL_RANK_START = 32
 _FULL_BASIS_APPLY_RTOL = 1e-13
 
 # MRF penalty-basis resolver constant (consumed by ``select_live_basis`` and the
-# ``Environment._mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
+# ``Environment.get_mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
 # cap ``R`` used when ``rank is None``. It lives here (not in the encoding tier)
 # because the pure selector below returns ``MRFBasis`` and must not import from a
 # higher tier; the encoding-tier fit re-imports it rather than redefining it. The
@@ -93,7 +93,7 @@ _DEFAULT_MAX_RANK = 250
 class MRFBasis(NamedTuple):
     """Reduced-rank penalty basis for the penalized-Poisson GAM.
 
-    Produced by :func:`select_live_basis` (and ``Environment._mrf_basis``);
+    Produced by :func:`select_live_basis` (and ``Environment.get_mrf_basis``);
     consumed by the penalized-Poisson fit. ``B`` and ``d`` are float64 in
     **live-bin order**; ``live_bins`` (np.intp) maps that order back to
     ``env.n_bins`` order. The column layout is fixed: ``B[:, :n_live_components]``
@@ -734,7 +734,7 @@ def select_live_basis(
             f"select_live_basis needs {n_fill} fill mode(s) but only "
             f"{fill_idx.size} non-null live mode(s) are present in the "
             f"{Q.shape[1]}-mode eigenbasis. Grow the eigenbasis to full rank "
-            "before selecting (Environment._mrf_basis does this)."
+            "before selecting (Environment.get_mrf_basis does this)."
         )
     d_fill = Lam[fill_idx]
     # A structurally non-null fill must carry a positive penalty weight. A

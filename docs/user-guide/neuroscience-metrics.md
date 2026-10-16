@@ -322,8 +322,19 @@ not establish coordinated temporal activity or membership in a cell assembly.
 
 ### Border Score
 
-The border score quantifies how strongly a cell's firing field is aligned with environmental boundaries (walls). Implements the algorithm from Solstad et al. (2008), adapted for arbitrary graph-based environments:
+The border score quantifies how strongly a cell's firing field is aligned with environmental boundaries (walls). Implements the algorithm from Solstad et al. (2008), adapted for arbitrary graph-based environments.
 
+Which boundary counts as a wall is a scientific choice. By default
+(`boundary_source="physical"`), the score uses measured walls: the arena's
+declared footprint and any internal walls. An environment built from tracked
+positions (`Environment.from_samples`) has no measured walls, so the default
+raises and asks for that choice. Either build the environment from the
+measured arena outline (`Environment.from_polygon(outline, bin_size)`), or
+pass `boundary_source="analysis"` to score against the edges of the visited
+bins, as in the examples below. See
+[Choose physical walls or analysis boundaries](environments.md#choose-physical-walls-or-analysis-boundaries).
+
+<!-- docs-test: run -->
 ```python
 from neurospatial.encoding import border_score
 from neurospatial.encoding import compute_spatial_rate
@@ -331,17 +342,18 @@ from neurospatial.encoding import compute_spatial_rate
 # Compute firing rate map
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
-# Compute border score
+# Compute border score against the edges of the visited bins
 score = border_score(
     env,
     firing_rate,
     threshold=0.3,    # 30% of peak (Solstad et al. standard)
-    min_area=200.0    # Minimum field area (cm²)
+    min_area=200.0,   # Minimum field area (cm²)
+    boundary_source="analysis",
 )
-# Returns: score in [-1, 1]
+# Returns: score in [-1, 1], or NaN when no field reaches min_area
 ```
 
-**Algorithm (adapted for irregular graphs):**
+**Algorithm with `boundary_source="analysis"` (adapted for irregular graphs):**
 
 1. Segment field at threshold: bins where `firing_rate >= threshold × peak_rate`
 2. Compute boundary coverage (cM): fraction of boundary bins in field
@@ -367,7 +379,7 @@ this cutoff alone is insufficient.
 
 The original Solstad et al. (2008) paper used rectangular arenas with 4 discrete walls. This implementation generalizes to arbitrary graph-based environments:
 
-- **Boundary definition**: Uses `env.boundary_bins` (graph-based boundary detection) instead of discrete walls
+- **Boundary definition**: Analysis mode uses `env.boundary_bins` (graph-based boundary detection) instead of discrete walls; physical mode uses the declared wall geometry
 - **Distance metric**: Uses graph geodesic distances instead of Euclidean distances
 - **Coverage**: Computed over all boundary bins (not per-wall)
 - **Normalization**: Distance normalized by environment extent (bounding box diagonal)
@@ -381,17 +393,20 @@ This adaptation is appropriate for irregular layouts, mazes, and complex environ
 
 **Example: Checking a synthetic boundary field**
 
+<!-- docs-test: run -->
 ```python
 # Construct an idealized boundary-associated field:
 # - High firing along one or more walls
 # - Low firing in center
+
+from neurospatial.encoding import border_score
 
 # Generate the synthetic field
 firing_rate = np.zeros(env.n_bins)
 boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
 
-score = border_score(env, firing_rate)
+score = border_score(env, firing_rate, boundary_source="analysis")
 print(f"Border score: {score:.3f}")  # Should be > 0.5
 
 # Visualize
@@ -764,6 +779,7 @@ for i, neuron_fields in enumerate(result.place_fields):
 
 ### Border Cell Detection
 
+<!-- docs-test: run -->
 ```python
 from neurospatial.encoding import border_score
 from neurospatial.encoding import compute_spatial_rate
@@ -771,8 +787,12 @@ from neurospatial.encoding import compute_spatial_rate
 # Compute firing rate
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
-# Compute border score
-score = border_score(env, firing_rate, threshold=0.3, min_area=200.0)
+# Compute border score. This environment was built from tracked positions,
+# so score against the edges of the visited bins; with a measured arena
+# outline (Environment.from_polygon), omit boundary_source to use its walls.
+score = border_score(
+    env, firing_rate, threshold=0.3, min_area=200.0, boundary_source="analysis"
+)
 
 # Screen for a boundary-associated candidate; not a calibrated cell verdict
 is_border_candidate = score >= 0.5  # Illustrative cutoff

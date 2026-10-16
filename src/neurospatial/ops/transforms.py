@@ -1166,7 +1166,10 @@ def estimate_transform(
         - "rigid": Rotation + translation (preserves distances and angles)
         - "similarity": Rotation + uniform scaling + translation
           (preserves angles, scales distances uniformly)
-        - "affine": Full affine (rotation, scaling, shear, translation)
+        - "affine": Full affine (rotation, scaling, shear, translation).
+          Fitted to noisy landmarks, it absorbs the noise as a small stretch
+          or shear, so smoothing on an environment transformed by it refuses.
+          Use "similarity" or "rigid" to align an arena whose shape is known.
 
     Returns
     -------

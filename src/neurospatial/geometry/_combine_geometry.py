@@ -8,6 +8,7 @@ from itertools import pairwise, product
 from typing import Any
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
@@ -636,6 +637,78 @@ def segment_enters_component(
     return False
 
 
+def _bound_candidates(
+    left: list[_Piece], right: list[_Piece]
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """Return piece pairs whose bounds are not separated along any axis.
+
+    Parameters
+    ----------
+    left, right : list of _Piece
+        Pieces of two components with bounds of shape ``(n_dims,)``.
+
+    Returns
+    -------
+    left_index, right_index : NDArray[np.intp], shape (n_candidates,)
+        Pairs sorted by left index, then right index. A pair is excluded
+        exactly when ``_overlap`` would reject it by its bounds alone.
+    """
+    if not left or not right:
+        empty = np.empty(0, dtype=np.intp)
+        return empty, empty
+    left_low = np.array([piece.low for piece in left], dtype=np.float64)
+    left_high = np.array([piece.high for piece in left], dtype=np.float64)
+    right_low = np.array([piece.low for piece in right], dtype=np.float64)
+    right_high = np.array([piece.high for piece in right], dtype=np.float64)
+
+    def envelopes(low: NDArray[np.float64], high: NDArray[np.float64]) -> Any:
+        # Closed rectangles over the first two axes enclose every pair whose
+        # bounds intersect strictly on all axes.
+        if low.shape[1] == 1:
+            low = np.column_stack([low, np.zeros(len(low))])
+            high = np.column_stack([high, np.ones(len(high))])
+        return shapely.box(low[:, 0], low[:, 1], high[:, 0], high[:, 1])
+
+    # The tree indexes finite rectangles only. Pieces with nonfinite bounds
+    # are paired with every other piece so the exact bound test decides them.
+    left_finite = np.isfinite(left_low).all(axis=1) & np.isfinite(left_high).all(axis=1)
+    right_finite = np.isfinite(right_low).all(axis=1) & np.isfinite(right_high).all(
+        axis=1
+    )
+    left_rows, right_rows = np.flatnonzero(left_finite), np.flatnonzero(right_finite)
+    query, tree_index = shapely.STRtree(
+        envelopes(right_low[right_rows], right_high[right_rows])
+    ).query(envelopes(left_low[left_rows], left_high[left_rows]))
+    every_right = np.arange(len(right))
+    unbounded_left = np.flatnonzero(~left_finite)
+    unbounded_right = np.flatnonzero(~right_finite)
+    left_index = np.concatenate(
+        [
+            left_rows[query],
+            np.repeat(unbounded_left, len(right)),
+            np.repeat(left_rows, len(unbounded_right)),
+        ]
+    )
+    right_index = np.concatenate(
+        [
+            right_rows[tree_index],
+            np.tile(every_right, len(unbounded_left)),
+            np.tile(unbounded_right, len(left_rows)),
+        ]
+    )
+    flat = np.unique(left_index * len(right) + right_index)
+    left_index, right_index = np.divmod(flat, len(right))
+    separated = np.any(
+        np.minimum(left_high[left_index], right_high[right_index])
+        <= np.maximum(left_low[left_index], right_low[right_index]),
+        axis=1,
+    )
+    return (
+        left_index[~separated].astype(np.intp),
+        right_index[~separated].astype(np.intp),
+    )
+
+
 def certify_components(
     children: tuple[Binning, ...], arenas: tuple[Arena, ...], keys: tuple[str, ...]
 ) -> None:
@@ -651,7 +724,12 @@ def certify_components(
                 continue
             try:
                 left, right = _pieces(first, arenas[i]), _pieces(second, arenas[j])
-                if any(_overlap(a, b) for a in left for b in right):
+                # Pairs are tested in the same order as a full scan, so the
+                # first overlap or uncertain contact reported is unchanged.
+                if any(
+                    _overlap(left[a], right[b])
+                    for a, b in zip(*_bound_candidates(left, right), strict=True)
+                ):
                     raise ValueError(
                         "Overlapping cells or intersecting support bounds; disjoint lookup support cannot be certified. Restrict or separate the components."
                     )

@@ -2,8 +2,11 @@
 
 import copy
 import pickle
+import re
+import warnings
 from dataclasses import replace
 
+import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import LineString, box
@@ -32,6 +35,80 @@ def test_rebin_new_resolution_restores_arena_after_analysis_crop():
     np.testing.assert_array_equal(
         coarse.rebin(bin_size=1).bin_centers, grid().bin_centers
     )
+
+
+def test_rebin_reports_original_area_left_without_a_new_bin():
+    # 4-unit cells over a 6-unit arena: only the cell centered at (2, 2) lies
+    # strictly inside, so 20 of the 36 original bins lose their bin.
+    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    with pytest.warns(UserWarning, match="without a new bin") as record:
+        coarse = env.rebin(bin_size=4.0)
+    lost = coarse.bin_at(env.bin_centers) < 0
+    assert np.count_nonzero(lost) == 20
+    (message,) = [str(item.message) for item in record]
+    assert re.search(r"20 of 36 original bins \(55\.6% of their area\)", message)
+    assert "divisor" in message and "-1" in message
+
+
+@pytest.mark.parametrize("size", [1.0, 2.0, 3.0, 0.5])
+def test_rebin_covering_the_arena_does_not_warn(size):
+    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        coarse = env.rebin(bin_size=size)
+    assert np.all(coarse.bin_at(env.bin_centers) >= 0)
+    assert coarse.bin_sizes.sum() == pytest.approx(36.0)
+
+
+def _u_maze():
+    """Fine U-maze: a 2-wide barrier separates two arms joined below y = 5."""
+    footprint = box(0, 0, 20, 20).difference(box(9, 5, 11, 20))
+    return Environment.from_polygon(footprint, 1.0, connect_diagonal_neighbors=False)
+
+
+def _arm_to_arm_path(env):
+    """Shortest navigation path between the tops of the two arms."""
+    start, end = env.bin_at(np.array([[5.5, 18.5], [14.5, 18.5]]))
+    return nx.shortest_path_length(env.connectivity, start, end, weight="distance")
+
+
+@pytest.mark.parametrize(
+    "rebin",
+    [lambda env: env.rebin(bin_size=5.0), lambda env: env.rebin(5)],
+    ids=["bin_size", "factor"],
+)
+def test_rebin_reports_connections_across_a_barrier_in_the_outline(rebin):
+    # 5-unit cells on both sides of the 2-wide barrier have centers inside the
+    # arms, so their grid connection jumps the barrier: the path between the
+    # arm tops shrinks from 37 to 5. The warning names the crossing.
+    fine = _u_maze()
+    assert _arm_to_arm_path(fine) == pytest.approx(37.0)
+    with pytest.warns(UserWarning, match="only outside the arena") as record:
+        coarse = rebin(fine)
+    assert _arm_to_arm_path(coarse) == pytest.approx(5.0)
+    (message,) = [
+        str(item.message)
+        for item in record
+        if "only outside the arena" in str(item.message)
+    ]
+    # Count independently: neighbors whose shared face lies in the barrier.
+    domain = coarse.arena.polygonal_domain()
+    half = coarse.bin_sizes[0] ** 0.5 / 2
+    crossing = 0
+    for u, v in coarse.connectivity.edges:
+        a, b = (box(*(c - half), *(c + half)) for c in coarse.bin_centers[[u, v]])
+        face = a.boundary.intersection(b.boundary)
+        crossing += face.length > 0 and face.intersection(domain).length == 0
+    assert crossing > 0
+    assert re.search(rf"\b{crossing} connections\b", message)
+    assert "walls" in message
+
+
+def test_rebin_within_the_arms_does_not_report_crossings():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        coarse = _u_maze().rebin(bin_size=0.5)
+    assert _arm_to_arm_path(coarse) > 36.0
 
 
 @pytest.mark.parametrize(

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 import numpy as np
 import shapely
 from numpy.typing import NDArray
-from scipy.spatial import Delaunay, cKDTree
+from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
 from neurospatial.geometry._hex_lookup import _points_to_hex_bin_ind
@@ -54,7 +54,7 @@ class _LocatorState:
     def __getstate__(self) -> dict[str, Any]:
         state = vars(self).copy()
         state.pop("_tree", None)
-        state.pop("_delaunay", None)
+        state.pop("_triangle_lookup", None)
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -263,14 +263,181 @@ class HexLocator(_LocatorState):
         return indices
 
 
-@dataclass(frozen=True, eq=False)
-class MeshLocator(_LocatorState):
-    """Locate points in a fixed triangulation clipped to a polygon.
+# Barycentric tolerance of scipy's Delaunay.find_simplex: a point belongs to a
+# triangle when every barycentric coordinate lies in [-eps, 1 + eps].
+_BARYCENTRIC_EPS = 100 * np.finfo(np.float64).eps
+# scipy treats a simplex whose transform has reciprocal condition number below
+# this as degenerate and never returns it; Qhull emits such zero-area slivers
+# between nearly collinear boundary samples.
+_DEGENERATE_RCOND = 1000 * np.finfo(np.float64).eps
+# Overlap depth, relative to triangle size, accepted as coordinate rounding.
+_OVERLAP_RTOL = 1e-9
+# Query points per batch of candidate-triangle tests.
+_QUERY_CHUNK = 65_536
+
+
+class _TriangleIndex(NamedTuple):
+    """Bounding-box tree and barycentric transforms of the locatable triangles."""
+
+    tree: shapely.STRtree
+    triangles: NDArray[np.intp]
+    inverse: NDArray[np.float64]
+    origin: NDArray[np.float64]
+
+
+def _separated(
+    triangles: NDArray[np.float64],
+    others: NDArray[np.float64],
+    depth: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Test whether an edge line of each triangle separates it from another.
+
+    Parameters
+    ----------
+    triangles, others : ndarray of float64, shape (n_pairs, 3, 2)
+        Counterclockwise triangle vertices, paired row by row.
+    depth : ndarray of float64, shape (n_pairs,)
+        Distance ``others`` may reach inside an edge and still count as outside.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_pairs,)
+        True where every vertex of ``others`` lies on or outside one edge of
+        ``triangles``. Two convex polygons have disjoint interiors exactly when
+        an edge of one of them separates them in this way.
+    """
+    separated = np.zeros(len(triangles), dtype=bool)
+    for start in range(3):
+        origin = triangles[:, start]
+        edge = triangles[:, (start + 1) % 3] - origin
+        offset = others - origin[:, None, :]
+        # Twice the signed area: |edge| times the distance left of the edge.
+        cross = edge[:, None, 0] * offset[..., 1] - edge[:, None, 1] * offset[..., 0]
+        limit = depth * np.hypot(edge[:, 0], edge[:, 1])
+        separated |= np.all(cross <= limit[:, None], axis=1)
+    return separated
+
+
+def _triangle_index(
+    points: NDArray[np.float64], simplices: NDArray[np.intp]
+) -> _TriangleIndex:
+    """Validate stored triangles and index them for point lookup.
 
     Parameters
     ----------
     points : ndarray of float64, shape (n_points, 2)
-        Coordinates from which the Delaunay triangulation was built.
+        Triangle vertex coordinates.
+    simplices : ndarray of intp, shape (n_simplices, 3)
+        Vertex indices of each stored triangle.
+
+    Returns
+    -------
+    _TriangleIndex
+        Lookup structures for the non-degenerate triangles, keyed by their
+        stored triangle numbers.
+
+    Raises
+    ------
+    ValueError
+        If the triangles do not form a valid triangulation of the points:
+        malformed arrays, out-of-range or repeated vertex indices, or
+        overlapping triangles.
+    """
+    if points.ndim != 2 or points.shape[1] != 2:
+        raise ValueError(
+            f"Mesh points must have shape (n_points, 2), got {points.shape}."
+        )
+    if not np.all(np.isfinite(points)):
+        raise ValueError("Mesh points must be finite.")
+    if simplices.ndim != 2 or simplices.shape[1] != 3:
+        raise ValueError(
+            f"Mesh simplices must have shape (n_simplices, 3), got {simplices.shape}."
+        )
+    out_of_range = np.flatnonzero(
+        np.any((simplices < 0) | (simplices >= len(points)), axis=1)
+    )
+    if out_of_range.size:
+        raise ValueError(
+            f"Mesh triangles {out_of_range[:5].tolist()} use a vertex index "
+            f"outside 0..{len(points) - 1}; the stored mesh is corrupt."
+        )
+    ordered = np.sort(simplices, axis=1)
+    repeated = np.flatnonzero(np.any(ordered[:, 1:] == ordered[:, :-1], axis=1))
+    if repeated.size:
+        raise ValueError(
+            f"Mesh triangles {repeated[:5].tolist()} repeat a vertex; the stored "
+            "mesh is corrupt."
+        )
+
+    vertices = points[simplices]
+    # Columns of the 2x2 transform scipy inverts: v0 - v2 and v1 - v2.
+    first = vertices[:, 0] - vertices[:, 2]
+    second = vertices[:, 1] - vertices[:, 2]
+    det = first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0]
+    norm_1 = np.maximum(np.abs(first).sum(axis=1), np.abs(second).sum(axis=1))
+    norm_inf = np.maximum(
+        np.abs(first[:, 0]) + np.abs(second[:, 0]),
+        np.abs(first[:, 1]) + np.abs(second[:, 1]),
+    )
+    # For a 2x2 matrix, |det| / (||A||_1 ||A||_inf) is the 1-norm reciprocal
+    # condition number that scipy estimates.
+    locatable = np.abs(det) >= _DEGENERATE_RCOND * norm_1 * norm_inf
+    triangles = np.flatnonzero(locatable).astype(np.intp)
+
+    det = det[triangles]
+    inverse = (
+        np.stack(
+            (
+                np.stack((second[triangles, 1], -second[triangles, 0]), axis=-1),
+                np.stack((-first[triangles, 1], first[triangles, 0]), axis=-1),
+            ),
+            axis=1,
+        )
+        / det[:, None, None]
+    )
+    lower = vertices[triangles].min(axis=1)
+    upper = vertices[triangles].max(axis=1)
+    span = np.sum(upper - lower, axis=1)
+    # Barycentric eps admits points up to eps * altitude outside a triangle.
+    pad = 2 * _BARYCENTRIC_EPS * span[:, None]
+    boxes = shapely.box(*(lower - pad).T, *(upper + pad).T)
+    tree = shapely.STRtree(boxes)
+
+    # Only triangles with intersecting bounding boxes can overlap.
+    left, right = tree.query(boxes)
+    distinct = left < right
+    left, right = left[distinct], right[distinct]
+    counterclockwise = vertices[triangles]
+    clockwise = det < 0
+    counterclockwise[clockwise] = counterclockwise[clockwise][:, ::-1]
+    depth = _OVERLAP_RTOL * np.maximum(span[left], span[right])
+    overlap = ~(
+        _separated(counterclockwise[left], counterclockwise[right], depth)
+        | _separated(counterclockwise[right], counterclockwise[left], depth)
+    )
+    if np.any(overlap):
+        pairs = np.column_stack((triangles[left], triangles[right]))[overlap]
+        raise ValueError(
+            f"Mesh triangles overlap (stored triangle pairs {pairs[:5].tolist()}); "
+            "a point could belong to more than one bin, so the stored mesh is "
+            "corrupt."
+        )
+    return _TriangleIndex(tree, triangles, inverse, vertices[triangles, 2])
+
+
+@dataclass(frozen=True, eq=False)
+class MeshLocator(_LocatorState):
+    """Locate points in a fixed triangulation clipped to a polygon.
+
+    The stored triangles define the bins, so lookup never depends on how this
+    platform's Qhull would triangulate the points. A point on an edge or vertex
+    shared by several triangles belongs to the lowest-numbered one, and
+    zero-area triangles contain no points.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, 2)
+        Triangle vertex coordinates.
     simplices : ndarray of intp, shape (n_simplices, 3)
         Stored triangulation, including inactive triangles.
     simplex_to_active : ndarray of intp, shape (n_simplices,)
@@ -283,7 +450,9 @@ class MeshLocator(_LocatorState):
     simplices: NDArray[np.intp]
     simplex_to_active: NDArray[np.intp]
     boundary: Polygon | None
-    _delaunay: Delaunay | None = field(default=None, init=False, repr=False)
+    _triangle_lookup: _TriangleIndex | None = field(
+        default=None, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "points", _owned_array(self.points, np.float64))
@@ -292,18 +461,34 @@ class MeshLocator(_LocatorState):
             self, "simplex_to_active", _owned_array(self.simplex_to_active, np.intp)
         )
 
-    def _triangulation(self) -> Delaunay:
-        """Rebuild the memo without changing the stored simplex numbering."""
-        triangulation = self._delaunay
-        if triangulation is None:
-            triangulation = Delaunay(self.points)
-            if not np.array_equal(triangulation.simplices, self.simplices):
-                raise ValueError(
-                    "Rebuilt Delaunay simplices differ from stored simplices; "
-                    "point lookup cannot preserve bin indices."
-                )
-            object.__setattr__(self, "_delaunay", triangulation)
-        return triangulation
+    def _triangle_index(self) -> _TriangleIndex:
+        """Validate the stored triangles once and memoize their lookup index."""
+        index = self._triangle_lookup
+        if index is None:
+            index = _triangle_index(self.points, self.simplices)
+            object.__setattr__(self, "_triangle_lookup", index)
+        return index
+
+    def _find_triangles(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Return the lowest-numbered stored triangle containing each point, or -1."""
+        index = self._triangle_index()
+        found = np.full(len(points), len(self.simplices), dtype=np.intp)
+        finite = np.flatnonzero(np.all(np.isfinite(points), axis=1))
+        # Chunks bound the memory of the (point, candidate triangle) pairs.
+        for start in range(0, len(finite), _QUERY_CHUNK):
+            rows = finite[start : start + _QUERY_CHUNK]
+            query, entry = index.tree.query(shapely.points(points[rows]))
+            query = rows[query]
+            offset = points[query] - index.origin[entry]
+            coords = np.einsum("kij,kj->ki", index.inverse[entry], offset)
+            coords = np.column_stack((coords, 1.0 - coords[:, 0] - coords[:, 1]))
+            inside = np.all(
+                (coords >= -_BARYCENTRIC_EPS) & (coords <= 1.0 + _BARYCENTRIC_EPS),
+                axis=1,
+            )
+            np.minimum.at(found, query[inside], index.triangles[entry[inside]])
+        found[found == len(self.simplices)] = -1
+        return found
 
     def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Return active triangle indices for points inside the boundary."""
@@ -311,7 +496,7 @@ class MeshLocator(_LocatorState):
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
             raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
 
-        orig_simplices = self._triangulation().find_simplex(pts2d)
+        orig_simplices = self._find_triangles(pts2d)
         active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=np.intp)
         valid_mask = orig_simplices != -1
         if np.any(valid_mask):
@@ -321,10 +506,7 @@ class MeshLocator(_LocatorState):
                 xcoords = pts2d[valid_mask, 0]
                 ycoords = pts2d[valid_mask, 1]
                 on_or_inside = shapely.contains_xy(self.boundary, xcoords, ycoords)
-                idxs = np.flatnonzero(valid_mask)
-                for local_i, keep in enumerate(on_or_inside):
-                    if not keep:
-                        active_triangle_idxs[idxs[local_i]] = -1
+                active_triangle_idxs[np.flatnonzero(valid_mask)[~on_or_inside]] = -1
         return active_triangle_idxs.astype(np.intp, copy=False)
 
 

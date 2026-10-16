@@ -2265,14 +2265,24 @@ class Environment(Generic[_C]):
         **Connectivity**: The connectivity graph is rebuilt for the coarsened
         grid using the stored diagonal-connection choice, or actual edges when
         an older grid has no stored choice. Physical walls still block
-        connections and must align with complete coarse faces.
+        connections and must align with complete coarse faces. The arena
+        outline does not: neighbors that meet only outside a polygonal arena,
+        such as bins on both sides of a barrier narrower than a bin, stay
+        connected, and a ``UserWarning`` names them. Declare the barrier's
+        edges as internal walls to remove those connections.
 
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: Keep centers strictly inside a polygonal arena, or
-        contained by another known arena. Unknown domains retain the full
-        coarse grid. Rebinning preserves the arena rather than filling its holes.
+        **Active bins**: With ``factor``, keep coarse cells whose centers lie
+        in the known arena, including on its boundary, as ``contains`` does;
+        a factor of 2 therefore merges every fine bin of a grid mask. With
+        ``bin_size``, keep new cells whose centers lie strictly inside a
+        polygonal arena, or are contained by another known arena. Unknown
+        domains retain the full coarse grid. Rebinning preserves the arena
+        rather than filling its holes. When original bins (inside the
+        truncated extent) are left without a new bin, a ``UserWarning`` gives
+        their count and share of the area, since positions in them map to -1.
 
         **Metadata preservation**: The arena, units, frame and named regions
         are preserved. Region coordinates and metadata remain intact even when
@@ -2478,6 +2488,9 @@ class Environment(Generic[_C]):
         transforms need stored face normals, certified source flux distances and
         perpendicular transformed center links (normalized residual at most 1e-12). Smoothing
         refuses when those right angles are lost; exact cells remain available.
+        A general affine fitted to noisy landmarks absorbs the noise as a small
+        stretch or shear, so smoothing refuses; fit landmarks with
+        ``estimate_transform(..., kind="similarity")`` to keep it.
         Triangle vertices and deformed hexagon polygons retain their exact mapped
         shapes. Tracks accept translation and similarity only.
 
@@ -6444,12 +6457,6 @@ class Environment(Generic[_C]):
         from neurospatial.environment.fields import _mrf_basis
 
         return _mrf_basis(self, occupancy, rank=rank)
-
-    def _mrf_basis(
-        self, occupancy: NDArray[np.float64], *, rank: int | None
-    ) -> MRFBasis:
-        """Compatibility delegate for the former private penalty-basis adapter."""
-        return self.get_mrf_basis(occupancy, rank=rank)
 
     def transitions(
         self,

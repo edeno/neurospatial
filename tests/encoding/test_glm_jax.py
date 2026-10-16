@@ -90,7 +90,7 @@ def _rank_deficient_case(env):
     occ[: n_bins // 2] = 3.0
     counts = np.zeros((1, n_bins))
     counts[0, : n_bins // 2] = rng.poisson(10.0, size=n_bins // 2)
-    basis = env._mrf_basis(occ, rank=n_bins)  # full rank -> rank-deficient exposed
+    basis = env.get_mrf_basis(occ, rank=n_bins)  # full rank -> rank-deficient exposed
     c, o = _restrict(counts.T, occ, basis)
     return basis, c, o
 
@@ -110,7 +110,7 @@ def test_jax_numpy_parity(open_field_env, simulate_place_fields):
     env = open_field_env
     centers = [(4.0, 4.0), (12.0, 12.0), (4.0, 12.0), (12.0, 4.0)]
     counts_full, occ_full = simulate_place_fields(env, centers, seed=1)
-    basis = env._mrf_basis(occ_full, rank=40)
+    basis = env.get_mrf_basis(occ_full, rank=40)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit_np = fit_mrf_gam(basis, counts, occ, penalty=1.5, backend="numpy")
@@ -175,7 +175,7 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
     env = sparse_regime_env
     centers = [(10.0, 10.0), (30.0, 30.0), (10.0, 30.0)]
     counts_full, occ_full = simulate_place_fields(env, centers, seed=2)
-    basis = env._mrf_basis(occ_full, rank=60)
+    basis = env.get_mrf_basis(occ_full, rank=60)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_diag = 1.0 * basis.d
     constant_base = _structural_constant_base(basis.B, basis.n_live_components)
@@ -228,7 +228,7 @@ def test_jax_absent_uses_numpy(open_field_env, simulate_place_fields, monkeypatc
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=3)
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     # Force the "extra unavailable" branch even where JAX is installed.
@@ -295,7 +295,7 @@ def test_reml_parity(open_field_env, simulate_place_fields):
     env = open_field_env
     centers = [(5.0, 5.0), (11.0, 11.0)]
     counts_full, occ_full = simulate_place_fields(env, centers, seed=4)
-    basis = env._mrf_basis(occ_full, rank=40)
+    basis = env.get_mrf_basis(occ_full, rank=40)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.B.shape[1] - basis.n_live_components
 
@@ -324,7 +324,7 @@ def test_pooled_false_jax_parity(open_field_env, simulate_varied_smoothness):
     centers = [(5.0, 5.0), (11.0, 11.0), (8.0, 8.0)]
     sigmas = [1.5, 8.0, 4.0]
     counts_full, occ_full = simulate_varied_smoothness(env, centers, sigmas, seed=3)
-    basis = env._mrf_basis(occ_full, rank=30)
+    basis = env.get_mrf_basis(occ_full, rank=30)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fj = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False, backend="jax")
@@ -398,7 +398,7 @@ def test_jax_all_zero_spike_effectively_floors(open_field_env):
     env = open_field_env
     occ = np.full(env.n_bins, 3.0)
     counts = np.zeros((2, env.n_bins))
-    basis = env._mrf_basis(occ, rank=20)
+    basis = env.get_mrf_basis(occ, rank=20)
     c, o = _restrict(counts.T, occ, basis)
 
     with pytest.warns(UserWarning, match="no unit has any spikes"):

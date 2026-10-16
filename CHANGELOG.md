@@ -4,6 +4,46 @@
 
 ### Fixed
 
+- Smoothing on an environment transformed by an affine map fitted to noisy
+  landmarks (`estimate_transform(..., kind="affine")`) still refuses, because
+  the fit absorbs tracking noise as a real stretch or shear. The refusal now
+  reports the measured stretch and angle error, explains that the bandwidth
+  would not be applied equally in every direction, and names the fix: fit
+  `kind="similarity"` (or `"rigid"`) or smooth on the source environment. It
+  previously suggested recentering coordinates, which does not help.
+
+- Triangular-mesh environments saved on one operating system now load on
+  another. Loading used to rebuild the Delaunay triangulation and refuse the
+  file when it differed from the saved triangles, which happens whenever sample
+  points are cocircular (any square lattice), because Qhull breaks those ties
+  differently across platforms. Point-to-bin lookup now uses the saved
+  triangles directly, with the same edge tolerance as before. A point exactly
+  on an edge or vertex shared by several triangles goes to the lowest-numbered
+  saved triangle. Files whose triangles overlap or reference missing or
+  repeated vertices are still refused, now with a message that names the
+  triangles.
+
+- `Environment.rebin(factor=...)` keeps a coarse cell whose center lies on the
+  arena boundary, such as the cell beside a missing corner of a grid mask or of
+  a grid-aligned polygon. Two-dimensional arenas previously required strictly
+  interior centers, unlike 1-D and 3-D masks, so a factor of 2 dropped coarse
+  cells that held recorded fine bins (3 of 15 bins of a 4-by-4 mask without one
+  corner), and positions in them mapped to `-1`. A factor of 2 now merges every
+  fine bin of a grid mask inside the (possibly truncated) coarse extent.
+
+- Both `rebin` modes warn when original bins are left without a new bin,
+  naming their count, their share of the area and how to cover them. Positions
+  in those bins map to `-1`, so their time and spikes silently dropped out of
+  totals: about 2.5% of a circular arena's fine bins at `factor=2`, and 56% of
+  a 6-by-6 arena at `bin_size=4`.
+
+- `rebin` warns when new bins on both sides of a barrier in the arena outline
+  are connected because they meet only outside the arena. In a U-maze with a
+  2-unit barrier, 5-unit bins shortened the path between the arm ends from 37
+  to 5. The connections are kept, as in `from_polygon` at the same bin size;
+  the warning names them and how to fix it: smaller bins, or the barrier's
+  edges declared as internal walls.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam
@@ -61,9 +101,19 @@
   tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
   border cell; single-unit and population tables agree.
   Physical border scores refuse combined environments in which a component has
-  no declared walls, naming the component, instead of scoring its fields
+  no measured footprint, naming the component, instead of scoring its fields
   against walls in other components (euclidean returned -1 for a wall-hugging
-  field). Declare walls for each component or use `boundary_source="analysis"`.
+  field). Declare each component's outline or use `boundary_source="analysis"`.
+  A single arena that declares internal walls but not its footprint
+  (`OpenArena(..., physical_footprint_known=False)`) is refused the same way:
+  a field along its outer edge was scored against the internal walls alone
+  (-1, labeled `"place"`; now NaN, labeled `"undetermined"`). Declare the
+  measured outline, for example
+  `OpenArena(outline, walls=..., physical_footprint_known=True)`.
+- The border-score examples in the neuroscience metrics guide raised on their
+  position-derived environments, which have no measured walls. They now
+  explain the physical-versus-analysis boundary choice, pass
+  `boundary_source="analysis"` and run in the documentation tests.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
@@ -162,7 +212,8 @@
   Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB
   storage; new sizes are physical lengths along those axes. Other families and
   records without a specification refuse this mode. Integer-factor coarsening
-  retains its existing behavior. Fields and fitted models are not transferred.
+  keeps its truncation warning and now also accepts masked and polygon grids
+  with uniform rectangular cells. Fields and fitted models are not transferred.
 
 - Add `Environment.combine` for owned disjoint components, with stable keyed
   bin sources, qualified regions and deterministic mutual-nearest-neighbor
@@ -436,6 +487,13 @@
 - Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
 
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
+- `Environment.combine`, and `subset` and loading of a combined environment,
+  check component overlap only for cells whose bounding boxes intersect instead
+  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
+  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
+  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
+  are reported.
 
 ### Fixed
 

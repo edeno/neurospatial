@@ -77,6 +77,108 @@ def _arena_bounds(arena: Arena) -> NDArray[np.float64]:
     )
 
 
+def _warn_unbinned(env: RebinConsumer, lost: NDArray[np.bool_], remedy: str) -> None:
+    """Warn that original bins have no new bin, with their count and share.
+
+    Parameters
+    ----------
+    lost : ndarray of bool, shape (n_bins,)
+        Original bins whose centers map to no bin after rebinning.
+    remedy : str
+        Mode-specific advice for covering the lost bins.
+    """
+    if not np.any(lost):
+        return
+    sizes = env._binning.bins.sizes
+    n_dims = env.bin_centers.shape[1]
+    measure = {1: "length", 2: "area"}.get(n_dims, "volume")
+    if env.arena.polygonal_domain() is not None:
+        remedy += (
+            " For exact cells along the arena boundary, build a grid that "
+            "covers the arena at the new size and clip it: "
+            "Environment.from_bins(grid.clip(polygon).binning, arena=env.arena)."
+        )
+    warnings.warn(
+        f"Rebinning leaves {np.count_nonzero(lost)} of {len(lost)} original bins "
+        f"({sizes[lost].sum() / sizes.sum():.1%} of their {measure}) without a "
+        "new bin, because new bins are kept only where their centers lie in the "
+        "arena. Positions in those bins map to -1, so their time and spikes drop "
+        f"out of totals on the new bins. {remedy}",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _warn_outline_crossings(
+    env: RebinConsumer, rebinned: Environment, remedy: str
+) -> None:
+    """Warn when new connections join cells that touch only outside the arena.
+
+    Grid connections join neighboring cells whose centers lie in the arena,
+    without checking where the cells meet. Bins wider than a gap in the
+    outline, such as the barrier between two maze arms, are joined across it,
+    so path lengths, distances and smoothing pass through the barrier. Cells
+    whose shared face (or corner, for diagonal neighbors) lies partly in the
+    arena remain connected through it.
+
+    Parameters
+    ----------
+    rebinned : Environment
+        The new environment, published with the original arena.
+    remedy : str
+        Mode-specific advice for resolving the barrier.
+    """
+    domain = env.arena.polygonal_domain()
+    pairs = rebinned._binning.bins.pairs
+    if domain is None or len(pairs) == 0:
+        return
+    import shapely
+
+    from neurospatial.geometry._polygon import materialize_cells
+
+    centers = rebinned.bin_centers
+    shapely.prepare(domain)
+    # A center link inside the arena already meets the shared face there.
+    candidates = np.flatnonzero(
+        ~shapely.covers(domain, shapely.linestrings(centers[pairs]))
+    )
+    if len(candidates) == 0:
+        return
+    cells = np.asarray(materialize_cells(rebinned._binning), dtype=object)
+    contacts = shapely.intersection(
+        shapely.boundary(cells[pairs[candidates, 0]]),
+        shapely.boundary(cells[pairs[candidates, 1]]),
+    )
+    face = shapely.length(contacts)
+    # Tolerances ignore coordinate rounding along the outline.
+    scale = float(np.sqrt(np.min(rebinned._binning.bins.sizes)))
+    separated = np.where(
+        face > 0,
+        shapely.length(shapely.intersection(contacts, domain)) <= 1e-9 * face,
+        shapely.distance(domain, contacts) > 1e-9 * scale,
+    )
+    crossing = candidates[separated & ~shapely.is_empty(contacts)]
+    if len(crossing) == 0:
+        return
+    u, v = pairs[crossing[0]]
+    count = (
+        "1 connection joins"
+        if len(crossing) == 1
+        else f"{len(crossing)} connections join"
+    )
+    warnings.warn(
+        f"{count} new bins that meet only outside the arena, for example "
+        f"bins {u} at {centers[u].tolist()} and {v} at "
+        f"{centers[v].tolist()}. The bins are wider than a gap in the arena "
+        "outline, such as a barrier between two arms, so path lengths, "
+        f"distances and smoothing pass through it. {remedy} Or declare the "
+        "barrier's edges as internal walls, OpenArena(polygon, walls=...), so "
+        "rebinning removes connections across them or refuses cells they cut.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _rebin_resolution(
     env: RebinConsumer, bin_size: float | tuple[float, ...]
 ) -> Environment:
@@ -181,7 +283,7 @@ def _rebin_resolution(
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
     snapshot, graph, ranges, category = prepare_bins(binning)
-    return Environment._from_binning(
+    rebinned = Environment._from_binning(
         snapshot,
         connectivity=graph,
         dimension_ranges=ranges,
@@ -195,6 +297,16 @@ def _rebin_resolution(
         regions=env.regions,
         arena=env.arena,
     )
+    _warn_unbinned(
+        env,
+        rebinned.bin_at(env.bin_centers) < 0,
+        "Use a smaller bin_size, or one that puts cell edges on the arena "
+        "boundary, such as a divisor of a rectangular arena's side lengths.",
+    )
+    _warn_outline_crossings(
+        env, rebinned, "Use a bin_size smaller than the barrier's width."
+    )
+    return rebinned
 
 
 def _require_native_grid_navigation(
@@ -410,18 +522,12 @@ def _rebin_factor(
     coarse_bin_centers = np.column_stack(center_coords)
 
     # Finalize active cells before constructing the graph or publishing an
-    # environment. The original arena remains the continuous authority.
+    # environment. The original arena remains the continuous authority. Its
+    # closed containment keeps a coarse cell centered on the domain boundary,
+    # such as the corner beside a missing fine cell, in every dimension.
     keep = np.ones(len(coarse_bin_centers), dtype=bool)
     if env.arena.domain_known:
-        domain = env.arena.polygonal_domain()
-        if domain is not None:
-            from shapely import contains_xy
-
-            keep = contains_xy(
-                domain, coarse_bin_centers[:, 0], coarse_bin_centers[:, 1]
-            )
-        else:
-            keep = env.arena.contains(coarse_bin_centers)
+        keep = env.arena.contains(coarse_bin_centers)
         if not np.any(keep):
             raise ValueError(
                 "Rebinning retains no coarse bin center inside the original arena. "
@@ -480,4 +586,16 @@ def _rebin_factor(
         frame=env.frame,
     )
 
+    # Bins beyond the truncated extent are already reported above.
+    within = np.all(
+        env.bin_centers < np.array([edges[-1] for edges in coarse_edges]), axis=1
+    )
+    _warn_unbinned(
+        env,
+        within & (coarse_env.bin_at(env.bin_centers) < 0),
+        "Use a smaller factor.",
+    )
+    _warn_outline_crossings(
+        env, coarse_env, "Use a factor whose bins are narrower than the barrier."
+    )
     return coarse_env

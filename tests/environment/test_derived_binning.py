@@ -16,7 +16,7 @@ from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
 from neurospatial.io import from_dict, to_dict
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import Affine2D, estimate_transform
 
 _CARTESIAN_CASES = [
     "grid8",
@@ -331,6 +331,63 @@ def test_ordinary_rotations_keep_similarity_faces(built_environment, angle):
     assert child._binning.faces.available
     np.testing.assert_allclose(child.bin_sizes, parent.bin_sizes, rtol=1e-12)
     np.testing.assert_array_equal(child.boundary_bins, parent.boundary_bins)
+
+
+def _landmark_fit(env, kind):
+    """Fit a map from noisy landmark detections to known room coordinates.
+
+    The detections carry tracking noise of 0.5% of the arena width, like
+    0.5 px on a 100 px camera image of the arena.
+    """
+    low = np.min(env.bin_centers, axis=0)
+    high = np.max(env.bin_centers, axis=0)
+    corners = np.array(
+        [[low[0], low[1]], [high[0], low[1]], [low[0], high[1]], [high[0], high[1]]]
+    )
+    angle, scale = 0.4, 1.5
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    room = corners @ (scale * rotation).T + np.array([30.0, -20.0])
+    noise = np.random.default_rng(81).normal(
+        0.0, 0.005 * np.max(high - low), corners.shape
+    )
+    return estimate_transform(corners + noise, room, kind=kind)
+
+
+@pytest.mark.parametrize(
+    "built_environment", ["grid8", "mask", "hex", "mesh"], indirect=True
+)
+def test_noisy_landmark_similarity_fit_smooths_like_source(built_environment):
+    parent = built_environment
+    transform = _landmark_fit(parent, "similarity")
+    scale = np.sqrt(abs(np.linalg.det(transform.A[:2, :2])))
+    child = parent.apply_transform(transform)
+    field = np.sin(np.arange(parent.n_bins)) + 2.0
+    # The same physical bandwidth, expressed in room units, smooths identically.
+    np.testing.assert_allclose(
+        child.smooth(field, 2.0 * scale), parent.smooth(field, 2.0), rtol=1e-10
+    )
+
+
+@pytest.mark.parametrize(
+    "built_environment", ["grid8", "mask", "hex", "mesh"], indirect=True
+)
+def test_noisy_landmark_affine_fit_refusal_reports_distortion_and_fix(
+    built_environment,
+):
+    # A general affine fit absorbs the landmark noise as a real, small stretch.
+    transform = _landmark_fit(built_environment, "affine")
+    singular = np.linalg.svd(transform.A[:2, :2], compute_uv=False)
+    child = built_environment.apply_transform(transform)
+    with pytest.raises(NotImplementedError) as caught:
+        child.smooth(np.ones(child.n_bins), 2.0)
+    message = str(caught.value)
+    assert f"{100 * (singular[0] / singular[-1] - 1):.3g}%" in message
+    assert "bandwidth" in message
+    assert 'estimate_transform(..., kind="similarity")' in message
+    assert "right angle" in message
+    assert "Fix:" in message
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)

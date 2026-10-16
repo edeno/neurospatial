@@ -105,7 +105,8 @@ def decode(
     -------
     object
         Geometry with normalized dtypes and owned, read-only arrays. KD-tree
-        and Delaunay memos remain lazy and can be rebuilt from stored data.
+        and mesh triangle-lookup memos remain lazy and are rebuilt from stored
+        data.
 
     Raises
     ------

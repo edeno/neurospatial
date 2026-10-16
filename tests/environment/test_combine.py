@@ -867,3 +867,56 @@ def test_touching_nearest_supports_resolve_boundary_tie_by_component_order():
         env = Environment.combine(components)
         index = env.bin_at(point)[0]
         assert env.bin_sources[index] == (next(iter(components)), 0)
+
+
+def test_overlap_candidates_match_an_exhaustive_bounds_scan():
+    from neurospatial.geometry._combine_geometry import _bound_candidates, _Piece
+
+    rng = np.random.default_rng(3)
+    for dims in (1, 2, 3):
+        sides = []
+        for _ in range(2):
+            low = np.round(rng.uniform(0, 6, size=(40, dims)) * 2) / 2
+            high = low + np.round(rng.uniform(0, 2, size=(40, dims)) * 2) / 2
+            low[3, 0], high[5, -1], low[7] = np.nan, np.inf, -np.inf
+            sides.append(
+                [_Piece("box", None, lo, hi) for lo, hi in zip(low, high, strict=True)]
+            )
+        left, right = sides
+        # Every pair the exact test would not reject by its bounds, in scan order.
+        expected = [
+            (a, b)
+            for a in range(len(left))
+            for b in range(len(right))
+            if not np.any(
+                np.minimum(left[a].high, right[b].high)
+                <= np.maximum(left[a].low, right[b].low)
+            )
+        ]
+        assert expected
+        assert list(zip(*_bound_candidates(left, right), strict=True)) == expected
+
+
+def test_touching_grid_certification_tests_no_cell_pairs(monkeypatch):
+    import neurospatial.geometry._combine_geometry as geometry
+
+    calls = []
+    exact = geometry._overlap
+
+    def counted(a, b):
+        calls.append((a, b))
+        return exact(a, b)
+
+    monkeypatch.setattr(geometry, "_overlap", counted)
+
+    def square(offset, count=30):
+        edges = np.arange(count + 1.0)
+        return Environment.from_grid_mask(
+            np.ones((count, count), dtype=bool), grid_edges=(edges + offset, edges)
+        )
+
+    assert Environment.combine({"a": square(0.0), "b": square(30.0)}).n_bins == 1800
+    assert calls == []
+    with pytest.raises(ValueError, match=r"[Oo]verlap"):
+        Environment.combine({"a": square(0.0), "b": square(29.5)})
+    assert len(calls) == 1

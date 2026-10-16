@@ -434,7 +434,10 @@ Other common queries are `env.neighbors(bin_index)`,
 ## Choose physical walls or analysis boundaries
 
 Physical border scores use asserted footprint rings (including holes) and
-explicit internal walls. A crop or a missing position sample does not create a
+explicit internal walls. The footprint must be known: internal walls alone do
+not say where the outer walls are, so an arena declared with
+`OpenArena(..., physical_footprint_known=False)` refuses physical scoring even
+when it has internal walls. A crop or a missing position sample does not create a
 wall. If only tracking-derived support or an analysis mask is available, request
 `boundary_source="analysis"` to use the legacy boundary-bin approximation.
 Physical mode is the default. It requires measured wall geometry and retained
@@ -518,9 +521,9 @@ polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
-A combined environment also needs declared walls for every component: a field
-in a component without them would otherwise be scored against walls in other
-components, so physical scoring refuses and names the component.
+A combined environment also needs a measured footprint for every component: a
+field at the edge of a component without one would otherwise be scored against
+walls elsewhere, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 
@@ -628,8 +631,15 @@ assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
 ```
 
 Whole-bin selection keeps centers inside the arena; it does not promise complete
-coverage or exact clipped areas. Physical walls must still follow complete new
-cell faces. Use `clip()` separately, or a finer grid, where needed. Re-binning
+coverage or exact clipped areas. When original bins are left without a new bin,
+`rebin` warns with their count and share of the area, because positions there
+map to `-1` and drop out of occupancy and spike totals. Physical walls must
+still follow complete new cell faces. The arena outline is not a wall: new bins
+on both sides of a barrier narrower than a bin, such as the wall between two
+maze arms, stay connected, and `rebin` warns because path lengths and smoothing
+then pass through the barrier. Declare the barrier's edges as internal walls,
+`OpenArena(polygon, walls=...)`, to remove those connections. Use `clip()`
+separately, or a finer grid, where needed. Re-binning
 creates new bin IDs and does not copy rates, counts or fitted models.
 
 New rectangular environments store an owned `GridBinningSpec` independently of

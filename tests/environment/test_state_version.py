@@ -1,4 +1,4 @@
-"""Immutable geometry ownership and the standalone versioned cache decorator."""
+"""Immutable geometry ownership of Environment."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.environment.decorators import versioned_cached_property
 
 
 @pytest.fixture(params=["dict", "file"])
@@ -44,7 +43,7 @@ class TestPublishedValueOwnership:
         )
         env.compute_kernel(1.0)
         env.diffuse(np.ones(env.n_bins), 1.0)
-        env._mrf_basis(np.ones(env.n_bins), rank=3)
+        env.get_mrf_basis(np.ones(env.n_bins), rank=3)
         env.get_differential_operator()
         env._kdtree_cache = cKDTree(env.bin_centers)
         old_geometry = env._diffusion_geometry
@@ -286,87 +285,3 @@ class TestPublishedGeometryIsReadOnly:
                 np.testing.assert_array_equal(edge, original)
         else:
             assert after == before
-
-
-class TestVersionedCachedProperty:
-    """Decorator behavior: caches per (instance, _state_version)."""
-
-    def test_caches_within_same_version(self) -> None:
-        calls = {"n": 0}
-
-        class Stub:
-            _state_version = 0
-
-            @versioned_cached_property
-            def value(self) -> int:
-                calls["n"] += 1
-                return 42
-
-        stub = Stub()
-        assert stub.value == 42
-        assert stub.value == 42
-        assert calls["n"] == 1
-
-    def test_recomputes_after_version_bump(self) -> None:
-        calls = {"n": 0}
-
-        class Stub:
-            _state_version = 0
-
-            @versioned_cached_property
-            def value(self) -> int:
-                calls["n"] += 1
-                return calls["n"]
-
-        stub = Stub()
-        assert stub.value == 1
-        assert stub.value == 1  # still cached
-        stub._state_version += 1
-        assert stub.value == 2  # recomputed
-        assert stub.value == 2  # cached at the new version
-
-    def test_separate_instances_have_separate_caches(self) -> None:
-        class Stub:
-            _state_version = 0
-
-            def __init__(self, v: int) -> None:
-                self._v = v
-
-            @versioned_cached_property
-            def value(self) -> int:
-                return self._v
-
-        a = Stub(1)
-        b = Stub(2)
-        assert a.value == 1
-        assert b.value == 2
-        a._v = 99
-        # No version bump → still cached at the old value.
-        assert a.value == 1
-        a._state_version = 1
-        assert a.value == 99
-
-    def test_double_assignment_in_class_raises(self) -> None:
-        # Ensure the same descriptor cannot be assigned to two different
-        # attribute names on the same class — matches the cached_property
-        # invariant that names are stable.
-        descriptor = versioned_cached_property(lambda self: 0)
-
-        # Python 3.10/3.11 wraps exceptions raised in __set_name__ in a
-        # RuntimeError (with the original exception as __cause__); 3.12+
-        # propagates the original exception as-is. Accept both shapes and
-        # unwrap if needed before checking the underlying message.
-        with pytest.raises((TypeError, RuntimeError)) as exc_info:
-
-            class Stub:
-                _state_version = 0
-                first = descriptor
-                second = descriptor
-
-            _ = Stub  # silence unused warning
-
-        err: BaseException | None = exc_info.value
-        if isinstance(err, RuntimeError) and err.__cause__ is not None:
-            err = err.__cause__
-        assert isinstance(err, TypeError)
-        assert "two different names" in str(err)

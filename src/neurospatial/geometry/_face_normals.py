@@ -122,7 +122,7 @@ def geometric_normals(
         active = np.flatnonzero(locator.simplex_to_active >= 0)
         active = active[np.argsort(locator.simplex_to_active[active])]
         stored = locator.simplices[active]
-        # Identify stored centroid rows without rebuilding Delaunay lookup or
+        # Identify stored centroid rows without building the triangle lookup or
         # depending on Qhull's platform-specific simplex ordering. Publication
         # separately validates each representative against locator geometry.
         source_centers = locator.points[stored].mean(axis=1)

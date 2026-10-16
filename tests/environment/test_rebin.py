@@ -18,7 +18,7 @@ def _arena_record(arena):
 
 
 def _coarse_oracle(env, factor):
-    """Enumerate candidate cells and test each center against arena geometry."""
+    """Enumerate candidate cells and test each center against closed arena geometry."""
     factors = (factor,) * env.n_dims if isinstance(factor, int) else factor
     edges = tuple(
         edge[: (size // step) * step + 1 : step]
@@ -31,7 +31,7 @@ def _coarse_oracle(env, factor):
     if not env.arena.domain_known:
         keep = np.ones(len(candidates), dtype=bool)
     elif (domain := env.arena.polygonal_domain()) is not None:
-        keep = np.array([domain.contains(Point(center)) for center in candidates])
+        keep = np.array([domain.covers(Point(center)) for center in candidates])
     else:
         keep = env.arena.contains(candidates)
     return edges, candidates[keep], keep.reshape(tuple(map(len, axes)))
@@ -61,21 +61,41 @@ def _assert_masked_connectivity(env, coarse, *, diagonal):
         )
     }
     assert set(coarse.connectivity.edges) == expected
+    # Factor-2 cells merge fine bins: every fine bin inside the (possibly
+    # truncated) coarse extent belongs to a retained coarse cell.
+    inside = np.all(
+        env.bin_centers < np.array([edge[-1] for edge in coarse.grid_edges]), axis=1
+    )
+    assert np.all(coarse.bin_at(env.bin_centers[inside]) >= 0)
     return indices
 
 
-@pytest.mark.parametrize("factor", [2, 3])
-def test_sparse_observations_do_not_invent_unsupported_coarse_cells(factor):
-    env = Environment.from_samples(
+def _two_distant_samples():
+    return Environment.from_samples(
         positions=np.array([[0.0, 0.0], [100.0, 100.0]]), bin_size=10.0
     )
-    _, centers, active = _coarse_oracle(env, factor)
+
+
+def test_sparse_observations_do_not_invent_unsupported_coarse_cells():
+    env = _two_distant_samples()
+    _, centers, active = _coarse_oracle(env, 3)
     assert centers.size == 0 and not active.any()
     with (
         pytest.warns(UserWarning, match="truncated"),
         pytest.raises(ValueError, match="no coarse bin center"),
     ):
-        env.rebin(factor)
+        env.rebin(3)
+
+
+def test_sparse_observation_keeps_the_coarse_cell_centered_on_its_corner():
+    env = _two_distant_samples()
+    with pytest.warns(UserWarning, match="truncated"):
+        coarse = env.rebin(2)
+    _assert_coarse_oracle(env, coarse, 2)
+    # The single coarse cell holds the observed bin at the origin; the bin at
+    # (100, 100) lies in the truncated last row and column.
+    np.testing.assert_array_equal(coarse.bin_centers, [[5.0, 5.0]])
+    np.testing.assert_array_equal(coarse.bin_at(env.bin_centers), [0, -1])
 
 
 @pytest.mark.parametrize("diagonal", [False, True])

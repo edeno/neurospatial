@@ -65,8 +65,9 @@ def border_score(
         compatibility with irregular graph structures.
 
     boundary_source : {'physical', 'analysis'}, default='physical'
-        Physical mode requires asserted planar footprint rings or explicit
-        internal walls. Coverage is the fraction of their total length covered
+        Physical mode requires an asserted planar footprint; its rings and any
+        explicit internal walls are the walls. Internal walls alone do not
+        locate the outer walls. Coverage is the fraction of their total length covered
         by field cells; distance is mean center-to-wall distance normalized by
         the wall diameter (maximum point separation). Geodesic mode adds center-to-wall seed
         lengths to paths on the retained graph; unavailable routes return NaN.
@@ -91,8 +92,9 @@ def border_score(
     Raises
     ------
     NotImplementedError
-        If physical wall geometry is unavailable, a combined component has no
-        declared walls, or any measured wall segment lacks retained cells with
+        If physical wall geometry is unavailable, the arena or a combined
+        component has no measured footprint (internal walls alone are not
+        enough), or any measured wall segment lacks retained cells with
         finite firing rates. Missing observations are
         not evidence for zero firing; explicitly select the analysis-boundary
         approximation when that is the intended measurement.

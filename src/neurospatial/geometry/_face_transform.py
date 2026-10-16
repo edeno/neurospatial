@@ -104,6 +104,55 @@ def _combined_vectors(
     return None
 
 
+_SIMILARITY_FIX = (
+    'To smooth in the new coordinates, fit the landmarks with estimate_transform(..., kind="similarity") '
+    '(or kind="rigid" when both coordinate systems use the same length units), '
+    "or smooth on the source environment before transforming; bin IDs are unchanged."
+)
+
+
+def _refusal_reason(
+    kind: str,
+    index: int,
+    edge: tuple[int, int],
+    linear: NDArray[np.float64],
+    *,
+    resolved: bool,
+    source_valid: bool,
+    angle: float,
+) -> str:
+    """Explain a failed face certificate with the measured distortion and a fix.
+
+    ``angle`` is the transformed center link's angle from its face normal in
+    degrees.
+    """
+    u, v = edge
+    face = f"face {index} ({u}, {v})"
+    if not resolved:
+        return (
+            f"The center link at {face} has zero length in floating point after the {kind}, "
+            "so its right angle with the shared face cannot be checked. "
+            "Recenter or rescale coordinates before transforming."
+        )
+    if not source_valid:
+        return (
+            f"The source cells do not certify the right angle (orthogonality) and flux distance "
+            f"between center links and shared faces at {face} (tolerance {ORTHOGONALITY_TOLERANCE:g}), "
+            f"so the {kind} cannot keep their smoothing geometry; only similarities can. "
+            + _SIMILARITY_FIX
+        )
+    singular = np.linalg.svd(linear, compute_uv=False)
+    stretch = 100 * (singular[0] / singular[-1] - 1)
+    return (
+        f"The {kind} is not a similarity: it stretches lengths {stretch:.3g}% more along one "
+        f"direction than another, so the center link at {face} meets the shared face "
+        f"{angle:.3g} degrees away from a right angle (tangential residual tolerance "
+        f"{ORTHOGONALITY_TOLERANCE:g}). Diffusion fluxes are exact only at right angles, "
+        "so smoothing on these cells would not apply the requested physical bandwidth "
+        "equally in every direction. " + _SIMILARITY_FIX
+    )
+
+
 def certify_transformed_faces(
     binning: Binning,
     old: FaceGeometry,
@@ -136,21 +185,28 @@ def certify_transformed_faces(
     new_residual = np.hypot.reduce(
         unit_after - new_projection[:, None] * normals.values, axis=1
     )
-    valid = (~positive) | (
+    source_valid = (
         (old_projection > 0)
-        & (new_projection > 0)
         & (old_residual <= ORTHOGONALITY_TOLERANCE)
-        & (new_residual <= ORTHOGONALITY_TOLERANCE)
         & np.isclose(old.distance, lengths_before, rtol=ORTHOGONALITY_TOLERANCE, atol=0)
     )
-    valid &= (lengths_before > 0) & (lengths_after > 0)
+    target_valid = (new_projection > 0) & (new_residual <= ORTHOGONALITY_TOLERANCE)
+    resolved = (lengths_before > 0) & (lengths_after > 0)
+    valid = ((~positive) | (source_valid & target_valid)) & resolved
     if not np.all(valid):
         index = int(np.flatnonzero(~valid)[0])
-        u, v = old.edges[index]
         return MissingFaces(
-            f"The {kind} fails the right angle (orthogonality) or source flux-distance certificate at face {index} ({u}, {v}) "
-            f"(tangential tolerance {ORTHOGONALITY_TOLERANCE:g}). "
-            "Use a similarity affine transform, recenter unresolved coordinates, or rebuild certified cells."
+            _refusal_reason(
+                kind,
+                index,
+                tuple(old.edges[index]),
+                linear,
+                resolved=bool(resolved[index]),
+                source_valid=bool(source_valid[index]),
+                angle=float(
+                    np.degrees(np.arctan2(new_residual[index], new_projection[index]))
+                ),
+            )
         )
     areas = np.zeros_like(old.A)
     areas[positive] = np.exp(
