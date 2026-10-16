@@ -73,8 +73,7 @@ flowchart TD
 `geometry/` holds immutable bins, locators, arena evidence, coordinate semantics,
 validation and codecs. It does not import builders, numerical solvers, storage
 backends or plotting libraries. `layout/` and `ops/` are independent peers.
-Import-linter checks these package boundaries. The only exceptions are the
-`Environment` methods that hand off to storage (`to_file`, `to_nwb`, ...) or
+The only upward imports are the `Environment` methods that hand off to storage (`to_file`, `to_nwb`, ...) or
 rendering (`animate_fields`), which import those packages when called.
 
 An environment captures construction output once and owns its geometry, which
