@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
@@ -26,7 +26,6 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
     from neurospatial.geometry._arena import Arena
-    from neurospatial.layout.base import LayoutEngine
 
 PolygonType = type[shapely.geometry.Polygon]
 
@@ -174,28 +173,6 @@ def _owned_copy(value: Any) -> Any:
     if type(value) in (list, tuple):
         return type(value)(_owned_copy(item) for item in value)
     return value
-
-
-def _combine(
-    cls: type[Environment[Any]],
-    components: Mapping[str, Environment],
-    *,
-    auto_bridge: bool = True,
-    max_mnn_distance: float | None = None,
-    bridge_conductances: Mapping[tuple[tuple[str, int], tuple[str, int]], float]
-    | None = None,
-    name: str = "",
-) -> Environment:
-    """Implement Environment.combine using explicit construction inputs."""
-    from neurospatial.environment._combine import _combine
-
-    return _combine(
-        components,
-        auto_bridge=auto_bridge,
-        max_mnn_distance=max_mnn_distance,
-        bridge_conductances=bridge_conductances,
-        name=name,
-    )
 
 
 def _from_bins(
@@ -382,9 +359,10 @@ def _from_samples(
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-    return cls.from_layout(
-        kind=layout_str,
-        layout_params=layout_params,
+    return _from_layout(
+        cls,
+        layout_str,
+        layout_params,
         name=name,
         units=units,
         frame=frame,
@@ -411,7 +389,8 @@ def _open_field(
     **layout_specific_kwargs: Any,
 ) -> Environment:
     """Implement Environment.open_field using explicit construction inputs."""
-    return cls.from_samples(
+    return _from_samples(
+        cls,
         positions,
         bin_size,
         name=name,
@@ -488,15 +467,16 @@ def _linear_track(
             f"{points}."
         )
 
-    return cls.from_graph(
-        graph=graph,
-        edge_order=edge_order,
-        edge_spacing=edge_spacing,
-        track_width=track_width,
-        bin_size=bin_size,
+    return _from_graph(
+        cls,
+        graph,
+        edge_order,
+        edge_spacing,
+        bin_size,
         name=name,
         units=units,
         frame=frame,
+        track_width=track_width,
     )
 
 
@@ -573,15 +553,16 @@ def _maze(
             f"Got node positions: {node_pos}."
         )
 
-    return cls.from_graph(
-        graph=graph,
-        edge_order=edge_order,
-        edge_spacing=edge_spacing,
-        track_width=track_width,
-        bin_size=bin_size,
+    return _from_graph(
+        cls,
+        graph,
+        edge_order,
+        edge_spacing,
+        bin_size,
         name=name,
         units=units,
         frame=frame,
+        track_width=track_width,
     )
 
 
@@ -610,9 +591,10 @@ def _from_graph(
         [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
         dtype=np.float64,
     )
-    return cls.from_layout(
-        kind="Graph",
-        layout_params=layout_params,
+    return _from_layout(
+        cls,
+        "Graph",
+        layout_params,
         name=name,
         units=units,
         frame=frame,
@@ -637,9 +619,10 @@ def _from_polygon(
         "bin_size": bin_size,
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
-    return cls.from_layout(
-        kind="ShapelyPolygon",
-        layout_params=layout_params,
+    return _from_layout(
+        cls,
+        "ShapelyPolygon",
+        layout_params,
         name=name,
         units=units,
         frame=frame,
@@ -665,9 +648,10 @@ def _from_grid_mask(
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
 
-    return cls.from_layout(
-        kind="MaskedGrid",
-        layout_params=layout_params,
+    return _from_layout(
+        cls,
+        "MaskedGrid",
+        layout_params,
         name=name,
         units=units,
         frame=frame,
@@ -693,9 +677,10 @@ def _from_pixel_mask(
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
 
-    return cls.from_layout(
-        kind="ImageMask",
-        layout_params=layout_params,
+    return _from_layout(
+        cls,
+        "ImageMask",
+        layout_params,
         name=name,
         units=units,
         frame=frame,
@@ -726,7 +711,7 @@ def _from_layout(
 
         arena = own_arena(arena)
     metadata = declared_metadata(cls, name=name, units=units, frame=frame)
-    layout_instance = cls._create_layout(kind, layout_params)
+    layout_instance = create_layout(kind=kind, **layout_params)
     return publish_layout(
         cls,
         layout_instance,
@@ -737,13 +722,6 @@ def _from_layout(
         arena=arena,
         within_arena=True,
     )
-
-
-def _create_layout(
-    cls: type[Environment[Any]], kind: LayoutType | str, layout_params: dict[str, Any]
-) -> LayoutEngine:
-    """Implement Environment._create_layout using explicit construction inputs."""
-    return create_layout(kind=kind, **layout_params)
 
 
 def _from_nwb(

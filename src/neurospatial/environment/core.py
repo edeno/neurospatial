@@ -36,6 +36,7 @@ from neurospatial.environment._cache import (
     AnalysisCache,
 )
 from neurospatial.environment._clipping import _clip
+from neurospatial.environment._combine import _combine
 from neurospatial.environment._lookup import locate, nearest_bin
 from neurospatial.environment._publication import (
     UNSET,
@@ -102,7 +103,6 @@ from neurospatial.geometry._coordinates import (
     CartesianSystem,
     EgocentricPolarSystem,
 )
-from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import LayoutType
 from neurospatial.ops.binning import TieBreakStrategy
 from neurospatial.ops.calculus import (
@@ -2460,10 +2460,7 @@ class Environment(Generic[_C]):
         ValueError
             If coordinates disagree, components overlap, or support cannot be certified.
         """
-        from neurospatial.environment.factories import _combine
-
         return _combine(
-            cls,
             components,
             auto_bridge=auto_bridge,
             max_mnn_distance=max_mnn_distance,
@@ -3560,15 +3557,6 @@ class Environment(Generic[_C]):
             regions=regions,
             arena=arena,
         )
-
-    @classmethod
-    def _create_layout(
-        cls, kind: LayoutType | str, layout_params: dict[str, Any]
-    ) -> LayoutEngine:
-        """Build the layout engine ``from_layout`` wraps; subclasses may substitute."""
-        from neurospatial.environment.factories import _create_layout
-
-        return _create_layout(cls, kind, layout_params)
 
     @classmethod
     def from_nwb(
