@@ -6054,8 +6054,9 @@ class Environment(Generic[_C]):
             marks a missing bin: in ``mode='average'`` each column is averaged
             over its own observed bins, as described under Missing bins in
             :meth:`smooth`, and columns without NaN are unchanged; the other
-            modes refuse NaN. With ``backend='jax'`` NaN is not inspected (the
-            input may be traced) and reaches every bin. Inf is not validated;
+            modes refuse NaN. ``backend='jax'`` refuses a concrete input with
+            NaN (use ``backend='numpy'``); a traced input cannot be inspected,
+            so NaN in it reaches every bin. Inf is not validated;
             :meth:`smooth` refuses it.
         bandwidth : float
             Physical smoothing standard deviation σ (> 0), independent of bin
@@ -6083,7 +6084,7 @@ class Environment(Generic[_C]):
             If ``bandwidth`` is not positive, ``mode`` is invalid, ``backend`` is
             invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``;
             or if ``fields`` holds NaN with ``mode='transition'`` or
-            ``'density'``.
+            ``'density'``, or as a concrete input with ``backend='jax'``.
 
         See Also
         --------

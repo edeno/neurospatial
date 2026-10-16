@@ -525,8 +525,8 @@ def _diffuse(
             )
 
     # NaN marks a missing bin. A NaN-free batch takes the plain linear apply
-    # unchanged; JAX inputs may be traced, so they are never inspected.
-    missing = np.isnan(fields_2d) if backend == "numpy" else None
+    # unchanged; a traced JAX input cannot be inspected, so it is not.
+    missing = _missing_bins(fields_2d, backend)
     if missing is None or not missing.any():
         result = apply(fields_2d)
     elif mode != "average":
@@ -543,6 +543,20 @@ def _diffuse(
                     "fill the missing bins explicitly (for example "
                     "np.nan_to_num(field) if they are truly zero), or use "
                     "mode='average' if the field is intensive, such as a rate map"
+                ),
+            )
+        )
+    elif backend == "jax":
+        raise ValueError(
+            _format_error(
+                f"diffuse(backend='jax') got {int(missing.sum())} NaN (missing) bins.",
+                why=(
+                    "Why: the JAX apply is a plain linear operator, so NaN would "
+                    "spread through its whole connected part."
+                ),
+                fix=(
+                    "use backend='numpy', which averages over the observed bins, "
+                    "or fill the missing bins first"
                 ),
             )
         )
@@ -563,6 +577,19 @@ def _diffuse(
     # numpy backend -> ndarray; jax backend -> jax.Array (documented above).
     # The NDArray annotation is the numpy-path type; cast covers both.
     return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
+
+
+def _missing_bins(fields: Any, backend: str) -> NDArray[np.bool_] | None:
+    """NaN bins of a concrete field batch; None for a NaN-free or traced JAX one."""
+    if backend == "numpy":
+        return np.asarray(np.isnan(fields), dtype=np.bool_)
+    import jax
+    import jax.numpy as jnp
+
+    # Check on the device first, so a NaN-free JAX batch is not copied to host.
+    if isinstance(fields, jax.core.Tracer) or not bool(jnp.isnan(fields).any()):
+        return None
+    return np.asarray(np.isnan(np.asarray(fields)), dtype=np.bool_)
 
 
 def _mrf_basis(

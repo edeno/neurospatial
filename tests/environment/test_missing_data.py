@@ -267,6 +267,34 @@ def test_extensive_modes_refuse_missing_bins_with_a_choice(any_env, mode, call):
     assert "np.nan_to_num" in message and "mode='average'" in message
 
 
+def test_concrete_jax_input_with_nan_is_refused(any_env):
+    jnp = pytest.importorskip("jax.numpy")
+    field = np.ones(any_env.n_bins)
+    field[0] = np.nan
+    with pytest.raises(ValueError, match="backend='numpy'"):
+        any_env.diffuse(jnp.asarray(field), 3.0, mode="average", backend="jax")
+    # A NaN-free JAX field is the plain operator.
+    np.testing.assert_allclose(
+        np.asarray(
+            any_env.diffuse(jnp.asarray(np.ones(any_env.n_bins)), 3.0, backend="jax")
+        ),
+        any_env.diffuse(np.ones(any_env.n_bins), 3.0),
+        rtol=1e-5,
+    )
+
+
+def test_traced_jax_input_is_not_inspected(any_env):
+    jax = pytest.importorskip("jax")
+    field = np.ones(any_env.n_bins)
+    field[0] = np.nan
+    smoothed = jax.jit(
+        lambda f: any_env.diffuse(f, 2.0, mode="average", backend="jax")
+    )(jax.numpy.asarray(field))
+    # The documented limitation: a traced apply is plain linear algebra, so
+    # the NaN reaches every bin.
+    assert np.isnan(np.asarray(smoothed)).all()
+
+
 def test_an_interior_hole_is_filled_from_its_neighbors(any_env):
     field = np.sin(np.arange(any_env.n_bins) * 0.37)
     holed = field.copy()

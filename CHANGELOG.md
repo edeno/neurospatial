@@ -306,7 +306,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `resample_field(method="diffuse")` use. `mode="transition"` and
   `mode="density"` refuse a field with NaN, because missing bins have no
   defensible mass under a conserving operator: fill them explicitly, or use
-  `mode="average"` for an intensive field. Before, `smooth`
+  `mode="average"` for an intensive field. `diffuse(backend="jax")` refuses
+  a concrete field with NaN and points to `backend="numpy"`. Before, `smooth`
   refused any NaN and `diffuse` silently turned every bin NaN. Fields without
   NaN give exactly the same values as before.
 
