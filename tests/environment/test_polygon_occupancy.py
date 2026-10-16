@@ -75,12 +75,14 @@ def test_polygon_observation_filters_precede_geometric_subdivision(gate):
         kwargs.update(speed=np.array([0.0, 1.0]), min_speed=0.5)
     else:
         kwargs["epochs"] = (0.0, 1.0)
-    result = env.occupancy(
-        np.array([0.0, 2.0]),
-        np.array([[-1.0, 1.0], [1.0, 1.0]]),
-        time_allocation="linear",
-        **kwargs,
-    )
+    # The one interval is excluded, so occupancy is empty and a warning says so.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = env.occupancy(
+            np.array([0.0, 2.0]),
+            np.array([[-1.0, 1.0], [1.0, 1.0]]),
+            time_allocation="linear",
+            **kwargs,
+        )
     np.testing.assert_array_equal(result, [0.0])
 
 
@@ -524,7 +526,14 @@ def test_sampled_wall_crossing_check_does_not_join_filtered_intervals(excluded):
         kwargs["epochs"] = np.array([[1.0, 2.0]])
     else:
         positions[0] = np.nan
-    occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
+    if excluded == "gap":
+        # Half the intervals are gaps, so the median exceeds max_gap: flagged.
+        with pytest.warns(UserWarning, match="probably not in seconds"):
+            occupancy = env.occupancy(
+                times, positions, time_allocation="linear", **kwargs
+            )
+    else:
+        occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
     assert occupancy.sum() == pytest.approx(1.0)
 
 

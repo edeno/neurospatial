@@ -106,10 +106,12 @@ def test_linear_counts_and_dwell_share_affine_holes_entry_exit_and_gaps(linear, 
         dwell,
         atol=2e-6,
     )
-    np.testing.assert_array_equal(
-        child.occupancy(times, mapping(points), time_allocation="linear", max_gap=1.0),
-        0.0,
-    )
+    # A gate shorter than every 4 s interval excludes them all, and says so.
+    with pytest.warns(UserWarning, match="excluded ALL.*probably not in seconds"):
+        gated = child.occupancy(
+            times, mapping(points), time_allocation="linear", max_gap=1.0
+        )
+    np.testing.assert_array_equal(gated, 0.0)
 
 
 @pytest.mark.parametrize("linear", MAPS)

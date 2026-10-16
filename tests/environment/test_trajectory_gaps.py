@@ -25,6 +25,18 @@ from numpy.testing import assert_array_equal
 from neurospatial import Environment
 
 
+def _x_neighbors(env):
+    """Two active bins whose centers differ by one bin width along x."""
+    centers = np.asarray(env.bin_centers)
+    width = float(np.diff(env.grid_edges[0]).min())
+    target = centers + np.array([width, 0.0])
+    for first, point in enumerate(target):
+        match = np.flatnonzero(np.all(np.isclose(centers, point), axis=1))
+        if match.size:
+            return first, int(match[0])
+    raise AssertionError("no pair of x-neighbors in this environment")
+
+
 class TestOccupancyEdgeCases:
     """Edge cases for occupancy computation.
 
@@ -114,20 +126,16 @@ class TestOccupancyEdgeCases:
         valid_bin_idx = min(5, small_2d_env.n_bins - 1)
         bin_center = small_2d_env.bin_centers[valid_bin_idx]
 
-        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
         # All positions identical
         positions = np.tile(bin_center.reshape(1, -1), (5, 1))
 
         occ = small_2d_env.occupancy(times, positions)
 
-        # All time should accumulate in one bin (if position is valid)
-        # Total time is 4 seconds
-        assert np.sum(occ) <= 4.0
-        if np.sum(occ) > 0:
-            # If any occupancy recorded, it should all be in one bin
-            # (stationary trajectory)
-            num_bins_with_occ = np.sum(occ > 0)
-            assert num_bins_with_occ == 1
+        # All 0.4 s accumulate in the one bin of the stationary trajectory
+        assert occ[valid_bin_idx] == pytest.approx(0.4)
+        assert np.sum(occ) == pytest.approx(0.4)
+        assert np.sum(occ > 0) == 1
 
     def test_occupancy_max_gap_none_with_large_gaps(self, small_2d_env):
         """Test occupancy with max_gap=None (no gap filtering).
@@ -682,23 +690,20 @@ class TestLinearTimeAllocation:
         Tests that linear allocation works correctly when returning
         sample counts instead of time in seconds.
         """
-        # Create simple trajectory
-        bin_0 = grid_env_from_samples.bin_centers[0]
-        bin_1 = grid_env_from_samples.bin_centers[
-            min(1, len(grid_env_from_samples.bin_centers) - 1)
-        ]
-
-        times = np.array([0.0, 2.0, 4.0])
-        positions = np.array([bin_0, bin_1, bin_0])
+        # Back and forth between the centers of two neighboring bins
+        first, second = _x_neighbors(grid_env_from_samples)
+        centers = grid_env_from_samples.bin_centers
+        times = np.array([0.0, 0.2, 0.4])
+        positions = np.array([centers[first], centers[second], centers[first]])
 
         occ_counts = grid_env_from_samples.occupancy(
             times, positions, time_allocation="linear", return_seconds=False
         )
 
-        # Should count intervals (2 total), with fractional counts
-        # across bins due to linear allocation
-        # Sum should be proportional to number of intervals
-        assert np.sum(occ_counts) <= 2.0  # Cannot exceed number of intervals
+        # Two intervals, each split half and half between the two bins
+        assert occ_counts[first] == pytest.approx(1.0)
+        assert occ_counts[second] == pytest.approx(1.0)
+        assert np.sum(occ_counts) == pytest.approx(2.0)
 
 
 class TestRayGridIntersection:
@@ -718,15 +723,16 @@ class TestRayGridIntersection:
         # Use same position twice (zero movement)
         bin_center = grid_env_from_samples.bin_centers[0]
 
-        times = np.array([0.0, 1.0])
+        times = np.array([0.0, 0.1])
         positions = np.array([bin_center, bin_center])
 
         occ = grid_env_from_samples.occupancy(
             times, positions, time_allocation="linear"
         )
 
-        # All time goes to starting bin (if it's valid)
-        assert np.sum(occ) <= 1.0
+        # All time goes to the starting bin
+        assert occ[0] == pytest.approx(0.1)
+        assert np.sum(occ) == pytest.approx(0.1)
 
     def test_ray_grid_parallel_to_axis(self, grid_env_from_samples):
         """Test ray-grid intersection with movement parallel to grid axis.
@@ -734,27 +740,22 @@ class TestRayGridIntersection:
         Tests the RAY_EPSILON threshold for ray direction components parallel
         to grid edges (prevents division by zero).
         """
-        # Create movement strictly along one axis
-        # Get two positions aligned along one dimension
-        bin_0 = grid_env_from_samples.bin_centers[0]
-
-        # Move only in x direction (y stays constant)
-        times = np.array([0.0, 1.0])
-        positions = np.array(
-            [
-                bin_0,
-                bin_0 + np.array([2.0, 0.0]),  # Move in x only
-            ]
-        )
+        # Move only in x direction (y stays constant), center to center
+        first, second = _x_neighbors(grid_env_from_samples)
+        centers = grid_env_from_samples.bin_centers
+        times = np.array([0.0, 0.1])
+        positions = np.array([centers[first], centers[second]])
 
         occ = grid_env_from_samples.occupancy(
             times, positions, time_allocation="linear"
         )
 
-        # Should handle axis-aligned movement without division by zero
-        assert np.sum(occ) <= 1.0
-        assert not np.any(np.isnan(occ))
-        assert not np.any(np.isinf(occ))
+        # Axis-aligned movement splits the interval evenly between the two
+        # cells, without division by zero
+        assert np.isfinite(occ).all()
+        assert occ[first] == pytest.approx(0.05)
+        assert occ[second] == pytest.approx(0.05)
+        assert np.sum(occ) == pytest.approx(0.1)
 
     def test_ray_grid_diagonal_crossing_multiple_bins(self):
         """Test ray-grid intersection with diagonal path crossing multiple bins.
@@ -841,12 +842,13 @@ class TestTrajectoryIntegrationGaps:
         Tests behavior when filters remove all intervals (should return
         zero occupancy everywhere).
         """
-        times = np.array([0.0, 1.0, 2.0, 3.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3])
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
         # All speeds below threshold
         speeds = np.array([0.1, 0.2, 0.3, 0.4])
 
-        occ = small_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
+        with pytest.warns(UserWarning, match="excluded ALL.*min_speed=2.0"):
+            occ = small_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
 
         # All intervals filtered - no occupancy
         assert np.sum(occ) == pytest.approx(0.0)

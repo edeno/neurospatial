@@ -116,7 +116,7 @@ class TestLinearOccupancyBasic:
         positions = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(positions, bin_size=1.0)
 
-        times = np.array([0.0, 1.0, 2.0])
+        times = np.array([0.0, 0.1, 0.2])
         trajectory = np.array([[0.5, 0.5], [1.5, 1.5], [2.5, 2.5]])
 
         # Default call (no time_allocation specified)
@@ -125,8 +125,10 @@ class TestLinearOccupancyBasic:
         # Explicit 'start'
         occupancy_start = env.occupancy(times, trajectory, time_allocation="start")
 
-        # Should be identical
+        # Should be identical, with each interval in its start bin
         assert_allclose(occupancy_default, occupancy_start, rtol=1e-12)
+        assert_allclose(occupancy_default[env.bin_at(trajectory[:2])], [0.1, 0.1])
+        assert occupancy_default.sum() == pytest.approx(0.2)
 
 
 class TestLinearOccupancyMassConservation:

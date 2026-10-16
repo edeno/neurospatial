@@ -133,13 +133,18 @@ class TestBinSequenceDeduplication:
             bin_size=5.0,
         )
 
-        times = np.array([0.0, 1.0, 2.0, 3.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3])
         positions = np.array([[2.0], [2.5], [7.0], [7.5]])
 
         bins_default = env.bin_sequence(times, positions)
         bins_explicit = env.bin_sequence(times, positions, dedup=True)
 
         assert_array_equal(bins_default, bins_explicit)
+        # Consecutive samples in the same bin collapse to one entry.
+        per_sample = env.bin_at(positions)
+        runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
+        assert len(runs) < len(per_sample)
+        assert_array_equal(bins_default, runs)
 
     def test_no_dedup_preserves_all_samples(self):
         """Test that dedup=False keeps all samples."""
@@ -485,14 +490,15 @@ class TestBinSequenceMultipleLayouts:
             bin_size=2.5,
         )
 
-        times = np.arange(20, dtype=float)
+        times = np.arange(20, dtype=float) / 30.0
         positions = rng.uniform(0, 10, (20, 2))
 
         bins = env.bin_sequence(times, positions)
 
-        # Length may be less than 20 if dedup=True (default)
-        assert len(bins) <= 20
-        # Some may be outside (-1) if they fall outside polygon
+        # One entry per run of equal bins (dedup=True is the default)
+        per_sample = env.bin_at(positions)
+        runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
+        assert_array_equal(bins, runs)
         assert bins.dtype == np.int32
 
 
@@ -506,13 +512,13 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(5, dtype=float)
+        times = np.arange(5, dtype=float) / 10.0
         positions = np.full((5, 1), 100.0)  # All far outside
 
         bins = env.bin_sequence(times, positions, dedup=False)
 
-        # All should be -1 (outside)
-        assert np.all(bins == -1)
+        # Every sample is kept, and all are -1 (outside)
+        assert_array_equal(bins, np.full(5, -1))
 
     def test_all_samples_outside_with_none(self):
         """Test all outside samples with outside_value=None."""
@@ -521,7 +527,7 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(5, dtype=float)
+        times = np.arange(5, dtype=float) / 10.0
         positions = np.full((5, 1), 100.0)  # All far outside
 
         bins = env.bin_sequence(times, positions, outside_value=None)
@@ -537,13 +543,15 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(4, dtype=float)
+        times = np.arange(4, dtype=float) / 10.0
         positions = np.array([[2.5], [7.5], [12.5], [17.5]])  # Different bin each time
 
         bins_no_dedup = env.bin_sequence(times, positions, dedup=False)
         bins_dedup = env.bin_sequence(times, positions, dedup=True)
 
         # No consecutive repeats, so dedup should have no effect
+        assert_array_equal(bins_no_dedup, env.bin_at(positions))
+        assert len(np.unique(bins_no_dedup)) == 4
         assert_array_equal(bins_no_dedup, bins_dedup)
 
     def test_boundary_crossing(self):

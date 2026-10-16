@@ -52,8 +52,8 @@ def test_observed_runs(two_epoch_recording):
     ]
     assert observed_runs(times, max_gap=0.5, epochs=[(0.0, 50.0)]) == [slice(0, 2501)]
     assert observed_runs(
-        np.array([0.0, 0.1, 10.0, 20.0, 20.1]), max_gap=0.5, epochs=None
-    ) == [slice(0, 2), slice(3, 5)]
+        np.array([0.0, 0.1, 0.2, 10.0, 20.0, 20.1, 20.2]), max_gap=0.5, epochs=None
+    ) == [slice(0, 3), slice(4, 7)]
 
 
 def test_start_allocated_occupancy():
