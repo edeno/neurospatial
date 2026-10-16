@@ -23,13 +23,12 @@ layers =
     _constants : _exceptions : _intervals : _logging : _lru : _stacklevel : _typing : _validation
 ignore_imports =
     # Environment facade methods that hand off to storage (to_file, from_file,
-    # to_dict, from_dict, to_nwb, from_nwb) and rendering (animate_fields,
-    # plot(scale_bar=...)) through function-local imports.
+    # to_dict, from_dict, to_nwb, from_nwb) and rendering (animate_fields)
+    # through function-local imports.
     neurospatial.environment.core -> neurospatial.io
     neurospatial.environment.core -> neurospatial.io.nwb
     neurospatial.environment._factories -> neurospatial.io.nwb
     neurospatial.environment.core -> neurospatial.animation.core
-    neurospatial.environment._visualization -> neurospatial.animation.config
 broken_contract_guidance =
     Move the imported code down to the importer's layer or below, or move the
     importer up. Only Environment facade methods that hand off to io or

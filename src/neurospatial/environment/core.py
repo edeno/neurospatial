@@ -151,12 +151,12 @@ if TYPE_CHECKING:
     import shapely
     from matplotlib.colors import Colormap
 
-    from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._factories import PolygonType
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.geometry._polygon import ClipMapping
+    from neurospatial.layout._scale_bar import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
