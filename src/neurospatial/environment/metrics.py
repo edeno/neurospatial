@@ -92,19 +92,7 @@ def _boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
 
 def _linearization_properties(env: MetricsConsumer) -> dict[str, Any]:
     """Implement Environment.linearization_properties using explicit metrics inputs."""
-    return cast(
-        "dict[str, Any]",
-        _copy_export(env._linearization_properties_cached),
-    )
-
-
-def _linearization_properties_cached(env: MetricsConsumer) -> dict[str, Any]:
-    """Implement Environment._linearization_properties_cached using explicit metrics inputs."""
-    if not env._is_linearized_track_env:
-        return {"is_linearized_track": False}
-
-    # The owned public value never exposed mutable builder-only fields.
-    return {"is_linearized_track": True}
+    return {"is_linearized_track": env._is_linearized_track_env}
 
 
 def _get_bin_attributes(env: MetricsConsumer) -> pd.DataFrame:

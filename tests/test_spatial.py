@@ -79,7 +79,7 @@ class TestMapPointsToBins:
 
         np.testing.assert_array_equal(bins1, bins2)
 
-    def test_clear_kdtree_cache_behavior(self, grid_env):
+    def test_clear_cache_behavior(self, grid_env):
         """Test that clear_cache() allows recomputation with identical results."""
         points = np.array([[5.0, 5.0], [2.0, 3.0], [8.0, 7.0]])
 
@@ -87,7 +87,7 @@ class TestMapPointsToBins:
         bins_before = map_points_to_bins(grid_env, points)
 
         # Clear cache
-        grid_env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+        grid_env.clear_cache()
 
         # Mapping after clear should return identical results
         bins_after = map_points_to_bins(grid_env, points)
@@ -187,107 +187,6 @@ class TestEnvironmentClearCache:
         )
         np.testing.assert_array_almost_equal(
             self._to_array(diff_op_before), self._to_array(diff_op_after)
-        )
-        np.testing.assert_array_equal(boundary_before, boundary_after)
-
-    def test_clear_cache_kdtree_only_preserves_others(self, env_with_caches):
-        """Test selective kdtree clearing preserves other caches."""
-        env = env_with_caches
-        points = np.array([[50.0, 50.0]])
-
-        # Get initial values
-        kernel_before = env.compute_kernel(bandwidth=10.0)
-        boundary_before = env.boundary_bins.copy()
-
-        # Clear only KDTree cache
-        env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-
-        # KDTree should recompute correctly
-        bins_after = map_points_to_bins(env, points)
-        assert bins_after[0] >= 0  # Valid bin mapping
-
-        # Other caches should return same values (not recomputed)
-        kernel_after = env.compute_kernel(bandwidth=10.0)
-        boundary_after = env.boundary_bins
-
-        np.testing.assert_array_almost_equal(
-            self._to_array(kernel_before), self._to_array(kernel_after)
-        )
-        np.testing.assert_array_equal(boundary_before, boundary_after)
-
-    def test_clear_cache_kernels_only_preserves_others(self, env_with_caches):
-        """Test selective kernel clearing preserves other caches."""
-        env = env_with_caches
-        points = np.array([[50.0, 50.0]])
-
-        # Get initial values
-        bins_before = map_points_to_bins(env, points)
-        boundary_before = env.boundary_bins.copy()
-
-        # Clear only kernel cache
-        env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
-
-        # Kernels should recompute correctly
-        kernel_after = env.compute_kernel(bandwidth=10.0)
-        assert kernel_after.shape[0] == env.n_bins
-
-        # Other caches should return same values
-        bins_after = map_points_to_bins(env, points)
-        boundary_after = env.boundary_bins
-
-        np.testing.assert_array_equal(bins_before, bins_after)
-        np.testing.assert_array_equal(boundary_before, boundary_after)
-
-    def test_clear_cache_properties_only_preserves_others(self, env_with_caches):
-        """Test selective property clearing preserves other caches."""
-        env = env_with_caches
-        points = np.array([[50.0, 50.0]])
-
-        # Get initial values
-        bins_before = map_points_to_bins(env, points)
-        kernel_before = env.compute_kernel(bandwidth=10.0)
-
-        # Clear only cached properties
-        env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
-
-        # Properties should recompute correctly
-        diff_op_after = env.get_differential_operator()
-        boundary_after = env.boundary_bins
-        # Differential operator shape is (n_bins, n_edges), not square
-        n_edges = env.connectivity.number_of_edges()
-        assert diff_op_after.shape == (env.n_bins, n_edges)
-        assert len(boundary_after) > 0
-
-        # Other caches should return same values
-        bins_after = map_points_to_bins(env, points)
-        kernel_after = env.compute_kernel(bandwidth=10.0)
-
-        np.testing.assert_array_equal(bins_before, bins_after)
-        np.testing.assert_array_almost_equal(
-            self._to_array(kernel_before), self._to_array(kernel_after)
-        )
-
-    def test_clear_cache_none_selected_no_change(self, env_with_caches):
-        """Test that clear_cache() with all False doesn't affect behavior."""
-        env = env_with_caches
-        points = np.array([[50.0, 50.0]])
-
-        # Get values before
-        bins_before = map_points_to_bins(env, points)
-        kernel_before = env.compute_kernel(bandwidth=10.0)
-        boundary_before = env.boundary_bins.copy()
-
-        # Clear nothing
-        env.clear_cache(kdtree=False, kernels=False, cached_properties=False)
-
-        # Values should be unchanged
-        bins_after = map_points_to_bins(env, points)
-        kernel_after = env.compute_kernel(bandwidth=10.0)
-        boundary_after = env.boundary_bins
-
-        np.testing.assert_array_equal(bins_before, bins_after)
-        np.testing.assert_array_almost_equal(
-            self._to_array(kernel_before), self._to_array(kernel_after)
         )
         np.testing.assert_array_equal(boundary_before, boundary_after)
 

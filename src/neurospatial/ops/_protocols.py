@@ -44,18 +44,6 @@ class NearestBinConsumer(Protocol):
     ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
 
 
-class CacheClearConsumer(Protocol):
-    """Public control over which environment-owned analyses are discarded."""
-
-    def clear_cache(
-        self,
-        *,
-        kdtree: bool = True,
-        kernels: bool = True,
-        cached_properties: bool = True,
-    ) -> None: ...
-
-
 class DiffusionGeometryConsumer(Protocol):
     """Access to an environment's cached conductances and cell measures."""
 

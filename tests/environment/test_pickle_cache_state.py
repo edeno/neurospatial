@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import pickle
-from functools import cached_property
 
 import networkx as nx
 import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._cache import DIFFUSION_KERNELS
 
 
 class _TransientWork:
@@ -26,19 +26,27 @@ def _environment():
     )
 
 
+def _refuse_build():
+    raise AssertionError("the source cache was cleared")
+
+
+def _derive_or_pickle(env, method):
+    if method == "derived":
+        return env.subset(bins=np.ones(env.n_bins, dtype=bool))
+    return pickle.loads(pickle.dumps(env))
+
+
 @pytest.mark.parametrize("method", ["derived", "pickle"])
 def test_derived_and_pickle_skip_transient_work_without_clearing_source(method):
     env = _environment()
     key = (0.5, "density")
     transient = _TransientWork()
-    env._kernel_cache[key] = transient
-    if method == "derived":
-        restored = env.with_metadata()
-    else:
-        restored = pickle.loads(pickle.dumps(env))
+    env._cache.get_recent(DIFFUSION_KERNELS, key, lambda: transient)
 
-    assert env._kernel_cache[key] is transient
-    assert restored._kernel_cache == {}
+    restored = _derive_or_pickle(env, method)
+
+    assert env._cache.get_recent(DIFFUSION_KERNELS, key, _refuse_build) is transient
+    assert len(restored._cache) == 0
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(
         restored.compute_kernel(0.5), _environment().compute_kernel(0.5)
@@ -60,41 +68,27 @@ def test_pickle_size_does_not_grow_after_analysis():
     np.testing.assert_array_equal(pickle.loads(warm).compute_kernel(0.5), kernel)
 
 
-def _copy_environment(env, method):
-    if method == "derived":
-        return env.with_metadata()
-    return pickle.loads(pickle.dumps(env))
-
-
 @pytest.mark.parametrize("method", ["derived", "pickle"])
-def test_computed_properties_are_not_copied_or_pickled(method):
+def test_computed_analyses_are_not_copied_or_pickled(method):
     env = _environment()
-    env.get_differential_operator()
+    expected_operator = env.get_differential_operator().toarray()
     env.get_divergence_operator()
     env.get_bin_attributes()
     env.get_edge_attributes()
-    _ = env.boundary_bins, env.bin_sizes, env.linearization_properties
-    _ = env._diffusion_geometry, env._diffusion_eigenbasis, env._mrf_eigenbasis
-    _ = env._gaussian_kernels, env._source_flat_to_active_node_id_map
-    transient = _TransientWork()
-    keys = []
-    for cls in type(env).__mro__:
-        for name, descriptor in vars(cls).items():
-            if not isinstance(descriptor, cached_property):
-                continue
-            assert name in vars(env)
-            vars(env)[name] = transient
-            keys.append(name)
+    env.compute_gaussian_kernel(1.0)
+    env.nearest_bin(env.bin_centers)
+    _ = env.boundary_bins, env._diffusion_eigenbasis, env._mrf_eigenbasis
+    populated = len(env._cache)
+    assert populated >= 10
 
-    restored = _copy_environment(env, method)
+    restored = _derive_or_pickle(env, method)
 
-    assert all(vars(env)[key] is transient for key in keys)
-    assert not any(key in vars(restored) for key in keys)
+    assert len(env._cache) == populated
+    assert len(restored._cache) == 0
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(restored.bin_sizes, np.ones(env.n_bins))
-    assert restored.get_differential_operator().shape == (
-        env.n_bins,
-        len(env.edge_pairs),
+    np.testing.assert_array_equal(
+        restored.get_differential_operator().toarray(), expected_operator
     )
 
 

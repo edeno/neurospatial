@@ -271,7 +271,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     )
     geometry, published = env._geometry, env._binning
     kernel = env.compute_kernel(1.0)
-    cached_kernel = env._kernel_cache[(1.0, "density")]
+    cache, n_cached = env._cache, len(env._cache)
     layout = _source_layout(env)
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
     with pytest.raises(ValueError, match="sizes"):
@@ -280,7 +280,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
     assert env._geometry is geometry
     assert env._binning is published
-    assert env._kernel_cache[(1.0, "density")] is cached_kernel
+    assert env._cache is cache and len(cache) == n_cached
     np.testing.assert_array_equal(env.compute_kernel(1.0), kernel)
 
 

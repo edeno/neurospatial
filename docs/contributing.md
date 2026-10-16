@@ -252,8 +252,11 @@ validated faces once for the immutable environment;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
 operators all derive from it. Consumers read it through
 `_require_face_geometry(operation)`, which names the analysis when the layout
-has no cell faces. Private analyses use standard-library `cached_property`; `clear_cache()`
-ends their lifetime explicitly. Copies and saved environments omit these caches.
+has no cell faces. Private analyses live in one `AnalysisCache`
+(`environment/_cache.py`) with a lock per entry, so concurrent first requests
+compute each value once. `with_metadata` and `with_regions` share their
+parent's cache; derivations, readers and unpickled environments start with an
+empty one. `clear_cache()` empties it.
 
 Numerical consumers declare their small environment requirements in
 `ops._protocols`, so Cartesian and polar environments satisfy them without

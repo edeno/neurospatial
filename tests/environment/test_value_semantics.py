@@ -1,7 +1,6 @@
 """Environment is an immutable value: identity equality, no copy, no fitted state."""
 
 import copy
-import pickle
 import warnings
 
 import numpy as np
@@ -71,30 +70,8 @@ class TestNoFittedState:
 
 
 class TestAnalysisCacheInitialisation:
-    def test_new_environment_starts_with_empty_caches(self, env):
-        assert env._kdtree_cache is None
-        assert env._kernel_cache == {}
-
-    def test_derived_environment_does_not_inherit_populated_caches(self, env):
-        env.compute_kernel(bandwidth=2.0, mode="transition")
-        env.bin_at(np.array([[1.0, 1.0]]))
-        assert env._kernel_cache
-        derived = env.with_metadata(name="derived")
-        assert derived._kernel_cache == {}
-        assert derived._kdtree_cache is None
-
-    def test_pickle_round_trip_restores_empty_caches(self, env):
-        env.compute_kernel(bandwidth=2.0, mode="transition")
-        env.bin_at(np.array([[1.0, 1.0]]))
-        restored = pickle.loads(pickle.dumps(env))
-        assert restored is not env
-        assert restored._kdtree_cache is None
-        assert restored._kernel_cache == {}
-        np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
-        assert (
-            restored.bin_at(np.array([[1.0, 1.0]]))[0]
-            == env.bin_at(np.array([[1.0, 1.0]]))[0]
-        )
+    def test_new_environment_starts_with_empty_cache(self, env):
+        assert len(env._cache) == 0
 
 
 class TestRuleFixes:

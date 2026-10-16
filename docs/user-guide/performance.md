@@ -6,6 +6,19 @@ This guide covers performance characteristics, caching strategies, and optimizat
 
 neurospatial uses multiple caching mechanisms to optimize repeated operations on environments. Understanding these caches helps manage memory usage and performance for large-scale analyses.
 
+Each environment keeps one analysis cache. Its values depend only on the bins
+and their connectivity, which never change, so a cached value is always valid.
+`env.clear_cache()` (no arguments) releases everything in it to free memory;
+the next analysis recomputes what it needs and returns the same result.
+
+Environments returned by `env.with_metadata(...)` and `env.with_regions(...)`
+have the same bins, so they share their parent's cache: renaming an
+environment or changing its regions does not throw away the kernels and
+eigenbases already computed. Clearing the cache on any of them clears it for
+all of them. Environments made by `subset`, `clip`, `rebin`, `apply_transform`
+or `combine`, and environments loaded from a file, a dict, NWB or a pickle,
+start with their own empty cache.
+
 ### Cache Types
 
 #### 1. Kernel Cache
@@ -45,13 +58,16 @@ smoothed3 = env.smooth(field, bandwidth=15.0)  # Slower (new cache entry)
 
 # Manual cache control
 kernel = env.compute_kernel(bandwidth=10.0, cache=False)  # Skip cache
-env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+env.clear_cache()  # Release every cached analysis
 ```
 
 **When to clear**:
 - After processing many fields with different bandwidths (prevents memory bloat)
-- Before serializing environment (caches don't serialize)
 - In memory-constrained environments
+
+Pickles, files and NWB exports never include cached analyses, so there is no
+need to clear the cache before saving an environment or sending it to worker
+processes.
 
 ---
 
@@ -89,8 +105,8 @@ bin_indices = map_points_to_bins(env, points)  # Slower (tree construction)
 # Subsequent nearest-neighbor queries: use cached tree
 more_indices = map_points_to_bins(env, more_points)  # Fast
 
-# Clear KDTree cache when you want to free memory
-env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+# Clear the cache when you want to free memory
+env.clear_cache()
 ```
 
 **Performance impact**:
@@ -113,18 +129,13 @@ from neurospatial.ops import map_points_to_bins
 # Uses cached KDTree
 bin_indices = map_points_to_bins(env, points)
 
-# Clear only KDTree cache (selective clearing)
-env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-
-# Or clear all caches
+# Release the KDTree together with every other cached analysis
 env.clear_cache()
 ```
 
 **When to clear**:
 - When processing many different environments sequentially
 - Before long-running processes to free memory
-- After environment modifications (rare - environments are immutable)
-- Use selective clearing to preserve specific caches
 
 ---
 
@@ -423,7 +434,7 @@ tracemalloc.stop()
 import time
 
 # Benchmark uncached vs cached
-env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+env.clear_cache()
 
 start = time.time()
 result1 = env.smooth(field, bandwidth=10.0)

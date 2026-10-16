@@ -553,7 +553,7 @@ def test_eigenbasis_single_basis_and_invalidated():
 
     # Explicit cache clearing drops the holder without changing geometry.
     geometry = env._geometry
-    env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+    env.clear_cache()
     assert env._geometry is geometry
     holder2 = env._diffusion_eigenbasis
     assert holder2 == {} and id(holder2) != id(holder)

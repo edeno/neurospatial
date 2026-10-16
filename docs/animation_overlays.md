@@ -974,20 +974,15 @@ env.animate_fields(
 
 ### Clearing Caches for Parallel Rendering
 
-Environment caching can prevent pickling. Clear before parallel operations:
+Pickling an environment for worker processes never includes its cached
+analyses, so parallel rendering does not need a cleared cache. Clearing still
+frees the memory held by kernels and eigenbases in the main process:
 
 ```python
-# Clear all caches
+# Release every cached analysis (takes no arguments)
 env.clear_cache()
 
-# Or selectively clear
-env.clear_cache(
-    kdtree=True,          # Clear KDTree cache
-    kernels=False,        # Keep kernel cache
-    cached_properties=True  # Clear @cached_property values
-)
-
-# Now parallel rendering works
+# Parallel rendering
 env.animate_fields(
     fields,
     frame_times=frame_times,

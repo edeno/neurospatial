@@ -22,7 +22,7 @@ from scipy.spatial import cKDTree
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.geometry._coordinates import CartesianSystem
-    from neurospatial.ops._protocols import CacheClearConsumer, NearestBinConsumer
+    from neurospatial.ops._protocols import NearestBinConsumer
 
 
 class TieBreakStrategy(Enum):
@@ -409,37 +409,6 @@ def _nearest_bin_query(
         return (bin_indices, distances_out)
 
     return bin_indices
-
-
-def clear_kdtree_cache(env: Environment) -> None:
-    """Clear the cached KD-tree for an environment.
-
-    This is useful if bin_centers have been modified (not recommended) or
-    to free memory.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment whose KD-tree cache should be cleared.
-
-    See Also
-    --------
-    Environment.clear_cache : Clear all caches (KDTree + cached properties + kernels)
-
-    Notes
-    -----
-    For most use cases, prefer `env.clear_cache()` which clears all caches
-    including the KDTree cache and cached properties. This function is provided
-    for backward compatibility and fine-grained control.
-
-    Examples
-    --------
-    >>> from neurospatial.ops.binning import clear_kdtree_cache
-    >>> clear_kdtree_cache(env)  # doctest: +SKIP
-
-    """
-    consumer: CacheClearConsumer = env
-    consumer.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
 
 def regions_to_mask(

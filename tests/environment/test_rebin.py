@@ -273,8 +273,7 @@ class TestRebinBasic:
 
         assert coarse.layout_type == "RegularGrid"
         assert coarse._geometry is not env._geometry
-        assert coarse._kernel_cache == {}
-        assert coarse._kdtree_cache is None
+        assert len(coarse._cache) == 0
         # Cached operators must use the rebinned graph. The
         # differential operator has shape (n_bins, n_edges).
         D = coarse.get_differential_operator()

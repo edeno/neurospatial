@@ -91,7 +91,7 @@ def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypa
     for actual, wanted in zip(_geometry_arrays(fresh), expected, strict=True):
         np.testing.assert_array_equal(actual, wanted)
     assert len(calls) == 1
-    env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+    env.clear_cache()
     rebuilt = env.get_diffusion_geometry()
     assert len(calls) == 2
     assert not np.shares_memory(rebuilt.W.data, second.W.data)
@@ -130,7 +130,7 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)
     np.testing.assert_array_equal(env.compute_gaussian_kernel(1.0), expected)
-    env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+    env.clear_cache()
     rebuilt = env.compute_gaussian_kernel(1.0)
     assert len(calls) == 2
     assert not np.shares_memory(rebuilt, second)
@@ -204,7 +204,7 @@ def test_derived_and_unpickled_environments_restore_analysis_with_independently_
     geometry = env.get_diffusion_geometry()
     gaussian = env.compute_gaussian_kernel(1.0)
     if method == "derived":
-        restored = env.with_metadata()
+        restored = env.subset(bins=np.ones(env.n_bins, dtype=bool))
     else:
         restored = pickle.loads(pickle.dumps(env))
     new_geometry = restored.get_diffusion_geometry()

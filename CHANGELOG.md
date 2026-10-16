@@ -39,6 +39,23 @@
   environment to an analysis function raises `TypeError` naming the corrected
   call.
 
+- `Environment.clear_cache()` takes no arguments and releases every cached
+  analysis (KD-tree, smoothing kernels, eigenbases, operators, boundary bins
+  and attribute tables). The `kdtree=`, `kernels=` and `cached_properties=`
+  options and `neurospatial.ops.binning.clear_kdtree_cache` are removed; call
+  `env.clear_cache()` instead.
+
+- `env.with_metadata(...)` and `env.with_regions(...)` share their parent's
+  analysis cache instead of starting with an empty one, because the bins are
+  the same. A rate map computed again after renaming an environment reuses the
+  cached eigenbasis: on a 3,586-bin open field, the first
+  `compute_spatial_rate` call after `with_metadata(name=...)` took 0.51 s
+  instead of 0.88 s. Clearing the cache of one clears it for all of them.
+  Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
+  `combine`) and environments loaded from files, dicts, NWB or pickles start
+  with their own empty cache. Each cached analysis is computed once even when
+  several threads request it at the same time.
+
 - `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
   instead of `AttributeError` when the environment is not a linearized track.
   The message is unchanged.

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
+    from neurospatial.environment._cache import AnalysisCache
     from neurospatial.environment._protocols import (
         CartesianLookupConsumer,
         CellLengthConsumer,
@@ -82,8 +83,8 @@ if TYPE_CHECKING:
         _polar_system: CoordinateSystem = EgocentricPolarSystem(circular=True)
         assert_type(cartesian.coordinate_system, CartesianSystem)
         assert_type(polar.coordinate_system, EgocentricPolarSystem)
-        assert_type(cartesian._gaussian_kernels, dict[float, NDArray[np.float64]])
-        assert_type(polar._gaussian_kernels, dict[float, NDArray[np.float64]])
+        assert_type(cartesian._cache, AnalysisCache)
+        assert_type(polar._cache, AnalysisCache)
 
 
 if TYPE_CHECKING:

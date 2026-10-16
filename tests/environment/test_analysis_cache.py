@@ -1,0 +1,265 @@
+"""One analysis cache per geometry: shared by relabelled copies, never pickled."""
+
+from __future__ import annotations
+
+import pickle
+import threading
+import time
+
+import numpy as np
+import pytest
+from shapely.geometry import box
+
+from neurospatial import Environment, Regions
+from neurospatial.environment._cache import (
+    DIFFERENTIAL_OPERATOR,
+    KDTREE,
+    AnalysisCache,
+    CacheKey,
+)
+from neurospatial.ops.transforms import translate
+
+N_THREADS = 4
+
+
+def _refuse_build():
+    raise AssertionError("expected a cached value")
+
+
+@pytest.fixture
+def env() -> Environment:
+    """A 30 x 30 grid of unit cells."""
+    return Environment.from_grid_mask(
+        np.ones((30, 30), dtype=bool),
+        grid_edges=(np.arange(31.0),) * 2,
+        name="arena",
+        units="cm",
+    )
+
+
+def _populate(env: Environment) -> dict[str, np.ndarray]:
+    """Run analyses that fill the cache and return their results."""
+    field = np.linspace(0.0, 1.0, env.n_bins)
+    return {
+        # A wide bandwidth keeps a truncated eigenbasis in the cache.
+        "smoothed": env.smooth(field, 4.0),
+        "nearest": env.nearest_bin(env.bin_centers + 0.1),
+        "kernel": env.compute_kernel(1.0),
+        "gaussian": np.array(env.compute_gaussian_kernel(1.0)),
+        "boundary": env.boundary_bins,
+        "differential": env.get_differential_operator().toarray(),
+    }
+
+
+@pytest.mark.parametrize(
+    "relabel",
+    [
+        lambda env: env.with_metadata(name="renamed"),
+        lambda env: env.with_metadata(units="m", frame="room"),
+        lambda env: env.with_regions(Regions()),
+    ],
+    ids=["name", "units-frame", "regions"],
+)
+def test_metadata_copies_reuse_cached_analyses(env, relabel):
+    expected = _populate(env)
+    eigenbasis = env._diffusion_eigenbasis["basis"]
+    kdtree = env._cache.get(KDTREE, _refuse_build)
+
+    copy = relabel(env)
+
+    assert copy._cache is env._cache
+    assert copy._diffusion_eigenbasis["basis"] is eigenbasis
+    assert copy._cache.get(KDTREE, _refuse_build) is kdtree
+    for name, value in _populate(copy).items():
+        np.testing.assert_array_equal(value, expected[name], err_msg=name)
+    assert copy._diffusion_eigenbasis["basis"] is eigenbasis
+
+
+def test_analysis_on_a_copy_is_reused_by_its_source(env):
+    renamed = env.with_metadata(name="renamed")
+    operator = renamed.get_differential_operator()
+
+    assert DIFFERENTIAL_OPERATOR in env._cache
+    np.testing.assert_array_equal(
+        env.get_differential_operator().toarray(), operator.toarray()
+    )
+
+
+def test_clearing_a_copy_clears_the_shared_cache(env):
+    _populate(env)
+    renamed = env.with_metadata(name="renamed")
+
+    renamed.clear_cache()
+
+    assert len(env._cache) == 0
+
+
+@pytest.mark.parametrize(
+    "derive",
+    [
+        lambda env: env.subset(bins=np.ones(env.n_bins, dtype=bool)),
+        lambda env: env.rebin(factor=2),
+        lambda env: env.clip(box(0.0, 0.0, 30.0, 30.0)),
+        lambda env: env.apply_transform(translate(5.0, 0.0)),
+        lambda env: Environment.combine(
+            {"a": env, "b": env.apply_transform(translate(50.0, 0.0))}
+        ),
+        lambda env: pickle.loads(pickle.dumps(env)),
+        lambda env: Environment.from_dict(env.to_dict()),
+    ],
+    ids=["subset", "rebin", "clip", "apply_transform", "combine", "pickle", "dict"],
+)
+def test_derived_and_restored_environments_start_with_their_own_cache(env, derive):
+    _populate(env)
+    populated = len(env._cache)
+
+    derived = derive(env)
+
+    assert derived._cache is not env._cache
+    assert len(derived._cache) == 0
+    assert len(env._cache) == populated
+    derived.nearest_bin(derived.bin_centers)
+    derived.compute_gaussian_kernel(1.0)
+    assert len(env._cache) == populated
+
+
+def test_file_read_starts_with_its_own_cache(env, tmp_path):
+    _populate(env)
+    env.to_file(tmp_path / "arena")
+
+    loaded = Environment.from_file(tmp_path / "arena")
+
+    assert len(loaded._cache) == 0
+
+
+def test_pickle_round_trip_has_empty_cache_and_equal_results(env):
+    expected = _populate(env)
+
+    restored = pickle.loads(pickle.dumps(env))
+
+    assert len(restored._cache) == 0
+    for name, value in _populate(restored).items():
+        np.testing.assert_array_equal(value, expected[name], err_msg=name)
+
+
+def _run_concurrently(call):
+    """Call ``call`` from N_THREADS threads released at the same moment."""
+    barrier = threading.Barrier(N_THREADS)
+    results: list[object] = [None] * N_THREADS
+    errors: list[BaseException] = []
+
+    def worker(index: int) -> None:
+        barrier.wait()
+        try:
+            results[index] = call()
+        except BaseException as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(N_THREADS)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert not any(thread.is_alive() for thread in threads), "threads deadlocked"
+    assert not errors, errors
+    return results
+
+
+def _slow_counted(function, calls):
+    """Wrap a builder so concurrent callers overlap while it runs."""
+
+    def wrapper(*args, **kwargs):
+        calls.append(threading.get_ident())
+        time.sleep(0.05)
+        return function(*args, **kwargs)
+
+    return wrapper
+
+
+def test_concurrent_first_kdtree_lookup_builds_one_tree(env, monkeypatch):
+    import scipy.spatial
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        scipy.spatial, "cKDTree", _slow_counted(scipy.spatial.cKDTree, calls)
+    )
+    points = env.bin_centers + 0.1
+
+    results = _run_concurrently(lambda: env.nearest_bin(points))
+
+    assert len(calls) == 1
+    for result in results:
+        np.testing.assert_array_equal(result, np.arange(env.n_bins))
+
+
+def test_concurrent_first_diffusion_geometry_builds_once(env, monkeypatch):
+    from neurospatial.environment import fields
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        fields,
+        "_diffusion_geometry",
+        _slow_counted(fields._diffusion_geometry, calls),
+    )
+
+    results = _run_concurrently(env.get_diffusion_geometry)
+
+    assert len(calls) == 1
+    for result in results:
+        assert np.shares_memory(result.W.data, results[0].W.data)
+
+
+def test_concurrent_kernels_build_nested_geometry_once(env, monkeypatch):
+    """A kernel needs the diffusion geometry; neither is built twice or deadlocks."""
+    from neurospatial.environment import fields
+    from neurospatial.ops import diffusion
+
+    geometry_calls: list[int] = []
+    kernel_calls: list[int] = []
+    monkeypatch.setattr(
+        fields,
+        "_diffusion_geometry",
+        _slow_counted(fields._diffusion_geometry, geometry_calls),
+    )
+    monkeypatch.setattr(
+        diffusion,
+        "diffusion_kernel",
+        _slow_counted(diffusion.diffusion_kernel, kernel_calls),
+    )
+
+    results = _run_concurrently(lambda: env.compute_kernel(1.0))
+
+    assert len(geometry_calls) == 1
+    assert len(kernel_calls) == 1
+    for result in results:
+        np.testing.assert_array_equal(result, results[0])
+
+
+def test_cache_gives_concurrent_callers_one_value():
+    cache = AnalysisCache()
+    key: CacheKey[object] = CacheKey("value")
+    calls: list[int] = []
+
+    def build() -> object:
+        calls.append(threading.get_ident())
+        time.sleep(0.05)
+        return object()
+
+    results = _run_concurrently(lambda: cache.get(key, build))
+
+    assert len(calls) == 1
+    assert all(result is results[0] for result in results)
+
+
+def test_cache_pickles_and_copies_empty():
+    import copy
+
+    cache = AnalysisCache()
+    key: CacheKey[list[int]] = CacheKey("value")
+    cache.get(key, lambda: [1, 2, 3])
+
+    for restored in (pickle.loads(pickle.dumps(cache)), copy.deepcopy(cache)):
+        assert isinstance(restored, AnalysisCache)
+        assert len(restored) == 0
+        assert restored.get(key, lambda: [4]) == [4]
+    assert cache.get(key, _refuse_build) == [1, 2, 3]

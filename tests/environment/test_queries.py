@@ -290,13 +290,11 @@ class TestBinSizes:
 
         assert np.all(sizes > 0)
 
-    def test_bin_sizes_cached(self, small_2d_env):
-        """Measures are cached internally and exported independently."""
+    def test_bin_sizes_exported_independently(self, small_2d_env):
+        """Each read exports the published measures as a separate array."""
         sizes1 = small_2d_env.bin_sizes
-        cached = small_2d_env._bin_sizes_cached
         sizes2 = small_2d_env.bin_sizes
 
-        assert small_2d_env._bin_sizes_cached is cached
         assert sizes1 is not sizes2
         np.testing.assert_array_equal(sizes1, sizes2)
 

@@ -97,14 +97,9 @@ def _neighbors(env: QueryConsumer, bin_index: int | ArrayLike) -> list[int]:
 
 def _bin_sizes(env: QueryConsumer) -> NDArray[np.float64]:
     """Implement Environment.bin_sizes using explicit queries inputs."""
-    sizes: NDArray[np.float64] = env._bin_sizes_cached.copy()
+    sizes: NDArray[np.float64] = env._binning.bins.sizes.copy()
     sizes.setflags(write=False)
     return sizes
-
-
-def _bin_sizes_cached(env: QueryConsumer) -> NDArray[np.float64]:
-    """Implement Environment._bin_sizes_cached using explicit queries inputs."""
-    return env._binning.bins.sizes
 
 
 def _path_between(

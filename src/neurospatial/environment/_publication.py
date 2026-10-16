@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.environment._cache import AnalysisCache
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.regions import Regions
@@ -686,7 +687,7 @@ def publish(
         )
     )
     env._regions = env._validate_regions(Regions() if regions is None else regions)
-    env._reset_analysis_caches()
+    env._cache = AnalysisCache()
     log_environment_created(
         env_type=provenance.layout_type,
         n_bins=env.n_bins,

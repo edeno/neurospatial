@@ -46,6 +46,6 @@ def test_public_calculus_paths_share_owned_operator_caches() -> None:
             env.get_differential_operator().toarray(), expected
         )
         assert differential.call_count == divergence.call_count == 1
-        env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        env.clear_cache()
         env.get_divergence_operator()
         assert differential.call_count == divergence.call_count == 2

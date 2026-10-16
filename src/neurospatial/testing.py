@@ -91,24 +91,27 @@ def assert_environment_contract(
     else:
         raise AssertionError("environment region snapshot accepted mutation")
 
-    restored_values = [
+    same_geometry = [
         copy.copy(env),
         copy.deepcopy(env),
+        env.with_metadata(name="contract replacement"),
+    ]
+    read_back = [
         pickle.loads(pickle.dumps(env)),
         type(env).from_dict(env.to_dict()),
-        env.with_metadata(name="contract replacement"),
     ]
     with tempfile.TemporaryDirectory(prefix="neurospatial-contract-") as directory:
         path = Path(directory) / "environment.json"
         env.to_file(path)
-        restored_values.append(type(env).from_file(path))
-    for restored in restored_values:
+        read_back.append(type(env).from_file(path))
+    assert all(restored._cache is env._cache for restored in same_geometry)
+    assert all(len(restored._cache) == 0 for restored in read_back)
+    for restored in same_geometry + read_back:
         assert type(restored) is type(env)
         check_lookup(restored)
         np.testing.assert_array_equal(restored.bin_centers, centers)
         np.testing.assert_array_equal(restored.bin_sizes, sizes)
         np.testing.assert_array_equal(restored.edge_pairs, pairs)
-        assert not restored._kernel_cache
 
     if not env.binning.faces.available:
         try:

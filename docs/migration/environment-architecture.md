@@ -62,7 +62,7 @@ and used as dictionary keys.
 
 | Before | Now |
 | --- | --- |
-| `env2 = env.copy()` | `env2 = env` (or `env.with_metadata()` for a separate object with its own empty caches) |
+| `env2 = env.copy()` | `env2 = env` (or `env.with_metadata()` for a separate object) |
 | `env.copy()` then `with_regions(...)` | `env.with_regions(...)` |
 
 **No "fitted" state.** An environment always has its bins and connectivity, so
@@ -74,6 +74,44 @@ function raises a `TypeError` that shows the corrected call.
 
 **Linearization errors.** `to_linear` and `linear_to_nd` raise `TypeError`
 (not `AttributeError`) on an environment that is not a linearized track.
+
+## One analysis cache, shared by relabelled copies
+
+An environment computes some analyses once and keeps them: the KD-tree behind
+`nearest_bin`, diffusion and Gaussian smoothing kernels, the eigenbases used by
+`smooth`, `diffuse` and `get_mrf_basis`, the gradient and divergence
+operators, boundary bins and the bin and edge attribute tables. They now live
+in one cache per environment.
+
+**`clear_cache()` takes no arguments.** It releases every cached analysis. The
+`kdtree=`, `kernels=` and `cached_properties=` options are removed, together
+with `neurospatial.ops.binning.clear_kdtree_cache`. Clearing only frees
+memory: the next analysis computes what it needs again and gives the same
+result.
+
+| Before | Now |
+| --- | --- |
+| `env.clear_cache(kdtree=True, kernels=False, cached_properties=False)` | `env.clear_cache()` |
+| `env.clear_cache(kernels=True)` | `env.clear_cache()` |
+| `clear_kdtree_cache(env)` | `env.clear_cache()` |
+
+**Relabelled copies share the cache.** `env.with_metadata(...)` and
+`env.with_regions(...)` return environments with the same bins, so they now
+share their parent's cache instead of starting empty. Renaming an environment
+or replacing its regions keeps the kernels and eigenbases already computed:
+
+```python
+rates = compute_spatial_rate(env, spike_times, times, positions)
+renamed = env.with_metadata(name="session 2")
+rates = compute_spatial_rate(renamed, spike_times, times, positions)  # reuses the cache
+```
+
+Calling `clear_cache()` on one of them clears it for all of them. To get an
+environment with its own empty cache, derive one (`subset`, `clip`, `rebin`,
+`apply_transform`, `combine`) or load one from a file, dict, NWB or pickle.
+
+**Threads.** Each cached analysis is computed once, even when several threads
+ask for it at the same time.
 
 ## Polar environments report their own layout type
 

@@ -255,8 +255,7 @@ def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
     child = parent.rebin(2)
     assert published == [child]
     assert child._geometry is not parent._geometry
-    assert child._kernel_cache == {}
-    assert child._kdtree_cache is None
+    assert len(child._cache) == 0
 
 
 def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():

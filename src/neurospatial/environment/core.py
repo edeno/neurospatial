@@ -7,7 +7,6 @@ import logging
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -27,6 +26,19 @@ from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.environment._cache import (
+    BIN_ATTRIBUTES,
+    BOUNDARY_BINS,
+    DIFFERENTIAL_OPERATOR,
+    DIFFUSION_EIGENBASIS,
+    DIFFUSION_GEOMETRY,
+    DIVERGENCE_OPERATOR,
+    EDGE_ATTRIBUTES,
+    FACE_GEOMETRY,
+    KDTREE,
+    MRF_EIGENBASIS,
+    AnalysisCache,
+)
 from neurospatial.environment._publication import (
     UNSET,
     _freeze_geometry_arrays,
@@ -73,7 +85,6 @@ if TYPE_CHECKING:
     import scipy.sparse
     import shapely
     from matplotlib.colors import Colormap
-    from scipy.spatial import cKDTree
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
@@ -180,12 +191,7 @@ class Environment(Generic[_C]):
 
     _is_linearized_track_env: bool
 
-    _kdtree_cache: cKDTree | None
-
-    _kernel_cache: dict[
-        tuple[float, KernelMode],
-        NDArray[np.float64],
-    ]
+    _cache: AnalysisCache
 
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
@@ -197,19 +203,8 @@ class Environment(Generic[_C]):
             )
         )
 
-    def __getstate__(self) -> dict[str, Any]:
-        """Export owned state without copying or serializing transient analyses."""
-        state = self.__dict__.copy()
-        for name in ("_kernel_cache", "_kdtree_cache"):
-            state.pop(name, None)
-        for cls in type(self).__mro__:
-            for name, descriptor in vars(cls).items():
-                if isinstance(descriptor, cached_property):
-                    state.pop(name, None)
-        return state
-
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore owned state and reset transient caches without a builder."""
+        """Restore owned state; the analysis cache unpickles empty."""
         self.__dict__.update(state)
         from neurospatial.geometry._ownership import own_arena
 
@@ -219,7 +214,6 @@ class Environment(Generic[_C]):
             arena=own_arena(self._geometry.arena),
         )
         self._regions = self._validate_regions(self._regions)
-        self._reset_analysis_caches()
         self._freeze_geometry_arrays()
 
     def _freeze_geometry_arrays(self) -> None:
@@ -349,17 +343,10 @@ class Environment(Generic[_C]):
                 stacklevel=_external_stacklevel(),
             )
 
-    def _reset_analysis_caches(self) -> None:
-        """Discard this instance's memoized analyses without clearing shared values."""
-        self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
-        self._kernel_cache = {}
-        self._kdtree_cache = None
-
     def _replace_value(self) -> Self:
-        """Share published values while giving the new environment fresh caches."""
+        """Share published geometry and its analysis cache with a new instance."""
         result = type(self).__new__(type(self))
         result.__dict__.update(self.__dict__)
-        result._reset_analysis_caches()
         return result
 
     def __copy__(self) -> Self:
@@ -390,7 +377,8 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Same concrete type and geometry, with fresh analysis caches.
+            Same concrete type and geometry. It shares this environment's
+            analysis cache, so analyses computed on either are reused by both.
         """
         metadata = _Metadata(
             self.name if isinstance(name, _Unset) else name,
@@ -424,7 +412,8 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Same concrete type and geometry, with fresh analysis caches.
+            Same concrete type and geometry. It shares this environment's
+            analysis cache, so analyses computed on either are reused by both.
         """
         snapshot = self._validate_regions(regions)
         result = self._replace_value()
@@ -590,33 +579,6 @@ class Environment(Generic[_C]):
 
         return _info(self)
 
-    @cached_property
-    def _source_flat_to_active_node_id_map(self) -> dict[int, int]:
-        """Get or create the mapping from original full grid flat indices
-        to active bin IDs (0 to n_active_bins - 1).
-
-        The map is cached on the instance for subsequent calls. This method
-        is intended for internal use by other Environment or related manager methods.
-
-        Returns
-        -------
-        Dict[int, int]
-            A dictionary mapping `source_grid_flat_index` from graph nodes
-            to the `active_bin_id` (which is the graph node ID).
-
-        Raises
-        ------
-        RuntimeError
-            If the connectivity graph is not available, or if all nodes are
-            missing the 'source_grid_flat_index' attribute required for the map.
-
-        """
-        return {
-            data["source_grid_flat_index"]: node_id
-            for node_id, data in self.connectivity.nodes(data=True)
-            if "source_grid_flat_index" in data
-        }
-
     @property
     def is_linearized_track(self) -> bool:
         """Indicate if the environment's layout is primarily 1-dimensional.
@@ -723,7 +685,7 @@ class Environment(Generic[_C]):
         of the generator used by ``env.smooth``.
 
         Both matrices are cached privately for this immutable geometry.
-        ``clear_cache(cached_properties=True)`` discards them when needed.
+        ``clear_cache()`` discards them when needed.
 
         Examples
         --------
@@ -767,7 +729,7 @@ class Environment(Generic[_C]):
         -------
         scipy.sparse.csc_matrix
             Sparse operator of shape (n_bins, n_edges). The private cache is
-            reused until clear_cache(cached_properties=True).
+            reused until clear_cache().
 
         Raises
         ------
@@ -791,132 +753,61 @@ class Environment(Generic[_C]):
         """
         return self._divergence_operator_cached.copy()
 
-    @cached_property
+    @property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        faces = self._require_face_geometry("gradient/divergence")
-        return _compute_differential_operator(faces, self.n_bins)
+        def build() -> sparse.csc_matrix:
+            faces = self._require_face_geometry("gradient/divergence")
+            return _compute_differential_operator(faces, self.n_bins)
 
-    @cached_property
+        return self._cache.get(DIFFERENTIAL_OPERATOR, build)
+
+    @property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        faces = self._require_face_geometry("gradient/divergence")
-        return _compute_divergence_operator(faces, self._differential_operator_cached)
+        def build() -> sparse.csc_matrix:
+            faces = self._require_face_geometry("gradient/divergence")
+            return _compute_divergence_operator(
+                faces, self._differential_operator_cached
+            )
 
-    def _clear_explicit_caches(
-        self, *, kdtree: bool = True, kernels: bool = True
-    ) -> None:
-        """Internal method to clear explicit caches (KDTree, kernels).
+        return self._cache.get(DIVERGENCE_OPERATOR, build)
 
-        This is called by clear_cache().
+    def clear_cache(self) -> None:
+        """Release every cached analysis of this environment's geometry.
 
-        Parameters
-        ----------
-        kdtree : bool, default=True
-            Whether to clear the KDTree cache.
-        kernels : bool, default=True
-            Whether to clear the cached smoothing kernels.
-        """
-        if kdtree:
-            self._kdtree_cache = None
-        if kernels:
-            self._kernel_cache = {}
-            self._gaussian_kernels.clear()
-
-    def clear_cache(
-        self,
-        *,
-        kdtree: bool = True,
-        kernels: bool = True,
-        cached_properties: bool = True,
-    ) -> None:
-        """Clear caches with optional selective clearing.
-
-        This method clears explicit caches (KDTree, kernels) and/or
-        @cached_property values. By default, all caches are cleared.
-
-        Parameters
-        ----------
-        kdtree : bool, default=True
-            Whether to clear the KDTree cache used by map_points_to_bins().
-        kernels : bool, default=True
-            Whether to clear the cached smoothing kernels: diffusion kernels
-            used by compute_kernel(), smooth() and occupancy(), and the
-            Gaussian-KDE kernels of rate-map smoothing.
-        cached_properties : bool, default=True
-            Whether to clear all @cached_property values.
-
-        Caches available for clearing
-        ------------------------------
-        **Explicit caches** (kdtree, kernels):
-            - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
-            - Kernel caches (_kernel_cache, _gaussian_kernels): diffusion
-              kernels used by smooth() and occupancy(), and Gaussian-KDE
-              kernels; each keeps its most recently used kernels
-
-        **Cached properties** (cached_properties):
-            - differential_operator: Graph differential operator matrix
-            - boundary_bins: Bins on environment boundary
-            - bin_sizes: Area/volume of each bin
-            - bin_attributes: DataFrame with bin properties (position, degree, etc.)
-            - edge_attributes: DataFrame with edge properties (distance, angle, etc.)
-            - linearization_properties: 1D linearization metadata
-            - _source_flat_to_active_node_id_map: Grid index mapping
+        An environment computes some analyses once and keeps them: the
+        KD-tree used by nearest-bin lookup, diffusion and Gaussian smoothing
+        kernels, the eigenbasis used by ``diffuse``, ``smooth`` and the MRF
+        basis, cell faces and diffusion geometry, the gradient and divergence
+        operators, boundary bins and the bin and edge attribute tables. They
+        depend only on the geometry, which never changes, so keeping them is
+        always correct. Clearing them only frees memory; the next analysis
+        computes what it needs again and returns the same results.
 
         Notes
         -----
-        This method is useful when:
+        ``with_metadata`` and ``with_regions`` return environments with the
+        same geometry, and they share this environment's cache. Clearing it on
+        any of them clears it for all of them. Environments derived with
+        ``subset``, ``clip``, ``rebin``, ``apply_transform`` or ``combine``,
+        and environments loaded from a file, a dict, NWB or a pickle, have
+        their own caches.
 
-        - **Memory management**: Free memory after intensive computations
-        - **Testing**: Ensure clean state between test runs
-        - **Profiling**: Measure cache rebuild performance
-        - **Selective clearing**: Clear only specific cache types
-        - **Manual modifications**: Clear stale caches if environment was
-          modified (not recommended - create new Environment instead)
-
-        Cached properties are automatically recomputed on next access.
-
-        **Performance impact**: Clearing caches has minimal overhead, but
-        recomputing cached properties (especially differential_operator) can
-        be expensive for large environments (>100,000 bins).
+        Pickling never includes cached analyses, so clearing is not needed
+        before sending an environment to worker processes.
 
         Examples
         --------
-        Clear all caches (default behavior):
-
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(1000, 2) * 100
+        >>> data = np.random.default_rng(0).uniform(0, 100, size=(1000, 2))
         >>> env = Environment.from_samples(data, bin_size=5.0)
-        >>>
-        >>> # Access some cached properties
-        >>> _ = env.get_differential_operator()
-        >>> _ = env.boundary_bins
-        >>>
-        >>> # Clear all caches
-        >>> env.clear_cache()
-        >>>
-        >>> # Properties will be recomputed on next access
-        >>> _ = env.get_differential_operator()  # Triggers recomputation
-
-        Clear only specific cache types:
-
-        >>> # Clear only KDTree cache (keep kernels and cached properties)
-        >>> env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-        >>>
-        >>> # Clear only cached properties (keep KDTree and kernels)
-        >>> env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
-        >>>
-        >>> # Clear KDTree and kernels, keep cached properties
-        >>> env.clear_cache(kdtree=True, kernels=True, cached_properties=False)
+        >>> kernel = env.compute_kernel(bandwidth=10.0)
+        >>> renamed = env.with_metadata(name="session 2")
+        >>> env.clear_cache()  # also clears the cache that ``renamed`` uses
+        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0), kernel)
+        True
         """
-        # Clear explicit caches (KDTree, kernels) selectively
-        self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
-
-        # Geometry is immutable; cached analyses last until explicitly cleared.
-        if cached_properties:
-            for cls in type(self).__mro__:
-                for name, attr in vars(cls).items():
-                    if isinstance(attr, cached_property):
-                        self.__dict__.pop(name, None)
+        self._cache.clear()
 
     @property
     def coordinate_kind(self) -> Literal["cartesian", "polar"]:
@@ -988,18 +879,21 @@ class Environment(Generic[_C]):
         coordinates = self._geometry.coordinates
         return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
 
-    @cached_property
+    @property
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
-        if not self._is_polar:
-            return _cartesian_boundary_bins(self)
-        from neurospatial.layout.helpers.utils import find_boundary_nodes
+        def build() -> NDArray[np.intp]:
+            if not self._is_polar:
+                return _cartesian_boundary_bins(self)
+            from neurospatial.layout.helpers.utils import find_boundary_nodes
 
-        return find_boundary_nodes(
-            graph=self.connectivity,
-            grid_shape=self.grid_shape,
-            active_mask=self.active_mask,
-            periodic_axes=(1,) if self._angular_is_circular else (),
-        ).astype(np.intp, copy=False)
+            return find_boundary_nodes(
+                graph=self.connectivity,
+                grid_shape=self.grid_shape,
+                active_mask=self.active_mask,
+                periodic_axes=(1,) if self._angular_is_circular else (),
+            ).astype(np.intp, copy=False)
+
+        return self._cache.get(BOUNDARY_BINS, build)
 
     @classmethod
     def from_polar_egocentric(
@@ -1245,11 +1139,9 @@ class Environment(Generic[_C]):
             tie_break, max_distance, max_distance_factor
         )
         centers = self._binning.bins.centers
-        if self._kdtree_cache is None:
-            self._kdtree_cache = cKDTree(centers)
         return _nearest_bin_query(
             centers,
-            self._kdtree_cache,
+            self._cache.get(KDTREE, lambda: cKDTree(centers)),
             points,
             tie_break=resolved,
             return_dist=return_dist,
@@ -3835,12 +3727,6 @@ class Environment(Generic[_C]):
 
         return _bin_sizes(self)
 
-    @cached_property
-    def _bin_sizes_cached(self) -> NDArray[np.float64]:
-        from neurospatial.environment.queries import _bin_sizes_cached
-
-        return _bin_sizes_cached(self)
-
     def path_between(
         self,
         source_active_bin_idx: int | ArrayLike,
@@ -5559,12 +5445,6 @@ class Environment(Generic[_C]):
 
         return _linearization_properties(self)
 
-    @cached_property
-    def _linearization_properties_cached(self) -> dict[str, Any]:
-        from neurospatial.environment.metrics import _linearization_properties_cached
-
-        return _linearization_properties_cached(self)
-
     def get_bin_attributes(self) -> pd.DataFrame:
         """
         Extract bin (node) attributes as a pandas DataFrame.
@@ -5613,12 +5493,11 @@ class Environment(Generic[_C]):
 
         return _get_bin_attributes(self)
 
-    @cached_property
+    @property
     def _bin_attributes_cached(self) -> pd.DataFrame:
-        # Extract node attributes from connectivity graph
         from neurospatial.environment.metrics import _bin_attributes_cached
 
-        return _bin_attributes_cached(self)
+        return self._cache.get(BIN_ATTRIBUTES, lambda: _bin_attributes_cached(self))
 
     def get_edge_attributes(self) -> pd.DataFrame:
         """
@@ -5672,12 +5551,11 @@ class Environment(Generic[_C]):
 
         return _get_edge_attributes(self)
 
-    @cached_property
+    @property
     def _edge_attributes_cached(self) -> pd.DataFrame:
-        # Extract edge attributes from connectivity graph
         from neurospatial.environment.metrics import _edge_attributes_cached
 
-        return _edge_attributes_cached(self)
+        return self._cache.get(EDGE_ATTRIBUTES, lambda: _edge_attributes_cached(self))
 
     def compute_kernel(
         self,
@@ -5720,7 +5598,7 @@ class Environment(Generic[_C]):
             with the same (bandwidth, mode) reuse the computation and return
             independent copies of the cached result.
             The environment keeps the most recently used kernels (eight by
-            default); ``clear_cache(kernels=True)`` releases them.
+            default); ``clear_cache()`` releases them.
 
         Returns
         -------
@@ -5810,7 +5688,7 @@ class Environment(Generic[_C]):
         The dense matrix costs O(n_bins**2) memory. Repeated calls reuse an
         environment-owned bounded cache and return independent array headers
         without copying the matrix. Use .copy() for an editable matrix.
-        clear_cache(kernels=True) releases the cached weights.
+        clear_cache() releases the cached weights.
         """
         from neurospatial.environment.fields import _compute_gaussian_kernel
 
@@ -5832,7 +5710,7 @@ class Environment(Generic[_C]):
         Every export has independent sparse and NumPy headers over immutable
         buffers. Replacing an exported matrix's buffers or changing an array's
         shape cannot change the environment. Reading the export does not copy
-        O(n_edges) data. clear_cache(cached_properties=True) rebuilds on demand.
+        O(n_edges) data. After clear_cache() it is rebuilt on demand.
 
         Raises
         ------
@@ -6092,7 +5970,7 @@ class Environment(Generic[_C]):
 
         return _diffuse(self, fields, bandwidth, mode=mode, backend=backend)
 
-    @cached_property
+    @property
     def _face_geometry(self) -> FaceGeometry:
         """Validated cell faces, cached for this immutable geometry.
 
@@ -6102,7 +5980,7 @@ class Environment(Generic[_C]):
         """
         from neurospatial.environment.fields import _face_geometry
 
-        return _face_geometry(self)
+        return self._cache.get(FACE_GEOMETRY, lambda: _face_geometry(self))
 
     def _require_face_geometry(self, operation: str) -> FaceGeometry:
         """Cached cell faces, or an actionable error naming ``operation``.
@@ -6121,48 +5999,34 @@ class Environment(Generic[_C]):
 
         return _require_face_geometry(self, operation)
 
-    @cached_property
-    def _diffusion_geometry(
-        self,
-    ) -> DiffusionGeometry:
+    @property
+    def _diffusion_geometry(self) -> DiffusionGeometry:
         """Cached diffusion geometry ``(W, volumes, n_components, labels)``.
 
-        Geometry-only, so it is built once and discarded by
-        ``clear_cache(cached_properties=True)``. Shared by dense kernels,
-        :meth:`diffuse`, smoothness bases, and the W-component support gates.
+        Shared by dense kernels, :meth:`diffuse`, smoothness bases, and the
+        W-component support gates.
         """
         from neurospatial.environment.fields import _diffusion_geometry
 
-        return _diffusion_geometry(self)
+        return self._cache.get(DIFFUSION_GEOMETRY, lambda: _diffusion_geometry(self))
 
-    @cached_property
+    @property
     def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
-        """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
+        """Growable single-entry truncated-eigenbasis holder for :meth:`diffuse`.
 
-        Returns a small mutable holder (the max-rank truncated basis, grown by
+        A small mutable holder (the max-rank truncated basis, grown by
         replace, plus a per-``(sigma, tol)`` resolved-rank memo) that
-        :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place. The
-        private cached property owns it, so clearing cached properties drops it
-        wholesale. It holds a single basis strictly below ``dense_fraction·n``
-        — never a persistent ``(n, n)``.
+        :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place.
+        It holds a single basis strictly below ``dense_fraction·n`` — never a
+        persistent ``(n, n)``.
         """
-        from neurospatial.environment.fields import _diffusion_eigenbasis
 
-        return _diffusion_eigenbasis(self)
+        def build() -> DiffusionEigenbasisCache:
+            return {}
 
-    @cached_property
-    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
-        """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
+        return self._cache.get(DIFFUSION_EIGENBASIS, build)
 
-        The smoothing adapter fills this holder with the most recently used
-        kernels (``_constants.MAX_CACHED_KERNELS``). It is emptied by
-        ``clear_cache(kernels=True)`` and freed with the environment.
-        """
-        from neurospatial.environment.fields import _gaussian_kernels
-
-        return _gaussian_kernels(self)
-
-    @cached_property
+    @property
     def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
@@ -6170,15 +6034,14 @@ class Environment(Generic[_C]):
         holding the ``G`` globally-smallest modes of the symmetric conjugate
         ``S`` and each mode's source W-component, grown by replace by
         :func:`neurospatial.ops.diffusion._ensure_global_modes`. Geometry-only
-        (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent)
-        and dropped wholesale by ``clear_cache(cached_properties=True)``.
+        (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent).
         Starts empty (``G == 0``) and never stores a dense ``(n, n)`` basis
         (dense solves stay call-local). Distinct from
         :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
         """
         from neurospatial.environment.fields import _mrf_eigenbasis
 
-        return _mrf_eigenbasis(self)
+        return self._cache.get(MRF_EIGENBASIS, lambda: _mrf_eigenbasis(self.n_bins))
 
     def get_mrf_basis(
         self,

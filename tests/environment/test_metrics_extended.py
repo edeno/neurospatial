@@ -17,6 +17,8 @@ Coverage Target: 36% → 80%
 
 from __future__ import annotations
 
+import pickle
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -432,13 +434,13 @@ class TestLinearizationProperties:
         # Should only have is_linearized_track key for N-D environments
         assert len(props) == 1
 
-    def test_linearization_properties_cached(self, graph_env: Environment) -> None:
-        """Test that linearization_properties is cached."""
+    def test_linearization_properties_are_independent(
+        self, graph_env: Environment
+    ) -> None:
+        """Each read returns a new dict with the same values."""
         props1 = graph_env.linearization_properties
-        cached = graph_env._linearization_properties_cached
         props2 = graph_env.linearization_properties
 
-        assert graph_env._linearization_properties_cached is cached
         assert props1 is not props2
         assert props1["is_linearized_track"] == props2["is_linearized_track"]
 
@@ -605,8 +607,8 @@ class TestMetricsIntegration:
 
     def test_metrics_work_after_clear_cache(self, small_2d_env: Environment) -> None:
         """Test that metrics work after clearing cache."""
-        # Make a copy to avoid mutating session-scoped fixture
-        env = small_2d_env.with_metadata()
+        # Unpickling gives the session fixture's geometry its own cache.
+        env = pickle.loads(pickle.dumps(small_2d_env))
 
         # Access metrics
         _ = env.boundary_bins

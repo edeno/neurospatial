@@ -26,14 +26,14 @@ def test_rebin_modes_preserve_annotations_walls_and_fresh_caches(mode):
     parent_kernel = parent.compute_kernel(0.5)
     parent.nearest_bin(np.array([[1.0, 1.0]]))
     parent.get_divergence_operator()
-    assert parent._kernel_cache and parent._kdtree_cache is not None
+    assert len(parent._cache) > 0
 
     child = parent.rebin(2) if mode == "factor" else parent.rebin(bin_size=2.0)
 
     assert child.name == "arena"
     assert (child.units, child.frame) == ("cm", "camera")
     assert child.n_bins == 9
-    assert child._kernel_cache == {} and child._kdtree_cache is None
+    assert len(child._cache) == 0
     assert nx.number_connected_components(child.connectivity) == 2
     sides = child.bin_centers[:, 0] < 2
     assert all(sides[u] == sides[v] for u, v in child.edge_pairs)

@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import _constants
-from neurospatial._lru import lru_get, lru_put
+from neurospatial.environment._cache import DIFFUSION_KERNELS, GAUSSIAN_KERNELS
 from neurospatial.environment._protocols import (
     FieldConsumer,
 )
@@ -22,11 +22,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import InterpolationConsumer
     from neurospatial.geometry._binning import Binning
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.ops._types import KernelMode, MRFEigenbasisCache
     from neurospatial.ops.diffusion import MRFBasis
 
 
@@ -291,33 +287,16 @@ def _compute_kernel(
             "for volume-unbiased averaging of an intensive field (rate map)."
         )
 
-    # Initialize cache if it doesn't exist
-    # (for backward compatibility with environments deserialized from older versions)
-    if not hasattr(env, "_kernel_cache"):
-        empty: dict[tuple[float, KernelMode], NDArray[np.float64]] = {}
-        env._kernel_cache = empty
-
-    # Check cache first if enabled
-    cache_key = (bandwidth, mode)
-    if cache:
-        cached = lru_get(env._kernel_cache, cache_key)
-        if cached is not None:
-            return cast("NDArray[np.float64]", cached.copy())
-
-    # Compute kernel from the cached diffusion geometry, whose cell measures
+    # The kernel uses the cached diffusion geometry, whose cell measures
     # (the layout's bin sizes) are the mass matrix M used by every mode.
-    kernel = diffusion_kernel(env, bandwidth, mode=mode)
-
-    # Store in cache if enabled
-    if cache:
-        lru_put(
-            env._kernel_cache,
-            cache_key,
-            kernel,
-            limit=_constants.MAX_CACHED_KERNELS,
-        )
-
-    return kernel.copy() if cache else kernel
+    if not cache:
+        return diffusion_kernel(env, bandwidth, mode=mode)
+    kernel = env._cache.get_recent(
+        DIFFUSION_KERNELS,
+        (bandwidth, mode),
+        lambda: diffusion_kernel(env, bandwidth, mode=mode),
+    )
+    return cast("NDArray[np.float64]", kernel.copy())
 
 
 def _smooth(
@@ -427,9 +406,8 @@ def _diffuse(
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
     W, volumes, n_components, _labels = env._diffusion_geometry
-    holder = env._diffusion_eigenbasis
     result = diffusion_apply(
-        holder,
+        env._diffusion_eigenbasis,
         W,
         volumes,
         n_components,
@@ -468,21 +446,10 @@ def _diffusion_geometry(env: FieldConsumer) -> DiffusionGeometry:
     )
 
 
-def _diffusion_eigenbasis(env: FieldConsumer) -> DiffusionEigenbasisCache:
-    """Implement Environment._diffusion_eigenbasis using explicit fields inputs."""
-    return {}
-
-
-def _gaussian_kernels(env: FieldConsumer) -> dict[float, NDArray[np.float64]]:
-    """Implement Environment._gaussian_kernels using explicit fields inputs."""
-    return {}
-
-
-def _mrf_eigenbasis(env: FieldConsumer) -> MRFEigenbasisCache:
-    """Implement Environment._mrf_eigenbasis using explicit fields inputs."""
-    n = env.n_bins
+def _mrf_eigenbasis(n_bins: int) -> MRFEigenbasisCache:
+    """Empty MRF eigenbasis holder for ``n_bins`` bins, grown on demand."""
     return {
-        "Q": np.zeros((n, 0)),
+        "Q": np.zeros((n_bins, 0)),
         "Lam": np.zeros(0),
         "mode_comp": np.zeros(0, dtype=np.intp),
         "G": 0,
@@ -545,35 +512,29 @@ def _compute_gaussian_kernel(
     if not np.isfinite(bandwidth) or bandwidth <= 0:
         raise ValueError(f"bandwidth must be finite and positive (got {bandwidth}).")
 
-    kernels = env._gaussian_kernels
-    cached = lru_get(kernels, float(bandwidth))
-    if cached is not None:
-        return _array_header(cached)
-    bin_centers = env.bin_centers
-    n_bins = bin_centers.shape[0]
-
-    # Warn (never raise) for large environments. The dense weight matrix
-    # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
-    # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
-    # its threshold. Placed after the cache-hit check so it fires once per
-    # build, not per call.
-    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
-        estimated_gb = n_bins * n_bins * 8 / 1e9
-        warnings.warn(
-            f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
-            f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
-            f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
-            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
-            f"may be slow and memory-intensive. To avoid a dense kernel, use "
-            f"method='diffusion_kde' (matrix-free, boundary-aware, "
-            f"O(n * rank)) or increase bin_size (fewer bins).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
+    def build() -> NDArray[np.float64]:
+        n_bins = env.bin_centers.shape[0]
+        # Warn (never raise) for large environments. The dense weight matrix
+        # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
+        # estimate that and proceed. Mirrors the diffusion-kernel warning and
+        # shares its threshold. It fires once per build, not per call.
+        if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
+            estimated_gb = n_bins * n_bins * 8 / 1e9
+            warnings.warn(
+                f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
+                f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
+                f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
+                f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
+                f"may be slow and memory-intensive. To avoid a dense kernel, use "
+                f"method='diffusion_kde' (matrix-free, boundary-aware, "
+                f"O(n * rank)) or increase bin_size (fewer bins).",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+        return _immutable_array(
+            _gaussian_kernel(env.bin_centers, env.coordinate_system, bandwidth)
         )
 
-    kernel = _immutable_array(
-        _gaussian_kernel(env.bin_centers, env.coordinate_system, bandwidth)
+    return _array_header(
+        env._cache.get_recent(GAUSSIAN_KERNELS, float(bandwidth), build)
     )
-
-    lru_put(kernels, float(bandwidth), kernel, limit=_constants.MAX_CACHED_KERNELS)
-    return _array_header(kernel)

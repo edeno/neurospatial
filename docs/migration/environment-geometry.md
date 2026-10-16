@@ -62,8 +62,7 @@ retain the distinction between length and angle.
 
 Use `nearest_bin` for nearest-center queries; Cartesian `bin_at` retains exact
 cell ownership. Existing free functions delegate through public operations.
-`clear_cache()` releases cached analyses, and copies and pickle records omit
-disposable analysis caches. Existing `compute_kernel()` continues to return an
+`clear_cache()` releases cached analyses, and pickle records omit them. Existing `compute_kernel()` continues to return an
 independent editable diffusion matrix.
 
 ## Contributor imports

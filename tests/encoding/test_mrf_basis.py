@@ -512,7 +512,7 @@ def test_holder_resets_on_clear_cache(sparse_regime_env):
     env.get_mrf_basis(occ, rank=50)
     assert env._mrf_eigenbasis["G"] == 50  # grown
 
-    env.clear_cache(cached_properties=True)
+    env.clear_cache()
 
     holder = env._mrf_eigenbasis
     assert holder["G"] == 0  # freshly re-initialized to the empty state

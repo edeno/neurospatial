@@ -25,8 +25,8 @@ from neurospatial.geometry._coordinates import CellLengthConsumer as CellLengthC
 
 if TYPE_CHECKING:
     import pandas as pd
-    from scipy.spatial import cKDTree
 
+    from neurospatial.environment._cache import AnalysisCache
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
     from neurospatial.geometry._coordinates import CoordinateSystem
@@ -191,14 +191,9 @@ class InterpolationConsumer(Protocol):
     @property
     def layout_type(self) -> str | None: ...
 
-    _kdtree_cache: cKDTree | None
-
 
 class QueryConsumer(Protocol):
     """Only the environment members read by queries operations."""
-
-    @property
-    def _bin_sizes_cached(self) -> NDArray[np.float64]: ...
 
     @property
     def _binning(self) -> Binning: ...
@@ -332,9 +327,6 @@ class MetricsConsumer(Protocol):
     _is_linearized_track_env: bool
 
     @property
-    def _linearization_properties_cached(self) -> dict[str, Any]: ...
-
-    @property
     def active_mask(self) -> NDArray[np.bool_] | None: ...
 
     @property
@@ -368,12 +360,9 @@ class FieldConsumer(Protocol):
     def bin_centers(self) -> NDArray[np.float64]: ...
 
     @property
-    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]: ...
-
-    @property
     def _face_geometry(self) -> FaceGeometry: ...
 
-    _kernel_cache: dict[tuple[float, KernelMode], NDArray[np.float64]]
+    _cache: AnalysisCache
 
     @property
     def _mrf_eigenbasis(self) -> MRFEigenbasisCache: ...

@@ -2,6 +2,7 @@
 Tests for the Environment class using a plus maze example.
 """
 
+import pickle
 import warnings
 from pathlib import Path
 
@@ -1268,175 +1269,109 @@ class TestPositionsParameterNaming:
 
 
 class TestCacheManagement:
-    """Tests for Environment cache management functionality.
+    """Environment analyses are computed once, reused and released by clear_cache().
 
-    Environment caches several computationally expensive properties:
-    - KDTree (_kdtree_cache) for fast point-to-bin mapping
-    - @cached_property values like differential_operator, boundary_bins, etc.
-
-    These tests verify that caching works correctly and can be cleared when needed.
-
-    Note: Uses fresh copies of session-scoped fixtures to avoid mutating shared state.
+    Each test starts from an unpickled copy of a session fixture: unpickling
+    gives an environment with the same geometry and its own empty cache, so
+    the tests neither see nor change the shared fixture's cache.
     """
 
     @pytest.fixture
     def cache_test_env(self, grid_env_from_samples):
-        """Provide a fresh copy of grid_env_from_samples for cache testing.
-
-        This fixture creates a copy to avoid mutating the session-scoped
-        fixture, which would affect other tests.
-        """
-        return grid_env_from_samples.with_metadata()
-
-    @pytest.fixture
-    def cache_test_graph_env(self, simple_graph_env):
-        """Provide a fresh copy of simple_graph_env for cache testing."""
-        return simple_graph_env.with_metadata()
+        """The plus-maze grid with its own empty analysis cache."""
+        return pickle.loads(pickle.dumps(grid_env_from_samples))
 
     def test_kernel_cache_keeps_most_recently_used_kernels(
         self, cache_test_env, monkeypatch
     ):
         """The diffusion-kernel cache drops the least recently used kernel."""
-        from neurospatial import _constants
+        from neurospatial.environment._cache import DIFFUSION_KERNELS
+        from neurospatial.ops import diffusion
 
-        monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
+        monkeypatch.setattr(DIFFUSION_KERNELS, "limit", 2)
+        built = []
+        original = diffusion.diffusion_kernel
+
+        def counted(env, bandwidth, **kwargs):
+            built.append(bandwidth)
+            return original(env, bandwidth, **kwargs)
+
+        monkeypatch.setattr(diffusion, "diffusion_kernel", counted)
         first = cache_test_env.compute_kernel(1.0, mode="density")
-        cached = cache_test_env._kernel_cache[(1.0, "density")]
         cache_test_env.compute_kernel(2.0, mode="density")
         np.testing.assert_array_equal(
             cache_test_env.compute_kernel(1.0, mode="density"), first
         )
-        assert cache_test_env._kernel_cache[(1.0, "density")] is cached
-        cache_test_env.compute_kernel(3.0, mode="density")
+        cache_test_env.compute_kernel(3.0, mode="density")  # drops 2.0
+        cache_test_env.compute_kernel(1.0, mode="density")
+        cache_test_env.compute_kernel(2.0, mode="density")
 
-        assert list(cache_test_env._kernel_cache) == [
-            (1.0, "density"),
-            (3.0, "density"),
-        ]
+        assert built == [1.0, 2.0, 3.0, 2.0]
 
-    def test_clear_cache_clears_kdtree(self, cache_test_env):
-        """Test that clear_cache() clears the KDTree cache."""
+    def test_clear_cache_takes_no_options(self, cache_test_env):
+        """Selective clearing is gone; clear_cache() always releases everything."""
+        with pytest.raises(TypeError):
+            cache_test_env.clear_cache(kdtree=True)
+
+    def test_clear_cache_releases_every_analysis(self, cache_test_env):
+        """Every cached analysis is released and recomputes to the same value."""
         from neurospatial.ops.binning import map_points_to_bins
 
-        # Create KDTree cache by calling map_points_to_bins
         points = np.array([[5.0, 5.0]])
-        map_points_to_bins(cache_test_env, points)
+        before = {
+            "boundary": cache_test_env.boundary_bins,
+            "differential": cache_test_env.get_differential_operator().toarray(),
+            "divergence": cache_test_env.get_divergence_operator().toarray(),
+            "bins": cache_test_env.get_bin_attributes(),
+            "edges": cache_test_env.get_edge_attributes(),
+            "nearest": map_points_to_bins(cache_test_env, points),
+            "kernel": cache_test_env.compute_kernel(1.0),
+            "smoothed": cache_test_env.smooth(np.ones(cache_test_env.n_bins), 1.0),
+        }
+        assert len(cache_test_env._cache) > 0
 
-        # Verify cache exists
-        assert hasattr(cache_test_env, "_kdtree_cache")
-        assert cache_test_env._kdtree_cache is not None
-
-        # Clear all caches
         cache_test_env.clear_cache()
 
-        # Verify KDTree cache is cleared
-        assert cache_test_env._kdtree_cache is None
+        assert len(cache_test_env._cache) == 0
+        np.testing.assert_array_equal(cache_test_env.boundary_bins, before["boundary"])
+        np.testing.assert_array_equal(
+            cache_test_env.get_differential_operator().toarray(),
+            before["differential"],
+        )
+        np.testing.assert_array_equal(
+            cache_test_env.get_divergence_operator().toarray(), before["divergence"]
+        )
+        pd.testing.assert_frame_equal(
+            cache_test_env.get_bin_attributes(), before["bins"]
+        )
+        pd.testing.assert_frame_equal(
+            cache_test_env.get_edge_attributes(), before["edges"]
+        )
+        np.testing.assert_array_equal(
+            map_points_to_bins(cache_test_env, points), before["nearest"]
+        )
+        np.testing.assert_array_equal(
+            cache_test_env.compute_kernel(1.0), before["kernel"]
+        )
+        np.testing.assert_allclose(
+            cache_test_env.smooth(np.ones(cache_test_env.n_bins), 1.0),
+            before["smoothed"],
+            rtol=0,
+            atol=1e-12,
+        )
 
-    def test_clear_cache_clears_cached_properties(self, cache_test_env):
-        """Test that clear_cache() clears @cached_property values."""
-        # Access several cached properties to trigger computation
-        _ = cache_test_env.boundary_bins
-        _ = cache_test_env.bin_sizes
-
-        # Verify they're in __dict__ (cached)
-        assert "_boundary_bins_cached" in cache_test_env.__dict__
-        assert "_bin_sizes_cached" in cache_test_env.__dict__
-
-        # Clear all caches
-        cache_test_env.clear_cache()
-
-        # Verify cached properties are cleared from __dict__
-        assert "_boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_bin_sizes_cached" not in cache_test_env.__dict__
-
-    def test_clear_cache_clears_differential_operator(self, cache_test_env):
-        """Test that clear_cache() clears the differential_operator cache."""
-        # Public calls return copies while sharing a private cached operator.
-        cache_key = "_differential_operator_cached"
-
-        diff_op_original = cache_test_env.get_differential_operator()
+    def test_cached_operator_is_reused_until_cleared(self, cache_test_env):
+        """Public operator calls return copies of one cached matrix."""
+        first = cache_test_env.get_differential_operator()
         cached = cache_test_env._differential_operator_cached
-        assert cache_key in cache_test_env.__dict__
         second = cache_test_env.get_differential_operator()
         assert cache_test_env._differential_operator_cached is cached
-        assert second is not diff_op_original
-        np.testing.assert_array_equal(second.toarray(), diff_op_original.toarray())
-
-        cache_test_env.clear_cache()
-        assert cache_key not in cache_test_env.__dict__
-
-        diff_op_new = cache_test_env.get_differential_operator()
-        assert diff_op_new is not None
-        assert diff_op_new.shape == diff_op_original.shape
-        assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
-
-    def test_clear_cache_allows_recomputation(self, cache_test_env):
-        """Test that after clearing, cached properties can be recomputed."""
-        # Access property
-        boundary_original = cache_test_env.boundary_bins
-        assert len(boundary_original) > 0
-
-        # Clear cache
-        cache_test_env.clear_cache()
-
-        # Access again - should recompute
-        boundary_new = cache_test_env.boundary_bins
-        assert len(boundary_new) > 0
-
-        # Should be equal (same computation)
-        np.testing.assert_array_equal(boundary_new, boundary_original)
-
-    def test_clear_cache_with_all_cached_properties(self, cache_test_env):
-        """Test clearing when ALL cached properties are populated."""
-        from neurospatial.ops.binning import map_points_to_bins
-
-        _ = cache_test_env.boundary_bins
-        _ = cache_test_env.bin_sizes
-        _ = cache_test_env.get_differential_operator()
-        _ = cache_test_env._source_flat_to_active_node_id_map
-        _ = cache_test_env.get_bin_attributes()
-        _ = cache_test_env.get_edge_attributes()
-        # linearization_properties only exists for 1D environments - skip for 2D grid
-        map_points_to_bins(cache_test_env, np.array([[5.0, 5.0]]))
-
-        # Keys for the three method-form caches.
-        diff_key = "_differential_operator_cached"
-        bin_key = "_bin_attributes_cached"
-        edge_key = "_edge_attributes_cached"
-
-        # Verify all are cached.
-        assert cache_test_env._kdtree_cache is not None
-        assert "_boundary_bins_cached" in cache_test_env.__dict__
-        assert "_bin_sizes_cached" in cache_test_env.__dict__
-        assert diff_key in cache_test_env.__dict__
-        assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
-        assert bin_key in cache_test_env.__dict__
-        assert edge_key in cache_test_env.__dict__
+        assert second is not first
+        np.testing.assert_array_equal(second.toarray(), first.toarray())
 
         cache_test_env.clear_cache()
 
-        # Verify ALL are cleared.
-        assert cache_test_env._kdtree_cache is None
-        assert "_boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_bin_sizes_cached" not in cache_test_env.__dict__
-        assert diff_key not in cache_test_env.__dict__
-        assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
-        assert bin_key not in cache_test_env.__dict__
-        assert edge_key not in cache_test_env.__dict__
-
-    def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
-        """Test that clear_cache() clears linearization_properties on 1D environments."""
-        # linearization_properties only exists for 1D (GraphLayout) environments
-        if not cache_test_graph_env.is_linearized_track:
-            pytest.skip("Requires 1D environment")
-
-        # Access linearization properties (triggers caching)
-        _ = cache_test_graph_env.linearization_properties
-        cache_key = "_linearization_properties_cached"
-        assert cache_key in cache_test_graph_env.__dict__
-
-        # Clear cache
-        cache_test_graph_env.clear_cache()
-
-        # Verify cleared
-        assert cache_key not in cache_test_graph_env.__dict__
+        assert cache_test_env._differential_operator_cached is not cached
+        np.testing.assert_array_equal(
+            cache_test_env.get_differential_operator().toarray(), first.toarray()
+        )

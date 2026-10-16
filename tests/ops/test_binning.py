@@ -32,12 +32,6 @@ class TestBinningImports:
 
         assert callable(resample_field)
 
-    def test_import_clear_kdtree_cache(self):
-        """Test clear_kdtree_cache can be imported from ops.binning."""
-        from neurospatial.ops.binning import clear_kdtree_cache
-
-        assert callable(clear_kdtree_cache)
-
 
 class TestMapPointsToBins:
     """Test map_points_to_bins function from new location."""

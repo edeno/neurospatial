@@ -16,6 +16,8 @@ TEST_PLAN2.md : Section 1.2 - Field Operations Tests
 
 from __future__ import annotations
 
+import pickle
+
 import numpy as np
 import pytest
 from hypothesis import assume, given
@@ -83,17 +85,24 @@ class TestComputeKernel:
         assert kernel.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
         assert kernel.dtype == np.float64
 
-    def test_compute_kernel_caching_enabled(self, small_2d_env):
+    def test_compute_kernel_caching_enabled(self, small_2d_env, monkeypatch):
         """Test that kernel caching works when enabled."""
-        # First call - computes and caches
-        kernel1 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
-        cached = small_2d_env._kernel_cache[(5.0, "density")]
+        from neurospatial.ops import diffusion
 
-        # Second call - should return cached result
-        kernel2 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
+        env = pickle.loads(pickle.dumps(small_2d_env))  # own empty cache
+        calls = []
+        original = diffusion.diffusion_kernel
+
+        def counted(*args, **kwargs):
+            calls.append(1)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(diffusion, "diffusion_kernel", counted)
+        kernel1 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
+        kernel2 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
 
         # Cache reuse does not expose its mutable array to callers.
-        assert small_2d_env._kernel_cache[(5.0, "density")] is cached
+        assert len(calls) == 1
         assert kernel1 is not kernel2
         np.testing.assert_array_equal(kernel1, kernel2)
 

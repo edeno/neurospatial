@@ -34,8 +34,6 @@ class TestPublishedValueOwnership:
 
     def test_restoration_publishes_saved_geometry_with_fresh_caches(self) -> None:
         """Reading a different saved graph does not change an existing value."""
-        from scipy.spatial import cKDTree
-
         grid = (np.ones((3, 3), dtype=bool), (np.arange(4.0),) * 2)
         env = Environment.from_grid_mask(grid[0], grid_edges=grid[1])
         expected = Environment.from_grid_mask(
@@ -45,21 +43,21 @@ class TestPublishedValueOwnership:
         env.diffuse(np.ones(env.n_bins), 1.0)
         env.get_mrf_basis(np.ones(env.n_bins), rank=3)
         env.get_differential_operator()
-        env._kdtree_cache = cKDTree(env.bin_centers)
+        env.nearest_bin(env.bin_centers)
         old_geometry = env._diffusion_geometry
         old_diffusion_cache = env._diffusion_eigenbasis
         old_mrf_cache = env._mrf_eigenbasis
         geometry = env._geometry
+        cache, n_cached = env._cache, len(env._cache)
 
         restored = Environment.from_dict(expected.to_dict())
 
         assert env._geometry is geometry
-        assert env._kernel_cache
+        assert env._cache is cache and len(cache) == n_cached
         assert env._diffusion_geometry is old_geometry
         assert env._diffusion_eigenbasis is old_diffusion_cache
         assert env._mrf_eigenbasis is old_mrf_cache
-        assert restored._kernel_cache == {}
-        assert restored._kdtree_cache is None
+        assert len(restored._cache) == 0
         assert restored._diffusion_geometry is not old_geometry
         assert restored._diffusion_eigenbasis is not old_diffusion_cache
         assert restored._mrf_eigenbasis is not old_mrf_cache
@@ -79,6 +77,7 @@ class TestPublishedValueOwnership:
         )
         env.compute_kernel(1.0)
         connectivity, geometry = env.connectivity, env._geometry
+        cache, n_cached = env._cache, len(env._cache)
         broken = connectivity.copy()
         for _, _, data in broken.edges(data=True):
             del data["edge_id"]
@@ -94,7 +93,7 @@ class TestPublishedValueOwnership:
 
         assert env.connectivity is connectivity
         assert env._geometry is geometry
-        assert env._kernel_cache
+        assert env._cache is cache and len(cache) == n_cached > 0
 
 
 class TestPublishedGeometryIsReadOnly:
