@@ -557,8 +557,8 @@ def _bin_center_coords(
             f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
             "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
             "coordinate.\n"
-            "  Fix: ensure the environment is fitted and exposes 2-D "
-            "bin_centers."
+            "  Fix: pass an Environment, whose bin_centers have shape "
+            "(n_bins, n_dims)."
         )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(

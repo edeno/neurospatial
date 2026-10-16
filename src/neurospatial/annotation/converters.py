@@ -288,7 +288,7 @@ def env_from_boundary_region(
     Returns
     -------
     Environment
-        Discretized environment fitted to the boundary polygon.
+        Environment whose bins cover the boundary polygon.
 
     Raises
     ------

@@ -34,7 +34,7 @@ def assert_environment_contract(
     Parameters
     ----------
     env : Environment or PolarEnvironment
-        Fitted environment, including one produced by an installed adapter.
+        Environment, including one produced by an installed adapter.
     points : array-like of float, shape (n_points, n_dims)
         Native coordinates. Include boundary points with independently known
         ownership; this helper cannot infer a scientific boundary convention.

@@ -1202,8 +1202,8 @@ def compute_view_rate(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -1547,8 +1547,8 @@ def compute_view_rates(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -2022,8 +2022,8 @@ def is_spatial_view_cell(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -2261,8 +2261,8 @@ def spatial_view_cell_significance(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 

@@ -127,7 +127,7 @@ def decode_session(
     Parameters
     ----------
     env : Environment
-        Fitted spatial environment that defines the bin layout and
+        Spatial environment that defines the bin layout and
         connectivity graph.
     spike_times : array or sequence of arrays
         Spike times for one or more neurons.  Accepted formats mirror

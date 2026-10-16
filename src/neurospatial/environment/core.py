@@ -1011,7 +1011,7 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            A fitted polar environment. Column 0 is distance in physical units;
+            A polar environment. Column 0 is distance in physical units;
             column 1 is angle in radians (zero ahead, positive to the left).
 
         Examples
@@ -2619,7 +2619,7 @@ class Environment(Generic[_C]):
         Returns
         -------
         env : Environment
-            A newly created Environment, fitted to the discretized samples.
+            A new Environment binned from the samples.
 
         Raises
         ------
@@ -2666,13 +2666,14 @@ class Environment(Generic[_C]):
         >>> env = Environment.from_samples(
         ...     positions=positions,
         ...     bin_size=5.0,  # 5cm bins
-        ...     bin_count_threshold=5,  # Require 5 samples per bin (lowered from 10)
+        ...     bin_count_threshold=5,  # Require 5 samples per bin
         ...     dilate=True,  # Expand active region
         ...     fill_holes=True,  # Fill interior holes
         ... )
 
         Create a hexagonal grid environment:
 
+        >>> from neurospatial.layout import LayoutType
         >>> env = Environment.from_samples(
         ...     positions=positions,
         ...     layout=LayoutType.HEXAGONAL,  # or layout="Hexagonal"
@@ -2807,7 +2808,7 @@ class Environment(Generic[_C]):
         Returns
         -------
         env : Environment
-            A newly created open-arena Environment, fitted to the samples.
+            A new open-arena Environment binned from the samples.
 
         Raises
         ------

@@ -138,7 +138,7 @@ class EnvironmentLike(Protocol):
         ...
 
 
-# Keep the duck check small and avoid fitted-only n_bins/n_dims properties.
+# Keep the duck check small; it does not need the n_bins/n_dims properties.
 # Compatible providers need not inherit the public Environment runtime class.
 _ENVIRONMENT_LIKE_ATTRS: tuple[str, ...] = (
     "bin_centers",

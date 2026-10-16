@@ -2648,7 +2648,7 @@ def _compute_glm_spatial_rates(
     Parameters
     ----------
     env : Environment
-        Fitted environment; supplies the diffusion geometry and the reduced-rank
+        Environment that supplies the diffusion geometry and the reduced-rank
         MRF penalty basis.
     spike_counts : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit binned spike counts in active-bin order (unit-major).
@@ -2795,8 +2795,8 @@ def compute_spatial_rate(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -3343,8 +3343,8 @@ def compute_spatial_rates(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays or 2D array
         Spike times for each neuron. Accepted formats:
 
@@ -5101,8 +5101,8 @@ def is_place_cell(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -5553,8 +5553,8 @@ def place_cell_significance(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays or 2D array
         Spike times for each neuron. Accepted formats:
 

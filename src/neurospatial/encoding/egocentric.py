@@ -1928,8 +1928,8 @@ def _object_vector_rate(
 
     # `env` is optional in this function (None is permitted with the
     # euclidean distance metric, since geodesic distance is the only
-    # path that needs an env-derived graph). Only validate fitted-state
-    # if the user supplied an env; the geodesic path raises its own
+    # path that needs an env-derived graph). Only validate the env
+    # if the user supplied one; the geodesic path raises its own
     # explicit error a few lines below if env is None.
     if env is not None:
         validate_env_argument(
@@ -2634,7 +2634,7 @@ def _object_vector_rates(
     )
 
     # `env` is optional in this function (None is permitted with the
-    # euclidean distance metric); only validate fitted-state when supplied.
+    # euclidean distance metric); only validate it when supplied.
     if env is not None:
         validate_env_argument(
             env,

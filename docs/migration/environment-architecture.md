@@ -79,7 +79,9 @@ An `Environment` cannot be changed after it is built, so it now behaves like a
 plain value.
 
 **Equality.** Two environments are equal only when they are the same object.
-`env == "session1"` (comparing with the name) no longer works; compare
+`env == "session1"` used to compare the name; it now returns `False` without an
+error, so `if env == "session1":` silently takes the other branch. Search your
+code for `== "` next to an environment and compare the name instead:
 `env.name == "session1"`. `env.with_metadata(name="other")` returns a new
 environment, which does not equal the original. Environments can be put in sets
 and used as dictionary keys.
@@ -92,7 +94,8 @@ and used as dictionary keys.
 import copy
 
 session = env.with_metadata(name="session1")
-# Before: session == "session1"
+# Before: session == "session1"  (now always False)
+assert session != "session1"
 assert session.name == "session1"
 
 # Before: env2 = env.copy()

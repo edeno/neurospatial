@@ -668,18 +668,17 @@ from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 check_ffmpeg_available()
 ```
 
-### "Environment must be fitted"
+### "Environment cannot be constructed directly"
 
-**Error**: `RuntimeError: Environment must be fitted before calling this method`
+**Error**: `ValueError: [E1006] Environment cannot be constructed directly — use a factory method.`
 
-**Solution**: Use factory methods to create environments:
+**Solution**: Build the environment with a factory method:
 
 ```python
-# Wrong - bare constructor doesn't fit environment
-env = Environment()
-env.animate_fields(fields, frame_times=frame_times)  # Error!
+# Wrong - the bare constructor has no bins to animate
+env = Environment()  # Error!
 
-# Correct - factory methods automatically fit
+# Correct - a factory builds the bins from your data
 env = Environment.from_samples(positions, bin_size=2.5)
 env.animate_fields(fields, frame_times=frame_times)  # Works!
 ```

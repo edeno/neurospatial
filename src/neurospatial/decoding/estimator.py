@@ -127,7 +127,7 @@ class BayesianDecoder:
     Parameters
     ----------
     env : Environment
-        Fitted spatial environment defining the bin layout and connectivity.
+        Spatial environment defining the bin layout and connectivity.
     dt : float, default=0.025
         Decoding time-bin width in seconds.
     bandwidth : float or None, default=None

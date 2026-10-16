@@ -51,18 +51,17 @@ A **bin** is a discrete spatial unit with:
 **Active bins** are bins considered part of the environment. **Inactive bins** are excluded (e.g., walls, obstacles, or unvisited regions).
 
 ```python
-# All bins are active by default
+# By default, only bins that contain at least one sample are active
 env = Environment.from_samples(data, bin_size=2.0)
-print(f"All bins active: {env.n_bins}")
+print(f"Visited bins: {env.n_bins}")
 
-# Automatically infer active bins from data
-env_auto = Environment.from_samples(
-    data,
-    bin_size=2.0,
-    infer_active_bins=True,  # Only bins with data
-    bin_count_threshold=1    # Minimum samples per bin
-)
-print(f"Auto-detected active bins: {env_auto.n_bins}")
+# Require several samples before a bin counts as visited
+env_strict = Environment.from_samples(data, bin_size=2.0, bin_count_threshold=5)
+print(f"Bins with at least 5 samples: {env_strict.n_bins}")
+
+# Keep every bin in the sampled extent, visited or not
+env_all = Environment.from_samples(data, bin_size=2.0, infer_active_bins=False)
+print(f"All bins in the extent: {env_all.n_bins}")
 ```
 
 ### Why Active/Inactive Matters

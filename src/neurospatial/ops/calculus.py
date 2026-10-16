@@ -38,7 +38,7 @@ def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matri
     Parameters
     ----------
     env : Environment
-        Fitted environment with finite-volume cell geometry. Edge distances
+        Environment with finite-volume cell geometry. Edge distances
         use the same geometry as ``env.smooth``, including track junctions.
 
     Returns
@@ -114,7 +114,7 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     Parameters
     ----------
     env : Environment
-        Fitted environment with finite-volume cell geometry.
+        Environment with finite-volume cell geometry.
     field : NDArray[np.float64], shape (n_bins,)
         Scalar value at each bin center.
 
@@ -171,7 +171,7 @@ def divergence(
     Parameters
     ----------
     env : Environment
-        Fitted environment with finite-volume cell geometry.
+        Environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
         Flux density along each oriented edge in ``env.edge_pairs``
         order. Positive values flow from the first endpoint to the second.

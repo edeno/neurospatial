@@ -29,8 +29,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   arena classes in `neurospatial.arena` are unchanged.
 
 - `Environment` is an immutable value. Two environments are equal only when
-  they are the same object: `env == "name"` (comparing with the name) no
-  longer works, so compare `env.name`. Environments can be used in sets and as
+  they are the same object. `env == "name"` used to compare the environment's
+  name; it now returns `False` without an error, so a check such as
+  `if env == "session1":` silently takes the other branch. Write
+  `env.name == "session1"` instead. Environments can be used in sets and as
   dictionary keys. `Environment.copy()` is removed because an environment
   cannot change after it is built; `copy.copy(env)` and `copy.deepcopy(env)`
   return the same object. Use `with_metadata`, `with_regions`, `subset` or

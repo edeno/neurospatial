@@ -1207,7 +1207,7 @@ def diffusion_kernel(
     Parameters
     ----------
     env : Environment
-        Fitted environment (any supported layout).
+        Environment (any supported layout).
     sigma : float
         Physical smoothing standard deviation (finite, > 0).
     mode : {"transition", "density", "average"}, default="density"

@@ -137,7 +137,7 @@ def select_basis_centers(
     Parameters
     ----------
     env : Environment
-        Fitted environment with bin_centers.
+        Environment with bin_centers.
     n_centers : int
         Number of centers to select.
 
@@ -389,7 +389,7 @@ def geodesic_rbf_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
     centers : NDArray[np.int_] or None
         Node indices for basis centers. If None, auto-select using
         n_centers and center_method.
@@ -637,7 +637,7 @@ def heat_kernel_wavelet_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment with connectivity graph.
+        Environment with connectivity graph.
     centers : NDArray[np.int_] or None
         Node indices for wavelet centers. If None, auto-select.
     scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
@@ -807,7 +807,7 @@ def chebyshev_filter_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment with connectivity graph.
+        Environment with connectivity graph.
     centers : NDArray[np.int_] or None
         Node indices for filter centers. If None, auto-select.
     max_degree : int, default=5
@@ -1057,7 +1057,7 @@ def spatial_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
     coverage : {"local", "medium", "global"}, default="medium"
         Spatial scale of basis functions:
 
