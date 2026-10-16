@@ -262,3 +262,10 @@ def test_layout_without_sample_tiling_is_refused(factory, layout, positions):
     message = str(caught.value)
     assert "layout='RegularGrid' and layout='Hexagonal'" in message
     assert "Environment.from_layout" in message.split("Fix:")[1]
+
+
+def test_from_layout_refuses_an_unbuilt_engine():
+    from neurospatial import LayoutNotBuiltError
+
+    with pytest.raises(LayoutNotBuiltError, match="not built yet"):
+        Environment.from_layout(MaskedGridLayout())
