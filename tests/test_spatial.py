@@ -124,12 +124,10 @@ class TestMapPointsToBins:
 
 
 class TestEnvironmentClearCache:
-    """Test Environment.clear_cache() method with selective clearing.
+    """Test the behavioral contract of Environment.clear_cache().
 
-    These tests verify the behavioral contract of clear_cache():
     - After clearing, cached computations are recomputed on next access
     - Results after clearing are identical to results before clearing
-    - Selective clearing only affects specified caches
     """
 
     @pytest.fixture
