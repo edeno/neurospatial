@@ -832,8 +832,8 @@ happens when you call the method, not when you look it up:
   `NotImplementedError`.
 - Every Cartesian-only refusal raises this one error: the methods, the
   Cartesian modes of shared methods such as `distance_to(metric="euclidean")`,
-  analysis functions such as `spatial_autocorrelation`, `Environment.combine`
-  and `ops.apply_transform_to_environment` (which used to raise `ValueError`).
+  analysis functions such as `spatial_autocorrelation`, and
+  `Environment.combine`.
 - The message says what was refused, why it needs Cartesian positions, and what
   to use on a polar environment.
 
@@ -865,3 +865,31 @@ if polar_env.coordinate_kind == "polar":
 A polar environment now answers `component_keys`, `bin_sources` and
 `get_bridge_attributes()` like any environment that was not combined: an empty
 tuple, `None` and an empty table.
+
+## `ops` functions that renamed an `Environment` method
+
+Three functions in `neurospatial.ops` only called an `Environment` method
+under another name. They are removed; call the method. The arguments and
+results are unchanged.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.ops import translate
+
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, size=(2000, 2))  # cm
+env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+
+# Before: map_points_to_bins(env, positions[:5], tie_break="lowest_index")
+bins = env.nearest_bin(positions[:5], tie_break="lowest_index")
+# Before: compute_differential_operator(env)
+D = env.get_differential_operator()  # (n_bins, n_edges)
+# Before: apply_transform_to_environment(env, translate(10.0, 0.0), frame="rig")
+shifted = env.apply_transform(translate(10.0, 0.0), frame="rig")
+assert np.allclose(shifted.bin_centers, env.bin_centers + [10.0, 0.0])
+```
+
+`map_points_to_bins` refused polar environments; `env.nearest_bin` accepts
+them and compares the stored distance and angle columns directly.

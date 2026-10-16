@@ -170,12 +170,10 @@ def test_napari_raster_helpers_refuse_framed_grids_explicitly():
 
 
 def test_nearest_interpolation_still_uses_world_euclidean_distance_under_shear():
-    from neurospatial.ops.binning import map_points_to_bins
-
     env = grid().apply_transform(transform(np.array([[1.0, 2.0], [0.0, 1.0]])))
     points = env._binning.grid_frame.to_world(np.array([[1.1, 1.1], [1.9, 1.9]]))
     field = np.arange(env.n_bins, dtype=float)
-    owners = map_points_to_bins(env, points)
+    owners = env.nearest_bin(points)
     np.testing.assert_array_equal(env.interpolate(field, points), field[owners])
 
 

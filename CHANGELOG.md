@@ -297,9 +297,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   positions, and what works on a polar environment. That includes the
   Cartesian modes of shared methods (`distance_to(metric="euclidean")`,
   `transitions(times=..., positions=...)`), analysis functions such as
-  `spatial_autocorrelation` and `field_shape_metrics`, `Environment.combine`
-  (it raised a plain `TypeError`) and `ops.apply_transform_to_environment`
-  (it raised `ValueError`).
+  `spatial_autocorrelation` and `field_shape_metrics`, and
+  `Environment.combine` (it raised a plain `TypeError`).
+
+- Three `neurospatial.ops` functions that only renamed an `Environment`
+  method are removed; call the method instead.
+  `map_points_to_bins(env, points, ...)` is `env.nearest_bin(points, ...)`,
+  `compute_differential_operator(env)` is `env.get_differential_operator()`,
+  and `apply_transform_to_environment(env, transform, ...)` is
+  `env.apply_transform(transform, ...)`. The arguments and results are the
+  same, with one difference: `map_points_to_bins` refused polar environments,
+  and `env.nearest_bin` accepts them.
 
 ### Changed
 
@@ -423,8 +431,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   the range comes from the cells (grid, outline or cell shapes) as before.
 
 - `subset()` and `rebin()` accept `name=` like `clip()` and
-  `apply_transform()`, and `neurospatial.ops.apply_transform_to_environment`
-  accepts `frame=`.
+  `apply_transform()`.
 
 - `from_polygon`, `from_grid_mask`, `from_pixel_mask`, `from_graph`,
   `linear_track` and `maze` accept `regions=`, so every Cartesian factory
@@ -468,7 +475,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 ### Fixed
 
 - A position sample with a NaN coordinate is a missing sample in every
-  per-sample query. `env.nearest_bin` and `map_points_to_bins` give it bin
+  per-sample query. `env.nearest_bin` gives it bin
   `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to
   raise, `nearest_bin` with a SciPy error about finite values. A point with an
   infinite coordinate is outside: bin `-1` and distance `inf`, or NaN from
@@ -590,7 +597,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
   raise `CartesianOnlyError` on polar environments instead of returning wrong
   numbers. The refusals cover `field_shape_metrics`,
-  `field_shift_distance`, `spatial_autocorrelation`, `map_points_to_bins`,
+  `field_shift_distance`, `spatial_autocorrelation`,
   `resample_field`, `map_probabilities`, `spatial_basis`,
   `graph_turn_sequence` and `detect_laps`. Type checkers reject polar
   environments for these functions. Some functions refuse only their Cartesian

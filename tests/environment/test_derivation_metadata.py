@@ -10,7 +10,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.geometry._arena import encode_arena
-from neurospatial.ops.transforms import apply_transform_to_environment, translate
+from neurospatial.ops.transforms import translate
 from neurospatial.regions import Regions
 
 SHIFT = (20.0, 0.0)
@@ -73,15 +73,9 @@ def test_apply_transform_keeps_name_and_units_and_moves_regions():
     )
 
 
-@pytest.mark.parametrize("bound", [True, False])
-def test_apply_transform_frame_is_the_callers_label(bound):
+def test_apply_transform_frame_is_the_callers_label():
     parent = _parent()
-    transform = translate(*SHIFT)
-    child = (
-        parent.apply_transform(transform, frame="session2")
-        if bound
-        else apply_transform_to_environment(parent, transform, frame="session2")
-    )
+    child = parent.apply_transform(translate(*SHIFT), frame="session2")
     assert child.frame == "session2"
 
 

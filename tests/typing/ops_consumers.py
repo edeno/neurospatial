@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
     from neurospatial.ops._protocols import (
-        AffineTransformConsumer,
         BasisCentersConsumer,
         BinCentersConsumer,
         BinLookupConsumer,
@@ -33,7 +32,7 @@ if TYPE_CHECKING:
         ViewshedConsumer,
         WaveletBasisConsumer,
     )
-    from neurospatial.ops.transforms import AffineND, apply_transform_to_environment
+    from neurospatial.ops.transforms import AffineND
 
     def _either_coordinate_system(
         env: Environment[CartesianSystem] | Environment[EgocentricPolarSystem],
@@ -59,11 +58,7 @@ if TYPE_CHECKING:
         _spatial: SpatialBasisConsumer = cartesian
         _viewshed: ViewshedConsumer = cartesian
         _lookup: BinLookupConsumer = cartesian
-        _affine: AffineTransformConsumer[Environment[CartesianSystem]] = cartesian
-        assert_type(
-            apply_transform_to_environment(cartesian, transform),
-            Environment[CartesianSystem],
-        )
+        assert_type(cartesian.apply_transform(transform), Environment[CartesianSystem])
 
         _polar_bins: CartesianBinsConsumer = polar  # type: ignore[assignment]
         _polar_nearest: CartesianNearestBinConsumer = polar  # type: ignore[assignment]

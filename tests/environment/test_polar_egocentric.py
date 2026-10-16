@@ -1073,23 +1073,6 @@ class TestPolarBoundaryGuardsExtended:
         finally:
             plt.close(fig)
 
-    def test_apply_transform_refuses_polar_env(self, polar_env):
-        """apply_transform_to_environment must reject polar envs.
-
-        An affine transform on (distance, angle) bin centers is not
-        geometrically meaningful. The free-function path guards against a
-        polar env being passed directly (accessing its absent Cartesian
-        method raises before reaching the free function).
-        """
-        from neurospatial.ops.transforms import (
-            apply_transform_to_environment,
-            translate,
-        )
-
-        T = translate(1.0, 1.0)
-        with pytest.raises(CartesianOnlyError, match=r"apply_transform.*polar"):
-            apply_transform_to_environment(polar_env, T)
-
     def test_apply_transform_method_refuses_polar_env(self, polar_env):
         """The apply_transform method on a polar env raises CartesianOnlyError."""
         from neurospatial.ops.transforms import translate

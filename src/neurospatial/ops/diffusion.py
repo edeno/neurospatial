@@ -49,10 +49,7 @@ from neurospatial._stacklevel import _external_stacklevel
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from neurospatial.ops._protocols import (
-        DiffusionAccuracyConsumer,
-        DiffusionGeometryConsumer,
-    )
+    from neurospatial.ops._protocols import DiffusionGeometryConsumer
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -134,7 +131,7 @@ class MRFBasis(NamedTuple):
 _DIFFUSE_DENOM_EPS = 1e-12
 
 # A smoothed weight is resolved when it exceeds this many times the diffusion
-# apply's noise floor (``diffusion_apply_rtol``) relative to the largest value
+# apply's noise floor (``env.diffusion_accuracy``) relative to the largest value
 # in its W-component. A ratio of two smoothed values at a resolved bin then has
 # an error of at most about 1/1000 = 0.1% of its value.
 _RESOLUTION_MARGIN = 1e3
@@ -1127,30 +1124,6 @@ def diffusion_component_labels(
     return geometry.n_components, geometry.labels
 
 
-def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
-    """Relative accuracy of ``env.diffuse(fields, sigma)`` (its noise floor).
-
-    Errors of the apply are about this fraction of the largest output value:
-    ``_HEAT_KERNEL_RANK_TOL`` when the bandwidth's eigenbasis is truncated, and
-    float64 roundoff (``_FULL_BASIS_APPLY_RTOL``) when the full basis is used.
-    Values below this level are indistinguishable from zero.
-
-    Parameters
-    ----------
-    env : Environment
-        An environment.
-    sigma : float
-        The bandwidth passed to ``env.diffuse``.
-
-    Returns
-    -------
-    float
-        The relative noise floor. A bandwidth that ``env.diffuse`` has not yet
-        resolved reports the truncation tolerance (the larger of the two).
-    """
-    return env.diffusion_accuracy(sigma)
-
-
 def _diffusion_apply_rtol(
     holder: DiffusionEigenbasisCache, n_bins: int, sigma: float
 ) -> float:
@@ -1270,7 +1243,7 @@ def masked_diffusion_average(
         The far-field gate: a relative floor on the smoothed weight, or None
         for the component-support gate alone. Each caller states its own. A
         callable is evaluated after smoothing, for a floor that depends on the
-        operator the smoothing resolved (``diffusion_apply_rtol``).
+        operator the smoothing resolved (``env.diffusion_accuracy``).
 
     Returns
     -------

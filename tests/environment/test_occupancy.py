@@ -660,7 +660,7 @@ class TestOccupancyReturnSeconds:
 class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
     """Regression: trajectory functions must agree on out-of-env samples.
 
-    Previously ``Environment.occupancy`` used ``map_points_to_bins`` which
+    Previously ``Environment.occupancy`` used ``nearest_bin`` which
     returns the nearest in-env bin index regardless of how far the input
     point is. ``Environment.bin_sequence`` used ``bin_at`` which returns
     -1 for points outside any active bin. The same trajectory passed
@@ -689,7 +689,7 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
 
         A tracking error at (13, 5) -- inside the env's bounding box but
         outside the 10x10 active mask -- was silently mapped by
-        ``map_points_to_bins`` to the nearest in-env edge bin
+        ``nearest_bin`` to the nearest in-env edge bin
         (the implicit "10x typical bin spacing" threshold doesn't catch
         2 cm of overshoot on a 2 cm-bin env). ``bin_sequence`` already
         used ``bin_at`` and correctly reported -1 for this sample.

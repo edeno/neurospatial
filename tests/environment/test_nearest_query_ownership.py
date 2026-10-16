@@ -6,8 +6,6 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from neurospatial import Environment
-from neurospatial.environment import CartesianSystem
-from neurospatial.ops.binning import map_points_to_bins
 
 
 def test_nearest_queries_reuse_one_tree_until_the_cache_is_cleared():
@@ -17,7 +15,7 @@ def test_nearest_queries_reuse_one_tree_until_the_cache_is_cleared():
     points = np.array([[0.5, 0.5], [1.0, 1.0], [100.0, 100.0]])
     with patch("neurospatial.environment._lookup.cKDTree", wraps=cKDTree) as build:
         expected = env.nearest_bin(points, return_dist=True)
-        actual = map_points_to_bins(env, points, return_dist=True)
+        actual = env.nearest_bin(points, return_dist=True)
         for left, right in zip(actual, expected, strict=True):
             np.testing.assert_array_equal(left, right)
         assert build.call_count == 1
@@ -42,18 +40,4 @@ def test_public_nearest_query_keeps_raw_polar_coordinate_semantics():
     np.testing.assert_array_equal(actual, expected)
     np.testing.assert_allclose(
         actual_distances, distances[np.arange(len(points)), expected]
-    )
-
-
-def test_compatibility_wrappers_need_no_private_cache_attributes():
-    class Queries:
-        coordinate_system = CartesianSystem()
-
-        def nearest_bin(self, points, **options):
-            assert options["max_distance"] == 2.0
-            return np.zeros(len(points), dtype=np.int64)
-
-    queries = Queries()
-    np.testing.assert_array_equal(
-        map_points_to_bins(queries, np.ones((2, 2)), max_distance=2.0), [0, 0]
     )

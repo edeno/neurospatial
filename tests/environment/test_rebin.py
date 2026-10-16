@@ -527,9 +527,8 @@ class TestRebinIntegration:
         coarse = env.rebin(factor=2)
 
         # All original bin centers should map to some bin in coarse
-        from neurospatial.ops import map_points_to_bins
 
-        indices = map_points_to_bins(coarse, env.bin_centers)
+        indices = coarse.nearest_bin(env.bin_centers)
 
         # Should all be valid (not -1)
         assert np.all(indices >= 0)

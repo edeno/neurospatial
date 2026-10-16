@@ -10,10 +10,7 @@ from environment_helpers import native_layout
 from scipy import sparse
 
 from neurospatial import Environment
-from neurospatial.ops.calculus import (
-    _compute_divergence_operator,
-    compute_differential_operator,
-)
+from neurospatial.ops.calculus import _compute_divergence_operator
 
 
 def _diffusion_generator(env):
@@ -146,7 +143,7 @@ def test_operators_raise_without_finite_volume_geometry(missing_faces_env):
 
 
 class TestDifferentialOperatorComputation:
-    """Test compute_differential_operator() function."""
+    """Test get_differential_operator() function."""
 
     def test_differential_operator_shape(self):
         """Test that differential operator has shape (n_bins, n_edges)."""
@@ -154,7 +151,7 @@ class TestDifferentialOperatorComputation:
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         n_bins = env.n_bins
         n_edges = len(env.connectivity.edges)
@@ -168,7 +165,7 @@ class TestDifferentialOperatorComputation:
         data = np.array([[0.0], [1.0], [2.0], [3.0]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         # Compute Laplacian from differential operator
         L_from_D = (
@@ -190,7 +187,7 @@ class TestDifferentialOperatorComputation:
         data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         assert sparse.issparse(D)
         assert isinstance(D, sparse.csc_matrix)
@@ -201,7 +198,7 @@ class TestDifferentialOperatorComputation:
         data = np.array([[0.0], [1.0], [2.0]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         # For a 1D chain, edge distances should be 1.0
         # D should contain +/-1/d = +/-1 for d=1
@@ -216,7 +213,7 @@ class TestDifferentialOperatorComputation:
         data = np.array([[0.0, 0.0]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         # Single node should have shape (1, 0) - no edges
         assert D.shape == (1, 0)
@@ -229,7 +226,7 @@ class TestDifferentialOperatorComputation:
         env = Environment.from_samples(data, bin_size=1.0)
 
         # This should work even with disconnected components
-        D = compute_differential_operator(env)
+        D = env.get_differential_operator()
 
         n_bins = env.n_bins
         n_edges = len(env.connectivity.edges)
@@ -288,7 +285,7 @@ class TestEnvironmentCachedProperty:
         env = Environment.from_samples(data, bin_size=1.0)
 
         D_property = env.get_differential_operator()
-        D_function = compute_differential_operator(env)
+        D_function = env.get_differential_operator()
 
         # Should produce identical matrices
         np.testing.assert_array_equal(D_property.toarray(), D_function.toarray())

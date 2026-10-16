@@ -1315,7 +1315,6 @@ class TestCacheManagement:
 
     def test_clear_cache_releases_every_analysis(self, cache_test_env):
         """Every cached analysis is released and recomputes to the same value."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         points = np.array([[5.0, 5.0]])
         before = {
@@ -1324,7 +1323,7 @@ class TestCacheManagement:
             "divergence": cache_test_env.get_divergence_operator().toarray(),
             "bins": cache_test_env.get_bin_attributes(),
             "edges": cache_test_env.get_edge_attributes(),
-            "nearest": map_points_to_bins(cache_test_env, points),
+            "nearest": cache_test_env.nearest_bin(points),
             "kernel": cache_test_env.compute_kernel(1.0),
             "smoothed": cache_test_env.smooth(np.ones(cache_test_env.n_bins), 1.0),
         }
@@ -1348,7 +1347,7 @@ class TestCacheManagement:
             cache_test_env.get_edge_attributes(), before["edges"]
         )
         np.testing.assert_array_equal(
-            map_points_to_bins(cache_test_env, points), before["nearest"]
+            cache_test_env.nearest_bin(points), before["nearest"]
         )
         np.testing.assert_array_equal(
             cache_test_env.compute_kernel(1.0), before["kernel"]

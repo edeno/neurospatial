@@ -27,7 +27,6 @@ from neurospatial import Environment
 from neurospatial.encoding import PlaceFieldsResult
 from neurospatial.encoding._metrics import sparsity, spatial_information
 from neurospatial.encoding.spatial import compute_spatial_rate, detect_place_fields
-from neurospatial.ops.binning import map_points_to_bins
 from neurospatial.ops.distance import pairwise_distances
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 
@@ -285,15 +284,11 @@ class TestSpatialQueryPerformance:
 
         assert len(result) == len(positions)
 
-    def test_map_points_to_bins_batch(
-        self, benchmark, medium_env, benchmark_data_medium
-    ):
-        """Benchmark map_points_to_bins() with KDTree caching (5000 points)."""
+    def test_nearest_bin_batch(self, benchmark, medium_env, benchmark_data_medium):
+        """Benchmark env.nearest_bin() with KDTree caching (5000 points)."""
         positions, _, _ = benchmark_data_medium
 
-        result = benchmark(
-            map_points_to_bins, medium_env, positions, tie_break="lowest_index"
-        )
+        result = benchmark(medium_env.nearest_bin, positions, tie_break="lowest_index")
 
         assert len(result) == len(positions)
 

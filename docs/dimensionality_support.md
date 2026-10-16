@@ -136,8 +136,7 @@ R = Rotation.from_euler('z', 45, degrees=True).as_matrix()
 transform = from_rotation_matrix(R, translation=[10, 20, 30])
 
 # Apply to 3D environment
-from neurospatial.ops import apply_transform_to_environment
-env_transformed = apply_transform_to_environment(env_3d, transform)
+env_transformed = env_3d.apply_transform(transform)
 ```
 
 ✅ **Transform estimation** - Estimate rigid, similarity, or affine transforms from point pairs

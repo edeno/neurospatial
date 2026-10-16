@@ -35,7 +35,7 @@ unit and angle is in radians. Zero angle is ahead of the animal; positive angles
 point to its left. Shared graph and field operations keep their existing polar
 math. Cartesian lookup, affine transforms, clipping and Cartesian trajectory
 operations still refuse polar inputs. Domain functions that read bin centers as
-Cartesian coordinates, such as `map_points_to_bins` and
+Cartesian coordinates, such as `resample_field` and
 `spatial_autocorrelation`, refuse them too; functions with a graph-based mode,
 such as `rate_map_centroid(method="geodesic")`, keep that mode for polar bins.
 Decoded posterior means work on polar environments: `mean_position` is the

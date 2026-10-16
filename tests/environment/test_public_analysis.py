@@ -16,7 +16,6 @@ from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops import MRFBasis
 from neurospatial.ops.basis import _diffusion_generator
 from neurospatial.ops.diffusion import (
-    diffusion_apply_rtol,
     diffusion_component_labels,
     diffusion_kernel,
 )
@@ -238,7 +237,6 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
     n_components, labels = diffusion_component_labels(host)
     assert n_components == 1
     np.testing.assert_array_equal(labels, np.zeros(env.n_bins, dtype=int))
-    assert diffusion_apply_rtol(host, 1.0) == env.diffusion_accuracy(1.0)
     np.testing.assert_array_equal(
         _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(1.0)
     )

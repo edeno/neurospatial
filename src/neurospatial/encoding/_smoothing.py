@@ -71,7 +71,6 @@ from neurospatial.ops.diffusion import (
     _RESOLUTION_MARGIN,
     above_component_floor,
     component_support_mask,
-    diffusion_apply_rtol,
     diffusion_component_labels,
     masked_diffusion_average,
 )
@@ -767,7 +766,7 @@ def _resolution_floor(env: Environment, bandwidth: float) -> float:
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * diffusion_apply_rtol(env, bandwidth)
+    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth)
 
 
 def _resolved_density_mask(
@@ -779,7 +778,7 @@ def _resolved_density_mask(
     """Bins whose smoothed occupancy density is resolved above the apply's noise.
 
     ``env.diffuse`` reproduces the dense heat operator only to a relative
-    accuracy (``diffusion_apply_rtol``: the truncation tolerance, or float64
+    accuracy (``env.diffusion_accuracy``: the truncation tolerance, or float64
     roundoff for the full basis). Far from all occupancy the smoothed spike and
     occupancy densities both approach that noise, so their ratio is noise too
     (it reached 20,000 Hz on a 50 Hz field). A bin is resolved when its

@@ -19,7 +19,6 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment, Regions
-from neurospatial.ops import map_points_to_bins
 
 
 @pytest.mark.slow
@@ -192,7 +191,7 @@ class TestSpatialQueryPerformance:
 
     @pytest.mark.wallclock
     def test_kdtree_batch_query_performance(self):
-        """Test KDTree batch query performance for map_points_to_bins().
+        """Test KDTree batch query performance for nearest_bin().
 
         This benchmark verifies that batch point-to-bin mapping scales
         efficiently with the number of query points, using the cached
@@ -208,7 +207,7 @@ class TestSpatialQueryPerformance:
 
         # Benchmark batch query
         start = time.perf_counter()
-        bin_indices = map_points_to_bins(env, query_points)
+        bin_indices = env.nearest_bin(query_points)
         elapsed = time.perf_counter() - start
 
         # Should complete in <50ms for 10k queries on 2500 bins

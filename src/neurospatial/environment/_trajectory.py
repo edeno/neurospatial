@@ -171,7 +171,7 @@ def _occupancy(
     # Map positions to bin indices using the layout's geometric
     # containment, which matches Environment.bin_sequence and returns
     # -1 for samples outside the active mask. The earlier path
-    # used map_points_to_bins (KDTree nearest-neighbor with a
+    # used nearest-center lookup (KDTree nearest-neighbor with a
     # heuristic 10x-typical-spacing threshold). That heuristic let
     # samples a few centimeters outside the active mask silently
     # bind to the nearest edge bin, so a tracking-error overshoot

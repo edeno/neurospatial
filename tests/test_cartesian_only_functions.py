@@ -31,7 +31,6 @@ from neurospatial.encoding import (
 )
 from neurospatial.ops import (
     geodesic_rbf_basis,
-    map_points_to_bins,
     map_probabilities,
     resample_field,
     select_basis_centers,
@@ -78,10 +77,6 @@ def _polar_regions_env(env: Environment) -> Environment:
         (
             lambda env: spatial_autocorrelation(env, _rates(env)),
             "spatial_autocorrelation()",
-        ),
-        (
-            lambda env: map_points_to_bins(env, np.array([[10.0, 0.0]])),
-            "map_points_to_bins()",
         ),
         (
             lambda env: resample_field(_rates(env), env, env),

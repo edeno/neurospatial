@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
     from neurospatial.ops._protocols import (
         BinSpacingConsumer,
-        CartesianNearestBinConsumer,
         RegionMaskConsumer,
         ResampleSourceConsumer,
         ResampleTargetConsumer,
@@ -52,12 +51,15 @@ class TieBreakStrategy(Enum):
 
     Examples
     --------
-    >>> from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
     >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops.binning import TieBreakStrategy
+    >>> env = Environment.from_samples(np.zeros((1, 2)), bin_size=1.0)
     >>> # Use enum for autocomplete and type safety
-    >>> result = map_points_to_bins(
-    ...     env, points, tie_break=TieBreakStrategy.CLOSEST_CENTER
-    ... )  # doctest: +SKIP
+    >>> env.nearest_bin(
+    ...     np.array([[0.1, 0.1]]), tie_break=TieBreakStrategy.CLOSEST_CENTER
+    ... )
+    array([0])
     """
 
     LOWEST_INDEX = "lowest_index"
@@ -120,164 +122,6 @@ def _typical_bin_spacing(env: BinSpacingConsumer) -> float:
     if env.is_linearized_track:
         return float(np.median(env.bin_sizes))
     return _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
-
-
-def map_points_to_bins(
-    env: CartesianNearestBinConsumer,
-    points: NDArray[np.float64],
-    *,
-    tie_break: TieBreakStrategy
-    | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
-    return_dist: bool = False,
-    max_distance: float | None = None,
-    max_distance_factor: float | None = None,
-) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Map points to bins using nearest-neighbor with KDTree caching.
-
-    This function provides fast, batch mapping of continuous coordinates to
-    discrete bin indices using KD-tree nearest-neighbor queries. Unlike
-    `Environment.bin_at()` which uses geometric containment, this finds the
-    bin whose center is closest to each point.
-
-    Internally caches a KD-tree on first call for O(log N) lookups. Best for
-    large batches, trajectory processing, and when approximate assignment is
-    acceptable.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment containing the bin discretization.
-    points : NDArray[np.float64], shape (n_points, n_dims)
-        Continuous coordinates to map to bins.
-    tie_break : TieBreakStrategy or {"lowest_index", "closest_center"}, default=TieBreakStrategy.LOWEST_INDEX
-        Strategy for resolving ties when a point is equidistant from multiple
-        bin centers. Can pass either a TieBreakStrategy enum member or a string.
-
-        - TieBreakStrategy.LOWEST_INDEX or "lowest_index": Choose the bin with
-          smallest index (deterministic, recommended for reproducibility)
-        - TieBreakStrategy.CLOSEST_CENTER or "closest_center": Return the actual
-          closest (may be non-deterministic for exact ties, but faster). On an
-          exact tie between equidistant centers, the bin returned is the one
-          reported by the underlying KDTree query; that ordering is
-          implementation-defined and may differ between platforms.
-
-    return_dist : bool, default=False
-        If True, also return the distance from each point to its assigned bin center.
-    max_distance : float, optional
-        Absolute distance threshold in physical units. Points farther than this
-        from the nearest bin center are marked as outside (-1). Cannot be used
-        with max_distance_factor.
-    max_distance_factor : float, optional
-        Relative distance threshold as a multiple of typical bin spacing. Points
-        farther than (max_distance_factor × typical_bin_spacing) from the nearest
-        bin center are marked as outside (-1). Cannot be used with max_distance.
-
-    Returns
-    -------
-    bin_indices : NDArray[np.int_], shape (n_points,)
-        Bin index for each point. The "outside" sentinel ``-1`` is
-        returned only when ``max_distance`` (or ``max_distance_factor``)
-        rejects the nearest-neighbor distance, or when the implicit
-        ``10 × typical_bin_spacing`` heuristic does so. A point a
-        couple of centimeters outside the active mask of a 2 cm-bin
-        env will silently bind to the nearest edge bin under the
-        default heuristic. For trajectory occupancy / bin-sequence
-        purposes use :meth:`Environment.bin_at` (geometric containment,
-        always returns ``-1`` for outside points). Use this function
-        for nearest-neighbor *interpolation* queries where assigning
-        points to the closest in-env bin is the goal. A point with a NaN
-        coordinate is a missing sample and gets ``-1``, as does a point with
-        an infinite coordinate.
-    distances : NDArray[np.float64], shape (n_points,), optional
-        Distance from each point to its assigned bin center: ``inf`` for a
-        rejected point and NaN for a missing one.
-        Only returned if `return_dist=True`.
-
-    Raises
-    ------
-    ValueError
-        If both max_distance and max_distance_factor are specified, or if either
-        is negative, or if invalid tie_break mode.
-    CartesianOnlyError
-        If ``env`` is polar: nearest centers in ``(distance, angle)`` space
-        mix units and ignore the angle seam.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.ops.binning import map_points_to_bins
-    >>> data = np.random.randn(1000, 2) * 10  # doctest: +SKIP
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> points = np.array([[0.0, 0.0], [10.0, 10.0], [50.0, 50.0]])  # doctest: +SKIP
-    >>> bins = map_points_to_bins(env, points)  # doctest: +SKIP
-    >>> bins  # doctest: +SKIP
-    array([ 42,  89,  -1])
-
-    >>> # Get distances too
-    >>> bins, dists = map_points_to_bins(
-    ...     env, points, return_dist=True
-    ... )  # doctest: +SKIP
-    >>> dists  # doctest: +SKIP
-    array([0.23, 0.45, inf])
-
-    >>> # Filter outliers with absolute threshold
-    >>> bins = map_points_to_bins(env, points, max_distance=15.0)  # doctest: +SKIP
-
-    >>> # Filter outliers with relative threshold (adapts to bin size)
-    >>> bins = map_points_to_bins(
-    ...     env, points, max_distance_factor=1.5
-    ... )  # doctest: +SKIP
-
-    Notes
-    -----
-    This function builds and caches a KD-tree on the environment's bin_centers
-    on first call. Subsequent calls reuse the cached tree for O(log N) performance.
-
-    The cache is stored as a private attribute on the Environment object.
-
-    **IMPORTANT**: Environment objects are designed to be immutable after creation.
-    Modifying bin_centers or other spatial attributes after creation will cause
-    the cache to become stale and produce incorrect results. If you need a modified
-    environment, create a new Environment instance instead.
-
-    The typical bin spacing is estimated using deterministic quantile-based
-    sampling for reproducibility.
-
-    See Also
-    --------
-    Environment.bin_at : Geometric containment mapping (exact bin assignment)
-    Environment.contains : Check if points are within environment bounds
-
-    Notes
-    -----
-    **Geometric Containment vs Nearest-Neighbor:**
-
-    - `Environment.bin_at()`: Uses layout-specific geometric containment to
-      determine which bin actually contains the point. This is exact but may
-      be slower for large batches and doesn't support advanced features like
-      tie-breaking or distance thresholds.
-
-    - `map_points_to_bins()` (this function): Uses KDTree to find the bin whose
-      center is closest to the point. Fast with caching, supports tie-breaking,
-      and allows distance thresholds. Best for large batches and trajectory
-      processing.
-
-    """
-    require_cartesian(
-        env.coordinate_system,
-        "map_points_to_bins()",
-        why="It finds the nearest bin center to each Cartesian point.",
-        fix="find the bins of (distance, angle) rows with env.nearest_bin(points)",
-    )
-
-    return env.nearest_bin(
-        points,
-        tie_break=tie_break,
-        return_dist=return_dist,
-        max_distance=max_distance,
-        max_distance_factor=max_distance_factor,
-    )
 
 
 def _validate_nearest_options(
@@ -609,7 +453,7 @@ def resample_field(
 
     See Also
     --------
-    map_points_to_bins : Low-level point-to-bin mapping
+    Environment.nearest_bin : Nearest-center point-to-bin mapping
     apply_kernel : Apply diffusion kernels to fields
     regions_to_mask : Convert regions to bin masks (spatial discretization)
 
@@ -750,19 +594,18 @@ def resample_field(
         )
 
     # Step 1: Map each destination bin center to nearest source bin
-    # Use map_points_to_bins for KD-tree cached nearest-neighbor lookup
+    # Use the source environment's KD-tree cached nearest-neighbor lookup
     # (return_dist defaults to False, so the result is the index array).
     dst_to_src_indices = cast(
         "NDArray[np.int64]",
-        map_points_to_bins(
-            src_env,
+        src_env.nearest_bin(
             dst_env.bin_centers,
             tie_break=TieBreakStrategy.LOWEST_INDEX,
         ),
     )
 
     # Step 2: Pullback field values via nearest neighbor.
-    # map_points_to_bins returns -1 for destination bin centers that fall
+    # nearest_bin returns -1 for destination bin centers that fall
     # outside the source environment. Naive ``field[dst_to_src_indices]`` would
     # silently resolve -1 to ``field[-1]`` (Python negative indexing). Gather
     # safely with the negative indices clamped, then mask those positions NaN.

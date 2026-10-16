@@ -429,11 +429,10 @@ class TestSimulateTrajectoryLaps:
             seed=42,
         )
 
-        # Use map_points_to_bins to check - this is more efficient than calling
+        # Use nearest_bin to check - this is more efficient than calling
         # contains() in a loop, and it validates that positions can be mapped
-        from neurospatial.ops import map_points_to_bins
 
-        bin_indices = map_points_to_bins(simple_2d_env, positions)
+        bin_indices = simple_2d_env.nearest_bin(positions)
 
         # All bin indices should be valid (>= 0)
         assert np.all(bin_indices >= 0), "Some positions could not be mapped to bins"

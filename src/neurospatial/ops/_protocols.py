@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -21,22 +21,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.binning import TieBreakStrategy
-    from neurospatial.ops.transforms import Affine2D, AffineND
     from neurospatial.regions import Regions
-
-_TransformedT_co = TypeVar("_TransformedT_co", covariant=True)
-
-
-class AffineTransformConsumer(Protocol[_TransformedT_co]):
-    """The environment-owned affine construction adapter."""
-
-    def apply_transform(
-        self,
-        transform: AffineND | Affine2D,
-        *,
-        name: str | None = None,
-        frame: str | None = None,
-    ) -> _TransformedT_co: ...
 
 
 class CartesianConsumer(Protocol):
@@ -188,21 +173,6 @@ class ResampleTargetConsumer(DiffusionGeometryConsumer, CartesianConsumer, Proto
     def diffuse(
         self, fields: Any, bandwidth: float, *, mode: KernelMode = ...
     ) -> NDArray[np.float64]: ...
-
-
-class DiffusionAccuracyConsumer(Protocol):
-    """Report apply accuracy without exposing the mutable eigenbasis holder."""
-
-    def diffusion_accuracy(self, bandwidth: float) -> float: ...
-
-
-class FaceGeometryConsumer(Protocol):
-    """Public access to an environment-owned differential operator."""
-
-    @property
-    def n_bins(self) -> int: ...
-
-    def get_differential_operator(self) -> sparse.csc_matrix: ...
 
 
 class GradientConsumer(Protocol):

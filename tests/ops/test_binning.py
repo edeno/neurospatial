@@ -7,12 +7,6 @@ import pytest
 class TestBinningImports:
     """Test that binning module exports are available from new location."""
 
-    def test_import_map_points_to_bins(self):
-        """Test map_points_to_bins can be imported from ops.binning."""
-        from neurospatial.ops.binning import map_points_to_bins
-
-        assert callable(map_points_to_bins)
-
     def test_import_tie_break_strategy(self):
         """Test TieBreakStrategy can be imported from ops.binning."""
         from neurospatial.ops.binning import TieBreakStrategy
@@ -33,8 +27,8 @@ class TestBinningImports:
         assert callable(resample_field)
 
 
-class TestMapPointsToBins:
-    """Test map_points_to_bins function from new location."""
+class TestNearestBin:
+    """Test Environment.nearest_bin."""
 
     @pytest.fixture
     def grid_env(self):
@@ -52,10 +46,9 @@ class TestMapPointsToBins:
 
     def test_map_points_basic(self, grid_env):
         """Test basic point mapping from new import location."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         points = np.array([[5.0, 5.0], [0.0, 0.0], [10.0, 10.0]])
-        bins = map_points_to_bins(grid_env, points)
+        bins = grid_env.nearest_bin(points)
 
         assert bins.shape == (3,)
         assert bins.dtype == np.int64
@@ -64,12 +57,10 @@ class TestMapPointsToBins:
 
     def test_tie_break_strategy_enum(self, grid_env):
         """Test using TieBreakStrategy enum from new location."""
-        from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
+        from neurospatial.ops.binning import TieBreakStrategy
 
         points = np.array([[5.0, 5.0]])
-        bins = map_points_to_bins(
-            grid_env, points, tie_break=TieBreakStrategy.LOWEST_INDEX
-        )
+        bins = grid_env.nearest_bin(points, tie_break=TieBreakStrategy.LOWEST_INDEX)
 
         assert bins.shape == (1,)
         assert bins[0] >= 0
@@ -83,7 +74,6 @@ class TestMapPointsToBins:
             NearestBinLocator,
             SpatialBins,
         )
-        from neurospatial.ops.binning import map_points_to_bins
 
         n_bins = 20
         angles = np.linspace(0.0, 2.0 * np.pi, n_bins, endpoint=False)
@@ -100,8 +90,7 @@ class TestMapPointsToBins:
         )
         points = np.array([[0.0, 0.0]])
 
-        bins = map_points_to_bins(
-            env,
+        bins = env.nearest_bin(
             points,
             tie_break="lowest_index",
             max_distance=2.0,
@@ -117,7 +106,7 @@ _GRID_BIN_SIZE = 2.0
 
 
 class TestMapPointsToBinsBehavior:
-    """Behavioral tests for map_points_to_bins distance/threshold/tie semantics."""
+    """Behavioral tests for nearest_bin distance/threshold/tie semantics."""
 
     @pytest.fixture
     def regular_grid_env(self):
@@ -136,10 +125,9 @@ class TestMapPointsToBinsBehavior:
 
     def test_returns_dist_finite_for_inside_points(self, regular_grid_env):
         """Inside points get finite distance < bin_size; one point pinned exactly."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         point = np.array([[7.3, 11.7]])
-        bins, dists = map_points_to_bins(regular_grid_env, point, return_dist=True)
+        bins, dists = regular_grid_env.nearest_bin(point, return_dist=True)
 
         assert bins[0] >= 0
         assert np.isfinite(dists[0])
@@ -151,24 +139,20 @@ class TestMapPointsToBinsBehavior:
 
     def test_returns_dist_inf_for_outside_points(self, regular_grid_env):
         """A point far outside the env returns inf distance."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         far_point = np.array([[1000.0, 1000.0]])
-        bins, dists = map_points_to_bins(regular_grid_env, far_point, return_dist=True)
+        bins, dists = regular_grid_env.nearest_bin(far_point, return_dist=True)
 
         assert bins[0] == -1
         assert np.isinf(dists[0])
 
     def test_max_distance_marks_outside(self, regular_grid_env):
         """max_distance threshold rejects points beyond it (bin index -1)."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         # Point at distance 1.5 * bin_size = 3.0 from nearest center (20, 0).
         point = np.array([[23.0, 0.0]])
 
-        bins_reject = map_points_to_bins(
-            regular_grid_env, point, max_distance=_GRID_BIN_SIZE
-        )
+        bins_reject = regular_grid_env.nearest_bin(point, max_distance=_GRID_BIN_SIZE)
         assert bins_reject[0] == -1
 
         # Re-create env so the previous query's threshold does not leak via cache.
@@ -180,7 +164,7 @@ class TestMapPointsToBinsBehavior:
         data = np.column_stack([xx.ravel(), yy.ravel()])
         env2 = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
 
-        bins_accept = map_points_to_bins(env2, point, max_distance=2.0 * _GRID_BIN_SIZE)
+        bins_accept = env2.nearest_bin(point, max_distance=2.0 * _GRID_BIN_SIZE)
         assert bins_accept[0] >= 0
 
     def test_max_distance_factor_relative_to_bin_spacing(self, regular_grid_env):
@@ -188,10 +172,7 @@ class TestMapPointsToBinsBehavior:
         from scipy.spatial import cKDTree
 
         from neurospatial import Environment
-        from neurospatial.ops.binning import (
-            _estimate_typical_bin_spacing,
-            map_points_to_bins,
-        )
+        from neurospatial.ops.binning import _estimate_typical_bin_spacing
 
         kdtree = cKDTree(regular_grid_env.bin_centers)
         spacing = _estimate_typical_bin_spacing(kdtree, regular_grid_env.bin_centers)
@@ -207,30 +188,28 @@ class TestMapPointsToBinsBehavior:
             point = np.array([[20.0 + offset, 0.0]])  # dist = offset from (20, 0)
 
             env_factor = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
-            bins_factor = map_points_to_bins(env_factor, point, max_distance_factor=0.5)
+            bins_factor = env_factor.nearest_bin(point, max_distance_factor=0.5)
 
             env_abs = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
-            bins_abs = map_points_to_bins(env_abs, point, max_distance=0.5 * spacing)
+            bins_abs = env_abs.nearest_bin(point, max_distance=0.5 * spacing)
 
             assert bins_factor[0] == bins_abs[0]
 
     def test_max_distance_and_factor_together_raises(self, regular_grid_env):
         """Specifying both max_distance and max_distance_factor raises."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         point = np.array([[5.0, 5.0]])
         with pytest.raises(ValueError, match="Cannot specify both"):
-            map_points_to_bins(
-                regular_grid_env, point, max_distance=1.0, max_distance_factor=1.0
+            regular_grid_env.nearest_bin(
+                point, max_distance=1.0, max_distance_factor=1.0
             )
 
     def test_max_distance_negative_raises(self, regular_grid_env):
         """A negative max_distance raises."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         point = np.array([[5.0, 5.0]])
         with pytest.raises(ValueError, match=r"positive|non-negative"):
-            map_points_to_bins(regular_grid_env, point, max_distance=-1.0)
+            regular_grid_env.nearest_bin(point, max_distance=-1.0)
 
     def test_default_threshold_is_10x_typical_spacing(self, monkeypatch):
         """The implicit default threshold is 10 x typical bin spacing.
@@ -253,12 +232,12 @@ class TestMapPointsToBinsBehavior:
 
         env_in = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
         point_in = np.array([[20.0 + 9.5 * K, 0.0]])  # dist 9.5*K from (20, 0)
-        bins_in = binning.map_points_to_bins(env_in, point_in)
+        bins_in = env_in.nearest_bin(point_in)
         assert bins_in[0] >= 0
 
         env_out = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
         point_out = np.array([[20.0 + 10.5 * K, 0.0]])  # dist 10.5*K
-        bins_out = binning.map_points_to_bins(env_out, point_out)
+        bins_out = env_out.nearest_bin(point_out)
         assert bins_out[0] == -1
 
     @pytest.mark.parametrize("use_enum", [True, False])
@@ -269,7 +248,7 @@ class TestMapPointsToBinsBehavior:
         (2, 0). lowest_index must return the lower of the two bin indices;
         closest_center returns one of the two equidistant bins.
         """
-        from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
+        from neurospatial.ops.binning import TieBreakStrategy
 
         tie_point = np.array([[1.0, 0.0]])
 
@@ -281,24 +260,21 @@ class TestMapPointsToBinsBehavior:
         lowest = TieBreakStrategy.LOWEST_INDEX if use_enum else "lowest_index"
         closest = TieBreakStrategy.CLOSEST_CENTER if use_enum else "closest_center"
 
-        bins_lowest = map_points_to_bins(regular_grid_env, tie_point, tie_break=lowest)
+        bins_lowest = regular_grid_env.nearest_bin(tie_point, tie_break=lowest)
         assert bins_lowest[0] == lower_idx
 
-        bins_closest = map_points_to_bins(
-            regular_grid_env, tie_point, tie_break=closest
-        )
+        bins_closest = regular_grid_env.nearest_bin(tie_point, tie_break=closest)
         # closest_center returns one of the two equidistant bins.
         assert bins_closest[0] in (idx_00, idx_20)
 
     def test_nan_points_are_missing_and_infinite_points_outside(self, regular_grid_env):
         """A NaN row is a missing sample (-1, NaN); an inf row is outside (-1, inf)."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         finite = np.array([[50.0, 50.0], [12.0, 30.0]])
         points = np.array([[np.nan, 50.0], finite[0], [np.inf, 0.0], finite[1]])
-        bins, dist = map_points_to_bins(regular_grid_env, points, return_dist=True)
-        expected_bins, expected_dist = map_points_to_bins(
-            regular_grid_env, finite, return_dist=True
+        bins, dist = regular_grid_env.nearest_bin(points, return_dist=True)
+        expected_bins, expected_dist = regular_grid_env.nearest_bin(
+            finite, return_dist=True
         )
         np.testing.assert_array_equal(
             bins, [-1, expected_bins[0], -1, expected_bins[1]]
@@ -309,10 +285,9 @@ class TestMapPointsToBinsBehavior:
 
     def test_returns_correct_bin_on_regular_grid(self, regular_grid_env):
         """A point maps to the bin whose center is nearest (round-to-center)."""
-        from neurospatial.ops.binning import map_points_to_bins
 
         point = np.array([[7.3, 11.7]])
-        bins = map_points_to_bins(regular_grid_env, point)
+        bins = regular_grid_env.nearest_bin(point)
 
         # Centers lie on even multiples of bin_size starting at 0, so the nearest
         # center is (round(7.3 / 2) * 2, round(11.7 / 2) * 2) = (8, 12).
@@ -331,7 +306,7 @@ class TestResampleFieldOutOfBounds:
     def test_out_of_source_bins_become_nan(self):
         """Destination bins with no source coverage map to NaN, not field[-1].
 
-        ``map_points_to_bins`` returns -1 for destination bin centers that fall
+        ``nearest_bin`` returns -1 for destination bin centers that fall
         outside the source environment. Negative indexing would silently
         resolve -1 to ``field[-1]`` (the last source bin's value); those
         positions must instead be NaN.
@@ -363,10 +338,10 @@ class TestResampleFieldOutOfBounds:
         assert resampled.shape == (dst_env.n_bins,)
 
         # Identify which destination bins fall outside the source coverage.
-        from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
+        from neurospatial.ops.binning import TieBreakStrategy
 
-        dst_to_src = map_points_to_bins(
-            src_env, dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+        dst_to_src = src_env.nearest_bin(
+            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
         )
         outside = dst_to_src < 0
 
@@ -428,17 +403,13 @@ class TestResampleFieldDiffuseNaN:
         (a forward diffusion matmul) and wiped out every reachable bin, leaving
         an all-NaN field.
         """
-        from neurospatial.ops.binning import (
-            TieBreakStrategy,
-            map_points_to_bins,
-            resample_field,
-        )
+        from neurospatial.ops.binning import TieBreakStrategy, resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = map_points_to_bins(
-            src_env, dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+        dst_to_src = src_env.nearest_bin(
+            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
         )
         outside = dst_to_src < 0
         assert np.any(outside)  # the test scenario must have out-of-source bins
@@ -460,17 +431,13 @@ class TestResampleFieldDiffuseNaN:
 
     def test_resample_diffuse_outside_bins_remain_nan(self):
         """Out-of-source bins are re-imposed as NaN after smoothing."""
-        from neurospatial.ops.binning import (
-            TieBreakStrategy,
-            map_points_to_bins,
-            resample_field,
-        )
+        from neurospatial.ops.binning import TieBreakStrategy, resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = map_points_to_bins(
-            src_env, dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+        dst_to_src = src_env.nearest_bin(
+            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
         )
         outside = dst_to_src < 0
         assert np.any(outside)

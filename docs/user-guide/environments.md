@@ -189,9 +189,8 @@ np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
 no conversion. Polar snapshots retain radius/angle coordinates; use environment
 storage to restore those, because `from_bins()` constructs Cartesian geometry.
 
-For nearest-center assignment, use `env.nearest_bin(points)`; the existing
-`map_points_to_bins(env, points)` function forwards to it. Both reuse the
-environment's query tree and retain the same tie-breaking and distance limits.
+For nearest-center assignment, use `env.nearest_bin(points)`. It reuses the
+environment's query tree and supports tie-breaking and distance limits.
 This is different from `bin_at()`, which checks Cartesian cell containment.
 For compatibility, nearest-center queries on polar environments compare the
 stored radius and angle columns as ordinary Euclidean coordinates with mixed

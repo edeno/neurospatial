@@ -812,7 +812,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        neurospatial.ops.calculus.compute_differential_operator : Underlying computation
+        neurospatial.ops.calculus.gradient : Apply it to a scalar field.
 
         References
         ----------
@@ -1092,7 +1092,7 @@ class Environment(Generic[_C]):
         and respects the actual geometry of the bins (grid cells, hexagons, etc.).
 
         For nearest-neighbor mapping with caching and tie-breaking, see
-        `neurospatial.ops.map_points_to_bins()`.
+        :meth:`nearest_bin`.
 
         Parameters
         ----------
@@ -1115,7 +1115,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        neurospatial.ops.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
+        nearest_bin : Nearest-neighbor mapping with KDTree caching
 
         Notes
         -----
@@ -1126,7 +1126,7 @@ class Environment(Generic[_C]):
           checks which grid cell the point falls into. For hexagons, which
           hexagon contains it. This is exact but may be slower for large batches.
 
-        - `map_points_to_bins()`: Uses KDTree to find the bin whose center is
+        - `nearest_bin()`: Uses KDTree to find the bin whose center is
           closest to the point. This is fast (O(log N)) with caching, supports
           tie-breaking on boundaries, and allows distance thresholds. Best for
           large batches, trajectory processing, and when approximate assignment
@@ -1197,8 +1197,8 @@ class Environment(Generic[_C]):
         reuses an environment-owned KD-tree. It does not test containment;
         use bin_at() for Cartesian occupancy and trajectory assignment.
         On polar environments, radius and angle are compared as raw columns
-        with mixed coordinate units. That preserves map_points_to_bins()
-        behavior and is neither physical polar distance nor containment.
+        with mixed coordinate units. That is neither physical polar distance
+        nor containment.
         """
         return nearest_bin(
             self._cache,

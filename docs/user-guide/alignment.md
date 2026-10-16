@@ -300,7 +300,7 @@ Here's a complete example aligning two 3D environments:
 import numpy as np
 from scipy.spatial.transform import Rotation
 from neurospatial import Environment
-from neurospatial.ops import apply_transform_to_environment, estimate_transform
+from neurospatial.ops import estimate_transform
 
 # Create two 3D environments
 positions_session1 = np.random.randn(1000, 3) * 20
@@ -317,7 +317,7 @@ landmarks_env2 = np.array([[10, 5, 2], [18.66, 10, 2], [1.34, 13.66, 2], [10, 5,
 transform = estimate_transform(landmarks_env1, landmarks_env2, kind="rigid")
 
 # Align env1 to env2's coordinate frame
-env1_aligned = apply_transform_to_environment(env1, transform, name="session1_aligned")
+env1_aligned = env1.apply_transform(transform, name="session1_aligned")
 
 # Now compare neural activity, place fields, etc. in aligned coordinate frame
 ```

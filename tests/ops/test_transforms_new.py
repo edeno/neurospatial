@@ -7,7 +7,6 @@ from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
     Affine2D,
     AffineND,
-    apply_transform_to_environment,
     estimate_transform,
     translate,
 )
@@ -204,7 +203,7 @@ class TestEstimateTransformKabsch:
 
 
 class TestApplyTransformToEnvironment:
-    """Test apply_transform_to_environment function."""
+    """Test apply_transform function."""
 
     @pytest.fixture
     def simple_2d_env(self):
@@ -219,7 +218,7 @@ class TestApplyTransformToEnvironment:
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""
         transform = Affine2D(np.eye(3))
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         assert np.allclose(transformed_env.bin_centers, simple_2d_env.bin_centers)
         assert transformed_env.n_bins == simple_2d_env.n_bins
@@ -227,7 +226,7 @@ class TestApplyTransformToEnvironment:
     def test_apply_translation(self, simple_2d_env):
         """Test applying translation transform."""
         transform = translate(10, 20)
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         # Centers should be translated
         expected = simple_2d_env.bin_centers + np.array([10, 20])
@@ -320,14 +319,14 @@ class TestApplyTransformToEnvironment:
     def test_transform_preserves_n_bins(self, simple_2d_env):
         """Test that transformation preserves number of bins."""
         transform = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         assert transformed_env.n_bins == simple_2d_env.n_bins
 
     def test_transform_preserves_connectivity(self, simple_2d_env):
         """Test that transformation preserves connectivity structure."""
         transform = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         assert (
             transformed_env.connectivity.number_of_edges()
@@ -347,7 +346,7 @@ class TestApplyTransformToEnvironment:
         )
         transform = Affine2D(R)
 
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         # Get edge distances from original
         orig_dists = [
@@ -365,17 +364,15 @@ class TestApplyTransformToEnvironment:
     def test_transform_copies_units(self, simple_2d_env):
         """Test that units are preserved."""
         transform = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         assert transformed_env.units == simple_2d_env.units
 
     def test_transform_frame_comes_from_the_caller(self, simple_2d_env):
         """The transformed frame is unlabeled unless the caller names it."""
         transform = translate(5, 5)
-        unlabeled = apply_transform_to_environment(simple_2d_env, transform)
-        labeled = apply_transform_to_environment(
-            simple_2d_env, transform, frame="session2"
-        )
+        unlabeled = simple_2d_env.apply_transform(transform)
+        labeled = simple_2d_env.apply_transform(transform, frame="session2")
 
         assert unlabeled.frame is None
         assert labeled.frame == "session2"
@@ -383,9 +380,7 @@ class TestApplyTransformToEnvironment:
     def test_transform_with_custom_name(self, simple_2d_env):
         """Test custom name for transformed environment."""
         transform = translate(5, 5)
-        transformed_env = apply_transform_to_environment(
-            simple_2d_env, transform, name="aligned"
-        )
+        transformed_env = simple_2d_env.apply_transform(transform, name="aligned")
 
         assert transformed_env.name == "aligned"
 
@@ -396,7 +391,7 @@ class TestApplyTransformToEnvironment:
         simple_2d_env = simple_2d_env.with_regions(region_builder)
 
         transform = translate(10, 20)
-        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
+        transformed_env = simple_2d_env.apply_transform(transform)
 
         assert "goal" in transformed_env.regions
         expected_point = np.array([15.0, 25.0])
@@ -411,4 +406,4 @@ class TestApplyTransformToEnvironment:
         # 2D transform on 3D environment should raise error
         transform = translate(5, 5)
         with pytest.raises(ValueError, match="dimensionality"):
-            apply_transform_to_environment(env_3d, transform)
+            env_3d.apply_transform(transform)

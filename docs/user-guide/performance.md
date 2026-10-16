@@ -87,7 +87,7 @@ processes.
 | 100,000 bins    | ~5 MB       |
 
 **Operations using KDTree**:
-- `map_points_to_bins(points, env)` - nearest-neighbor bin assignment
+- `env.nearest_bin(points)` - nearest-neighbor bin assignment
 - `env.interpolate(field, points, method="nearest")` - nearest-neighbor interpolation
 
 `env.bin_at(points)` and `env.contains(points)` use layout-specific geometric
@@ -97,13 +97,11 @@ tracking data when points outside the environment should return `-1` / `False`.
 **Example**:
 
 ```python
-from neurospatial.ops import map_points_to_bins
-
 # First nearest-neighbor query: builds KDTree
-bin_indices = map_points_to_bins(env, points)  # Slower (tree construction)
+bin_indices = env.nearest_bin(points)  # Slower (tree construction)
 
 # Subsequent nearest-neighbor queries: use cached tree
-more_indices = map_points_to_bins(env, more_points)  # Fast
+more_indices = env.nearest_bin(more_points)  # Fast
 
 # Clear the cache when you want to free memory
 env.clear_cache()
@@ -118,16 +116,14 @@ env.clear_cache()
 
 #### 3. Nearest-Neighbor Mapping Cache
 
-**Location**: `Environment`, accessed by `neurospatial.ops.map_points_to_bins()`
+**Location**: `Environment`, accessed by `env.nearest_bin()`
 **Purpose**: Reuse the same KDTree across repeated nearest-neighbor calls.
 
 **Example**:
 
 ```python
-from neurospatial.ops import map_points_to_bins
-
 # Uses cached KDTree
-bin_indices = map_points_to_bins(env, points)
+bin_indices = env.nearest_bin(points)
 
 # Release the KDTree together with every other cached analysis
 env.clear_cache()
@@ -200,7 +196,7 @@ for field in fields:
 
 Benchmarked on MacBook Pro M1, Python 3.13, numpy 2.3
 
-**`map_points_to_bins()` - Nearest-neighbor point-to-bin mapping**:
+**`env.nearest_bin()` - Nearest-neighbor point-to-bin mapping**:
 
 | Environment | n_bins | n_points | Uncached | Cached  | Speedup |
 |-------------|--------|----------|----------|---------|---------|

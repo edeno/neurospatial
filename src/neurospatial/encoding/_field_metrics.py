@@ -845,7 +845,7 @@ def field_shift_distance(
     **Cross-session alignment**:
 
     For comparing across sessions, environments should be aligned (e.g., using
-    estimate_transform and apply_transform_to_environment) to account for
+    estimate_transform and Environment.apply_transform) to account for
     camera shifts, rotation, or scaling. If environments are not aligned,
     distance will include alignment error.
 

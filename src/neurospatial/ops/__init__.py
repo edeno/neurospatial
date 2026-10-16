@@ -47,14 +47,12 @@ from neurospatial.ops.basis import (
 # Binning operations
 from neurospatial.ops.binning import (
     TieBreakStrategy,
-    map_points_to_bins,
     regions_to_mask,
     resample_field,
 )
 
 # Calculus operations (gradient, divergence)
 from neurospatial.ops.calculus import (
-    compute_differential_operator,
     divergence,
     gradient,
 )
@@ -106,7 +104,6 @@ from neurospatial.ops.transforms import (
     AffineND,
     SpatialTransform,
     VideoCalibration,
-    apply_transform_to_environment,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
     convert_to_cm,
@@ -165,11 +162,9 @@ __all__ = [
     "map_probabilities",
     # Binning
     "TieBreakStrategy",
-    "map_points_to_bins",
     "regions_to_mask",
     "resample_field",
     # Calculus
-    "compute_differential_operator",
     "divergence",
     "gradient",
     # Distance
@@ -221,7 +216,6 @@ __all__ = [
     "convert_to_pixels",
     "flip_y_data",
     # Transforms - Estimation
-    "apply_transform_to_environment",
     "estimate_transform",
     # Visibility
     "FieldOfView",

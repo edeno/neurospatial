@@ -34,7 +34,6 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.ops import (
-        map_points_to_bins,
         map_probabilities,
         resample_field,
         select_basis_centers,
@@ -54,8 +53,6 @@ if TYPE_CHECKING:
         field_shift_distance(cartesian, values, bins, polar, values, bins)  # type: ignore[arg-type]
         spatial_autocorrelation(cartesian, values)
         spatial_autocorrelation(polar, values)  # type: ignore[arg-type]
-        map_points_to_bins(cartesian, values)
-        map_points_to_bins(polar, values)  # type: ignore[arg-type]
         resample_field(values, cartesian, cartesian)
         resample_field(values, polar, cartesian)  # type: ignore[arg-type]
         resample_field(values, cartesian, polar)  # type: ignore[arg-type]
