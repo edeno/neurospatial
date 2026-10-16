@@ -66,16 +66,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   environment in one of them is refused with a message to re-save it.
   Cartesian environments in those files still load.
 
-- Every layout engine supplies its geometry through a `binning()` method that
-  returns a `Binning` (bins, point lookup, finite-volume faces and its grid,
-  track, shape and outline records), and `LayoutEngine` lists this method. A
-  custom layout engine, including a subclass of a built-in engine, is used by
-  implementing `binning()`. The environment keeps only what `binning()`
-  returns, with the layout's connectivity, ranges and grid attributes; it
-  never calls `point_to_bin_index` or `finite_volume_geometry`. Objects
-  without `binning()` still need an installed snapshot adapter. The private
-  `neurospatial.layout._capabilities` module (`RectilinearGridProvider`) is
-  removed; read `layout.binning().rectilinear`.
+- Custom layout engines must implement `binning()`, which returns the
+  `Binning` the environment keeps: bins in the connectivity graph's node
+  order, neighbor pairs in its edge order, point lookup, the faces between
+  cells (or why they are missing), and any grid, track, shape and outline
+  records. The environment no longer calls
+  `point_to_bin_index` on an engine, so to change lookup or faces, change what
+  `binning()` returns. All built-in engines implement it, a subclass of a
+  built-in engine inherits a working one, and `LayoutEngine` lists the method.
+  Objects without `binning()` still need an installed snapshot adapter. The
+  private `neurospatial.layout._capabilities` module (`RectilinearGridProvider`)
+  is removed; read `layout.binning().rectilinear`.
 
 - Graph, node and edge attributes of `env.connectivity` are stored as
   immutable values. A list attribute reads back as a tuple, a dict as a
@@ -165,7 +166,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   with their own empty cache. Each cached analysis is computed once even when
   several threads request it at the same time. `smooth`, `diffuse` and
   `get_mrf_basis` calls on one environment and its relabelled copies run one
-  at a time, because each holds the eigenbasis lock for the whole call; use
+  at a time, because each holds a lock on the shared cache for the whole call; use
   worker processes for parallel smoothing.
 
 - A factory given an `arena=` that leaves out some bins (for example

@@ -166,8 +166,8 @@ environment with its own empty cache, derive one (`subset`, `clip`, `rebin`,
 **Threads.** Threads can share one environment: each cached analysis is
 computed once even when several threads ask for it at the same time.
 `smooth`, `diffuse` and `get_mrf_basis` calls on one environment and its
-relabelled copies run one at a time, because each holds the eigenbasis lock
-for the whole call. To smooth in parallel (for example one neuron per
+relabelled copies run one at a time, because each holds a lock on the shared
+cache for the whole call. To smooth in parallel (for example one neuron per
 worker), use worker processes; each unpickles its own environment with an
 empty cache.
 
@@ -209,7 +209,7 @@ version that wrote it and save it again, or rebuild it with
 Each layout engine now hands its geometry to the environment through one
 method, `binning()`, which returns a `Binning`: the bins in the order of the
 connectivity graph's nodes, neighbor pairs in the order of its edges, point
-lookup, finite-volume faces (or the reason they are missing) and any grid,
+lookup, the faces between cells (or the reason they are missing) and any grid,
 track, shape and outline records. All built-in engines implement it, and the
 `LayoutEngine` protocol lists it.
 
@@ -222,11 +222,12 @@ If you wrote your own layout engine:
   normally.
 - The environment keeps only what `binning()` returns (plus `connectivity`,
   `dimension_ranges` and the grid attributes). It never calls
-  `point_to_bin_index` or `finite_volume_geometry`, so to change lookup or
-  faces, change what `binning()` returns. A layout whose methods were replaced
+  `point_to_bin_index`, so to change lookup or faces, change what `binning()`
+  returns. A layout whose methods were replaced
   on the instance is no longer refused.
 - An external object that has no `binning()` method still needs an installed
-  snapshot adapter (see the interoperability guide).
+  snapshot adapter (see the
+  [interoperability guide](../user-guide/interoperability.md)).
 - `neurospatial.layout._capabilities.RectilinearGridProvider` is removed. Read
   the grid record from the engine's binning:
 
