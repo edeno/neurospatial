@@ -252,7 +252,9 @@ class TestPlaceFieldDetectionAccuracy:
         spike_trains = session.spike_times
         ground_truth = session.ground_truth
         # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
-        bin_size = _typical_bin_spacing(env)
+        bin_size = _typical_bin_spacing(
+            env.bin_centers, env.bin_sizes, is_linearized_track=env.is_linearized_track
+        )
 
         true_centers = np.array(
             [ground_truth[i]["center"] for i in range(len(spike_trains))],

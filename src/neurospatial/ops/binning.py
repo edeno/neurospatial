@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
     from neurospatial.ops._protocols import (
-        BinSpacingConsumer,
         RegionMaskConsumer,
         ResampleSourceConsumer,
         ResampleTargetConsumer,
@@ -101,18 +100,28 @@ def _estimate_typical_bin_spacing(
     return float(np.median(nn_dists[:, 1]))
 
 
-def _typical_bin_spacing(env: BinSpacingConsumer) -> float:
+def _typical_bin_spacing(
+    bin_centers: NDArray[np.float64],
+    bin_sizes: NDArray[np.float64],
+    *,
+    is_linearized_track: bool,
+) -> float:
     """Typical distance between neighbouring bins, measured along the space.
 
     On a linearized track this is the median bin length along the track
-    (``env.bin_sizes``): Euclidean nearest neighbours can lie on another arm
+    (``bin_sizes``): Euclidean nearest neighbours can lie on another arm
     of the track. Otherwise it is the median nearest-neighbour distance
     between bin centres, which equals ``bin_size`` on a regular grid.
 
     Parameters
     ----------
-    env : Environment
-        An environment.
+    bin_centers : ndarray of float64, shape (n_bins, n_dims)
+        Bin centers, ``env.bin_centers``.
+    bin_sizes : ndarray of float64, shape (n_bins,)
+        Bin measures, ``env.bin_sizes``.
+    is_linearized_track : bool
+        Whether the bins lie along a linearized track,
+        ``env.is_linearized_track``.
 
     Returns
     -------
@@ -120,9 +129,9 @@ def _typical_bin_spacing(env: BinSpacingConsumer) -> float:
         The spacing; ``np.inf`` for a single-bin environment that is not a
         track.
     """
-    if env.is_linearized_track:
-        return float(np.median(env.bin_sizes))
-    return _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
+    if is_linearized_track:
+        return float(np.median(bin_sizes))
+    return _estimate_typical_bin_spacing(cKDTree(bin_centers), bin_centers)
 
 
 def _validate_nearest_options(

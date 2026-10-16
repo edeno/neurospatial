@@ -71,7 +71,6 @@ from neurospatial.ops.diffusion import (
     _RESOLUTION_MARGIN,
     above_component_floor,
     component_support_mask,
-    diffusion_component_labels,
     masked_diffusion_average,
 )
 
@@ -802,7 +801,8 @@ def _resolved_density_mask(
     NDArray[np.bool_], shape (n_bins,)
         True where the KDE ratio is numerically meaningful.
     """
-    n_components, labels = diffusion_component_labels(env)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
     support = component_support_mask(labels, n_components, occupancy > 0)
     resolved = above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
@@ -817,7 +817,8 @@ def _resolved_density_mask_jax(
     import jax
     import jax.numpy as jnp
 
-    n_components, labels = diffusion_component_labels(env)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
     labels_j = jnp.asarray(labels)
     has_occupancy = (
         jax.ops.segment_max(occupancy, labels_j, num_segments=n_components) > 0.0
@@ -1001,7 +1002,8 @@ def _binned_gate(
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
-    n_components, labels = diffusion_component_labels(env)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
     rates = np.atleast_2d(raw_rate)  # (n_neurons, n_bins)
     averaged = masked_diffusion_average(
         lambda columns: np.asarray(env.diffuse(columns, bandwidth, mode="average")),

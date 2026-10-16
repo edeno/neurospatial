@@ -218,7 +218,9 @@ def validate_simulation(
         # per-bin volume, not a length.
         from neurospatial.ops.binning import _typical_bin_spacing
 
-        max_center_error = 2.0 * _typical_bin_spacing(env)
+        max_center_error = 2.0 * _typical_bin_spacing(
+            env.bin_centers, env.bin_sizes, is_linearized_track=env.is_linearized_track
+        )
 
     if min_correlation is None:
         min_correlation = 0.5  # Reasonable threshold for noisy place fields

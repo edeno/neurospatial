@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 
 # Public entry points. The eigenbasis/apply-path functions below
 # (apply_heat_operator, diffusion_apply, heat_kernel_rank,
-# diffusion_component_labels, component_support_mask) are internal
+# component_support_mask) are internal
 # machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
     "MRFBasis",
@@ -1096,32 +1096,6 @@ def diffusion_apply(
     return _apply_modes(
         Q, Lam, volumes, sigma, np.asarray(fields, dtype=np.float64), mode, np
     )
-
-
-def diffusion_component_labels(
-    env: DiffusionGeometryConsumer,
-) -> tuple[int, NDArray[np.int_]]:
-    """``(n_components, labels)`` of the finite-volume ``W`` for ``env``.
-
-    Reads the Environment's cached finite-volume geometry so the smoothing
-    consumers can derive **W-component support** for their strict ``> 0`` gates
-    (support that is exact and truncation-proof, unlike the smoothed
-    denominator's sign; see :func:`component_support_mask`).
-
-    Parameters
-    ----------
-    env : Environment
-        An environment.
-
-    Returns
-    -------
-    n_components : int
-        Number of connected ``W``-components.
-    labels : NDArray[np.int_], shape (n_bins,)
-        Per-bin component id (``0..n_components-1``).
-    """
-    geometry = env.get_diffusion_geometry()
-    return geometry.n_components, geometry.labels
 
 
 def _diffusion_apply_rtol(

@@ -207,7 +207,11 @@ class PlaceCellModel:
         if width is None:
             # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
             # (an area in 2-D), not a length, so use the neighbour spacing.
-            spacing = _typical_bin_spacing(env)
+            spacing = _typical_bin_spacing(
+                env.bin_centers,
+                env.bin_sizes,
+                is_linearized_track=env.is_linearized_track,
+            )
             if not np.isfinite(spacing):
                 raise ValueError(
                     f"Cannot choose a default place-field width: the environment "

@@ -108,16 +108,6 @@ class DivergenceConsumer(Protocol):
     def get_divergence_operator(self) -> sparse.csc_matrix: ...
 
 
-class BinSpacingConsumer(BinCentersConsumer, Protocol):
-    """Bin centers and measures for the typical spacing between bins."""
-
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
-
-    @property
-    def is_linearized_track(self) -> bool: ...
-
-
 class FieldPlotConsumer(Protocol):
     """Draw one value per bin on an Axes, through the environment's renderer."""
 

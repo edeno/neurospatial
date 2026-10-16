@@ -42,7 +42,6 @@ if TYPE_CHECKING:
         BinCentersConsumer,
         BinningConsumer,
         BinsConsumer,
-        BinSpacingConsumer,
         CartesianBinsConsumer,
         FieldPlotConsumer,
         GraphConsumer,
@@ -73,7 +72,6 @@ if TYPE_CHECKING:
         _basis: BasisCentersConsumer = env
         _wavelets: WaveletBasisConsumer = env
         _plot: FieldPlotConsumer = env
-        _spacing: BinSpacingConsumer = env
         _regions: RegionMaskConsumer = env
         graph_convolve(env, values, lambda distance: distance)
         regions_to_mask(env, "goal")
