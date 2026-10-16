@@ -93,7 +93,7 @@ def test_public_binning_detaches_nested_track_metadata(restore: str) -> None:
     graph.add_node(1, pos=(4.0, 0.0))
     graph.add_edge(0, 1, distance=4.0)
     graph.graph["recording"] = {"labels": ["original"], "samples": np.array([1.0, 2.0])}
-    env = Environment.from_graph(graph, [(0, 1)], 0.0, 1.0)
+    env = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0)
     exported = env.binning
     if restore == "copy":
         exported = copy.deepcopy(exported)

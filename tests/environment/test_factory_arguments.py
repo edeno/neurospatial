@@ -109,3 +109,38 @@ def test_dimension_ranges_sets_the_tiled_extent(positions):
     )
     assert env.n_bins == 100
     np.testing.assert_allclose(env.dimension_ranges, [(0.0, 30.0), (0.0, 30.0)])
+
+
+def _l_track_graph():
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, pos in enumerate([(0.0, 0.0), (20.0, 0.0), (20.0, 20.0)]):
+        graph.add_node(node, pos=pos)
+    graph.add_edge(0, 1, distance=20.0)
+    graph.add_edge(1, 2, distance=20.0)
+    return graph
+
+
+def test_track_factories_share_the_edge_spacing_default():
+    graph = _l_track_graph()
+    from_graph = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2.0)
+    track = Environment.linear_track(
+        node_positions=[(0.0, 0.0), (20.0, 0.0), (20.0, 20.0)], bin_size=2.0
+    )
+    _same_bins(from_graph, track)
+    # Edges placed end to end: the linear coordinate runs 0..40 with no gap.
+    np.testing.assert_allclose(
+        from_graph.to_linear(np.array([[20.0, 1.0]])), [21.0], atol=1e-12
+    )
+    assert from_graph.layout_parameters["edge_spacing"] == 0.0
+
+
+def test_track_factories_take_bin_size_and_kind_by_keyword():
+    graph = _l_track_graph()
+    with pytest.raises(TypeError, match="positional"):
+        Environment.from_graph(graph, [(0, 1), (1, 2)], 0.0, 2.0)
+    nodes = {"start": (0, 0), "junction": (0, 5), "left": (-5, 5), "right": (5, 5)}
+    with pytest.raises(TypeError, match="positional"):
+        Environment.maze("t", node_positions=nodes, bin_size=1.0)
+    assert Environment.maze(kind="t", node_positions=nodes, bin_size=1.0).n_bins > 0

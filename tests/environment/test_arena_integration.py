@@ -72,8 +72,10 @@ def test_known_track_width_rejects_distant_points():
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(100.0, 0.0))
     graph.add_edge(0, 1, distance=100.0)
-    known = Environment.from_graph(graph, [(0, 1)], 0.0, 2.0, track_width=4.0)
-    abstract = Environment.from_graph(graph, [(0, 1)], 0.0, 2.0)
+    known = Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=4.0
+    )
+    abstract = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
     probes = np.array([[50.0, 2.0], [50.0, 2.1], [1000.0, 1000.0]])
     np.testing.assert_array_equal(known.contains(probes), [True, False, False])
     assert not abstract.arena.domain_known

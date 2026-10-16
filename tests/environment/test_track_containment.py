@@ -16,7 +16,9 @@ def _track(width):
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
-    return Environment.from_graph(graph, [(0, 1)], 0.0, 2.0, track_width=width)
+    return Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=width
+    )
 
 
 @pytest.mark.parametrize("factory", ["from_graph", "linear_track", "maze"])
@@ -27,7 +29,7 @@ def test_unknown_track_footprint_refuses_containment_but_retains_projection(fact
         env = Environment.linear_track(endpoints=[(0, 0), (10, 0)], bin_size=2.0)
     else:
         env = Environment.maze(
-            "t",
+            kind="t",
             node_positions={
                 "start": (0, 0),
                 "junction": (0, 10),
@@ -101,7 +103,7 @@ def test_track_presets_accept_a_declared_width(factory):
         )
     else:
         env = Environment.maze(
-            "t",
+            kind="t",
             node_positions={
                 "start": (0, 0),
                 "junction": (0, 10),

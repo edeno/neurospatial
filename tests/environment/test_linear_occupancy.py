@@ -186,7 +186,7 @@ class TestLinearOccupancyLayoutCompatibility:
         edge_order = [(0, 1), (1, 2)]
         edge_spacing = 1.0
         env = Environment.from_graph(
-            track_graph, edge_order, edge_spacing, bin_size=0.1
+            track_graph, edge_order, edge_spacing=edge_spacing, bin_size=0.1
         )
 
         times = np.array([0.0, 1.0])

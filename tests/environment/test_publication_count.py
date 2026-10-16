@@ -65,7 +65,7 @@ FACTORIES = {
         endpoints=[(0.0, 0.0), (10.0, 0.0)], bin_size=1.0
     ),
     "maze": lambda: Environment.maze(
-        "t",
+        kind="t",
         node_positions={"s": (0, 0), "j": (0, 10), "l": (-10, 10), "r": (10, 10)},
         bin_size=2.0,
     ),

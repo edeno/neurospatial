@@ -295,3 +295,31 @@ Remove them from the call; leaving them out gives the same hexagons as before.
 env = Environment.open_field(positions, bin_size=2.0, fill_holes=False)
 ```
 
+### Track factories
+
+`from_graph` keeps the graph and edge order positional; `bin_size` and
+`edge_spacing` are keywords. `edge_spacing` defaults to `0.0`, the same as in
+`linear_track` and `maze`, so a track whose edges join end to end needs no
+spacing argument:
+
+```python
+# Before
+env = Environment.from_graph(graph, edge_order, 0.0, 2.0)
+# Now
+env = Environment.from_graph(graph, edge_order, bin_size=2.0)
+# A gap between arms that do not touch is still a choice you make
+env = Environment.from_graph(graph, edge_order, bin_size=2.0, edge_spacing=10.0)
+```
+
+`maze` names its maze type by keyword:
+
+```python
+# Before
+env = Environment.maze("plus", node_positions=nodes, bin_size=2.0)
+# Now
+env = Environment.maze(kind="plus", node_positions=nodes, bin_size=2.0)
+```
+
+`from_graph`, `linear_track` and `maze` now accept `regions=` like the other
+factories.
+

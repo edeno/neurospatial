@@ -153,6 +153,13 @@
   fail with a `TypeError` about multiple values), `regions=` and `arena=`. See
   the [migration page](docs/migration/environment-architecture.md#factory-arguments).
 
+- `Environment.from_graph(graph, edge_order, *, bin_size, edge_spacing=0.0)`
+  takes `bin_size` and `edge_spacing` as keywords, and `edge_spacing` defaults
+  to `0.0` (edges end to end), as it already did for `linear_track` and
+  `maze`. `Environment.maze` takes `kind=` as a keyword:
+  `Environment.maze(kind="plus", node_positions=..., bin_size=...)`.
+  `from_graph`, `linear_track` and `maze` accept `regions=`.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

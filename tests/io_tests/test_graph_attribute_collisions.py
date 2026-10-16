@@ -32,7 +32,9 @@ def _environment(context):
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
     _annotate(graph)
-    return Environment.from_graph(graph, list(graph.edges), 0.0, 2.0)
+    return Environment.from_graph(
+        graph, list(graph.edges), edge_spacing=0.0, bin_size=2.0
+    )
 
 
 @pytest.mark.parametrize("context", ["connectivity", "track"])

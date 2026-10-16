@@ -464,6 +464,7 @@ def _linear_track(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
+    regions: Regions | None = None,
 ) -> Environment:
     """Implement Environment.linear_track using explicit construction inputs."""
     if endpoints is not None and node_positions is not None:
@@ -516,19 +517,20 @@ def _linear_track(
         cls,
         graph,
         edge_order,
-        edge_spacing,
-        bin_size,
+        bin_size=bin_size,
+        edge_spacing=edge_spacing,
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         track_width=track_width,
     )
 
 
 def _maze(
     cls: type[Environment[Any]],
-    kind: str,
     *,
+    kind: str,
     track_graph: nx.Graph | None = None,
     node_positions: dict[Any, Sequence[float]] | None = None,
     bin_size: float,
@@ -537,6 +539,7 @@ def _maze(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
+    regions: Regions | None = None,
 ) -> Environment:
     """Implement Environment.maze using explicit construction inputs."""
     allowed = ("w", "plus", "t")
@@ -602,11 +605,12 @@ def _maze(
         cls,
         graph,
         edge_order,
-        edge_spacing,
-        bin_size,
+        bin_size=bin_size,
+        edge_spacing=edge_spacing,
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         track_width=track_width,
     )
 
@@ -615,12 +619,13 @@ def _from_graph(
     cls: type[Environment[Any]],
     graph: nx.Graph,
     edge_order: list[tuple[Any, Any]],
-    edge_spacing: float | Sequence[float],
-    bin_size: float,
     *,
+    bin_size: float,
+    edge_spacing: float | Sequence[float] = 0.0,
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
+    regions: Regions | None = None,
     track_width: float | None = None,
 ) -> Environment:
     """Implement Environment.from_graph using explicit construction inputs."""
@@ -642,6 +647,7 @@ def _from_graph(
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         arena=TrackArena(segments, width=track_width),
     )
 

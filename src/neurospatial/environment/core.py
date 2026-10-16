@@ -2841,6 +2841,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized track Environment from an explicit topology.
 
@@ -2878,6 +2879,8 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
 
         Returns
         -------
@@ -2926,13 +2929,14 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
         )
 
     @classmethod
     def maze(
         cls,
-        kind: str,
         *,
+        kind: str,
         track_graph: nx.Graph | None = None,
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
@@ -2941,6 +2945,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized W / plus / T maze Environment.
 
@@ -3024,6 +3029,8 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
 
         Returns
         -------
@@ -3056,13 +3063,13 @@ class Environment(Generic[_C]):
         ...     "east": (50, 0),
         ...     "west": (-50, 0),
         ... }
-        >>> env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        >>> env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
         >>> env.is_linearized_track
         True
         """
         return _maze(
             cls,
-            kind,
+            kind=kind,
             track_graph=track_graph,
             node_positions=node_positions,
             bin_size=bin_size,
@@ -3071,6 +3078,7 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
         )
 
     @classmethod
@@ -3078,12 +3086,13 @@ class Environment(Generic[_C]):
         cls,
         graph: nx.Graph,
         edge_order: list[tuple[Any, Any]],
-        edge_spacing: float | Sequence[float],
-        bin_size: float,
         *,
+        bin_size: float,
+        edge_spacing: float | Sequence[float] = 0.0,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         track_width: float | None = None,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a user-defined graph structure.
@@ -3102,21 +3111,24 @@ class Environment(Generic[_C]):
         edge_order : List[Tuple[Any, Any]]
             An ordered list of edge tuples (node1, node2) from `graph` that
             defines the 1D bin ordering.
-        edge_spacing : Union[float, Sequence[float]]
-            The spacing to insert between consecutive edges in `edge_order`
-            during linearization, in the same units as the graph node coordinates.
-            If a float, applies to all gaps. If a sequence, specifies spacing for
-            each gap.
         bin_size : float
             The length of each bin along the linearized track, in the same units
             as the graph node coordinates. For example, if node positions are in
             centimeters, bin_size=2.0 creates 2cm bins along the track.
+        edge_spacing : float or sequence of floats, default 0.0
+            The spacing to insert between consecutive edges in `edge_order`
+            during linearization, in the same units as the graph node coordinates.
+            If a float, applies to all gaps. If a sequence, specifies spacing for
+            each gap. The default 0.0 places consecutive edges end to end, as in
+            :meth:`linear_track` and :meth:`maze`.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         track_width : float, optional
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
@@ -3220,11 +3232,12 @@ class Environment(Generic[_C]):
             cls,
             graph,
             edge_order,
-            edge_spacing,
-            bin_size,
+            bin_size=bin_size,
+            edge_spacing=edge_spacing,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
             track_width=track_width,
         )
 

@@ -41,7 +41,9 @@ def fv_env(request, uniform_grid):
             strict=True,
         )
     )
-    return built_from(lambda: Environment.maze("w", node_positions=nodes, bin_size=5.0))
+    return built_from(
+        lambda: Environment.maze(kind="w", node_positions=nodes, bin_size=5.0)
+    )
 
 
 @pytest.fixture

@@ -94,7 +94,7 @@ class TestPlaceCellModel:
             "am": (50, 50),
             "ar": (100, 50),
         }
-        env = Environment.maze("w", node_positions=nodes, bin_size=5.0)
+        env = Environment.maze(kind="w", node_positions=nodes, bin_size=5.0)
 
         pc = PlaceCellModel(env, center=[50.0, 0.0])
 

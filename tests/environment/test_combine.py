@@ -278,7 +278,9 @@ def test_measured_embedded_tracks_and_crossing_footprint_refusal():
             1, pos=(shift if vertical else shift + 4, 4.0 if vertical else 0.0)
         )
         graph.add_edge(0, 1, distance=4.0)
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.5)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.5
+        )
 
     a, b = track(0), track(10)
     combined = Environment.combine({"a": a, "b": b})
@@ -536,7 +538,9 @@ def test_automatic_bridges_do_not_bypass_a_measured_track(dims):
         graph.add_node(0, pos=(shift, *([0.0] * (dims - 1))))
         graph.add_node(1, pos=(shift + 1, *([0.0] * (dims - 1))))
         graph.add_edge(0, 1, distance=1.0)
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.25)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.25
+        )
 
     joined = Environment.combine(
         {key: track(shift) for key, shift in (("a", 0), ("b", 2), ("c", 4))}
@@ -618,7 +622,9 @@ def test_nearly_parallel_crossing_track_clearance_is_not_falsely_certified():
         graph.add_node(0, pos=start)
         graph.add_node(1, pos=end)
         graph.add_edge(0, 1, distance=float(np.hypot.reduce(np.array(end) - start)))
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 5e7, track_width=0.1)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=5e7, track_width=0.1
+        )
 
     first = make_track((-1e8, 0.0), (1e8, 0.0))
     second = make_track((-1e8, -1.0), (1e8, 1.0))
@@ -783,7 +789,9 @@ def test_rotated_wall_geometry_is_retained_and_transformed_tracks_are_certified(
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(4.0, 0.0))
     graph.add_edge(0, 1, distance=4.0)
-    track = Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.5)
+    track = Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.5
+    )
     moved = track.apply_transform(translate(10, 0)).with_metadata(frame=track.frame)
     assert Environment.combine({"track": track, "moved": moved}).n_bins == 8
 
