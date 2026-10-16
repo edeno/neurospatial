@@ -434,7 +434,10 @@ Other common queries are `env.neighbors(bin_index)`,
 ## Choose physical walls or analysis boundaries
 
 Physical border scores use asserted footprint rings (including holes) and
-explicit internal walls. A crop or a missing position sample does not create a
+explicit internal walls. The footprint must be known: internal walls alone do
+not say where the outer walls are, so an arena declared with
+`OpenArena(..., physical_footprint_known=False)` refuses physical scoring even
+when it has internal walls. A crop or a missing position sample does not create a
 wall. If only tracking-derived support or an analysis mask is available, request
 `boundary_source="analysis"` to use the legacy boundary-bin approximation.
 Physical mode is the default. It requires measured wall geometry and retained
@@ -518,9 +521,9 @@ polygonal walls; curved track footprints require a separate representation.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
-A combined environment also needs declared walls for every component: a field
-in a component without them would otherwise be scored against walls in other
-components, so physical scoring refuses and names the component.
+A combined environment also needs a measured footprint for every component: a
+field at the edge of a component without one would otherwise be scored against
+walls elsewhere, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 

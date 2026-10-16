@@ -371,3 +371,74 @@ def test_combined_component_without_walls_is_not_scored_against_other_walls(metr
         auto_bridge=False,
     )
     assert border_score(walled, field, metric=metric) > 0.5
+
+
+def _room_with_internal_wall(*, footprint_known):
+    """A 10x10 room with one declared internal wall at x=5."""
+    return Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool),
+        grid_edges=(np.arange(11.0),) * 2,
+        arena=OpenArena(
+            box(0, 0, 10, 10),
+            walls=(LineString([(5, 2), (5, 8)]),),
+            physical_footprint_known=footprint_known,
+        ),
+    )
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_internal_walls_without_footprint_do_not_score_outer_edge_fields(metric):
+    from neurospatial.encoding.spatial import SpatialRateResult
+
+    unknown = _room_with_internal_wall(footprint_known=False)
+    # A strong field hugging the west edge. Only the internal wall is declared,
+    # so whether the west edge is a wall is unknown.
+    rates = np.where(unknown.bin_centers[:, 0] < 1, 10.0, 0.1)
+    with pytest.raises(NotImplementedError) as error:
+        border_score(unknown, rates, metric=metric)
+    message = str(error.value)
+    assert "footprint" in message
+    assert "physical_footprint_known=True" in message
+    assert "boundary_source='analysis'" in message
+
+    result = SpatialRateResult(
+        rates, np.ones(unknown.n_bins), unknown, method="binned", bandwidth=0.0
+    )
+    table = result.summary_table()
+    assert np.isnan(table["border_score"].iloc[0])
+    assert "footprint" in table.attrs["unavailable_metrics"]["border_score"]
+    assert table["cell_type"].tolist() == ["undetermined"]
+
+    # Declaring the same outline as the measured footprint scores the
+    # outer-wall field as a border field.
+    known = _room_with_internal_wall(footprint_known=True)
+    assert border_score(known, rates, metric=metric) > 0.5
+    known_result = SpatialRateResult(
+        rates, np.ones(known.n_bins), known, method="binned", bandwidth=0.0
+    )
+    assert known_result.summary_table()["cell_type"].tolist() == ["border"]
+
+
+def test_combined_component_with_internal_walls_but_no_footprint_is_refused():
+    known = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(6.0),) * 2,
+        arena=OpenArena(box(0, 0, 5, 5)),
+    )
+    partial = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
+        arena=OpenArena(
+            box(10, 0, 15, 5),
+            walls=(LineString([(13, 1), (13, 4)]),),
+            physical_footprint_known=False,
+        ),
+    )
+    env = Environment.combine({"known": known, "partial": partial}, auto_bridge=False)
+    # This field hugs the partial room's west edge, which is not a declared wall.
+    field = ((env.bin_centers[:, 0] > 10) & (env.bin_centers[:, 0] < 11)).astype(float)
+    with pytest.raises(NotImplementedError) as error:
+        border_score(env, field, metric="euclidean")
+    message = str(error.value)
+    assert "'partial'" in message
+    assert "'known'" not in message

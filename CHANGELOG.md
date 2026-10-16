@@ -61,9 +61,15 @@
   tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
   border cell; single-unit and population tables agree.
   Physical border scores refuse combined environments in which a component has
-  no declared walls, naming the component, instead of scoring its fields
+  no measured footprint, naming the component, instead of scoring its fields
   against walls in other components (euclidean returned -1 for a wall-hugging
-  field). Declare walls for each component or use `boundary_source="analysis"`.
+  field). Declare each component's outline or use `boundary_source="analysis"`.
+  A single arena that declares internal walls but not its footprint
+  (`OpenArena(..., physical_footprint_known=False)`) is refused the same way:
+  a field along its outer edge was scored against the internal walls alone
+  (-1, labeled `"place"`; now NaN, labeled `"undetermined"`). Declare the
+  measured outline, for example
+  `OpenArena(outline, walls=..., physical_footprint_known=True)`.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
