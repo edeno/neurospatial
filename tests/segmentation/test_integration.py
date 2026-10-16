@@ -260,7 +260,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Phase 1: Random exploration (first 100 samples)
         rng = np.random.default_rng(42)
         explore_positions = rng.uniform(10, 50, (100, 2))
-        explore_times = np.linspace(0, 50, 100)
+        explore_times = np.arange(100) / 30.0  # 30 Hz tracking, in seconds
 
         # Phase 2: Goal-directed behavior (next 50 samples)
         goal_positions = np.column_stack(
@@ -269,7 +269,9 @@ class TestFullTrajectoryAnalysisWorkflow:
                 np.linspace(25, 40, 50),
             ]
         )
-        goal_times = np.linspace(50, 75, 50)
+        # A 10 s pause separates the phases, so each is its own recording;
+        # goal-directed runs are scored per recording.
+        goal_times = explore_times[-1] + 10.0 + np.arange(50) / 30.0
 
         # Combine phases
         all_positions = np.vstack([explore_positions, goal_positions])
@@ -286,12 +288,11 @@ class TestFullTrajectoryAnalysisWorkflow:
             min_progress=3.0,
         )
 
-        # Should detect at least one goal-directed run in phase 2
-        # (may detect 0 if discretization artifacts, but list should be valid)
-        assert isinstance(goal_runs, list)
-        if len(goal_runs) > 0:
-            # Runs should be in second half of trajectory
-            assert all(run.start_time >= 30 for run in goal_runs)
+        # The straight approach in phase 2 is a goal-directed run; the random
+        # exploration in phase 1 is not.
+        assert len(goal_runs) == 1
+        assert goal_runs[0].start_time == goal_times[0]
+        assert goal_runs[0].success
 
         # Step 2: Compare exploration vs goal-directed similarity
         explore_bins = position_bins[:100]
