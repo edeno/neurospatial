@@ -526,16 +526,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
-- In an arena with walls, each edge's `edge_id` in `env.connectivity` is its
-  row in `env.edge_pairs` again. Walls remove pairs, and the remaining edges
-  kept their numbering from before the removal, so `edge_id` pointed at the
-  wrong pair, or past the end of `env.edge_pairs`.
-
-- A combined environment read back from a file, dict or NWB record, or moved
-  with `apply_transform`, lists each bin's neighbors in the same order as the
-  original. The order used to change, which could change which of two equally
-  short paths `path_between` returned.
-
 - A position sample with a NaN coordinate is a missing sample in every
   per-sample query. `env.nearest_bin` gives it bin
   `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to
