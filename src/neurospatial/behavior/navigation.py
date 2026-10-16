@@ -1420,6 +1420,9 @@ def shortest_path_length(
         For ``metric="geodesic"``, if ``start`` or ``goal`` is outside the
         environment or has NaN coordinates; the geodesic path starts and ends
         at the bins that contain them, as in ``env.distance_between``.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment, whose
+        bins are (distance, angle), not allocentric positions.
 
     Examples
     --------
@@ -1432,6 +1435,16 @@ def shortest_path_length(
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
 
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "shortest_path_length(metric='geodesic')",
+        instead=(
+            "start and goal are allocentric positions; use an allocentric "
+            "Cartesian environment, or metric='euclidean'."
+        ),
+    )
     return env.distance_between(points=np.vstack([start, goal]))
 
 
@@ -2088,6 +2101,16 @@ def approach_rate(
         distances = np.linalg.norm(goal_vec, axis=1)
     else:
         assert env is not None
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
+
+        _require_cartesian_coordinates(
+            env,
+            "approach_rate(metric='geodesic')",
+            instead=(
+                "positions and goal are allocentric positions; use an "
+                "allocentric Cartesian environment, or metric='euclidean'."
+            ),
+        )
         position_bins = env.bin_at(positions)
         # The goal is an explicit point: one outside the environment raises.
         to_goal = env.distance_to(points=goal.reshape(1, -1), metric="geodesic")

@@ -196,3 +196,31 @@ def test_shortest_path_length_refuses_points_outside(env, outside):
     start, goal = (far, inside) if outside == "start" else (inside, far)
     with pytest.raises(ValueError, match="outside the environment"):
         shortest_path_length(env, start, goal)
+
+
+@pytest.fixture(scope="module")
+def polar() -> Environment:
+    return Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+    )
+
+
+def test_shortest_path_length_refuses_polar_environments(polar):
+    """Allocentric start/goal positions are not (distance, angle) bin centers."""
+    from neurospatial._exceptions import CartesianOnlyError
+
+    with pytest.raises(CartesianOnlyError, match="shortest_path_length"):
+        shortest_path_length(polar, np.array([10.0, 1.0]), np.array([20.0, -2.0]))
+
+
+def test_approach_rate_refuses_polar_environments(polar):
+    from neurospatial._exceptions import CartesianOnlyError
+    from neurospatial.behavior import approach_rate
+
+    times = np.arange(3) / 10.0
+    positions = np.array([[10.0, 0.0], [12.0, 0.0], [14.0, 0.0]])
+    with pytest.raises(CartesianOnlyError, match="approach_rate"):
+        approach_rate(times, positions, [20.0, 0.0], env=polar, metric="geodesic")
