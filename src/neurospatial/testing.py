@@ -75,10 +75,11 @@ def assert_environment_contract(
     pairs = env.edge_pairs.copy()
     exported = env.bin_centers
     try:
-        exported.setflags(write=True)
         exported[:] = -12345
     except ValueError:
         pass
+    else:
+        raise AssertionError("bin_centers accepted an in-place write")
     exported.shape = (exported.size,)
     np.testing.assert_array_equal(env.bin_centers, centers)
     graph = env.to_networkx()

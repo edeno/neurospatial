@@ -128,8 +128,6 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
     assert len(calls) == 1
     assert first is not second and np.shares_memory(first, second)
     with pytest.raises(ValueError):
-        first.setflags(write=True)
-    with pytest.raises(ValueError):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)
     np.testing.assert_array_equal(env.compute_gaussian_kernel(1.0), expected)

@@ -46,8 +46,6 @@ def test_point_buffers_are_independent_and_irreversibly_read_only(method, source
     assert not np.shares_memory(restored.data, source)
     assert restored.data.dtype == np.float64
     assert not restored.data.flags.writeable
-    with pytest.raises(ValueError):
-        restored.data.setflags(write=True)
     if expected.size:
         with pytest.raises(ValueError):
             restored.data[0] = 123

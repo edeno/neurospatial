@@ -383,8 +383,10 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        The returned records and NumPy array headers are independently owned.
-        Editing their shapes or writable flags cannot change this environment.
+        The returned records are a copy that shares no array with this
+        environment. Their arrays are read-only, so an accidental write
+        raises, and reshaping one in place (``array.shape = ...``), which a
+        read-only array allows, cannot change this environment.
         Native face recipes remain lazy; reading this property does not build
         numerical geometry. To pass a native Cartesian snapshot to from_bins(),
         explicitly replace its faces with KnownFaces(snapshot.faces.build()).

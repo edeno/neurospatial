@@ -55,11 +55,8 @@ def test_publication_detaches_source_geometry_and_metadata(restore):
     source._build_params_used["choice"] = -99.0
     for array in (env.bin_centers, env.bin_sizes, env.grid_edges[0], env.active_mask):
         assert not array.flags.writeable
-        try:
-            array.setflags(write=True)
-        except ValueError:
-            continue
-        array.flat[0] = -999
+        with pytest.raises(ValueError, match="read-only"):
+            array.flat[0] = -999
     exported = copy.deepcopy(env._binning)
     exported.bins.centers.setflags(write=True)
     exported.bins.centers[:] = 123

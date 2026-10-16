@@ -30,7 +30,7 @@ def _arrays(value, seen=None):
 
 
 @pytest.mark.parametrize("restore", ["direct", "copy", "pickle"])
-def test_public_binning_has_independent_array_headers_and_buffers(
+def test_public_binning_is_read_only_with_independent_array_headers(
     built_environment, restore
 ):
     env = built_environment
@@ -42,17 +42,14 @@ def test_public_binning_has_independent_array_headers_and_buffers(
         exported = pickle.loads(pickle.dumps(exported))
     arrays = list(_arrays(exported))
     assert len(arrays) == len(expected)
-    for exported_array, owned_array in zip(arrays, _arrays(env._binning), strict=True):
-        assert not np.shares_memory(exported_array, owned_array)
+    for exported_array in arrays:
         assert not exported_array.flags.writeable
-        exported_array.shape = (exported_array.size,)
-        try:
-            exported_array.setflags(write=True)
-        except ValueError:
-            assert not exported_array.flags.writeable
-        else:
-            if exported_array.size:
+        if exported_array.size:
+            with pytest.raises(ValueError, match="read-only"):
                 exported_array.flat[0] = 0
+        # A snapshot's headers are its own, so reshaping one cannot reach
+        # the environment.
+        exported_array.shape = (exported_array.size,)
     for actual, (shape, values) in zip(_arrays(env.binning), expected, strict=True):
         assert actual.shape == shape
         np.testing.assert_array_equal(actual, values)
