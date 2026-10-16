@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -21,8 +21,10 @@ from matplotlib.patches import PathPatch
 from matplotlib.path import Path as MplPath
 from numpy.typing import NDArray
 
-from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
+
+if TYPE_CHECKING:
+    from ..ops.transforms import SpatialTransform
 
 
 # ---------------------------------------------------------------------

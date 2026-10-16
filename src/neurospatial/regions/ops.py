@@ -48,8 +48,11 @@ Example usage (conceptual):
 
 """
 
+from __future__ import annotations
+
 import warnings
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -59,8 +62,10 @@ from shapely import points
 from shapely.geometry import Polygon
 
 from .._constants import POINT_REGION_TOLERANCE
-from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
+
+if TYPE_CHECKING:
+    from ..ops.transforms import SpatialTransform
 
 
 def _prepare_points(
