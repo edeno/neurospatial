@@ -157,8 +157,9 @@ np.testing.assert_allclose(restored.interpolate(field, transform(queries), mode=
 movement intervals for spike counts and dwell time when
 `time_allocation="linear"`. The example disables smoothing to compare the
 allocation directly. Smoothing requires valid numerical face geometry.
-Linear spatial spike encoding currently requires planar cells; 3-D grids
-support linear occupancy, but do not gain 3-D linear spike encoding in this stage.
+Spike encoding with `time_allocation="linear"` requires planar 2-D cells. 3-D
+grids support linear occupancy, but for 3-D spike encoding use
+`time_allocation="start"`.
 
 ### Start with position samples
 
