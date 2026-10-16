@@ -2061,14 +2061,14 @@ class Environment(Generic[_C]):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
 
         if bin_size is not None:
-            derivation, check = _rebin_resolution(self._binning, self.arena, bin_size)
+            derivation, check = _rebin_resolution(self._binning, self._arena, bin_size)
         else:
             assert factor is not None
             derivation, check = _rebin_factor(
-                self._binning, self.connectivity, self.arena, factor
+                self._binning, self.connectivity, self._arena, factor
             )
         rebinned = publish_derived(self, derivation, name=name)
-        warn_rebin_losses(self._binning, self.arena, rebinned, check)
+        warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
 
     def subset(
@@ -2208,7 +2208,7 @@ class Environment(Generic[_C]):
         """
         self._require_cartesian("clip()")
         return publish_derived(
-            self, _clip(self._binning, self.arena, polygon), name=name
+            self, _clip(self._binning, self._arena, polygon), name=name
         )
 
     def apply_transform(
@@ -2416,8 +2416,8 @@ class Environment(Generic[_C]):
             dimension_ranges=self.dimension_ranges,
             provenance=self._provenance,
             regions=self.regions,
-            arena=self.arena,
-            clip_mapping=self.clip_mapping,
+            arena=self._arena,
+            clip_mapping=self._geometry.clip_mapping,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
 
