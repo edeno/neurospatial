@@ -165,6 +165,28 @@ class TestBinsTakeIntegers:
             grid.bin_center_of(np.array([1.5, 2.0]))
 
 
+class TestFloatHintFollowsGeometry:
+    """The fix for a float target names a lookup that works on the geometry."""
+
+    def test_polar_query_hint_names_distance_and_angle(self):
+        polar = _LAYOUTS["polar"]()
+        with pytest.raises(TypeError, match=r"\(distance, angle\) rows with points="):
+            polar.distance_to(bins=1.5)
+
+    def test_polar_bin_center_of_points_to_a_polar_lookup(self):
+        polar = _LAYOUTS["polar"]()
+        with pytest.raises(TypeError) as caught:
+            polar.bin_center_of(1.5)
+        assert "env.nearest_bin(points)" in str(caught.value)
+        assert "bin_at" not in str(caught.value)
+        index = int(polar.nearest_bin(polar.bin_centers[[3]] + 0.01)[0])
+        assert index == 3  # the suggested lookup finds the bin
+
+    def test_cartesian_bin_center_of_points_to_bin_at(self, grid):
+        with pytest.raises(TypeError, match=r"env\.bin_at\(points\)"):
+            grid.bin_center_of(1.5)
+
+
 class TestPointsAreValidated:
     def test_one_dimensional_points_raise_with_fix(self, grid):
         with pytest.raises(ValueError, match=r"shape \(2,\)[\s\S]*points=\[\[x, y\]\]"):

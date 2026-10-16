@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cartesian import require_cartesian
-from neurospatial.environment._targets import validate_bin_indices
+from neurospatial.environment._targets import coordinate_hint, validate_bin_indices
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops.distance import distance_field
 
@@ -20,14 +20,14 @@ from neurospatial.ops.distance import distance_field
 def _bin_center_of(
     bin_centers: NDArray[np.float64],
     bin_indices: int | Sequence[int] | NDArray[np.integer],
+    coordinates: CartesianSystem | EgocentricPolarSystem,
 ) -> NDArray[np.float64]:
     """Return the centers of validated active-bin indices."""
     indices = validate_bin_indices(
         bin_indices,
         n_bins=len(bin_centers),
         operation="bin_center_of()",
-        fix="pass integer bin indices; to find the bin that contains a "
-        "coordinate, use env.bin_at(points)",
+        fix=coordinate_hint(coordinates, takes_points=False),
     )
     return np.asarray(bin_centers[indices.reshape(np.shape(bin_indices))])
 

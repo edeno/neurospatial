@@ -12,6 +12,7 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
     _format_error,
 )
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._region_bins import region_bin_mask
 
@@ -21,6 +22,34 @@ if TYPE_CHECKING:
     from neurospatial.regions import Regions
 
 _COUNT_WORDS = {1: "one bin", 2: "two bins, a start and an end"}
+
+
+def coordinate_hint(
+    coordinates: CartesianSystem | EgocentricPolarSystem, *, takes_points: bool
+) -> str:
+    """Say how to give a coordinate instead of a bin index, for this geometry.
+
+    Parameters
+    ----------
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        The environment's coordinate descriptor.
+    takes_points : bool
+        Whether the refused call itself takes ``points=``.
+
+    Returns
+    -------
+    str
+        The ``Fix:`` text for a float or boolean bin target.
+    """
+    polar = isinstance(coordinates, EgocentricPolarSystem)
+    rows = "(distance, angle) rows" if polar else "coordinate rows"
+    if takes_points:
+        return f"pass {rows} with points= instead, one row per point"
+    lookup = "env.nearest_bin(points)" if polar else "env.bin_at(points)"
+    return (
+        f"pass integer bin indices; to find the bins of {rows}, use {lookup}, "
+        "or give the rows with points= to a query such as env.distance_to"
+    )
 
 
 def validate_bin_indices(
@@ -188,6 +217,7 @@ def resolve_targets(
     region: str | None = None,
     binning: Binning,
     arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     regions: Regions | None = None,
     count: int | None = None,
 ) -> NDArray[np.intp]:
@@ -207,6 +237,8 @@ def resolve_targets(
         Bins and their point locator.
     arena : Arena
         Continuous domain of the bins.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        Coordinate meaning of the bins, for geometry-specific hints.
     regions : Regions or None, optional
         Named regions; None when the query takes no ``region=``.
     count : int or None, optional
@@ -256,7 +288,7 @@ def resolve_targets(
             bins,
             n_bins=binning.bins.n_bins,
             operation=operation,
-            fix="pass coordinates with points= instead, one row per point",
+            fix=coordinate_hint(coordinates, takes_points=True),
         )
     elif points is not None:
         resolved = locate_points(

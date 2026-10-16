@@ -382,6 +382,7 @@ class Environment(Generic[_C]):
             region=region,
             binning=self._binning,
             arena=self._arena,
+            coordinates=self._coordinate_system,
             regions=self.regions if takes_region else None,
             count=count,
         )
@@ -3779,7 +3780,7 @@ class Environment(Generic[_C]):
         (3, 2)
 
         """
-        return _bin_center_of(self.bin_centers, bin_indices)
+        return _bin_center_of(self.bin_centers, bin_indices, self._coordinate_system)
 
     def neighbors(
         self,
