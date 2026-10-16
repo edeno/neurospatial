@@ -753,6 +753,9 @@ def publish_layout(
     Environment
         A new instance of ``cls``.
     """
+    # An object converted by a snapshot adapter is checked as from_bins
+    # checks explicit bins: every center must locate its own bin.
+    adapted = not callable(getattr(layout, "binning", None))
     binning, graph, ranges, tag, category, resolved = built_layout_data(layout)
     selected = False
     polar = isinstance(coordinates, EgocentricPolarSystem)
@@ -785,7 +788,7 @@ def publish_layout(
         coordinate_kind="polar" if polar else "cartesian",
         regions=regions,
         arena=arena,
-        check_center_lookup=selected,
+        check_center_lookup=selected or adapted,
     )
 
 

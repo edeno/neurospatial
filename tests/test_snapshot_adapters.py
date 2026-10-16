@@ -675,3 +675,34 @@ def test_public_contract_kit_accepts_an_adapter_published_environment(_registry)
     _registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
     env = Environment.from_bins(_ExternalBinning(data))
     assert_environment_contract(env, [[0, 0], [2, 0], [10, 0]], [0, 1, -1])
+
+
+@pytest.mark.parametrize("adapted", [True, False])
+def test_from_layout_checks_center_lookup_of_adapted_objects(
+    _registry, monkeypatch, adapted
+):
+    """An adapted object gets the from_bins center check; a built engine does not."""
+    from neurospatial.geometry import _validation
+
+    checks = []
+    validate = _validation._validate_components
+
+    def recording(*args, **kwargs):
+        checks.append(kwargs["check_center_lookup"])
+        return validate(*args, **kwargs)
+
+    monkeypatch.setattr(_validation, "_validate_components", recording)
+    layout = create_layout(
+        "MaskedGrid",
+        active_mask=np.ones((2, 2), dtype=bool),
+        grid_edges=(np.arange(3.0),) * 2,
+    )
+    if adapted:
+        _registry.append(
+            _EntryPoint("binning", _data_adapter(_ExternalBinning, "binning"))
+        )
+        layout = _ExternalBinning(_explicit_binning(Environment.from_layout(layout)))
+    checks.clear()
+    env = Environment.from_layout(layout)
+    assert checks == [adapted]
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(4))
