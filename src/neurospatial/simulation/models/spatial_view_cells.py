@@ -341,7 +341,10 @@ class SpatialViewCellModel:
             from neurospatial.ops._boundaries import boundary_geometry, search_distance
 
             max_distance = search_distance(
-                boundary_geometry(self.env, self.boundary_source), positions
+                boundary_geometry(
+                    self.env.binning, self.env.arena, self.boundary_source
+                ),
+                positions,
             )
 
         # Compute viewed location
@@ -391,9 +394,11 @@ class SpatialViewCellModel:
             # Line-of-sight check (scalar per call) for the remaining candidates:
             # not NaN, in FOV, and still responding above zero.
             candidates = np.flatnonzero(~nan_mask & in_fov & (response > 0.0))
+            binning, arena = self.env.binning, self.env.arena
             for i in candidates:
                 if not _line_of_sight_clear(
-                    self.env,
+                    binning,
+                    arena,
                     positions[i],
                     self.preferred_view_location,
                     boundary_source=self.boundary_source,

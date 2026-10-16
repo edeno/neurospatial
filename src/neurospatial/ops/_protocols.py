@@ -1,9 +1,15 @@
-"""Small environment capabilities that ops functions read, named member by member."""
+"""The environment members that public ops functions read at their boundary.
+
+A public ops function that takes an environment reads the components it
+needs once, through these members, and computes from those components; it
+does not call back into environment analysis methods. Each base protocol
+names one to three members; the composite protocols only combine bases.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -20,11 +26,20 @@ if TYPE_CHECKING:
     )
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
-    from neurospatial.ops.binning import TieBreakStrategy
     from neurospatial.regions import Regions
 
 
-class CartesianConsumer(Protocol):
+# ---------------------------------------------------------------------------
+# Base protocols: one to three members each.
+# ---------------------------------------------------------------------------
+class CoordinateConsumer(Protocol):
+    """The coordinate descriptor, for functions with a Cartesian-only mode."""
+
+    @property
+    def coordinate_system(self) -> CartesianSystem | EgocentricPolarSystem: ...
+
+
+class CartesianConsumer(CoordinateConsumer, Protocol):
     """An environment whose bin centers are Cartesian positions."""
 
     @property
@@ -48,10 +63,6 @@ class BinsConsumer(BinCentersConsumer, Protocol):
     def n_dims(self) -> int: ...
 
 
-class CartesianBinsConsumer(BinsConsumer, CartesianConsumer, Protocol):
-    """Bin count, dimensionality and Cartesian centers."""
-
-
 class GraphConsumer(Protocol):
     """Bin count and navigation graph."""
 
@@ -62,54 +73,8 @@ class GraphConsumer(Protocol):
     def connectivity(self) -> nx.Graph: ...
 
 
-class BasisCentersConsumer(GraphConsumer, Protocol):
-    """Centers and graph for choosing basis-function centers."""
-
-    @property
-    def coordinate_system(self) -> CartesianSystem | EgocentricPolarSystem: ...
-
-    @property
-    def n_dims(self) -> int: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-
-class SpatialBasisConsumer(BasisCentersConsumer, Protocol):
-    """Cartesian bins with extents for sizing a default spatial basis."""
-
-    @property
-    def coordinate_system(self) -> CartesianSystem: ...
-
-    @property
-    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
-
-
-class FieldPlotConsumer(Protocol):
-    """Draw one value per bin on an Axes."""
-
-    def plot_field(
-        self,
-        field: NDArray[np.float64],
-        ax: Axes | None = ...,
-        cmap: str = ...,
-        *,
-        colorbar: bool = ...,
-    ) -> Axes: ...
-
-
-class BinSpacingConsumer(BinCentersConsumer, Protocol):
-    """Bin centers and measures for the typical spacing between bins."""
-
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
-
-    @property
-    def is_linearized_track(self) -> bool: ...
-
-
-class RegionMaskConsumer(Protocol):
-    """Bins, their domain and named regions for region membership masks."""
+class BinningConsumer(Protocol):
+    """The bins with their point lookup, and the continuous domain."""
 
     @property
     def binning(self) -> Binning: ...
@@ -117,62 +82,11 @@ class RegionMaskConsumer(Protocol):
     @property
     def arena(self) -> Arena: ...
 
-    @property
-    def regions(self) -> Regions: ...
-
-
-class BinLookupConsumer(Protocol):
-    """Point-to-bin containment and the navigation graph."""
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
-
-class NearestBinConsumer(Protocol):
-    """Nearest-bin assignment with environment-owned query caching."""
-
-    def nearest_bin(
-        self,
-        points: NDArray[np.float64],
-        *,
-        tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"] = ...,
-        return_dist: bool = False,
-        max_distance: float | None = None,
-        max_distance_factor: float | None = None,
-    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
-
-
-class CartesianNearestBinConsumer(NearestBinConsumer, CartesianConsumer, Protocol):
-    """Nearest-bin assignment for points in Cartesian coordinates."""
-
-
-class ResampleSourceConsumer(CartesianNearestBinConsumer, Protocol):
-    """Cartesian bins whose field values are carried to another environment."""
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
 
 class DiffusionGeometryConsumer(Protocol):
-    """Access to an environment's cached conductances and cell measures."""
+    """The environment's cached conductances and cell measures."""
 
     def get_diffusion_geometry(self) -> DiffusionGeometry: ...
-
-
-class ResampleTargetConsumer(DiffusionGeometryConsumer, CartesianConsumer, Protocol):
-    """Cartesian bins that receive a resampled field and may diffuse it."""
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    def diffuse(
-        self, fields: Any, bandwidth: float, *, mode: KernelMode = ...
-    ) -> NDArray[np.float64]: ...
 
 
 class GradientConsumer(Protocol):
@@ -193,41 +107,77 @@ class DivergenceConsumer(Protocol):
     def get_divergence_operator(self) -> sparse.csc_matrix: ...
 
 
-class WaveletGeometryConsumer(DiffusionGeometryConsumer, Protocol):
-    """Cell geometry and coordinates for a physical diffusion-wavelet generator."""
+class BinSpacingConsumer(BinCentersConsumer, Protocol):
+    """Bin centers and measures for the typical spacing between bins."""
 
     @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
+    def bin_sizes(self) -> NDArray[np.float64]: ...
+
+    @property
+    def is_linearized_track(self) -> bool: ...
+
+
+class FieldPlotConsumer(Protocol):
+    """Draw one value per bin on an Axes, through the environment's renderer."""
+
+    def plot_field(
+        self,
+        field: NDArray[np.float64],
+        ax: Axes | None = ...,
+        cmap: str = ...,
+        *,
+        colorbar: bool = ...,
+    ) -> Axes: ...
+
+
+# ---------------------------------------------------------------------------
+# Composite protocols: named combinations of the bases.
+# ---------------------------------------------------------------------------
+class CartesianBinsConsumer(CartesianConsumer, BinsConsumer, Protocol):
+    """Bin count, dimensionality and Cartesian centers."""
+
+
+class RegionMaskConsumer(BinningConsumer, Protocol):
+    """Bins, their domain and the named regions for region membership masks."""
+
+    @property
+    def regions(self) -> Regions: ...
+
+
+class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
+    """Point lookup, coordinate meaning and graph for geodesic distances."""
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+
+class BasisCentersConsumer(GraphConsumer, BinsConsumer, CoordinateConsumer, Protocol):
+    """Centers, graph and coordinate meaning for choosing basis centers."""
+
+
+class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
+    """Cartesian bins with extents for sizing a default spatial basis."""
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+
+class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
+    """Diffusion geometry, cell faces and graph for heat-kernel wavelets."""
 
     @property
     def binning(self) -> Binning: ...
 
 
-class BoundaryConsumer(Protocol):
-    """Continuous domain and explicit cells for physical/analysis boundaries."""
+class ResampleTargetConsumer(
+    CartesianConsumer, BinCentersConsumer, DiffusionGeometryConsumer, Protocol
+):
+    """Cartesian bins that receive a resampled field and may diffuse it.
 
-    @property
-    def arena(self) -> Arena: ...
+    ``diffuse`` is read once at the public boundary of ``resample_field``: the
+    destination environment caches the eigenbasis it smooths with.
+    """
 
-    @property
-    def binning(self) -> Binning: ...
-
-
-class ObserverConsumer(BoundaryConsumer, Protocol):
-    """Boundary geometry plus assignment for explicit analysis-mode observers."""
-
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
-
-class ViewshedConsumer(ObserverConsumer, Protocol):
-    """Observer geometry plus the bins a viewshed reports."""
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-
-class WaveletBasisConsumer(WaveletGeometryConsumer, BasisCentersConsumer, Protocol):
-    """Diffusion geometry and graph for heat-kernel wavelets and their centers."""
+    def diffuse(
+        self, fields: Any, bandwidth: float, *, mode: KernelMode = ...
+    ) -> NDArray[np.float64]: ...

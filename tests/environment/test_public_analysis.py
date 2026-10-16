@@ -241,5 +241,6 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(1.0)
     )
     np.testing.assert_array_equal(
-        _diffusion_generator(host).toarray(), _diffusion_generator(env).toarray()
+        _diffusion_generator(host.bin_centers, host.get_diffusion_geometry()).toarray(),
+        _diffusion_generator(env.bin_centers, env.get_diffusion_geometry()).toarray(),
     )

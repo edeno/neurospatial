@@ -108,12 +108,12 @@ if TYPE_CHECKING:
     import networkx as nx
     from scipy import sparse
 
+    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._protocols import (
         BasisCentersConsumer,
         FieldPlotConsumer,
         SpatialBasisConsumer,
         WaveletBasisConsumer,
-        WaveletGeometryConsumer,
     )
 
 __all__ = [
@@ -595,20 +595,30 @@ def geodesic_rbf_basis(
     return basis
 
 
-def _diffusion_generator(env: WaveletGeometryConsumer) -> sparse.csr_matrix:
-    """Finite-volume generator in bin-spacing² units, as used by env.smooth."""
+def _diffusion_generator(
+    bin_centers: NDArray[np.float64], geometry: DiffusionGeometry
+) -> sparse.csr_matrix:
+    """Finite-volume generator in bin-spacing² units, as used by env.smooth.
+
+    Parameters
+    ----------
+    bin_centers : ndarray of float64, shape (n_bins, n_dims)
+        Bin centers, for the typical bin spacing.
+    geometry : DiffusionGeometry
+        Conductances ``W`` and cell volumes of the same bins.
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        ``spacing**2 * M**-1 (Deg - W)``.
+    """
     from scipy import sparse
     from scipy.spatial import cKDTree
 
     from neurospatial.ops.binning import _estimate_typical_bin_spacing
 
-    # Name this analysis, not "smoothing", if the layout has no cell faces.
-    faces = env.binning.faces
-    if not faces.available:
-        raise faces.missing_error("heat_kernel_wavelet_basis")
-    geometry = env.get_diffusion_geometry()
     degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
-    spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
+    spacing = _estimate_typical_bin_spacing(cKDTree(bin_centers), bin_centers)
     return (
         spacing**2 * sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)
     ).tocsr()
@@ -750,7 +760,11 @@ def heat_kernel_wavelet_basis(
     n_scales = len(scales_arr)
     n_bins = env.n_bins
 
-    laplacian = _diffusion_generator(env)
+    # Name this analysis, not "smoothing", if the layout has no cell faces.
+    faces = env.binning.faces
+    if not faces.available:
+        raise faces.missing_error("heat_kernel_wavelet_basis")
+    laplacian = _diffusion_generator(env.bin_centers, env.get_diffusion_geometry())
 
     # Create delta vectors at centers
     # Shape: (n_bins, n_centers)

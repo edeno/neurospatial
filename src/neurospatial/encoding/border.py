@@ -247,7 +247,9 @@ def border_score(
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
     walls = (
-        boundary_geometry(env, "physical") if boundary_source == "physical" else None
+        boundary_geometry(env.binning, env.arena, "physical")
+        if boundary_source == "physical"
+        else None
     )
     physical_contact = None
     if walls is not None:

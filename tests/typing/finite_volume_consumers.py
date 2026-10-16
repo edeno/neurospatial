@@ -21,7 +21,7 @@ if TYPE_CHECKING:
         DiffusionGeometryConsumer,
         DivergenceConsumer,
         GradientConsumer,
-        WaveletGeometryConsumer,
+        WaveletBasisConsumer,
     )
     from neurospatial.ops._types import DiffusionEigenbasisCache, MRFEigenbasisCache
     from neurospatial.ops.basis import _diffusion_generator
@@ -35,10 +35,10 @@ if TYPE_CHECKING:
         geometry: DiffusionGeometryConsumer = env
         scalar: GradientConsumer = env
         flux: DivergenceConsumer = env
-        wavelets: WaveletGeometryConsumer = env
+        wavelets: WaveletBasisConsumer = env
         diffusion_kernel(geometry, 1.0)
         divergence(flux, gradient(scalar, np.ones(env.n_bins)))
-        _diffusion_generator(wavelets)
+        _diffusion_generator(wavelets.bin_centers, wavelets.get_diffusion_geometry())
         assert_type(env.get_diffusion_geometry(), DiffusionGeometry)
         assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
         assert_type(env.compute_gaussian_kernel(1.0), NDArray[np.float64])

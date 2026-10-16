@@ -717,7 +717,8 @@ class TestVectorizationEquivalence:
                         response[i] = 0.0
                         continue
                 if not _line_of_sight_clear(
-                    model.env,
+                    model.env.binning,
+                    model.env.arena,
                     positions[i],
                     model.preferred_view_location,
                     boundary_source="analysis",

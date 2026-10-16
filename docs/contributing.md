@@ -170,6 +170,15 @@ errors use `_format_error` to say what failed, why and how to fix it.
 A package that consumes an environment declares a small `Protocol` of the
 members it reads, as `ops/_protocols.py` does, so Cartesian and polar
 environments satisfy it without casts and `ops` never imports `Environment`.
+A public `ops` function that scientists call as `f(env, ...)` keeps taking
+the environment: it reads the components it needs once at the top (for
+example `env.binning`, `env.arena`, `env.connectivity` or
+`env.get_diffusion_geometry()`) and passes them to private functions that take
+those components. It does not call environment analysis methods such as
+`bin_at`, `nearest_bin` or `diffuse` from inside the computation. Each base
+protocol names one to three members; combine bases rather than repeating
+members, and do not repeat a method's full signature unless the function calls
+it.
 
 #### Analysis cache
 

@@ -828,7 +828,9 @@ class TestLineOfSightClear:
         observer = np.array([50.0, 50.0])
         target = np.array([60.0, 50.0])
 
-        assert _line_of_sight_clear(env, observer, target, boundary_source="analysis")
+        assert _line_of_sight_clear(
+            env.binning, env.arena, observer, target, boundary_source="analysis"
+        )
 
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
@@ -848,5 +850,5 @@ class TestLineOfSightClear:
         target = np.array([80.0, 50.0])
 
         assert not _line_of_sight_clear(
-            env, observer, target, boundary_source="analysis"
+            env.binning, env.arena, observer, target, boundary_source="analysis"
         )

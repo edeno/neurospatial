@@ -30,6 +30,7 @@ from neurospatial.encoding import (
     spatial_autocorrelation,
 )
 from neurospatial.ops import (
+    compute_egocentric_distance,
     geodesic_rbf_basis,
     map_probabilities,
     resample_field,
@@ -81,6 +82,16 @@ def _polar_regions_env(env: Environment) -> Environment:
         (
             lambda env: resample_field(_rates(env), env, env),
             "resample_field()",
+        ),
+        (
+            lambda env: compute_egocentric_distance(
+                np.array([[10.0, 0.0]]),
+                np.array([0.0]),
+                np.array([[20.0, 0.0]]),
+                metric="geodesic",
+                env=env,
+            ),
+            "compute_egocentric_distance(metric='geodesic')",
         ),
         (
             lambda env: map_probabilities(

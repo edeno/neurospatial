@@ -10,17 +10,18 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
+from neurospatial.geometry._lookup import locate
+
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena, _TransformedArena
     from neurospatial.geometry._binning import Binning, Locator
-    from neurospatial.ops._protocols import BoundaryConsumer, ObserverConsumer
 
 BoundarySource = Literal["physical", "analysis"]
 Interior = Callable[[NDArray[np.float64]], NDArray[np.bool_]]
 
 
 def boundary_geometry(
-    env: BoundaryConsumer, source: BoundarySource
+    binning: Binning, arena: Arena, source: BoundarySource
 ) -> shapely.Geometry:
     """Return declared physical walls or explicitly selected analysis boundaries.
 
@@ -30,13 +31,13 @@ def boundary_geometry(
     """
     if source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
-    if env.arena.coordinate_kind != "cartesian" or env.arena.n_dims != 2:
+    if arena.coordinate_kind != "cartesian" or arena.n_dims != 2:
         raise NotImplementedError(
             "Wall geometry requires planar Cartesian coordinates."
         )
     if source == "analysis":
-        return _analysis_boundary(env.binning, env.arena)
-    return physical_walls(env.arena)
+        return _analysis_boundary(binning, arena)
+    return physical_walls(arena)
 
 
 def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
@@ -308,9 +309,11 @@ def physical_footprint_interior(arena: Arena) -> Interior | None:
     )
 
 
-def analysis_interior(env: ObserverConsumer) -> Interior:
+def analysis_interior(binning: Binning, arena: Arena) -> Interior:
     """Retained analysis support, matching analysis-mode observer validity."""
-    return lambda points: np.asarray(env.bin_at(points) >= 0, dtype=np.bool_)
+    return lambda points: np.asarray(
+        locate(binning, arena, points) >= 0, dtype=np.bool_
+    )
 
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
@@ -329,14 +332,17 @@ def physical_walls(arena: Arena) -> shapely.Geometry:
 
 
 def valid_observers(
-    env: ObserverConsumer, positions: NDArray[np.float64], source: BoundarySource
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    source: BoundarySource,
 ) -> NDArray[np.bool_]:
     """Require finite observers inside the domain justified by the chosen source."""
     valid = np.asarray(np.all(np.isfinite(positions), axis=1), dtype=np.bool_)
     if source == "analysis":
-        valid[valid] = env.bin_at(positions[valid]) >= 0
-    elif env.arena.physical_footprint_known:
-        valid[valid] = env.arena.contains(positions[valid])
+        valid[valid] = locate(binning, arena, positions[valid]) >= 0
+    elif arena.physical_footprint_known:
+        valid[valid] = arena.contains(positions[valid])
     return valid
 
 

@@ -883,7 +883,7 @@ def batch_border_scores(
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
     if boundary_source == "physical":
-        boundary_geometry(env, "physical")
+        boundary_geometry(env.binning, env.arena, "physical")
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)

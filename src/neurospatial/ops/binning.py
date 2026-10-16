@@ -12,6 +12,7 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -27,8 +28,8 @@ if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
     from neurospatial.ops._protocols import (
         BinSpacingConsumer,
+        CartesianBinsConsumer,
         RegionMaskConsumer,
-        ResampleSourceConsumer,
         ResampleTargetConsumer,
     )
     from neurospatial.regions import Region, Regions
@@ -400,7 +401,7 @@ def _regions_mask(
 
 def resample_field(
     field: NDArray[np.float64],
-    src_env: ResampleSourceConsumer,
+    src_env: CartesianBinsConsumer,
     dst_env: ResampleTargetConsumer,
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
@@ -566,11 +567,13 @@ def resample_field(
                 "match"
             ),
         )
-    # Validate inputs
-    if field.shape[0] != src_env.n_bins:
+    # Read every component once; the resampling below uses only these.
+    src_centers = src_env.bin_centers
+    dst_centers = dst_env.bin_centers
+    if field.shape[0] != src_centers.shape[0]:
         raise ValueError(
             f"Field size {field.shape[0]} does not match source environment "
-            f"n_bins ({src_env.n_bins})"
+            f"n_bins ({src_centers.shape[0]})"
         )
 
     if method not in ("nearest", "diffuse"):
@@ -586,65 +589,124 @@ def resample_field(
             raise ValueError(f"bandwidth must be positive (got {bandwidth})")
 
     # Check dimension compatibility
-    if src_env.bin_centers.shape[1] != dst_env.bin_centers.shape[1]:
+    if src_centers.shape[1] != dst_centers.shape[1]:
         raise ValueError(
             f"Source and destination environments must have same number of dimensions. "
-            f"Source has {src_env.bin_centers.shape[1]}D, "
-            f"destination has {dst_env.bin_centers.shape[1]}D."
+            f"Source has {src_centers.shape[1]}D, "
+            f"destination has {dst_centers.shape[1]}D."
         )
 
-    # Step 1: Map each destination bin center to nearest source bin
-    # Use the source environment's KD-tree cached nearest-neighbor lookup
-    # (return_dist defaults to False, so the result is the index array).
+    resampled, outside_source = _pull_back_nearest(field, src_centers, dst_centers)
+    if method == "nearest":
+        return resampled
+    assert bandwidth is not None  # Already validated above
+    # The destination's diffusion operator is extracted here, at the public
+    # boundary: its truncated eigenbasis is cached by the destination
+    # environment, so repeated resampling onto it does not rebuild the basis.
+    geometry = dst_env.get_diffusion_geometry()
+    return _smooth_pulled_back(
+        resampled,
+        outside_source,
+        lambda columns: np.asarray(dst_env.diffuse(columns, bandwidth, mode="average")),
+        n_components=geometry.n_components,
+        labels=geometry.labels,
+    )
+
+
+def _pull_back_nearest(
+    field: NDArray[np.float64],
+    src_centers: NDArray[np.float64],
+    dst_centers: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Give each destination bin the value of its nearest source bin center.
+
+    Parameters
+    ----------
+    field : ndarray of float64, shape (n_src_bins,)
+        Values on the source bins.
+    src_centers : ndarray of float64, shape (n_src_bins, n_dims)
+        Source bin centers.
+    dst_centers : ndarray of float64, shape (n_dst_bins, n_dims)
+        Destination bin centers, in the same coordinates.
+
+    Returns
+    -------
+    resampled : ndarray of float64, shape (n_dst_bins,)
+        Pulled-back values; NaN where the source value is NaN or the
+        destination bin is outside the source.
+    outside_source : ndarray of bool, shape (n_dst_bins,)
+        Destination bins that the nearest-center lookup rejects as outside the
+        source.
+    """
     dst_to_src_indices = cast(
         "NDArray[np.int64]",
-        src_env.nearest_bin(
-            dst_env.bin_centers,
+        _nearest_bin_query(
+            src_centers,
+            cKDTree(src_centers),
+            dst_centers,
             tie_break=TieBreakStrategy.LOWEST_INDEX,
         ),
     )
-
-    # Step 2: Pullback field values via nearest neighbor.
-    # nearest_bin returns -1 for destination bin centers that fall
-    # outside the source environment. Naive ``field[dst_to_src_indices]`` would
-    # silently resolve -1 to ``field[-1]`` (Python negative indexing). Gather
-    # safely with the negative indices clamped, then mask those positions NaN.
+    # The lookup returns -1 for destination bin centers that fall outside the
+    # source environment. Naive ``field[dst_to_src_indices]`` would silently
+    # resolve -1 to ``field[-1]`` (Python negative indexing). Gather safely with
+    # the negative indices clamped, then mask those positions NaN.
     outside_source = dst_to_src_indices < 0
     safe_indices = np.where(outside_source, 0, dst_to_src_indices)
     resampled: NDArray[np.float64] = field[safe_indices].astype(np.float64, copy=True)
     resampled[outside_source] = np.nan
+    return resampled, outside_source
 
-    # Step 3: Optionally apply smoothing for diffuse method
-    if method == "diffuse":
-        # Type narrowing: bandwidth is guaranteed to be float at this point
-        assert bandwidth is not None  # Already validated above
 
-        # A pullback field is *intensive* (a rate map / probability density
-        # sampled onto dst_env), so smooth it with the row-stochastic average
-        # operator (masked Nadaraya-Watson), not the mass-conserving transition
-        # kernel: uncovered / NaN bins contribute *no weight* rather than a real
-        # 0 that pulls covered neighbours toward zero. Only a bin outside the
-        # source or in a component with no valid bin is left NaN (no far-field
-        # floor), and the signed numerator is never clipped.
-        from neurospatial.ops.diffusion import (
-            diffusion_component_labels,
-            masked_diffusion_average,
-        )
+def _smooth_pulled_back(
+    resampled: NDArray[np.float64],
+    outside_source: NDArray[np.bool_],
+    smooth_average: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    *,
+    n_components: int,
+    labels: NDArray[np.int_],
+) -> NDArray[np.float64]:
+    """Smooth a pulled-back intensive field over its valid destination bins.
 
-        valid = (~outside_source) & np.isfinite(resampled)
-        n_components, labels = diffusion_component_labels(dst_env)
-        smoothed = masked_diffusion_average(
-            lambda columns: np.asarray(
-                dst_env.diffuse(columns, bandwidth, mode="average")
-            ),
-            resampled[:, None],
-            valid[:, None],
-            labels,
-            n_components,
-            floor=None,
-        )[:, 0]
+    A pullback field is *intensive* (a rate map / probability density sampled
+    onto the destination), so it is smoothed with the row-stochastic average
+    operator (masked Nadaraya-Watson), not the mass-conserving transition
+    kernel: uncovered / NaN bins contribute *no weight* rather than a real 0
+    that pulls covered neighbours toward zero. Only a bin outside the source or
+    in a component with no valid bin is left NaN (no far-field floor), and the
+    signed numerator is never clipped.
 
-        smoothed[outside_source] = np.nan
-        resampled = smoothed
+    Parameters
+    ----------
+    resampled : ndarray of float64, shape (n_bins,)
+        Pulled-back values, NaN outside the source or where the source value
+        is missing.
+    outside_source : ndarray of bool, shape (n_bins,)
+        Destination bins outside the source; they stay NaN. Bins whose source
+        value is NaN are filled from their valid neighbours.
+    smooth_average : callable
+        The destination's ``mode="average"`` diffusion of a
+        ``(n_bins, n_fields)`` batch.
+    n_components : int
+        Number of connected components of the destination's diffusion graph.
+    labels : ndarray of int, shape (n_bins,)
+        Component of each destination bin.
 
-    return resampled
+    Returns
+    -------
+    ndarray of float64, shape (n_bins,)
+        Smoothed values, NaN outside the source.
+    """
+    from neurospatial.ops.diffusion import masked_diffusion_average
+
+    valid = (~outside_source) & np.isfinite(resampled)
+    smoothed = masked_diffusion_average(
+        smooth_average,
+        resampled[:, None],
+        valid[:, None],
+        labels,
+        n_components,
+        floor=None,
+    )[:, 0]
+    smoothed[outside_source] = np.nan
+    return smoothed

@@ -297,8 +297,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   positions, and what works on a polar environment. That includes the
   Cartesian modes of shared methods (`distance_to(metric="euclidean")`,
   `transitions(times=..., positions=...)`), analysis functions such as
-  `spatial_autocorrelation` and `field_shape_metrics`, and
-  `Environment.combine` (it raised a plain `TypeError`).
+  `spatial_autocorrelation` and `field_shape_metrics`,
+  `compute_egocentric_distance(metric="geodesic")` (it reported
+  `Environment.bin_at()`), and `Environment.combine` (it raised a plain
+  `TypeError`).
 
 - Three `neurospatial.ops` functions that only renamed an `Environment`
   method are removed; call the method instead.

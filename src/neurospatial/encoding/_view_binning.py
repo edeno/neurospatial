@@ -128,7 +128,7 @@ def _precompute_view_bins(
         from neurospatial.ops._boundaries import boundary_geometry, search_distance
 
         max_distance = search_distance(
-            boundary_geometry(env, boundary_source), positions
+            boundary_geometry(env.binning, env.arena, boundary_source), positions
         )
 
     # Compute viewed locations for all timepoints

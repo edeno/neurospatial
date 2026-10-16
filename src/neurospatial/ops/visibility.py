@@ -87,12 +87,12 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._lookup import locate
+
 if TYPE_CHECKING:
-    from neurospatial.ops._protocols import (
-        BinCentersConsumer,
-        ObserverConsumer,
-        ViewshedConsumer,
-    )
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.ops._protocols import BinCentersConsumer, BinningConsumer
 
 __all__ = [
     "FieldOfView",
@@ -495,7 +495,7 @@ def compute_viewed_location(
     method: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    env: ObserverConsumer | None = None,
+    env: BinningConsumer | None = None,
     max_distance: float = 100.0,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
@@ -588,14 +588,19 @@ def compute_viewed_location(
             valid_observers,
         )
 
-        walls = boundary_geometry(env, boundary_source)
+        binning, arena = env.binning, env.arena
+        walls = boundary_geometry(binning, arena, boundary_source)
         origins = positions.copy()
-        origins[~valid_observers(env, positions, boundary_source)] = np.nan
+        origins[~valid_observers(binning, arena, positions, boundary_source)] = np.nan
         viewed = (
-            physical_ray_hits(env.arena, origins, gaze_direction, max_distance)
+            physical_ray_hits(arena, origins, gaze_direction, max_distance)
             if boundary_source == "physical"
             else ray_hits(
-                walls, origins, gaze_direction, max_distance, analysis_interior(env)
+                walls,
+                origins,
+                gaze_direction,
+                max_distance,
+                analysis_interior(binning, arena),
             )
         )
 
@@ -603,7 +608,7 @@ def compute_viewed_location(
 
 
 def _ray_cast_to_boundary(
-    env: ObserverConsumer,
+    env: BinningConsumer,
     origin: NDArray[np.float64],
     direction: float,
     max_distance: float = 100.0,
@@ -650,7 +655,8 @@ def _ray_cast_to_boundary(
 
 
 def _line_of_sight_clear(
-    env: ObserverConsumer,
+    binning: Binning,
+    arena: Arena,
     observer: NDArray[np.float64],
     target: NDArray[np.float64],
     n_samples: int = 20,
@@ -661,8 +667,10 @@ def _line_of_sight_clear(
 
     Parameters
     ----------
-    env : Environment
-        The environment.
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
     observer : NDArray[np.float64], shape (2,)
         Observer position.
     target : NDArray[np.float64], shape (2,)
@@ -682,7 +690,8 @@ def _line_of_sight_clear(
     """
     return bool(
         _batch_line_of_sight_clear(
-            env,
+            binning,
+            arena,
             observer,
             np.asarray(target).reshape(1, 2),
             n_samples=n_samples,
@@ -692,7 +701,8 @@ def _line_of_sight_clear(
 
 
 def _batch_line_of_sight_clear(
-    env: ObserverConsumer,
+    binning: Binning,
+    arena: Arena,
     observer: NDArray[np.float64],
     targets: NDArray[np.float64],
     n_samples: int = 20,
@@ -703,8 +713,10 @@ def _batch_line_of_sight_clear(
 
     Parameters
     ----------
-    env : Environment
-        The environment.
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
     observer : NDArray[np.float64], shape (2,)
         Observer position.
     targets : NDArray[np.float64], shape (n_targets, 2)
@@ -730,24 +742,24 @@ def _batch_line_of_sight_clear(
         valid_observers,
     )
 
-    walls = boundary_geometry(env, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source)
     observer = np.asarray(observer, dtype=np.float64)
     targets = np.asarray(targets, dtype=np.float64)
     if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
         raise ValueError(
             "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
         )
-    if not valid_observers(env, observer.reshape(1, 2), boundary_source)[0]:
+    if not valid_observers(binning, arena, observer.reshape(1, 2), boundary_source)[0]:
         return np.zeros(len(targets), dtype=bool)
     return (
-        physical_clear_segments(env.arena, observer, targets)
+        physical_clear_segments(arena, observer, targets)
         if boundary_source == "physical"
-        else clear_segments(walls, observer, targets, analysis_interior(env))
+        else clear_segments(walls, observer, targets, analysis_interior(binning, arena))
     )
 
 
 def compute_viewshed(
-    env: ViewshedConsumer,
+    env: BinningConsumer,
     position: NDArray[np.float64],
     heading: float,
     *,
@@ -802,9 +814,34 @@ def compute_viewshed(
     >>> result.n_visible_bins > 0
     True
     """
+    return _viewshed(
+        env.binning,
+        env.arena,
+        position,
+        heading,
+        fov=fov,
+        n_rays=n_rays,
+        cue_positions=cue_positions,
+        boundary_source=boundary_source,
+    )
+
+
+def _viewshed(
+    binning: Binning,
+    arena: Arena,
+    position: NDArray[np.float64],
+    heading: float,
+    *,
+    fov: FieldOfView | float | None,
+    n_rays: int,
+    cue_positions: NDArray[np.float64] | None,
+    boundary_source: Literal["physical", "analysis"],
+) -> ViewshedResult:
+    """Compute a viewshed from the bins and domain; see :func:`compute_viewshed`."""
     from neurospatial.ops.egocentric import compute_egocentric_bearing
 
     position = np.asarray(position, dtype=np.float64)
+    n_bins = binning.bins.n_bins
 
     # Determine angular range
     full_circle = False
@@ -840,7 +877,7 @@ def compute_viewshed(
         valid_observers,
     )
 
-    walls = boundary_geometry(env, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source)
     if position.shape != (2,):
         raise ValueError("position must have shape (2,).")
     if (
@@ -851,28 +888,36 @@ def compute_viewshed(
         raise ValueError("n_rays must be a positive integer.")
     if (
         not np.isfinite(heading)
-        or not valid_observers(env, position.reshape(1, 2), boundary_source)[0]
+        or not valid_observers(binning, arena, position.reshape(1, 2), boundary_source)[
+            0
+        ]
     ):
         return ViewshedResult(
             np.empty(0, dtype=np.intp),
             np.empty(0, dtype=np.intp),
             np.empty(0),
             np.empty(0),
-            np.zeros(env.n_bins),
-            _total_bins=env.n_bins,
+            np.zeros(n_bins),
+            _total_bins=n_bins,
         )
     # Enclose both known walls and retained bin centers; no fixed 200-unit cap.
-    coordinates = np.vstack((np.array(walls.bounds).reshape(2, 2), env.bin_centers))
+    coordinates = np.vstack(
+        (np.array(walls.bounds).reshape(2, 2), binning.bins.centers)
+    )
     max_distance = max(
         float(np.hypot.reduce(coordinates - position, axis=1).max()) * 2, 1.0
     )
     n_steps = 100
     origins = np.broadcast_to(position, (n_rays, 2))
     hits = (
-        physical_ray_hits(env.arena, origins, ray_angles_allo, max_distance)
+        physical_ray_hits(arena, origins, ray_angles_allo, max_distance)
         if boundary_source == "physical"
         else ray_hits(
-            walls, origins, ray_angles_allo, max_distance, analysis_interior(env)
+            walls,
+            origins,
+            ray_angles_allo,
+            max_distance,
+            analysis_interior(binning, arena),
         )
     )
     hit_distance = np.hypot.reduce(hits - position, axis=1)
@@ -899,16 +944,16 @@ def compute_viewshed(
 
     # Reshape for batch bin_at query: (n_rays * n_steps, 2)
     flat_ray_points = ray_points_all.reshape(-1, 2)
-    flat_bin_indices = env.bin_at(flat_ray_points)
+    flat_bin_indices = locate(binning, arena, flat_ray_points)
 
     # Reshape back: (n_rays, n_steps)
     bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)
 
     # Sample analysis bins before the first chosen wall contact. Missing bins
     # do not occlude physical rays.
-    occlusion_scores = np.zeros(env.n_bins, dtype=np.float64)
-    ray_counts = np.zeros(env.n_bins, dtype=np.float64)
-    visible_bin_mask = np.zeros(env.n_bins, dtype=bool)
+    occlusion_scores = np.zeros(n_bins, dtype=np.float64)
+    ray_counts = np.zeros(n_bins, dtype=np.float64)
+    visible_bin_mask = np.zeros(n_bins, dtype=bool)
 
     for ray_idx in range(n_rays):
         valid_bins = bin_indices_2d[ray_idx]
@@ -950,7 +995,8 @@ def compute_viewshed(
             fov_indices = np.where(in_fov)[0]
             if len(fov_indices) > 0:
                 los_clear = _batch_line_of_sight_clear(
-                    env,
+                    binning,
+                    arena,
                     position,
                     cue_positions[fov_indices],
                     boundary_source=boundary_source,
@@ -982,12 +1028,12 @@ def compute_viewshed(
         cue_distances=cue_distances,
         cue_bearings=cue_bearings,
         occlusion_map=occlusion_map,
-        _total_bins=env.n_bins,
+        _total_bins=n_bins,
     )
 
 
 def compute_view_field(
-    env: ViewshedConsumer,
+    env: BinningConsumer,
     position: NDArray[np.float64],
     heading: float,
     *,
@@ -1037,13 +1083,13 @@ def compute_view_field(
     result = compute_viewshed(
         env, position, heading, fov=fov, n_rays=n_rays, boundary_source=boundary_source
     )
-    mask = np.zeros(env.n_bins, dtype=bool)
+    mask = np.zeros(result.occlusion_map.shape[0], dtype=bool)
     mask[result.visible_bins] = True
     return mask
 
 
 def visible_cues(
-    env: ObserverConsumer,
+    env: BinningConsumer,
     position: NDArray[np.float64],
     heading: float,
     cue_positions: NDArray[np.float64],
@@ -1138,7 +1184,11 @@ def visible_cues(
 
     if len(fov_indices) > 0:
         los_clear = _batch_line_of_sight_clear(
-            env, position, cue_positions[fov_indices], boundary_source=boundary_source
+            env.binning,
+            env.arena,
+            position,
+            cue_positions[fov_indices],
+            boundary_source=boundary_source,
         )
         visible[fov_indices] = los_clear
 
@@ -1150,7 +1200,7 @@ def visible_cues(
 
 
 def compute_viewshed_trajectory(
-    env: ViewshedConsumer,
+    env: BinningConsumer,
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
@@ -1189,10 +1239,11 @@ def compute_viewshed_trajectory(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    results = []
-    for i in range(len(positions)):
-        result = compute_viewshed(
-            env,
+    binning, arena = env.binning, env.arena
+    return [
+        _viewshed(
+            binning,
+            arena,
             positions[i],
             headings[i],
             fov=fov,
@@ -1200,13 +1251,12 @@ def compute_viewshed_trajectory(
             cue_positions=cue_positions,
             boundary_source=boundary_source,
         )
-        results.append(result)
-
-    return results
+        for i in range(len(positions))
+    ]
 
 
 def visibility_occupancy(
-    env: ViewshedConsumer,
+    env: BinningConsumer,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1250,7 +1300,8 @@ def visibility_occupancy(
     headings = np.asarray(headings, dtype=np.float64)
 
     n_time = len(times)
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    binning, arena = env.binning, env.arena
+    occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
 
     # Compute dt for each frame
     dt = np.diff(times)
@@ -1259,12 +1310,14 @@ def visibility_occupancy(
     # Loop over frames (viewshed computation is inherently per-frame)
     # Use np.add.at for safe accumulation with repeated indices
     for i in range(n_time):
-        result = compute_viewshed(
-            env,
+        result = _viewshed(
+            binning,
+            arena,
             positions[i],
             headings[i],
             fov=fov,
             n_rays=n_rays,
+            cue_positions=None,
             boundary_source=boundary_source,
         )
         np.add.at(occupancy, result.visible_bins, dt[i])
