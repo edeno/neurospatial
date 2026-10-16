@@ -461,10 +461,12 @@ def _smooth(
             "volume-unbiased averaging of an intensive field."
         )
 
-    # Apply the diffusion smoothing via the matrix-free apply-path. This is a
-    # PURE LINEAR operator -- no clip / renorm -- so smoothing a SIGNED field
-    # is preserved. It reproduces the dense kernel to within the truncation
-    # tolerance; positivity, where needed, is the caller's job.
+    # Apply the diffusion smoothing via the matrix-free apply-path. On a
+    # NaN-free field this is a pure linear operator -- no clip / renorm -- so
+    # smoothing a SIGNED field is preserved; a field with NaN is averaged over
+    # its observed bins (mode="average" only). It reproduces the dense kernel to
+    # within the truncation tolerance; positivity, where needed, is the
+    # caller's job.
     return _diffuse(cache, binning, field, bandwidth, mode=mode)
 
 
