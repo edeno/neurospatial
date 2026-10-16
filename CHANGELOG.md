@@ -37,6 +37,13 @@
   totals: about 2.5% of a circular arena's fine bins at `factor=2`, and 56% of
   a 6-by-6 arena at `bin_size=4`.
 
+- `rebin` warns when new bins on both sides of a barrier in the arena outline
+  are connected because they meet only outside the arena. In a U-maze with a
+  2-unit barrier, 5-unit bins shortened the path between the arm ends from 37
+  to 5. The connections are kept, as in `from_polygon` at the same bin size;
+  the warning names them and how to fix it: smaller bins, or the barrier's
+  edges declared as internal walls.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam

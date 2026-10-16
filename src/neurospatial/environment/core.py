@@ -2265,7 +2265,11 @@ class Environment(Generic[_C]):
         **Connectivity**: The connectivity graph is rebuilt for the coarsened
         grid using the stored diagonal-connection choice, or actual edges when
         an older grid has no stored choice. Physical walls still block
-        connections and must align with complete coarse faces.
+        connections and must align with complete coarse faces. The arena
+        outline does not: neighbors that meet only outside a polygonal arena,
+        such as bins on both sides of a barrier narrower than a bin, stay
+        connected, and a ``UserWarning`` names them. Declare the barrier's
+        edges as internal walls to remove those connections.
 
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
