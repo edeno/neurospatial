@@ -2,34 +2,43 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from itertools import product
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
+from neurospatial.environment._publication import _Derivation, _Provenance
+from neurospatial.geometry._arena import Arena
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._derive import transform_binning
+from neurospatial.geometry._polygon import ClipMapping
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 
-if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
 
-
-def _apply_transform_to_environment(
-    env: Environment,
+def _apply_transform(
     transform: AffineND | Affine2D,
     *,
-    name: str | None = None,
-    frame: str | None = None,
-) -> Environment:
+    binning: Binning,
+    connectivity: nx.Graph,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    provenance: _Provenance,
+    regions: Regions,
+    arena: Arena,
+    clip_mapping: ClipMapping | None,
+) -> _Derivation:
     """Transform owned cells, graphs, arenas and regions together."""
+    n_dims = binning.bins.n_dims
 
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
-    if env.n_dims != transform_dims:
+    if n_dims != transform_dims:
         raise ValueError(
             f"Transform dimensionality ({transform_dims}D) does not match "
-            f"environment dimensionality ({env.n_dims}D)."
+            f"environment dimensionality ({n_dims}D)."
         )
 
     # Containment is evaluated in the original layout's coordinate frame.
@@ -43,14 +52,12 @@ def _apply_transform_to_environment(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    from neurospatial.geometry._derive import transform_binning
-
-    binning = transform_binning(env._binning, transform)
-    transformed_centers = binning.bins.centers
+    transformed = transform_binning(binning, transform)
+    transformed_centers = transformed.bins.centers
 
     # Create new connectivity graph with updated node positions
 
-    new_graph = env.connectivity.copy()
+    new_graph = connectivity.copy()
     for node_id in new_graph.nodes:
         new_graph.nodes[node_id]["pos"] = tuple(transformed_centers[node_id])
 
@@ -63,26 +70,21 @@ def _apply_transform_to_environment(
         new_graph.edges[u, v]["vector"] = tuple(vec)
 
         # Recompute angle_2d for 2D environments only
-        if env.n_dims == 2 and "angle_2d" in new_graph.edges[u, v]:
+        if n_dims == 2 and "angle_2d" in new_graph.edges[u, v]:
             angle = float(np.arctan2(vec[1], vec[0]))
             new_graph.edges[u, v]["angle_2d"] = angle
 
     for (u, v), distance in zip(
-        binning.bins.pairs, binning.bins.pair_distances, strict=True
+        transformed.bins.pairs, transformed.bins.pair_distances, strict=True
     ):
         new_graph.edges[u, v]["distance"] = float(distance)
 
     # Transform dimension_ranges (N-dimensional)
     transformed_dim_ranges = None
-    if env.dimension_ranges is not None:
+    if dimension_ranges is not None:
         # Generate all corner points of the N-dimensional bounding box
         # For N dims, we have 2^N corners (all combinations of low/high per dimension)
-        n_dims = env.n_dims
-        ranges = env.dimension_ranges
-
-        # Generate corner points using itertools.product
-        from itertools import product
-
+        ranges = dimension_ranges
         corner_indices = list(product([0, 1], repeat=n_dims))  # All combinations of 0/1
         corners = np.array(
             [
@@ -100,23 +102,18 @@ def _apply_transform_to_environment(
             for dim in range(n_dims)
         ]
 
-    tag = f"{env.layout_type}_transformed"
-    params = {**env.layout_parameters, "transformed": True}
-    from neurospatial.environment._publication import _Provenance, publish_derived
-
-    return publish_derived(
-        env,
-        binning,
-        connectivity=new_graph,
-        dimension_ranges=transformed_dim_ranges,
-        provenance=_Provenance(tag, env._provenance.category, params),
-        name=name,
-        frame=frame,
+    tag = f"{provenance.layout_type}_transformed"
+    params = {**provenance.build_params, "transformed": True}
+    return _Derivation(
+        transformed,
+        new_graph,
+        transformed_dim_ranges,
+        _Provenance(tag, provenance.category, params),
         regions=Regions(
-            _transformed_region(region, transform) for region in env.regions.values()
+            _transformed_region(region, transform) for region in regions.values()
         ),
-        arena=env.arena.transformed(transform.A),
-        clip_mapping=env.clip_mapping,
+        arena=arena.transformed(transform.A),
+        clip_mapping=clip_mapping,
     )
 
 

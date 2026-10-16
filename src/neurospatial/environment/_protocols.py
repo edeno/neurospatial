@@ -34,74 +34,6 @@ if TYPE_CHECKING:
     from neurospatial.regions import Region, Regions
 
 
-class RebinConsumer(Protocol):
-    """Layout, arena and metadata for re-binning rectangular grids."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def arena(self) -> Arena: ...
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def frame(self) -> str | None: ...
-
-    @property
-    def units(self) -> str | None: ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-
-class SubsetConsumer(Protocol):
-    """Published geometry, regions and metadata for selecting spatial bins."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def arena(self) -> Arena: ...
-
-    @property
-    def active_mask(self) -> NDArray[np.bool_] | None: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-    @property
-    def grid_shape(self) -> tuple[int, ...] | None: ...
-
-    @property
-    def is_linearized_track(self) -> bool: ...
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-    @property
-    def frame(self) -> str | None: ...
-
-    @property
-    def units(self) -> str | None: ...
-
-
 class FieldMetricsConsumer(Protocol):
     """Environment members read by encoding/_field_metrics.py."""
 
@@ -206,35 +138,6 @@ class SmoothingConsumer(Protocol):
     def n_bins(self) -> int:
         """Number of spatial bins in the environment."""
         ...
-
-    @property
-    def units(self) -> str | None: ...
-
-
-class ClipConsumer(Protocol):
-    """Environment members read by environment/_clipping.py."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def arena(self) -> Arena: ...
-
-    @property
-    def frame(self) -> str | None: ...
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
-
-    @property
-    def n_dims(self) -> int:
-        """Number of spatial dimensions (1, 2, or 3)."""
-        ...
-
-    @property
-    def name(self) -> str: ...
 
     @property
     def units(self) -> str | None: ...

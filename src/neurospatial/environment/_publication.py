@@ -785,20 +785,39 @@ def publish_layout(
     )
 
 
+@dataclass(frozen=True)
+class _Derivation:
+    """Geometry derived from a parent environment, ready to publish.
+
+    Parameters
+    ----------
+    binning, connectivity, dimension_ranges, provenance
+        The derived geometry, as for :func:`publish`.
+    regions : Regions or None, optional
+        Replacement regions; ``None`` keeps the parent's regions.
+    arena : Arena or None, optional
+        Replacement arena; ``None`` keeps the parent's arena.
+    clip_mapping, grid_index, check_center_lookup
+        As for :func:`publish`.
+    """
+
+    binning: Binning
+    connectivity: nx.Graph
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    provenance: _Provenance
+    regions: Regions | None = None
+    arena: Arena | None = None
+    clip_mapping: ClipMapping | None = None
+    grid_index: GridIndex | None = None
+    check_center_lookup: bool = True
+
+
 def publish_derived(
     parent: _EnvironmentT,
-    binning: Binning,
+    derivation: _Derivation,
     *,
-    connectivity: nx.Graph,
-    dimension_ranges: Sequence[tuple[float, float]] | None,
-    provenance: _Provenance,
     name: str | None = None,
     frame: str | None | _Unset = UNSET,
-    regions: Regions | None = None,
-    arena: Arena | None = None,
-    clip_mapping: ClipMapping | None = None,
-    grid_index: GridIndex | None = None,
-    check_center_lookup: bool = True,
 ) -> _EnvironmentT:
     """Publish an environment derived from ``parent``, keeping its labels.
 
@@ -811,18 +830,12 @@ def publish_derived(
     ----------
     parent : Environment
         The environment the new geometry was derived from.
-    binning, connectivity, dimension_ranges, provenance
-        The derived geometry, as for :func:`publish`.
+    derivation : _Derivation
+        The derived geometry and any replacement regions or arena.
     name : str or None, optional
         Replacement name; ``None`` keeps the parent's name.
     frame : str or None, optional
         Replacement frame label; omission keeps the parent's frame.
-    regions : Regions or None, optional
-        Replacement regions; ``None`` keeps the parent's regions.
-    arena : Arena or None, optional
-        Replacement arena; ``None`` keeps the parent's arena.
-    clip_mapping, grid_index, check_center_lookup
-        As for :func:`publish`.
 
     Returns
     -------
@@ -836,16 +849,16 @@ def publish_derived(
     )
     return publish(
         type(parent),
-        binning,
-        connectivity=connectivity,
-        dimension_ranges=dimension_ranges,
-        provenance=provenance,
+        derivation.binning,
+        connectivity=derivation.connectivity,
+        dimension_ranges=derivation.dimension_ranges,
+        provenance=derivation.provenance,
         metadata=metadata,
-        is_linearized_track=binning.linearization is not None,
+        is_linearized_track=derivation.binning.linearization is not None,
         coordinate_kind=parent.coordinate_kind,
-        regions=parent.regions if regions is None else regions,
-        arena=parent._geometry.arena if arena is None else arena,
-        clip_mapping=clip_mapping,
-        grid_index=grid_index,
-        check_center_lookup=check_center_lookup,
+        regions=parent.regions if derivation.regions is None else derivation.regions,
+        arena=parent._geometry.arena if derivation.arena is None else derivation.arena,
+        clip_mapping=derivation.clip_mapping,
+        grid_index=derivation.grid_index,
+        check_center_lookup=derivation.check_center_lookup,
     )

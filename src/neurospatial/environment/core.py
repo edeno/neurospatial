@@ -26,6 +26,7 @@ from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
     BOUNDARY_BINS,
@@ -34,9 +35,11 @@ from neurospatial.environment._cache import (
     EDGE_ATTRIBUTES,
     AnalysisCache,
 )
+from neurospatial.environment._clipping import _clip
 from neurospatial.environment._lookup import locate, nearest_bin
 from neurospatial.environment._publication import (
     UNSET,
+    _Derivation,
     _diffusion_geometry_header,
     _freeze_geometry_arrays,
     _GeometryView,
@@ -45,8 +48,10 @@ from neurospatial.environment._publication import (
     _Provenance,
     _PublishedGeometry,
     _Unset,
+    publish_derived,
 )
 from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
+from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import _info, _repr, _repr_html
 from neurospatial.environment.cartesian import (
     CARTESIAN_OPERATIONS,
@@ -2053,10 +2058,18 @@ class Environment(Generic[_C]):
         self._require_cartesian("rebin()")
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+
+        def publish(derivation: _Derivation) -> Environment[CartesianSystem]:
+            return publish_derived(self, derivation, name=name)
+
         if bin_size is not None:
-            return _rebin_resolution(self, bin_size, name=name)
+            return _rebin_resolution(
+                self._binning, self.arena, bin_size, publish=publish
+            )
         assert factor is not None
-        return _rebin_factor(self, factor, name=name)
+        return _rebin_factor(
+            self._binning, self.connectivity, self.arena, factor, publish=publish
+        )
 
     def subset(
         self: Environment[CartesianSystem],
@@ -2150,16 +2163,16 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("subset()")
-        from neurospatial.environment._subset import _subset
-
-        return _subset(
-            self,
+        derivation = _subset(
+            self._binning,
+            self.connectivity,
+            self.regions,
             bins=bins,
             region_names=region_names,
             polygon=polygon,
             invert=invert,
-            name=name,
         )
+        return publish_derived(self, derivation, name=name)
 
     def clip(
         self: Environment[CartesianSystem],
@@ -2194,9 +2207,9 @@ class Environment(Generic[_C]):
             Cartesian planar area cells.
         """
         self._require_cartesian("clip()")
-        from neurospatial.environment._clipping import _clip
-
-        return _clip(self, polygon, name=name)
+        return publish_derived(
+            self, _clip(self._binning, self.arena, polygon), name=name
+        )
 
     def apply_transform(
         self: Environment[CartesianSystem],
@@ -2396,9 +2409,17 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("apply_transform()")
-        from neurospatial.environment._affine import _apply_transform_to_environment
-
-        return _apply_transform_to_environment(self, transform, name=name, frame=frame)
+        derivation = _apply_transform(
+            transform,
+            binning=self._binning,
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            provenance=self._provenance,
+            regions=self.regions,
+            arena=self.arena,
+            clip_mapping=self.clip_mapping,
+        )
+        return publish_derived(self, derivation, name=name, frame=frame)
 
     @classmethod
     def combine(

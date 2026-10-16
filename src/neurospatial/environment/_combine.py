@@ -239,7 +239,11 @@ def _combine(
     from neurospatial.geometry._composition import combined_normals
 
     normals = combined_normals(locator) if not len(pairs) else None
-    from neurospatial.environment._publication import _Provenance, publish_derived
+    from neurospatial.environment._publication import (
+        _Derivation,
+        _Provenance,
+        publish_derived,
+    )
     from neurospatial.geometry._explicit import prepare_bins
 
     snapshot, graph, ranges, category = prepare_bins(
@@ -248,11 +252,13 @@ def _combine(
     # Units and frame come from the first component; all components share them.
     return publish_derived(
         first,
-        snapshot,
-        connectivity=graph,
-        dimension_ranges=ranges,
-        provenance=_Provenance(snapshot.kind, category, {}),
+        _Derivation(
+            snapshot,
+            graph,
+            ranges,
+            _Provenance(snapshot.kind, category, {}),
+            regions=regions,
+            arena=_CombinedArena(arenas),
+        ),
         name=name,
-        regions=regions,
-        arena=_CombinedArena(arenas),
     )
