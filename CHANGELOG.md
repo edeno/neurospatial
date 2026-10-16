@@ -215,6 +215,33 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     (distance, angle) coordinates as `bin_centers`; `bins_in_region` and
     `region_mask` used to refuse point regions there.
 
+- Graph and distance queries take their target by keyword: `bins=` for bin
+  indices, `points=` for coordinates and, for `distance_to`, `region=` for a
+  region name. Exactly one is required. A bin index and a coordinate look the
+  same as numbers, and the old positional argument guessed between them:
+  `env.distance_to([50.7, 12.3])` measured the distance to bins 50 and 12,
+  and `env.neighbors([0, 1])` treated bins 0 and 1 as the point (0, 1).
+  - `env.distance_to(targets)` is `env.distance_to(bins=...)`,
+    `env.distance_to(points=...)` or `env.distance_to(region="reward")`.
+  - `env.neighbors(i)`, `env.reachable_from(i, ...)` and
+    `env.rings(center_bin=i, ...)` take `bins=i` or one point,
+    `points=[[x, y]]`.
+  - `env.path_between(a, b)` is `env.path_between(bins=[a, b])` or
+    `env.path_between(points=[[x0, y0], [x1, y1]])`.
+  - `env.distance_between(p1, p2)` is
+    `env.distance_between(points=[p1, p2])` or
+    `env.distance_between(bins=[a, b])`; `edge_weight=` is keyword-only.
+
+  `bins=` takes an int or an integer array. Floats and booleans raise
+  `TypeError` and point to `points=`; `env.bin_center_of` refuses them too and
+  points to `env.bin_at`. `points=` has shape `(n_points, n_dims)`, one row per
+  point, in the same coordinates as `bin_centers` (distance and angle on a
+  polar environment). Points with NaN or inf coordinates, or outside the
+  environment, raise `ValueError` that names the first such row.
+  `distance_between` used to return `inf` for a point outside the
+  environment; it now raises. A target passed by position raises Python's
+  `TypeError`.
+
 ### Changed
 
 - `env.connectivity` is built from the environment's bins for every layout,

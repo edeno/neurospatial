@@ -949,10 +949,12 @@ def field_shift_distance(
             distance = float(np.linalg.norm(centroid_1 - centroid_2))
             return distance
 
-        # Compute geodesic distance using centroids (coordinates), not bin indices
         try:
-            geodesic_dist = env_1.distance_between(centroid_1, centroid_2)
-            return float(geodesic_dist)
+            # Both centroids are measured on env_1's graph; bin_2 indexes env_2.
+            end_bin = env_1.bin_at(centroid_2.reshape(1, -1))[0]
+            if end_bin < 0:
+                return np.inf
+            return float(env_1.distance_between(bins=[bin_1, end_bin]))
         except Exception as e:
             warnings.warn(
                 f"Failed to compute geodesic distance: {e}. Falling back to Euclidean distance.",

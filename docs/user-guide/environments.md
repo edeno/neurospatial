@@ -426,10 +426,14 @@ subdivision currently requires 2-D polygon support. Higher-dimensional masks
 must match the grid support for linear allocation; otherwise the method raises
 with guidance to use start allocation or a matching grid.
 
-Other common queries are `env.neighbors(bin_index)`,
-`env.path_between(source_bin, target_bin)` and
-`env.distance_between(point_a, point_b)`. See the
-[API reference](../api/index.md) for their coordinate and distance conventions.
+Other common queries are `env.neighbors(bins=bin_index)`,
+`env.path_between(bins=[start_bin, end_bin])` and
+`env.distance_between(points=[point_a, point_b])`. Each query takes its target
+by keyword: `bins=` for bin indices, `points=` for coordinates (one row per
+point, mapped to the bin that contains it) and, for `distance_to`, `region=`
+for a named region. A bin index and a coordinate look alike as numbers, so the
+keyword says which one you mean. See the [API reference](../api/index.md) for
+their coordinate and distance conventions.
 
 ## Choose physical walls or analysis boundaries
 

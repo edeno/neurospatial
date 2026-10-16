@@ -791,18 +791,20 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             NotImplementedError,
             match=r"polar.*distance_between|distance_between.*polar",
         ):
-            polar_env.distance_between(np.array([0.0, 0.0]), np.array([10.0, 10.0]))
+            polar_env.distance_between(
+                points=[np.array([0.0, 0.0]), np.array([10.0, 10.0])]
+            )
 
     def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
         with pytest.raises(
             NotImplementedError,
             match=r"polar.*distance_to.*euclidean|distance_to.*euclidean.*polar",
         ):
-            polar_env.distance_to([0], metric="euclidean")
+            polar_env.distance_to(bins=[0], metric="euclidean")
 
     def test_distance_to_geodesic_works_on_polar_env(self, polar_env):
         """Geodesic distance respects connectivity, so it's well-defined on polar."""
-        distances = polar_env.distance_to([0], metric="geodesic")
+        distances = polar_env.distance_to(bins=[0], metric="geodesic")
         assert distances.shape == (polar_env.n_bins,)
         # Distance from a bin to itself is zero; everything else is positive.
         assert distances[0] == 0.0
@@ -810,7 +812,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
     def test_neighbors_works_on_polar_env(self, polar_env):
         """neighbors only reads the connectivity graph; should not raise."""
-        nbrs = polar_env.neighbors(0)
+        nbrs = polar_env.neighbors(bins=0)
         assert isinstance(nbrs, list)
 
     # --- Inherited Cartesian-coordinate / Cartesian-grid ops must also raise.
@@ -877,12 +879,12 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     # --- Graph operations remain valid on polar and must not regress.
 
     def test_path_between_works_on_polar_env(self, polar_env):
-        path = polar_env.path_between(0, polar_env.n_bins - 1)
+        path = polar_env.path_between(bins=[0, polar_env.n_bins - 1])
         assert isinstance(path, list)
         assert path[0] == 0 and path[-1] == polar_env.n_bins - 1
 
     def test_reachable_from_works_on_polar_env(self, polar_env):
-        reachable = polar_env.reachable_from(0)
+        reachable = polar_env.reachable_from(bins=0)
         assert reachable.shape == (polar_env.n_bins,)
         assert bool(reachable[0]) is True
 
@@ -923,10 +925,6 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         "call, operation",
         [
             (
-                lambda env: env.neighbors(np.array([5.0, 0.0])),
-                "neighbors() from a coordinate point",
-            ),
-            (
                 lambda env: env.transitions(
                     times=np.array([0.0, 0.1]),
                     positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
@@ -934,7 +932,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
                 "transitions() from times and positions",
             ),
             (
-                lambda env: env.distance_to([0], metric="euclidean"),
+                lambda env: env.distance_to(bins=[0], metric="euclidean"),
                 "distance_to(metric='euclidean')",
             ),
         ],
@@ -950,8 +948,8 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         assert str(caught.value).startswith(f"Environment.{operation} is not available")
         assert "()()" not in str(caught.value)
 
-    def test_point_region_covers_the_bin_at_its_distance_and_angle(self, polar_env):
-        """A polar point region is read in bin-center (distance, angle) coordinates."""
+    def test_points_and_point_regions_use_distance_and_angle(self, polar_env):
+        """Polar points and point regions are read in bin-center coordinates."""
         region_builder = Regions(polar_env.regions.values())
         region_builder.add("p", point=(25.0, 0.1))
         polar_env = polar_env.with_regions(region_builder)
@@ -964,6 +962,12 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         )
         np.testing.assert_array_equal(
             np.flatnonzero(polar_env.region_membership()[:, 0]), [covered]
+        )
+        assert polar_env.neighbors(points=[[25.0, 0.1]]) == polar_env.neighbors(
+            bins=covered
+        )
+        np.testing.assert_array_equal(
+            polar_env.distance_to(region="p"), polar_env.distance_to(bins=covered)
         )
 
 
@@ -1263,9 +1267,11 @@ class TestPolarTypeAndGeometry:
         with pytest.raises(NotImplementedError):
             polar_env.contains(np.array([[1.0, 1.0]]))
         with pytest.raises(NotImplementedError):
-            polar_env.distance_between(np.array([0.0, 0.0]), np.array([1.0, 1.0]))
+            polar_env.distance_between(
+                points=[np.array([0.0, 0.0]), np.array([1.0, 1.0])]
+            )
         with pytest.raises(NotImplementedError):
-            polar_env.distance_to([0], metric="euclidean")
+            polar_env.distance_to(bins=[0], metric="euclidean")
 
     def test_polar_edge_distances_physical(self, polar_env):
         """Two equal angular moves at different radii have arc length scaling with r.
@@ -1297,7 +1303,7 @@ class TestPolarTypeAndGeometry:
         edges of length Delta_r = 10 each, so the geodesic distance is 40.
         """
         # Same angle (idx 0), distance idx 0 -> distance idx 4: nodes 0 and 32.
-        dist = polar_env.distance_to([0], metric="geodesic")
+        dist = polar_env.distance_to(bins=[0], metric="geodesic")
         # Node 32 is r=45 at the same angle as node 0 (r=5).
         assert dist[32] == pytest.approx(40.0, rel=1e-9)
         # A pure angular hop from node 0 to node 1 equals the inner arc length.

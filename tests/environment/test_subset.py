@@ -585,4 +585,6 @@ class TestSubsetKeepsParentConnectivity:
             assert sorted(result.connectivity.edges()) == sorted(
                 walled.connectivity.edges()
             )
-            np.testing.assert_allclose(result.distance_to([0]), walled.distance_to([0]))
+            np.testing.assert_allclose(
+                result.distance_to(bins=[0]), walled.distance_to(bins=[0])
+            )

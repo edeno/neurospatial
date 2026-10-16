@@ -1249,14 +1249,14 @@ class TestEnvironmentRoundTrip:
         assert bin_idx == 0
 
         # Test neighbors works
-        neighbors = loaded_env.neighbors(0)
+        neighbors = loaded_env.neighbors(bins=0)
         assert len(neighbors) > 0
 
         # Test distance_between works. distance_between expects coordinates,
         # not bin indices, so pass the bin centers of bin 0 and a neighbor.
         if len(neighbors) > 0:
             dist = loaded_env.distance_between(
-                loaded_env.bin_centers[0], loaded_env.bin_centers[neighbors[0]]
+                points=[loaded_env.bin_centers[0], loaded_env.bin_centers[neighbors[0]]]
             )
             assert np.isfinite(dist)
             assert dist > 0
@@ -1941,13 +1941,13 @@ class TestAllLayoutsRoundTrip:
                 break
 
         if test_node is not None:
-            neighbors = loaded_env.neighbors(test_node)
+            neighbors = loaded_env.neighbors(bins=test_node)
             assert len(neighbors) > 0, f"neighbors failed for {layout_name}"
 
             # Test distance_between works (takes points, not node indices)
             point1 = loaded_env.bin_centers[test_node]
             point2 = loaded_env.bin_centers[neighbors[0]]
-            dist = loaded_env.distance_between(point1, point2)
+            dist = loaded_env.distance_between(points=[point1, point2])
             assert dist > 0, f"distance_between failed for {layout_name}"
 
     @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)

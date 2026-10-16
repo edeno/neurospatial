@@ -96,7 +96,7 @@ print(f"Number of nodes (bins): {G.number_of_nodes()}")
 print(f"Number of edges (neighbor links): {G.number_of_edges()}")
 
 # Neighboring bins of a given bin
-print(f"Neighbors of bin 0: {env.neighbors(0)}")
+print(f"Neighbors of bin 0: {env.neighbors(bins=0)}")
 ```
 
 Nodes and edges also carry metadata — bin positions, inter-bin distances, and

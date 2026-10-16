@@ -769,7 +769,7 @@ def distance_to_region(
         if target_int == -1:
             return np.full(n_samples, np.nan, dtype=np.float64)
 
-        dist_field = env.distance_to([target_int], metric=metric)
+        dist_field = env.distance_to(bins=target_int, metric=metric)
         distances = dist_field[position_bins].astype(np.float64)
 
         invalid_mask = position_bins == -1
@@ -802,7 +802,7 @@ def distance_to_region(
             for target in unique_targets:
                 mask = target_bins == target
                 if np.any(mask):
-                    dist_field = env.distance_to([int(target)], metric=metric)
+                    dist_field = env.distance_to(bins=int(target), metric=metric)
                     distances[mask] = dist_field[position_bins[mask]]
 
         invalid_mask = (position_bins == -1) | (target_bins == -1)

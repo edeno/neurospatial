@@ -229,8 +229,8 @@ class TestSpatialRatesRoundTrip:
         # genuinely non-empty (proving connectivity was restored, not fabricated).
         checked_bins = [i for i in (0, 1, 2, env.n_bins - 1) if 0 <= i < env.n_bins]
         for i in checked_bins:
-            assert set(back.env.neighbors(i)) == set(env.neighbors(i))
-        assert any(len(back.env.neighbors(i)) > 0 for i in checked_bins)
+            assert set(back.env.neighbors(bins=i)) == set(env.neighbors(bins=i))
+        assert any(len(back.env.neighbors(bins=i)) > 0 for i in checked_bins)
 
     def test_env_none_without_persisted_env_raises(self, empty_nwb, sample_environment):
         """env=None AND no persisted env -> clear ValueError (no fabrication)."""
@@ -529,8 +529,8 @@ class TestSpatialRatesRoundTrip:
             )
             checked = [i for i in (0, 1, env.n_bins - 1) if 0 <= i < env.n_bins]
             for i in checked:
-                assert set(back.env.neighbors(i)) == set(env.neighbors(i))
-            assert any(len(back.env.neighbors(i)) > 0 for i in checked)
+                assert set(back.env.neighbors(bins=i)) == set(env.neighbors(bins=i))
+            assert any(len(back.env.neighbors(bins=i)) > 0 for i in checked)
 
 
 class TestReadPositionLazy:

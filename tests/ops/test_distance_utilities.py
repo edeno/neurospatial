@@ -32,7 +32,7 @@ class TestDistanceToBasic:
         env = sample_2d_grid
         # Target bin at center of grid
         center_bin = env.n_bins // 2
-        distances = env.distance_to([center_bin], metric="geodesic")
+        distances = env.distance_to(bins=[center_bin], metric="geodesic")
 
         assert distances.shape == (env.n_bins,)
         assert distances.dtype == np.float64
@@ -44,7 +44,7 @@ class TestDistanceToBasic:
         """Distance to multiple target bins (multi-source)."""
         env = sample_2d_grid
         targets = [0, env.n_bins - 1]  # Opposite corners
-        distances = env.distance_to(targets, metric="geodesic")
+        distances = env.distance_to(bins=targets, metric="geodesic")
 
         assert distances.shape == (env.n_bins,)
         # Both targets should have zero distance
@@ -73,7 +73,7 @@ class TestDistanceToBasic:
         _ = regions.add("center", polygon=polygon)
         env = env.with_regions(regions)
 
-        distances = env.distance_to("center", metric="geodesic")
+        distances = env.distance_to(region="center", metric="geodesic")
 
         assert distances.shape == (env.n_bins,)
         # Bins inside region should have zero distance
@@ -89,7 +89,7 @@ class TestDistanceToBasic:
         n_bins_before = env.n_bins
         bin_centers_before = env.bin_centers.copy()
 
-        _ = env.distance_to([0], metric="geodesic")
+        _ = env.distance_to(bins=[0], metric="geodesic")
 
         assert env.n_bins == n_bins_before
         assert_array_equal(env.bin_centers, bin_centers_before)
@@ -103,8 +103,8 @@ class TestDistanceToMetrics:
         env = sample_2d_grid
         target = [0]
 
-        dist_geo = env.distance_to(target, metric="geodesic")
-        dist_euc = env.distance_to(target, metric="euclidean")
+        dist_geo = env.distance_to(bins=target, metric="geodesic")
+        dist_euc = env.distance_to(bins=target, metric="euclidean")
 
         assert dist_geo.shape == dist_euc.shape
         # Geodesic distance should be >= Euclidean (shortest path on graph)
@@ -117,7 +117,7 @@ class TestDistanceToMetrics:
         target_bin = 0
         target_pos = env.bin_centers[target_bin]
 
-        distances = env.distance_to([target_bin], metric="euclidean")
+        distances = env.distance_to(bins=[target_bin], metric="euclidean")
 
         # Manually compute Euclidean distances
         expected = np.linalg.norm(env.bin_centers - target_pos[np.newaxis, :], axis=1)
@@ -137,7 +137,7 @@ class TestDistanceToMetrics:
         target_bin = comps[1][0]
 
         # Geodesic distance from source to unreachable target should be inf
-        distances = env.distance_to([target_bin], metric="geodesic")
+        distances = env.distance_to(bins=[target_bin], metric="geodesic")
         assert distances[source_bin] == np.inf
 
 
@@ -148,32 +148,32 @@ class TestDistanceToValidation:
         """Invalid bin index raises ValueError."""
         env = sample_2d_grid
 
-        with pytest.raises(ValueError, match=r"Target bin indices must be in range.*"):
-            env.distance_to([env.n_bins], metric="geodesic")
+        with pytest.raises(ValueError, match=r"out of range"):
+            env.distance_to(bins=[env.n_bins], metric="geodesic")
 
-        with pytest.raises(ValueError, match=r"Target bin indices must be in range.*"):
-            env.distance_to([-1], metric="geodesic")
+        with pytest.raises(ValueError, match=r"out of range"):
+            env.distance_to(bins=[-1], metric="geodesic")
 
     def test_distance_to_invalid_region_name(self, sample_2d_grid):
         """Invalid region name raises KeyError."""
         env = sample_2d_grid
 
         with pytest.raises(KeyError, match=r"Region.*not found"):
-            env.distance_to("nonexistent_region", metric="geodesic")
+            env.distance_to(region="nonexistent_region", metric="geodesic")
 
     def test_distance_to_invalid_metric(self, sample_2d_grid):
         """Invalid metric raises ValueError."""
         env = sample_2d_grid
 
         with pytest.raises(ValueError, match=r"metric must be.*"):
-            env.distance_to([0], metric="invalid")
+            env.distance_to(bins=[0], metric="invalid")
 
     def test_distance_to_empty_targets(self, sample_2d_grid):
         """Empty target list raises ValueError."""
         env = sample_2d_grid
 
-        with pytest.raises(ValueError, match=r"targets cannot be empty"):
-            env.distance_to([], metric="geodesic")
+        with pytest.raises(ValueError, match=r"empty bins="):
+            env.distance_to(bins=[], metric="geodesic")
 
 
 class TestDistanceToEdgeCases:
@@ -184,7 +184,7 @@ class TestDistanceToEdgeCases:
         data = np.array([[0.0, 0.0]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        distances = env.distance_to([0], metric="geodesic")
+        distances = env.distance_to(bins=[0], metric="geodesic")
 
         assert distances.shape == (1,)
         assert distances[0] == 0.0
@@ -194,7 +194,7 @@ class TestDistanceToEdgeCases:
         env = sample_2d_grid
         targets = list(range(env.n_bins))
 
-        distances = env.distance_to(targets, metric="geodesic")
+        distances = env.distance_to(bins=targets, metric="geodesic")
 
         # All bins should have zero distance
         assert_array_equal(distances, 0.0)
@@ -217,7 +217,7 @@ class TestDistanceToEdgeCases:
         _ = regions.add("quarter", polygon=polygon)
         env = env.with_regions(regions)
 
-        distances = env.distance_to("quarter", metric="geodesic")
+        distances = env.distance_to(region="quarter", metric="geodesic")
 
         # All bins in region should have zero distance
         membership = env.region_membership()
@@ -241,7 +241,7 @@ class TestRingsBasic:
         center = env.n_bins // 2
         hops = 2
 
-        rings_result = env.rings(center, hops=hops)
+        rings_result = env.rings(bins=center, hops=hops)
 
         assert isinstance(rings_result, list)
         assert len(rings_result) == hops + 1  # [0, 1, 2]
@@ -256,7 +256,7 @@ class TestRingsBasic:
         env = sample_2d_grid
         center = env.n_bins // 2
 
-        rings_result = env.rings(center, hops=1)
+        rings_result = env.rings(bins=center, hops=1)
 
         assert len(rings_result) == 2  # [0, 1]
         assert_array_equal(rings_result[0], [center])
@@ -269,7 +269,7 @@ class TestRingsBasic:
         env = sample_2d_grid
         center = env.n_bins // 2
 
-        rings_result = env.rings(center, hops=0)
+        rings_result = env.rings(bins=center, hops=0)
 
         assert len(rings_result) == 1
         assert_array_equal(rings_result[0], [center])
@@ -280,7 +280,7 @@ class TestRingsBasic:
         n_bins_before = env.n_bins
         bin_centers_before = env.bin_centers.copy()
 
-        _ = env.rings(0, hops=2)
+        _ = env.rings(bins=0, hops=2)
 
         assert env.n_bins == n_bins_before
         assert_array_equal(env.bin_centers, bin_centers_before)
@@ -295,11 +295,11 @@ class TestRingsProperties:
         center = 0
         hops = 3
 
-        rings_result = env.rings(center, hops=hops)
+        rings_result = env.rings(bins=center, hops=hops)
         all_in_rings = np.concatenate(rings_result)
 
         # Should match reachable_from with radius
-        reachable_mask = env.reachable_from(center, radius=hops, metric="hops")
+        reachable_mask = env.reachable_from(bins=center, radius=hops, metric="hops")
         reachable_bins = np.where(reachable_mask)[0]
 
         assert set(all_in_rings) == set(reachable_bins)
@@ -310,7 +310,7 @@ class TestRingsProperties:
         center = env.n_bins // 2
         hops = 3
 
-        rings_result = env.rings(center, hops=hops)
+        rings_result = env.rings(bins=center, hops=hops)
 
         # Check all pairs are disjoint
         for i in range(len(rings_result)):
@@ -324,8 +324,8 @@ class TestRingsProperties:
         center = 0
         hops = 3
 
-        rings_result = env.rings(center, hops=hops)
-        distances = env.distance_to([center], metric="geodesic")
+        rings_result = env.rings(bins=center, hops=hops)
+        distances = env.distance_to(bins=[center], metric="geodesic")
 
         for k, ring in enumerate(rings_result):
             if len(ring) > 0:
@@ -350,18 +350,18 @@ class TestRingsValidation:
         """Invalid center bin raises ValueError."""
         env = sample_2d_grid
 
-        with pytest.raises(ValueError, match=r"center_bin must be in range.*"):
-            env.rings(env.n_bins, hops=2)
+        with pytest.raises(ValueError, match=r"out of range"):
+            env.rings(bins=env.n_bins, hops=2)
 
-        with pytest.raises(ValueError, match=r"center_bin must be in range.*"):
-            env.rings(-1, hops=2)
+        with pytest.raises(ValueError, match=r"out of range"):
+            env.rings(bins=-1, hops=2)
 
     def test_rings_negative_hops(self, sample_2d_grid):
         """Negative hops raises ValueError."""
         env = sample_2d_grid
 
         with pytest.raises(ValueError, match=r"hops must be non-negative"):
-            env.rings(0, hops=-1)
+            env.rings(bins=0, hops=-1)
 
 
 class TestRingsEdgeCases:
@@ -372,7 +372,7 @@ class TestRingsEdgeCases:
         data = np.array([[0.0, 0.0]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        rings_result = env.rings(0, hops=5)
+        rings_result = env.rings(bins=0, hops=5)
 
         # Only ring 0 should exist
         assert len(rings_result) == 6  # [0, 1, 2, 3, 4, 5]
@@ -393,7 +393,7 @@ class TestRingsEdgeCases:
         comp0_bins = set(comps[0])
 
         # Get rings with large hops (more than graph diameter)
-        rings_result = env.rings(center, hops=20)
+        rings_result = env.rings(bins=center, hops=20)
 
         # Collect all bins reached by rings
         reached_bins = set()
@@ -411,7 +411,7 @@ class TestRingsEdgeCases:
         center = 0
         hops = 1000  # Much larger than needed
 
-        rings_result = env.rings(center, hops=hops)
+        rings_result = env.rings(bins=center, hops=hops)
 
         # Should have hops+1 rings, but later ones are empty
         assert len(rings_result) == hops + 1
@@ -433,8 +433,8 @@ class TestDistanceUtilitiesIntegration:
         center = env.n_bins // 2
         hops = 3
 
-        rings_result = env.rings(center, hops=hops)
-        distances = env.distance_to([center], metric="geodesic")
+        rings_result = env.rings(bins=center, hops=hops)
+        distances = env.distance_to(bins=[center], metric="geodesic")
 
         # Bins in ring k should all have similar distances
         for _k, ring in enumerate(rings_result):
@@ -453,7 +453,7 @@ class TestDistanceUtilitiesIntegration:
         targets = [0, 10, 20]
 
         # Using distance_to wrapper
-        dist_wrapper = env.distance_to(targets, metric="geodesic")
+        dist_wrapper = env.distance_to(bins=targets, metric="geodesic")
 
         # Using direct distance_field
         dist_direct = distance_field(env.connectivity, sources=targets)

@@ -98,7 +98,6 @@ from neurospatial.environment._queries import (
     _path_between,
     _reachable_from,
     _rings,
-    resolve_bin,
 )
 from neurospatial.environment._rebin import (
     _rebin_factor,
@@ -108,6 +107,7 @@ from neurospatial.environment._rebin import (
 from neurospatial.environment._regions import _region_membership
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import _info, _repr, _repr_html
+from neurospatial.environment._targets import resolve_targets
 from neurospatial.environment._trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
@@ -365,14 +365,26 @@ class Environment(Generic[_C]):
         """Apply known arena containment before assigning active bins."""
         return locate(self._binning, self._arena, positions)
 
-    def _bin_index(self, point_or_index: int | ArrayLike, operation: str) -> int:
-        """Resolve a bin index or a coordinate point to one active-bin index."""
-        return resolve_bin(
-            point_or_index,
+    def _target_bins(
+        self,
+        operation: str,
+        bins: object,
+        points: ArrayLike | None,
+        *,
+        region: str | None = None,
+        takes_region: bool = False,
+        count: int | None = None,
+    ) -> NDArray[np.intp]:
+        """Resolve a query's one explicit target to active-bin indices."""
+        return resolve_targets(
+            operation,
+            bins=bins,
+            points=points,
+            region=region,
             binning=self._binning,
             arena=self._arena,
-            coordinates=self._coordinate_system,
-            operation=operation,
+            regions=self.regions if takes_region else None,
+            count=count,
         )
 
     _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
@@ -1255,68 +1267,63 @@ class Environment(Generic[_C]):
     @cartesian_only
     def distance_between(
         self: Environment[CartesianSystem],
-        point1: NDArray[np.float64],
-        point2: NDArray[np.float64],
+        *,
+        bins: Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
         edge_weight: str | None = "distance",
     ) -> float:
-        """Calculate the geodesic distance between two points in the environment.
+        """Geodesic distance between two bins or two points.
 
-        Points are first mapped to their nearest active bins using `self.bin_at()`.
-        The geodesic distance (distance along the shortest path through the space)
-        is then the shortest path length in the `connectivity` graph between these
-        bins, using the specified `edge_weight`.
+        The distance is the length of the shortest path through the
+        connectivity graph, so it goes around walls and between maze arms the
+        way the animal can. Give the two ends either as bin indices or as
+        coordinates; points are first mapped to the bins that contain them.
 
         Parameters
         ----------
-        point1 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The first N-dimensional point.
-        point2 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The second N-dimensional point.
-        edge_weight : str or None, optional
-            The edge attribute to use as weight for path calculation,
-            by default "distance". If None, the graph is treated as unweighted
-            (the distance is the number of edges).
+        bins : sequence of int, shape (2,), optional
+            Start and end bin indices, ``[start, end]``.
+        points : array-like, shape (2, n_dims), optional
+            Start and end coordinates, one row each, in the same coordinates
+            and units as ``bin_centers``.
+        edge_weight : str or None, default="distance"
+            Edge attribute summed along the path. ``"distance"`` gives the
+            path length in the environment's units; None counts edges (hops).
 
         Returns
         -------
         float
-            The geodesic distance. Returns `np.inf` if points do not map to
-            valid active bins, if bins are disconnected, or if the connectivity
-            graph is not available.
+            The path length, or ``np.inf`` when the two bins are in
+            disconnected parts of the graph.
+
+        Raises
+        ------
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
+        ValueError
+            If there are not exactly two targets, or a point is outside the
+            environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> p1 = np.array([1.0, 1.0])
-        >>> p2 = np.array([9.0, 9.0])
-        >>> dist = env.distance_between(p1, p2)
-        >>> print(dist > 0)
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> path_cm = env.distance_between(points=[[1.0, 1.0], [9.0, 1.0]])
+        >>> bool(path_cm > 0)
+        True
+        >>> start, end = env.bin_at(np.array([[1.0, 1.0], [9.0, 1.0]]))
+        >>> env.distance_between(bins=[start, end]) == path_cm
         True
 
         """
-        source_bin = self.bin_at(np.atleast_2d(point1))[0]
-        target_bin = self.bin_at(np.atleast_2d(point2))[0]
-
-        if source_bin == -1 or target_bin == -1:
-            # One or both points didn't map to a valid active bin. Returning
-            # np.inf silently can mask a coordinate-frame or units mistake, so
-            # warn when neither point lands in the environment.
-            if source_bin == -1 and target_bin == -1:
-                warnings.warn(
-                    "distance_between() returning np.inf: neither point mapped "
-                    "to an active bin (both bin_at() lookups returned -1). "
-                    "Check that the points are inside the environment and in "
-                    "the same coordinate frame/units as bin_centers.",
-                    category=UserWarning,
-                    stacklevel=_external_stacklevel(),
-                )
-            return np.inf
-
+        start, end = self._target_bins("distance_between()", bins, points, count=2)
         return geodesic_distance_between_points(
-            self.connectivity, source_bin, target_bin, weight=edge_weight
+            self.connectivity, int(start), int(end), weight=edge_weight
         )
 
     @cartesian_only(grid=True)
@@ -3726,7 +3733,7 @@ class Environment(Generic[_C]):
 
     def bin_center_of(
         self,
-        bin_indices: int | Sequence[int] | NDArray[np.int_],
+        bin_indices: int | Sequence[int] | NDArray[np.integer],
     ) -> NDArray[np.float64]:
         """Given one or more active-bin indices, return their N-D center coordinates.
 
@@ -3744,6 +3751,9 @@ class Environment(Generic[_C]):
 
         Raises
         ------
+        TypeError
+            If the indices are floats or booleans; use :meth:`bin_at` to find
+            the bin that contains a coordinate.
         BinIndexOutOfRangeError
             If any bin index is outside ``[0, n_bins)``, including negative
             indices (a ``ValueError`` subclass).
@@ -3764,32 +3774,38 @@ class Environment(Generic[_C]):
         """
         return _bin_center_of(self.bin_centers, bin_indices)
 
-    def neighbors(self, bin_index: int | ArrayLike) -> list[int]:
-        """Find indices of neighboring active bins for a bin or point.
-
-        This method delegates to the `neighbors` method of the
-        underlying `LayoutEngine`, which typically uses the `connectivity`.
+    def neighbors(
+        self,
+        *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
+    ) -> list[int]:
+        """Return the bins connected to one bin in the connectivity graph.
 
         Parameters
         ----------
-        bin_index : int or array-like
-            An active bin index (``0`` to ``n_active_bins - 1``), OR a
-            coordinate point (array-like of length ``n_dims``), which is mapped
-            to its active bin via :meth:`bin_at`. Integers are treated as
-            indices; coordinate arrays/floats are treated as points.
+        bins : int, optional
+            The bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            A coordinate, mapped to the bin that contains it, in the same
+            coordinates and units as ``bin_centers``.
 
         Returns
         -------
         list[int]
-            A list of active bin indices that are neighbors to `bin_index`.
-            Can be used directly for array indexing.
+            Indices of the neighboring bins. Can be used directly for array
+            indexing.
 
         Raises
         ------
-        BinIndexOutOfRangeError
-            If bin_index is an integer index outside [0, n_bins).
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         ValueError
-            If bin_index is a coordinate point outside every active bin.
+            If more than one bin or point is given, or the point is outside
+            the environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If the bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
@@ -3797,14 +3813,16 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> neighbors = env.neighbors(0)
-        >>> len(neighbors)  # Corner bin, including diagonal connectivity
+        >>> len(env.neighbors(bins=0))  # corner bin, with diagonal connectivity
         3
+        >>> sorted(env.neighbors(points=[[2.0, 2.0]])) == sorted(
+        ...     env.neighbors(bins=int(env.bin_at(np.array([[2.0, 2.0]]))[0]))
+        ... )
+        True
 
         """
-        return list(
-            self.connectivity.neighbors(self._bin_index(bin_index, "neighbors()"))
-        )
+        (start,) = self._target_bins("neighbors()", bins, points, count=1)
+        return list(self.connectivity.neighbors(int(start)))
 
     @property
     def bin_sizes(self) -> NDArray[np.float64]:
@@ -3846,168 +3864,164 @@ class Environment(Generic[_C]):
 
     def path_between(
         self,
-        source_active_bin_idx: int | ArrayLike,
-        target_active_bin_idx: int | ArrayLike,
+        *,
+        bins: Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
     ) -> list[int]:
-        """Find the shortest path between two active bins (or points).
+        """Find the shortest path between two bins or two points.
 
-        The path is a sequence of active bin indices (0 to n_active_bins - 1)
-        connecting the source to the target. Path calculation uses the
-        'distance' attribute on the edges of the `connectivity`
-        as weights.
+        The path is the sequence of bin indices along the shortest route
+        through the connectivity graph, weighted by the ``"distance"`` of each
+        edge.
 
         Parameters
         ----------
-        source_active_bin_idx : int or array-like
-            The active bin index (0 to n_active_bins - 1) for the start of the
-            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
-        target_active_bin_idx : int or array-like
-            The active bin index (0 to n_active_bins - 1) for the end of the
-            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
+        bins : sequence of int, shape (2,), optional
+            Start and end bin indices, ``[start, end]``.
+        points : array-like, shape (2, n_dims), optional
+            Start and end coordinates, one row each, mapped to the bins that
+            contain them.
 
         Returns
         -------
         list[int]
-            A list of active bin indices representing the shortest path from
-            source to target. The list includes both the source and target
-            indices. Returns a single-element list ``[source]`` when source and
-            target resolve to the same bin, and an empty list when no path
-            exists (disconnected components).
+            Bin indices from start to end, both included. A single-element
+            list when both ends are the same bin, and an empty list (with a
+            warning) when no path exists.
 
         Raises
         ------
-        BinIndexOutOfRangeError
-            If source/target is an integer index outside [0, n_bins).
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         ValueError
-            If source/target is a coordinate point outside every active bin.
+            If there are not exactly two targets, or a point is outside the
+            environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> path = env.path_between(0, 5)
-        >>> print(len(path) > 0)  # doctest: +SKIP
-        True
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> path = env.path_between(bins=[0, env.n_bins - 1])
+        >>> path[0], path[-1] == env.n_bins - 1
+        (0, True)
+        >>> center = env.bin_centers[3]
+        >>> env.path_between(points=[center, center + 0.1])  # both in bin 3
+        [3]
 
         """
-        return _path_between(
-            self.connectivity,
-            self._bin_index(source_active_bin_idx, "path_between()"),
-            self._bin_index(target_active_bin_idx, "path_between()"),
-        )
+        start, end = self._target_bins("path_between()", bins, points, count=2)
+        return _path_between(self.connectivity, int(start), int(end))
 
     def distance_to(
         self,
-        targets: Sequence[int] | str,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
+        region: str | None = None,
         metric: Literal["euclidean", "geodesic"] = "geodesic",
     ) -> NDArray[np.float64]:
-        """Compute distance from each bin to target set.
+        """Distance from every bin to the nearest target.
 
-        This method computes the distance from every bin in the environment to
-        the nearest target bin. Useful for:
-        - Navigation and path planning
-        - Computing distance-based features
-        - Analyzing spatial distributions relative to landmarks
-        - Creating distance fields for visualization
+        Give the target as bin indices, as coordinates or as a region name,
+        for example the distance from every bin to a reward port for a goal
+        or approach analysis. With several targets, each bin gets the distance
+        to the nearest one.
 
         Parameters
         ----------
-        targets : Sequence[int] or str
-            Target bin indices, or a region name. If a region name is provided,
-            all bins inside that region are used as targets (multi-source).
+        bins : int or sequence of int, optional
+            Target bin indices.
+        points : array-like, shape (n_points, n_dims), optional
+            Target coordinates, one row each, mapped to the bins that contain
+            them. Use the same coordinates and units as ``bin_centers``.
+        region : str, optional
+            Name of a region in ``self.regions``. Its targets are the bins it
+            covers, by the rule of :meth:`bins_in_region`: the bin that
+            contains a point region, or the bins whose centers lie inside a
+            polygon region or on its edge.
         metric : {'euclidean', 'geodesic'}, default='geodesic'
-            Distance metric to use:
-            - 'euclidean': Straight-line distance in physical coordinates (same units as bin_centers).
-            - 'geodesic': Graph distance respecting connectivity (shortest path, in physical units).
+            ``'geodesic'`` follows the connectivity graph, so it goes around
+            walls; ``'euclidean'`` is the straight-line distance between bin
+            centers. Both are in the units of ``bin_centers``.
 
         Returns
         -------
         distances : NDArray[np.float64], shape (n_bins,)
-            Distance from each bin to the nearest target, in the same units as
-            bin_centers (e.g., cm, meters, pixels). For bins unreachable
-            from all targets (disconnected graph components), returns np.inf.
+            Distance from each bin to the nearest target, ``0`` at the
+            targets. Bins in a part of the graph with no target are
+            ``np.inf`` for the geodesic metric.
 
         Raises
         ------
-        ValueError
-            If targets is empty, or if target bin indices are out of range,
-            or if metric is invalid.
-        CartesianOnlyError
-            A NotImplementedError for metric="euclidean" on environments without
-            Cartesian bin centers, such as polar environments.
-        KeyError
-            If targets is a string (region name) that doesn't exist in self.regions.
         TypeError
-            If targets is neither a sequence of integers nor a string.
+            If not exactly one of ``bins``, ``points`` and ``region`` is
+            given, or ``bins`` holds non-integers.
+        ValueError
+            If a target is empty, a point is outside the environment or has
+            NaN coordinates, the region covers no bin, or ``metric`` is
+            invalid.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
+        RegionNotFoundError
+            If ``region`` is not in ``self.regions`` (a ``KeyError``).
+        CartesianOnlyError
+            For ``metric="euclidean"`` on a polar environment.
 
         See Also
         --------
-        rings : Compute k-hop neighborhoods (BFS layers).
-        reachable_from : Find bins reachable from a source within a radius.
-        distance_field : Low-level function for computing geodesic distances.
+        rings : Bins grouped by hop distance from one bin.
+        reachable_from : Bins reachable from one bin within a radius.
+        neurospatial.ops.distance.distance_field : Graph distances from bins.
 
         Notes
         -----
-        **Geodesic Distance**:
-        Uses Dijkstra's algorithm to compute shortest paths on the connectivity
-        graph. Edge weights are the 'distance' attribute (physical distance between
-        bin centers). For disconnected graphs, unreachable bins have distance np.inf.
+        The geodesic metric runs Dijkstra's algorithm on the connectivity
+        graph, with each edge's ``"distance"`` (the physical distance between
+        bin centers) as its length.
 
-        **Euclidean Distance**:
-        Computes straight-line distance in the coordinate space, ignoring graph
-        connectivity. This is faster but doesn't respect physical barriers.
-
-        **Multi-Source Distances**:
-        When multiple targets are provided (or a region containing multiple bins),
-        each bin's distance is the minimum distance to any target.
-
-        **Region-Based Targets**:
-        If targets is a string, it must be a valid region name in self.regions.
-        All bins inside that region (as determined by region_membership) become
-        target bins.
+        A point target is the bin that contains it, so the distance to a point
+        equals the distance to its bin.
 
         Examples
         --------
         >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment, Regions
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> from neurospatial import Regions
         >>> regions = Regions()
-        >>> _ = regions.add("goal", polygon=box(8.0, 8.0, 10.0, 10.0))
+        >>> _ = regions.add("reward", point=(8.2, 8.7))
         >>> env = env.with_regions(regions)
-        >>> dist = env.distance_to("goal", metric="geodesic")
-        >>> dist.shape
+        >>> to_reward = env.distance_to(region="reward")
+        >>> to_reward.shape
         (100,)
-        >>> bool(np.all(dist >= 0.0))
+        >>> bool(np.array_equal(to_reward, env.distance_to(points=[[8.2, 8.7]])))
         True
-
-        >>> targets = [0, env.n_bins - 1]  # doctest: +SKIP
-        >>> dist = env.distance_to(targets, metric="euclidean")  # doctest: +SKIP
-        >>> float(dist[targets[0]])  # doctest: +SKIP
-        0.0  # doctest: +SKIP
-        >>> float(dist[targets[1]])  # doctest: +SKIP
-        0.0  # doctest: +SKIP
+        >>> corners = env.distance_to(bins=[0, env.n_bins - 1], metric="euclidean")
+        >>> float(corners[0]), float(corners[-1])
+        (0.0, 0.0)
 
         """
+        targets = self._target_bins(
+            "distance_to()", bins, points, region=region, takes_region=True
+        )
         return _distance_to(
             targets,
             metric=metric,
-            binning=self._binning,
-            arena=self._arena,
+            bin_centers=self.bin_centers,
             graph=self.connectivity,
-            regions=self.regions,
             coordinates=self._coordinate_system,
         )
 
     def reachable_from(
         self,
-        source_bin: int | ArrayLike,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
         radius: int | float | None = None,
         metric: Literal["hops", "geodesic"] = "hops",
     ) -> NDArray[np.bool_]:
@@ -4022,10 +4036,11 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        source_bin : int or array-like
-            An active bin index (0 to n_bins - 1), OR a coordinate point
-            (mapped to its bin via :meth:`bin_at`). Integers are treated as
-            indices; coordinate arrays/floats are treated as points.
+        bins : int, optional
+            The start bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            The start coordinate, mapped to the bin that contains it, in the
+            same coordinates and units as ``bin_centers``.
         radius : int, float, or None, optional
             Maximum distance/hops. If None, find all reachable bins in the
             same connected component.
@@ -4045,12 +4060,15 @@ class Environment(Generic[_C]):
 
         Raises
         ------
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         BinIndexOutOfRangeError
-            If source_bin is an integer index outside [0, n_bins).
+            If the bin index is outside ``[0, n_bins)``.
         ValueError
-            If source_bin is a coordinate point outside every active bin.
-            If radius is negative.
-            If metric is not 'hops' or 'geodesic'.
+            If more than one bin or point is given, the point is outside the
+            environment or has NaN coordinates, ``radius`` is negative, or
+            ``metric`` is not ``'hops'`` or ``'geodesic'``.
 
         See Also
         --------
@@ -4072,30 +4090,23 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> mask = env.reachable_from(10, radius=3, metric="hops")  # doctest: +SKIP
-        >>> neighbor_bins = np.where(mask)[0]  # doctest: +SKIP
-        >>> print(
-        ...     f"Found {len(neighbor_bins)} neighbors within 3 hops"
-        ... )  # doctest: +SKIP
-        Found 37 neighbors within 3 hops  # doctest: +SKIP
-
-        >>> goal_bin = env.bins_in_region("goal")[0]  # doctest: +SKIP
-        >>> mask = env.reachable_from(
-        ...     goal_bin, radius=50.0, metric="geodesic"
-        ... )  # doctest: +SKIP
-        >>> print(f"Bins within 50 units: {mask.sum()}")  # doctest: +SKIP
-        Bins within 50 units: 125  # doctest: +SKIP
-
-        >>> mask = env.reachable_from(source_bin=0, radius=None)  # doctest: +SKIP
-        >>> print(f"Component size: {mask.sum()} bins")  # doctest: +SKIP
-        Component size: 1000 bins  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> within_one_hop = env.reachable_from(bins=55, radius=1, metric="hops")
+        >>> int(within_one_hop.sum())  # the bin and its 8 neighbors
+        9
+        >>> within_2cm = env.reachable_from(
+        ...     points=[[5.0, 5.0]], radius=2.0, metric="geodesic"
+        ... )
+        >>> bool(within_2cm[55])
+        True
 
         """
+        (start,) = self._target_bins("reachable_from()", bins, points, count=1)
         return _reachable_from(
-            self.connectivity,
-            self._bin_index(source_bin, "reachable_from()"),
-            radius=radius,
-            metric=metric,
+            self.connectivity, int(start), radius=radius, metric=metric
         )
 
     def components(
@@ -4155,8 +4166,9 @@ class Environment(Generic[_C]):
 
     def rings(
         self,
-        center_bin: int,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
         hops: int,
     ) -> list[NDArray[np.int32]]:
         """Compute k-hop neighborhoods (BFS layers).
@@ -4171,8 +4183,11 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        center_bin : int
-            Starting bin index.
+        bins : int, optional
+            The center bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            The center coordinate, mapped to the bin that contains it, in the
+            same coordinates and units as ``bin_centers``.
         hops : int
             Number of hop layers to compute (non-negative).
 
@@ -4181,16 +4196,20 @@ class Environment(Generic[_C]):
         rings : list[NDArray[np.int32]], length hops+1
             List of bin index arrays, one per hop distance.
             rings[k] contains all bins exactly k hops from center.
-            rings[0] = [center_bin] (the center itself).
+            rings[0] is the center bin itself.
             If fewer than hops layers exist (small or disconnected graph),
             later rings will be empty arrays.
 
         Raises
         ------
-        ValueError
-            If center_bin is out of range [0, n_bins), or if hops is negative.
         TypeError
-            If center_bin is not an integer type, or if hops is not an integer.
+            If neither or both of ``bins`` and ``points`` are given, ``bins``
+            holds non-integers, or ``hops`` is not an integer.
+        ValueError
+            If more than one bin or point is given, the point is outside the
+            environment or has NaN coordinates, or ``hops`` is negative.
+        BinIndexOutOfRangeError
+            If the bin index is outside ``[0, n_bins)``.
 
         See Also
         --------
@@ -4224,20 +4243,16 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> rings_result = env.rings(center_bin=50, hops=2)  # doctest: +SKIP
-        >>> len(rings_result)  # doctest: +SKIP
-        3  # doctest: +SKIP
-        >>> len(rings_result[0])  # doctest: +SKIP
-        1  # doctest: +SKIP
-        >>> len(rings_result[1]) > 0  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        >>> all_bins = np.concatenate(rings_result)  # doctest: +SKIP
-        >>> len(all_bins) == len(np.unique(all_bins))  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> rings_result = env.rings(bins=55, hops=2)
+        >>> [len(ring) for ring in rings_result]  # 1 center, 8 around it, then 16
+        [1, 8, 16]
+        >>> same = env.rings(points=[[5.0, 5.0]], hops=2)
+        >>> all(np.array_equal(a, b) for a, b in zip(same, rings_result))
+        True
 
         """
-        return _rings(self.connectivity, center_bin, hops=hops)
+        (center,) = self._target_bins("rings()", bins, points, count=1)
+        return _rings(self.connectivity, int(center), hops=hops)
 
     def to_file(self, path: str | Path, *, overwrite: bool = False) -> None:
         """Save Environment-v3 binning and Arena data to JSON and NPZ files.
@@ -5262,7 +5277,7 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid(np.arange(0.0, 24.0, 4.0), np.arange(0.0, 24.0, 4.0))
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
-        >>> distances = env.distance_to([env.n_bins // 2])
+        >>> distances = env.distance_to(bins=env.n_bins // 2)
         >>> fields = [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
         >>> frame_times = np.arange(len(fields)) / 30.0
 

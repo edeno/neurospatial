@@ -215,6 +215,9 @@ def test_invalid_coordinate_dimensions_name_the_call(bad_shape):
         "bin_size_inf",
         "many_points",
         "outside_point",
+        "float_bins",
+        "no_target",
+        "nan_point",
         "unit_labels",
         "decoder_units",
         "likelihood_units",
@@ -273,8 +276,11 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
         "bin_size_zero": lambda: Environment.from_samples(r.positions, bin_size=0),
         "bin_size_nan": lambda: Environment.from_samples(r.positions, bin_size=np.nan),
         "bin_size_inf": lambda: Environment.from_samples(r.positions, bin_size=np.inf),
-        "many_points": lambda: env.neighbors(env.bin_centers[:2]),
-        "outside_point": lambda: env.neighbors([-1000.0, -1000.0]),
+        "many_points": lambda: env.neighbors(points=env.bin_centers[:2]),
+        "outside_point": lambda: env.neighbors(points=[[-1000.0, -1000.0]]),
+        "float_bins": lambda: env.distance_to(bins=[50.7, 12.3]),
+        "no_target": lambda: env.distance_to(),
+        "nan_point": lambda: env.distance_to(points=[[np.nan, 1.0]]),
         "unit_labels": lambda: resolve_unit_ids(
             [1], n_units=2, context="compute_spatial_rates"
         ),
@@ -409,7 +415,7 @@ def test_segmentation_unknown_region(site, recording):
         "boundary": lambda: distance_to_boundary(
             env, r.positions, boundary_type="region", region_name="home"
         ),
-        "distance": lambda: env.distance_to("home"),
+        "distance": lambda: env.distance_to(region="home"),
     }
     with pytest.raises(RegionNotFoundError) as caught:
         calls[site]()
@@ -433,14 +439,11 @@ def test_direction_label_errors_teach(method, recording):
     assert "\\n" not in str(caught.value)
 
 
-def test_neighbors_of_bin_at_output(recording):
+def test_bin_at_output_is_a_valid_bins_target(recording):
+    """bin_at returns an integer array, which bins= accepts as one bin."""
     r = recording
     index = r.env.bin_at(r.positions[:1])
-    with pytest.raises(ValueError, match=r"int\(bin_idx\[0\]\)") as caught:
-        r.env.neighbors(index)
-    assert "bin_at" in str(caught.value)
-    # Unwrapping the returned index is a real, successful correction.
-    assert r.env.neighbors(int(index[0])) == r.env.neighbors(r.positions[0])
+    assert r.env.neighbors(bins=index) == r.env.neighbors(points=r.positions[:1])
 
 
 def test_coarse_bin_size_warns():

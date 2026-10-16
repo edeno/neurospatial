@@ -259,20 +259,20 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         ),
         "plot_labels": lambda: _plot_labels(env, x["field"]),
         # Graph queries.
-        "neighbors": lambda: env.neighbors(0),
-        "path_between": lambda: env.path_between(0, n_last),
-        "reachable_from": lambda: env.reachable_from(0, radius=2, metric="hops"),
-        "rings": lambda: env.rings(0, hops=2),
+        "neighbors": lambda: env.neighbors(bins=0),
+        "path_between": lambda: env.path_between(bins=[0, n_last]),
+        "reachable_from": lambda: env.reachable_from(bins=0, radius=2, metric="hops"),
+        "rings": lambda: env.rings(bins=0, hops=2),
         "components": lambda: env.components(),
-        "distance_to_geodesic": lambda: env.distance_to([0], metric="geodesic"),
-        "distance_to_euclidean": lambda: env.distance_to([0], metric="euclidean"),
+        "distance_to_geodesic": lambda: env.distance_to(bins=[0], metric="geodesic"),
+        "distance_to_euclidean": lambda: env.distance_to(bins=[0], metric="euclidean"),
         # Coordinate queries.
         "bin_at": lambda: env.bin_at(x["points"]),
         "contains": lambda: env.contains(x["points"]),
         "distance_between": lambda: env.distance_between(
-            env.bin_centers[0], env.bin_centers[n_last]
+            points=env.bin_centers[[0, n_last]]
         ),
-        "neighbors_of_point": lambda: env.neighbors(env.bin_centers[n_last]),
+        "neighbors_of_point": lambda: env.neighbors(points=env.bin_centers[[n_last]]),
         "interpolate_nearest": lambda: env.interpolate(x["field"], x["points"]),
         "interpolate_linear": lambda: env.interpolate(
             x["field"], x["points"], mode="linear"

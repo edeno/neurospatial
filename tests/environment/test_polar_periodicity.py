@@ -53,7 +53,7 @@ def test_explicit_circular_topology_requires_a_full_circle(angle_range):
 def test_partial_range_has_no_shortcut_across_its_unobserved_angles():
     env = _polar((-np.pi / 2, np.pi / 2))
     np.testing.assert_allclose(
-        env.distance_to([0], metric="geodesic")[3], 15 * np.pi / 4
+        env.distance_to(bins=[0], metric="geodesic")[3], 15 * np.pi / 4
     )
 
 

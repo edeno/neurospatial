@@ -133,7 +133,7 @@ class TestPublishedGeometryIsReadOnly:
                 attrs.update({key: value})
             else:
                 attrs.pop(key, None)
-        assert env.distance_between(np.array([0.5]), np.array([2.5])) == 2.0
+        assert env.distance_between(points=[np.array([0.5]), np.array([2.5])]) == 2.0
 
     @pytest.mark.parametrize("how", ["deepcopy", "pickle"])
     def test_graph_attributes_stay_read_only_after_copy(self, how) -> None:

@@ -681,3 +681,68 @@ west_bins = grid.bins_in_region("west")
 west_interior = grid.bins_in_region("west", include_boundary=False)
 assert len(west_bins) == len(west_interior) + 10
 ```
+
+## Query targets are keywords: `bins=`, `points=` or `region=`
+
+A bin index and a coordinate look the same as numbers, so the graph and
+distance queries no longer guess which one you meant. Name the target with a
+keyword: `bins=` for bin indices, `points=` for coordinates and, for
+`distance_to`, `region=` for a named region. A point means the bin that
+contains it, so the distance to a reward port at `(82, 77)` is the distance to
+the bin that contains the port.
+
+<!-- docs-test: run -->
+```python
+positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))  # cm
+env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+reward_port = np.array([[82.0, 77.0]])  # cm, one row per point
+reward_bin = int(env.bin_at(reward_port)[0])
+start_bin = int(env.bin_at(positions[:1])[0])
+
+# Before: env.distance_to([reward_bin])
+to_reward = env.distance_to(bins=reward_bin)
+assert np.array_equal(to_reward, env.distance_to(points=reward_port))
+# Before: env.neighbors(reward_bin)
+around_reward = env.neighbors(bins=reward_bin)
+# Before: env.path_between(start_bin, reward_bin)
+route = env.path_between(bins=[start_bin, reward_bin])
+# Before: env.distance_between(positions[0], reward_port[0])
+route_cm = env.distance_between(points=[positions[0], reward_port[0]])
+# Before: env.reachable_from(reward_bin, radius=20.0, metric="geodesic")
+near_reward = env.reachable_from(bins=reward_bin, radius=20.0, metric="geodesic")
+# Before: env.rings(center_bin=reward_bin, hops=2)
+rings = env.rings(bins=reward_bin, hops=2)
+```
+
+With a named region, pass `region=`:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Regions
+
+positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))  # cm
+env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+regions = Regions()
+regions.add("reward", point=(82.0, 77.0))
+env = env.with_regions(regions)
+# Before: env.distance_to("reward")
+to_reward = env.distance_to(region="reward")
+assert np.array_equal(to_reward, env.distance_to(points=[[82.0, 77.0]]))
+```
+
+What the old guesses did, and what happens now:
+
+| Call | Before | Now |
+| --- | --- | --- |
+| `env.distance_to([50.7, 12.3])` | distance to bins 50 and 12 | use `points=[[50.7, 12.3]]`; floats in `bins=` raise `TypeError` |
+| `env.neighbors([0, 1])` | neighbors of the point (0, 1) | use `bins=0`, or `points=[[0, 1]]` |
+| `env.distance_to(3)` | `TypeError: len() of unsized object` | `env.distance_to(bins=3)` works |
+| `env.distance_between(p, far_point)` | `inf` | `ValueError` naming the point outside the environment |
+| `env.bin_center_of(np.array([10.0, 10.0]))` | centers of bin 10, twice | `TypeError` pointing to `env.bin_at` |
+
+`points=` always has shape `(n_points, n_dims)`: wrap one point as
+`[[x, y]]`. Points with NaN coordinates or outside the environment raise a
+`ValueError` that names the first such row, instead of mapping to `-1`. Queries
+that start from one bin (`neighbors`, `reachable_from`, `rings`) take one bin
+or one point; `path_between` and `distance_between` take two, the start and the
+end.

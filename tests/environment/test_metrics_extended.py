@@ -88,7 +88,7 @@ class TestBoundaryBins:
         # Get first boundary bin
         if len(boundary) > 0:
             boundary_bin = boundary[0]
-            boundary_neighbors = medium_2d_env.neighbors(boundary_bin)
+            boundary_neighbors = medium_2d_env.neighbors(bins=boundary_bin)
 
             # Find an interior bin (not in boundary)
             interior_bins = np.setdiff1d(
@@ -97,7 +97,7 @@ class TestBoundaryBins:
 
             if len(interior_bins) > 0:
                 interior_bin = interior_bins[0]
-                interior_neighbors = medium_2d_env.neighbors(interior_bin)
+                interior_neighbors = medium_2d_env.neighbors(bins=interior_bin)
 
                 # Interior bins typically have more neighbors
                 # (This may not always be true for irregular environments)
@@ -505,13 +505,13 @@ class TestSpatialMetrics:
         if len(boundary) > 0 and len(interior) > 0:
             # Average neighbor count for boundary bins
             boundary_neighbor_counts = [
-                len(small_2d_env.neighbors(b)) for b in boundary
+                len(small_2d_env.neighbors(bins=b)) for b in boundary
             ]
             avg_boundary_neighbors = np.mean(boundary_neighbor_counts)
 
             # Average neighbor count for interior bins
             interior_neighbor_counts = [
-                len(small_2d_env.neighbors(b)) for b in interior[:10]
+                len(small_2d_env.neighbors(bins=b)) for b in interior[:10]
             ]  # Sample
             avg_interior_neighbors = np.mean(interior_neighbor_counts)
 

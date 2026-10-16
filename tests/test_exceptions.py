@@ -211,7 +211,7 @@ def test_bin_index_out_of_range_site():
 
     env = Environment.from_samples(np.arange(10.0)[:, None], bin_size=2.0)
     with pytest.raises(BinIndexOutOfRangeError) as caught:
-        env.neighbors(env.n_bins)
+        env.neighbors(bins=env.n_bins)
     assert caught.value.index == env.n_bins
     assert "Fix:" in str(caught.value)
 

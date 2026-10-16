@@ -28,7 +28,7 @@ if TYPE_CHECKING:
         assert_type(polar.smooth(field, 1.0), NDArray[np.float64])
         assert_type(cartesian.diffuse(field, 1.0), NDArray[np.float64])
         assert_type(polar.to_dict(), dict[str, Any])
-        assert_type(cartesian.neighbors(0), list[int])
+        assert_type(cartesian.neighbors(bins=0), list[int])
 
     def _check_signatures(
         cartesian: Environment[CartesianSystem],
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
         # fails this check.
         cartesian.bin_at("not an array")  # type: ignore[arg-type]
         cartesian.bin_at(points, nonexistent_keyword=True)  # type: ignore[call-arg]
-        cartesian.neighbors(0, 1, 2)  # type: ignore[call-arg]
+        cartesian.neighbors(0)  # type: ignore[misc]
         cartesian.occupancy(times)  # type: ignore[call-arg]
         assert_type(
             cartesian.occupancy(times, points, epochs=None), NDArray[np.float64]

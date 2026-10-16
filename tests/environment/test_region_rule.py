@@ -95,7 +95,7 @@ def test_region_queries_agree_on_every_layout(env_with_regions, name, include_bo
 @pytest.mark.parametrize("name", ["reward", "zone"])
 def test_distance_to_region_is_zero_exactly_on_its_bins(env_with_regions, name):
     env = env_with_regions
-    distances = env.distance_to(name, metric="geodesic")
+    distances = env.distance_to(region=name, metric="geodesic")
     np.testing.assert_array_equal(
         np.flatnonzero(distances == 0.0), env.bins_in_region(name)
     )

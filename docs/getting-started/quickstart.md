@@ -151,7 +151,7 @@ same graph powers geodesic distances and shortest paths:
 
 ```python
 center_bin = env.bin_at([[50.0, 50.0]])[0]
-print("Neighbors of the center bin:", env.neighbors(center_bin))
+print("Neighbors of the center bin:", env.neighbors(bins=center_bin))
 ```
 
 **Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds

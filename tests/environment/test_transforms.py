@@ -602,7 +602,7 @@ class TestSubsetIntegration:
 
         # Query neighbors for each bin (should work without errors)
         for bin_id in range(min(10, subset_env.n_bins)):
-            neighbors = subset_env.neighbors(bin_id)
+            neighbors = subset_env.neighbors(bins=bin_id)
             assert isinstance(neighbors, list)
 
             # All neighbor IDs should be valid
@@ -621,7 +621,7 @@ class TestSubsetIntegration:
         # Should be able to compute paths (if connected)
         if nx.is_connected(subset_env.connectivity):
             # path_between expects bin indices (integers), not bin centers
-            path = subset_env.path_between(0, subset_env.n_bins - 1)
+            path = subset_env.path_between(bins=[0, subset_env.n_bins - 1])
             assert isinstance(path, list)
             assert len(path) > 0
 

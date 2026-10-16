@@ -106,10 +106,10 @@ env_3d = Environment.from_samples(data_3d, bin_size=2.0)
 # These all work:
 bins = env_3d.bin_at(points_3d)
 mask = env_3d.contains(points_3d)
-neighbors = env_3d.neighbors(bin_idx)
-path = env_3d.path_between(source_bin, target_bin)
-dist = env_3d.distance_between(points_3d[0], points_3d[1])
-bin_dist = float(env_3d.distance_to([target_bin])[source_bin])
+neighbors = env_3d.neighbors(bins=bin_idx)
+path = env_3d.path_between(bins=[source_bin, target_bin])
+dist = env_3d.distance_between(points=points_3d[:2])
+bin_dist = float(env_3d.distance_to(bins=target_bin)[source_bin])
 ```
 
 ✅ **Connectivity graphs** - Full 3D graph support

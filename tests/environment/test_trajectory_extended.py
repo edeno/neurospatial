@@ -419,10 +419,10 @@ class TestTransitionMatrix:
         # Use bins that are graph-adjacent (neighbors)
         # Get a sequence of bins that are actually connected
         bin_0 = 0
-        neighbors_0 = list(small_2d_env.neighbors(bin_0))
+        neighbors_0 = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors_0) > 0:
             bin_1 = neighbors_0[0]
-            neighbors_1 = list(small_2d_env.neighbors(bin_1))
+            neighbors_1 = list(small_2d_env.neighbors(bins=bin_1))
             if len(neighbors_1) > 0:
                 bin_2 = neighbors_1[0]
                 bins = np.array([bin_0, bin_1, bin_2, bin_0], dtype=np.int32)
@@ -438,7 +438,7 @@ class TestTransitionMatrix:
         """Test unnormalized transition counts."""
         # Find adjacent bins for valid transitions
         bin_0 = 0
-        neighbors = list(small_2d_env.neighbors(bin_0))
+        neighbors = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors) > 0:
             bin_1 = neighbors[0]
             bins = np.array([bin_0, bin_1, bin_0, bin_1, bin_0], dtype=np.int32)
@@ -571,10 +571,10 @@ class TestTemporalBinning:
         # Varying intervals: 1s, 2s, 3s
         # Find 3 distinct adjacent bins (bin_0 -> bin_1 -> bin_2)
         bin_0 = 0
-        neighbors_0 = list(small_2d_env.neighbors(bin_0))
+        neighbors_0 = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors_0) > 0:
             bin_1 = neighbors_0[0]
-            neighbors_1 = list(small_2d_env.neighbors(bin_1))
+            neighbors_1 = list(small_2d_env.neighbors(bins=bin_1))
             # bin_2 must be different from bin_0 (bin_0 is neighbor of bin_1)
             bin_2_candidates = [n for n in neighbors_1 if n != bin_0]
             if len(bin_2_candidates) > 0:

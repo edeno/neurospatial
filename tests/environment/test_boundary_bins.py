@@ -27,8 +27,10 @@ def test_removing_an_interior_grid_bin_exposes_its_orthogonal_neighbors():
     env, center, keep = _with_hole("RegularGrid")
     assert center not in env.boundary_bins
     child_of = np.cumsum(keep) - 1
-    offsets = np.abs(env.bin_centers[env.neighbors(center)] - env.bin_centers[center])
-    orthogonal = np.array(env.neighbors(center))[np.min(offsets, axis=1) < 1e-9]
+    offsets = np.abs(
+        env.bin_centers[env.neighbors(bins=center)] - env.bin_centers[center]
+    )
+    orthogonal = np.array(env.neighbors(bins=center))[np.min(offsets, axis=1) < 1e-9]
     assert len(orthogonal) == 4
     expected = set(child_of[np.setdiff1d(env.boundary_bins, center)]) | set(
         child_of[orthogonal]

@@ -1,7 +1,6 @@
 """Environment is an immutable value: identity equality, no copy, no fitted state."""
 
 import copy
-import warnings
 
 import numpy as np
 import pytest
@@ -78,14 +77,10 @@ class TestBinCountWarningsAndRefusals:
     def test_n_bins_matches_bin_centers(self, env):
         assert env.n_bins == env.bin_centers.shape[0] == 100
 
-    def test_distance_between_warning_points_at_the_caller(self, env):
+    def test_distance_between_points_outside_raise(self, env):
         far = np.array([1e6, 1e6])
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            env.distance_between(far, far)
-        messages = [w for w in caught if "distance_between" in str(w.message)]
-        assert len(messages) == 1
-        assert messages[0].filename == __file__
+        with pytest.raises(ValueError, match="outside the environment"):
+            env.distance_between(points=[far, far])
 
     def test_linearization_refusals_on_non_track_are_type_errors(self, env):
         with pytest.raises(TypeError, match="to_linear"):

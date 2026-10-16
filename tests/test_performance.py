@@ -252,7 +252,7 @@ class TestGraphAlgorithmPerformance:
         # Run multiple times to get stable measurement
         n_iterations = 100
         for _ in range(n_iterations):
-            path = env.path_between(start_bin, end_bin)
+            path = env.path_between(bins=[start_bin, end_bin])
         elapsed = time.perf_counter() - start_time
         avg_time = elapsed / n_iterations
 

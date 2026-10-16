@@ -111,7 +111,7 @@ def test_ordinary_environment_retains_support_sources_and_path_bridges(restore):
         [0, 2, -1, -1],
     )
     np.testing.assert_array_equal(joined.edge_pairs, [[0, 1], [2, 3], [1, 2]])
-    assert joined.path_between(0, 3) == [0, 1, 2, 3]
+    assert joined.path_between(bins=[0, 3]) == [0, 1, 2, 3]
     bridges = joined.get_bridge_attributes()
     assert len(bridges) == 1
     assert bridges.iloc[0]["distance"] == 3.0
@@ -327,7 +327,7 @@ def test_automatic_bridges_do_not_bypass_a_third_grid_component(dims):
         }
     )
     assert not joined.connectivity.has_edge(0, 2)
-    assert joined.path_between(0, 2) == [0, 1, 2]
+    assert joined.path_between(bins=[0, 2]) == [0, 1, 2]
 
 
 @pytest.mark.parametrize("dims", [1, 2, 3])
@@ -350,7 +350,7 @@ def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
     }
     joined = Environment.combine(components)
     assert not joined.connectivity.has_edge(0, 2)
-    assert joined.path_between(0, 2) == [0, 1, 2]
+    assert joined.path_between(bins=[0, 2]) == [0, 1, 2]
 
 
 @pytest.mark.parametrize("angle", [0.0, 0.1, 0.3, 0.37, 0.7])

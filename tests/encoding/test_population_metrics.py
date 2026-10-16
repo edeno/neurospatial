@@ -178,7 +178,7 @@ class TestPopulationCoverage:
         for i in range(n_bins):
             firing_rates[i, i] = 10.0  # Peak at bin i
             # Add some neighbors
-            for j in simple_env.neighbors(i):
+            for j in simple_env.neighbors(bins=i):
                 firing_rates[i, j] = 5.0
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
@@ -194,7 +194,7 @@ class TestPopulationCoverage:
         firing_rates = np.zeros((n_neurons, n_bins))
         for i in range(n_neurons):
             firing_rates[i, i] = 10.0
-            for j in simple_env.neighbors(i):
+            for j in simple_env.neighbors(bins=i):
                 if j < n_bins:
                     firing_rates[i, j] = 5.0
 
@@ -232,7 +232,7 @@ class TestPopulationCoverage:
         # Single neuron with a place field
         firing_rates = np.zeros((1, n_bins))
         firing_rates[0, 0] = 10.0
-        for j in simple_env.neighbors(0):
+        for j in simple_env.neighbors(bins=0):
             firing_rates[0, j] = 5.0
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
@@ -360,7 +360,7 @@ class TestPopulationCoverage:
         for i in range(n_neurons):
             peak = (i * 7) % n_bins
             firing_rates[i, peak] = 10.0
-            for j in simple_env.neighbors(peak):
+            for j in simple_env.neighbors(bins=peak):
                 firing_rates[i, j] = 5.0
         # Add a little noise so detection is non-trivial.
         firing_rates += rng.random((n_neurons, n_bins)) * 0.1

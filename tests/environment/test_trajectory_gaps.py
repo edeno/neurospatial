@@ -389,7 +389,7 @@ class TestTransitionMatrixNormalization:
         """
         # Create trajectory with repeated transitions
         bin_0 = 0
-        neighbors = list(small_2d_env.neighbors(bin_0))
+        neighbors = list(small_2d_env.neighbors(bins=bin_0))
 
         if len(neighbors) > 0:
             bin_1 = neighbors[0]
@@ -801,7 +801,7 @@ class TestRayGridIntersection:
         bins_visited = np.where(occ_linear > 0)[0]
         # Check that visited bins form a path (each bin connected to next)
         for i in range(len(bins_visited) - 1):
-            neighbors = list(env.neighbors(bins_visited[i]))
+            neighbors = list(env.neighbors(bins=bins_visited[i]))
             assert bins_visited[i + 1] in neighbors, "Path should be connected"
 
 

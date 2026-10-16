@@ -93,12 +93,12 @@ class TestEnvironmentFromGraph:
 
     def test_neighbors(self, graph_env: Environment):
         """Test getting neighbors of a bin."""
-        neighbors_of_0 = graph_env.neighbors(0)  # Start of West arm segment
+        neighbors_of_0 = graph_env.neighbors(bins=0)  # Start of West arm segment
         assert isinstance(neighbors_of_0, list)
         assert set(neighbors_of_0) == {1}  # Only connected to next bin on segment
 
         idx_on_west_arm = graph_env.bin_at(np.array([[-1.0, 0.0]]))[0]  # Bin 2
-        neighbors_on_west = graph_env.neighbors(idx_on_west_arm)
+        neighbors_on_west = graph_env.neighbors(bins=idx_on_west_arm)
         assert isinstance(neighbors_on_west, list)
         assert len(neighbors_on_west) > 0
         if 0 < idx_on_west_arm < 3:
@@ -107,7 +107,7 @@ class TestEnvironmentFromGraph:
         # Bin 3 is the end of the West arm segment (4,0)
         # Based on current graph_utils, it connects to bin 2 (intra-segment)
         # and to bin 4 (start of North arm, due to (3,4) inter-segment connection)
-        neighbors_of_3 = graph_env.neighbors(3)
+        neighbors_of_3 = graph_env.neighbors(bins=3)
         assert isinstance(neighbors_of_3, list)
         expected_neighbors_of_3 = {2, 4}  # Corrected expectation
         assert set(neighbors_of_3) == expected_neighbors_of_3
@@ -117,7 +117,7 @@ class TestEnvironmentFromGraph:
         p1 = np.array([[-1.5, 0.0]])
         p2 = np.array([[0.0, 1.5]])
 
-        manifold_dist = graph_env.distance_between(p1, p2)
+        manifold_dist = graph_env.distance_between(points=np.vstack([p1, p2]))
 
         bin_p1 = graph_env.bin_at(p1)[0]
         bin_p2 = graph_env.bin_at(p2)[0]
@@ -135,7 +135,7 @@ class TestEnvironmentFromGraph:
         bin_idx_west = graph_env.bin_at(np.array([[-1.5, 0.0]]))[0]
         bin_idx_north = graph_env.bin_at(np.array([[0.0, 1.5]]))[0]
 
-        path = graph_env.path_between(bin_idx_west, bin_idx_north)
+        path = graph_env.path_between(bins=[bin_idx_west, bin_idx_north])
         assert isinstance(path, list)
         assert len(path) > 1
         assert path[0] == bin_idx_west
@@ -143,11 +143,11 @@ class TestEnvironmentFromGraph:
         for bin_idx_path in path:  # Renamed variable to avoid conflict
             assert 0 <= bin_idx_path < 16
 
-        path_to_self = graph_env.path_between(bin_idx_west, bin_idx_west)
+        path_to_self = graph_env.path_between(bins=[bin_idx_west, bin_idx_west])
         assert path_to_self == [bin_idx_west]
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            graph_env.path_between(0, 100)
+            graph_env.path_between(bins=[0, 100])
 
     def test_linearized_coordinates(self, graph_env: Environment):
         """Test linearization and mapping back to N-D."""
@@ -709,7 +709,7 @@ class TestHexagonalLayout:
         # A qualitative check: find a bin, get its neighbors.
         # Neighbors should be distinct and their centers should be approx hexagon_width away.
         some_bin_idx = env_hexagonal.bin_centers.shape[0] // 2  # A somewhat central bin
-        neighbors = env_hexagonal.neighbors(some_bin_idx)
+        neighbors = env_hexagonal.neighbors(bins=some_bin_idx)
         assert isinstance(neighbors, list)
         if len(neighbors) > 0:
             assert len(set(neighbors)) == len(neighbors)  # Unique neighbors
@@ -1079,7 +1079,7 @@ class TestEnvironment3D:
 
         # Test an interior bin
         interior_bin = interior_bins[0]
-        neighbors = simple_3d_env.neighbors(interior_bin)
+        neighbors = simple_3d_env.neighbors(bins=interior_bin)
 
         # Interior bin with diagonal connectivity should have > 6 neighbors
         assert len(neighbors) > 6, (
@@ -1092,12 +1092,12 @@ class TestEnvironment3D:
         boundary_bins = simple_3d_env.boundary_bins
         if len(boundary_bins) > 0:
             boundary_bin = boundary_bins[0]
-            boundary_neighbors = simple_3d_env.neighbors(boundary_bin)
+            boundary_neighbors = simple_3d_env.neighbors(bins=boundary_bin)
             # Boundary should have fewer neighbors than max
             assert len(boundary_neighbors) < 26
 
         # Verify all neighbors are valid bin indices
-        all_neighbors = simple_3d_env.neighbors(interior_bin)
+        all_neighbors = simple_3d_env.neighbors(bins=interior_bin)
         assert all(0 <= n < simple_3d_env.n_bins for n in all_neighbors)
 
     def test_distance_between_3d(self, simple_3d_env: Environment):
@@ -1111,7 +1111,7 @@ class TestEnvironment3D:
         p2 = simple_3d_env.bin_centers[-1]  # Last bin (likely far from first)
 
         # Calculate manifold distance
-        manifold_dist = simple_3d_env.distance_between(p1, p2)
+        manifold_dist = simple_3d_env.distance_between(points=[p1, p2])
         assert manifold_dist > 0
         assert np.isfinite(manifold_dist)
 
@@ -1121,13 +1121,13 @@ class TestEnvironment3D:
         assert manifold_dist >= euclidean_dist * 0.9  # Allow some tolerance
 
         # Distance from a point to itself should be 0
-        dist_self = simple_3d_env.distance_between(p1, p1)
+        dist_self = simple_3d_env.distance_between(points=[p1, p1])
         assert np.isclose(dist_self, 0.0, atol=1e-6)
 
         # Test multiple point pairs
         p3 = simple_3d_env.bin_centers[1]  # Second bin
-        dist_p1_p3 = simple_3d_env.distance_between(p1, p3)
-        dist_p3_p2 = simple_3d_env.distance_between(p3, p2)
+        dist_p1_p3 = simple_3d_env.distance_between(points=[p1, p3])
+        dist_p3_p2 = simple_3d_env.distance_between(points=[p3, p2])
 
         # Triangle inequality: dist(p1, p3) + dist(p3, p2) >= dist(p1, p2)
         # (with some tolerance for floating point)

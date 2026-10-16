@@ -154,7 +154,7 @@ class TestSmoothRateMapDiffusionKDE:
         assert peak_idx == center_idx
 
         # Value should spread to neighbors (non-zero in adjacent bins)
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         for neighbor_idx in neighbors:
             assert result[neighbor_idx] > 0
 
@@ -312,7 +312,7 @@ class TestSmoothRateMapGaussianKDE:
         assert peak_idx == center_idx
 
         # Value should spread to neighbors
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         for neighbor_idx in neighbors:
             assert result[neighbor_idx] > 0
 
@@ -406,7 +406,7 @@ class TestSmoothRateMapBinned:
         center_idx = simple_env.n_bins // 2
 
         # Neighbors should have non-zero values
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         assert any(result[n] > 0 for n in neighbors)
 
     def test_handles_nan_values(self, simple_env, spike_counts_center):

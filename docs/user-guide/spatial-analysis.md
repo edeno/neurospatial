@@ -289,7 +289,7 @@ bins = result.bins
 starts = result.run_starts
 spatial_jumps = []
 for i in range(len(bins) - 1):
-    dist = env.distance_between(env.bin_centers[bins[i]], env.bin_centers[bins[i + 1]])
+    dist = env.distance_between(bins=[bins[i], bins[i + 1]])
     if dist > 20.0:  # cm
         jump_time = times[starts[i + 1]]
         spatial_jumps.append((jump_time, dist))
@@ -568,8 +568,9 @@ Find all bins reachable from a source bin via the connectivity graph.
 ```python
 def reachable_from(
     self,
-    source_bin: int | ArrayLike,
     *,
+    bins: int | None = None,
+    points: ArrayLike | None = None,
     radius: int | float | None = None,
     metric: Literal["hops", "geodesic"] = "hops",
 ) -> NDArray[np.bool_]:
@@ -578,8 +579,11 @@ def reachable_from(
 
     Parameters
     ----------
-    source_bin : int or array-like
-        Starting bin index, or a coordinate point mapped to its bin.
+    bins : int, optional
+        Starting bin index.
+    points : array-like, shape (1, n_dims), optional
+        Starting coordinate, mapped to the bin that contains it. Give exactly
+        one of ``bins`` and ``points``.
     radius : int, float, or None, optional
         Maximum number of edges (``metric="hops"``) or graph distance in
         physical units (``metric="geodesic"``). If None, returns every bin
@@ -599,12 +603,12 @@ def reachable_from(
 ```python
 # Find all bins reachable from center
 center_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
-reachable = env.reachable_from(center_bin)
+reachable = env.reachable_from(bins=center_bin)
 
 print(f"Bins reachable from center: {reachable.sum()} / {env.n_bins}")
 
 # Find bins within 20 cm geodesic distance
-nearby = env.reachable_from(center_bin, radius=20.0, metric="geodesic")
+nearby = env.reachable_from(bins=center_bin, radius=20.0, metric="geodesic")
 print(f"Bins within 20 cm: {nearby.sum()}")
 
 # Detect unreachable regions
@@ -1041,8 +1045,10 @@ Compute geodesic or Euclidean distance from each bin to target bins or regions.
 ```python
 def distance_to(
     self,
-    targets: Sequence[int] | str,
     *,
+    bins: int | Sequence[int] | None = None,
+    points: ArrayLike | None = None,
+    region: str | None = None,
     metric: Literal["euclidean", "geodesic"] = "geodesic",
 ) -> NDArray[np.float64]:
     """
@@ -1050,10 +1056,14 @@ def distance_to(
 
     Parameters
     ----------
-    targets : sequence of int, or str
-        Target specification:
-        - Sequence of bin indices: Distance to closest target bin
-        - String: Region name - distance to closest bin in region
+    bins : int or sequence of int, optional
+        Target bin indices: distance to the closest one.
+    points : array-like, shape (n_points, n_dims), optional
+        Target coordinates, mapped to the bins that contain them.
+    region : str, optional
+        Region name: distance to the closest bin the region covers (the bin
+        containing a point region, or the bins whose centers lie inside a
+        polygon). Give exactly one of ``bins``, ``points`` and ``region``.
     metric : {"euclidean", "geodesic"}, optional
         Distance metric:
         - "geodesic": Follows connectivity graph (path distance, respects barriers)
@@ -1075,24 +1085,24 @@ from neurospatial import Regions
 
 # Distance to specific bin indices
 goal_bins = [42, 87, 103]
-dist_to_goals = env.distance_to(goal_bins, metric='geodesic')
+dist_to_goals = env.distance_to(bins=goal_bins, metric='geodesic')
 
 # Distance to named region (requires regions defined)
 region_builder = Regions(env.regions.values())
 region_builder.add('goal_zone', polygon=goal_polygon)
 env = env.with_regions(region_builder)
-dist_to_goal_region = env.distance_to('goal_zone', metric='geodesic')
+dist_to_goal_region = env.distance_to(region='goal_zone', metric='geodesic')
 
 # Euclidean vs geodesic comparison
-dist_euclidean = env.distance_to([goal_bin], metric='euclidean')
-dist_geodesic = env.distance_to([goal_bin], metric='geodesic')
+dist_euclidean = env.distance_to(bins=goal_bin, metric='euclidean')
+dist_geodesic = env.distance_to(bins=goal_bin, metric='geodesic')
 
 ratio = dist_geodesic / dist_euclidean
 print(f"Mean geodesic/euclidean ratio: {ratio[np.isfinite(ratio)].mean():.2f}")
 
 # Multiple target bins (distance to nearest)
 reward_bins = [10, 50, 90]
-dist_to_nearest_reward = env.distance_to(reward_bins, metric='geodesic')
+dist_to_nearest_reward = env.distance_to(bins=reward_bins, metric='geodesic')
 
 # Visualize distance field
 import matplotlib.pyplot as plt
@@ -1148,8 +1158,9 @@ Get bins organized by graph distance (hop count) from a center bin using BFS lay
 ```python
 def rings(
     self,
-    center_bin: int,
     *,
+    bins: int | None = None,
+    points: ArrayLike | None = None,
     hops: int,
 ) -> list[NDArray[np.int32]]:
     """
@@ -1160,8 +1171,10 @@ def rings(
 
     Parameters
     ----------
-    center_bin : int
-        Starting bin index.
+    bins : int, optional
+        Center bin index.
+    points : array-like, shape (1, n_dims), optional
+        Center coordinate, mapped to the bin that contains it.
     hops : int
         Maximum number of hops (BFS layers) to compute.
 
@@ -1187,7 +1200,7 @@ def rings(
 ```python
 # Get bins by hop distance from center
 center_bin = 42
-hop_layers = env.rings(center_bin, hops=5)
+hop_layers = env.rings(bins=center_bin, hops=5)
 
 print(f"Center bin: {center_bin}")
 for k, layer_bins in enumerate(hop_layers):
@@ -1251,7 +1264,7 @@ plt.show()
 ```python
 # Count total bins within k hops
 center_bin = 50
-layers = env.rings(center_bin, hops=3)
+layers = env.rings(bins=center_bin, hops=3)
 bins_within_3_hops = np.concatenate(layers[:4])  # layers 0-3
 print(f"Bins within 3 hops: {len(bins_within_3_hops)}")
 
@@ -1459,11 +1472,11 @@ env_region = env.subset(region_names=[region_name])
 
 ```python
 # GOOD: Vectorized operations
-distances = env.distance_to([target_bin])
+distances = env.distance_to(bins=target_bin)
 
 # AVOID: Loops when vectorization possible
-# distances = np.array([env.distance_between(center, env.bin_centers[target_bin])
-#                       for center in env.bin_centers])
+# distances = np.array([env.distance_between(bins=[b, target_bin])
+#                       for b in range(env.n_bins)])
 ```
 
 ### Common Pitfalls
@@ -1495,8 +1508,8 @@ mean_rate = np.nanmean(firing_rate)
 
 ```python
 # These can differ greatly in complex environments!
-dist_geodesic = env.distance_to(goal, metric='geodesic')  # Through maze
-dist_euclidean = env.distance_to(goal, metric='euclidean')  # Straight line
+dist_geodesic = env.distance_to(bins=goal, metric='geodesic')  # Through maze
+dist_euclidean = env.distance_to(bins=goal, metric='euclidean')  # Straight line
 
 # Always specify which you're using
 ```

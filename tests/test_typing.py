@@ -50,7 +50,7 @@ def test_environmentlike_is_narrow_protocol(
     # surface (bin_centers / connectivity / neighbors), and it agrees with the
     # runtime ``is_environment_like`` duck-check.
     def _accepts_env_like(e: EnvironmentLike) -> tuple[object, object, object]:
-        return e.bin_centers, e.connectivity, e.neighbors(0)
+        return e.bin_centers, e.connectivity, e.neighbors(bins=0)
 
     _accepts_env_like(env)
     _accepts_env_like(polar_env)

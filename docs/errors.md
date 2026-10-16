@@ -12,12 +12,12 @@ Import `NeurospatialError` from the package root to catch library-specific excep
 from neurospatial import NeurospatialError
 
 try:
-    distances = env.distance_to("hom")
+    distances = env.distance_to(region="hom")
 except NeurospatialError as exc:
     print(exc)
 ```
 
-If the environment contains a region named `home`, the error suggests `Fix: pass targets='home'`. If the region is missing, build a replacement collection:
+If the environment contains a region named `home`, the error suggests `Fix: pass region='home'`. If the region is missing, build a replacement collection:
 
 ```python
 from neurospatial import Regions
