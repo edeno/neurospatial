@@ -105,12 +105,12 @@ def cartesian_only(
 
 
 def cartesian_only_members(cls: type) -> Mapping[str, str]:
-    """Map each ``@cartesian_only`` member of ``cls`` to its refusal reason.
+    """Map each ``@cartesian_only`` member defined on ``cls`` to its refusal reason.
 
     Parameters
     ----------
     cls : type
-        The class whose members, including inherited ones, are collected.
+        The class whose own members are read; inherited members are not.
 
     Returns
     -------
@@ -119,14 +119,10 @@ def cartesian_only_members(cls: type) -> Mapping[str, str]:
         ``GRID_REASON``.
     """
     members: dict[str, str] = {}
-    for klass in reversed(cls.__mro__):
-        for name, member in vars(klass).items():
-            function = member.fget if isinstance(member, property) else member
-            reason = _REASONS.get(function) if callable(function) else None
-            if reason is not None:
-                members[name] = reason
-            else:
-                members.pop(name, None)
+    for name, member in vars(cls).items():
+        function = member.fget if isinstance(member, property) else member
+        if callable(function) and function in _REASONS:
+            members[name] = _REASONS[function]
     return MappingProxyType(members)
 
 
