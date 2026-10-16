@@ -9,8 +9,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import HexagonShapes
 from neurospatial.geometry._locators import HexLocator
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
@@ -207,11 +209,32 @@ class HexagonalLayout:
         )
 
     def locator(self) -> HexLocator:
-        """Return the owned locator, rebuilding it for older saved layouts."""
+        """Return the owned locator, building it on first use."""
         if self._locator is None:
             self._build_locator()
         assert self._locator is not None
         return self._locator
+
+    def binning(self) -> Binning:
+        """Return owned hexagons, lookup and lazy hexagon-side faces.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        return assemble_binning(
+            self.connectivity,
+            kind=self._layout_type_tag,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="hex",
+            shapes=self.bin_shapes(),
+        )
 
     @property
     def is_linearized_track(self) -> bool:

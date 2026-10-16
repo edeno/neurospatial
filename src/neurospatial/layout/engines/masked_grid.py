@@ -6,12 +6,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.regular_grid import (
-    _create_regular_grid_connectivity_graph,
-)
 from neurospatial.layout.helpers.utils import check_grid_size_safety, get_centers
 from neurospatial.layout.mixins import _GridMixin
-from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class MaskedGridLayout(_GridMixin):
@@ -177,17 +173,6 @@ class MaskedGridLayout(_GridMixin):
         self.dimension_ranges = tuple(
             (edge_dim[0], edge_dim[-1]) for edge_dim in self.grid_edges
         )
-        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
-
-        self.connectivity = _create_regular_grid_connectivity_graph(
-            full_grid_bin_centers=full_grid_bin_centers,
-            active_mask_nd=self.active_mask,
-            grid_shape=self.grid_shape,
-            connect_diagonal=connect_diagonal_neighbors,
+        self._assign_cells(
+            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(
-            self.connectivity, n_dims=len(self.dimension_ranges)
-        )
-        self._build_locator(connect_diagonal=connect_diagonal_neighbors)

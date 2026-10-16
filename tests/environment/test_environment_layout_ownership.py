@@ -7,6 +7,7 @@ import pickle
 from dataclasses import replace
 from types import SimpleNamespace
 
+import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -17,7 +18,16 @@ from neurospatial.geometry._arena import _TransformedArena
 from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._ownership import own_arena
-from neurospatial.layout import RegularGridLayout, create_layout
+from neurospatial.layout import (
+    GraphLayout,
+    HexagonalLayout,
+    ImageMaskLayout,
+    MaskedGridLayout,
+    RegularGridLayout,
+    ShapelyPolygonLayout,
+    TriangularMeshLayout,
+    create_layout,
+)
 from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
@@ -133,6 +143,85 @@ def test_polar_provenance_cannot_change_published_faces():
     source._build_params_used["circular_angle"] = False
     env._layout_params_used["circular_angle"] = False
     np.testing.assert_array_equal(env._binning.faces.build().A, expected)
+
+
+def test_polar_faces_come_from_the_layout_not_its_parameters():
+    """Editing recorded parameters before publication cannot change the seam.
+
+    With two angular bins, a circular ring's two sectors share both of their
+    radial sides, so that face has twice the radial width.
+    """
+    source = _PolarGridLayout()
+    source.build(
+        active_mask=np.ones((2, 2), dtype=bool),
+        grid_edges=(np.arange(1.0, 4.0), np.linspace(-np.pi, np.pi, 3)),
+        circular_angle=True,
+        connect_diagonal_neighbors=False,
+    )
+    source._build_params_used["circular_angle"] = False
+    env = Environment._from_built_layout(
+        source, _coordinates=EgocentricPolarSystem(True)
+    )
+    faces = env._binning.faces.build()
+    radius = env.bin_centers[env._binning.bins.pairs, 0]
+    same_ring = radius[:, 0] == radius[:, 1]
+    assert np.count_nonzero(same_ring) == 2
+    np.testing.assert_array_equal(faces.A[same_ring], [2.0, 2.0])
+
+
+def test_track_faces_come_from_the_layout_not_its_parameters():
+    """Junction flux distances use the built track, not the recorded graph."""
+    graph = nx.Graph()
+    for node, pos in enumerate([(0.0, 0.0), (6.0, 0.0), (6.0, 6.0)]):
+        graph.add_node(node, pos=pos)
+    graph.add_edges_from([(0, 1), (1, 2)], distance=6.0)
+
+    def build():
+        layout = GraphLayout()
+        layout.build(
+            graph_definition=graph,
+            edge_order=[(0, 1), (1, 2)],
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+        return layout
+
+    reference = Environment._from_built_layout(build())
+    expected = reference._binning.faces.build()
+    source = build()
+    moved = nx.Graph()
+    moved.add_node(0, pos=(0.0, 0.0))
+    moved.add_node(1, pos=(100.0, 100.0))
+    moved.add_node(2, pos=(6.0, 6.0))
+    moved.add_edges_from([(0, 1), (1, 2)], distance=6.0)
+    source._build_params_used["graph_definition"] = moved
+    actual = Environment._from_built_layout(source)._binning.faces.build()
+    for first, second in zip(actual, expected, strict=True):
+        np.testing.assert_array_equal(first, second)
+    # The bend joins the last bin of one segment to the first of the next:
+    # its flux distance runs through the junction at (6, 0).
+    bend = int(np.argmax(actual.distance - reference._binning.bins.pair_distances))
+    np.testing.assert_allclose(actual.distance[bend], 2.0)
+
+
+@pytest.mark.parametrize(
+    "layout_type",
+    [
+        RegularGridLayout,
+        MaskedGridLayout,
+        ImageMaskLayout,
+        ShapelyPolygonLayout,
+        HexagonalLayout,
+        GraphLayout,
+        TriangularMeshLayout,
+        _PolarGridLayout,
+    ],
+)
+def test_unbuilt_layout_refuses_binning(layout_type):
+    from neurospatial._exceptions import LayoutNotBuiltError
+
+    with pytest.raises(LayoutNotBuiltError, match="not built"):
+        layout_type().binning()
 
 
 def test_custom_layout_refuses_before_opaque_deepcopy():

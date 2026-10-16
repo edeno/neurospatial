@@ -8,6 +8,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._binning import Binning
+
 T = TypeVar("T")
 
 
@@ -87,9 +89,12 @@ class LayoutEngine(Protocol):
     space into a set of bins or elements and constructing a graph representation
     of their connectivity.
 
-    Diffusion, gradients and divergence need supported native face data,
-    captured by the construction adapter into ``Binning.faces``. Point
-    mapping and visualization do not require numerical faces.
+    A built engine publishes its geometry through ``binning()``: a
+    ``Binning`` holding owned bins in connectivity edge order, point lookup,
+    finite-volume faces and the optional grid, track, shape and outline
+    components, all derived from the engine's own state. Environments are
+    constructed from that record; diffusion, gradients and divergence use its
+    faces. Custom engines implement the same method.
 
     Attributes
     ----------
@@ -146,6 +151,7 @@ class LayoutEngine(Protocol):
         - "hexagonal": Hexagonal tessellation
         - "mesh": Point-based mesh (TriangularMeshLayout)
         - "graph": 1D linearized path (GraphLayout)
+        - "polar": Egocentric distance-by-angle sectors
         - "other": Unknown or custom layouts
     is_grid_compatible : bool
         True if the layout can be rendered as a 2D image (has 2D grid_shape
@@ -187,7 +193,8 @@ class LayoutEngine(Protocol):
         Returns
         -------
         str
-            One of: "grid", "mask", "polygon", "hexagonal", "mesh", "graph", "other"
+            One of: "grid", "mask", "polygon", "hexagonal", "mesh", "graph",
+            "polar", "other"
 
         """
         ...
@@ -217,6 +224,28 @@ class LayoutEngine(Protocol):
         `connectivity`, etc.) based on the provided keyword arguments.
         The specific arguments required will vary depending on the concrete
         implementation of the layout engine.
+        """
+        ...
+
+    def binning(self) -> Binning:
+        """Return the built layout's owned geometry record.
+
+        Bins follow node order of ``connectivity`` and neighbor pairs follow
+        its edge iteration order, with each edge's ``"distance"`` as the
+        navigation distance. Every component must be a built-in geometry
+        record (no callbacks to the layout), so the environment can own it.
+
+        Returns
+        -------
+        Binning
+            Bins, point lookup, finite-volume faces (or the reason they are
+            missing) and the layout's grid, track, shape and outline
+            components.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
         """
         ...
 

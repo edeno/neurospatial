@@ -437,6 +437,28 @@ def test_layout_engine_protocol_adherence(
             )
             assert "edge_id" in edge_data  # Usually present
 
+    # 4. The owned binning snapshots this layout's own bins and connectivity.
+    binning = layout.binning()
+    edges = list(layout.connectivity.edges(data=True))
+    assert binning.kind == layout._layout_type_tag
+    np.testing.assert_array_equal(binning.bins.centers, layout.bin_centers)
+    np.testing.assert_array_equal(binning.bins.sizes, layout.bin_sizes())
+    np.testing.assert_array_equal(
+        binning.bins.pairs, np.array([(u, v) for u, v, _ in edges]).reshape(-1, 2)
+    )
+    np.testing.assert_array_equal(
+        binning.bins.pair_distances, [data["distance"] for _, _, data in edges]
+    )
+    assert binning.bins.measure_dim == (
+        1 if layout.is_linearized_track else layout.bin_centers.shape[1]
+    )
+    np.testing.assert_array_equal(
+        binning.locator.locate(layout.bin_centers), np.arange(len(layout.bin_centers))
+    )
+    assert binning.faces.available
+    np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
+    assert (binning.linearization is not None) == layout.is_linearized_track
+
 
 def test_normalize_layout_name_consistency():
     """Ensure environment.factories._normalize_layout_name matches layout.factories._normalize_name.

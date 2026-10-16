@@ -12,8 +12,10 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import Outline, TriangleShapes
 from neurospatial.geometry._locators import MeshLocator
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
@@ -219,11 +221,39 @@ class TriangularMeshLayout:
         )
 
     def locator(self) -> MeshLocator:
-        """Return the owned locator, rebuilding it for older saved layouts."""
+        """Return the owned locator, building it on first use."""
         if self._locator is None:
             self._build_locator()
         assert self._locator is not None
         return self._locator
+
+    def binning(self) -> Binning:
+        """Return owned triangles, lookup and lazy shared-edge faces.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        tri = self._full_delaunay_tri
+        if tri is None or self._active_original_simplex_indices is None:
+            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        return assemble_binning(
+            self.connectivity,
+            kind=self._layout_type_tag,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="mesh",
+            face_arrays=(
+                tri.points,
+                tri.simplices,
+                np.asarray(self._active_original_simplex_indices),
+            ),
+            shapes=self.bin_shapes(),
+            outline=self.outline(),
+        )
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map each 2D point to an active triangle index, or -1 if outside.

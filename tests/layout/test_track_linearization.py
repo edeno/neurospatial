@@ -141,21 +141,6 @@ def test_track_linearization_is_identity_hashed_and_read_only(
     )
 
 
-def test_legacy_track_layout_rebuilds_missing_component(
-    graph_layout_with_gap, locator_parity
-):
-    """Layouts saved before the component existed can recreate their projection."""
-    layout = graph_layout_with_gap
-    original = layout.linearization()
-    del layout._linearization
-    restored = layout.linearization()
-    assert restored is not original
-    assert restored is layout.linearization()
-    _assert_previous_projection(
-        restored, layout, "gapped_track/projection", locator_parity
-    )
-
-
 @pytest.mark.parametrize(
     "restore",
     [lambda x: x, copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))],

@@ -6,6 +6,9 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry._binning import Binning
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
 
@@ -17,7 +20,20 @@ class _PolarGridLayout(MaskedGridLayout):
     shared faces are the grid's ``Δr · Δθ`` measures scaled by radius, so
     diffusion and finite-volume operators read physical sector geometry from
     the layout.
+
+    Attributes
+    ----------
+    circular_angle : bool
+        Whether the first and last angular bins of each ring are joined,
+        set by ``build()``.
     """
+
+    circular_angle: bool
+
+    def __init__(self) -> None:
+        """Initialize an unbuilt polar grid."""
+        super().__init__()
+        self.circular_angle = False
 
     def build(
         self,
@@ -57,8 +73,9 @@ class _PolarGridLayout(MaskedGridLayout):
         # A rebuild changes active-bin numbering; both seams and point lookup
         # must derive their inverse mapping from the new mask.
         self._active_mask_inverse_map = None
-        # The masked-grid build captures the shared parameters; retain the
-        # polar-specific option alongside them for serialization and rebuilding.
+        self.circular_angle = bool(circular_angle)
+        # The masked-grid build captures the shared parameters; record the
+        # polar-specific option alongside them as provenance.
         self._build_params_used["circular_angle"] = circular_angle
         assert self.connectivity is not None
         _fix_polar_edge_geometry(self.connectivity)
@@ -93,6 +110,35 @@ class _PolarGridLayout(MaskedGridLayout):
         """
         return super().bin_sizes() * self.bin_centers[:, 0]
 
+    def binning(self) -> Binning:
+        """Return owned sectors, lookup and lazy polar faces.
+
+        Faces scale radial interfaces by their arc radius and join the angular
+        seam when the grid is circular. Face directions and a Cartesian
+        re-binning specification do not apply to ``(distance, angle)`` cells.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self.connectivity is None or self.grid_shape is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        return assemble_binning(
+            self.connectivity,
+            kind=self._layout_type_tag,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="polar",
+            face_arrays=(self._axis_widths(),),
+            n_angle=self.grid_shape[1],
+            circular=self.circular_angle,
+            face_normals=False,
+            rectilinear=self.rectilinear_grid(),
+        )
+
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
         """Grid faces with each radial face lengthened to its arc ``r_face · Δθ``.
 
@@ -111,7 +157,7 @@ class _PolarGridLayout(MaskedGridLayout):
             self.bin_sizes(),
             self._axis_widths(),
             self.grid_shape[1],
-            bool(self._build_params_used["circular_angle"]),
+            self.circular_angle,
         )
 
 

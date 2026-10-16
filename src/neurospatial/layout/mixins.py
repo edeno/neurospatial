@@ -6,10 +6,16 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._locators import NearestBinLocator, RectilinearLocator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_grid
+from neurospatial.layout.helpers.regular_grid import (
+    _create_regular_grid_connectivity_graph,
+)
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +169,65 @@ class _GridMixin:
             )
 
     def locator(self) -> RectilinearLocator:
-        """Return the owned locator, rebuilding it for older saved layouts."""
+        """Return the owned locator, building it on first use."""
         if self._locator is None:
             self._build_locator()
         assert self._locator is not None
         return self._locator
+
+    def _assign_cells(
+        self, full_grid_bin_centers: NDArray[np.float64], *, connect_diagonal: bool
+    ) -> None:
+        """Keep the active cells, connect them and snapshot lookup and grid choices.
+
+        Every Cartesian grid engine finishes ``build()`` here once it has set
+        ``grid_edges``, ``grid_shape`` and ``active_mask``.
+
+        Parameters
+        ----------
+        full_grid_bin_centers : ndarray of float64, shape (n_cells, n_dims)
+            Centers of every grid cell, active or not, in flat grid order.
+        connect_diagonal : bool
+            Whether cells that share only a corner are neighbors. Recorded in
+            the grid's binning specification even when no such pair is active.
+        """
+        assert self.active_mask is not None and self.grid_shape is not None
+        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
+        self.connectivity = _create_regular_grid_connectivity_graph(
+            full_grid_bin_centers=full_grid_bin_centers,
+            active_mask_nd=self.active_mask,
+            grid_shape=self.grid_shape,
+            connect_diagonal=connect_diagonal,
+        )
+        validate_connectivity_graph(self.connectivity, n_dims=len(self.grid_shape))
+        self._build_locator(connect_diagonal=connect_diagonal)
+
+    def binning(self) -> Binning:
+        """Return owned bins, lookup, lazy grid faces and grid components.
+
+        Faces use one width per axis. Face directions come from the grid
+        cells, and the binning specification records the grid's anchor and
+        diagonal-neighbor choice for later re-binning.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self.connectivity is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        return assemble_binning(
+            self.connectivity,
+            kind=self._layout_type_tag,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="grid",
+            face_arrays=(self._axis_widths(),),
+            rectilinear=self.rectilinear_grid(),
+            grid_spec=self._grid_spec,
+        )
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-D points to active bin indices based on grid structure.

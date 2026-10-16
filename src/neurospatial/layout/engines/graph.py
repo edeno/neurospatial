@@ -8,7 +8,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import TrackLinearization
+from neurospatial.geometry._binning import Binning, TrackLinearization
+from neurospatial.geometry._face_builders import track_geometry, track_junctions
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_track, plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
@@ -291,20 +293,48 @@ class GraphLayout(_KDTreeMixin):
         return self.linearization().linear_to_nd(linear_coordinates)
 
     def linearization(self) -> TrackLinearization:
-        """Return owned track geometry, restoring caches for older saved layouts."""
-        linearization = getattr(self, "_linearization", None)
-        if linearization is None:
-            if self.grid_edges is None or self.active_mask is None:
-                raise LayoutNotBuiltError(type(self).__name__, "grid_edges")
-            linearization = TrackLinearization(
-                self._build_params_used["graph_definition"],
-                self._build_params_used["edge_order"],
-                self._build_params_used["edge_spacing"],
-                self.grid_edges,
-                self.active_mask,
-            )
-            self._linearization = linearization
-        return linearization
+        """Return the owned track graph and linear coordinate system.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self._linearization is None:
+            raise LayoutNotBuiltError(type(self).__name__, "linearization")
+        return self._linearization
+
+    def binning(self) -> Binning:
+        """Return owned track bins, lookup, linearization and lazy track faces.
+
+        Faces have unit cross-section. A connection between bins on different
+        track segments uses the along-track distance through their shared
+        junction node as its flux distance.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        track = self.linearization()
+        return assemble_binning(
+            self.connectivity,
+            kind=self._layout_type_tag,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=1,
+            locator=self.locator(),
+            faces="track",
+            face_arrays=(
+                track_junctions(
+                    self.connectivity, track.graph, self.bin_centers.shape[1]
+                ),
+            ),
+            face_normals=False,
+            linearization=track,
+        )
 
     def linear_point_to_bin_ind(
         self,
@@ -402,12 +432,8 @@ class GraphLayout(_KDTreeMixin):
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.geometry._face_builders import track_geometry, track_junctions
-
         junctions = track_junctions(
-            self.connectivity,
-            self._build_params_used["graph_definition"],
-            self.bin_centers.shape[1],
+            self.connectivity, self.linearization().graph, self.bin_centers.shape[1]
         )
         return track_geometry(
             self.connectivity, self.bin_centers, self.bin_sizes(), junctions

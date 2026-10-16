@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import matplotlib
@@ -9,16 +10,13 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import Outline
 from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.regular_grid import (
-    _create_regular_grid,
-    _create_regular_grid_connectivity_graph,
-)
+from neurospatial.layout.helpers.regular_grid import _create_regular_grid
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
-from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class ShapelyPolygonLayout(_GridMixin):
@@ -133,17 +131,9 @@ class ShapelyPolygonLayout(_GridMixin):
         )
         self.active_mask = shapely_mask_flat.reshape(self.grid_shape)
 
-        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
-        self.connectivity = _create_regular_grid_connectivity_graph(
-            full_grid_bin_centers=full_grid_bin_centers,
-            active_mask_nd=self.active_mask,
-            grid_shape=self.grid_shape,
-            connect_diagonal=connect_diagonal_neighbors,
+        self._assign_cells(
+            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=2)
-        self._build_locator(connect_diagonal=connect_diagonal_neighbors)
 
     def plot(
         self,
@@ -225,6 +215,10 @@ class ShapelyPolygonLayout(_GridMixin):
             node_size=node_size,
             node_color=node_color,
         )
+
+    def binning(self) -> Binning:
+        """Return the grid's owned binning, with the polygon as its outline."""
+        return replace(super().binning(), outline=self.outline())
 
     def outline(self) -> Outline:
         """Return the defining polygon, including any interior rings."""
