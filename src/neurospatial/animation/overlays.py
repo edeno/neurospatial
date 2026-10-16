@@ -3555,7 +3555,7 @@ def _validate_pickle_ability(
             f"WHY: Parallel video rendering (n_workers > 1) requires pickling "
             f"OverlayData to pass it to worker processes. Unpickleable objects "
             f"include lambdas, closures, local functions, and certain class instances.\n\n"
-            f"{_pickling_guidance(n_workers=n_workers)}"
+            f"{_pickling_guidance('overlays')}"
         ) from e
 
 

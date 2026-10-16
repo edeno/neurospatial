@@ -1559,7 +1559,6 @@ class TestTimeSeriesVideoRender:
         rng = np.random.default_rng(42)
         positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.clear_cache()  # Ensure pickle-able
         return env
 
     @pytest.fixture

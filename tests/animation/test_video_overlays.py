@@ -876,12 +876,8 @@ def test_pickle_error_message_includes_solutions(
     assert "parallel" in error_msg.lower()
 
     # Verify HOW: provides solutions
-    # Should mention either n_workers=1 or env.clear_cache() or similar fix
-    assert (
-        "n_workers=1" in error_msg
-        or "clear_cache" in error_msg
-        or "remove" in error_msg
-    )
+    assert "n_workers=1" in error_msg
+    assert "clear_cache" not in error_msg
 
 
 def test_pickle_check_skipped_for_serial_rendering(

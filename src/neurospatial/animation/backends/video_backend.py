@@ -238,7 +238,9 @@ def render_video(
 
     If you encounter pickle errors:
 
-    1. **For environment**: Call ``env.clear_cache()`` before rendering
+    1. **For environment**: Replace what you attached to it that cannot be
+       pickled (lambdas, local functions, open files) with plain data. Cached
+       analyses are never pickled.
     2. **For overlay_data**: Remove unpickleable objects (lambdas, closures)
     3. **Alternative**: Use ``n_workers=1`` for serial rendering (no pickle needed)
 

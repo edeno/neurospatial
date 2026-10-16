@@ -194,7 +194,9 @@ def test_pickle_failure_error_message(test_env, test_fields, tmp_path, monkeypat
     error_msg = str(exc_info.value)
     # Check for key solutions
     assert "pickle" in error_msg.lower()
-    assert "clear_cache()" in error_msg
+    # The cache is never pickled, so clearing it is not offered as a fix.
+    assert "clear_cache" not in error_msg
+    assert "pickle.dumps(env)" in error_msg
     assert "n_workers=1" in error_msg
     assert "backend='html'" in error_msg
 

@@ -131,9 +131,11 @@ def _validate_env_pickleable(env: AnimationConsumer) -> None:
             f"rendering.\n"
             f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
             f"WHY: Video backend with parallel rendering (n_workers > 1) requires "
-            f"pickling the Environment to pass it to worker processes. Unpickleable "
-            f"objects include KDTree caches, lambdas, and certain class instances.\n\n"
-            f"{_pickling_guidance()}"
+            f"pickling the Environment to pass it to worker processes. Something "
+            f"attached to it cannot be pickled, such as a lambda, a local function "
+            f"or an open file. Cached analyses are never pickled, so they are not "
+            f"the cause.\n\n"
+            f"{_pickling_guidance('environment')}"
         ) from e
 
 
@@ -307,15 +309,18 @@ def animate_fields(
     - **100K+ frames**: Use ``backend="napari"`` for interactive exploration.
       Napari has O(1) frame seek time regardless of dataset size.
     - **Export to video**: Use ``backend="video"`` with ``n_workers=4`` for
-      parallel rendering. Call ``env.clear_cache()`` first.
+      parallel rendering.
     - **Subsampling**: For high-frequency data (e.g., 250 Hz), subsample to
       30-60 fps with ``subsample_frames(fields, source_fps=250, target_fps=30)``
       from ``neurospatial.animation``.
 
     **Parallel video rendering:**
 
-    Ensure environment is pickle-able by calling ``env.clear_cache()`` before
-    animating with ``n_workers > 1``.
+    With ``n_workers > 1`` the environment and overlays are pickled and sent
+    to worker processes. Cached analyses are never pickled. If something you
+    attached (a lambda, a local function, an open file) cannot be pickled,
+    the call raises ``ValueError`` before rendering; use ``n_workers=1`` or
+    replace that object with plain data.
     """
     # Detect if input is a 2D+ numpy array (potential memmap)
     # This must happen before any conversion to preserve array format for napari

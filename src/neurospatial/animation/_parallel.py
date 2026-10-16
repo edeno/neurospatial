@@ -1415,7 +1415,7 @@ def parallel_render_frames(
     ----------
     env : Environment
         Environment defining spatial structure. Must be pickle-able
-        (will be serialized to workers). Call env.clear_cache() first.
+        (will be serialized to workers). Cached analyses are never pickled.
     fields : list of ndarray of shape (n_bins,), dtype float64
         All fields to render. Each array contains field values for one frame.
     output_dir : str
@@ -1454,7 +1454,7 @@ def parallel_render_frames(
     ValueError
         If environment or overlay_data is not pickle-able when n_workers > 1.
         Error message includes WHAT/WHY/HOW format with actionable solutions:
-        - For environment: Call env.clear_cache() or use n_workers=1
+        - For environment: Replace unpickleable attached objects or use n_workers=1
         - For overlay_data: Remove unpickleable objects or use n_workers=1
 
     Examples
@@ -1489,17 +1489,16 @@ def parallel_render_frames(
         try:
             pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception as e:
-            # WHAT: Environment not pickle-able
-            # WHY: Parallel rendering requires pickling to send to workers
-            # Fix: Call env.clear_cache() or use n_workers=1
+            from neurospatial.animation._utils import _pickling_guidance
+
             raise ValueError(
                 f"WHAT: Environment is not pickle-able for parallel rendering.\n"
+                f"  Pickling failed with: {type(e).__name__}: {e}\n"
                 f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
-                f"the environment to send to worker processes.\n"
-                f"Fix: Choose one of these solutions:\n"
-                f"  1. Call env.clear_cache() to remove unpickleable cached objects\n"
-                f"  2. Use n_workers=1 for serial rendering (no pickling required)\n"
-                f"Original error: {e}"
+                f"the environment to send to worker processes. Something attached "
+                f"to it cannot be pickled; cached analyses are never pickled, so "
+                f"they are not the cause.\n"
+                f"{_pickling_guidance('environment')}"
             ) from e
 
         # Validate overlay_data is pickle-able (if provided)

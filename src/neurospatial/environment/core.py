@@ -5060,9 +5060,9 @@ class Environment(Generic[_C]):
             files. Only used with video backend.
         n_workers : int, optional
             Number of parallel workers for video rendering. If None, uses
-            CPU count / 2. Set to 1 for serial rendering. Requires environment
-            to be pickle-able (call `env.clear_cache()` if pickle errors occur).
-            Only used with video backend.
+            CPU count / 2. Set to 1 for serial rendering. Workers receive a
+            pickled copy of the environment, which never includes cached
+            analyses. Only used with video backend.
         dry_run : bool, default=False
             If True, estimate rendering time and file size without actually rendering.
             Only used with video backend.
@@ -5210,7 +5210,6 @@ class Environment(Generic[_C]):
         >>> viewer = env.animate_fields(
         ...     fields, frame_times=frame_times, backend="napari"
         ... )  # doctest: +SKIP
-        >>> env.clear_cache()  # Clear caches before using parallel video workers
         >>> env.animate_fields(  # doctest: +SKIP
         ...     fields,
         ...     frame_times=frame_times,
