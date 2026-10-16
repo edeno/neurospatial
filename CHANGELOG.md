@@ -158,6 +158,14 @@
   edges). `Environment.distance_between` now calls it, so the two always
   agree.
 
+### Changed
+
+- `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
+  rectangular grids splits every interval across the cells its straight path
+  crosses at once, instead of one interval at a time: a 20,000-sample 3-D
+  trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
+  1.2 s. Occupancy values are unchanged.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid
