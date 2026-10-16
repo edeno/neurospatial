@@ -308,9 +308,7 @@ def _require_native_grid_navigation(
     from neurospatial.environment._arena import apply_walls
     from neurospatial.geometry._binning import SpatialBins
     from neurospatial.geometry._native_faces import NativeFaces
-    from neurospatial.layout.helpers.regular_grid import (
-        _create_regular_grid_connectivity_graph,
-    )
+    from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
 
     bins = binning.bins
     direct_distances = np.hypot.reduce(
@@ -331,17 +329,21 @@ def _require_native_grid_navigation(
 
     grid = binning.rectilinear
     assert grid is not None
-    # Only adjacency is needed from this builder. Grid indices avoid computing
-    # unused physical edge lengths at potentially extreme coordinate scales.
-    indices = np.column_stack(
-        np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
-    ).astype(np.float64)
-    graph = _create_regular_grid_connectivity_graph(
-        indices,
-        grid.active_mask,
-        grid.shape,
-        connect_diagonal=connect_diagonal,
+    # Only adjacency is needed from this grid. Unit cells in index coordinates
+    # avoid computing unused physical edge lengths at extreme coordinate scales.
+    index_centers = (
+        np.column_stack(
+            np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
+        ).astype(np.float64)
+        + 0.5
     )
+    graph = regular_grid_from_cells(
+        tuple(np.arange(n + 1, dtype=np.float64) for n in grid.shape),
+        grid.active_mask,
+        index_centers,
+        connect_diagonal_neighbors=connect_diagonal,
+    ).connectivity
+    assert graph is not None
     pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
     candidate_bins = SpatialBins(
         bins.centers,
