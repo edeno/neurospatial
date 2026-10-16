@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import pickle
 import warnings
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timezone
 
 import networkx as nx
@@ -25,6 +25,7 @@ from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
 from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import translate
 
 _BuiltEnvironment = Environment | Environment
 
@@ -373,3 +374,93 @@ def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
     assert "Fix: pass coordinates matching the arena's circular flag" in str(
         error.value
     )
+
+
+def _center_lookup_paths():
+    import networkx as nx
+    from shapely.geometry import box
+
+    from neurospatial.binning import KnownFaces
+
+    positions = np.random.default_rng(0).uniform(0, 20, (500, 2))
+    track = nx.Graph()
+    track.add_node(0, pos=(0.0, 0.0))
+    track.add_node(1, pos=(10.0, 0.0))
+    track.add_edge(0, 1, distance=10.0)
+
+    def grid():
+        return Environment.from_grid_mask(
+            np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+        )
+
+    def from_bins():
+        binning = grid()._binning
+        return Environment.from_bins(
+            replace(binning, faces=KnownFaces(binning.faces.build()))
+        )
+
+    return {
+        "from_samples": lambda: Environment.from_samples(positions, bin_size=4.0),
+        "hexagonal": lambda: Environment.from_samples(
+            positions, bin_size=4.0, layout="Hexagonal"
+        ),
+        "from_polygon": lambda: Environment.from_polygon(box(0, 0, 8, 8), bin_size=2.0),
+        "from_grid_mask": grid,
+        "from_pixel_mask": lambda: Environment.from_pixel_mask(
+            np.ones((3, 3), dtype=bool), pixel_size=2.0
+        ),
+        "from_graph": lambda: Environment.from_graph(
+            track, [(0, 1)], edge_spacing=0.0, bin_size=2.0
+        ),
+        "from_layout": lambda: Environment.from_layout(
+            create_layout(
+                "TriangularMesh", boundary_polygon=box(0, 0, 8, 8), point_spacing=2.0
+            )
+        ),
+        "from_polar_egocentric": lambda: Environment.from_polar_egocentric(
+            distance_range=(0.0, 10.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 2,
+        ),
+        "from_bins": from_bins,
+        "rebin_factor": lambda: grid().rebin(2),
+        "rebin_bin_size": lambda: grid().rebin(bin_size=2.0),
+        "subset": lambda: grid().subset(mask=np.arange(16) % 2 == 0),
+        "clip": lambda: grid().clip(box(0, 0, 3, 3)),
+        "apply_transform": lambda: grid().apply_transform(translate(1.0, 0.0)),
+        "combine": lambda: Environment.combine(
+            {"a": grid(), "b": grid().apply_transform(translate(10.0, 0.0))}
+        ),
+        "from_dict": lambda: Environment.from_dict(grid().to_dict()),
+    }
+
+
+@pytest.mark.parametrize("path", sorted(_center_lookup_paths()))
+def test_every_publication_checks_that_bin_centers_locate_their_bins(monkeypatch, path):
+    """Factories, engines, derivations and readers all run the lookup check."""
+    from neurospatial.geometry import _validation
+
+    checked = []
+    check = _validation._validate_center_lookup
+
+    def recording(binning):
+        checked.append(binning.bins.n_bins)
+        return check(binning)
+
+    monkeypatch.setattr(_validation, "_validate_center_lookup", recording)
+    env = _center_lookup_paths()[path]()
+    assert checked[-1] == env.n_bins
+
+
+def test_center_lookup_check_refuses_a_locator_that_places_centers_elsewhere():
+    from neurospatial.binning import NearestBinLocator
+    from neurospatial.geometry._validation import _validate_center_lookup
+
+    env = Environment.from_grid_mask(
+        np.ones((1, 3), dtype=bool), grid_edges=(np.arange(2.0), np.arange(4.0))
+    )
+    centers = env._binning.bins.centers
+    swapped = NearestBinLocator(centers, bin_indices=np.array([1, 0, 2]))
+    with pytest.raises(ValueError, match="locator bin-center lookup"):
+        _validate_center_lookup(replace(env._binning, locator=swapped))

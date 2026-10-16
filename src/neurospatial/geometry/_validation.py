@@ -1396,8 +1396,18 @@ def _validate_components(
         )
         if bins.measure_dim != 1:
             raise ValueError("linearization bins.measure_dim must be 1.")
-    located = copy.deepcopy(locator).locate(bins.centers)
-    if track is not None:
+    _validate_center_lookup(binning)
+
+
+def _validate_center_lookup(binning: Binning) -> None:
+    """Check that the locator places every bin center in its own bin.
+
+    The lookup runs on a detached copy of the locator, so validation does not
+    warm the published locator's memos.
+    """
+    bins = binning.bins
+    located = copy.deepcopy(binning.locator).locate(bins.centers)
+    if binning.linearization is not None:
         # An embedded track can revisit an identical spatial point at a
         # different linear coordinate. Nearest-point lookup may choose either
         # coincident bin; the validated track component owns path identity.

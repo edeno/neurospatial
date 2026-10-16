@@ -350,11 +350,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   your own labels next to the environment, for example in a dict keyed by
   `env.name`.
 
-- Every layout, including a custom engine, now has each bin center located by
-  its own lookup when the environment is built, as `from_bins`, `subset` and
-  the readers already did. A custom engine whose locator does not place a bin
-  center in that bin is refused with a `ValueError` instead of producing an
-  environment whose `bin_at(env.bin_centers)` disagrees with the bin IDs.
+- Building from any layout engine, including a custom one, and `rebin` now
+  check that each bin center is located in its own bin, as `from_bins`,
+  `subset` and the readers already did. The built-in engines pass; a custom
+  engine whose binning fails the check is refused with a `ValueError`.
 
 ### Changed
 
