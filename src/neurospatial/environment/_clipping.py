@@ -56,15 +56,10 @@ def _clip(
         (float(bounds[:, axis].min()), float(bounds[:, axis + 2].max()))
         for axis in range(2)
     ]
-    from neurospatial.environment._publication import (
-        _Provenance,
-        declared_metadata,
-        publish,
-    )
+    from neurospatial.environment._publication import _Provenance, publish_derived
 
-    env_cls = cast("type[Environment]", type(env))
-    return publish(
-        env_cls,
+    return publish_derived(
+        cast("Environment", env),
         binning,
         connectivity=graph,
         dimension_ranges=ranges,
@@ -73,13 +68,6 @@ def _clip(
             "polygon",
             {"source": "clip", "original_n_bins": env.n_bins},
         ),
-        metadata=declared_metadata(
-            env_cls,
-            name=name if name is not None else env.name,
-            units=env.units,
-            frame=env.frame,
-        ),
-        is_linearized_track=False,
-        arena=env.arena,
+        name=name,
         clip_mapping=mapping,
     )

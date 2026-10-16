@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from neurospatial.ops.transforms import Affine2D, AffineND
+from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -17,10 +20,9 @@ def _apply_transform_to_environment(
     transform: AffineND | Affine2D,
     *,
     name: str | None = None,
+    frame: str | None = None,
 ) -> Environment:
     """Transform owned cells, graphs, arenas and regions together."""
-    from neurospatial.environment import Environment
-    from neurospatial.regions import Region, Regions
 
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
@@ -100,71 +102,45 @@ def _apply_transform_to_environment(
 
     tag = f"{env.layout_type}_transformed"
     params = {**env.layout_parameters, "transformed": True}
-    new_name = name if name is not None else f"{env.name}_transformed"
-    from neurospatial.environment._publication import (
-        _Provenance,
-        declared_metadata,
-        publish,
-    )
+    from neurospatial.environment._publication import _Provenance, publish_derived
 
-    new_env = publish(
-        Environment,
+    return publish_derived(
+        env,
         binning,
         connectivity=new_graph,
         dimension_ranges=transformed_dim_ranges,
         provenance=_Provenance(tag, env._provenance.category, params),
-        metadata=declared_metadata(Environment, name=new_name),
-        is_linearized_track=env.is_linearized_track,
+        name=name,
+        frame=frame,
+        regions=Regions(
+            _transformed_region(region, transform) for region in env.regions.values()
+        ),
         arena=env.arena.transformed(transform.A),
         clip_mapping=env.clip_mapping,
     )
-    # Transform and copy regions
-    if env.regions and len(env.regions) > 0:
-        transformed_regions = []
-        for region in env.regions.values():
-            if region.kind == "point":
-                # Transform point
-                old_point = np.array(region.data)
-                new_point = transform(old_point.reshape(1, -1))[0]
-                new_region = Region(
-                    name=region.name,
-                    kind="point",
-                    data=new_point,
-                    metadata={**region.metadata, "transformed": True},
-                )
-            elif region.kind == "polygon":
-                # Transform polygon
-                import shapely.geometry as shp
-                from shapely.geometry import Polygon
 
-                # Type narrowing: region.data is a Polygon when kind == "polygon"
-                if not isinstance(region.data, Polygon):
-                    raise TypeError(
-                        f"Region '{region.name}' has kind='polygon' but data is not a Polygon"
-                    )
-                old_coords = np.array(region.data.exterior.coords)
-                new_coords = transform(old_coords)
-                new_holes = [
-                    transform(np.asarray(ring.coords)) for ring in region.data.interiors
-                ]
-                new_poly = shp.Polygon(new_coords, holes=new_holes)
-                new_region = Region(
-                    name=region.name,
-                    kind="polygon",
-                    data=new_poly,
-                    metadata={**region.metadata, "transformed": True},
-                )
 
-            transformed_regions.append(new_region)
-
-        new_env = new_env.with_regions(Regions(transformed_regions))
-
-    # Copy units and frame
-    if hasattr(env, "units"):
-        new_env = new_env.with_metadata(units=env.units)
-    if hasattr(env, "frame"):
-        new_env = new_env.with_metadata(
-            frame=f"{env.frame}_transformed" if env.frame else "transformed"
+def _transformed_region(region: Region, transform: AffineND | Affine2D) -> Region:
+    """Map a point or polygon region through ``transform``, marking it transformed."""
+    if region.kind == "point":
+        data: NDArray[np.float64] | Polygon = transform(
+            np.asarray(region.data).reshape(1, -1)
+        )[0]
+    else:
+        # Type narrowing: region.data is a Polygon when kind == "polygon"
+        if not isinstance(region.data, Polygon):
+            raise TypeError(
+                f"Region '{region.name}' has kind='polygon' but data is not a Polygon"
+            )
+        data = Polygon(
+            transform(np.asarray(region.data.exterior.coords)),
+            holes=[
+                transform(np.asarray(ring.coords)) for ring in region.data.interiors
+            ],
         )
-
-    return new_env
+    return Region(
+        name=region.name,
+        kind=region.kind,
+        data=data,
+        metadata={**region.metadata, "transformed": True},
+    )

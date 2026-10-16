@@ -30,7 +30,7 @@ def test_rebin_modes_preserve_annotations_walls_and_fresh_caches(mode):
 
     child = parent.rebin(2) if mode == "factor" else parent.rebin(bin_size=2.0)
 
-    assert child.name == "arena_rebinned"
+    assert child.name == "arena"
     assert (child.units, child.frame) == ("cm", "camera")
     assert child.n_bins == 9
     assert child._kernel_cache == {} and child._kdtree_cache is None

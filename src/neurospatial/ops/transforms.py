@@ -1351,12 +1351,13 @@ def apply_transform_to_environment(
     transform: AffineND | Affine2D,
     *,
     name: str | None = None,
+    frame: str | None = None,
 ) -> Environment:
     """Apply N-D affine transformation to an Environment, returning a new instance.
 
-    This function creates a new Environment with transformed bin_centers and
-    updated connectivity graph. All other properties (regions, metadata) are
-    copied from the source environment. Supports 2D, 3D, or higher-dimensional
+    This function creates a new Environment with transformed bin_centers,
+    connectivity graph, arena and regions. The name and units are kept; the
+    frame label comes from ``frame``. Supports 2D, 3D, or higher-dimensional
     transformations.
 
     Parameters
@@ -1368,7 +1369,10 @@ def apply_transform_to_environment(
         - For 2D environments: use Affine2D or AffineND with n_dims=2
         - For 3D environments: use AffineND with n_dims=3
     name : str, optional
-        Name for the new environment. If None, appends "_transformed" to original name.
+        Name for the new environment; defaults to the source environment's name.
+    frame : str, optional
+        Coordinate frame label of the transformed positions. The default
+        ``None`` leaves the frame unlabeled.
 
     Returns
     -------
@@ -1452,7 +1456,7 @@ def apply_transform_to_environment(
     """
     consumer: AffineTransformConsumer = env
     try:
-        return consumer.apply_transform(transform, name=name)
+        return consumer.apply_transform(transform, name=name, frame=frame)
     except CartesianOnlyError:
         raise ValueError(
             "apply_transform requires a Cartesian environment but got an "

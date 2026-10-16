@@ -1981,6 +1981,7 @@ class Environment(Generic[_C]):
         factor: int | tuple[int, ...] | None = None,
         *,
         bin_size: float | tuple[float, ...] | None = None,
+        name: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
@@ -2006,6 +2007,8 @@ class Environment(Generic[_C]):
             Needs a known arena and a supported stored GridBinningSpec.
             Center selection can leave portions of the arena without a bin;
             use ``clip`` separately when exact clipped cells are needed.
+        name : str, optional
+            Name of the new environment; defaults to this environment's name.
 
         Returns
         -------
@@ -2076,9 +2079,10 @@ class Environment(Generic[_C]):
         truncated extent) are left without a new bin, a ``UserWarning`` gives
         their count and share of the area, since positions in them map to -1.
 
-        **Metadata preservation**: The arena, units, frame and named regions
-        are preserved. Region coordinates and metadata remain intact even when
-        truncation removes the bins near a region. New-size re-binning It supports rectangular
+        **Metadata preservation**: The name, arena, units, frame and named
+        regions are preserved. Region coordinates and metadata remain intact
+        even when truncation removes the bins near a region. New-size
+        re-binning supports rectangular
         grids from samples, masks, images and polygon grids, including their
         derived grid frames. Other families and older records without a stored
         specification refuse this mode. It never transfers fields or models.
@@ -2122,9 +2126,9 @@ class Environment(Generic[_C]):
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
         if bin_size is not None:
-            return _rebin_resolution(self, bin_size)
+            return _rebin_resolution(self, bin_size, name=name)
         assert factor is not None
-        return _rebin_factor(self, factor)
+        return _rebin_factor(self, factor, name=name)
 
     def subset(
         self: Environment[CartesianSystem],
@@ -2133,15 +2137,16 @@ class Environment(Generic[_C]):
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
         invert: bool = False,
+        name: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Create new environment containing subset of bins.
 
         Extracts a subgraph from the environment containing only the selected
-        bins. Node indices are renumbered to be contiguous [0, n'-1]. This
-        operation drops all regions; users can re-add regions to the subset
-        environment if needed. Bin sizes, retained faces, cell shapes and track
-        coordinates are preserved. Points in discarded bins are outside the
-        subset and map to ``-1``.
+        bins. Node indices are renumbered to be contiguous [0, n'-1]. Bin
+        sizes, retained faces, cell shapes and track coordinates are
+        preserved, and so are the name, units, frame, arena and named regions.
+        Regions may extend beyond the retained bins. Points in discarded bins
+        are outside the subset and map to ``-1``.
 
         Parameters
         ----------
@@ -2156,13 +2161,15 @@ class Environment(Generic[_C]):
             for 2D environments.
         invert : bool, default=False
             If True, invert the selection mask (select complement).
+        name : str, optional
+            Name of the new environment; defaults to this environment's name.
 
         Returns
         -------
         sub_env : Environment
             New environment with selected bins renumbered to [0, n'-1].
-            Connectivity is the induced subgraph. All regions are dropped.
-            Metadata (units, frame) is preserved.
+            Connectivity is the induced subgraph. Name, units, frame, arena
+            and regions are preserved.
 
         Raises
         ------
@@ -2218,7 +2225,12 @@ class Environment(Generic[_C]):
         from neurospatial.environment._subset import _subset
 
         return _subset(
-            self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
+            self,
+            bins=bins,
+            region_names=region_names,
+            polygon=polygon,
+            invert=invert,
+            name=name,
         )
 
     def clip(
@@ -2239,7 +2251,8 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Exact positive-area cells. Disconnected pieces get separate bins;
+            Exact positive-area cells, with the parent's units, frame, arena
+            and named regions. Disconnected pieces get separate bins;
             ``clip_mapping.parent_bin_indices`` identifies their input bins.
             Rates, counts and fitted models are not transferred. Numerical
             operations require certified finite-volume geometry. The analysis
@@ -2262,6 +2275,7 @@ class Environment(Generic[_C]):
         transform: AffineND | Affine2D,
         *,
         name: str | None = None,
+        frame: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Apply affine transformation to environment, returning a new instance.
 
@@ -2295,8 +2309,13 @@ class Environment(Generic[_C]):
             Create transforms using factory functions like `translate()`,
             `scale_2d()`, `from_rotation_matrix()`, or compose using `@` operator.
         name : str, optional
-            Name for the transformed environment. If None, appends "_transformed"
-            to the original name.
+            Name for the transformed environment; defaults to this
+            environment's name.
+        frame : str, optional
+            Coordinate frame label of the transformed positions, for example
+            ``"session2"``. The default ``None`` leaves the frame unlabeled,
+            because the transformed coordinates are no longer in this
+            environment's frame.
 
         Returns
         -------
@@ -2307,7 +2326,7 @@ class Environment(Generic[_C]):
             - `bin_centers`: All bin positions are transformed
             - `connectivity`: Node 'pos' attributes updated, edge distances/vectors recomputed
             - `regions`: Point and polygon regions are transformed
-            - `metadata`: Units preserved, frame updated with "_transformed" suffix
+            - `metadata`: Name and units preserved; frame set from ``frame``
 
             Bin IDs and edge ordering are retained. Cell/face measures and
             available numerical capabilities follow the transformed geometry.
@@ -2451,7 +2470,7 @@ class Environment(Generic[_C]):
         self._require_cartesian("apply_transform()")
         from neurospatial.environment._affine import _apply_transform_to_environment
 
-        return _apply_transform_to_environment(self, transform, name=name)
+        return _apply_transform_to_environment(self, transform, name=name, frame=frame)
 
     @classmethod
     def combine(

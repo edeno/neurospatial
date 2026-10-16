@@ -53,7 +53,7 @@ def test_rebin_preserves_walls_in_the_layout_facade(factor):
     child = parent.rebin(factor)
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert child.units == "cm" and child.frame == "camera"
-    assert child.name == "arena_rebinned"
+    assert child.name == "arena"
     assert nx.number_connected_components(child.connectivity) == 2
     sides = child.bin_centers[:, 0] < 2
     assert all(sides[u] == sides[v] for u, v in child.connectivity.edges)

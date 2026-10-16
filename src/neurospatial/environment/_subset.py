@@ -155,6 +155,7 @@ def _subset(
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
+    name: str | None = None,
 ) -> Environment:
     """Derive selected bins and their graph, bounds and preserved metadata."""
     mask = _subset_mask(
@@ -210,22 +211,15 @@ def _subset(
             low, high = float(axis.min()), float(axis.max())
             margin = 0.05 * (high - low) if shapes is not None else 0.0
             ranges.append((low - margin, high + margin))
-    from neurospatial.environment._publication import (
-        _Provenance,
-        declared_metadata,
-        publish,
-    )
+    from neurospatial.environment._publication import _Provenance, publish_derived
 
-    env_cls = cast("type[Environment]", type(env))
-    return publish(
-        env_cls,
+    return publish_derived(
+        cast("Environment", env),
         binning,
         connectivity=graph,
         dimension_ranges=ranges,
         provenance=_Provenance(
             tag, "mask" if binning.rectilinear is not None else "subset", params
         ),
-        metadata=declared_metadata(env_cls, units=env.units, frame=env.frame),
-        is_linearized_track=env.is_linearized_track,
-        arena=env.arena,
+        name=name,
     )

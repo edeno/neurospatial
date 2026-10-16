@@ -219,17 +219,6 @@ class TestRebin:
         with pytest.raises((ValueError, TypeError)):
             medium_2d_env.rebin(factor=2.5)  # type: ignore
 
-    def test_rebin_updates_name(self, medium_2d_env: Environment) -> None:
-        """Test that rebinned environment has updated name."""
-        # Set original name
-        env = medium_2d_env.with_metadata()
-        env = env.with_metadata(name="OriginalEnv")
-
-        rebinned = env.rebin(factor=2)
-
-        assert "rebinned" in rebinned.name.lower()
-        assert "OriginalEnv" in rebinned.name
-
 
 class TestSubset:
     """Tests for Environment.subset() method.
@@ -422,24 +411,6 @@ class TestSubset:
 
         assert subset_env.units == "cm"
         assert subset_env.frame == "arena1"
-
-    def test_subset_drops_regions(self, medium_2d_env: Environment) -> None:
-        """Test that subsetting drops all regions."""
-        # Create a fresh copy to avoid region conflicts
-        import copy
-
-        env_copy = copy.copy(medium_2d_env)
-        env_copy = env_copy.with_regions(Regions())  # Fresh regions
-        region_builder = Regions(env_copy.regions.values())
-        region_builder.add("goal", point=np.array([0.0, 0.0]))
-        env_copy = env_copy.with_regions(region_builder)
-
-        # Select subset
-        bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
-        subset_env = env_copy.subset(bins=bin_ids)
-
-        # Regions should be empty
-        assert len(subset_env.regions) == 0
 
     def test_subset_renumbers_nodes(self, small_2d_env: Environment) -> None:
         """Test that subset renumbers node IDs to be contiguous."""
@@ -893,19 +864,6 @@ class TestApplyTransform:
 
         assert transformed.name == "rotated_env"
 
-    def test_apply_transform_default_name(self, medium_2d_env: Environment) -> None:
-        """Test that default name appends '_transformed'."""
-        from neurospatial.ops.transforms import translate
-
-        # Set original name
-        env = medium_2d_env.with_metadata()
-        env = env.with_metadata(name="OriginalEnv")
-
-        transform = translate(5, 5)
-        transformed = env.apply_transform(transform)
-
-        assert "transformed" in transformed.name.lower()
-
     def test_apply_transform_preserves_units(self, medium_2d_env: Environment) -> None:
         """Test that units metadata is preserved."""
         # Create isolated copy to avoid mutating fixture
@@ -920,21 +878,6 @@ class TestApplyTransform:
         transformed = env_copy.apply_transform(transform)
 
         assert transformed.units == "cm"
-
-    def test_apply_transform_updates_frame(self, medium_2d_env: Environment) -> None:
-        """Test that frame is updated with '_transformed' suffix."""
-        # Create isolated copy
-        import copy
-
-        env_copy = copy.copy(medium_2d_env)
-        env_copy = env_copy.with_metadata(frame="session1")
-
-        from neurospatial.ops.transforms import translate
-
-        transform = translate(5, 5)
-        transformed = env_copy.apply_transform(transform)
-
-        assert "transformed" in transformed.frame
 
     def test_apply_transform_with_regions(self, medium_2d_env: Environment) -> None:
         """Test that regions are transformed along with environment."""

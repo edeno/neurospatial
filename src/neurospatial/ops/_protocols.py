@@ -22,7 +22,11 @@ class AffineTransformConsumer(Protocol):
     """The environment-owned affine construction adapter."""
 
     def apply_transform(
-        self, transform: AffineND | Affine2D, *, name: str | None = None
+        self,
+        transform: AffineND | Affine2D,
+        *,
+        name: str | None = None,
+        frame: str | None = None,
     ) -> Environment: ...
 
 

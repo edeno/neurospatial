@@ -408,12 +408,16 @@ class TestApplyTransformToEnvironment3D:
 
         assert transformed_env.units == simple_3d_env.units
 
-    def test_3d_transform_updates_frame(self, simple_3d_env):
-        """Test that frame name is updated."""
+    def test_3d_transform_frame_comes_from_the_caller(self, simple_3d_env):
+        """The transformed frame is unlabeled unless the caller names it."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        unlabeled = apply_transform_to_environment(simple_3d_env, transform)
+        labeled = apply_transform_to_environment(
+            simple_3d_env, transform, frame="session2"
+        )
 
-        assert "transformed" in transformed_env.frame
+        assert unlabeled.frame is None
+        assert labeled.frame == "session2"
 
     def test_3d_transform_with_custom_name(self, simple_3d_env):
         """Test custom name for 3D transformed environment."""

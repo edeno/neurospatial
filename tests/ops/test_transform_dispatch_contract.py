@@ -25,8 +25,10 @@ def test_free_and_bound_transforms_preserve_the_same_geometry(n_dims):
     matrix = np.eye(n_dims + 1)
     matrix[:-1, -1] = np.arange(1.0, n_dims + 1)
     transform = AffineND(matrix)
-    free = apply_transform_to_environment(env, transform, name="aligned")
-    bound = env.apply_transform(transform, name="aligned")
+    free = apply_transform_to_environment(
+        env, transform, name="aligned", frame="session2"
+    )
+    bound = env.apply_transform(transform, name="aligned", frame="session2")
 
     for actual in (free, bound):
         np.testing.assert_array_equal(
@@ -40,7 +42,7 @@ def test_free_and_bound_transforms_preserve_the_same_geometry(n_dims):
         assert (actual.name, actual.units, actual.frame) == (
             "aligned",
             "cm",
-            "lab_transformed",
+            "session2",
         )
     np.testing.assert_array_equal(free.compute_kernel(0.5), bound.compute_kernel(0.5))
 

@@ -332,22 +332,6 @@ class TestSubsetMetadataHandling:
         assert sub_env.units == "cm"
         assert sub_env.frame == "session1"
 
-    def test_subset_drops_regions(self):
-        """Subset drops all regions."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", point=[50, 50])
-        region_builder.add("start", point=[10, 10])
-        env = env.with_regions(region_builder)
-
-        # Subset
-        mask = env.bin_centers[:, 0] < 50
-        sub_env = env.subset(bins=mask)
-
-        # Regions should be dropped
-        assert len(sub_env.regions) == 0
-
 
 class TestSubsetIntegration:
     """Integration tests with other Environment methods."""

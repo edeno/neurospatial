@@ -239,11 +239,20 @@ def _combine(
     from neurospatial.geometry._composition import combined_normals
 
     normals = combined_normals(locator) if not len(pairs) else None
-    return Environment.from_bins(
-        Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals),
+    from neurospatial.environment._publication import _Provenance, publish_derived
+    from neurospatial.geometry._explicit import prepare_bins
+
+    snapshot, graph, ranges, category = prepare_bins(
+        Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals)
+    )
+    # Units and frame come from the first component; all components share them.
+    return publish_derived(
+        first,
+        snapshot,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        provenance=_Provenance(snapshot.kind, category, {}),
         name=name,
-        units=first.units,
-        frame=first.frame,
         regions=regions,
         arena=_CombinedArena(arenas),
     )

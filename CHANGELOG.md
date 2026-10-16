@@ -77,6 +77,15 @@
   still returns an independent graph whose attributes, including nested
   dictionaries, can be edited.
 
+- Derived environments keep the labels of the environment they came from.
+  `subset()` and `clip()` now keep the named regions (they used to drop them),
+  and `subset()` keeps the name. `rebin()` keeps the name (no `_rebinned`
+  suffix). `apply_transform()` keeps the name (no `_transformed` suffix) and no
+  longer invents a frame: the new frame is the `frame=` you pass, or `None`.
+  `subset()` and `rebin()` accept `name=` like `clip()` and `apply_transform()`,
+  and `neurospatial.ops.apply_transform_to_environment` accepts `frame=`.
+  Derived environments no longer repeat the warning about unrecognized units.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

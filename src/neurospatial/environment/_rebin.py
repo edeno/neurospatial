@@ -10,7 +10,6 @@ and owns geometry, applies physical walls and creates fresh analysis caches.
 from __future__ import annotations
 
 import warnings
-from copy import deepcopy
 from dataclasses import replace
 from itertools import product
 from types import SimpleNamespace
@@ -180,15 +179,10 @@ def _warn_outline_crossings(
 
 
 def _rebin_resolution(
-    env: RebinConsumer, bin_size: float | tuple[float, ...]
+    env: RebinConsumer, bin_size: float | tuple[float, ...], *, name: str | None = None
 ) -> Environment:
     """Construct new bins over the retained arena, preserving lattice frame."""
-    from neurospatial.environment._publication import (
-        _Provenance,
-        declared_metadata,
-        publish,
-    )
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._publication import _Provenance, publish_derived
     from neurospatial.geometry._binning import KnownFaces
     from neurospatial.geometry._derive import transform_binning
     from neurospatial.geometry._explicit import prepare_bins
@@ -285,21 +279,13 @@ def _rebin_resolution(
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
     snapshot, graph, ranges, category = prepare_bins(binning)
-    rebinned = publish(
-        Environment,
+    rebinned = publish_derived(
+        cast("Environment", env),
         snapshot,
         connectivity=graph,
         dimension_ranges=ranges,
         provenance=_Provenance(snapshot.kind, category, {}),
-        metadata=declared_metadata(
-            Environment,
-            name=f"{env.name}_rebinned" if env.name else "",
-            units=env.units,
-            frame=env.frame,
-        ),
-        is_linearized_track=snapshot.linearization is not None,
-        regions=env.regions,
-        arena=env.arena,
+        name=name,
     )
     _warn_unbinned(
         env,
@@ -385,6 +371,8 @@ def _require_native_grid_navigation(
 def _rebin_factor(
     env: RebinConsumer,
     factor: int | tuple[int, ...],
+    *,
+    name: str | None = None,
 ) -> Environment:
     """Coarsen a regular grid by an integer factor."""
     from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
@@ -533,32 +521,32 @@ def _rebin_factor(
         connect_diagonal_neighbors=connect_diagonal,
         grid_spec=env._binning.grid_spec,
     )
-    from neurospatial.environment._publication import (
-        declared_metadata,
-        publish_layout,
-    )
+    from neurospatial.environment._publication import _Provenance, publish_derived
+    from neurospatial.layout._construction import built_layout_data
     from neurospatial.layout.base import LayoutEngine
 
-    env_cls = cast("type[Environment]", env.__class__)
-    coarse_env = publish_layout(
-        env_cls,
-        cast("LayoutEngine", layout),
-        metadata=declared_metadata(
-            env_cls,
-            name=f"{env.name}_rebinned" if env.name else "",
-            units=env.units,
-            frame=env.frame,
+    binning, graph, ranges, _, category, _, index = built_layout_data(
+        cast("LayoutEngine", layout)
+    )
+    coarse_env = publish_derived(
+        cast("Environment", env),
+        binning,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        provenance=_Provenance(
+            "RegularGrid",
+            category,
+            {
+                "bin_size": tuple(
+                    (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+                ),
+                "dimension_ranges": layout.dimension_ranges,
+                "connect_diagonal_neighbors": connect_diagonal,
+            },
         ),
-        layout_type="RegularGrid",
-        build_params={
-            "bin_size": tuple(
-                (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
-            ),
-            "dimension_ranges": layout.dimension_ranges,
-            "connect_diagonal_neighbors": connect_diagonal,
-        },
-        regions=deepcopy(env.regions),
-        arena=env.arena,
+        name=name,
+        grid_index=index,
+        check_center_lookup=index is None,
     )
 
     # Bins beyond the truncated extent are already reported above.

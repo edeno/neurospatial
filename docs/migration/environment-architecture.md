@@ -140,3 +140,24 @@ To edit attributes, export an ordinary NetworkX graph:
 graph = env.to_networkx()
 graph.nodes[0]["label"] = "start"
 ```
+
+## Derived environments keep their labels
+
+`subset`, `clip` and `rebin` describe the same arena in the same coordinates,
+so they keep the parent's name, units, frame, arena and named regions.
+`apply_transform` keeps the name and units, moves the regions and arena with
+the bins, and sets the frame only from the `frame=` you pass, because the new
+coordinates are no longer in the parent's frame.
+
+| Call | Before | Now |
+| --- | --- | --- |
+| `env.subset(...)` | name `""`, regions dropped | name and regions kept |
+| `env.clip(polygon)` | regions dropped | regions kept |
+| `env.rebin(...)` | name `"<name>_rebinned"` | name kept |
+| `env.apply_transform(T)` | name `"<name>_transformed"`, frame `"<frame>_transformed"` (or `"transformed"`) | name kept, frame `None` |
+| `env.apply_transform(T, frame="session2")` | not available | frame `"session2"` |
+
+Regions are annotations and may extend beyond the retained bins. To drop them,
+call `child.with_regions(Regions())`. To rename a derived environment, pass
+`name=` to `subset`, `clip`, `rebin` or `apply_transform`, or call
+`with_metadata(name=...)`.

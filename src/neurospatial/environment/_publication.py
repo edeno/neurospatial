@@ -675,3 +675,69 @@ def publish_layout(
         grid_index=index,
         check_center_lookup=index is None,
     )
+
+
+def publish_derived(
+    parent: _EnvironmentT,
+    binning: Binning,
+    *,
+    connectivity: nx.Graph,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    provenance: _Provenance,
+    name: str | None = None,
+    frame: str | None | _Unset = UNSET,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    clip_mapping: ClipMapping | None = None,
+    grid_index: GridIndex | None = None,
+    check_center_lookup: bool = True,
+) -> _EnvironmentT:
+    """Publish an environment derived from ``parent``, keeping its labels.
+
+    Derivations (subset, clip, rebin, apply_transform and combine) keep the
+    parent's class, name, units, frame, regions and arena unless the
+    derivation supplies a replacement. Units are never changed by a
+    derivation, and an inherited label is not checked again.
+
+    Parameters
+    ----------
+    parent : Environment
+        The environment the new geometry was derived from.
+    binning, connectivity, dimension_ranges, provenance
+        The derived geometry, as for :func:`publish`.
+    name : str or None, optional
+        Replacement name; ``None`` keeps the parent's name.
+    frame : str or None, optional
+        Replacement frame label; omission keeps the parent's frame.
+    regions : Regions or None, optional
+        Replacement regions; ``None`` keeps the parent's regions.
+    arena : Arena or None, optional
+        Replacement arena; ``None`` keeps the parent's arena.
+    clip_mapping, grid_index, check_center_lookup
+        As for :func:`publish`.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``type(parent)``.
+    """
+    metadata = _Metadata(
+        parent.name if name is None else name,
+        parent.units,
+        parent.frame if isinstance(frame, _Unset) else frame,
+    )
+    return publish(
+        type(parent),
+        binning,
+        connectivity=connectivity,
+        dimension_ranges=dimension_ranges,
+        provenance=provenance,
+        metadata=metadata,
+        is_linearized_track=binning.linearization is not None,
+        coordinate_kind=parent.coordinate_kind,
+        regions=parent.regions if regions is None else regions,
+        arena=parent._geometry.arena if arena is None else arena,
+        clip_mapping=clip_mapping,
+        grid_index=grid_index,
+        check_center_lookup=check_center_lookup,
+    )
