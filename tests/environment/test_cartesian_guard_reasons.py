@@ -12,6 +12,8 @@ from neurospatial.environment.core import (
     CARTESIAN_OPERATIONS,
 )
 
+_SHARED = ("bin_centers", "n_bins", "neighbors", "path_between", "smooth")
+
 
 def _polar(cls=Environment):
     return cls.from_polar_egocentric((0, 2), (-np.pi, np.pi), 1, np.pi / 2)
@@ -73,6 +75,16 @@ def test_unbound_refusal_repeats_the_bound_message(name):
     assert f"({reason})" in str(bound.value)
 
 
+def test_dir_hides_cartesian_only_members_on_polar_bins_only():
+    polar_names = set(dir(_polar()))
+    cartesian_names = set(dir(_cartesian()))
+    assert not polar_names & CARTESIAN_OPERATIONS
+    assert cartesian_names >= CARTESIAN_OPERATIONS
+    assert cartesian_names - polar_names == CARTESIAN_OPERATIONS
+    assert polar_names >= set(_SHARED)
+    assert set(dir(Environment)) >= CARTESIAN_OPERATIONS
+
+
 def test_cartesian_bins_keep_every_cartesian_only_member():
     env = _cartesian()
     assert all(hasattr(env, name) for name in CARTESIAN_OPERATIONS)
@@ -106,4 +118,5 @@ def test_refusal_names_the_runtime_subclass():
     assert str(bound.value).startswith("RecordingRoom.bin_at() is not available")
     assert str(unbound.value) == str(bound.value)
     assert bound.value.environment_type == "RecordingRoom"
+    assert not set(dir(env)) & CARTESIAN_OPERATIONS
     assert hasattr(_cartesian(RecordingRoom), "bin_at")

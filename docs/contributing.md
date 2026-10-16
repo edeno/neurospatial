@@ -359,8 +359,8 @@ capability. It refuses unbound calls such as `Environment.bin_at(polar_env,
 points)`, and `CARTESIAN_OPERATIONS` and `CARTESIAN_GRID_OPERATIONS` in
 `environment/core.py` are derived from it. On polar instances,
 `Environment.__getattribute__` refuses the decorated members, so `hasattr` is
-False. A method that refuses only one mode on polar bins calls
-`require_cartesian(coordinates, "...")` for that mode.
+False, and `__dir__` leaves them out. A method that refuses only one mode on
+polar bins calls `require_cartesian(coordinates, "...")` for that mode.
 `test_every_public_member_is_classified_for_polar` checks that every other
 public member has a reviewed polar meaning. The attribute-filtering hook exists
 only at runtime: type checkers must still reject missing attributes. Negative

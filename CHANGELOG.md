@@ -168,6 +168,11 @@
   `Environment.bin_at(polar_env, points)` alike. Messages from `Environment`
   itself are unchanged.
 
+- `dir(env)` on a polar environment, and so tab completion in IPython and
+  Jupyter, no longer lists the Cartesian-only members such as `bin_at`,
+  `contains`, `occupancy` and `subset`. It now matches `hasattr(env, "bin_at")`,
+  which was already `False`. Cartesian environments list them as before.
+
 - `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
   rectangular grids splits every interval across the cells its straight path
   crosses at once, instead of one interval at a time: a 20,000-sample 3-D

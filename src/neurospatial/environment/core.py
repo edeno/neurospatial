@@ -931,6 +931,13 @@ class Environment(Generic[_C]):
                     )
             return super().__getattribute__(name)
 
+    def __dir__(self) -> list[str]:
+        """List attributes, leaving out Cartesian-only members on polar bins."""
+        names = super().__dir__()
+        if self._is_polar:
+            return [name for name in names if name not in _CARTESIAN_ONLY]
+        return list(names)
+
     @property
     def _angular_is_circular(self) -> bool:
         """Normalized polar circularity, retained through copies and storage."""
