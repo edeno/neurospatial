@@ -391,3 +391,27 @@ comes from the engine's record of its `build(...)` arguments, including the
 defaults it resolved, for example `connect_diagonal_neighbors=True` for a
 masked grid.
 
+### NWB: loading versus building
+
+`Environment.from_nwb` used to do two different things depending on its
+arguments. It now only loads an environment that was saved in the file, and
+names the record with `name=`, as `env.to_nwb(nwbfile, name)` does. Building an
+environment from the file's Position data is
+`neurospatial.io.nwb.environment_from_position`, which takes the same binning
+options as `Environment.from_samples`:
+
+```python
+from neurospatial.io.nwb import environment_from_position
+
+# Before
+env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+env = Environment.from_nwb(nwbfile, bin_size=5.0, units="cm")
+# Now
+env = Environment.from_nwb(nwbfile, name="linear_track")
+env = environment_from_position(nwbfile, bin_size=5.0, units="cm")
+```
+
+`environment_from_position` takes `bin_size` as a keyword, so
+`environment_from_position(nwbfile, 5.0)` becomes
+`environment_from_position(nwbfile, bin_size=5.0)`.
+

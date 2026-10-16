@@ -38,6 +38,7 @@ _DATA_ARGUMENTS = {
     "from_layout": ("layout",),
     "combine": ("components",),
     "from_polar_egocentric": (),
+    "from_nwb": ("nwbfile",),
 }
 _LABELS = ("name", "units", "frame", "regions")
 
@@ -63,7 +64,7 @@ def test_factories_take_only_their_data_positionally(factory, data):
     [
         factory
         for factory in _DATA_ARGUMENTS
-        if factory not in ("combine", "from_polar_egocentric")
+        if factory not in ("combine", "from_polar_egocentric", "from_nwb")
     ],
 )
 def test_cartesian_factories_accept_the_same_labels(factory):

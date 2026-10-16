@@ -821,29 +821,12 @@ def _from_nwb(
     cls: type[Environment[Any]],
     nwbfile: Any,
     *,
-    scratch_name: str | None = None,
-    bin_size: float | None = None,
-    **kwargs: Any,
+    name: str,
 ) -> Environment:
-    """Implement Environment.from_nwb using explicit construction inputs."""
-    if scratch_name is None and bin_size is None:
-        raise ValueError(
-            "Either scratch_name or bin_size must be provided. "
-            "Use scratch_name to load a stored environment, or bin_size "
-            "to create a new environment from Position data."
-        )
-
-    # Lazy import keeps pynwb optional. Both readers raise the "pynwb is
-    # required" ImportError themselves when pynwb is missing; any other
+    """Implement Environment.from_nwb: read a stored environment record."""
+    # Lazy import keeps pynwb optional. The reader raises the "pynwb is
+    # required" ImportError itself when pynwb is missing; any other
     # ImportError propagates unchanged.
-    from neurospatial.io.nwb import environment_from_position, read_environment
+    from neurospatial.io.nwb import read_environment
 
-    # Load from scratch if scratch_name is provided (takes precedence)
-    if scratch_name is not None:
-        return cast("Environment", read_environment(nwbfile, name=scratch_name))
-
-    # Create from position data
-    return cast(
-        "Environment",
-        environment_from_position(nwbfile, bin_size=bin_size, **kwargs),
-    )
+    return cast("Environment", read_environment(nwbfile, name=name))

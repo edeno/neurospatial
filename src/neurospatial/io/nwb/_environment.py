@@ -12,9 +12,13 @@ from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pynwb import NWBFile
 
     from neurospatial import Environment
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.layout.factories import LayoutType
     from neurospatial.regions import Regions
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
@@ -353,30 +357,45 @@ def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
 
 def environment_from_position(
     nwbfile: NWBFile,
-    bin_size: float,
     *,
+    bin_size: float | Sequence[float],
     processing_module: str | None = None,
     position_name: str | None = None,
+    name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    **kwargs: Any,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    layout: LayoutType | str = "RegularGrid",
+    dimension_ranges: Sequence[tuple[float, float]] | None = None,
+    infer_active_bins: bool = True,
+    bin_count_threshold: int = 0,
+    dilate: bool | None = None,
+    fill_holes: bool | None = None,
+    close_gaps: bool | None = None,
+    add_boundary_bins: bool | None = None,
+    connect_diagonal_neighbors: bool | None = None,
 ) -> Environment:
     """
-    Create Environment from NWB Position data.
+    Create an Environment by binning the positions in an NWB Position container.
 
-    Convenience function that reads position data and creates an Environment
-    using Environment.from_samples().
+    Reads the positions with :func:`read_position` and bins them with
+    :meth:`Environment.from_samples`. Every binning option means the same as
+    in ``from_samples``. To load an environment that was saved in the file,
+    use :func:`read_environment` or ``Environment.from_nwb`` instead.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to read from.
-    bin_size : float
-        Bin size for environment discretization.
+    bin_size : float or sequence of floats
+        Bin size, in the environment's spatial units (see `units`).
     processing_module : str, optional
         Name of processing module containing Position.
     position_name : str, optional
         Name of specific SpatialSeries within Position.
+    name : str, default ""
+        Name of the environment.
     units : str, optional
         Spatial units for the environment. If None, auto-detected from the
         series ``unit``, with NWB long names mapped to ``m`` / ``cm`` / ``mm``
@@ -386,13 +405,22 @@ def environment_from_position(
         ``units=`` to state the real unit.
     frame : str, optional
         Coordinate frame identifier for the environment.
-    **kwargs
-        Additional arguments passed to Environment.from_samples().
-        Common kwargs include:
-        - infer_active_bins : bool
-            Whether to only include bins visited by the animal.
-        - bin_count_threshold : int
-            Minimum samples per bin when infer_active_bins=True.
+    regions : Regions, optional
+        Named regions to snapshot with the environment.
+    arena : Arena, optional
+        Explicit continuous domain. See :meth:`Environment.from_samples`.
+    layout : LayoutType or str, default "RegularGrid"
+        ``"RegularGrid"`` or ``"Hexagonal"``.
+    dimension_ranges : sequence of (float, float), optional
+        ``[(min, max), ...]`` extent to tile on each axis.
+    infer_active_bins : bool, default True
+        Whether to only include bins visited by the animal.
+    bin_count_threshold : int, default 0
+        Minimum samples per bin when ``infer_active_bins=True``.
+    dilate, fill_holes, close_gaps, add_boundary_bins, connect_diagonal_neighbors : bool, optional
+        Regular grid only; see :meth:`Environment.from_samples` for their
+        defaults. Passing any of them with ``layout="Hexagonal"`` raises
+        ``ValueError``.
 
     Returns
     -------
@@ -403,6 +431,8 @@ def environment_from_position(
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    ValueError
+        If a regular-grid-only option is passed with ``layout="Hexagonal"``.
     ImportError
         If pynwb is not installed.
 
@@ -448,7 +478,22 @@ def environment_from_position(
 
     # Create Environment from position samples
     return Environment.from_samples(
-        positions, bin_size=bin_size, units=units, frame=frame, **kwargs
+        positions,
+        bin_size=bin_size,
+        name=name,
+        units=units,
+        frame=frame,
+        regions=regions,
+        arena=arena,
+        layout=layout,
+        dimension_ranges=dimension_ranges,
+        infer_active_bins=infer_active_bins,
+        bin_count_threshold=bin_count_threshold,
+        dilate=dilate,
+        fill_holes=fill_holes,
+        close_gaps=close_gaps,
+        add_boundary_bins=add_boundary_bins,
+        connect_diagonal_neighbors=connect_diagonal_neighbors,
     )
 
 

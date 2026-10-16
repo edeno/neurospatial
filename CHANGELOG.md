@@ -180,6 +180,17 @@
   own record, which includes the defaults it resolved. Grids, polygons, masks
   and tracks keep their dedicated factories.
 
+- `Environment.from_nwb` only loads an environment saved in the file:
+  `Environment.from_nwb(nwbfile, name="linear_track")`. The record name is
+  `name=` (it was `scratch_name=`), matching `env.to_nwb(nwbfile, name)` and
+  `read_environment`, and defaults to `"spatial_environment"`. To build an
+  environment from the file's Position data, call
+  `neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)`
+  instead of `from_nwb(nwbfile, bin_size=...)`.
+  `environment_from_position` takes `bin_size` as a keyword and lists every
+  `from_samples` option (`name=`, `regions=`, `arena=`, `layout=`,
+  `fill_holes=` and so on) instead of forwarding `**kwargs`.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

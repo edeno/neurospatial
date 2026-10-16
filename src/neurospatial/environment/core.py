@@ -3626,82 +3626,61 @@ class Environment(Generic[_C]):
         cls,
         nwbfile: Any,
         *,
-        scratch_name: str | None = None,
-        bin_size: float | None = None,
-        **kwargs: Any,
+        name: str = "spatial_environment",
     ) -> Environment[Any]:
-        """Create Environment from NWB file.
+        """Load an Environment saved in an NWB file's scratch space.
 
-        This classmethod provides two modes of operation:
-
-        1. **Load from scratch**: If `scratch_name` is provided, loads a previously
-           stored Environment from the NWB file's scratch space. Schema 2.0
-           restores the complete binning without a layout builder. Older records
-           must be recreated with a factory and saved again.
-
-        2. **Create from position**: If `bin_size` is provided (and `scratch_name`
-           is not), creates a new Environment by discretizing position data found
-           in the NWB file's behavior processing module.
+        Reads a record written by :meth:`to_nwb` (or
+        :func:`neurospatial.io.nwb.write_environment`). Schema 3.0 restores the
+        complete binning, arena and regions without a layout builder. To
+        build a new environment from the file's Position data, use
+        :func:`neurospatial.io.nwb.environment_from_position`.
 
         Parameters
         ----------
         nwbfile : NWBFile
             The NWB file to read from. Must be a pynwb.NWBFile instance.
-        scratch_name : str, optional
-            Name of the stored environment in scratch/. If provided, loads
-            the Environment from NWB scratch space (takes precedence over bin_size).
-        bin_size : float, optional
-            Bin size for environment discretization when creating from Position data.
-            Required if scratch_name is not provided.
-        **kwargs
-            Additional keyword arguments forwarded to environment_from_position()
-            when creating from position data. Common kwargs include:
-            - units : str - Spatial units for the environment
-            - frame : str - Coordinate frame identifier
-            - infer_active_bins : bool - Whether to only include visited bins
-            - bin_count_threshold : int - Minimum samples per bin
+        name : str, default "spatial_environment"
+            Name of the stored record in scratch/, as passed to
+            :meth:`to_nwb`. The restored environment keeps its own saved
+            ``env.name``.
 
         Returns
         -------
         Environment
-            The loaded or newly created Environment.
+            The stored Environment, in its original coordinate system.
 
         Raises
         ------
-        ValueError
-            If neither scratch_name nor bin_size is provided.
         KeyError
-            If scratch_name is provided but not found in NWB scratch space,
-            or if bin_size is provided but no Position data is found.
+            If no record called `name` is in the NWB scratch space.
+        ValueError
+            If the stored record uses an unsupported schema or is inconsistent.
         ImportError
             If pynwb is not installed.
 
         See Also
         --------
         to_nwb : Write Environment to NWB file.
-        neurospatial.io.nwb.read_environment : Low-level NWB reading function.
-        neurospatial.io.nwb.environment_from_position : Create from Position data.
+        neurospatial.io.nwb.read_environment : The NWB reader this method calls.
+        neurospatial.io.nwb.environment_from_position : Bin NWB Position data.
 
         Examples
         --------
-        Load a previously stored environment from scratch:
-
-        >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-        >>> from neurospatial import Environment  # doctest: +SKIP
-        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
-
-        Create environment from Position data:
-
-        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     env = Environment.from_nwb(nwbfile, bin_size=5.0, units="cm")
-
+        >>> from datetime import datetime, timezone
+        >>> from pynwb import NWBFile
+        >>> from neurospatial import Environment
+        >>> env = Environment.linear_track(
+        ...     endpoints=[(0, 0), (6, 0)], bin_size=2.0, units="cm"
+        ... )
+        >>> nwbfile = NWBFile(
+        ...     "example", "example", datetime(2025, 1, 1, tzinfo=timezone.utc)
+        ... )
+        >>> env.to_nwb(nwbfile, name="linear_track")
+        >>> Environment.from_nwb(nwbfile, name="linear_track").n_bins
+        3
         """
-        return _from_nwb(
-            cls, nwbfile, scratch_name=scratch_name, bin_size=bin_size, **kwargs
-        )
+        return _from_nwb(cls, nwbfile, name=name)
 
     def bin_center_of(
         self,
@@ -4410,7 +4389,7 @@ class Environment(Generic[_C]):
             The NWB file to write to. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
             Name for the environment in scratch/. Use this name when loading
-            with ``Environment.from_nwb(nwbfile, scratch_name=name)``.
+            with ``Environment.from_nwb(nwbfile, name=name)``.
         overwrite : bool, default False
             If True, replace existing environment with the same name.
             If False, raise ValueError on duplicate name.
@@ -4460,7 +4439,7 @@ class Environment(Generic[_C]):
 
         >>> with NWBHDF5IO(path, "r") as io:  # doctest: +SKIP
         ...     nwbfile = io.read()
-        ...     loaded_env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+        ...     loaded_env = Environment.from_nwb(nwbfile, name="linear_track")
 
         """
         try:
