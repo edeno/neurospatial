@@ -131,3 +131,62 @@ def test_shortest_paths_match_center_distances(annotated):
     assert actual.keys() == expected.keys()
     for node, length in expected.items():
         assert actual[node] == pytest.approx(length, rel=1e-12)
+
+
+def _edge_id_environments():
+    from shapely.geometry import Polygon
+
+    from neurospatial.layout import create_layout
+
+    positions = np.random.default_rng(3).uniform(0, 30, (3000, 2))
+    track = nx.Graph()
+    for node, pos in enumerate([(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (40.0, 0.0)]):
+        track.add_node(node, pos=pos)
+    for u, v in [(0, 1), (1, 2), (1, 3)]:
+        track.add_edge(u, v, distance=20.0)
+    return {
+        "grid": lambda: Environment.from_samples(positions, bin_size=3.0),
+        "hexagonal": lambda: Environment.from_samples(
+            positions, bin_size=3.0, layout="Hexagonal"
+        ),
+        "mesh": lambda: Environment.from_layout(
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (30, 0), (30, 30), (0, 30)]),
+                point_spacing=4.0,
+            )
+        ),
+        "track": lambda: Environment.from_graph(
+            track, [(0, 1), (1, 2), (1, 3)], bin_size=2.0, edge_spacing=3.0
+        ),
+    }
+
+
+def _edge_ids_are_pair_rows(env):
+    rows = {frozenset(map(int, pair)): i for i, pair in enumerate(env.edge_pairs)}
+    assert sorted(rows.values()) == list(range(env.edge_pairs.shape[0]))
+    for u, v, data in env.connectivity.edges(data=True):
+        assert data["edge_id"] == rows[frozenset((u, v))]
+
+
+@pytest.mark.parametrize("layout", ["grid", "hexagonal", "mesh", "track"])
+def test_subset_numbers_edge_ids_by_kept_pair_row(layout):
+    env = _edge_id_environments()[layout]()
+    _edge_ids_are_pair_rows(env)
+    # Dropping every third bin removes pairs from the middle of the list.
+    child = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+    assert child.edge_pairs.shape[0] < env.edge_pairs.shape[0]
+    _edge_ids_are_pair_rows(child)
+
+
+@pytest.mark.parametrize("circular", [True, False])
+def test_polar_edge_ids_number_pair_rows_across_the_seam(circular):
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi) if circular else (-np.pi / 2, np.pi / 2),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+        circular_angle=circular,
+    )
+    _edge_ids_are_pair_rows(env)
+    _edge_ids_are_pair_rows(Environment.from_dict(env.to_dict()))

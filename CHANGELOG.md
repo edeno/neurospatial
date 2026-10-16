@@ -303,9 +303,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   used to give the bin's position among the active bins, which pointed at gap
   cells after the first gap.
 
-- The `edge_id` of each connectivity edge of a polar environment is its row in
-  `env.edge_pairs`, as on other layouts. Edges across the angular seam used to
-  have IDs that did not match their rows.
+- The `edge_id` of each connectivity edge is its row in `env.edge_pairs` on
+  every layout, so it can index edge values such as gradients and fluxes.
+  Edges across the angular seam of a polar environment, and the edges of a
+  hexagonal, triangular-mesh or track environment after `subset()`, used to
+  keep IDs that did not match their rows.
 
 - `Environment.open_field(..., fill_holes=False)` works; it used to fail with
   a `TypeError` about multiple values for `fill_holes`.

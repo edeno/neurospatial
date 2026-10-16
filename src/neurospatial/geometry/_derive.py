@@ -195,8 +195,8 @@ def select_bins(
     binning : Binning
         The kept bins, renumbered ``0..n_kept-1`` in their original order.
     graph : networkx.Graph
-        Induced graph, in the parent's node and edge order. Grid selections
-        number ``edge_id`` from 0.
+        Induced graph, in the parent's node and edge order, with each
+        ``edge_id`` renumbered to its row in the kept pairs.
     dimension_ranges : tuple of (float, float)
         Extent of the kept cells, with no margin (see
         :func:`neurospatial.geometry._explicit.cell_extent`): the grid extent
@@ -215,8 +215,7 @@ def select_bins(
     for index, (u, v) in enumerate(binning.bins.pairs):
         old_u, old_v = selected[u], selected[v]
         data = dict(connectivity.edges[old_u, old_v])
-        if binning.rectilinear is not None:
-            data["edge_id"] = index
+        data["edge_id"] = index
         graph.add_edge(int(u), int(v), **data)
     ranges = cell_extent(binning, shapeless="centers")
     return binning, graph, ranges
