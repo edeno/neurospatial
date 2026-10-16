@@ -1534,7 +1534,10 @@ class Environment(Generic[_C]):
             Position coordinates matching environment dimensions. An interval
             that starts at a sample outside the environment, or at a sample
             with a NaN coordinate (missing; see Missing data in the class
-            Notes), adds no occupancy.
+            Notes), adds no occupancy. With ``time_allocation='linear'`` an
+            interval with a NaN at either end adds none, and an interval with
+            an end outside the environment adds only the time its straight
+            path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
