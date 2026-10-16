@@ -369,12 +369,12 @@ def environment_from_position(
     layout: LayoutType | str = "RegularGrid",
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int | None = None,
-    dilate: bool | None = None,
-    fill_holes: bool | None = None,
-    close_gaps: bool | None = None,
-    add_boundary_bins: bool | None = None,
-    connect_diagonal_neighbors: bool | None = None,
+    bin_count_threshold: int = 0,
+    dilate: bool = False,
+    fill_holes: bool = False,
+    close_gaps: bool = False,
+    add_boundary_bins: bool = False,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """
     Create an Environment by binning the positions in an NWB Position container.
@@ -415,14 +415,17 @@ def environment_from_position(
         ``[(min, max), ...]`` extent to tile on each axis.
     infer_active_bins : bool, default True
         Whether to only include bins visited by the animal.
-    bin_count_threshold : int, optional
-        Minimum samples per bin. Default 0. Only with
-        ``infer_active_bins=True``.
-    dilate, fill_holes, close_gaps, add_boundary_bins, connect_diagonal_neighbors : bool, optional
-        Regular grid only; see :meth:`Environment.from_samples` for their
-        defaults. Passing any of them with ``layout="Hexagonal"`` raises
-        ``ValueError``, and so does passing `dilate`, `fill_holes` or
-        `close_gaps` with ``infer_active_bins=False``.
+    bin_count_threshold : int, default 0
+        Minimum samples per bin. Only with ``infer_active_bins=True``.
+    dilate, fill_holes, close_gaps, add_boundary_bins : bool, default False
+        Regular grid only; see :meth:`Environment.from_samples`.
+    connect_diagonal_neighbors : bool, default True
+        Regular grid only; see :meth:`Environment.from_samples`.
+
+        Changing any regular-grid-only option from its default with
+        ``layout="Hexagonal"`` raises ``ValueError``, and so does changing
+        `bin_count_threshold`, `dilate`, `fill_holes` or `close_gaps` with
+        ``infer_active_bins=False``. The defaults are always accepted.
 
     Returns
     -------
@@ -434,9 +437,9 @@ def environment_from_position(
     KeyError
         If no Position container found, or if specified position_name not found.
     ValueError
-        If `layout` is neither "RegularGrid" nor "Hexagonal", or an option is
-        passed that the chosen layout or ``infer_active_bins=False`` does not
-        use. The message names ``environment_from_position``.
+        If `layout` is neither "RegularGrid" nor "Hexagonal", or an option
+        that the chosen layout or ``infer_active_bins=False`` ignores differs
+        from its default. The message names ``environment_from_position``.
     ImportError
         If pynwb is not installed.
 

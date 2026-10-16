@@ -129,16 +129,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     angle_bin_size=np.pi / 8)`. Four positional numbers were easy to swap.
 
 - `Environment.from_samples`, `Environment.open_field` and
-  `neurospatial.io.nwb.environment_from_position` refuse options that the
-  call would ignore, instead of ignoring them without a word. The
-  regular-grid-only options (`dilate`, `fill_holes`, `close_gaps`,
-  `add_boundary_bins`, `connect_diagonal_neighbors`) raise `ValueError` with
-  `layout="Hexagonal"`. With `infer_active_bins=False` every bin in the extent
-  is active, so `bin_count_threshold`, `dilate`, `fill_holes` and
-  `close_gaps` raise `ValueError`. A `layout=` other than `"RegularGrid"` or
-  `"Hexagonal"` raises `ValueError` listing the supported layouts and the
-  factory to use instead; it used to raise `NotImplementedError`. Errors from
-  `environment_from_position` name that function.
+  `neurospatial.io.nwb.environment_from_position` refuse option values that
+  the call would ignore, instead of ignoring them without a word. A
+  regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
+  `add_boundary_bins`, `connect_diagonal_neighbors`) set to anything but its
+  default raises `ValueError` with `layout="Hexagonal"`. With
+  `infer_active_bins=False` every bin in the extent is active, so changing
+  `bin_count_threshold`, `dilate`, `fill_holes` or `close_gaps` from its
+  default raises `ValueError`. The defaults are accepted with any layout, and
+  the signatures show them (`dilate: bool = False`,
+  `bin_count_threshold: int = 0`, `connect_diagonal_neighbors: bool = True`;
+  `fill_holes` defaults to `True` in `open_field`). A `layout=` other than
+  `"RegularGrid"` or `"Hexagonal"` raises `ValueError` listing the supported
+  layouts and the factory to use instead; it used to raise
+  `NotImplementedError`. Errors from `environment_from_position` name that
+  function.
 
 - `Environment.from_layout` takes a built layout engine instead of a layout
   name and a dictionary of build parameters:

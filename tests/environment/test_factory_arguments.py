@@ -73,37 +73,79 @@ def test_cartesian_factories_accept_the_same_labels(factory):
         assert parameters[label].kind is inspect.Parameter.KEYWORD_ONLY
 
 
-@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
-@pytest.mark.parametrize(
-    ("option", "value"),
-    [
-        ("dilate", True),
-        ("fill_holes", True),
-        ("close_gaps", True),
-        ("add_boundary_bins", True),
-        # Passing a regular grid's default value is still an explicit choice
-        # that a hexagonal layout would ignore.
-        ("connect_diagonal_neighbors", True),
-        ("dilate", False),
-    ],
+_REGULAR_GRID_ONLY = (
+    "dilate",
+    "fill_holes",
+    "close_gaps",
+    "add_boundary_bins",
+    "connect_diagonal_neighbors",
 )
+_MASK_OPTIONS = ("bin_count_threshold", "dilate", "fill_holes", "close_gaps")
+
+
+def _default(factory, option):
+    return inspect.signature(getattr(Environment, factory)).parameters[option].default
+
+
+def _changed(factory, option):
+    """A value that differs from the factory's default for ``option``."""
+    default = _default(factory, option)
+    return 5 if option == "bin_count_threshold" else not default
+
+
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+def test_sample_option_signatures_show_their_real_defaults(factory):
+    defaults = {
+        option: _default(factory, option)
+        for option in ("bin_count_threshold", *_REGULAR_GRID_ONLY)
+    }
+    assert defaults == {
+        "bin_count_threshold": 0,
+        "dilate": False,
+        "fill_holes": factory == "open_field",
+        "close_gaps": False,
+        "add_boundary_bins": False,
+        "connect_diagonal_neighbors": True,
+    }
+
+
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+@pytest.mark.parametrize("option", _REGULAR_GRID_ONLY)
 def test_regular_grid_option_with_hexagonal_layout_is_refused(
-    factory, option, value, positions
+    factory, option, positions
 ):
-    with pytest.raises(ValueError, match=option) as caught:
+    value = _changed(factory, option)
+    with pytest.raises(ValueError, match=f"{option}={value!r}") as caught:
         getattr(Environment, factory)(
             positions, bin_size=3.0, layout="Hexagonal", **{option: value}
         )
     message = str(caught.value)
-    assert f"{factory}(layout='Hexagonal')" in message
+    assert f"{factory}(layout='Hexagonal') cannot apply" in message
     assert "Fix: remove" in message
     assert "layout='RegularGrid'" in message
 
 
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+def test_hexagonal_layout_accepts_the_regular_grid_defaults(factory, positions):
+    """A parameter set can switch layouts without editing the grid options."""
+    defaults = {option: _default(factory, option) for option in _REGULAR_GRID_ONLY}
+    explicit = getattr(Environment, factory)(
+        positions, bin_size=3.0, layout="Hexagonal", **defaults
+    )
+    omitted = getattr(Environment, factory)(positions, bin_size=3.0, layout="Hexagonal")
+    _same_bins(explicit, omitted)
+    assert explicit.layout_parameters == omitted.layout_parameters
+
+
 def test_refusal_lists_every_inapplicable_option(positions):
-    with pytest.raises(ValueError, match="does not use dilate, close_gaps"):
+    with pytest.raises(ValueError, match="cannot apply dilate=True, close_gaps=True"):
         Environment.from_samples(
-            positions, bin_size=3.0, layout="Hexagonal", dilate=True, close_gaps=True
+            positions,
+            bin_size=3.0,
+            layout="Hexagonal",
+            dilate=True,
+            fill_holes=False,
+            close_gaps=True,
         )
 
 
@@ -204,29 +246,29 @@ def test_from_layout_owns_a_copy_of_the_engine_bins():
 
 
 @pytest.mark.parametrize("factory", ["from_samples", "open_field"])
-@pytest.mark.parametrize(
-    ("option", "value"),
-    [
-        ("bin_count_threshold", 5),
-        # The default value passed explicitly is still a choice that would
-        # be ignored.
-        ("bin_count_threshold", 0),
-        ("dilate", True),
-        ("fill_holes", False),
-        ("close_gaps", True),
-    ],
-)
-def test_mask_option_without_inferred_bins_is_refused(
-    factory, option, value, positions
-):
-    with pytest.raises(ValueError, match=option) as caught:
+@pytest.mark.parametrize("option", _MASK_OPTIONS)
+def test_mask_option_without_inferred_bins_is_refused(factory, option, positions):
+    value = _changed(factory, option)
+    with pytest.raises(ValueError, match=f"{option}={value!r}") as caught:
         getattr(Environment, factory)(
             positions, bin_size=3.0, infer_active_bins=False, **{option: value}
         )
     message = str(caught.value)
-    assert f"{factory}(infer_active_bins=False) does not use" in message
+    assert f"{factory}(infer_active_bins=False) cannot apply" in message
     assert "every bin in the extent is active" in message
     assert "infer_active_bins=True" in message.split("Fix:")[1]
+
+
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+def test_mask_option_defaults_without_inferred_bins_are_accepted(factory, positions):
+    defaults = {option: _default(factory, option) for option in _MASK_OPTIONS}
+    explicit = getattr(Environment, factory)(
+        positions, bin_size=3.0, infer_active_bins=False, **defaults
+    )
+    omitted = getattr(Environment, factory)(
+        positions, bin_size=3.0, infer_active_bins=False
+    )
+    _same_bins(explicit, omitted)
 
 
 @pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])

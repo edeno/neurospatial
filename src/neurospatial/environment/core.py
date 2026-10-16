@@ -2536,12 +2536,12 @@ class Environment(Generic[_C]):
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
-        bin_count_threshold: int | None = None,
-        dilate: bool | None = None,
-        fill_holes: bool | None = None,
-        close_gaps: bool | None = None,
-        add_boundary_bins: bool | None = None,
-        connect_diagonal_neighbors: bool | None = None,
+        bin_count_threshold: int = 0,
+        dilate: bool = False,
+        fill_holes: bool = False,
+        close_gaps: bool = False,
+        add_boundary_bins: bool = False,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
@@ -2587,28 +2587,29 @@ class Environment(Generic[_C]):
             If True, only bins containing ≥ `bin_count_threshold` samples are
             "active." If False, every bin in the extent is active, and the
             mask options (`bin_count_threshold`, `dilate`, `fill_holes`,
-            `close_gaps`) cannot be passed.
-        connect_diagonal_neighbors : bool, optional
-            Regular grid only. If True (the default), connect grid bins
-            diagonally when building connectivity.
+            `close_gaps`) must keep their defaults.
+        connect_diagonal_neighbors : bool, default True
+            Regular grid only. If True, connect grid bins diagonally when
+            building connectivity. A hexagonal layout accepts only the
+            default.
 
         Other Parameters
         ----------------
-        bin_count_threshold : int, optional
+        bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be considered
-            "active." Default 0. Only with ``infer_active_bins=True``.
-        dilate : bool, optional
+            "active." Only with ``infer_active_bins=True``.
+        dilate : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, apply
-            morphological dilation to the active-bin mask. Default False.
-        fill_holes : bool, optional
+            morphological dilation to the active-bin mask.
+        fill_holes : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, fill
-            holes in the active-bin mask. Default False.
-        close_gaps : bool, optional
+            holes in the active-bin mask.
+        close_gaps : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, close
-            small gaps between active bins. Default False.
-        add_boundary_bins : bool, optional
+            small gaps between active bins.
+        add_boundary_bins : bool, default False
             Regular grid only. If True, add peripheral bins around the
-            bounding region of samples. Default False.
+            bounding region of samples.
 
         Returns
         -------
@@ -2621,9 +2622,11 @@ class Environment(Generic[_C]):
             If `positions` is not 2D or contains invalid coordinates; if
             `layout` is neither "RegularGrid" nor "Hexagonal"; if a
             regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
-            `add_boundary_bins`, `connect_diagonal_neighbors`) is passed with
-            ``layout="Hexagonal"``; or if a mask option is passed with
-            ``infer_active_bins=False``.
+            `add_boundary_bins`, `connect_diagonal_neighbors`) differs from
+            its default with ``layout="Hexagonal"``; or if a mask option
+            differs from its default with ``infer_active_bins=False``. The
+            default values themselves are accepted, so a parameter set can
+            switch layouts without editing these options.
 
         See Also
         --------
@@ -2734,12 +2737,12 @@ class Environment(Generic[_C]):
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
-        bin_count_threshold: int | None = None,
-        dilate: bool | None = None,
-        fill_holes: bool | None = None,
-        close_gaps: bool | None = None,
-        add_boundary_bins: bool | None = None,
-        connect_diagonal_neighbors: bool | None = None,
+        bin_count_threshold: int = 0,
+        dilate: bool = False,
+        fill_holes: bool = True,
+        close_gaps: bool = False,
+        add_boundary_bins: bool = False,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an open-arena Environment from sampled positions.
 
@@ -2774,26 +2777,26 @@ class Environment(Generic[_C]):
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are
             "active." If False, every bin in the extent is active, and the
-            mask options cannot be passed. See :meth:`from_samples`.
-        bin_count_threshold : int, optional
+            mask options must keep their defaults. See :meth:`from_samples`.
+        bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be "active."
-            Default 0. Only with ``infer_active_bins=True``.
-        dilate : bool, optional
+            Only with ``infer_active_bins=True``.
+        dilate : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, apply
-            morphological dilation to the active-bin mask. Default False.
-        fill_holes : bool, optional
-            Regular grid only, with ``infer_active_bins=True``. If True (the
-            default here), fill holes in the active-bin mask. Pass False to
-            keep the unvisited interior bins out.
-        close_gaps : bool, optional
+            morphological dilation to the active-bin mask.
+        fill_holes : bool, default True
+            Regular grid only, with ``infer_active_bins=True``. If True, fill
+            holes in the active-bin mask. Pass False to keep the unvisited
+            interior bins out.
+        close_gaps : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, close
-            small gaps between active bins. Default False.
-        add_boundary_bins : bool, optional
+            small gaps between active bins.
+        add_boundary_bins : bool, default False
             Regular grid only. If True, add peripheral bins around the
-            bounding region of samples. Default False.
-        connect_diagonal_neighbors : bool, optional
-            Regular grid only. If True (the default), connect grid bins
-            diagonally when building connectivity.
+            bounding region of samples.
+        connect_diagonal_neighbors : bool, default True
+            Regular grid only. If True, connect grid bins diagonally when
+            building connectivity.
 
         Returns
         -------
@@ -2804,8 +2807,9 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If `layout` is neither "RegularGrid" nor "Hexagonal", if a
-            regular-grid-only option is passed with ``layout="Hexagonal"``, or
-            if a mask option is passed with ``infer_active_bins=False``.
+            regular-grid-only option differs from its default with
+            ``layout="Hexagonal"``, or if a mask option differs from its
+            default with ``infer_active_bins=False``.
 
         See Also
         --------

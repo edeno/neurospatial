@@ -431,13 +431,28 @@ class TestEnvironmentFromPosition:
 
         with pytest.raises(
             ValueError,
-            match=r"environment_from_position\(layout='Hexagonal'\) does not use dilate",
+            match=r"environment_from_position\(layout='Hexagonal'\) cannot apply dilate=True",
         ):
             environment_from_position(
                 sample_nwb_with_position, bin_size=5.0, layout="Hexagonal", dilate=True
             )
         with pytest.raises(TypeError, match="positional"):
             environment_from_position(sample_nwb_with_position, 5.0)
+
+    def test_default_options_are_accepted_with_any_layout(
+        self, sample_nwb_with_position
+    ):
+        from neurospatial.io.nwb import environment_from_position
+
+        env = environment_from_position(
+            sample_nwb_with_position,
+            bin_size=5.0,
+            layout="Hexagonal",
+            dilate=False,
+            connect_diagonal_neighbors=True,
+            bin_count_threshold=0,
+        )
+        assert env.layout_type == "Hexagonal"
 
 
 class TestWriteEnvironment:

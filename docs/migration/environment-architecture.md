@@ -421,8 +421,9 @@ ax.set_xlim(low - 1.0, high + 1.0)
 ## Factory arguments
 
 Every `Environment` factory takes its data positionally and every option by
-keyword, following the argument order used across neurospatial. Options that a
-layout does not use raise an error instead of being ignored.
+keyword, following the argument order used across neurospatial. An option
+that the layout would ignore raises an error when you change it from its
+default, instead of being ignored.
 
 ### `from_samples` and `open_field`
 
@@ -439,19 +440,26 @@ other names that used to be forwarded to the layout engine now raise
 `TypeError`. The options that clean up a regular grid's active-bin mask or set
 its diagonal connections (`dilate`, `fill_holes`, `close_gaps`,
 `add_boundary_bins`, `connect_diagonal_neighbors`) mean nothing on a hexagonal
-layout, so passing any of them with `layout="Hexagonal"` raises `ValueError`.
-Remove them from the call; leaving them out gives the same hexagons as before:
+layout, so setting any of them to a value other than its default with
+`layout="Hexagonal"` raises `ValueError` (it used to be ignored). Remove
+those values from the call; leaving them out gives the same hexagons as
+before. The defaults themselves are accepted, so a parameter set that sweeps
+`layout` over `["RegularGrid", "Hexagonal"]` can spell them out:
 
 <!-- docs-test: run -->
 ```python
 # Before: Environment.from_samples(positions, 4.0, layout="Hexagonal", fill_holes=True)
 hex_env = Environment.from_samples(positions, bin_size=4.0, layout="Hexagonal")
+
+grid_options = {"dilate": False, "fill_holes": False, "connect_diagonal_neighbors": True}
+for layout in ["RegularGrid", "Hexagonal"]:
+    Environment.from_samples(positions, bin_size=4.0, layout=layout, **grid_options)
 ```
 
 In the same way, `bin_count_threshold`, `dilate`, `fill_holes` and `close_gaps`
 decide which bins the samples make active. With `infer_active_bins=False`
-every bin in the extent is active, so passing any of them raises `ValueError`
-instead of being ignored. A `layout=` other than `"RegularGrid"` or
+every bin in the extent is active, so changing any of them from its default
+raises `ValueError` instead of being ignored. A `layout=` other than `"RegularGrid"` or
 `"Hexagonal"` raises `ValueError` (it was `NotImplementedError`); build such a
 layout with `create_layout` and pass it to `from_layout`.
 

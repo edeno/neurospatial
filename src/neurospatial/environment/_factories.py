@@ -215,16 +215,37 @@ def _from_bins(
     return result
 
 
-# Options that only a regular grid reads, with the value each takes when it
-# is not passed. A hexagonal layout has six fixed neighbors and no mask
-# clean-up, so passing any of these with ``layout="Hexagonal"`` is an error.
-_REGULAR_GRID_ONLY_DEFAULTS: dict[str, bool] = {
-    "add_boundary_bins": False,
+# Defaults of the options shared by from_samples, open_field and
+# environment_from_position. An option that the chosen layout or
+# infer_active_bins=False ignores is refused only when it differs from its
+# default, so passing the default explicitly is always accepted.
+_SAMPLE_OPTION_DEFAULTS: dict[str, Any] = {
+    "bin_count_threshold": 0,
     "dilate": False,
     "fill_holes": False,
     "close_gaps": False,
+    "add_boundary_bins": False,
     "connect_diagonal_neighbors": True,
 }
+# A hexagonal layout has six fixed neighbors and no mask clean-up.
+_REGULAR_GRID_ONLY = (
+    "add_boundary_bins",
+    "dilate",
+    "fill_holes",
+    "close_gaps",
+    "connect_diagonal_neighbors",
+)
+# With infer_active_bins=False every bin in the extent is active.
+_MASK_OPTIONS = ("bin_count_threshold", "dilate", "fill_holes", "close_gaps")
+
+
+def _changed(
+    options: dict[str, Any], defaults: dict[str, Any], names: Sequence[str]
+) -> list[str]:
+    """Show each option in ``names`` whose value differs from its default."""
+    return [
+        f"{name}={options[name]!r}" for name in names if options[name] != defaults[name]
+    ]
 
 
 def _from_samples(
@@ -240,19 +261,19 @@ def _from_samples(
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int | None = None,
-    dilate: bool | None = None,
-    fill_holes: bool | None = None,
-    close_gaps: bool | None = None,
-    add_boundary_bins: bool | None = None,
-    connect_diagonal_neighbors: bool | None = None,
+    bin_count_threshold: int = 0,
+    dilate: bool = False,
+    fill_holes: bool = False,
+    close_gaps: bool = False,
+    add_boundary_bins: bool = False,
+    connect_diagonal_neighbors: bool = True,
     factory: str = "from_samples",
-    grid_defaults: dict[str, bool] = _REGULAR_GRID_ONLY_DEFAULTS,
+    defaults: dict[str, Any] = _SAMPLE_OPTION_DEFAULTS,
 ) -> Environment:
     """Implement Environment.from_samples, open_field and the NWB builder.
 
-    ``None`` for `bin_count_threshold` or a regular-grid-only option means it
-    was not passed; the value then comes from ``0`` or ``grid_defaults``.
+    ``defaults`` holds the public factory's defaults of the shared options;
+    an option the layout ignores is refused only when it differs from them.
     ``factory`` names the public function in error messages.
     """
     try:
@@ -331,58 +352,54 @@ def _from_samples(
             )
         )
 
-    grid_options = {
-        "add_boundary_bins": add_boundary_bins,
+    options: dict[str, Any] = {
+        "bin_count_threshold": bin_count_threshold,
         "dilate": dilate,
         "fill_holes": fill_holes,
         "close_gaps": close_gaps,
+        "add_boundary_bins": add_boundary_bins,
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
-    passed_grid_options = {
-        option: value for option, value in grid_options.items() if value is not None
-    }
-    if layout_normalized == "hexagonal" and passed_grid_options:
-        listed = ", ".join(passed_grid_options)
+    changed_grid_options = _changed(options, defaults, _REGULAR_GRID_ONLY)
+    if layout_normalized == "hexagonal" and changed_grid_options:
+        listed = ", ".join(changed_grid_options)
         raise ValueError(
             _format_error(
-                f"{factory}(layout={layout_str!r}) does not use {listed}.",
+                f"{factory}(layout={layout_str!r}) cannot apply {listed}.",
                 why=(
                     "Why: these options shape the active-bin mask and the "
                     "neighbor graph of a regular grid. A hexagonal layout "
                     "always connects each hexagon to its six neighbors and "
-                    "does not clean up the active-bin mask, so the options "
+                    "does not clean up the active-bin mask, so the "
+                    f"{'values' if len(changed_grid_options) > 1 else 'value'} "
                     "would be ignored."
                 ),
                 fix=(
-                    f"remove {listed} from the call, or use "
-                    f"layout='RegularGrid' to apply {'them' if len(passed_grid_options) > 1 else 'it'}"
+                    f"remove {listed} from the call (the defaults are "
+                    "accepted), or use layout='RegularGrid' to apply "
+                    f"{'them' if len(changed_grid_options) > 1 else 'it'}"
                 ),
             )
         )
 
     # Mask options act only while active bins are inferred from the samples.
-    mask_options = {
-        "bin_count_threshold": bin_count_threshold,
-        "dilate": dilate,
-        "fill_holes": fill_holes,
-        "close_gaps": close_gaps,
-    }
-    passed_mask_options = [
-        option for option, value in mask_options.items() if value is not None
-    ]
-    if not infer_active_bins and passed_mask_options:
-        listed = ", ".join(passed_mask_options)
+    changed_mask_options = _changed(options, defaults, _MASK_OPTIONS)
+    if not infer_active_bins and changed_mask_options:
+        listed = ", ".join(changed_mask_options)
         raise ValueError(
             _format_error(
-                f"{factory}(infer_active_bins=False) does not use {listed}.",
+                f"{factory}(infer_active_bins=False) cannot apply {listed}.",
                 why=(
                     "Why: these options decide which bins the samples make "
                     "active. With infer_active_bins=False every bin in the "
-                    "extent is active, so the options would be ignored."
+                    f"extent is active, so the "
+                    f"{'values' if len(changed_mask_options) > 1 else 'value'} "
+                    "would be ignored."
                 ),
                 fix=(
-                    f"remove {listed} from the call, or set "
-                    "infer_active_bins=True to select bins from the samples"
+                    f"remove {listed} from the call (the defaults are "
+                    "accepted), or set infer_active_bins=True to select bins "
+                    "from the samples"
                 ),
             )
         )
@@ -392,17 +409,14 @@ def _from_samples(
     common_params = {
         "positions": positions,
         "infer_active_bins": infer_active_bins,
-        "bin_count_threshold": 0
-        if bin_count_threshold is None
-        else bin_count_threshold,
+        "bin_count_threshold": bin_count_threshold,
     }
 
     # Layout-specific parameters
     if layout_normalized == "regulargrid":
         specific_params: dict[str, Any] = {
             "bin_size": bin_size,
-            **grid_defaults,
-            **passed_grid_options,
+            **{name: options[name] for name in _REGULAR_GRID_ONLY},
         }
     else:
         specific_params = {"hexagon_width": bin_size}
@@ -461,12 +475,12 @@ def _open_field(
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int | None = None,
-    dilate: bool | None = None,
-    fill_holes: bool | None = None,
-    close_gaps: bool | None = None,
-    add_boundary_bins: bool | None = None,
-    connect_diagonal_neighbors: bool | None = None,
+    bin_count_threshold: int = 0,
+    dilate: bool = False,
+    fill_holes: bool = True,
+    close_gaps: bool = False,
+    add_boundary_bins: bool = False,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.open_field: from_samples that fills holes by default."""
     return _from_samples(
@@ -488,7 +502,7 @@ def _open_field(
         add_boundary_bins=add_boundary_bins,
         connect_diagonal_neighbors=connect_diagonal_neighbors,
         factory="open_field",
-        grid_defaults={**_REGULAR_GRID_ONLY_DEFAULTS, "fill_holes": True},
+        defaults={**_SAMPLE_OPTION_DEFAULTS, "fill_holes": True},
     )
 
 
