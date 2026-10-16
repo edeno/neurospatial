@@ -466,6 +466,13 @@
 
 - Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
 
+- `Environment.combine`, and `subset` and loading of a combined environment,
+  check component overlap only for cells whose bounding boxes intersect instead
+  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
+  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
+  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
+  are reported.
+
 ### Fixed
 
 - Keep valid gaze hits on slanted physical walls during view encoding, using
