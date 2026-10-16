@@ -424,14 +424,20 @@ native builders and their construction adapters live in `layout/`. The public
 are no compatibility alias modules, and pickles from earlier versions are not
 loadable.
 
-Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Environment
-adapters sit above independent `layout` and `ops` packages, which consume
-`geometry`. The whole geometry package cannot import builders, environments,
-analysis, storage or rendering packages. Type-only imports are excluded. Affine
-convenience functions call the public environment method through a narrow
-consumer protocol; Environment retains construction and analysis caches. No
-import exceptions are needed. New geometry modules are covered automatically.
-Keep `import-linter` in the dev extra; CI runs it on Python 3.13.
+Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Its layers
+contract places every top-level package and module: shared `_` utilities at
+the bottom, then `geometry` (with `extensions`), `regions`, independent
+`layout` and `ops`, `environment`, and the analysis, rendering and storage
+packages above it. A package imports only from layers below it, and a new
+top-level module must be added to a layer. The only upward imports are
+Environment facade methods that hand off to `io` or `animation`; each is listed
+in `ignore_imports`. Core packages also may not import from the lazy package
+root, which would hide the real dependency. The whole geometry package cannot
+import builders, environments, analysis, storage or rendering packages.
+Type-only imports are excluded. Affine convenience functions call the public
+environment method through a narrow consumer protocol; Environment retains
+construction and analysis caches. New geometry modules are covered
+automatically. Keep `import-linter` in the dev extra; CI runs it on Python 3.13.
 
 Check refactors with `scripts/environment_baseline.py`. Before changing code,
 run `uv run python scripts/environment_baseline.py record base.npz` on the

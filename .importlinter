@@ -4,12 +4,62 @@ include_external_packages = True
 exclude_type_checking_imports = True
 
 [importlinter:contract:layers]
-name = Environment adapters sit above independent builders and numerical operations
+name = Each package imports only from the layers below it
 type = layers
+containers =
+    neurospatial
+exhaustive = True
 layers =
+    io | annotation | testing
+    animation | events | simulation
+    decoding
+    encoding | behavior
+    stats
+    _results
+    environment
+    layout | ops
+    regions | arena | binning
+    geometry : extensions
+    _constants : _exceptions : _intervals : _logging : _lru : _stacklevel : _typing : _validation
+ignore_imports =
+    # Environment facade methods that hand off to storage (to_file, from_file,
+    # to_dict, from_dict, to_nwb, from_nwb) and rendering (animate_fields,
+    # plot(scale_bar=...)) through function-local imports.
+    neurospatial.environment.core -> neurospatial.io
+    neurospatial.environment.core -> neurospatial.io.nwb
+    neurospatial.environment._factories -> neurospatial.io.nwb
+    neurospatial.environment.core -> neurospatial.animation.core
+    neurospatial.environment._visualization -> neurospatial.animation.config
+broken_contract_guidance =
+    Move the imported code down to the importer's layer or below, or move the
+    importer up. Only Environment facade methods that hand off to io or
+    animation may import upward; list each such edge in ignore_imports.
+
+[importlinter:contract:package-root]
+name = Core packages never reach analysis code through the package root
+type = forbidden
+source_modules =
     neurospatial.environment
-    neurospatial.layout | neurospatial.ops
+    neurospatial.environment.**
+    neurospatial.layout
+    neurospatial.layout.**
+    neurospatial.ops
+    neurospatial.ops.**
+    neurospatial.regions
+    neurospatial.regions.**
+    neurospatial.arena
+    neurospatial.binning
     neurospatial.geometry
+    neurospatial.geometry.**
+    neurospatial.extensions
+forbidden_modules =
+    neurospatial
+as_packages = False
+allow_indirect_imports = True
+broken_contract_guidance =
+    The package root resolves its exports lazily, so an import from it hides
+    which package is really used. Import from the defining package instead,
+    for example neurospatial.regions rather than neurospatial.
 
 [importlinter:contract:geometry]
 name = Owned geometry stays independent of analysis, storage and rendering
