@@ -9,6 +9,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.binning import FaceGeometry, KnownFaces
+from neurospatial.environment._fields import face_geometry
 from neurospatial.io import from_dict, to_dict
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.transforms import AffineND
@@ -41,7 +42,10 @@ def test_rotated_unequal_scaling_uses_independent_face_area_oracles(dims, reflec
         scales[0] *= -1
     linear = rotation @ np.diag(scales)
     child = env.apply_transform(affine(linear))
-    old, actual = env._face_geometry, child._face_geometry
+    old, actual = (
+        face_geometry(env._cache, env._binning),
+        face_geometry(child._cache, child._binning),
+    )
     np.testing.assert_allclose(
         actual.volumes, old.volumes * abs(np.prod(scales)), rtol=1e-12
     )
@@ -70,7 +74,9 @@ def test_rotated_unequal_scaling_uses_independent_face_area_oracles(dims, reflec
     flux = gradient(child, np.arange(env.n_bins, dtype=float))
     assert divergence(child, flux) @ child.bin_sizes == pytest.approx(0.0, abs=1e-12)
     loaded = from_dict(to_dict(child))
-    np.testing.assert_array_equal(loaded._face_geometry.A, actual.A)
+    np.testing.assert_array_equal(
+        face_geometry(loaded._cache, loaded._binning).A, actual.A
+    )
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
@@ -86,10 +92,14 @@ def test_unequal_scaling_along_rotated_source_axes_is_certified(offset):
     assert child._binning.faces.available
     expected = env.apply_transform(affine(rotation @ np.diag([2.0, 3.0])))
     np.testing.assert_allclose(
-        child._face_geometry.A, expected._face_geometry.A, rtol=1e-12
+        face_geometry(child._cache, child._binning).A,
+        face_geometry(expected._cache, expected._binning).A,
+        rtol=1e-12,
     )
     np.testing.assert_allclose(
-        child._face_geometry.distance, expected._face_geometry.distance, rtol=1e-12
+        face_geometry(child._cache, child._binning).distance,
+        face_geometry(expected._cache, expected._binning).distance,
+        rtol=1e-12,
     )
 
 
@@ -109,7 +119,7 @@ def test_skew_cells_refuse_all_numerical_consumers_but_retain_geometry(operation
 
 def test_new_support_requires_located_flux_distances_and_normal_authority():
     env = grid(diagonal=False)
-    old = env._face_geometry
+    old = face_geometry(env._cache, env._binning)
     angle = 0.37
     linear = np.array(
         [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
@@ -152,7 +162,10 @@ def test_bridge_free_combined_cells_retain_normal_authority(offset):
         moved.smooth(np.ones(moved.n_bins), 0.7), 1.0, atol=1e-12
     )
     loaded = from_dict(to_dict(moved))
-    np.testing.assert_array_equal(loaded._face_geometry.A, moved._face_geometry.A)
+    np.testing.assert_array_equal(
+        face_geometry(loaded._cache, loaded._binning).A,
+        face_geometry(moved._cache, moved._binning).A,
+    )
 
 
 @pytest.mark.parametrize("derivation", ["native", "transformed", "subset"])

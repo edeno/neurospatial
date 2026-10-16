@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import KnownFaces
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._composition import CombinedLocator
@@ -24,7 +25,9 @@ def snapshot():
     return CombinedLocator(
         ("left", "right"),
         tuple(
-            replace(env._binning, faces=KnownFaces(env._face_geometry))
+            replace(
+                env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+            )
             for env in children
         ),
         tuple(env.arena for env in children),
@@ -153,7 +156,9 @@ def test_mutated_nested_face_array_is_revalidated():
         np.ones((2, 1, 1), dtype=bool),
         grid_edges=(np.arange(3.0), np.arange(2.0), np.arange(2.0)),
     )
-    child = replace(env._binning, faces=KnownFaces(env._face_geometry))
+    child = replace(
+        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+    )
     child.faces.faces.A.setflags(write=True)
     child.faces.faces.A[:] = -1
     combined = CombinedLocator(

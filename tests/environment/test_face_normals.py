@@ -13,6 +13,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import FaceNormals, KnownFaces
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
@@ -33,7 +34,7 @@ def _grid(n_dims=2, diagonal=True):
 def test_native_grid_normals_match_shared_faces(n_dims, diagonal):
     env = _grid(n_dims, diagonal)
     values = env._binning.face_normals.values
-    faces = env._face_geometry
+    faces = face_geometry(env._cache, env._binning)
     delta = (
         env.bin_centers[env.edge_pairs[:, 1]] - env.bin_centers[env.edge_pairs[:, 0]]
     )
@@ -56,7 +57,7 @@ def test_planar_normals_are_perpendicular_to_true_shared_edges(built_environment
     cells = materialize_cells(env._binning)
     for index, (u, v) in enumerate(env.edge_pairs):
         shared = cells[u].boundary.intersection(cells[v].boundary)
-        if env._face_geometry.A[index] == 0:
+        if face_geometry(env._cache, env._binning).A[index] == 0:
             np.testing.assert_array_equal(normals[index], 0)
             continue
         coordinates = np.asarray(shared.coords)
@@ -174,9 +175,11 @@ def test_invalid_normal_records_refused(invalid):
 )
 def test_explicit_bins_reject_inconsistent_normals(corruption):
     env = _grid()
-    binning = replace(env._binning, faces=KnownFaces(env._face_geometry))
+    binning = replace(
+        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+    )
     values = binning.face_normals.values.copy()
-    active = np.flatnonzero(env._face_geometry.A > 0)[0]
+    active = np.flatnonzero(face_geometry(env._cache, env._binning).A > 0)[0]
     if corruption == "reverse":
         values[active] *= -1
     elif corruption == "tangent":
@@ -185,7 +188,10 @@ def test_explicit_bins_reject_inconsistent_normals(corruption):
     elif corruption == "active_zero":
         values[active] = 0
     elif corruption == "path_unit":
-        values[np.flatnonzero(env._face_geometry.A == 0)[0]] = [1.0, 0.0]
+        values[np.flatnonzero(face_geometry(env._cache, env._binning).A == 0)[0]] = [
+            1.0,
+            0.0,
+        ]
     elif corruption == "wrong_shape":
         values = values[:-1]
     normals = FaceNormals(values)
@@ -230,7 +236,9 @@ def test_legacy_binning_keeps_old_transform_capabilities():
     original = env.apply_transform(Affine2D(matrix))
     legacy = loaded.apply_transform(Affine2D(matrix))
     for actual, expected in zip(
-        legacy._face_geometry, original._face_geometry, strict=True
+        face_geometry(legacy._cache, legacy._binning),
+        face_geometry(original._cache, original._binning),
+        strict=True,
     ):
         np.testing.assert_array_equal(actual, expected)
 
@@ -311,7 +319,7 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
         pairs,
         env._binning.bins.pair_distances[order],
     )
-    old = env._face_geometry
+    old = face_geometry(env._cache, env._binning)
     faces = KnownFaces(
         FaceGeometry(pairs, old.A[order], old.distance[order], env.bin_sizes)
     )
@@ -388,7 +396,7 @@ def test_non_geometric_bins_do_not_invent_normals():
 
 def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
     env = _grid()
-    old = env._face_geometry
+    old = face_geometry(env._cache, env._binning)
     # Diagonal neighbors share only a corner, so their physical face really
     # has zero area while their navigation connection remains present.
     contact = np.flatnonzero(old.A == 0)[0]

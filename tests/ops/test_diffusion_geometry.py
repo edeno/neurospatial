@@ -17,7 +17,11 @@ from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
-from neurospatial.environment._fields import diffusion_eigenbasis, mrf_eigenbasis
+from neurospatial.environment._fields import (
+    diffusion_eigenbasis,
+    face_geometry,
+    mrf_eigenbasis,
+)
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
@@ -618,7 +622,7 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
 def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env):
     for env in (_four_connected_grid(), _polar(), reloaded_graph_env):
         assert env._binning.faces.available
-        assert len(env._face_geometry.volumes) == env.n_bins
+        assert len(face_geometry(env._cache, env._binning).volumes) == env.n_bins
 
 
 @pytest.mark.parametrize(

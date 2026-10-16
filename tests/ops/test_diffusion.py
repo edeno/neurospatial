@@ -25,6 +25,7 @@ from environment_helpers import built_from, face_graph, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.ops.diffusion import (
@@ -591,7 +592,7 @@ def test_mesh_skew_guard_warns():
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
-        _ = env_ok._face_geometry
+        _ = face_geometry(env_ok._cache, env_ok._binning)
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
     # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
@@ -606,4 +607,4 @@ def test_mesh_skew_guard_warns():
         )
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
-        _ = env_skew._face_geometry
+        _ = face_geometry(env_skew._cache, env_skew._binning)

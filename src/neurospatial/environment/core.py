@@ -64,7 +64,6 @@ from neurospatial.environment._fields import (
     _smooth,
     diffusion_eigenbasis,
     diffusion_geometry,
-    face_geometry,
     require_face_geometry,
 )
 from neurospatial.environment._lookup import nearest_bin
@@ -149,7 +148,7 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._factories import PolygonType
     from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.layout._scale_bar import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
@@ -6172,16 +6171,6 @@ class Environment(Generic[_C]):
         return _diffuse(
             self._cache, self._binning, fields, bandwidth, mode=mode, backend=backend
         )
-
-    @property
-    def _face_geometry(self) -> FaceGeometry:
-        """Validated cell faces, cached for this immutable geometry.
-
-        Shared by the diffusion snapshot and the gradient and divergence
-        operators, which read it through ``require_face_geometry`` so a layout
-        without cell faces fails with an error naming the analysis.
-        """
-        return face_geometry(self._cache, self._binning)
 
     @property
     def _diffusion_geometry(self) -> DiffusionGeometry:

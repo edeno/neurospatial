@@ -7,6 +7,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.binning import KnownFaces
+from neurospatial.environment._fields import face_geometry
 
 
 @pytest.mark.parametrize("n_angle", [1, 2])
@@ -37,7 +38,7 @@ def test_factor_rebin_depends_on_grid_geometry_instead_of_kind_label():
         replace(
             source._binning,
             kind="RecordedGrid",
-            faces=KnownFaces(source._face_geometry),
+            faces=KnownFaces(face_geometry(source._cache, source._binning)),
         ),
         arena=source.arena,
     )
@@ -55,7 +56,11 @@ def test_boundary_detection_uses_owned_context_not_descriptive_kind(kind):
         grid_edges=(np.arange(4.0),) * 2,
     )
     renamed = Environment.from_bins(
-        replace(source._binning, kind=kind, faces=KnownFaces(source._face_geometry)),
+        replace(
+            source._binning,
+            kind=kind,
+            faces=KnownFaces(face_geometry(source._cache, source._binning)),
+        ),
         arena=source.arena,
     )
     np.testing.assert_array_equal(renamed.boundary_bins, source.boundary_bins)

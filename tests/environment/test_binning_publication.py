@@ -20,6 +20,7 @@ from environment_helpers import (
 )
 
 from neurospatial import CartesianOnlyError, Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
@@ -198,8 +199,8 @@ def test_faces_match_layout_and_cache_lifetime(
     env = built_environment
     graph, sizes = face_graph(_source_layout(env).binning())
     expected = FaceGeometry.from_graph(graph, sizes)
-    faces = env._face_geometry
-    assert faces is env._face_geometry
+    faces = face_geometry(env._cache, env._binning)
+    assert faces is face_geometry(env._cache, env._binning)
     for actual, reference in zip(faces, expected, strict=True):
         np.testing.assert_array_equal(actual, reference)
         assert not actual.flags.writeable
@@ -214,7 +215,7 @@ def test_faces_match_layout_and_cache_lifetime(
     published = env._binning
     env.clear_cache()
     assert env._binning is published
-    assert env._face_geometry is not faces
+    assert face_geometry(env._cache, env._binning) is not faces
     np.testing.assert_allclose(env.smooth(field, bandwidth=1.0), before)
 
 
@@ -251,12 +252,12 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     replacement = Environment.from_grid_mask(
         mask, grid_edges=edges, connect_diagonal_neighbors=False
     )
-    old_binning, old_faces = env._binning, env._face_geometry
+    old_binning, old_faces = env._binning, face_geometry(env._cache, env._binning)
     restored = Environment.from_dict(replacement.to_dict())
     assert restored._binning is not old_binning
-    assert restored._face_geometry is not old_faces
+    assert face_geometry(restored._cache, restored._binning) is not old_faces
     assert env._binning is old_binning
-    assert env._face_geometry is old_faces
+    assert face_geometry(env._cache, env._binning) is old_faces
     np.testing.assert_array_equal(
         restored._binning.bins.pairs, list(replacement.connectivity.edges())
     )
@@ -304,7 +305,7 @@ def test_faces_reject_changed_pair_order() -> None:
     binning = layout.binning()
     faces = binning.faces.build()
     np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
-    expected = env._face_geometry
+    expected = face_geometry(env._cache, env._binning)
     by_pair = {frozenset(pair): i for i, pair in enumerate(expected.edges)}
     for i, pair in enumerate(faces.edges):
         assert faces.A[i] == expected.A[by_pair[frozenset(pair)]]

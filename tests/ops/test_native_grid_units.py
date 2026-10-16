@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 
 
 @pytest.mark.parametrize("scale", [1e-12, 1e-10, 1e-8, 1.0])
@@ -15,7 +16,7 @@ def test_native_grid_faces_and_diffusion_scale_with_coordinate_units(scale):
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * scale, np.arange(2.0) * scale),
     )
-    faces = scaled._face_geometry
+    faces = face_geometry(scaled._cache, scaled._binning)
     np.testing.assert_allclose(faces.volumes, scale**2, rtol=1e-14, atol=0)
     assert faces.A[0] == pytest.approx(scale, rel=1e-14, abs=0)
     assert faces.distance[0] == pytest.approx(scale, rel=1e-14, abs=0)
@@ -33,7 +34,7 @@ def test_tiny_axis_does_not_turn_diagonal_contacts_into_physical_faces():
         grid_edges=(np.arange(3.0) * 1e-12, np.arange(3.0)),
         connect_diagonal_neighbors=True,
     )
-    faces = env._face_geometry
+    faces = face_geometry(env._cache, env._binning)
     areas = {
         frozenset(pair): area for pair, area in zip(faces.edges, faces.A, strict=True)
     }
@@ -51,7 +52,7 @@ def test_tiny_native_grid_keeps_faces_and_diffusion_under_uniform_scaling():
         grid_edges=(np.arange(3.0) * width, np.arange(2.0) * width),
     )
     transformed = env.apply_transform(Affine2D(np.diag([scale, scale, 1.0])))
-    faces = transformed._face_geometry
+    faces = face_geometry(transformed._cache, transformed._binning)
     assert faces.A[0] == pytest.approx(width * scale, rel=1e-14, abs=0)
     np.testing.assert_allclose(
         transformed.compute_kernel(0.5 * width * scale, mode="average"),

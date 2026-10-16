@@ -13,6 +13,7 @@ from hypothesis import strategies as st
 from shapely import Polygon
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
@@ -71,9 +72,9 @@ class TestCartesianDerivedGeometry:
         np.testing.assert_array_equal(child.bin_sizes, parent.bin_sizes[keep])
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
-        faces = parent._face_geometry
+        faces = face_geometry(parent._cache, parent._binning)
         selected = keep[faces.edges].all(axis=1)
-        actual = child._face_geometry
+        actual = face_geometry(child._cache, child._binning)
         np.testing.assert_array_equal(actual.edges, child_of[faces.edges[selected]])
         np.testing.assert_array_equal(actual.A, faces.A[selected])
         np.testing.assert_array_equal(actual.distance, faces.distance[selected])

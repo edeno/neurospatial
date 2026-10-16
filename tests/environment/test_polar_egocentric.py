@@ -10,6 +10,7 @@ import pytest
 
 from neurospatial import Environment, Regions
 from neurospatial._exceptions import CartesianOnlyError
+from neurospatial.environment._fields import face_geometry
 from neurospatial.environment.core import (
     CARTESIAN_OPERATIONS,
 )
@@ -1416,7 +1417,9 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
 
     with pytest.raises(ValueError, match="cartesian cell measures"):
         Environment.from_bins(
-            replace(env._binning, faces=KnownFaces(env._face_geometry))
+            replace(
+                env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+            )
         )
 
 

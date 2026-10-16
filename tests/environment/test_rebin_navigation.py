@@ -11,6 +11,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import FaceGeometry, FaceNormals, KnownFaces, SpatialBins
+from neurospatial.environment._fields import face_geometry
 
 
 def _grid(*, diagonal=False, scale=1.0, arena=None):
@@ -26,7 +27,7 @@ def _explicit_grid(source, *, spec, navigation=None):
     """Retain exact cells and faces while changing only declared navigation."""
     binning = source._binning
     bins = binning.bins
-    faces = source._face_geometry
+    faces = face_geometry(source._cache, source._binning)
     keep = np.ones(len(bins.pairs), dtype=bool)
     distances = bins.pair_distances.copy()
     if navigation == "long_path":

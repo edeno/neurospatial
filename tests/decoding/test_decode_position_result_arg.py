@@ -17,6 +17,7 @@ from environment_helpers import publish_binning, publish_environment
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.decoding.posterior import decode_position, decode_position_summary
 from neurospatial.encoding.spatial import SpatialRatesResult, compute_spatial_rates
+from neurospatial.environment._fields import face_geometry
 
 
 @pytest.fixture
@@ -65,7 +66,7 @@ def test_rate_result_rejects_different_environment(
         from neurospatial.geometry._locators import NearestBinLocator
 
         bins = replace(env._binning.bins, sizes=env.bin_sizes * 2)
-        faces = env._face_geometry._replace(volumes=bins.sizes)
+        faces = face_geometry(env._cache, env._binning)._replace(volumes=bins.sizes)
         binning = replace(
             env._binning,
             bins=bins,

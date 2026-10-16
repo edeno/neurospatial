@@ -10,6 +10,7 @@ import pytest
 from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -179,7 +180,9 @@ def test_graph_iteration_order_preserves_authoritative_pairs_and_weights(
     for (u, v), distance in zip(bins.pairs, bins.pair_distances, strict=True):
         assert facade.connectivity.edges[u, v]["distance"] == distance
     for actual, expected in zip(
-        facade._binning.faces.build(), env._face_geometry, strict=True
+        facade._binning.faces.build(),
+        face_geometry(env._cache, env._binning),
+        strict=True,
     ):
         np.testing.assert_array_equal(actual, expected)
 
@@ -333,7 +336,7 @@ def test_facade_validates_physical_grid_measures(built_environment, corrupt):
     env = built_environment
     binning = env._binning
     if corrupt:
-        faces = env._face_geometry
+        faces = face_geometry(env._cache, env._binning)
         binning = replace(
             binning,
             bins=replace(binning.bins, sizes=binning.bins.sizes * 2.0),
@@ -357,7 +360,7 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
         original,
         locator=replace(original.locator, edges=edges),
         rectilinear=replace(original.rectilinear, edges=edges),
-        faces=KnownFaces(env._face_geometry),
+        faces=KnownFaces(face_geometry(env._cache, env._binning)),
     )
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
         publish_binning(

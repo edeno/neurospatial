@@ -5,6 +5,7 @@ from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.encoding.spatial import _extract_connected_component_graph
+from neurospatial.environment._fields import face_geometry
 from neurospatial.layout import create_layout
 
 
@@ -60,7 +61,10 @@ def test_explicit_bins_segment_using_supplied_diagonal_connections():
         connect_diagonal_neighbors=True,
     )
     env = Environment.from_bins(
-        replace(original._binning, faces=KnownFaces(original._face_geometry))
+        replace(
+            original._binning,
+            faces=KnownFaces(face_geometry(original._cache, original._binning)),
+        )
     )
     assert env._binning.grid_spec.connect_diagonal
     mask = np.array([True, False, False, True])

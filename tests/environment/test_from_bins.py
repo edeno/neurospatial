@@ -25,6 +25,7 @@ from neurospatial.binning import (
     RectilinearLocator,
     SpatialBins,
 )
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._components import Outline
 from neurospatial.layout import create_layout
 from neurospatial.ops.calculus import divergence, gradient
@@ -835,9 +836,13 @@ def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_
     explicit = Environment.from_bins(
         replace(source, faces=KnownFaces(source.faces.build()))
     )
-    np.testing.assert_array_equal(explicit._face_geometry.A, env._face_geometry.A)
     np.testing.assert_array_equal(
-        explicit._face_geometry.distance, env._face_geometry.distance
+        face_geometry(explicit._cache, explicit._binning).A,
+        face_geometry(env._cache, env._binning).A,
+    )
+    np.testing.assert_array_equal(
+        face_geometry(explicit._cache, explicit._binning).distance,
+        face_geometry(env._cache, env._binning).distance,
     )
 
 
@@ -897,7 +902,9 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
         rectilinear=RectilinearGrid(edges, (2,), mask),
     )
     env = Environment.from_bins(source)
-    np.testing.assert_array_equal(env._face_geometry.distance, [scale])
+    np.testing.assert_array_equal(
+        face_geometry(env._cache, env._binning).distance, [scale]
+    )
     np.testing.assert_array_equal(env.bin_at(centers), [0, 1])
 
 
@@ -953,9 +960,13 @@ def _cell_face_source(kind, history):
 def test_explicit_cell_faces_from_native_layouts_round_trip(kind, history):
     env, source = _cell_face_source(kind, history)
     restored = Environment.from_bins(source)
-    np.testing.assert_array_equal(restored._face_geometry.A, env._face_geometry.A)
     np.testing.assert_array_equal(
-        restored._face_geometry.distance, env._face_geometry.distance
+        face_geometry(restored._cache, restored._binning).A,
+        face_geometry(env._cache, env._binning).A,
+    )
+    np.testing.assert_array_equal(
+        face_geometry(restored._cache, restored._binning).distance,
+        face_geometry(env._cache, env._binning).distance,
     )
 
 

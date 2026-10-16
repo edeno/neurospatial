@@ -14,6 +14,7 @@ import pytest
 from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment, Regions
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.io import from_dict, from_file, to_dict, to_file
@@ -57,7 +58,7 @@ def test_file_round_trip_identical(environment_round_trip):
         loaded.bin_sizes,
         loaded._binning.bins.pairs,
         loaded._binning.bins.pair_distances,
-        *loaded._face_geometry,
+        *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
 
@@ -149,7 +150,7 @@ def test_loaded_snapshot_pickle_restores_protected_arrays(environment_round_trip
         loaded.bin_centers,
         loaded.bin_sizes,
         loaded._binning.bins.pairs,
-        *loaded._face_geometry,
+        *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
 
@@ -302,7 +303,7 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
     binning = replace(
         native._binning,
         linearization=component,
-        faces=KnownFaces(native._face_geometry),
+        faces=KnownFaces(face_geometry(native._cache, native._binning)),
     )
     parameters = {
         "graph_definition": graph,
