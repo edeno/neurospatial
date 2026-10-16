@@ -1,4 +1,4 @@
-"""Infer continuous domains from supplied geometry without inventing walls."""
+"""Infer, check and apply an arena for a binning without inventing walls."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from neurospatial.geometry._polygon import (
     materialize_cells,
 )
 from neurospatial.geometry._validation import _polygon_area_allowance
-from neurospatial.geometry._wall_frame import _wall_source_frame as _wall_source_frame
+from neurospatial.geometry._wall_frame import _wall_source_frame
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning

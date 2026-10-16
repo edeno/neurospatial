@@ -26,9 +26,13 @@ from scipy import sparse
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
 from neurospatial.arena import EgocentricSurround
-from neurospatial.environment._arena import apply_walls, infer_arena, validate_arena
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.geometry import _validation
+from neurospatial.geometry._arena_binning import (
+    apply_walls,
+    infer_arena,
+    validate_arena,
+)
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._context import grid_index as compute_grid_index
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem

@@ -148,6 +148,11 @@
   `Environment.bin_sequence_with_runs()`, is importable from a public path for
   type annotations and `isinstance` checks.
 
+- Every arena type has `domain_bounds()`, the lower and upper corners of a box
+  that encloses its known Cartesian domain (`None` for an unknown domain, a
+  track without a width or a polar surround). `Environment.rebin(bin_size=...)`
+  uses it to lay out the new grid.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

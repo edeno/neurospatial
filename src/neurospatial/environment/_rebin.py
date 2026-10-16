@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, replace
-from itertools import product
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
@@ -23,15 +22,11 @@ import shapely
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._arena import apply_walls
 from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry._arena import (
     Arena,
-    MaskArena,
-    TrackArena,
-    _CombinedArena,
-    _TransformedArena,
 )
+from neurospatial.geometry._arena_binning import apply_walls
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._derive import transform_binning
 from neurospatial.geometry._explicit import prepare_bins
@@ -91,49 +86,6 @@ def warn_rebin_losses(
         lost = check.considered & lost
     _warn_unbinned(binning, arena, lost, check.lost_remedy)
     _warn_outline_crossings(arena, rebinned, check.crossing_remedy)
-
-
-def _arena_bounds(arena: Arena) -> NDArray[np.float64]:
-    """Enclose a known domain in its coordinate frame, without inventing walls."""
-    if not arena.domain_known:
-        raise NotImplementedError(
-            "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
-        )
-    if isinstance(arena, _TransformedArena):
-        limits = _arena_bounds(arena.base)
-        corners = np.array(list(product(*limits.T)))
-        mapped = corners @ arena.forward[:-1, :-1].T + arena.forward[:-1, -1]
-        return np.array([mapped.min(axis=0), mapped.max(axis=0)])
-    polygon = arena.polygonal_domain()
-    if polygon is not None:
-        return np.array([polygon.bounds[:2], polygon.bounds[2:]])
-    if isinstance(arena, MaskArena):
-        cells = np.argwhere(arena.active_mask)
-        return np.array(
-            [
-                [
-                    edge[int(low)]
-                    for edge, low in zip(arena.edges, cells.min(axis=0), strict=True)
-                ],
-                [
-                    edge[int(high) + 1]
-                    for edge, high in zip(arena.edges, cells.max(axis=0), strict=True)
-                ],
-            ]
-        )
-    if isinstance(arena, TrackArena) and arena.width is not None:
-        return np.array(
-            [
-                arena.segments.min(axis=(0, 1)) - arena.width / 2,
-                arena.segments.max(axis=(0, 1)) + arena.width / 2,
-            ]
-        )
-    if isinstance(arena, _CombinedArena):
-        children = np.array([_arena_bounds(child) for child in arena.children])
-        return np.array([children[:, 0].min(axis=0), children[:, 1].max(axis=0)])
-    raise NotImplementedError(
-        "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
-    )
 
 
 def _warn_unbinned(
@@ -274,7 +226,15 @@ def _rebin_resolution(
     local_arena = arena.transformed(
         np.asarray(np.linalg.inv(spec.forward), dtype=np.float64)
     )
-    limits = _arena_bounds(local_arena)
+    if not local_arena.domain_known:
+        raise NotImplementedError(
+            "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
+        )
+    limits = local_arena.domain_bounds()
+    if limits is None:
+        raise NotImplementedError(
+            "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
+        )
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         low = np.floor((limits[0] - spec.origin) / spacing)
         high = np.ceil((limits[1] - spec.origin) / spacing)

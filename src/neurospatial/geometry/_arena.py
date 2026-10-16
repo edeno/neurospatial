@@ -67,6 +67,17 @@ class Arena(Protocol):
         """Return exact planar polygonal support when available."""
         ...
 
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Return a box enclosing the known Cartesian domain.
+
+        Returns
+        -------
+        ndarray of float64, shape (2, n_dims), or None
+            Lower and upper corners, or None when the domain is unknown or
+            has no Cartesian box (for example a track without a width).
+        """
+        ...
+
 
 def _error(what: str, fix: str) -> ValueError:
     return ValueError(_format_error(what, fix=fix))
@@ -106,6 +117,11 @@ def _unknown() -> NotImplementedError:
             fix="supply explicit arena geometry or a positive full track width",
         )
     )
+
+
+def _polygon_bounds(polygon: Polygon | MultiPolygon) -> NDArray[np.float64]:
+    """Lower and upper corners of a planar polygon, shape (2, 2)."""
+    return np.array([polygon.bounds[:2], polygon.bounds[2:]])
 
 
 def _polygon(value: Any, name: str = "polygon") -> Polygon | MultiPolygon:
@@ -249,6 +265,10 @@ class UnknownArena:
         """Return no invented polygon."""
         return None
 
+    def domain_bounds(self) -> None:
+        """An unknown domain has no bounds."""
+        return None
+
 
 @dataclass(frozen=True, eq=False)
 class OpenArena:
@@ -314,6 +334,10 @@ class OpenArena:
     def polygonal_domain(self) -> Polygon | MultiPolygon:
         """Return the immutable stored polygonal domain."""
         return self.polygon
+
+    def domain_bounds(self) -> NDArray[np.float64]:
+        """Bound the stored polygon."""
+        return _polygon_bounds(self.polygon)
 
 
 @dataclass(frozen=True, eq=False)
@@ -448,6 +472,25 @@ class MaskArena(_ArrayState):
         ]
         return cast("Polygon | MultiPolygon", shapely.union_all(cells))
 
+    def domain_bounds(self) -> NDArray[np.float64]:
+        """Bound the active cells (their exact union in two dimensions)."""
+        polygon = self.polygonal_domain()
+        if polygon is not None:
+            return _polygon_bounds(polygon)
+        cells = np.argwhere(self.active_mask)
+        return np.array(
+            [
+                [
+                    edge[int(low)]
+                    for edge, low in zip(self.edges, cells.min(axis=0), strict=True)
+                ],
+                [
+                    edge[int(high) + 1]
+                    for edge, high in zip(self.edges, cells.max(axis=0), strict=True)
+                ],
+            ]
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class TrackArena(_ArrayState):
@@ -554,6 +597,17 @@ class TrackArena(_ArrayState):
         """Do not approximate round caps with a polygonal buffer."""
         return None
 
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the capsules of a track with a known width."""
+        if self.width is None:
+            return None
+        return np.array(
+            [
+                self.segments.min(axis=(0, 1)) - self.width / 2,
+                self.segments.max(axis=(0, 1)) + self.width / 2,
+            ]
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class EgocentricSurround:
@@ -622,6 +676,10 @@ class EgocentricSurround:
 
     def polygonal_domain(self) -> None:
         """A polar window is not a Cartesian polygon."""
+        return None
+
+    def domain_bounds(self) -> None:
+        """A polar window has no Cartesian box."""
         return None
 
 
@@ -748,6 +806,15 @@ class _TransformedArena(_ArrayState):
             if domain is None
             else cast("Polygon | MultiPolygon", _mapped_geometry(domain, self.forward))
         )
+
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the mapped corners of the base domain's box."""
+        limits = self.base.domain_bounds()
+        if limits is None:
+            return None
+        corners = np.array(list(itertools.product(*limits.T)))
+        mapped = corners @ self.forward[:-1, :-1].T + self.forward[:-1, -1]
+        return np.array([mapped.min(axis=0), mapped.max(axis=0)])
 
 
 def _track_distances(
@@ -914,6 +981,17 @@ class _CombinedArena:
         if any(polygon is None for polygon in polygons):
             return None
         return cast("Polygon | MultiPolygon", shapely.union_all(polygons))
+
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the union, or every component box when it is not polygonal."""
+        polygon = self.polygonal_domain()
+        if polygon is not None:
+            return _polygon_bounds(polygon)
+        limits = [child.domain_bounds() for child in self.children]
+        if any(limit is None for limit in limits):
+            return None
+        children = np.array(limits)
+        return np.array([children[:, 0].min(axis=0), children[:, 1].max(axis=0)])
 
 
 def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
