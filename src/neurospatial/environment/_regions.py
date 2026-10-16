@@ -170,6 +170,11 @@ def _region_mask(
     # Polygon (and other area-bearing) regions: delegate to the
     # canonical containment predicate.
     if len(polygon_regions) > 0:
+        if not isinstance(include_boundary, bool):
+            raise TypeError(
+                "include_boundary must be a bool, got "
+                f"{type(include_boundary).__name__}"
+            )
         mask |= _polygon_regions_mask(
             centers, polygon_regions, include_boundary=include_boundary
         )

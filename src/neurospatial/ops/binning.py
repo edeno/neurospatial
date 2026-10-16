@@ -625,18 +625,12 @@ def _polygon_regions_mask(
 
     Raises
     ------
-    TypeError
-        If ``include_boundary`` is not a bool.
     NotImplementedError
         If a polygon region is tested against bin centers that are not 2-D.
     """
     from shapely import contains, covers
     from shapely import points as shapely_points
 
-    if not isinstance(include_boundary, bool):
-        raise TypeError(
-            f"include_boundary must be a bool, got {type(include_boundary).__name__}"
-        )
     mask = np.zeros(len(bin_centers), dtype=bool)
 
     # Check if we have any polygon regions (to avoid unnecessary computation)
