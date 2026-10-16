@@ -2636,7 +2636,7 @@ def _compute_glm_spatial_rates(
     Orchestrates the ``method="glm"`` estimator: it owns the **unit-major <->
     bin-major** boundary, the float64 core / dtype-at-the-boundary split, and the
     two-concern backend handling. It composes the reduced-rank penalty basis
-    (:meth:`Environment._mrf_basis`) and the penalized-Poisson fit
+    (:meth:`Environment.get_mrf_basis`) and the penalized-Poisson fit
     (:func:`neurospatial.encoding._glm.fit_mrf_gam`) without modifying either.
 
     The encoding side is **unit-major** ``(n_units, n_bins)``; the fit is
@@ -2696,7 +2696,7 @@ def _compute_glm_spatial_rates(
     n_units, n_bins = spike_counts.shape
 
     # Reduced-rank penalty basis from occupancy (live-bin order).
-    basis = env._mrf_basis(occupancy, rank=rank)
+    basis = env.get_mrf_basis(occupancy, rank=rank)
     live_bins = np.asarray(basis.live_bins, dtype=np.intp)
 
     # Dead-component warning is owned here (not by ``fit_mrf_gam``): it needs env's
@@ -2704,7 +2704,7 @@ def _compute_glm_spatial_rates(
     # when there ARE units and there is at least one live component but fewer than
     # the total: the fully-dead (zero total occupancy) case is already covered by
     # ``fit_mrf_gam``'s own warning, and a no-neuron call has no rates to floor.
-    n_components = int(env._diffusion_geometry.n_components)
+    n_components = int(env.get_diffusion_geometry().n_components)
     if n_units and 0 < basis.n_live_components < n_components:
         n_dead = n_components - basis.n_live_components
         warnings.warn(

@@ -164,6 +164,75 @@ factor. Unequal axis scaling and shear raise because scalar path lengths do not
 determine how those paths stretch. See [snapshot adapters](interoperability.md#installed-snapshot-adapters)
 to convert an external provider into these built-in records.
 
+`env.binning` returns an independent snapshot for inspecting or preparing geometry.
+Changing its array shapes, writable flags or values cannot change the environment.
+Reading it keeps native face recipes lazy. `from_bins()` requires explicit faces;
+materialize them when rebuilding a native Cartesian snapshot:
+
+<!-- docs-test: run -->
+```python
+from dataclasses import replace
+import numpy as np
+from neurospatial import Environment
+from neurospatial.binning import KnownFaces
+
+original = Environment.from_grid_mask(
+    np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+)
+snapshot = original.binning
+explicit = replace(snapshot, faces=KnownFaces(snapshot.faces.build()))
+rebuilt = Environment.from_bins(explicit, arena=original.arena)
+np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
+```
+
+`MissingFaces` already states that numerical geometry is unavailable and needs
+no conversion. Polar snapshots retain radius/angle coordinates; use environment
+storage to restore those, because `from_bins()` constructs Cartesian geometry.
+
+For nearest-center assignment, use `env.nearest_bin(points)`; the existing
+`map_points_to_bins(env, points)` function forwards to it. Both reuse the
+environment's query tree and retain the same tie-breaking and distance limits.
+This is different from `bin_at()`, which checks Cartesian cell containment.
+For compatibility, nearest-center queries on polar environments compare the
+stored radius and angle columns as ordinary Euclidean coordinates with mixed
+units. These values are not physical polar distances or containment tests.
+
+For a custom numerical analysis, use `env.coordinate_system` to interpret the
+columns and `env.get_diffusion_geometry()` to inspect conductances, cell measures
+and connected diffusion components. These are independent read-only exports.
+The environment keeps its expensive geometry and eigenbasis caches private.
+
+`env.compute_gaussian_kernel(bandwidth)` returns unnormalized Gaussian weights
+that ignore walls; `env.diffuse(field, bandwidth)` respects the numerical boundary
+geometry. After diffusion, `env.diffusion_accuracy(bandwidth)` reports its relative
+noise floor. A spatial model can request a Markov random field smoothness basis
+with `env.get_mrf_basis(occupancy, rank=...)`.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.environment import CartesianSystem
+
+env: Environment[CartesianSystem] = Environment.from_grid_mask(
+    np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+)
+geometry = env.get_diffusion_geometry()
+assert geometry.W.shape == (9, 9)
+assert geometry.n_components == 1
+weights = env.compute_gaussian_kernel(1.0)
+assert not weights.flags.writeable
+smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), 1.0)
+assert env.diffusion_accuracy(1.0) <= 1e-6
+basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
+assert basis.B.shape == (env.n_bins, 4)
+```
+
+Geometry and Gaussian exports have independent headers over immutable buffers;
+repeated reads reuse those buffers. Use `.copy()` for editable arrays or sparse
+matrices. MRF basis arrays are already independent and editable. Environment
+copies and restored files start with fresh private analysis caches.
+
 ## Add known geometry when available
 
 `env.arena` describes continuous support; `env.bin_at(positions)` and
@@ -517,8 +586,8 @@ assigning a distant wall to a nearby bin would change the measured location.
 Build cells that reach the wall, or explicitly request the analysis-boundary
 approximation. `from_polygon()` keeps whole cells whose centers lie inside, so
 its cells stop short of a curved or slanted wall. To reach such a wall, clip a
-grid that covers the arena to the measured polygon and pass those cells to
-`Environment.from_bins(..., arena=OpenArena(polygon))`.
+grid that covers the arena to the measured polygon and attach its walls:
+`Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
 The geometry-only `compute_viewed_location()` still returns the known physical
 hit even when its location has no analysis bin.
 

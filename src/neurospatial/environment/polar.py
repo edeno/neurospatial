@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from neurospatial.environment._coordinates import (
+from neurospatial.geometry._coordinates import (
     _POLAR_COORDINATES,
     EgocentricPolarSystem,
 )

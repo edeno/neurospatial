@@ -111,8 +111,8 @@ face source in `Binning.faces`:
   components.
 
 The construction adapter captures supported native face inputs once when
-publishing `env._binning`; it does not check the legacy
-`FiniteVolumeGeometryProvider` protocol. Environment operations read the
+publishing owned binning. The obsolete finite-volume provider protocol is
+removed; numerical capability comes from the stored faces source. Environment operations read the
 resulting components. Geometry without supported faces has a `MissingFaces`
 reason. Saved binnings use
 `KnownFaces` for validated geometry and retain that reason when geometry is absent.
@@ -184,7 +184,7 @@ array views reject writes and its graph rejects topology and attribute edits.
 starts fresh caches. Readers decode binning and graph records directly through
 this path, without replaying build parameters. Readers validate the storage
 format; publication runs the shared geometry checks once.
-`layout/_validation.py` checks positions, ordered faces and distances, measures,
+`geometry/_validation.py` checks positions, ordered faces and distances, measures,
 locator/component agreement, frames and immediate clip mappings. Center lookup
 is checked on a detached locator so publication does not warm the saved value's
 lookup cache. Validated embedded tracks may revisit identical spatial centers; center
@@ -203,7 +203,7 @@ the topology of new records, but retain their previous limitation of dropping
 these reserved user attributes; use a current reader to recover them.
 
 
-`subset` and `apply_transform` derive a binning through `layout/_derive.py` and
+`subset` and `apply_transform` derive a binning through `geometry/_derive.py` and
 publish it through the same owned-data path. Subsets select whole bins and restrict
 ordered faces, locators and components. Translations and similarities preserve
 finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
@@ -236,7 +236,7 @@ Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
 They include a required Arena record. Version 2/`2.0` remains readable with an
 explicit `UnknownArena`, without inferring physical geometry from parameters,
 outlines or masks. Version 1/`1.x` records are refused with recreation guidance.
-Pure codecs in `layout/_codecs.py` and `arena.py` store typed arrays and JSON
+Pure codecs in `geometry/_codecs.py` and `geometry/_arena.py` store typed arrays and JSON
 metadata; polygon WKB bytes and offsets preserve ordered cells and holes.
 Shared snapshot references retain locator ownership without duplicating each
 record. Bounded KD-tree and Delaunay memos are rebuilt from saved data.
@@ -246,12 +246,12 @@ JSON metadata and canonical-key/shape/dtype mapping, without padding or a
 custom extension.
 
 `Environment._face_geometry` builds from `env._binning.faces` and caches the
-validated faces once per state version;
+validated faces once for the immutable environment;
 the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
 operators all derive from it. Consumers read it through
 `_require_face_geometry(operation)`, which names the analysis when the layout
-has no cell faces. The existing state-version and `clear_cache()` mechanisms
-own every cache lifetime.
+has no cell faces. Private analyses use standard-library `cached_property`; `clear_cache()`
+ends their lifetime explicitly. Copies and saved environments omit these caches.
 
 Numerical consumers declare their small environment requirements in
 `ops._protocols`, so Cartesian and polar environments satisfy them without
@@ -260,6 +260,31 @@ MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
 libraries at runtime. The dense-operation warning threshold is
 `neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
 Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both coordinate variants of the common Environment against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
+
+### Owned geometry and builder boundaries
+
+`geometry/` holds immutable binning records, locators, arena evidence, coordinate
+semantics, validation and codecs. It does not import environment adapters,
+layout builders, numerical solvers, storage backends or rendering libraries.
+`neurospatial.binning` and `neurospatial.arena` retain their public import paths.
+Private aliases keep existing supported pickle records readable; new code imports
+geometry from its current package.
+
+`layout/` constructs native binnings. `ops/` implements numerical algorithms on
+explicit geometry and arrays. These packages are independent peers above
+`geometry/`. `environment/` coordinates them and owns cached analyses. Import
+contracts enforce these package boundaries without ignored dependency edges.
+Importing `neurospatial.binning` does not load native builders, `environment.core`
+or Matplotlib. Standalone validation functions retain their public contracts;
+publication additionally checks agreement between the graph and owned binning.
+
+Subset selection lives in `environment/_subset.py`; both supported rebin calls
+live in `environment/_rebin.py`. Factor rebin preserves its historical grid
+partitioning rules, while `rebin(bin_size=...)` uses the saved binning
+specification and frame. Both publish through the same owned-data path. Shared
+time-support calculations live in `_intervals.py`, and physical wall-frame
+evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
+`ops/_boundaries.py` calculation with explicit geometry inputs.
 
 ### Environment architecture
 
@@ -289,7 +314,12 @@ type.
 
 Geometry uses the [owned publication path](#diffusion-geometry-providers)
 described above. Derivations return new environments with fresh analysis caches.
-`layout/_graph.py` projects newly constructed binning into standard navigation
+The environment owns its nearest-query tree and differential-operator caches.
+Compatibility functions delegate through public query, operator and cache-control
+methods. Numerical builders receive explicit centers, trees or face geometry;
+they do not inspect or mutate environment caches. `env.binning` is a detached
+public snapshot for consumers preparing geometry, and keeps native faces lazy.
+`geometry/_graph.py` projects newly constructed binning into standard navigation
 graph attributes for explicit bins and clipping. It preserves bin IDs and pair
 row IDs. Derivations such as subsets retain their existing graph metadata and
 edge ordering rather than rebuilding those annotations from geometry alone.
@@ -306,7 +336,8 @@ Shared code asks the owned coordinate descriptor about lengths, axes and
 circularity, or uses public `coordinate_kind` for metadata. Do not discriminate
 using environment classes or descriptive layout labels.
 
-Layout-specific operations read components from `env._binning`: faces for
+Environment adapters read components from the owned binning; other packages
+use `env.binning`: faces for
 smoothing, a rectilinear grid for grid interpolation and native N-D time
 allocation, exact planar cells for polygon time allocation, and linearization
 for track coordinate conversions. The construction adapter reads a
@@ -314,8 +345,17 @@ for track coordinate conversions. The construction adapter reads a
 `track_linearization()`. Custom builders supply supported owned binning
 snapshots. Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Integer-factor `rebin` retains its existing RegularGrid-family
-restriction, truncation warnings and complete-face wall constraints.
+alternative. Integer-factor `rebin` requires uniform rectangular cells and
+native grid navigation, allowing physical walls to remove connections. It
+refuses custom path lengths or topology that cell geometry cannot reconstruct,
+and retains truncation warnings and complete-face wall constraints.
+Both rebin modes live in `environment/_rebin.py`; selection of existing bins
+lives in `environment/_subset.py`. Rebin construction policies remain distinct:
+factor mode retains native lazy faces and its recorded grid parameters, while
+resolution mode prepares faces for the retained affine frame. Both use the
+same atomic `Environment._from_binning` publisher for owned data, walls and
+fresh analysis caches. The old `environment.transforms` path only re-exports
+private implementation functions for compatibility.
 `rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
 provenance. It re-bins the retained known arena, preserving the grid anchor and
 affine frame; requested sizes are physical lengths along those axes. Subset and
@@ -335,14 +375,21 @@ must refuse instead of silently switching boundary sources.
 methods. Algorithms live in private module functions using narrow protocols;
 there are no environment mixins or broad host protocol.
 
-Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Geometry data
-cannot import the public environment, native builders, encoders or optional
-storage/UI libraries. Numerical operations cannot import concrete environment
-APIs or builders. Type-only imports are excluded. The single ignored edge is
-`ops.transforms -> environment._affine`: the existing public transform
-convenience function lazily forwards to that construction adapter. The numerical
-package is otherwise checked in full. Add new geometry modules to the data
-contract and keep `import-linter` in the dev extra; CI runs it on Python 3.13.
+Owned geometry, validation, codecs and pure coordinate math live in `geometry/`;
+native builders and their construction adapters live in `layout/`. The public
+`neurospatial.binning` and `neurospatial.arena` imports remain stable. Former
+private geometry modules contain explicit aliases so trusted builder-free
+pickles written before this move can still resolve their classes. They contain
+no parallel implementation. Older layout-bearing pickles remain unsupported.
+
+Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Environment
+adapters sit above independent `layout` and `ops` packages, which consume
+`geometry`. The whole geometry package cannot import builders, environments,
+analysis, storage or rendering packages. Type-only imports are excluded. Affine
+convenience functions call the public environment method through a narrow
+consumer protocol; Environment retains construction and analysis caches. No
+import exceptions are needed. New geometry modules are covered automatically.
+Keep `import-linter` in the dev extra; CI runs it on Python 3.13.
 
 Check refactors with `scripts/environment_baseline.py`. Before changing code,
 run `uv run python scripts/environment_baseline.py record base.npz` on the

@@ -5,7 +5,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _get_gaussian_kernel
-from neurospatial.environment._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
 
 
 @pytest.fixture
@@ -66,15 +66,15 @@ def test_axis_names_and_length_ranges(units):
 
 
 def test_cartesian_declaration_and_fallback_lengths(cartesian_env):
-    assert isinstance(cartesian_env._coordinate_system, CartesianSystem)
+    assert isinstance(cartesian_env.coordinate_system, CartesianSystem)
     np.testing.assert_array_equal(
-        cartesian_env._coordinate_system.fallback_lengths(cartesian_env),
+        cartesian_env.coordinate_system.fallback_lengths(cartesian_env),
         np.ones(cartesian_env.n_bins),
     )
 
 
 def test_polar_declaration_and_fallback_lengths(polar_env):
-    system = polar_env._coordinate_system
+    system = polar_env.coordinate_system
     assert isinstance(system, EgocentricPolarSystem)
     assert system.circular == polar_env._angular_is_circular
     assert system.circular == polar_env.layout_parameters["circular_angle"]
@@ -83,12 +83,12 @@ def test_polar_declaration_and_fallback_lengths(polar_env):
 
 def test_gaussian_cache_reuses_only_its_own_kernel(cartesian_env):
     kernel = _get_gaussian_kernel(cartesian_env, 1.0)
-    assert _get_gaussian_kernel(cartesian_env, 1.0) is kernel
+    assert np.shares_memory(_get_gaussian_kernel(cartesian_env, 1.0), kernel)
     copied = cartesian_env.copy()
     other = _get_gaussian_kernel(copied, 1.0)
-    assert other is not kernel
+    assert not np.shares_memory(other, kernel)
     np.testing.assert_array_equal(other, kernel)
-    assert _get_gaussian_kernel(cartesian_env, 2.0) is not kernel
+    assert not np.shares_memory(_get_gaussian_kernel(cartesian_env, 2.0), kernel)
 
 
 def test_clear_cache_rebuilds_an_identical_gaussian_kernel(cartesian_env):

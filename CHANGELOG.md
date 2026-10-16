@@ -37,8 +37,8 @@
   slanted wall reach it: a hit is owned by the cell within that cell's
   coordinate rounding of the hit, instead of an overlay of nearly coincident
   edges. Cells that stop short of the wall still refuse, and the message names
-  the route that builds wall-reaching cells: clip a covering grid to the wall
-  polygon and pass those cells to `Environment.from_bins(..., arena=OpenArena(polygon))`.
+  the route that builds wall-reaching cells:
+  `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
 
 - Observers tracked exactly on a wall no longer view their own position. A ray
   or cue sight line that leaves the wall into the room reaches the next wall;
@@ -107,6 +107,13 @@
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 ### Added
+
+- Expose detached, read-only `env.binning` snapshots and public coordinate,
+  diffusion-geometry, diffusion-accuracy, MRF-basis and Gaussian-kernel
+  operations. Environment owns analysis caches; numerical consumers use public
+  operations or explicit geometry. Existing public geometry imports remain
+  stable while owned data and codecs move into an independent `geometry/`
+  package with enforced dependency rules.
 
 - Preserve linear interpolation and movement time fractions after rotating,
   reflecting or shearing Cartesian 2-D/3-D grids. Planar grids use exact QuadMesh

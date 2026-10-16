@@ -71,7 +71,10 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
     assert fv_env._divergence_operator_cached is cached
     np.testing.assert_array_equal(exported.toarray(), operator.toarray())
     np.testing.assert_allclose(
-        operator.toarray(), _compute_divergence_operator(fv_env).toarray()
+        operator.toarray(),
+        _compute_divergence_operator(
+            fv_env.binning.faces.build(), fv_env.get_differential_operator()
+        ).toarray(),
     )
     flux = np.random.default_rng(4).normal(size=fv_env.connectivity.number_of_edges())
     np.testing.assert_allclose(divergence(fv_env, flux), operator @ flux)
@@ -167,7 +170,12 @@ class TestDifferentialOperatorComputation:
         D = compute_differential_operator(env)
 
         # Compute Laplacian from differential operator
-        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_from_D = (
+            -_compute_divergence_operator(
+                env.binning.faces.build(), env.get_differential_operator()
+            )
+            @ D.T
+        ).toarray()
 
         # Get finite-volume diffusion generator
         L_fv = _diffusion_generator(env).toarray()
@@ -227,7 +235,12 @@ class TestDifferentialOperatorComputation:
         assert D.shape == (n_bins, n_edges)
 
         # Finite-volume generator relationship should still hold
-        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_from_D = (
+            -_compute_divergence_operator(
+                env.binning.faces.build(), env.get_differential_operator()
+            )
+            @ D.T
+        ).toarray()
         L_fv = _diffusion_generator(env).toarray()
         np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
@@ -296,7 +309,12 @@ class TestDifferentialOperatorEdgeCases:
         assert D.shape == (n_bins, n_edges)
 
         # Finite-volume generator relationship should hold
-        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_from_D = (
+            -_compute_divergence_operator(
+                env.binning.faces.build(), env.get_differential_operator()
+            )
+            @ D.T
+        ).toarray()
         L_fv = _diffusion_generator(env).toarray()
         np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
@@ -309,7 +327,12 @@ class TestDifferentialOperatorEdgeCases:
         D = env.get_differential_operator()
 
         # Should still satisfy Finite-volume generator relationship
-        L_from_D = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L_from_D = (
+            -_compute_divergence_operator(
+                env.binning.faces.build(), env.get_differential_operator()
+            )
+            @ D.T
+        ).toarray()
         L_fv = _diffusion_generator(env).toarray()
         np.testing.assert_allclose(L_from_D, L_fv, rtol=1e-10, atol=1e-10)
 
@@ -320,7 +343,12 @@ class TestDifferentialOperatorEdgeCases:
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = env.get_differential_operator()
-        L = (-_compute_divergence_operator(env) @ D.T).toarray()
+        L = (
+            -_compute_divergence_operator(
+                env.binning.faces.build(), env.get_differential_operator()
+            )
+            @ D.T
+        ).toarray()
 
         # Laplacian should be symmetric
         np.testing.assert_allclose(L, L.T, rtol=1e-10, atol=1e-10)

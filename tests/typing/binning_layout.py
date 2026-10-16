@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.layout._binning import Binning
+    from neurospatial.geometry._binning import Binning
 
     def _check(env: Environment, points: NDArray[np.float64]) -> None:
         assert_type(env._binning, Binning)

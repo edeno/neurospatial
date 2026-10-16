@@ -134,7 +134,7 @@ def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]
     def _encode(value: Any) -> Any:
         # networkx graph -> node-link dict (same form used for connectivity)
         if isinstance(value, nx.Graph):
-            from neurospatial.layout._codecs import graph_to_node_link
+            from neurospatial.geometry._codecs import graph_to_node_link
 
             return {"__nx_graph__": graph_to_node_link(value)}
         # shapely geometry -> WKT string (round-trippable, human-readable)
@@ -159,7 +159,7 @@ def _decode_layout_parameters(params: Any) -> Any:
     """Inverse of ``_jsonsafe_layout_parameters`` for the sentinel dicts."""
     if isinstance(params, dict):
         if set(params) == {"__nx_graph__"}:
-            from neurospatial.layout._codecs import graph_from_node_link
+            from neurospatial.geometry._codecs import graph_from_node_link
 
             return graph_from_node_link(params["__nx_graph__"])
         if set(params) == {"__shapely_wkt__"}:
@@ -449,10 +449,10 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
-    from neurospatial.arena import encode_arena
-    from neurospatial.layout._codecs import encode, graph_to_node_link
+    from neurospatial.geometry._arena import encode_arena
+    from neurospatial.geometry._codecs import encode, graph_to_node_link
 
-    binning_meta, binning_arrays = encode(env._binning, "binning")
+    binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
     metadata: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
@@ -556,12 +556,12 @@ def _restore_environment(
     legacy_arena: bool = False,
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
-    from neurospatial.arena import Arena, UnknownArena, decode_arena
     from neurospatial.environment import Environment
-    from neurospatial.layout._binning import Binning, TrackLinearization
-    from neurospatial.layout._codecs import decode, graph_from_node_link
-    from neurospatial.layout._context import grid_index
-    from neurospatial.layout._locators import HexLocator, MeshLocator
+    from neurospatial.geometry._arena import Arena, UnknownArena, decode_arena
+    from neurospatial.geometry._binning import Binning, TrackLinearization
+    from neurospatial.geometry._codecs import decode, graph_from_node_link
+    from neurospatial.geometry._context import grid_index
+    from neurospatial.geometry._locators import HexLocator, MeshLocator
     from neurospatial.regions import Region, Regions
 
     try:

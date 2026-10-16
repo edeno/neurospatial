@@ -14,15 +14,11 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.layout._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
-)
-from neurospatial.layout._construction import binning_from_layout
-from neurospatial.layout._diffusion import (
+from neurospatial.geometry._diffusion import (
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._capabilities import RectilinearGridProvider
+from neurospatial.layout._construction import binning_from_layout
 
 _BuiltEnvironment = Environment | Environment
 
@@ -85,10 +81,10 @@ def test_binning_capabilities_match_layout_protocols(
     assert (binning.rectilinear is not None) == isinstance(
         layout, RectilinearGridProvider
     )
-    assert (binning.linearization is not None) == isinstance(
-        layout, TrackLinearizationProvider
+    assert (binning.linearization is not None) == layout.is_linearized_track
+    assert binning.faces.available == callable(
+        getattr(layout, "finite_volume_geometry", None)
     )
-    assert binning.faces.available == isinstance(layout, FiniteVolumeGeometryProvider)
     if not hasattr(layout, "bin_shapes"):
         assert binning.shapes is None
     if not hasattr(layout, "outline"):
@@ -267,17 +263,12 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     replacement = Environment.from_grid_mask(
         mask, grid_edges=edges, connect_diagonal_neighbors=False
     )
-    old_binning, old_faces, version = (
-        env._binning,
-        env._face_geometry,
-        env._state_version,
-    )
+    old_binning, old_faces = env._binning, env._face_geometry
     restored = Environment.from_dict(replacement.to_dict())
     assert restored._binning is not old_binning
     assert restored._face_geometry is not old_faces
     assert env._binning is old_binning
     assert env._face_geometry is old_faces
-    assert env._state_version == version
     np.testing.assert_array_equal(
         restored._binning.bins.pairs, list(replacement.connectivity.edges())
     )
@@ -289,7 +280,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    geometry, published, version = env._geometry, env._binning, env._state_version
+    geometry, published = env._geometry, env._binning
     kernel = env.compute_kernel(1.0)
     cached_kernel = env._kernel_cache[(1.0, "density")]
     layout = _source_layout(env)
@@ -300,7 +291,6 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
     assert env._geometry is geometry
     assert env._binning is published
-    assert env._state_version == version
     assert env._kernel_cache[(1.0, "density")] is cached_kernel
     np.testing.assert_array_equal(env.compute_kernel(1.0), kernel)
 

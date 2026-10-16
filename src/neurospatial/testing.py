@@ -16,8 +16,8 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 
@@ -110,7 +110,7 @@ def assert_environment_contract(
         np.testing.assert_array_equal(restored.edge_pairs, pairs)
         assert not restored._kernel_cache
 
-    if not env._binning.faces.available:
+    if not env.binning.faces.available:
         try:
             env.get_differential_operator()
         except NotImplementedError:

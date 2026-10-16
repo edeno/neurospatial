@@ -11,11 +11,7 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import (
-        CartesianSystem,
-        CoordinateSystem,
-        EgocentricPolarSystem,
-    )
+    from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
     from neurospatial.environment._protocols import (
         CartesianLookupConsumer,
         CellLengthConsumer,
@@ -26,6 +22,7 @@ if TYPE_CHECKING:
         TrajectoryBinningConsumer,
         TransitionsConsumer,
     )
+    from neurospatial.geometry._coordinates import CoordinateSystem
 
     def _environment(env: FieldConsumer) -> None: ...
 
@@ -83,8 +80,8 @@ if TYPE_CHECKING:
         _polar_lengths: CellLengthConsumer = polar
         _cartesian_system: CoordinateSystem = CartesianSystem()
         _polar_system: CoordinateSystem = EgocentricPolarSystem(circular=True)
-        assert_type(cartesian._coordinate_system, CartesianSystem)
-        assert_type(polar._coordinate_system, EgocentricPolarSystem)
+        assert_type(cartesian.coordinate_system, CartesianSystem)
+        assert_type(polar.coordinate_system, EgocentricPolarSystem)
         assert_type(cartesian._gaussian_kernels, dict[float, NDArray[np.float64]])
         assert_type(polar._gaussian_kernels, dict[float, NDArray[np.float64]])
 

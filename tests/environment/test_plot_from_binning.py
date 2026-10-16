@@ -371,7 +371,7 @@ def test_three_dimensional_grid_keeps_plot_field_refusal():
 @pytest.mark.parametrize("drawing", ["triangles", "polygon_grid"])
 def test_plot_helpers_draw_every_multipolygon_component(drawing):
     """An outline with separated arenas draws each exterior and one legend label."""
-    from neurospatial.layout._components import Outline, TriangleShapes
+    from neurospatial.geometry._components import Outline, TriangleShapes
     from neurospatial.layout._plotting import plot_polygon_grid, plot_triangles
 
     points = np.array(

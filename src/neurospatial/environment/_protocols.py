@@ -21,14 +21,16 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._coordinates import CellLengthConsumer as CellLengthConsumer
+
 if TYPE_CHECKING:
     import pandas as pd
     from scipy.spatial import cKDTree
 
-    from neurospatial.arena import Arena
-    from neurospatial.environment._coordinates import CoordinateSystem
-    from neurospatial.layout._binning import Binning
-    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._coordinates import CoordinateSystem
+    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -114,9 +116,6 @@ class RebinConsumer(Protocol):
     def connectivity(self) -> nx.Graph: ...
 
     @property
-    def layout_type(self) -> str | None: ...
-
-    @property
     def bin_centers(self) -> NDArray[np.float64]: ...
 
     @property
@@ -198,19 +197,6 @@ class InterpolationConsumer(Protocol):
     _kdtree_cache: cKDTree | None
 
 
-class CellLengthConsumer(Protocol):
-    """Cell measures, dimension count and radial edges for length-scale defaults."""
-
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
-
-    @property
-    def n_dims(self) -> int: ...
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-
 class QueryConsumer(Protocol):
     """Only the environment members read by queries operations."""
 
@@ -251,10 +237,6 @@ class QueryConsumer(Protocol):
 
     @property
     def regions(self) -> Regions: ...
-
-
-class SerializationConsumer(Protocol):
-    """Only the environment members read by serialization operations."""
 
 
 class RegionConsumer(Protocol):
@@ -387,6 +369,17 @@ class FieldConsumer(Protocol):
     @property
     def _diffusion_geometry(self) -> DiffusionGeometry: ...
 
+    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
+
+    @property
+    def coordinate_system(self) -> CoordinateSystem: ...
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]: ...
+
     @property
     def _face_geometry(self) -> FaceGeometry: ...
 
@@ -419,10 +412,6 @@ class FieldConsumer(Protocol):
     def n_bins(self) -> int:
         """Number of spatial bins in the environment."""
         ...
-
-
-class TrajectoryConsumer(Protocol):
-    """Only the environment members read by trajectory operations."""
 
 
 class AnimationConsumer(Protocol):
@@ -466,7 +455,7 @@ class BorderConsumer(FieldMetricsConsumer, Protocol):
     """Environment members read by encoding/border.py, encoding/_physical_border.py."""
 
     @property
-    def _binning(self) -> Binning: ...
+    def binning(self) -> Binning: ...
 
     @property
     def arena(self) -> Arena: ...
@@ -503,17 +492,14 @@ class BorderConsumer(FieldMetricsConsumer, Protocol):
 class SmoothingConsumer(Protocol):
     """Environment members read by encoding/_smoothing.py."""
 
-    @property
-    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache: ...
+    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
+
+    def diffusion_accuracy(self, bandwidth: float) -> float: ...
+
+    def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]: ...
 
     @property
-    def _diffusion_geometry(self) -> DiffusionGeometry: ...
-
-    @property
-    def _coordinate_system(self) -> CoordinateSystem: ...
-
-    @property
-    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]: ...
+    def coordinate_system(self) -> CoordinateSystem: ...
 
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...
@@ -576,3 +562,45 @@ class ClipConsumer(Protocol):
 
     @property
     def units(self) -> str | None: ...
+
+
+class SummaryConsumer(Protocol):
+    """Published metadata and geometry read only for text and HTML summaries."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def _is_fitted(self) -> bool: ...
+
+    @property
+    def _layout_type_used(self) -> str | None: ...
+
+    @property
+    def layout_type(self) -> str | None: ...
+
+    @property
+    def n_dims(self) -> int: ...
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+    @property
+    def bin_sizes(self) -> NDArray[np.float64]: ...
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
+
+    @property
+    def regions(self) -> Regions: ...
+
+    @property
+    def is_linearized_track(self) -> bool: ...
+
+    def info(self) -> str: ...

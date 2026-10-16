@@ -10,8 +10,8 @@ from dataclasses import FrozenInstanceError
 import numpy as np
 import pytest
 
-from neurospatial.layout._binning import SpatialBins
-from neurospatial.layout._capabilities import RectilinearGrid
+from neurospatial.geometry._binning import SpatialBins
+from neurospatial.geometry._capabilities import RectilinearGrid
 
 
 @pytest.fixture

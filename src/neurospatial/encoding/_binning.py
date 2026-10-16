@@ -29,16 +29,18 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import TimeSupport, resolve_time_windows, run_time_bounds
+from neurospatial._intervals import (
+    TimeSupport,
+    interval_valid_mask,
+    resolve_time_windows,
+    run_time_bounds,
+    start_allocated_occupancy,
+)
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._polygon_trajectory import (
     RetainedLinearInterval,
     retained_linear_intervals,
     uses_polygon_allocation,
-)
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
 )
 
 if TYPE_CHECKING:
@@ -121,7 +123,7 @@ def prepare_linear_spatial_intervals(
     """
     if (
         env.n_dims != 2
-        or env._binning.bins.measure_dim != 2
+        or env.binning.bins.measure_dim != 2
         or env.arena.coordinate_kind != "cartesian"
     ):
         raise NotImplementedError(
@@ -410,14 +412,13 @@ def _bin_spike_train_with_stats(
     for d in range(n_dims):
         spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
 
-    if linear_intervals is not None and env._binning.grid_frame is not None:
+    grid_frame = env.binning.grid_frame if linear_intervals is not None else None
+    if grid_frame is not None:
         from neurospatial.environment._polygon_trajectory import _source_grid
 
         # Use the same retained source planes and half-open ownership as
         # fractional dwell allocation, including paths along a hole edge.
-        locator, source_positions = _source_grid(
-            env._binning.grid_frame, spike_positions
-        )
+        locator, source_positions = _source_grid(grid_frame, spike_positions)
         spike_bins = locator.locate(source_positions)
         if env.arena.domain_known:
             spike_bins[~env.arena.contains(spike_positions)] = -1
@@ -620,7 +621,7 @@ def _spatial_interval_mask(
     ndarray of bool, shape (n_samples - 1,)
         Shared validity; empty when fewer than two samples form an interval.
     """
-    from neurospatial.environment.trajectory import interval_valid_mask
+    from neurospatial._intervals import interval_valid_mask
 
     sample_bins = env.bin_at(positions)
     mask = interval_valid_mask(

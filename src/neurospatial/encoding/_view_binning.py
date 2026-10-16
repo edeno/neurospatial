@@ -32,233 +32,27 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
-)
+from neurospatial.ops._boundaries import _wall_hit_bins
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
-    import shapely
-
-    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
-    from neurospatial.layout._binning import Locator
 
 __all__ = [
     "bin_view_spike_train",
     "bin_view_spike_trains",
     "compute_occupancy",
 ]
-
-
-def _resolve_wall_contacts(
-    locator: Locator,
-    arena: Arena,
-    cells: Sequence[shapely.Geometry],
-    walls: shapely.Geometry,
-    hits: NDArray[np.float64],
-    origins: NDArray[np.float64],
-    bins: NDArray[np.intp],
-) -> NDArray[np.intp]:
-    """Resolve rounded boundary hits using cells that actually touch the wall.
-
-    A single representable step can remain outside a slanted or curved
-    polygon, and clipped cell edges only nearly coincide with such a wall. For
-    a failed hit, a retained cell reaches the wall there when the hit lies
-    within the cell's bounded coordinate uncertainty of both the cell and the
-    wall. Intersect the approach segment ending at the hit with that cell, and
-    query an interior point of the terminal piece. A missing strip between a
-    cell and the wall is wider than that uncertainty and is never bridged by
-    an inward search.
-    """
-    import shapely
-
-    from neurospatial.arena import _feature_cap
-    from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
-    from neurospatial.layout._polygon import ClippedLocator
-    from neurospatial.layout._validation import _polygon_coordinate_errors
-
-    def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
-        parent = locator
-        while True:
-            if isinstance(parent, RectilinearLocator):
-                # Optimized grid subsets retain inactive cells in their grid
-                # mask, rather than a SubsetLocator wrapper. Preserve that
-                # full-grid owner even when its active-bin index is -1.
-                return all(
-                    np.searchsorted(edge, target[0, axis], side="right")
-                    == np.searchsorted(edge, query[0, axis], side="right")
-                    for axis, edge in enumerate(parent.edges)
-                )
-            original = parent.locate(target)[0]
-            if original >= 0 and parent.locate(query)[0] != original:
-                return False
-            if not isinstance(parent, (SubsetLocator, ClippedLocator)):
-                return True
-            parent = parent.base
-
-    missing = np.flatnonzero((bins < 0) & np.all(np.isfinite(hits), axis=1))
-    if not len(missing):
-        return bins
-    polygons = np.asarray(cells, dtype=object)
-    # Distance to the hit, not an overlay of cells with the wall: near-
-    # coincident clipped edges intersect a curved wall only in scattered
-    # rounded fragments, which can lie far from the hit.
-    budgets = np.array(
-        [
-            np.hypot.reduce(
-                np.minimum(_polygon_coordinate_errors(cell), _feature_cap(arena))
-            )
-            for cell in cells
-        ]
-    )
-    for row in missing:
-        point = shapely.Point(hits[row])
-        distances = shapely.distance(polygons, point)
-        candidates = np.flatnonzero(
-            (distances <= budgets) & (walls.distance(point) <= budgets)
-        )
-        segment = shapely.LineString([origins[row], hits[row]])
-        for index in candidates:
-            pieces = shapely.get_parts(segment.intersection(cells[index]))
-            for piece in pieces:
-                if piece.geom_type != "LineString" or piece.length == 0:
-                    continue
-                # Only the terminal approach interval establishes ownership.
-                if piece.distance(point) > budgets[index]:
-                    continue
-                middle = piece.interpolate(0.5, normalized=True)
-                query = np.array([[middle.x, middle.y]])
-                if arena.domain_known and not arena.contains(query)[0]:
-                    continue
-                original = np.nextafter(hits[row : row + 1], origins[row : row + 1])
-                if locator.locate(query)[0] == index and same_parent(original, query):
-                    bins[row] = index
-                    break
-            if bins[row] >= 0:
-                break
-
-    return bins
-
-
-def _wall_view_bins(
-    env: Environment,
-    hits: NDArray[np.float64],
-    origins: NDArray[np.float64],
-    source: Literal["physical", "analysis"],
-) -> NDArray[np.intp]:
-    """Assign the observer-side limit in the retained cell-owner frame."""
-    import shapely
-    from shapely.ops import unary_union
-
-    from neurospatial.arena import _feature_cap, _TransformedArena
-    from neurospatial.environment._arena import _wall_source_frame
-    from neurospatial.layout._composition import CombinedLocator
-    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
-    from neurospatial.layout._polygon import (
-        ClippedLocator,
-        PolygonCells,
-        materialize_cells,
-    )
-    from neurospatial.ops._boundaries import physical_walls
-
-    def source_locator(
-        locator: Locator, arena: Arena, centers: NDArray[np.float64]
-    ) -> Locator:
-        if isinstance(locator, TransformedLocator):
-            if isinstance(arena, _TransformedArena) and np.array_equal(
-                locator.inverse, arena.inverse
-            ):
-                original, _error = arena._project(centers)
-                return source_locator(locator.base, arena.base, original)
-            if source == "physical":
-                raise NotImplementedError(
-                    "Physical wall-bin assignment needs a shared source frame; retain the arena's transform with the bins, or explicitly choose boundary_source='analysis'."
-                )
-        if isinstance(locator, SubsetLocator):
-            return SubsetLocator(
-                source_locator(locator.base, arena, centers), locator.parent_to_child
-            )
-        if isinstance(locator, ClippedLocator):
-            local = _wall_source_frame(locator, arena, centers)
-            if local is not None:
-                return ClippedLocator(
-                    source_locator(locator.base, arena, centers),
-                    PolygonCells(local[0]),
-                    locator.mapping,
-                )
-        if isinstance(locator, CombinedLocator) and source == "physical":
-            # A child with its own affine frame has no one shared owner frame.
-            pending = [child.locator for child in locator.children]
-            while pending:
-                child = pending.pop()
-                if isinstance(child, TransformedLocator):
-                    raise NotImplementedError(
-                        "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
-                    )
-                if isinstance(child, (SubsetLocator, ClippedLocator)):
-                    pending.append(child.base)
-                elif isinstance(child, CombinedLocator):
-                    pending.extend(part.locator for part in child.children)
-        return locator
-
-    locator = source_locator(env._binning.locator, env.arena, env.bin_centers)
-    frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)
-    if frame is None:
-        bins = env.bin_at(np.nextafter(hits, origins))
-        if source == "physical":
-            walls = physical_walls(env.arena)
-        else:
-            from neurospatial.ops._boundaries import boundary_geometry
-
-            walls = boundary_geometry(env, source)
-        return _resolve_wall_contacts(
-            locator,
-            env.arena,
-            materialize_cells(env._binning),
-            walls,
-            hits,
-            origins,
-            bins,
-        )
-    cells, _walls, _centers, _inverse, frames = frame
-    query = np.vstack((hits, origins))
-    error = None
-    for arena in frames:
-        query, error = arena._project(query, error)
-    base = frames[-1].base
-    if source == "physical":
-        walls = physical_walls(base)
-    else:
-        domain = unary_union(cells)
-        restriction = base.polygonal_domain() if base.domain_known else None
-        if restriction is not None:
-            domain = domain.intersection(restriction)
-        walls = unary_union([domain.boundary, *base.walls])
-    assert error is not None
-    points = shapely.points(query[: len(hits)])
-    allowance = np.hypot.reduce(
-        np.minimum(error[: len(hits)], _feature_cap(base)), axis=1
-    )
-    close = shapely.distance(points, walls) <= allowance
-    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
-    query[np.flatnonzero(close)] = np.column_stack(
-        (shapely.get_x(nearest), shapely.get_y(nearest))
-    )
-    inside = np.nextafter(query[: len(hits)], query[len(hits) :])
-    bins = locator.locate(inside)
-    if base.domain_known:
-        bins[~base.contains(inside)] = -1
-    return _resolve_wall_contacts(
-        locator, base, cells, walls, query[: len(hits)], query[len(hits) :], bins
-    )
 
 
 def _view_observation_mask(
@@ -357,8 +151,15 @@ def _precompute_view_bins(
     if np.any(valid_view_mask):
         valid_viewed = viewed_locations[valid_view_mask]
         if gaze_model != "fixed_distance":
-            valid_bins = _wall_view_bins(
-                env, valid_viewed, positions[valid_view_mask], boundary_source
+            origins = positions[valid_view_mask]
+            valid_bins = env.bin_at(np.nextafter(valid_viewed, origins))
+            valid_bins = _wall_hit_bins(
+                env.binning,
+                env.arena,
+                valid_viewed,
+                origins,
+                valid_bins,
+                boundary_source,
             )
             required = np.zeros(n_samples, dtype=bool)
             if interval_mask is not None:
@@ -370,9 +171,9 @@ def _precompute_view_bins(
                     "Physical wall hit has no retained bin on the observer's side. "
                     "Build bins that reach the measured wall before computing view rates; "
                     "adding OpenArena or clipping existing cells cannot add missing bins. "
-                    "For curved or slanted walls, clip a grid that covers the arena with "
-                    "grid.clip(polygon) and pass those cells to Environment.from_bins(..., "
-                    "arena=OpenArena(polygon)). "
+                    "For curved or slanted walls, clip a grid that covers the arena to the "
+                    "measured polygon and attach its walls: Environment.from_bins("
+                    "grid.clip(polygon).binning, arena=OpenArena(polygon)). "
                     "For rotated rectangular arenas, construct bins in the arena-aligned frame "
                     "and transform bins, arena and observations together. Alternatively, explicitly "
                     "choose boundary_source='analysis' to encode the retained analysis boundary. "

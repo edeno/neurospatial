@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 def _is_polar(env: object) -> bool:
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     return isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem)
 

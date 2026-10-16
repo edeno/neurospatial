@@ -1344,23 +1344,20 @@ class TestCacheManagement:
         _ = cache_test_env.bin_sizes
 
         # Verify they're in __dict__ (cached)
-        assert "_versioned_cache___boundary_bins_cached" in cache_test_env.__dict__
-        assert "_versioned_cache___bin_sizes_cached" in cache_test_env.__dict__
+        assert "_boundary_bins_cached" in cache_test_env.__dict__
+        assert "_bin_sizes_cached" in cache_test_env.__dict__
 
         # Clear all caches
         cache_test_env.clear_cache()
 
         # Verify cached properties are cleared from __dict__
-        assert "_versioned_cache___boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_versioned_cache___bin_sizes_cached" not in cache_test_env.__dict__
+        assert "_boundary_bins_cached" not in cache_test_env.__dict__
+        assert "_bin_sizes_cached" not in cache_test_env.__dict__
 
     def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
-        # differential_operator changed from @cached_property to a
-        # method backed by a versioned_cached_property. The on-instance
-        # cache key is now ``_versioned_cache__<name>`` instead of just
-        # ``<name>``.
-        cache_key = "_versioned_cache___differential_operator_cached"
+        # Public calls return copies while sharing a private cached operator.
+        cache_key = "_differential_operator_cached"
 
         diff_op_original = cache_test_env.get_differential_operator()
         cached = cache_test_env._differential_operator_cached
@@ -1408,14 +1405,14 @@ class TestCacheManagement:
         map_points_to_bins(cache_test_env, np.array([[5.0, 5.0]]))
 
         # Keys for the three method-form caches.
-        diff_key = "_versioned_cache___differential_operator_cached"
-        bin_key = "_versioned_cache___bin_attributes_cached"
-        edge_key = "_versioned_cache___edge_attributes_cached"
+        diff_key = "_differential_operator_cached"
+        bin_key = "_bin_attributes_cached"
+        edge_key = "_edge_attributes_cached"
 
         # Verify all are cached.
         assert cache_test_env._kdtree_cache is not None
-        assert "_versioned_cache___boundary_bins_cached" in cache_test_env.__dict__
-        assert "_versioned_cache___bin_sizes_cached" in cache_test_env.__dict__
+        assert "_boundary_bins_cached" in cache_test_env.__dict__
+        assert "_bin_sizes_cached" in cache_test_env.__dict__
         assert diff_key in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
         assert bin_key in cache_test_env.__dict__
@@ -1425,8 +1422,8 @@ class TestCacheManagement:
 
         # Verify ALL are cleared.
         assert cache_test_env._kdtree_cache is None
-        assert "_versioned_cache___boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_versioned_cache___bin_sizes_cached" not in cache_test_env.__dict__
+        assert "_boundary_bins_cached" not in cache_test_env.__dict__
+        assert "_bin_sizes_cached" not in cache_test_env.__dict__
         assert diff_key not in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
         assert bin_key not in cache_test_env.__dict__
@@ -1440,7 +1437,7 @@ class TestCacheManagement:
 
         # Access linearization properties (triggers caching)
         _ = cache_test_graph_env.linearization_properties
-        cache_key = "_versioned_cache___linearization_properties_cached"
+        cache_key = "_linearization_properties_cached"
         assert cache_key in cache_test_graph_env.__dict__
 
         # Clear cache

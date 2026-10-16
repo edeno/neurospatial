@@ -35,8 +35,8 @@ from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
-    from neurospatial.arena import Arena
     from neurospatial.environment import Environment
+    from neurospatial.geometry._arena import Arena
 
 
 class SpatialRatesLike(Protocol):
@@ -56,7 +56,7 @@ def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     from shapely.ops import unary_union
 
-    from neurospatial.arena import encode_arena
+    from neurospatial.geometry._arena import encode_arena
 
     if first is second:
         return True
@@ -107,7 +107,7 @@ def _validate_encoding_environment(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
     mismatch = None
-    if source._coordinate_system != env._coordinate_system:
+    if source.coordinate_system != env.coordinate_system:
         mismatch = "coordinate systems"
     elif source.units != env.units or source.frame != env.frame:
         mismatch = "units or coordinate frames"
@@ -124,42 +124,46 @@ def _validate_encoding_environment(
         ):
             mismatch = "weighted connectivity"
     if mismatch is None:
-        from neurospatial.layout._polygon import PolygonCells, materialize_cells
+        from neurospatial.geometry._polygon import PolygonCells, materialize_cells
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"
-        elif isinstance(source._binning.shapes, PolygonCells) or isinstance(
-            env._binning.shapes, PolygonCells
-        ):
-            source_cells, target_cells = (
-                materialize_cells(source._binning),
-                materialize_cells(env._binning),
-            )
-            if len(source_cells) != len(target_cells) or any(
-                not left.equals(right)
-                for left, right in zip(source_cells, target_cells, strict=True)
+        else:
+            source_binning, target_binning = source.binning, env.binning
+            if isinstance(source_binning.shapes, PolygonCells) or isinstance(
+                target_binning.shapes, PolygonCells
             ):
-                mismatch = "polygon cell geometry"
-            else:
-                from neurospatial.layout._codecs import encode
-
-                try:
-                    source_meta, source_arrays = encode(
-                        source._binning.locator, "locator"
-                    )
-                    target_meta, target_arrays = encode(env._binning.locator, "locator")
-                except ValueError:
-                    mismatch = "bin-boundary ownership"
+                source_cells, target_cells = (
+                    materialize_cells(source_binning),
+                    materialize_cells(target_binning),
+                )
+                if len(source_cells) != len(target_cells) or any(
+                    not left.equals(right)
+                    for left, right in zip(source_cells, target_cells, strict=True)
+                ):
+                    mismatch = "polygon cell geometry"
                 else:
-                    if (
-                        source_meta != target_meta
-                        or source_arrays.keys() != target_arrays.keys()
-                        or any(
-                            not np.array_equal(value, target_arrays[key])
-                            for key, value in source_arrays.items()
+                    from neurospatial.geometry._codecs import encode
+
+                    try:
+                        source_meta, source_arrays = encode(
+                            source_binning.locator, "locator"
                         )
-                    ):
+                        target_meta, target_arrays = encode(
+                            target_binning.locator, "locator"
+                        )
+                    except ValueError:
                         mismatch = "bin-boundary ownership"
+                    else:
+                        if (
+                            source_meta != target_meta
+                            or source_arrays.keys() != target_arrays.keys()
+                            or any(
+                                not np.array_equal(value, target_arrays[key])
+                                for key, value in source_arrays.items()
+                            )
+                        ):
+                            mismatch = "bin-boundary ownership"
     if mismatch is not None:
         raise IncompatibleEnvironmentError(
             f"{context}: the encoding result's environment differs from the "

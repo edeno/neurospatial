@@ -6,10 +6,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._capabilities import (
-    RectilinearGridProvider,
-    TrackLinearizationProvider,
-)
+from neurospatial.layout._capabilities import RectilinearGridProvider
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
 from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
@@ -53,7 +50,6 @@ def test_grid_capability_matches_cell_centers(grid_layout):
         centers[grid.active_mask.ravel()], grid_layout.bin_centers
     )
     assert grid.active_mask.shape == grid.shape
-    assert not isinstance(grid_layout, TrackLinearizationProvider)
 
 
 def test_unbuilt_grid_refuses_cell_geometry(grid_layout):
@@ -70,15 +66,12 @@ def test_non_grid_capabilities(layout_type):
     """Only graph layouts provide track conversion; none has rectangular cells."""
     layout = layout_type()
     assert not isinstance(layout, RectilinearGridProvider)
-    assert isinstance(layout, TrackLinearizationProvider) == (
-        layout_type is GraphLayout
-    )
+    assert layout.is_linearized_track == (layout_type is GraphLayout)
 
 
 def test_saved_layout_facade_keeps_capabilities_in_the_binning():
     """The facade exposes data components without claiming provider methods."""
     from neurospatial.io import from_dict, to_dict
-    from neurospatial.layout._diffusion import FiniteVolumeGeometryProvider
 
     original = Environment.linear_track(
         endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
@@ -86,7 +79,6 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
     loaded = from_dict(to_dict(original))
     layout = loaded
     assert not isinstance(layout, RectilinearGridProvider)
-    assert not isinstance(layout, FiniteVolumeGeometryProvider)
     assert loaded._binning.faces.available
     assert loaded._binning.linearization is not None
     points = np.array([[0.5, 0.0], [1.5, 0.0]])

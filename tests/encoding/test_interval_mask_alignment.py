@@ -613,7 +613,7 @@ def test_interval_mask_not_recomputed_per_neuron_batch(
     helper and assert its call count does not grow with the neuron count (the
     pre-fix code called it once per neuron inside the loop).
     """
-    import neurospatial.environment.trajectory as traj_mod
+    import neurospatial._intervals as traj_mod
 
     times = gap_trajectory["times"]
     positions = gap_trajectory["positions"]
@@ -661,7 +661,7 @@ def test_compute_spatial_rates_mask_computed_once(
     monkeypatch, env_1d, gap_trajectory
 ) -> None:
     """A `compute_spatial_rates` call computes the shared mask a constant # of times."""
-    import neurospatial.environment.trajectory as traj_mod
+    import neurospatial._intervals as traj_mod
 
     times = gap_trajectory["times"]
     positions = gap_trajectory["positions"]

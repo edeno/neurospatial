@@ -80,7 +80,7 @@ def reloaded_graph_env(graph_environment_round_trip):
 @pytest.fixture
 def missing_faces_env():
     """A data-backed refusal independent of any layout class or file format."""
-    from neurospatial.layout._binning import MissingFaces
+    from neurospatial.geometry._binning import MissingFaces
 
     env = Environment.linear_track(endpoints=[[0.0, 0.0], [4.0, 0.0]], bin_size=1.0)
     env._geometry = replace(

@@ -1,4 +1,4 @@
-"""Tests for Environment._state_version and versioned_cached_property."""
+"""Immutable geometry ownership and the standalone versioned cache decorator."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def env() -> Environment:
     return Environment.from_samples(rng.uniform(0, 100, (200, 2)), bin_size=5.0)
 
 
-class TestStateVersionField:
+class TestPublishedValueOwnership:
     """Published values retain their state; restored values own fresh caches."""
 
     def test_restoration_publishes_saved_geometry_with_fresh_caches(self) -> None:
@@ -50,11 +50,11 @@ class TestStateVersionField:
         old_geometry = env._diffusion_geometry
         old_diffusion_cache = env._diffusion_eigenbasis
         old_mrf_cache = env._mrf_eigenbasis
-        version = env._state_version
+        geometry = env._geometry
 
         restored = Environment.from_dict(expected.to_dict())
 
-        assert env._state_version == version
+        assert env._geometry is geometry
         assert env._kernel_cache
         assert env._diffusion_geometry is old_geometry
         assert env._diffusion_eigenbasis is old_diffusion_cache
@@ -79,7 +79,7 @@ class TestStateVersionField:
             np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
         )
         env.compute_kernel(1.0)
-        connectivity, version = env.connectivity, env._state_version
+        connectivity, geometry = env.connectivity, env._geometry
         broken = connectivity.copy()
         for _, _, data in broken.edges(data=True):
             del data["edge_id"]
@@ -94,12 +94,12 @@ class TestStateVersionField:
             publish_environment("invalid", layout, "MaskedGrid", {})
 
         assert env.connectivity is connectivity
-        assert env._state_version == version
+        assert env._geometry is geometry
         assert env._kernel_cache
 
 
 class TestPublishedGeometryIsReadOnly:
-    """Versioned caches cannot see in-place edits, so geometry refuses them."""
+    """Published geometry refuses in-place edits that would invalidate analyses."""
 
     def test_arrays_are_read_only_and_graph_is_frozen(self) -> None:
         import networkx as nx
@@ -172,7 +172,7 @@ class TestPublishedGeometryIsReadOnly:
 
         env = restored_grid
         boundary = env.boundary_bins.copy()
-        version = env._state_version
+        geometry = env._geometry
         attrs = (
             env.connectivity.edges[0, 1]
             if attribute == "vector"
@@ -181,7 +181,7 @@ class TestPublishedGeometryIsReadOnly:
         with pytest.raises(TypeError):
             attrs[attribute][0] = 0
 
-        assert env._state_version == version
+        assert env._geometry is geometry
         np.testing.assert_array_equal(env.boundary_bins, boundary)
         np.testing.assert_array_equal(
             find_boundary_nodes(

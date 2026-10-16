@@ -492,7 +492,7 @@ def compute_home_range(
                 f"times and position_bins must have same length. "
                 f"Got {len(times)} and {len(position_bins)}."
             )
-        from neurospatial.environment.trajectory import observed_interval_mask
+        from neurospatial._intervals import observed_interval_mask
 
         interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
         if len(position_bins) == 0:
@@ -872,8 +872,8 @@ def compute_trajectory_curvature(
         return _compute_trajectory_curvature_contiguous(
             positions, None, smooth_window=smooth_window
         )
+    from neurospatial._intervals import observed_runs
     from neurospatial._validation import validate_times_positions
-    from neurospatial.environment.trajectory import observed_runs
 
     times, positions = validate_times_positions(
         times, positions, call="compute_trajectory_curvature", order="positions, times"

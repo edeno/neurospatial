@@ -1184,13 +1184,17 @@ class TestPolarGaussianKernelSeam:
         circular_kernel = _get_gaussian_kernel(env_circular, bandwidth)
         open_kernel = _get_gaussian_kernel(env_open, bandwidth)
         assert circular_kernel is not open_kernel
-        assert env_circular._gaussian_kernels[bandwidth] is circular_kernel
-        assert env_open._gaussian_kernels[bandwidth] is open_kernel
+        assert np.shares_memory(
+            env_circular._gaussian_kernels[bandwidth], circular_kernel
+        )
+        assert np.shares_memory(env_open._gaussian_kernels[bandwidth], open_kernel)
         seam_a, seam_b, *_ = self._ring_indices(env_open)
         assert circular_kernel[seam_a, seam_b] > 1e-3
         assert open_kernel[seam_a, seam_b] < 1e-3
-        assert _get_gaussian_kernel(env_circular, bandwidth) is circular_kernel
-        assert _get_gaussian_kernel(env_open, bandwidth) is open_kernel
+        assert np.shares_memory(
+            _get_gaussian_kernel(env_circular, bandwidth), circular_kernel
+        )
+        assert np.shares_memory(_get_gaussian_kernel(env_open, bandwidth), open_kernel)
 
 
 # =============================================================================
@@ -1206,7 +1210,9 @@ def test_gaussian_kernel_is_released_with_environment() -> None:
         np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]]),
         bin_size=1.0,
     )
-    kernel_ref = weakref.ref(_get_gaussian_kernel(env, bandwidth=1.0))
+    _get_gaussian_kernel(env, bandwidth=1.0)
+    kernel_ref = weakref.ref(env._gaussian_kernels[1.0])
+    assert kernel_ref() is not None
     del env
     gc.collect()
     assert kernel_ref() is None
@@ -1219,7 +1225,7 @@ def test_gaussian_kernel_cache_keeps_most_recently_used_kernels(
     monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
     first = _get_gaussian_kernel(simple_env, bandwidth=1.0)
     _get_gaussian_kernel(simple_env, bandwidth=2.0)
-    assert _get_gaussian_kernel(simple_env, bandwidth=1.0) is first
+    assert np.shares_memory(_get_gaussian_kernel(simple_env, bandwidth=1.0), first)
     _get_gaussian_kernel(simple_env, bandwidth=3.0)
 
     assert list(simple_env._gaussian_kernels) == [1.0, 3.0]

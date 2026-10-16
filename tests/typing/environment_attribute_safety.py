@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     class MissingOperation(Protocol):
         def nonexistent_operation(self) -> int: ...

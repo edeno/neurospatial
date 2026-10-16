@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy as copy_module
 import logging
 import warnings
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import (
@@ -17,7 +17,6 @@ from typing import (
     NoReturn,
     TypeVar,
     cast,
-    overload,
 )
 
 import networkx as nx
@@ -29,17 +28,34 @@ from typing_extensions import Self
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._coordinates import (
-    CartesianSystem,
-    EgocentricPolarSystem,
-    polar_circularity,
+from neurospatial.environment._publication import (
+    UNSET,
+    _freeze_geometry_arrays,
+    _freeze_graph_attributes,
+    _GeometryView,
+    _Metadata,
+    _MetadataView,
+    _PublishedGeometry,
+    _Unset,
 )
-from neurospatial.environment._metadata import UNSET, _Metadata, _MetadataView, _Unset
+
+# Older pickles resolve these private globals through core. The aliases keep
+# that lookup working while each type has one implementation in _publication.
+from neurospatial.environment._publication import (
+    _PublishedGraph as _PublishedGraph,
+)
+from neurospatial.environment._publication import (
+    _ReadOnlyGraphAttributes as _ReadOnlyGraphAttributes,
+)
+from neurospatial.environment._publication import (
+    _ReadOnlyGraphMetadata as _ReadOnlyGraphMetadata,
+)
+from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
 )
-from neurospatial.environment.decorators import check_fitted, versioned_cached_property
+from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.fields import _interpolate
 from neurospatial.environment.metrics import (
     _cartesian_boundary_bins,
@@ -49,17 +65,22 @@ from neurospatial.environment.trajectory import (
     _bin_sequence,
     _occupancy,
 )
-from neurospatial.environment.transforms import _rebin
-from neurospatial.layout._binning import Binning
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    polar_circularity,
+)
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import LayoutType
 from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
 )
+from neurospatial.ops.binning import TieBreakStrategy
 from neurospatial.ops.calculus import (
+    _compute_differential_operator,
     _compute_divergence_operator,
-    compute_differential_operator,
 )
 from neurospatial.regions import Region, Regions
 
@@ -75,11 +96,11 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.arena import Arena
     from neurospatial.environment._protocols import CartesianLookupConsumer
     from neurospatial.environment.factories import PolygonType
-    from neurospatial.layout._diffusion import DiffusionGeometry, FaceGeometry
-    from neurospatial.layout._polygon import ClipMapping
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -98,204 +119,6 @@ if TYPE_CHECKING:
     )
 else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
-
-_T = TypeVar("_T")
-
-
-def _array_header(array: NDArray[Any]) -> NDArray[Any]:
-    """Expose immutable bytes through a header independent of private arrays."""
-    buffer: Any = array.base
-    while isinstance(buffer, np.ndarray):
-        buffer = buffer.base
-    assert isinstance(buffer, bytes)
-    return np.frombuffer(buffer, dtype=array.dtype).reshape(array.shape)
-
-
-class _ReadOnlyGraphAttributes(Mapping[str, Any]):
-    """Published graph attributes, with pickle and editable-copy support."""
-
-    def __init__(self, attributes: Mapping[str, Any], **kwargs: Any) -> None:
-        self._data = copy_module.deepcopy({**attributes, **kwargs})
-
-    def __getitem__(self, key: str) -> Any:
-        return copy_module.deepcopy(self._data[key])
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._data)
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def copy(self) -> dict[str, Any]:
-        return copy_module.deepcopy(self._data)
-
-    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
-        raise TypeError(
-            _format_error(
-                "Environment.connectivity attributes are read-only.",
-                why="Why: editing geometry would leave cached kernels and operators stale.",
-                fix="build a new environment; use env.connectivity.copy() for an editable graph for separate analyses",
-            )
-        )
-
-    __setitem__ = _refuse_edit
-    __delitem__ = _refuse_edit
-    clear = _refuse_edit
-    pop = _refuse_edit
-    popitem = _refuse_edit
-    setdefault = _refuse_edit
-    update = _refuse_edit
-    __ior__ = _refuse_edit
-
-    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return type(self), (self.copy(),)
-
-
-class _ReadOnlyGraphMetadata(dict[str, Any]):
-    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
-
-    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    clear = _ReadOnlyGraphAttributes._refuse_edit
-    pop = _ReadOnlyGraphAttributes._refuse_edit
-    popitem = _ReadOnlyGraphAttributes._refuse_edit
-    setdefault = _ReadOnlyGraphAttributes._refuse_edit
-    update = _ReadOnlyGraphAttributes._refuse_edit
-    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
-        return copy_module.deepcopy(dict(self), memo)
-
-    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return dict, (dict(self),)
-
-
-class _PublishedGraph(nx.Graph):
-    """Freeze public graph bindings as well as topology and attribute values.
-
-    NetworkX's cached views remain lazy. Copies construct an ordinary editable
-    instance of this subclass; only environment publication seals its bindings.
-    """
-
-    @property
-    def graph(self) -> dict[str, Any]:
-        # node_link_data retains this object directly, unlike node/edge
-        # attributes. Return a detached dict so standard JSON encoding works
-        # without exposing the authoritative metadata to base-dict mutation.
-        attributes = self.__dict__["graph"]
-        if not self.__dict__.get("_published", False):
-            return cast("dict[str, Any]", attributes)
-        return _ReadOnlyGraphMetadata(attributes.copy())
-
-    @graph.setter
-    def graph(self, attributes: dict[str, Any]) -> None:
-        if self.__dict__.get("_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
-        self.__dict__["graph"] = attributes
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if not name.startswith("_") and getattr(self, "_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
-        super().__setattr__(name, value)
-
-    def __delattr__(self, name: str) -> None:
-        if not name.startswith("_") and getattr(self, "_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
-        super().__delattr__(name)
-
-
-def _freeze_graph_attributes(graph: nx.Graph) -> None:
-    """Protect node, edge and graph attributes when publishing connectivity."""
-    graph._published = False
-    # NetworkX's freeze protects topology only. Replace its attribute mappings
-    # in place so the layout and environment keep sharing the same graph.
-    for node, attrs in graph.nodes(data=True):
-        graph._node[node] = _ReadOnlyGraphAttributes(
-            attrs,
-            pos=tuple(float(value) for value in attrs["pos"]),
-            original_grid_nd_index=tuple(
-                int(value) for value in attrs["original_grid_nd_index"]
-            ),
-        )
-    for u, v, attrs in graph.edges(data=True):
-        frozen = _ReadOnlyGraphAttributes(
-            attrs, vector=tuple(float(value) for value in attrs["vector"])
-        )
-        graph._adj[u][v] = graph._adj[v][u] = frozen
-    graph.graph = _ReadOnlyGraphAttributes(graph.graph)
-    nx.freeze(graph)
-    graph.__class__ = _PublishedGraph
-    graph._published = True
-
-
-@dataclass(frozen=True)
-class _PublishedGeometry:
-    """The geometry an environment publishes, replaced whole and never edited.
-
-    ``_from_binning`` publishes owned arrays and a frozen graph atomically.
-    Each new value owns fresh versioned analysis caches.
-    """
-
-    binning: Binning | None
-    bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
-    dimension_ranges: Sequence[tuple[float, float]] | None
-    grid_edges: tuple[NDArray[np.float64], ...] | None
-    grid_shape: tuple[int, ...] | None
-    active_mask: NDArray[np.bool_] | None
-    arena: Arena | None = None
-    clip_mapping: ClipMapping | None = None
-    coordinates: CartesianSystem | EgocentricPolarSystem | None = None
-
-
-class _GeometryView(Generic[_T]):
-    """Read-only environment attribute backed by its published geometry."""
-
-    def __set_name__(self, owner: type, name: str) -> None:
-        self._name = name
-
-    @overload
-    def __get__(self, obj: None, objtype: type | None = None) -> _GeometryView[_T]: ...
-
-    @overload
-    def __get__(self, obj: Environment[Any], objtype: type | None = None) -> _T: ...
-
-    def __get__(
-        self, obj: Environment[Any] | None, objtype: type | None = None
-    ) -> _GeometryView[_T] | _T:
-        if obj is None:
-            return self
-        value: _T = getattr(obj._geometry, self._name)
-        if isinstance(value, np.ndarray):
-            return cast("_T", _array_header(value))
-        if isinstance(value, tuple) and self._name == "grid_edges":
-            return cast("_T", tuple(_array_header(edge) for edge in value))
-        return value
-
-    def __set__(self, obj: object, value: object) -> NoReturn:
-        raise AttributeError(
-            _format_error(
-                f"Environment.{self._name} is read-only.",
-                why=(
-                    "Why: cached kernels, operators and lookups belong to the "
-                    "geometry the environment was built with, so replacing part "
-                    "of it would leave them stale."
-                ),
-                fix=(
-                    "build a new environment instead, e.g. with a factory, "
-                    "subset, rebin or apply_transform"
-                ),
-            )
-        )
-
-    def __delete__(self, obj: object) -> NoReturn:
-        self.__set__(obj, None)
 
 
 @dataclass
@@ -379,8 +202,6 @@ class Environment(Generic[_C]):
 
     _is_fitted: bool = field(init=False, default=False)
 
-    _state_version: int = field(init=False, default=0)
-
     _kdtree_cache: cKDTree | None = field(init=False, default=None, repr=False)
 
     _kernel_cache: dict[
@@ -405,16 +226,16 @@ class Environment(Generic[_C]):
     def __getstate__(self) -> dict[str, Any]:
         """Export owned state without copying or serializing transient analyses."""
         state = self.__dict__.copy()
-        for name in ("_kernel_cache", "_kdtree_cache"):
+        for name in ("_kernel_cache", "_kdtree_cache", "_state_version"):
             state.pop(name, None)
+        # Older builder-free values may carry caches for retired analyses.
+        for name in tuple(state):
+            if name.startswith("_versioned_cache__"):
+                state.pop(name)
         for cls in type(self).__mro__:
             for name, descriptor in vars(cls).items():
                 if isinstance(descriptor, cached_property):
                     state.pop(name, None)
-                elif isinstance(descriptor, versioned_cached_property):
-                    key = f"_versioned_cache__{name}"
-                    state.pop(key, None)
-                    state.pop(f"{key}__version", None)
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -429,7 +250,7 @@ class Environment(Generic[_C]):
                 "Environment pickle is missing owned binning data; load a dictionary, file or NWB export instead."
             )
         if self._is_fitted:
-            from neurospatial.environment._ownership import own_arena
+            from neurospatial.geometry._ownership import own_arena
 
             assert self._geometry.arena is not None
             self._geometry = replace(
@@ -443,27 +264,7 @@ class Environment(Generic[_C]):
 
     def _freeze_geometry_arrays(self) -> None:
         """Own immutable buffers; public descriptors expose separate array headers."""
-
-        def immutable(array: NDArray[Any]) -> NDArray[Any]:
-            return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(
-                array.shape
-            )
-
-        geometry = self._geometry
-        self._geometry = replace(
-            geometry,
-            bin_centers=immutable(geometry.bin_centers),
-            active_mask=(
-                immutable(geometry.active_mask)
-                if geometry.active_mask is not None
-                else None
-            ),
-            grid_edges=(
-                tuple(immutable(edge) for edge in geometry.grid_edges)
-                if geometry.grid_edges is not None
-                else None
-            ),
-        )
+        self._geometry = _freeze_geometry_arrays(self._geometry)
 
     @property
     def _binning(self) -> Binning:
@@ -471,6 +272,33 @@ class Environment(Generic[_C]):
         binning = self._geometry.binning
         assert binning is not None
         return binning
+
+    @property
+    @check_fitted
+    def binning(self) -> Binning:
+        """Return a detached snapshot of bins, lookup and geometry components.
+
+        Returns
+        -------
+        Binning
+            Independently owned geometry records in this environment's coordinates.
+
+        Notes
+        -----
+        The returned records and NumPy array headers are independently owned.
+        Editing their shapes or writable flags cannot change this environment.
+        Native face recipes remain lazy; reading this property does not build
+        numerical geometry. To pass a native Cartesian snapshot to from_bins(),
+        explicitly replace its faces with KnownFaces(snapshot.faces.build()).
+        MissingFaces is already explicit and retains its refusal reason.
+
+        Polar snapshots retain radius/angle coordinates and are not inputs to
+        the Cartesian from_bins() factory. Use environment storage to restore
+        an unchanged polar environment.
+        """
+        from neurospatial.geometry._ownership import own_binning
+
+        return own_binning(self._binning)
 
     @property
     @check_fitted
@@ -562,6 +390,7 @@ class Environment(Generic[_C]):
 
     def _reset_analysis_caches(self) -> None:
         """Discard this instance's memoized analyses without clearing shared values."""
+        self.__dict__.pop("_state_version", None)
         for legacy_name in ("bin_sizes", "boundary_bins", "linearization_properties"):
             self.__dict__.pop(legacy_name, None)
         if self._is_fitted:
@@ -701,33 +530,9 @@ class Environment(Generic[_C]):
         "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        # Use ``repr(self.name)`` so the empty-string case ``name=""``
-        # is visibly distinct from the unset case ``name=None``.
-        # The previous ``f"'{name}'" if name else 'None'`` collapsed the
-        # two into the same string and hid the difference from users
-        # debugging an Environment they thought they had named.
-        cls_name = type(self).__name__
-        if not self._is_fitted:
-            return f"{cls_name}(name={self.name!r}, not fitted)"
+        from neurospatial.environment._summary import _repr
 
-        # Fitted environments: show name, dims, bins, layout. Truncate
-        # very long names but keep ``None`` distinct from ``""``.
-        name = self.name
-        if isinstance(name, str) and len(name) > 40:
-            name = name[:37] + "..."
-
-        try:
-            dims_str = f"{self.n_dims}D"
-        except (RuntimeError, AttributeError):
-            dims_str = "?D"
-
-        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
-
-        layout_type = self._layout_type_used or "Unknown"
-        if layout_type.endswith("Layout"):
-            layout_type = layout_type[:-6]  # Remove 'Layout' suffix
-
-        return f"{cls_name}(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
+        return _repr(self)
 
     def __str__(self) -> str:
         """Human-readable summary, equivalent to :meth:`info`.
@@ -737,61 +542,9 @@ class Environment(Generic[_C]):
         ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
         interactive debugging and logs.
         """
-        if not self._is_fitted:
-            return self.__repr__()
-        return self.info()
+        from neurospatial.environment._summary import _str
 
-    @staticmethod
-    def _html_table_row(label: str, value: str, highlight: bool = False) -> str:
-        """Generate a single HTML table row.
-
-        Parameters
-        ----------
-        label : str
-            Row label (left column).
-        value : str
-            Row value (right column).
-        highlight : bool, default=False
-            If True, use highlighted background color.
-
-        Returns
-        -------
-        str
-            HTML string for the table row.
-
-        """
-        bg_color = "#fffacd" if highlight else "#fff"
-        return (
-            f'<tr style="background-color: {bg_color};">'
-            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-            f'font-weight: bold; color: #555;">{label}</td>'
-            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-            f'color: #000;">{value}</td>'
-            "</tr>"
-        )
-
-    @staticmethod
-    def _html_table_header(title: str) -> str:
-        """Generate HTML table header row.
-
-        Parameters
-        ----------
-        title : str
-            Title text for the header (already HTML-escaped).
-
-        Returns
-        -------
-        str
-            HTML string for the header row.
-
-        """
-        return (
-            '<tr style="background-color: #f0f0f0; border-bottom: 2px solid #999;">'
-            '<th colspan="2" style="padding: 8px; text-align: left; '
-            'font-weight: bold; font-size: 14px;">'
-            f"{title}"
-            "</th></tr>"
-        )
+        return _str(self)
 
     def _repr_html_(self) -> str:
         """Generate rich HTML representation for Jupyter notebooks.
@@ -836,77 +589,9 @@ class Environment(Generic[_C]):
         This will display a formatted table with environment details.
 
         """
-        import html
+        from neurospatial.environment._summary import _repr_html
 
-        # Escape HTML special characters in name
-        name = html.escape(str(self.name) if self.name else "None")
-
-        # Build table rows
-        rows = []
-        rows.append(self._html_table_header(f"Environment: {name}"))
-
-        # Check if fitted
-        if not self._is_fitted:
-            rows.append(self._html_table_row("Status", "Not fitted", highlight=True))
-            rows.append(
-                self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
-            )
-            return (
-                '<div style="margin: 10px;">'
-                '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-                'font-family: monospace; font-size: 12px;">'
-                f"{''.join(rows)}"
-                "</table></div>"
-            )
-
-        # Fitted environment - show full details
-        rows.append(
-            self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
-        )
-
-        # Dimensions and bins
-        try:
-            n_dims = self.n_dims
-            rows.append(self._html_table_row("Dimensions", str(n_dims)))
-        except (RuntimeError, AttributeError):
-            rows.append(self._html_table_row("Dimensions", "Unknown"))
-            n_dims = None
-
-        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
-        rows.append(self._html_table_row("Number of Bins", str(n_bins)))
-
-        # Spatial extent
-        if hasattr(self, "dimension_ranges") and self.dimension_ranges:
-            extent_parts = []
-            for dim_idx, (min_val, max_val) in enumerate(self.dimension_ranges):
-                extent_parts.append(f"dim{dim_idx}: [{min_val:.2f}, {max_val:.2f}]")
-            extent_str = "<br>".join(extent_parts)
-            rows.append(self._html_table_row("Spatial Extent", extent_str))
-
-        # Regions
-        n_regions = len(self.regions) if hasattr(self, "regions") else 0
-        if n_regions > 0:
-            rows.append(self._html_table_row("Regions", f"{n_regions} defined"))
-        else:
-            rows.append(self._html_table_row("Regions", "None"))
-
-        # 1D-specific info
-        if (
-            n_dims == 1
-            and hasattr(self, "is_linearized_track")
-            and self.is_linearized_track
-        ):
-            rows.append(
-                self._html_table_row("Linearization", "Available (1D environment)")
-            )
-
-        return (
-            '<div style="margin: 10px;">'
-            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-            'font-family: monospace; font-size: 12px;">'
-            f"{''.join(rows)}"
-            "</table></div>"
-        )
+        return _repr_html(self)
 
     @check_fitted
     def info(self) -> str:
@@ -970,96 +655,9 @@ class Environment(Generic[_C]):
         Regions: 0
 
         """
-        # Build output line by line
-        lines = []
+        from neurospatial.environment._summary import _info
 
-        # Header
-        lines.append("Environment Information")
-        lines.append("=" * 23)
-        lines.append("")
-
-        # Basic information
-        name_display = self.name if self.name else "(unnamed)"
-        lines.append(f"Name: {name_display}")
-        lines.append(f"Layout Type: {self.layout_type}")
-        lines.append(f"Dimensions: {self.n_dims}")
-        lines.append(f"Number of Bins: {self.n_bins}")
-        lines.append("")
-
-        # Spatial extent
-        if self.dimension_ranges is not None:
-            lines.append("Spatial Extent:")
-            for dim_idx, (dim_min, dim_max) in enumerate(self.dimension_ranges):
-                dim_range = dim_max - dim_min
-                lines.append(
-                    f"  Dimension {dim_idx}: [{dim_min:.2f}, {dim_max:.2f}] "
-                    f"(range: {dim_range:.2f})"
-                )
-            lines.append("")
-        else:
-            lines.append("Spatial Extent: Not available")
-            lines.append("")
-
-        # Bin sizes
-        lines.append("Bin Sizes:")
-        try:
-            bin_sizes_array = self.bin_sizes
-
-            # Check if all bins have the same size (uniform)
-            if np.allclose(bin_sizes_array, bin_sizes_array[0]):
-                # Uniform bin size - for grids, extract per-dimension from grid_edges
-                if self.grid_edges and all(len(e) > 1 for e in self.grid_edges):
-                    for dim_idx, edges in enumerate(self.grid_edges):
-                        dim_sizes = np.diff(edges)
-                        if np.allclose(dim_sizes, dim_sizes[0]):
-                            lines.append(f"  Dimension {dim_idx}: {dim_sizes[0]:.2f}")
-                        else:
-                            lines.append(
-                                f"  Dimension {dim_idx}: variable "
-                                f"(mean: {np.mean(dim_sizes):.2f}, "
-                                f"std: {np.std(dim_sizes):.2f})"
-                            )
-                else:
-                    # Non-grid layout or 1D - show the uniform measure
-                    measure_name = (
-                        "Size"
-                        if self.n_dims == 1
-                        else "Area"
-                        if self.n_dims == 2
-                        else "Volume"
-                    )
-                    lines.append(f"  {measure_name}: {bin_sizes_array[0]:.2f}")
-            else:
-                # Variable bin sizes
-                lines.append(
-                    f"  Variable (mean: {np.mean(bin_sizes_array):.2f}, "
-                    f"std: {np.std(bin_sizes_array):.2f}, "
-                    f"range: [{np.min(bin_sizes_array):.2f}, {np.max(bin_sizes_array):.2f}])"
-                )
-        except (AttributeError, RuntimeError, ValueError):
-            lines.append("  (not available)")
-        lines.append("")
-
-        # Regions
-        n_regions = len(self.regions) if self.regions else 0
-        if n_regions > 0:
-            lines.append(f"Regions: {n_regions} defined")
-            # Show region names if not too many
-            if n_regions <= 5:
-                for region_name in self.regions:
-                    lines.append(f"  - {region_name}")
-            else:
-                lines.append("  (use env.regions to inspect all regions)")
-        else:
-            lines.append("Regions: None")
-        lines.append("")
-
-        # 1D-specific information
-        if hasattr(self, "is_linearized_track") and self.is_linearized_track:
-            lines.append("Linearization: Available (1D environment)")
-            lines.append("")
-
-        return "\n".join(lines)
+        return _info(self)
 
     @cached_property
     @check_fitted
@@ -1217,8 +815,8 @@ class Environment(Generic[_C]):
         ``div(grad(f)) = -M**-1 (Deg - W) f`` with ``W = A/d``, the negative
         of the generator used by ``env.smooth``.
 
-        Both matrices use ``@versioned_cached_property`` and are recomputed
-        when the environment's state version changes.
+        Both matrices are cached privately for this immutable geometry.
+        ``clear_cache(cached_properties=True)`` discards them when needed.
 
         Examples
         --------
@@ -1262,8 +860,8 @@ class Environment(Generic[_C]):
         Returns
         -------
         scipy.sparse.csc_matrix
-            Sparse operator of shape (n_bins, n_edges), cached until the
-            environment's geometry changes.
+            Sparse operator of shape (n_bins, n_edges). The private cache is
+            reused until clear_cache(cached_properties=True).
 
         Raises
         ------
@@ -1289,13 +887,15 @@ class Environment(Generic[_C]):
         """
         return self._divergence_operator_cached.copy()
 
-    @versioned_cached_property
+    @cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        return compute_differential_operator(self)
+        faces = self._require_face_geometry("gradient/divergence")
+        return _compute_differential_operator(faces, self.n_bins)
 
-    @versioned_cached_property
+    @cached_property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        return _compute_divergence_operator(self)
+        faces = self._require_face_geometry("gradient/divergence")
+        return _compute_divergence_operator(faces, self._differential_operator_cached)
 
     @check_fitted
     def copy(self, *, deep: bool = True) -> Self:
@@ -1483,22 +1083,15 @@ class Environment(Generic[_C]):
         # Clear explicit caches (KDTree, kernels) selectively
         self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
 
-        # Clear @cached_property AND @versioned_cached_property values from
-        # instance __dict__ if requested. This avoids maintaining a hardcoded
-        # list that can become stale when adding new cached properties.
+        # Geometry is immutable; cached analyses last until explicitly cleared.
         if cached_properties:
+            for name in tuple(self.__dict__):
+                if name.startswith("_versioned_cache__"):
+                    self.__dict__.pop(name)
             for cls in type(self).__mro__:
                 for name, attr in vars(cls).items():
                     if isinstance(attr, cached_property):
                         self.__dict__.pop(name, None)
-                    elif isinstance(attr, versioned_cached_property):
-                        # versioned_cached_property uses two keys: the
-                        # value at "_versioned_cache__<name>" and the
-                        # captured version at
-                        # "_versioned_cache__<name>__version".
-                        value_key = f"_versioned_cache__{name}"
-                        self.__dict__.pop(value_key, None)
-                        self.__dict__.pop(f"{value_key}__version", None)
 
     @property
     @check_fitted
@@ -1515,6 +1108,18 @@ class Environment(Generic[_C]):
         """Owned coordinate semantics, inferred from the construction factory."""
         return cast("_C", self._geometry.coordinates)
 
+    @property
+    @check_fitted
+    def coordinate_system(self) -> _C:
+        """Return this environment's immutable coordinate descriptor.
+
+        CartesianSystem describes position columns in length units.
+        EgocentricPolarSystem describes radius in length units and angle in
+        radians, including whether the angular axis wraps. The descriptor is
+        an independent frozen value; changing it cannot change the environment.
+        """
+        return copy_module.copy(self._coordinate_system)
+
     def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
         """Refuse Cartesian coordinate math for polar radius/angle bins."""
         if self._is_polar:
@@ -1524,7 +1129,9 @@ class Environment(Generic[_C]):
             raise CartesianOnlyError(
                 type(self).__name__,
                 operation,
-                reason="Cartesian-coordinate operation",
+                reason="Cartesian-grid operation"
+                if operation.partition("(")[0] in CARTESIAN_GRID_OPERATIONS
+                else "Cartesian-coordinate operation",
                 explanation=_POLAR_EXPLANATION,
             )
         return cast("CartesianLookupConsumer", self)
@@ -1558,7 +1165,7 @@ class Environment(Generic[_C]):
         coordinates = self._geometry.coordinates
         return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
 
-    @versioned_cached_property
+    @cached_property
     @check_fitted
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
         if not self._is_polar:
@@ -1569,7 +1176,6 @@ class Environment(Generic[_C]):
             graph=self.connectivity,
             grid_shape=self.grid_shape,
             active_mask=self.active_mask,
-            layout_kind=self._layout_type_used,
             periodic_axes=(1,) if self._angular_is_circular else (),
         ).astype(np.intp, copy=False)
 
@@ -1663,7 +1269,7 @@ class Environment(Generic[_C]):
     def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
         self._require_cartesian("component_keys()")
-        from neurospatial.layout._composition import _component_keys
+        from neurospatial.geometry._composition import _component_keys
 
         return _component_keys(self._binning)
 
@@ -1677,7 +1283,7 @@ class Environment(Generic[_C]):
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
         self._require_cartesian("bin_sources()")
-        from neurospatial.layout._composition import _bin_sources
+        from neurospatial.geometry._composition import _bin_sources
 
         return _bin_sources(self._binning)
 
@@ -1762,6 +1368,81 @@ class Environment(Generic[_C]):
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
         self._require_cartesian("bin_at()")
         return self._locate(points_nd)
+
+    @check_fitted
+    def nearest_bin(
+        self,
+        points: NDArray[np.float64],
+        *,
+        tie_break: TieBreakStrategy
+        | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
+        return_dist: bool = False,
+        max_distance: float | None = None,
+        max_distance_factor: float | None = None,
+    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
+        """Find the nearest bin center for every point in stored coordinates.
+
+        Parameters
+        ----------
+        points : ndarray, shape (n_points, n_dims)
+            Coordinates to compare with bin centers.
+        tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
+            Select the lowest bin ID among ties, or use "closest_center" for
+            the tree's nearest candidate.
+        return_dist : bool, default=False
+            Also return Euclidean distances to the selected centers.
+        max_distance : float or None, optional
+            Maximum Euclidean distance; rejected points return bin ID -1.
+        max_distance_factor : float or None, optional
+            Maximum distance as a multiple of typical center spacing. Cannot
+            be combined with max_distance. Without either limit, the existing
+            ten-times-typical-spacing rule rejects distant points.
+
+        Returns
+        -------
+        ndarray or tuple of ndarray
+            Bin IDs, shape (n_points,). When return_dist=True, also return
+            distances with infinity for rejected points.
+
+        Raises
+        ------
+        RuntimeError
+            If the environment is not fitted.
+        ValueError
+            If distance limits or tie-breaking settings are invalid, or query
+            points have the wrong coordinate width or nonfinite values.
+
+        Notes
+        -----
+        This compares Euclidean distance in stored coordinate columns and
+        reuses an environment-owned KD-tree. It does not test containment;
+        use bin_at() for Cartesian occupancy and trajectory assignment.
+        On polar environments, radius and angle are compared as raw columns
+        with mixed coordinate units. That preserves map_points_to_bins()
+        behavior and is neither physical polar distance nor containment.
+        """
+        from scipy.spatial import cKDTree
+
+        from neurospatial.ops.binning import (
+            _nearest_bin_query,
+            _validate_nearest_options,
+        )
+
+        resolved = _validate_nearest_options(
+            tie_break, max_distance, max_distance_factor
+        )
+        centers = self._binning.bins.centers
+        if self._kdtree_cache is None:
+            self._kdtree_cache = cKDTree(centers)
+        return _nearest_bin_query(
+            centers,
+            self._kdtree_cache,
+            points,
+            tie_break=resolved,
+            return_dist=return_dist,
+            max_distance=max_distance,
+            max_distance_factor=max_distance_factor,
+        )
 
     @check_fitted
     def contains(
@@ -2524,7 +2205,7 @@ class Environment(Generic[_C]):
             Coarsening factor per dimension. If int, applied uniformly to all
             dimensions. If tuple, must match the number of dimensions.
             Each factor must be a positive integer. Only supported for the
-            existing uniform RegularGrid family; retains truncation behavior.
+            existing axis-aligned uniform rectangular cells; retains truncation behavior.
         bin_size : float or tuple of float, optional
             New positive physical bin lengths along the retained grid axes,
             in environment units. May refine or coarsen a rectangular grid.
@@ -2544,7 +2225,8 @@ class Environment(Generic[_C]):
         RuntimeError
             If called before the environment is fitted.
         NotImplementedError
-            If environment layout is not RegularGridLayout.
+            If cells are not a uniform rectangular grid, or factor rebinning
+            would replace custom navigation distances or connections.
         ValueError
             If factor is not positive or if factor is too large for grid shape.
             Also raised when coarse cells cannot represent an existing wall.
@@ -2570,18 +2252,20 @@ class Environment(Generic[_C]):
             ...     minlength=coarse.n_bins,
             ... )
 
-        **Factor mode**: Integer coarsening requires the uniform RegularGrid
-        family. New-size mode uses the stored GridBinningSpec instead of a
-        descriptive layout name.
+        **Factor mode**: Integer coarsening requires uniform rectangular cells
+        with native grid connections and straight center-to-center navigation
+        distances, allowing connections removed by physical walls. Custom
+        paths cannot be reconstructed from cell geometry; use ``subset`` to
+        retain them or construct the target bins and paths explicitly.
 
         **Non-divisible dimensions**: If the grid shape is not evenly divisible
         by the factor in any dimension, the grid is truncated to the largest
         multiple of the factor. A warning is issued in this case.
 
         **Connectivity**: The connectivity graph is rebuilt for the coarsened
-        grid with the same connectivity pattern as the original (e.g., if
-        original had diagonal connections, coarsened grid will too). Physical
-        walls still block connections and must align with complete coarse faces.
+        grid using the stored diagonal-connection choice, or actual edges when
+        an older grid has no stored choice. Physical walls still block
+        connections and must align with complete coarse faces.
 
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
@@ -2636,11 +2320,9 @@ class Environment(Generic[_C]):
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
         if bin_size is not None:
-            from neurospatial.environment._rebin import _rebin_resolution
-
             return _rebin_resolution(self, bin_size)
         assert factor is not None
-        return _rebin(self, factor)
+        return _rebin_factor(self, factor)
 
     @check_fitted
     def subset(
@@ -2732,7 +2414,7 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("subset()")
-        from neurospatial.environment.transforms import _subset
+        from neurospatial.environment._subset import _subset
 
         return _subset(
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
@@ -2967,18 +2649,10 @@ class Environment(Generic[_C]):
         True
 
         """
-        # Import here to avoid circular dependency
-        # (the integration adapter constructs a new Environment)
-        # Delegate to free function
-        # Cast self to Environment for type checking
         self._require_cartesian("apply_transform()")
-        from neurospatial.ops.transforms import (
-            apply_transform_to_environment as _apply_transform_impl,
-        )
+        from neurospatial.environment._affine import _apply_transform_to_environment
 
-        env = self
-
-        return _apply_transform_impl(env, transform, name=name)
+        return _apply_transform_to_environment(self, transform, name=name)
 
     @classmethod
     def combine(
@@ -4347,7 +4021,7 @@ class Environment(Generic[_C]):
 
         return _bin_sizes(self)
 
-    @versioned_cached_property
+    @cached_property
     def _bin_sizes_cached(self) -> NDArray[np.float64]:
         from neurospatial.environment.queries import _bin_sizes_cached
 
@@ -6098,7 +5772,7 @@ class Environment(Generic[_C]):
 
         return _linearization_properties(self)
 
-    @versioned_cached_property
+    @cached_property
     def _linearization_properties_cached(self) -> dict[str, Any]:
         from neurospatial.environment.metrics import _linearization_properties_cached
 
@@ -6124,9 +5798,8 @@ class Environment(Generic[_C]):
         -----
         - Method (not property) since v0.4: the construction cost
           (one DataFrame allocation per bin) is now visible at the
-          call site. Attribute extraction is cached internally via
-          :class:`versioned_cached_property`; each call returns an independent
-          DataFrame, including nested object values.
+          call site. Attribute extraction is cached privately; each call returns
+          an independent DataFrame, including nested object values.
         - For large environments (>100,000 bins), the first call may
           take a few seconds.
         - Memory usage: ~8 bytes per attribute per bin (e.g., 10
@@ -6154,7 +5827,7 @@ class Environment(Generic[_C]):
 
         return _get_bin_attributes(self)
 
-    @versioned_cached_property
+    @cached_property
     def _bin_attributes_cached(self) -> pd.DataFrame:
         # Extract node attributes from connectivity graph
         from neurospatial.environment.metrics import _bin_attributes_cached
@@ -6185,8 +5858,8 @@ class Environment(Generic[_C]):
         -----
         - Method (not property) since v0.4: edge-DataFrame allocation is
           O(n_edges) and visible at the call site. Attribute extraction is
-          cached internally via :class:`versioned_cached_property`; each call
-          returns an independent DataFrame, including nested object values.
+          cached privately; each call returns an independent DataFrame,
+          including nested object values.
         - For large environments (>100,000 edges), the first call may
           take a few seconds.
         - Memory usage: ~8 bytes per attribute per edge (e.g., 6
@@ -6214,7 +5887,7 @@ class Environment(Generic[_C]):
 
         return _get_edge_attributes(self)
 
-    @versioned_cached_property
+    @cached_property
     def _edge_attributes_cached(self) -> pd.DataFrame:
         # Extract edge attributes from connectivity graph
         from neurospatial.environment.metrics import _edge_attributes_cached
@@ -6330,6 +6003,86 @@ class Environment(Generic[_C]):
         from neurospatial.environment.fields import _compute_kernel
 
         return _compute_kernel(self, bandwidth, mode=mode, cache=cache)
+
+    @check_fitted
+    def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
+        """Return Gaussian weights between bin centers, ignoring walls.
+
+        Parameters
+        ----------
+        bandwidth : float
+            Finite positive standard deviation in environment length units.
+
+        Returns
+        -------
+        ndarray, shape (n_bins, n_bins)
+            Read-only weights ``exp(-distance**2 / (2 * bandwidth**2))``.
+            These weights are not normalized by row or by cell measure.
+
+        Notes
+        -----
+        Cartesian coordinates use Euclidean distances. Polar coordinates use
+        radial differences and mean-radius angular arc lengths, with angular
+        wrapping only for a circular coordinate system. Weights can cross
+        physical walls; use diffuse() for boundary-aware smoothing.
+
+        The dense matrix costs O(n_bins**2) memory. Repeated calls reuse an
+        environment-owned bounded cache and return independent array headers
+        without copying the matrix. Use .copy() for an editable matrix.
+        clear_cache(kernels=True) releases the cached weights.
+        """
+        from neurospatial.environment.fields import _compute_gaussian_kernel
+
+        return _compute_gaussian_kernel(self, bandwidth)
+
+    @check_fitted
+    def get_diffusion_geometry(self) -> DiffusionGeometry:
+        """Return read-only conductances, cell measures and diffusion components.
+
+        Returns
+        -------
+        DiffusionGeometry
+            Sparse symmetric conductances W, positive cell volumes, component
+            count and labels in active-bin order. Components follow positive
+            conductance, so navigation-only links do not transport a field.
+
+        Notes
+        -----
+        The environment builds this geometry once and owns its private cache.
+        Every export has independent sparse and NumPy headers over immutable
+        buffers. Replacing an exported matrix's buffers or changing an array's
+        shape cannot change the environment. Reading the export does not copy
+        O(n_edges) data. clear_cache(cached_properties=True) rebuilds on demand.
+
+        Raises
+        ------
+        NotImplementedError
+            If the stored binning cannot supply numerical diffusion geometry.
+        """
+        from neurospatial.environment._publication import _diffusion_geometry_header
+
+        return _diffusion_geometry_header(self._diffusion_geometry)
+
+    @check_fitted
+    def diffusion_accuracy(self, bandwidth: float) -> float:
+        """Return the relative numerical noise floor of diffuse() at a bandwidth.
+
+        Parameters
+        ----------
+        bandwidth : float
+            The physical bandwidth passed to diffuse().
+
+        Returns
+        -------
+        float
+            Relative truncation tolerance, or float64 roundoff when a full
+            basis was used. A bandwidth not yet resolved by diffuse() reports
+            the more conservative truncation tolerance. This query does not
+            build an eigenbasis.
+        """
+        from neurospatial.ops.diffusion import _diffusion_apply_rtol
+
+        return _diffusion_apply_rtol(self._diffusion_eigenbasis, self.n_bins, bandwidth)
 
     def smooth(
         self,
@@ -6565,9 +6318,9 @@ class Environment(Generic[_C]):
 
         return _diffuse(self, fields, bandwidth, mode=mode, backend=backend)
 
-    @versioned_cached_property
+    @cached_property
     def _face_geometry(self) -> FaceGeometry:
-        """Validated cell faces, built once per ``_state_version``.
+        """Validated cell faces, cached for this immutable geometry.
 
         Shared by the diffusion snapshot and the gradient and divergence
         operators. Read it through :meth:`_require_face_geometry`, which names
@@ -6594,50 +6347,48 @@ class Environment(Generic[_C]):
 
         return _require_face_geometry(self, operation)
 
-    @versioned_cached_property
+    @cached_property
     def _diffusion_geometry(
         self,
     ) -> DiffusionGeometry:
         """Cached diffusion geometry ``(W, volumes, n_components, labels)``.
 
-        Geometry-only, so it is built once and dropped wholesale on any
-        ``_state_version`` bump (like every ``versioned_cached_property``). Shared
-        by dense kernels, :meth:`diffuse`, smoothness bases, and the
-        W-component support gates.
+        Geometry-only, so it is built once and discarded by
+        ``clear_cache(cached_properties=True)``. Shared by dense kernels,
+        :meth:`diffuse`, smoothness bases, and the W-component support gates.
         """
         from neurospatial.environment.fields import _diffusion_geometry
 
         return _diffusion_geometry(self)
 
-    @versioned_cached_property
+    @cached_property
     def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
         """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
 
         Returns a small mutable holder (the max-rank truncated basis, grown by
         replace, plus a per-``(sigma, tol)`` resolved-rank memo) that
         :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place. The
-        ``versioned_cached_property`` owns it, so it is dropped wholesale on any
-        ``_state_version`` bump / ``clear_cache``, and it holds only a single
-        basis strictly below ``dense_fraction·n`` — never a persistent ``(n, n)``.
+        private cached property owns it, so clearing cached properties drops it
+        wholesale. It holds a single basis strictly below ``dense_fraction·n``
+        — never a persistent ``(n, n)``.
         """
         from neurospatial.environment.fields import _diffusion_eigenbasis
 
         return _diffusion_eigenbasis(self)
 
-    @versioned_cached_property
+    @cached_property
     def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
         """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
 
         The smoothing adapter fills this holder with the most recently used
         kernels (``_constants.MAX_CACHED_KERNELS``). It is emptied by
-        ``clear_cache(kernels=True)``, dropped on a state version bump, and
-        freed with the environment.
+        ``clear_cache(kernels=True)`` and freed with the environment.
         """
         from neurospatial.environment.fields import _gaussian_kernels
 
         return _gaussian_kernels(self)
 
-    @versioned_cached_property
+    @cached_property
     def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
         """Growable global eigenbasis holder for the MRF penalty-basis resolver.
 
@@ -6646,52 +6397,59 @@ class Environment(Generic[_C]):
         ``S`` and each mode's source W-component, grown by replace by
         :func:`neurospatial.ops.diffusion._ensure_global_modes`. Geometry-only
         (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent)
-        and dropped wholesale on any ``_state_version`` bump, like every
-        ``versioned_cached_property``. Starts empty (``G == 0``) and never stores
-        a dense ``(n, n)`` basis (dense solves stay call-local). Distinct from
+        and dropped wholesale by ``clear_cache(cached_properties=True)``.
+        Starts empty (``G == 0``) and never stores a dense ``(n, n)`` basis
+        (dense solves stay call-local). Distinct from
         :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
         """
         from neurospatial.environment.fields import _mrf_eigenbasis
 
         return _mrf_eigenbasis(self)
 
-    def _mrf_basis(
+    @check_fitted
+    def get_mrf_basis(
         self,
         occupancy: NDArray[np.float64],
         *,
-        rank: int | None,
+        rank: int | None = None,
     ) -> MRFBasis:
-        """Reduced-rank MRF penalty basis for the penalized-Poisson GAM.
-
-        Reuses the cached finite-volume geometry (:meth:`_diffusion_geometry`)
-        and the symmetric eigensolver, growing the cached global eigenbasis
-        (:meth:`_mrf_eigenbasis`) only as far as needed, then masking it by
-        occupancy through the pure
-        :func:`neurospatial.ops.diffusion.select_live_basis`.
-
-        Because dead components also contribute low modes, the global ``G``
-        needed to expose ``r_eff`` *live* modes is not knowable up front, so
-        ``G`` is grown iteratively until enough strictly-positive live modes
-        appear (or the basis reaches full rank). Only this method eigensolves;
-        the selector is pure masking, so a repeat call at the same-or-smaller
-        rank / same live support (still in the sparse regime) is a cache hit.
+        """Build a reduced-rank Markov random field smoothness basis.
 
         Parameters
         ----------
-        occupancy : NDArray[np.float64], shape (n_bins,)
-            Time (or samples) spent per active bin, active-bin order.
-        rank : int or None
-            Requested rank cap ``R``; ``None`` resolves to the module default.
+        occupancy : ndarray, shape (n_bins,)
+            Nonnegative exposure per active bin. Positive exposure selects
+            the connected components retained in the basis.
+        rank : int or None, optional
+            Requested number of modes. None uses the default cap of 250;
+            the result is also capped by the occupied support. Each retained
+            component needs its constant mode, even when rank is smaller.
 
         Returns
         -------
         MRFBasis
-            The reduced-rank penalty basis in live-bin order. See
-            :class:`neurospatial.ops.diffusion.MRFBasis` for its invariants.
+            Independent editable arrays B, shape (n_live_bins, n_modes),
+            penalty weights d, shape (n_modes,), and live_bins, which maps rows
+            back to active bin IDs; also the number of retained components.
+
+        Notes
+        -----
+        The environment owns and reuses the expensive geometry and global
+        truncated eigenbasis. Requests reuse a cached basis when it is
+        sufficient; near-full bases are rebuilt per call rather than retained.
+        Returned arrays cannot change the cache. Unoccupied components
+        contribute no basis rows; every occupied component has one unpenalized
+        constant mode, followed by modes with positive smoothness penalties.
         """
         from neurospatial.environment.fields import _mrf_basis
 
         return _mrf_basis(self, occupancy, rank=rank)
+
+    def _mrf_basis(
+        self, occupancy: NDArray[np.float64], *, rank: int | None
+    ) -> MRFBasis:
+        """Compatibility delegate for the former private penalty-basis adapter."""
+        return self.get_mrf_basis(occupancy, rank=rank)
 
     def transitions(
         self,
@@ -6864,6 +6622,10 @@ class Environment(Generic[_C]):
         binning, graph, ranges, tag, category, resolved, index = built_layout_data(
             layout
         )
+        if isinstance(_coordinates, EgocentricPolarSystem) and arena is None:
+            from neurospatial.environment._arena import infer_arena
+
+            arena = infer_arena(binning, polar=True, circular=_coordinates.circular)
         return cls._from_binning(
             binning,
             connectivity=graph,
@@ -6914,9 +6676,9 @@ class Environment(Generic[_C]):
             infer_arena,
             validate_arena,
         )
-        from neurospatial.environment._ownership import own_arena, own_binning
-        from neurospatial.layout._context import GridIndex, grid_index
-        from neurospatial.layout._validation import (
+        from neurospatial.geometry._context import GridIndex, grid_index
+        from neurospatial.geometry._ownership import own_arena, own_binning
+        from neurospatial.geometry._validation import (
             _validate_clip_mapping,
             _validate_components,
             _validate_graph,
@@ -6941,8 +6703,14 @@ class Environment(Generic[_C]):
         index = (
             _grid_index if isinstance(_grid_index, GridIndex) else grid_index(binning)
         )
+        from neurospatial.arena import EgocentricSurround
+
         coordinates = (
-            EgocentricPolarSystem(polar_circularity(index.shape, graph, build_params))
+            EgocentricPolarSystem(
+                arena.circular
+                if isinstance(arena, EgocentricSurround)
+                else polar_circularity(index.shape, graph, build_params)
+            )
             if polar
             else CartesianSystem()
         )
@@ -6983,7 +6751,6 @@ class Environment(Generic[_C]):
         env._layout_category = layout_type
         env._layout_params_used = copy_module.deepcopy(build_params)
         env._is_linearized_track_env = is_linearized_track
-        env._state_version = 1
         env._is_fitted = True
         env._geometry = _PublishedGeometry(
             binning=binning,

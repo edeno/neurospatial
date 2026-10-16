@@ -5,7 +5,6 @@ Environment exposes thin entry points; Cartesian coordinate operations are guard
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
@@ -15,10 +14,19 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import as_intervals
-from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._intervals import (
+    as_intervals,
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
+from neurospatial._intervals import (
+    observed_interval_mask as observed_interval_mask,
+)
+from neurospatial._intervals import (
+    observed_runs as observed_runs,
+)
 from neurospatial._validation import validate_times_positions
-from neurospatial.layout._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
 
 if TYPE_CHECKING:
     import scipy.sparse
@@ -71,217 +79,6 @@ class BinSequenceWithRuns:
     bins: NDArray[np.int32]
     run_starts: NDArray[np.int64]
     run_lengths: NDArray[np.int64]
-
-
-def interval_valid_mask(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64] | None = None,
-    env: TrajectoryBinningConsumer | None = None,
-    *,
-    speed: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    max_gap: float | None = 0.5,
-    start_bin: NDArray[np.intp] | None = None,
-    epochs: NDArray[np.float64] | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-) -> NDArray[np.bool_]:
-    """Compute the per-interval validity mask shared by spikes and occupancy.
-
-    This is the **single source of truth** for which trajectory intervals are
-    counted toward a firing-rate map. A rate map is
-    ``spike_counts (numerator) / occupancy (denominator)`` per bin, and BOTH
-    sides MUST drop the IDENTICAL set of intervals or the rate is biased.
-    ``env.occupancy`` calls this helper to build its interval mask, and the
-    spike-binning kernel gates each spike by the validity of the interval it
-    falls in using this SAME helper — so numerator and denominator stay aligned
-    by construction.
-
-    Interval ``k`` spans ``[t_k, t_{k+1})`` (``time_allocation="start"``
-    semantics) and is assigned to the bin at sample ``k``. It is valid iff:
-
-    .. math::
-        (\\text{max\\_gap is None or } \\Delta t_k \\le \\text{max\\_gap})
-        \\;\\wedge\\;
-        (\\text{min\\_speed is None or } \\text{speed}_k \\ge \\text{min\\_speed})
-        \\;\\wedge\\;
-        (\\text{start\\_bin}_k \\ge 0)
-        \\;\\wedge\\;
-        ([t_k, t_{k+1}) \\subseteq \\text{epochs})
-        \\;\\wedge\\;
-        ([t_k, t_{k+1}) \\subseteq \\text{spike\\_window})
-
-    where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
-    Bounds are checked only when ``start_bin`` or ``env`` is supplied; speed
-    is checked only when ``speed`` is supplied. Window gates apply when given.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Trajectory timestamps in seconds (assumed sorted/finite; validated
-        upstream).
-    positions : ndarray, shape (n_samples, n_dims), or None
-        Trajectory coordinates. Required with ``env`` unless ``start_bin``
-        has already been computed.
-    env : Environment or None
-        The spatial environment; ``env.bin_at`` maps each start sample to its
-        bin (``-1`` outside the active mask).
-    speed : ndarray, shape (n_samples,), or None
-        Per-sample speed. Only consulted when ``min_speed`` is set; the gate
-        uses ``speed[:-1] >= min_speed`` (the speed of each interval's start
-        sample). Consumed as-is; never re-derived here.
-    min_speed : float or None
-        Minimum speed threshold. When ``None`` (default) no speed gating.
-    max_gap : float or None
-        Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
-        dropped. Default 0.5; ``None`` disables gap gating on BOTH sides
-        (spikes and occupancy) so they stay aligned.
-    start_bin : ndarray of intp, shape (n_samples,), or None
-        Optional precomputed ``env.bin_at(positions)`` result. When provided,
-        it is used directly for the out-of-bounds-start gate instead of
-        recomputing ``env.bin_at`` internally — letting callers that have
-        already mapped ``positions`` to bins (e.g. ``env.occupancy``) avoid a
-        redundant second ``bin_at`` pass. When ``None`` (default), ``bin_at``
-        is computed here as before. Behaviour is identical either way; the
-        passed array must be the ``bin_at`` of the SAME ``positions``.
-    epochs, spike_window : ndarray, shape (n_windows, 2), or None
-        Already normalized, sorted and merged half-open windows in seconds.
-        Each kept interval must lie wholly inside one row of each supplied
-        window set.
-
-    Returns
-    -------
-    ndarray of bool, shape (n_samples - 1,)
-        ``True`` for each valid interval. Empty (length 0) when fewer than
-        two samples are provided.
-    """
-    from neurospatial._intervals import intervals_contain
-
-    times = np.asarray(times, dtype=np.float64)
-
-    n_samples = len(times)
-    if n_samples < 2:
-        return np.zeros(max(n_samples - 1, 0), dtype=bool)
-
-    dt = np.diff(times)
-    valid_mask = np.ones(len(dt), dtype=bool)
-
-    # Filter by max_gap.
-    if max_gap is not None:
-        valid_mask &= dt <= max_gap
-
-    # Filter by min_speed (speed of each interval's starting sample).
-    if min_speed is not None and speed is not None:
-        speed = np.asarray(speed, dtype=np.float64)
-        valid_mask &= speed[:-1] >= min_speed
-
-    # Filter out intervals whose START sample is outside the active
-    # environment (bin_at returns -1 for points outside any active bin).
-    # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
-    # already computes bin_at(positions)); otherwise compute it here.
-    if start_bin is None and env is not None:
-        pos = np.asarray(positions, dtype=np.float64)
-        start_bin = env.bin_at(pos.reshape(-1, 1) if pos.ndim == 1 else pos)
-    if start_bin is not None:
-        valid_mask &= np.asarray(start_bin)[:-1] >= 0
-    for windows in (epochs, spike_window):
-        if windows is not None:
-            valid_mask &= intervals_contain(windows, times[:-1], times[1:])
-
-    return valid_mask
-
-
-def start_allocated_occupancy(
-    start_bin: NDArray[np.intp],
-    dt: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-    n_bins: int,
-    *,
-    return_seconds: bool = True,
-) -> NDArray[np.float64]:
-    """Sum each valid interval's duration into the bin of its start sample.
-
-    Parameters
-    ----------
-    start_bin : ndarray of intp, shape (n_samples,)
-        Bin of every sample (``-1`` = invalid; such intervals must already be
-        excluded by ``interval_mask``).
-    dt : ndarray, shape (n_samples - 1,)
-        ``np.diff(times)``.
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        The shared validity mask.
-    n_bins : int
-        Number of bins.
-    return_seconds : bool, default=True
-        Weight by ``dt`` (seconds) or count intervals.
-
-    Returns
-    -------
-    ndarray, shape (n_bins,)
-    """
-    bins = start_bin[:-1][interval_mask]
-    weights = dt[interval_mask] if return_seconds else None
-    return np.bincount(bins, weights=weights, minlength=n_bins)[:n_bins].astype(
-        np.float64
-    )
-
-
-def observed_interval_mask(
-    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
-) -> NDArray[np.bool_]:
-    """Per-interval validity for position-only analyses (gap and epochs gates).
-
-    ``epochs`` is the raw user argument; it is normalized here with
-    ``as_intervals(epochs, name="epochs")``.
-
-    Returns
-    -------
-    ndarray of bool, shape (n_samples - 1,)
-    """
-    from neurospatial._intervals import as_intervals
-
-    times = np.asarray(times, dtype=np.float64)
-    resolved_epochs = as_intervals(epochs, name="epochs")
-    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-    if mask.size and not mask.any():
-        _warn_all_intervals_excluded(times, max_gap=max_gap, epochs=resolved_epochs)
-    return mask
-
-
-def _warn_all_intervals_excluded(
-    times: NDArray[np.float64],
-    *,
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
-) -> None:
-    """Name the gate that left a position-only analysis with no observed data."""
-    causes = [f"max_gap={max_gap}"] if max_gap is not None else []
-    fixes = []
-    if max_gap is not None:
-        fixes.append(
-            f"max_gap is in seconds and the median sampling interval is "
-            f"{float(np.median(np.diff(times))):.4g} s; raise max_gap above it "
-            f"or pass max_gap=None to disable gap gating"
-        )
-    if epochs is not None:
-        causes.append("epochs")
-        fixes.append("check that epochs overlap `times` (same clock, seconds)")
-    warnings.warn(
-        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
-        f"{', '.join(causes)}), so the result is empty or NaN rather than a "
-        f"measurement. Fix: {'; '.join(fixes)}.",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
-
-
-def observed_runs(
-    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
-) -> list[slice]:
-    """One sample slice per maximal run of valid intervals, in time order."""
-    from neurospatial._intervals import run_sample_bounds
-
-    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
-    return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
 
 
 def _occupancy(

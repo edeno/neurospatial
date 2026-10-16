@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.layout import _codecs
+from neurospatial.geometry import _codecs
 
 
 @pytest.mark.parametrize("field", ["layout_parameters", "binning", "arena"])

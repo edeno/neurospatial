@@ -85,7 +85,7 @@ def check_fitted(method: Callable[P, T]) -> Callable[P, T]:
 
 
 class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.cached_property
-    """Cached property that auto-invalidates on Environment ``_state_version`` bump.
+    """Cached property that auto-invalidates on a host ``_state_version`` bump.
 
     Behaves like :func:`functools.cached_property`, but the cached
     value is keyed by the host instance's ``_state_version`` integer.
@@ -94,9 +94,9 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     ``_state_version``; on mismatch the underlying function is re-run
     and the new value is cached.
 
-    New environments own fresh caches; subsets, transforms and re-binning
-    return new values. The descriptor also protects internal hosts that advance
-    their version explicitly. The host class must expose an
+    Environment uses ordinary private cached properties over immutable geometry.
+    This descriptor remains available for hosts that advance their version
+    explicitly. The host class must expose an
     integer attribute named ``_state_version`` and must allow
     per-instance attribute storage (no ``__slots__`` without
     ``_state_version`` plus the versioned cache keys).
@@ -104,9 +104,8 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     Limitations
     -----------
     Invalidation is **only** triggered by ``_state_version`` bumps. The
-    descriptor does **not** fingerprint the underlying state. To keep that
-    sound, Environment publishes owned read-only geometry as one value. The host must own and protect geometry so edits cannot bypass
-    invalidation. Build a new environment to change geometry. Assigning or
+    descriptor does **not** fingerprint the underlying state. The host must own
+    and protect its state so edits cannot bypass invalidation. Assigning or
     deleting a cached property raises rather than shadowing its descriptor and
     bypassing future version checks.
 

@@ -8,8 +8,8 @@ import pickle
 import numpy as np
 import pytest
 
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._locators import (
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,

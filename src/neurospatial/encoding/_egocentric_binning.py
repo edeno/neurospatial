@@ -52,21 +52,21 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.encoding._binning import (
     FrameBinning,
     count_spikes_by_frame,
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.environment.trajectory import (
-    interval_valid_mask,
-    start_allocated_occupancy,
-)
 from neurospatial.ops.egocentric import _wrap_angle, compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 

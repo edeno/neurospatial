@@ -10,19 +10,19 @@ Their array exports can be copied and edited to prepare a new binning without
 changing an existing environment. Delegated layout callbacks are not accepted.
 """
 
-from neurospatial.layout._binning import (
+from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
 )
-from neurospatial.layout._capabilities import RectilinearGrid
-from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.layout._diffusion import FaceGeometry
-from neurospatial.layout._face_normals import FaceNormals
-from neurospatial.layout._grid_frame import FramedGrid
-from neurospatial.layout._locators import (
+from neurospatial.geometry._capabilities import RectilinearGrid
+from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+from neurospatial.geometry._face_normals import FaceNormals
+from neurospatial.geometry._grid_frame import FramedGrid
+from neurospatial.geometry._locators import (
     HexLocator,
     MeshLocator,
     NearestBinLocator,
@@ -30,13 +30,14 @@ from neurospatial.layout._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
-from neurospatial.layout._rebin_spec import GridBinningSpec
+from neurospatial.geometry._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 __all__ = [
     "Binning",
     "ClipMapping",
     "ClippedLocator",
+    "DiffusionGeometry",
     "FaceGeometry",
     "FaceNormals",
     "FramedGrid",

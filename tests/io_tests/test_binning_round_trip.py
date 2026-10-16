@@ -14,9 +14,9 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment, Regions
+from neurospatial.geometry._binning import KnownFaces, MissingFaces
+from neurospatial.geometry._codecs import encode
 from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.layout._binning import KnownFaces, MissingFaces
-from neurospatial.layout._codecs import encode
 
 
 def _same_value(actual, expected):

@@ -448,7 +448,7 @@ def wall_reaching_cells(polygon, bin_size):
         np.ones(tuple(len(edge) - 1 for edge in edges), dtype=bool),
         grid_edges=edges,
     )
-    return Environment.from_bins(grid.clip(polygon)._binning, arena=OpenArena(polygon))
+    return Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))
 
 
 CURVED_AND_SLANTED_ARENAS = {

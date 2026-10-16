@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial.layout._binning import Binning, MissingFaces, SpatialBins
-from neurospatial.layout._codecs import decode, encode
-from neurospatial.layout._locators import (
+from neurospatial.geometry._binning import Binning, MissingFaces, SpatialBins
+from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.geometry._polygon import ClipMapping, ClippedLocator, PolygonCells
 
 
 def clipped_binning():

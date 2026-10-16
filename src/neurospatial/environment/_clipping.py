@@ -8,8 +8,8 @@ import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.environment._protocols import ClipConsumer
-from neurospatial.layout._graph import _graph_from_binning
-from neurospatial.layout._polygon import clip_binning
+from neurospatial.geometry._graph import _graph_from_binning
+from neurospatial.geometry._polygon import clip_binning
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -26,7 +26,7 @@ def _clip(
         raise NotImplementedError(
             "Exact polygon clipping requires Cartesian 2-D cells."
         )
-    from neurospatial.layout._composition import bridge_values
+    from neurospatial.geometry._composition import bridge_values
 
     if bridge_values(env._binning):
         raise NotImplementedError(
@@ -48,7 +48,7 @@ def _clip(
     graph = _graph_from_binning(binning)
     shapes = binning.shapes
     assert shapes is not None
-    from neurospatial.layout._polygon import PolygonCells
+    from neurospatial.geometry._polygon import PolygonCells
 
     assert isinstance(shapes, PolygonCells)
     bounds = np.array([cell.bounds for cell in shapes.polygons])

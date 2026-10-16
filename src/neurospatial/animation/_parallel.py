@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from matplotlib.artist import Artist
 
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._binning import Binning
 
 
 def _get_field_artist(ax: Any) -> Artist | None:
@@ -85,7 +86,7 @@ def _get_field_artist(ax: Any) -> Artist | None:
     return None
 
 
-def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
+def _update_field_artist(artist: Any, binning: Binning, field: Any) -> None:
     """Update a reused field artist's data with a new frame's field values.
 
     The update path differs by artist type so that the new data matches the
@@ -101,21 +102,18 @@ def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
     ----------
     artist : matplotlib.artist.Artist
         The artist returned by :func:`_get_field_artist`.
-    env : Environment
-        Environment providing the grid geometry (``grid_shape``,
-        ``active_mask``) used to reconstruct grid data for QuadMesh artists.
+    binning : Binning
+        Owned grid geometry used to reconstruct data for QuadMesh artists.
     field : array-like, shape (n_bins,)
         Field values for the active bins, ordered by active-bin index.
     """
     from matplotlib.collections import QuadMesh
 
     if isinstance(artist, QuadMesh):
-        from neurospatial.layout._grid_frame import require_grid_context
+        from neurospatial.geometry._grid_frame import require_grid_context
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
-        grid, _ = require_grid_context(
-            env._binning, "animation", fix="use a cell renderer"
-        )
+        grid, _ = require_grid_context(binning, "animation", fix="use a cell renderer")
         grid_data = map_active_data_to_grid(
             grid.shape,
             grid.active_mask,
@@ -1792,13 +1790,14 @@ def _render_worker_frames(task: dict) -> None:
             # Fast path: update the field artist's data only.
             # Type checker: reuse_artists=True guarantees primary_artist is not None
             assert primary_artist is not None
+            binning = env.binning
             for local_idx in range(1, len(fields)):
                 field = fields[local_idx]
 
                 # Update the field artist in place. _update_field_artist applies
                 # the correct call per artist type: QuadMesh.set_array(grid_data.T)
                 # for grids, AxesImage.set_data(field_2d) for imshow layouts.
-                _update_field_artist(primary_artist, env, field)
+                _update_field_artist(primary_artist, binning, field)
 
                 # Update title if labels provided
                 if frame_labels and frame_labels[local_idx]:

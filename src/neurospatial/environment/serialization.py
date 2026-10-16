@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
-
-from neurospatial.environment._protocols import SerializationConsumer
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 
-def _to_file(
-    env: SerializationConsumer, path: str | Path, *, overwrite: bool = False
-) -> None:
+def _to_file(env: Environment, path: str | Path, *, overwrite: bool = False) -> None:
     """Implement Environment.to_file using explicit serialization inputs."""
     from neurospatial.io import to_file as _to_file
 
-    _to_file(cast("Environment", env), path, overwrite=overwrite)
+    _to_file(env, path, overwrite=overwrite)
 
 
 def _from_file(cls: type[Environment[Any]], path: str | Path) -> Environment:
@@ -27,11 +23,11 @@ def _from_file(cls: type[Environment[Any]], path: str | Path) -> Environment:
     return _from_file(path)
 
 
-def _to_dict(env: SerializationConsumer) -> dict[str, Any]:
+def _to_dict(env: Environment) -> dict[str, Any]:
     """Implement Environment.to_dict using explicit serialization inputs."""
     from neurospatial.io import to_dict as _to_dict
 
-    return _to_dict(cast("Environment", env))
+    return _to_dict(env)
 
 
 def _from_dict(cls: type[Environment[Any]], data: dict[str, Any]) -> Environment:
@@ -42,7 +38,7 @@ def _from_dict(cls: type[Environment[Any]], data: dict[str, Any]) -> Environment
 
 
 def _to_nwb(
-    env: SerializationConsumer,
+    env: Environment,
     nwbfile: Any,
     name: str = "spatial_environment",
     *,

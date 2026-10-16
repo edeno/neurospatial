@@ -11,14 +11,14 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import MetricsConsumer
-from neurospatial.layout._binning import Binning
-from neurospatial.layout._locators import (
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._locators import (
     HexLocator,
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.layout._polygon import PolygonCells, _boundary_cell_indices
+from neurospatial.geometry._polygon import PolygonCells, _boundary_cell_indices
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -81,7 +81,6 @@ def _cartesian_boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
         graph=env.connectivity,
         grid_shape=grid_shape,
         active_mask=active_mask,
-        layout_kind=env._layout_type_used,
     ).astype(np.intp, copy=False)
 
 
@@ -176,7 +175,7 @@ def _edge_attributes_cached(env: MetricsConsumer) -> pd.DataFrame:
 def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     """Export retained navigation bridge data as an independent table."""
 
-    from neurospatial.layout._composition import composition_view
+    from neurospatial.geometry._composition import composition_view
 
     columns = [
         "source_component",
@@ -192,7 +191,7 @@ def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     if result is None:
         return pd.DataFrame(columns=columns)
     root, indices, _scale = result
-    from neurospatial.layout._composition import bridge_values
+    from neurospatial.geometry._composition import bridge_values
 
     by_pair = bridge_values(binning)
     offsets = root.offsets

@@ -71,7 +71,7 @@ def test_quadmesh_corners_values_masks_and_animation_updates(linear):
         x, y = np.meshgrid(np.arange(4.0), np.arange(4.0), indexing="xy")
         expected = mapping(np.column_stack([x.ravel(), y.ravel()])).reshape(4, 4, 2)
         np.testing.assert_allclose(artist.get_coordinates(), expected)
-        _update_field_artist(artist, child, values + 10)
+        _update_field_artist(artist, child.binning, values + 10)
         actual = artist.get_array()
         assert actual.mask[1, 1]
         np.testing.assert_array_equal(

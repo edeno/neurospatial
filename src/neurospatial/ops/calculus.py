@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.layout._diffusion import FaceGeometry
+    from neurospatial.geometry._diffusion import FaceGeometry
     from neurospatial.ops._protocols import (
         DivergenceConsumer,
         FaceGeometryConsumer,
@@ -27,11 +27,6 @@ if TYPE_CHECKING:
     )
 
 __all__ = ["compute_differential_operator", "divergence", "gradient"]
-
-
-def _faces(env: FaceGeometryConsumer) -> FaceGeometry:
-    """Cached face measures, along-edge distances and cell volumes."""
-    return env._require_face_geometry("gradient/divergence")
 
 
 def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
@@ -80,8 +75,14 @@ def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matri
     divergence : Compute the net outward flux per cell volume.
     Environment.get_differential_operator : Cached access to this matrix.
     """
-    faces = _faces(env)
-    n_bins, n_edges = env.n_bins, faces.distance.size
+    return env.get_differential_operator()
+
+
+def _compute_differential_operator(
+    faces: FaceGeometry, n_bins: int
+) -> sparse.csc_matrix:
+    """Build an oriented inverse-distance operator from explicit face data."""
+    n_edges = faces.distance.size
     if n_edges == 0:
         return sparse.csc_matrix((n_bins, 0), dtype=np.float64)
     src, dst = faces.edges[:, 0], faces.edges[:, 1]
@@ -96,12 +97,13 @@ def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matri
     )
 
 
-def _compute_divergence_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
+def _compute_divergence_operator(
+    faces: FaceGeometry, differential_operator: sparse.csc_matrix
+) -> sparse.csc_matrix:
     """Build the negative volume-weighted adjoint of the gradient."""
-    faces = _faces(env)
     return (
         -sparse.diags(1.0 / faces.volumes)
-        @ env.get_differential_operator()
+        @ differential_operator
         @ sparse.diags(faces.A * faces.distance)
     ).tocsc()
 

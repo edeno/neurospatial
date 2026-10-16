@@ -12,8 +12,8 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
-    from neurospatial.arena import Arena
     from neurospatial.environment._protocols import BorderConsumer
+    from neurospatial.geometry._arena import Arena
 
 
 @dataclass(frozen=True)
@@ -31,10 +31,10 @@ def _prepare_physical_border(
     walls: shapely.Geometry,
 ) -> _PhysicalBorderContact:
     """Require represented, observed wall coverage before interpreting activity."""
-    from neurospatial.arena import _CombinedArena, _TransformedArena
-    from neurospatial.layout._composition import CombinedLocator, composition_view
-    from neurospatial.layout._locators import SubsetLocator, TransformedLocator
-    from neurospatial.layout._polygon import ClippedLocator, materialize_cells
+    from neurospatial.geometry._arena import _CombinedArena, _TransformedArena
+    from neurospatial.geometry._composition import CombinedLocator, composition_view
+    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+    from neurospatial.geometry._polygon import ClippedLocator, materialize_cells
 
     def independent_frame(locator: object) -> bool:
         if isinstance(locator, TransformedLocator):
@@ -54,7 +54,8 @@ def _prepare_physical_border(
 
     # A field in a component without declared walls would otherwise be
     # scored against the walls of other components.
-    composition = composition_view(env._binning.locator)
+    binning = env.binning
+    composition = composition_view(binning.locator)
     arena = env.arena
     while isinstance(arena, _TransformedArena):
         arena = arena.base
@@ -84,15 +85,15 @@ def _prepare_physical_border(
         )
 
     try:
-        cells = materialize_cells(env._binning)
+        cells = materialize_cells(binning)
     except ValueError as exc:
         raise NotImplementedError(
             "Physical border coverage needs exact planar cells; supply supported grid or polygon cells, or choose boundary_source='analysis'."
         ) from exc
-    from neurospatial.environment._arena import _wall_source_frame
+    from neurospatial.geometry._wall_frame import _wall_source_frame
     from neurospatial.ops._boundaries import physical_walls
 
-    frame = _wall_source_frame(env._binning.locator, env.arena, env.bin_centers)
+    frame = _wall_source_frame(binning.locator, env.arena, env.bin_centers)
     contact_cells, contact_walls = cells, walls
     forward = None
     if frame is not None:
@@ -138,7 +139,7 @@ def _physical_border_score(
         unary_union([geometry.cells[index] for index in field_bins])
     )
     if geometry.forward is not None:
-        from neurospatial.arena import _mapped_geometry
+        from neurospatial.geometry._arena import _mapped_geometry
 
         contact = _mapped_geometry(contact, geometry.forward)
     coverage = contact.length / walls.length

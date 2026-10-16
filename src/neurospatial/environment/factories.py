@@ -22,8 +22,8 @@ from neurospatial.layout.factories import _normalize_name as _normalize_layout_n
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
-    from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._arena import Arena
     from neurospatial.layout.base import LayoutEngine
 
 try:
@@ -221,11 +221,11 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
-    from neurospatial.environment._from_bins import prepare_bins
+    from neurospatial.geometry._explicit import prepare_bins
 
     snapshot, graph, ranges, category = prepare_bins(binning)
     if arena is None and snapshot.outline is not None:
-        from neurospatial.arena import OpenArena
+        from neurospatial.geometry._arena import OpenArena
 
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
     result = cls._from_binning(
@@ -614,7 +614,7 @@ def _from_graph(
         "edge_spacing": edge_spacing,
         "bin_size": bin_size,
     }
-    from neurospatial.arena import TrackArena
+    from neurospatial.geometry._arena import TrackArena
 
     segments = np.array(
         [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
@@ -727,7 +727,7 @@ def _from_layout(
     """Implement Environment.from_layout using explicit construction inputs."""
     layout_params = _owned_copy(layout_params)
     if arena is not None:
-        from neurospatial.environment._ownership import own_arena
+        from neurospatial.geometry._ownership import own_arena
 
         arena = own_arena(arena)
     layout_instance = cls._create_layout(kind, layout_params)
@@ -755,7 +755,7 @@ def _from_layout(
         if not np.all(keep):
             env = env.subset(bins=keep)
     if arena is not None:
-        from neurospatial.layout._context import GridIndex
+        from neurospatial.geometry._context import GridIndex
 
         assert env.active_mask is not None
         env = env_cls._from_binning(

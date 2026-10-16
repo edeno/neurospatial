@@ -176,7 +176,7 @@ def rate_map_centroid(
     import networkx as nx
 
     if method == "euclidean":
-        from neurospatial.environment._coordinates import _require_cartesian_coordinates
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,
@@ -675,7 +675,7 @@ def field_shape_metrics(
     .. [2] Knierim et al. (1995). Place cells, head direction cells, and the
            learning of landmark stability. J Neurosci 15(3).
     """
-    from neurospatial.environment._coordinates import _require_cartesian_coordinates
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(
         env,
@@ -899,7 +899,7 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
-    from neurospatial.environment._coordinates import _require_cartesian_coordinates
+    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
     for env in (env_1, env_2):
         _require_cartesian_coordinates(
@@ -1107,7 +1107,7 @@ def compute_field_emd(
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
     if metric == "euclidean":
-        from neurospatial.environment._coordinates import _require_cartesian_coordinates
+        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
         _require_cartesian_coordinates(
             env,

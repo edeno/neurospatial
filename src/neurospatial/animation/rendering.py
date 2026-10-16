@@ -524,7 +524,8 @@ def field_to_rgb_for_napari(
     >>> rgb.dtype
     dtype('uint8')
     """
-    if env._binning.grid_frame is not None:
+    binning = env.binning
+    if binning.grid_frame is not None:
         raise NotImplementedError(
             "Napari raster images do not support framed grids; use Matplotlib, video or HTML rendering."
         )
@@ -558,7 +559,7 @@ def field_to_rgb_for_napari(
 
     # For grid-compatible 2D layouts, reshape to 2D image
     # Use is_grid_compatible property for type checking, then verify 2D grid_shape
-    is_grid = env._binning.rectilinear is not None
+    is_grid = binning.rectilinear is not None
     has_2d_grid = (
         hasattr(env, "grid_shape")
         and env.grid_shape is not None

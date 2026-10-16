@@ -11,10 +11,12 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import (
+    from neurospatial.binning import DiffusionGeometry
+    from neurospatial.environment import (
         CartesianSystem,
         EgocentricPolarSystem,
     )
+    from neurospatial.ops import MRFBasis
     from neurospatial.ops._protocols import (
         DiffusionAccuracyConsumer,
         DiffusionGeometryConsumer,
@@ -47,6 +49,10 @@ if TYPE_CHECKING:
         divergence(flux, gradient(scalar, np.ones(env.n_bins)))
         compute_differential_operator(faces)
         _diffusion_generator(wavelets)
+        assert_type(env.get_diffusion_geometry(), DiffusionGeometry)
+        assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
+        assert_type(env.compute_gaussian_kernel(1.0), NDArray[np.float64])
+        assert_type(env.diffusion_accuracy(1.0), float)
         assert_type(env._diffusion_eigenbasis, DiffusionEigenbasisCache)
         assert_type(env._mrf_eigenbasis, MRFEigenbasisCache)
         assert_type(env._diffusion_eigenbasis["basis"][0], NDArray[np.float64])

@@ -11,7 +11,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial.layout._binning import TrackLinearization
+from neurospatial.geometry._binning import TrackLinearization
 
 
 def _assert_previous_projection(component, layout, prefix, recorded):

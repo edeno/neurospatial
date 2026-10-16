@@ -413,7 +413,7 @@ class TestAngularCircularDerivedFromGraph:
             assert self._env(circular).copy()._angular_is_circular is circular
 
 
-class TestPolarStateVersionFreshness:
+class TestPolarCacheFreshness:
     """Polar geometry is complete before construction-time caches are populated."""
 
     def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
@@ -446,9 +446,9 @@ class TestPolarStateVersionFreshness:
         assert polar_env._face_geometry is captured[0]
 
     def test_differential_operator_reflects_circular_edges(self):
-        """A versioned cached property sees the wrap edges, not a stale graph.
+        """The cached operator includes circular wrap edges from the owned graph.
 
-        ``get_differential_operator`` is a ``versioned_cached_property`` of
+        ``get_differential_operator`` returns a cached operator from
         shape ``(n_bins, n_edges)``. Its edge (column) dimension must match the
         connectivity graph's edge count including the circular wrap edges.
         """
@@ -1300,10 +1300,15 @@ class TestPolarTypeAndGeometry:
 # is checked on a polar environment and listed here, or moved to
 # CartesianCoordinates if it reads bin centers as Cartesian coordinates.
 _POLAR_INHERITED_MEMBERS = {
+    "nearest-bin lookup in stored radius/angle columns": {"nearest_bin"},
     "graph and diffusion operations on physical polar geometry": {
         "bin_sizes",
         "components",
         "compute_kernel",
+        "compute_gaussian_kernel",
+        "diffusion_accuracy",
+        "get_diffusion_geometry",
+        "get_mrf_basis",
         "diffuse",
         "distance_to",
         "get_differential_operator",
@@ -1318,6 +1323,8 @@ _POLAR_INHERITED_MEMBERS = {
         "transitions",
     },
     "read-only geometry views in (distance, angle) coordinates": {
+        "binning",
+        "coordinate_system",
         "active_mask",
         "arena",
         "clip_mapping",
