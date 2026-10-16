@@ -6,7 +6,6 @@ import math
 
 import networkx as nx
 import numpy as np
-import shapely
 from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
@@ -25,6 +24,7 @@ from neurospatial.geometry._capabilities import (
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._explicit import cell_extent
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._face_transform import (
     certify_transformed_faces,
@@ -38,7 +38,6 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
 )
-from neurospatial.geometry._polygon import PolygonCells
 
 
 def _refusal(what: str, why: str, fix: str) -> ValueError:
@@ -179,7 +178,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
 
 def select_bins(
     binning: Binning, connectivity: nx.Graph, mask: NDArray[np.bool_]
-) -> tuple[Binning, nx.Graph, list[tuple[float, float]]]:
+) -> tuple[Binning, nx.Graph, tuple[tuple[float, float], ...] | None]:
     """Keep the selected bins of a binning, with their graph and bounds.
 
     Parameters
@@ -198,8 +197,10 @@ def select_bins(
     graph : networkx.Graph
         Induced graph, in the parent's node and edge order. Grid selections
         number ``edge_id`` from 0.
-    dimension_ranges : list of (float, float)
-        Grid extent for grids; otherwise the kept cells' bounds.
+    dimension_ranges : tuple of (float, float)
+        Extent of the kept cells, with no margin (see
+        :func:`neurospatial.geometry._explicit.cell_extent`): the grid extent
+        for grids, and the kept bin centers' bounds for bins without shapes.
     """
     binning = subset_binning(binning, mask)
     selected = np.flatnonzero(mask)
@@ -217,30 +218,7 @@ def select_bins(
         if binning.rectilinear is not None:
             data["edge_id"] = index
         graph.add_edge(int(u), int(v), **data)
-    if binning.rectilinear is not None:
-        ranges = [
-            (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
-        ]
-    else:
-        shapes = binning.shapes
-        vertices = binning.bins.centers
-        if binning.grid_frame is not None:
-            vertices = binning.grid_frame.corners()
-        elif isinstance(shapes, HexagonShapes):
-            angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
-            offsets = shapes.radius * np.column_stack((np.cos(angles), np.sin(angles)))
-            vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
-        elif isinstance(shapes, TriangleShapes):
-            vertices = shapes.points[shapes.triangles].reshape(-1, 2)
-        elif isinstance(shapes, PolygonCells):
-            vertices = np.concatenate(
-                [shapely.get_coordinates(cell) for cell in shapes.polygons]
-            )
-        ranges = []
-        for axis in vertices.T:
-            low, high = float(axis.min()), float(axis.max())
-            margin = 0.05 * (high - low) if shapes is not None else 0.0
-            ranges.append((low - margin, high + margin))
+    ranges = cell_extent(binning, shapeless="centers")
     return binning, graph, ranges
 
 

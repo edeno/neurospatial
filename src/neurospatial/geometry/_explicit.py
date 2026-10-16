@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+from typing import Literal
 
 import networkx as nx
 import numpy as np
@@ -32,8 +33,28 @@ def _category(binning: Binning) -> str:
     return "grid" if binning.rectilinear is not None else "other"
 
 
-def _plot_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
-    """Use actual retained geometry for descriptive plotting bounds only."""
+def cell_extent(
+    binning: Binning, *, shapeless: Literal["none", "centers"]
+) -> tuple[tuple[float, float], ...] | None:
+    """Bound the retained cells, one ``(low, high)`` per axis.
+
+    Parameters
+    ----------
+    binning : Binning
+        Bins whose cells to bound.
+    shapeless : {"none", "centers"}
+        For bins without cell shapes, return None ("none": centers and scalar
+        measures do not establish a cell extent) or the bounds of the bin
+        centers ("centers").
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        Grid extent for grids (full lattice, including inactive cells), the
+        outline's bounds when one is stored, otherwise the bounds of the
+        cells themselves: polygon cells, hexagons, or the vertices of the
+        retained triangles. None for an empty binning.
+    """
     if binning.rectilinear is not None:
         return tuple(
             (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
@@ -56,9 +77,13 @@ def _plot_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
         low = shapes.centers.min(axis=0) + offsets.min(axis=0)
         high = shapes.centers.max(axis=0) + offsets.max(axis=0)
     elif isinstance(shapes, TriangleShapes):
-        low, high = shapes.points.min(axis=0), shapes.points.max(axis=0)
+        # Only the retained triangles: a subset keeps every mesh point.
+        vertices = shapes.points[np.unique(shapes.triangles)]
+        low, high = vertices.min(axis=0), vertices.max(axis=0)
+    elif shapeless == "centers":
+        centers = binning.bins.centers
+        low, high = centers.min(axis=0), centers.max(axis=0)
     else:
-        # Centers and scalar measures do not establish a cell extent.
         return None
     return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
 
@@ -119,4 +144,9 @@ def prepare_bins(
     )
     snapshot = replace(snapshot, bins=bins, faces=faces)
     graph = _graph_from_binning(snapshot)
-    return snapshot, graph, _plot_ranges(snapshot), _category(snapshot)
+    return (
+        snapshot,
+        graph,
+        cell_extent(snapshot, shapeless="none"),
+        _category(snapshot),
+    )

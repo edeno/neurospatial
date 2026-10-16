@@ -166,6 +166,17 @@
   trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
   1.2 s. Occupancy values are unchanged.
 
+- `Environment.subset()` reports the extent of the bins it keeps as
+  `dimension_ranges`, with no added margin. Hexagonal and triangular-mesh
+  subsets used to add 5% on each side; a mesh subset now bounds only its kept
+  triangles, so a subset of one corner of a mesh no longer reports the extent
+  of the whole mesh. Grid subsets keep the extent of their grid, and bins
+  without cell shapes (tracks) keep the bounds of the kept bin centers, as
+  before. The same applies to the bins an `arena=` removes in
+  `Environment.from_layout`, `from_grid_mask` and `from_pixel_mask`. For
+  `Environment.from_bins`, the ranges of triangular-mesh bins bound the
+  triangles' vertices rather than every stored mesh point.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

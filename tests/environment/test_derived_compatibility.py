@@ -286,9 +286,12 @@ def test_subset_plot_bounds_include_whole_retained_cells(
             else:
                 child.plot_field(np.ones(child.n_bins), ax=axes, colorbar=False)
             figure.canvas.draw()
+        # Matplotlib's patch transform rounds hexagon vertices a few ulps
+        # past the exact cell, which the limits need not cover.
+        rounding = 1e-12 * float(np.max(high - low))
         for axis, limits in enumerate((axes.get_xlim(), axes.get_ylim())):
-            assert limits[0] <= low[axis]
-            assert limits[1] >= high[axis]
+            assert limits[0] <= low[axis] + rounding
+            assert limits[1] >= high[axis] - rounding
         assert not [
             warning
             for warning in caught
