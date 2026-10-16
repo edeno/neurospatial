@@ -175,7 +175,10 @@ the environment: it reads the components it needs once at the top (for
 example `env.binning`, `env.arena`, `env.connectivity` or
 `env.get_diffusion_geometry()`) and passes them to private functions that take
 those components. It does not call environment analysis methods such as
-`bin_at`, `nearest_bin` or `diffuse` from inside the computation. Each base
+`bin_at`, `nearest_bin` or `diffuse` from inside the computation. One exception
+is allowed: an operator the environment caches (its KD-tree search or its
+diffusion eigenbasis) may be read at the boundary as a callable, for example
+`dst_env.diffuse` in `resample_field`, so repeated calls do not rebuild it. Each base
 protocol names one to three members; combine bases rather than repeating
 members, and do not repeat a method's full signature unless the function calls
 it.
