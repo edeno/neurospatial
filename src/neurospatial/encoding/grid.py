@@ -429,13 +429,6 @@ def _spatial_autocorrelation_fft(
         If environment is not a regular 2D grid.
     """
     grid_shape = env.grid_shape
-
-    if grid_shape is None:
-        raise ValueError(
-            "FFT method requires environment with grid_shape. "
-            "Use spatial_autocorrelation_radial for irregular topologies."
-        )
-
     if len(grid_shape) != 2:
         raise ValueError(
             f"FFT method requires 2D grid, got {len(grid_shape)}D grid. "

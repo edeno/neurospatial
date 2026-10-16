@@ -1417,9 +1417,7 @@ class TestEnvironmentRoundTrip:
         )
         assert env.is_linearized_track is True, "Original env should be 1D"
 
-        # The reconstructed layout itself is the single source of truth: the
-        # env property is derived from layout.is_linearized_track, so the two
-        # must agree (no post-construction patching of _is_linearized_track_env).
+        # The flag is derived from the stored binning's track linearization.
         assert loaded_env.is_linearized_track is True, (
             "Reconstructed layout must report is_linearized_track=True so "
             "env.is_linearized_track and env.is_linearized_track agree"

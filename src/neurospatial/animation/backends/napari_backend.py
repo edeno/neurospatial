@@ -3159,11 +3159,7 @@ def render_napari(
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     # Scale is (time, y, x) for shape (time, height, width, channels)
     layer_scale: tuple[float, float, float] | None = None
-    if (
-        env.grid_shape is not None
-        and len(env.grid_shape) == 2
-        and env.dimension_ranges is not None
-    ):
+    if len(env.grid_shape) == 2 and env.dimension_ranges is not None:
         n_x, n_y = env.grid_shape
         (x_min, x_max), (y_min, y_max) = env.dimension_ranges
         # After transposition: image is (n_y, n_x) so scale is (y_scale, x_scale)
@@ -3491,11 +3487,7 @@ def _render_multi_field_napari(
     # Compute scale for napari (converts pixels to environment units)
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     layer_scale: tuple[float, float, float] | None = None
-    if (
-        env.grid_shape is not None
-        and len(env.grid_shape) == 2
-        and env.dimension_ranges is not None
-    ):
+    if len(env.grid_shape) == 2 and env.dimension_ranges is not None:
         n_x, n_y = env.grid_shape
         (x_min, x_max), (y_min, y_max) = env.dimension_ranges
         y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0

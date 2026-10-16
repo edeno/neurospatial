@@ -419,13 +419,12 @@ class Environment(Generic[_C]):
     def to_networkx(self) -> nx.Graph:
         """Return a detached editable graph with bin IDs and weighted edges.
 
-        ``env.connectivity`` stores its graph, node and edge attributes as
-        immutable values: lists read back as tuples, dicts as read-only
-        mappings and arrays as read-only arrays. This export restores them as
-        independent, editable copies: lists, dicts, sets and writable arrays,
-        at every nesting level. Values stored as tuples stay tuples. Node
-        identities are the bin IDs; ``edge_pairs`` defines numerical edge order.
-        Standard NetworkX drawing, editing and JSON conversion can use this graph.
+        ``env.connectivity`` is rebuilt from the bins and holds only the
+        standard node and edge attributes, as numbers and tuples, and refuses
+        every edit. This export is an ordinary graph with editable attribute
+        dicts and graph metadata; tuple values stay tuples. Node identities
+        are the bin IDs; ``edge_pairs`` defines numerical edge order. Standard
+        NetworkX drawing, editing and JSON conversion can use this graph.
 
         Returns
         -------
@@ -748,14 +747,14 @@ class Environment(Generic[_C]):
 
     @property
     def is_linearized_track(self) -> bool:
-        """Indicate if the environment's layout is primarily 1-dimensional.
+        """Whether the bins lie along a linearized track.
 
         Returns
         -------
         bool
-            True if the underlying `LayoutEngine` (`self.layout`) reports
-            itself as 1-dimensional (e.g., `GraphLayout`), False otherwise.
-            This is determined by `self.layout.is_linearized_track`.
+            True when the binning carries a track linearization, as
+            ``from_graph`` and ``linear_track`` build, so ``to_linear`` and
+            ``linear_to_nd`` apply; False otherwise.
 
         """
         return self._binning.linearization is not None
@@ -1463,17 +1462,14 @@ class Environment(Generic[_C]):
         Linear position: 5.0
 
         """
-        if not self._binning.linearization is not None:
+        linearization = self._binning.linearization
+        if linearization is None:
             msg = (
                 "to_linear() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
                 "Use bin_at() to map positions to bins for N-D environments."
             )
             raise TypeError(msg)
-
-        linearization = self._binning.linearization
-        # Publication refuses a linearized track without its linearization.
-        assert linearization is not None
         return linearization.to_linear(nd_position)
 
     @cartesian_only(
@@ -1544,17 +1540,14 @@ class Environment(Generic[_C]):
         2D position: [5. 0.]
 
         """
-        if not self._binning.linearization is not None:
+        linearization = self._binning.linearization
+        if linearization is None:
             msg = (
                 "linear_to_nd() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
                 "Use bin_center_of() to get bin centers for N-D environments."
             )
             raise TypeError(msg)
-
-        linearization = self._binning.linearization
-        # Publication refuses a linearized track without its linearization.
-        assert linearization is not None
         return linearization.linear_to_nd(linear_position)
 
     @cartesian_only(
@@ -5930,10 +5923,11 @@ class Environment(Generic[_C]):
         Notes
         -----
         The environment builds this geometry once and owns its private cache.
-        Every export has independent sparse and NumPy headers over immutable
-        buffers. Replacing an exported matrix's buffers or changing an array's
-        shape cannot change the environment. Reading the export does not copy
-        O(n_edges) data. After clear_cache() it is rebuilt on demand.
+        Every export is a new sparse matrix and tuple over read-only views of
+        the cached arrays, so writing to them raises, and replacing an
+        exported matrix's arrays or changing an array's shape cannot change
+        the environment. Reading the export does not copy O(n_edges) data.
+        After clear_cache() it is rebuilt on demand.
 
         Raises
         ------
