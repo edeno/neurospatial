@@ -645,5 +645,7 @@ class TestBuildChoices:
         )
         data = env.to_dict()
         data["layout_parameters"]["grid_edges"] = [[0.0, 1.0, 2.0]] * 2
-        with pytest.raises(ValueError, match="'grid_edges' is not a build choice"):
+        with pytest.raises(ValueError, match="'grid_edges' is not a build choice") as e:
             Environment.from_dict(data)
+        assert "Fix: remove 'grid_edges' from layout_parameters" in str(e.value)
+        assert "capture_build_params" not in str(e.value)

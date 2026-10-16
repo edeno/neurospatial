@@ -463,6 +463,7 @@ def _restore_environment(
         EgocentricPolarSystem,
     )
     from neurospatial.geometry._locators import HexLocator, MeshLocator
+    from neurospatial.layout.base import build_choices
     from neurospatial.regions import Region, Regions
 
     try:
@@ -516,6 +517,14 @@ def _restore_environment(
         params = metadata["layout_parameters"]
         if not isinstance(params, dict):
             raise ValueError("layout_parameters must be a dictionary of build choices")
+        params = build_choices(
+            params,
+            owner="The saved layout_parameters",
+            fix=(
+                "remove {name!r} from layout_parameters, or re-save the "
+                "environment from a factory-built Environment"
+            ),
+        )
         ranges = metadata.get("dimension_ranges")
         if ranges is not None:
             binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
