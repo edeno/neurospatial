@@ -252,6 +252,18 @@ def _computed_equal(
         raise ValueError(f"{name} does not match the binning geometry.")
 
 
+def _same_ring(first: Any, second: Any, tolerance: NDArray[np.float64]) -> bool:
+    """Compare oriented rings without a rounding-sensitive starting vertex."""
+    actual, expected = np.asarray(first.coords)[:-1], np.asarray(second.coords)[:-1]
+    if actual.shape != expected.shape:
+        return False
+    starts = np.flatnonzero(np.all(np.abs(expected - actual[0]) <= tolerance, axis=1))
+    return any(
+        np.all(np.abs(actual - np.roll(expected, -start, axis=0)) <= tolerance)
+        for start in starts
+    )
+
+
 @dataclass(eq=False)
 class _LocatorGeometry:
     """Geometry recovered from a locator, including arithmetic error only."""
@@ -735,6 +747,8 @@ def _locator_geometry(
                 matrix[1, -1],
             ],
         )
+    if geometry.radius > 0 and not (similarity and sign > 0):
+        geometry.polygons = cells_from_locator(locator)
     if geometry.radius > 0:
         geometry.shapes_supported &= bool(similarity and sign > 0)
         geometry.radius *= scale
@@ -974,8 +988,26 @@ def _validate_components(
     if isinstance(binning.faces, KnownFaces):
         _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
         _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
+    from neurospatial.layout._face_normals import validate_normals
+
+    if binning.face_normals is not None and coordinate_kind != "cartesian":
+        raise ValueError("Physical face normals require Cartesian coordinates.")
+    validate_normals(binning)
     _validate_clip_mapping(binning)
     if isinstance(locator, CombinedLocator):
+        if binning.face_normals is not None:
+            from neurospatial.layout._composition import combined_normals
+
+            expected_normals = combined_normals(locator)
+            if expected_normals is None:
+                raise ValueError(
+                    "Combined normals require authoritative child normals."
+                )
+            _equal(
+                binning.face_normals.values,
+                expected_normals.values,
+                "combined face normals",
+            )
         expected_bins = locator.spatial_bins()
         _equal(bins.pairs, expected_bins.pairs, "combined neighbor pairs")
         _equal(
@@ -1001,12 +1033,80 @@ def _validate_components(
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(locator, coordinate_kind, bins.measure_dim)
     gap = min(_gap(geometry.centers), geometry.cell_gap)
+    if binning.grid_frame is not None:
+        from neurospatial.layout._grid_frame import FramedGrid, frame_from_locator
+
+        frame = binning.grid_frame
+        if coordinate_kind != "cartesian" or binning.rectilinear is not None:
+            raise ValueError(
+                "FramedGrid requires Cartesian cells without a duplicate world-axis grid."
+            )
+        checked = FramedGrid(frame.source, frame.forward)
+        _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
+        expected_frame, error = frame_from_locator(locator)
+        _equal(
+            frame.source.shape, expected_frame.source.shape, "grid_frame.source.shape"
+        )
+        _equal(
+            frame.source.active_mask,
+            expected_frame.source.active_mask,
+            "grid_frame.source.active_mask",
+        )
+        for axis, (actual, expected) in enumerate(
+            zip(frame.source.edges, expected_frame.source.edges, strict=True)
+        ):
+            _equal(actual, expected, f"grid_frame.source.edges[{axis}]")
+        reference = expected_frame.forward
+        _computed_equal(
+            frame.forward,
+            reference,
+            error,
+            "grid_frame.forward and locator frame",
+            gap=gap,
+        )
+        indices = np.unravel_index(
+            np.flatnonzero(frame.source.active_mask), frame.source.shape
+        )
+        source_centers = np.column_stack(
+            [
+                (edge[:-1] + np.diff(edge) / 2)[index]
+                for edge, index in zip(frame.source.edges, indices, strict=True)
+            ]
+        )
+        _computed_equal(
+            frame.to_world(source_centers),
+            expected_frame.to_world(source_centers),
+            np.column_stack((np.abs(source_centers), np.ones(len(source_centers))))
+            @ error[:-1].T,
+            "grid_frame.forward projected cells and locator frame",
+            gap=gap,
+        )
     if not isinstance(locator, CombinedLocator):
         from neurospatial.layout._composition import expected_composition_binning
 
         composition = expected_composition_binning(locator)
         if composition is not None:
             expected_binning, computed = composition
+            if binning.face_normals is not None:
+                expected_normals = expected_binning.face_normals
+                if expected_normals is None:
+                    raise ValueError(
+                        "Derived combined normals require authoritative child normals."
+                    )
+                actual_normals = binning.face_normals.values
+                if computed:
+                    if not np.allclose(
+                        actual_normals, expected_normals.values, rtol=0, atol=1e-12
+                    ):
+                        raise ValueError(
+                            "Derived combined face normals disagree with child geometry."
+                        )
+                else:
+                    _equal(
+                        actual_normals,
+                        expected_normals.values,
+                        "derived combined face normals",
+                    )
             _equal(
                 bins.pairs,
                 expected_binning.bins.pairs,
@@ -1118,7 +1218,11 @@ def _validate_components(
             else grid_locator.active_mask
         )
         _equal(grid.active_mask, mask, "rectilinear active_mask")
-    if shapes is not None and not geometry.shapes_supported:
+    if (
+        shapes is not None
+        and not geometry.shapes_supported
+        and not isinstance(shapes, PolygonCells)
+    ):
         raise ValueError("shapes do not match the locator affine geometry.")
     if isinstance(shapes, HexagonShapes):
         _equal(shapes.centers, bins.centers, "shapes.centers")
@@ -1184,14 +1288,25 @@ def _validate_components(
                 expected_normalized.exterior,
                 *expected_normalized.interiors,
             ]
-            if len(actual_rings) != len(expected_rings) or any(
-                np.shape(a.coords) != np.shape(b.coords)
-                or not np.all(
-                    np.abs(np.asarray(a.coords) - np.asarray(b.coords))
-                    <= np.minimum(tolerance, gap / 4)
+            ring_tolerance = np.minimum(tolerance, gap / 4)
+            same = len(actual_rings) == len(expected_rings) and _same_ring(
+                actual_rings[0], expected_rings[0], ring_tolerance
+            )
+            remaining = list(expected_rings[1:])
+            for ring in actual_rings[1:]:
+                match = next(
+                    (
+                        i
+                        for i, candidate in enumerate(remaining)
+                        if _same_ring(ring, candidate, ring_tolerance)
+                    ),
+                    None,
                 )
-                for a, b in zip(actual_rings, expected_rings, strict=True)
-            ):
+                if match is None:
+                    same = False
+                    break
+                remaining.pop(match)
+            if not same:
                 raise ValueError(f"polygon cell {index} disagrees with its locator.")
             if not actual.contains(shapely.Point(bins.centers[index])):
                 raise ValueError(
@@ -1214,6 +1329,7 @@ def _validate_components(
                 shapes,
                 bins.centers,
                 bins.pairs,
+                center_errors=geometry.center_error if geometry.computed else None,
                 path_only=np.array(
                     [
                         not contact.is_empty and contact.length == 0
@@ -1532,6 +1648,15 @@ class BinningLayout:
             )
         if isinstance(data.shapes, PolygonCells):
             return plot_polygon_cells(ax, shapes=data.shapes, **common, **kwargs)
+        if data.grid_frame is not None:
+            return plot_grid(
+                ax,
+                rectilinear=data.grid_frame.source,
+                frame=data.grid_frame,
+                bin_centers=self.bin_centers,
+                **common,
+                **kwargs,
+            )
         if data.rectilinear is not None:
             if data.outline is not None:
                 return plot_polygon_grid(

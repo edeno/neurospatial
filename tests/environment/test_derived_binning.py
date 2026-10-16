@@ -197,10 +197,12 @@ def test_reflection_keeps_bin_identity_and_boundary_owners(built_environment, di
     )
     np.testing.assert_array_equal(child.boundary_bins, parent.boundary_bins)
     assert child._binning.rectilinear is None
-    with pytest.raises(NotImplementedError, match="axis-aligned"):
+    np.testing.assert_array_equal(
         child.interpolate(
             np.ones(child.n_bins), transform(parent.bin_centers), mode="linear"
-        )
+        ),
+        1.0,
+    )
 
 
 @pytest.mark.parametrize("origin", [0.0, 1e9])
@@ -572,8 +574,8 @@ def test_retained_affine_triangle_corruption_is_rejected(
         ("hex", "translation", "PatchCollection"),
         ("hex", "rotation", "PatchCollection"),
         ("hex", "uniform_scaling", "PatchCollection"),
-        ("hex", "axis_scaling", "PathCollection"),
-        ("hex", "reflection", "PathCollection"),
+        ("hex", "axis_scaling", "PatchCollection"),
+        ("hex", "reflection", "PatchCollection"),
         ("mesh", "translation", "PolyCollection"),
         ("mesh", "rotation", "PolyCollection"),
         ("mesh", "uniform_scaling", "PolyCollection"),

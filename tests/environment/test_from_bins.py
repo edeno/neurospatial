@@ -16,6 +16,7 @@ from neurospatial.arena import OpenArena
 from neurospatial.binning import (
     Binning,
     FaceGeometry,
+    FaceNormals,
     KnownFaces,
     MissingFaces,
     NearestBinLocator,
@@ -815,7 +816,11 @@ def test_legacy_tiny_grid_zero_faces_require_rebuilding():
     faces = source.faces.build()
     with pytest.raises(ValueError, match="Older tiny-grid records"):
         Environment.from_bins(
-            replace(source, faces=KnownFaces(faces._replace(A=np.zeros_like(faces.A))))
+            replace(
+                source,
+                faces=KnownFaces(faces._replace(A=np.zeros_like(faces.A))),
+                face_normals=None,
+            )
         )
 
 
@@ -976,7 +981,13 @@ def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
     if change == "missing_face":
         areas = faces.A.copy()
         areas[0] = 0.0
-        invalid = replace(source, faces=KnownFaces(faces._replace(A=areas)))
+        normals = source.face_normals.values.copy()
+        normals[0] = 0.0
+        invalid = replace(
+            source,
+            faces=KnownFaces(faces._replace(A=areas)),
+            face_normals=FaceNormals(normals),
+        )
     else:
         # Link the two farthest-apart bins, which cannot share a cell face.
         separation = np.linalg.norm(
@@ -1000,8 +1011,21 @@ def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
                     faces.volumes,
                 )
             ),
+            face_normals=FaceNormals(
+                np.vstack(
+                    [
+                        source.face_normals.values,
+                        (bins.centers[v] - bins.centers[u]) / distance,
+                    ]
+                )
+            ),
         )
-    with pytest.raises(ValueError, match=rf"{_CELL_FACE_LABELS[kind]}\.A"):
+    # A face without a physical counterpart fails the normal-direction check
+    # first; a missing face fails the shared-edge check.
+    with pytest.raises(
+        ValueError,
+        match=rf"{_CELL_FACE_LABELS[kind]}\.A|face normals disagree with the locator",
+    ):
         Environment.from_bins(invalid)
 
 
@@ -1029,7 +1053,9 @@ def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
         ),
         shapes=None,
     )
-    with pytest.raises(ValueError, match=r"hexagon faces"):
+    with pytest.raises(
+        ValueError, match=r"hexagon faces|face normals disagree with the locator"
+    ):
         Environment.from_bins(sheared)
 
 

@@ -14,6 +14,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
 from neurospatial.layout._binning import (
+    Binning,
     KnownFaces,
     LayoutLocator,
     MissingFaces,
@@ -128,7 +129,7 @@ def test_codec_round_trip(codec_part):
     encoded = encode(codec_part, "part")
     meta, arrays = encoded
     assert json.loads(json.dumps(meta)) == meta
-    assert meta["codec_version"] == 1
+    assert meta["codec_version"] == (3 if isinstance(codec_part, Binning) else 1)
     assert isinstance(meta["codec"], str)
     assert all(name.startswith("part/") for name in arrays)
     restored = decode(meta, arrays, "part")

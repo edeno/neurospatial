@@ -44,6 +44,8 @@ from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._composition import CombinedLocator
+from neurospatial.layout._face_normals import FaceNormals
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -131,6 +133,8 @@ def _check_binning(binning: Binning) -> None:
         (binning.shapes, (HexagonShapes, TriangleShapes, PolygonCells)),
         (binning.outline, (Outline,)),
         (binning.grid_spec, (GridBinningSpec,)),
+        (binning.face_normals, (FaceNormals,)),
+        (binning.grid_frame, (FramedGrid,)),
     ):
         if component is not None and type(component) not in allowed:
             _migration(component)

@@ -35,11 +35,11 @@ from neurospatial.environment._protocols import (
     SelfEnv,
 )
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
-from neurospatial.layout._capabilities import require_rectilinear
 from neurospatial.layout._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
 )
+from neurospatial.layout._grid_frame import require_grid_context
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -139,7 +139,8 @@ def _interpolate(
         values = _interpolate_nearest(env, field, points)
     else:  # mode == "linear"
         values = _interpolate_linear(env._binning, field, points)
-    values[env._locate(points) < 0] = np.nan
+    owners = env._locate(points)
+    values[owners < 0] = np.nan
     return values
 
 
@@ -221,7 +222,7 @@ def _interpolate_linear(
     requiring an inactive cell's value and out-of-bounds points return NaN.
 
     """
-    grid = require_rectilinear(
+    grid, frame = require_grid_context(
         binning,
         "interpolate(mode='linear')",
         fix="use mode='nearest', which works on every layout",
@@ -262,6 +263,11 @@ def _interpolate_linear(
         # Bin centers are midpoints between edges
         centers = (edges[:-1] + edges[1:]) / 2
         grid_points.append(centers)
+
+    if frame is not None:
+        points = frame._project_to_planes(
+            points, grid_points, operation="Linear interpolation"
+        )
 
     # Create interpolator
     # bounds_error=False, fill_value=np.nan → outside points return NaN

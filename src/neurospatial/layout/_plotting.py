@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from neurospatial.layout._binning import TrackLinearization
     from neurospatial.layout._capabilities import RectilinearGrid
     from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
+    from neurospatial.layout._grid_frame import FramedGrid
     from neurospatial.layout._polygon import PolygonCells
 
 
@@ -86,6 +87,7 @@ def plot_grid(
     connectivity: nx.Graph,
     dimension_ranges: Sequence[tuple[float, float]] | None,
     rectilinear: RectilinearGrid,
+    frame: FramedGrid | None = None,
     figsize: tuple[float, float] = (7, 7),
     cmap: str = "bone_r",
     alpha: float = 0.7,
@@ -103,17 +105,23 @@ def plot_grid(
         )
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
+    x, y = grid_edges
+    if frame is not None:
+        xx, yy = np.meshgrid(x, y, indexing="xy")
+        corners = frame.to_world(np.column_stack((xx.ravel(), yy.ravel())))
+        x, y = (corners[:, axis].reshape(xx.shape) for axis in range(2))
     ax.pcolormesh(
-        grid_edges[0],
-        grid_edges[1],
+        x,
+        y,
         rectilinear.active_mask.T,
         cmap=cmap,
         alpha=alpha,
         shading="auto",
     )
-    ax.set_xticks(grid_edges[0])
-    ax.set_yticks(grid_edges[1])
-    ax.grid(True, ls="-", lw=0.5, c="gray")
+    if frame is None:
+        ax.set_xticks(grid_edges[0])
+        ax.set_yticks(grid_edges[1])
+        ax.grid(True, ls="-", lw=0.5, c="gray")
     ax.set_aspect("equal")
     ax.set_title(f"{title} (2D Grid)")
     ax.set_xlabel("Dimension 0")

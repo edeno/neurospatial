@@ -82,6 +82,31 @@
 
 ### Added
 
+- Preserve linear interpolation and movement time fractions after rotating,
+  reflecting or shearing Cartesian 2-D/3-D grids. Planar grids use exact QuadMesh
+  plots/animation updates. Planar linear spike counts and dwell share bounded
+  source-plane ownership, including paths along inactive-cell boundaries.
+  Napari raster helpers explicitly refuse framed grids.
+
+- Certify new affine numerical transforms from stored physical normals and flux
+  distances. Unequal scaling along retained orthogonal grid axes can preserve
+  diffusion, smoothing, gradients and divergence; skew faces refuse with a
+  geometric reason. Existing approximate-mesh similarity behavior is preserved.
+
+- Retain 2-D/3-D source grid frames through affine transforms and whole-bin
+  subsets, without exposing source axes as world-aligned grid edges. Reflected
+  and deformed hexagons retain exact polygon cells. New binning codec version 3
+  stores the frame and reads earlier versions 1 and 2; partial clipping uses
+  exact polygon cells rather than a tensor grid.
+
+- Add optional owned `FaceNormals` data to `Binning`, in authoritative neighbor
+  pair order. Native Cartesian grids and planar hexagon/triangle cells capture
+  physical directions; subsets, clipping, physical walls and affine transforms
+  preserve their alignment. Normals survive copying and JSON/NWB storage, but
+  enable new numerical transforms only with the source/target face certificate.
+  Codec version 2 introduced normals; current version 3 also stores grid frames
+  and reads legacy versions 1 and 2. Older readers reject the new nested version.
+
 - Ray casting and cue line of sight now intersect declared physical walls,
   including holes and internal barriers. Analysis crops no longer occlude
   physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for

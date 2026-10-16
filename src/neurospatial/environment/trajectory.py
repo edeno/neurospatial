@@ -392,6 +392,19 @@ def _occupancy(
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
     bin_indices = env.bin_at(positions)
+    if (
+        time_allocation == "linear"
+        and env.n_dims != 2
+        and env._binning.grid_frame is not None
+    ):
+        from neurospatial.environment._polygon_trajectory import _source_grid
+
+        source_locator, source_positions = _source_grid(
+            env._binning.grid_frame, positions
+        )
+        bin_indices = source_locator.locate(source_positions)
+        if env.arena.domain_known:
+            bin_indices[~env.arena.contains(positions)] = -1
 
     # Compute time intervals
     dt = np.diff(times)
@@ -399,14 +412,16 @@ def _occupancy(
     # Default start allocation shares every interval gate with spike binning.
     # Polygon linear allocation keeps observation validity separate from
     # geometric support, allowing outside-to-inside and re-entry segments.
+    framed_nd = env.n_dims != 2 and env._binning.grid_frame is not None
+    observation_only = polygon_allocation and not framed_nd
     valid_mask = interval_valid_mask(
         times,
         positions,
-        None if polygon_allocation else env,
+        None if observation_only else env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=None if polygon_allocation else bin_indices,
+        start_bin=None if observation_only else bin_indices,
         epochs=as_intervals(epochs, name="epochs"),
     )
 
@@ -429,11 +444,35 @@ def _occupancy(
                 retained_linear_intervals,
             )
 
+            normalizers = np.ones(len(dt))
+            if framed_nd and not return_seconds:
+                # Preserve the native N-D count convention: normalize over
+                # the full grid extent before dropping inactive cells.
+                frame = env._binning.grid_frame
+                assert frame is not None
+                from neurospatial.environment._polygon_trajectory import _source_grid
+
+                _, source_positions = _source_grid(frame, positions)
+                for sample in np.flatnonzero(valid_mask):
+                    normalizers[sample] = sum(
+                        fraction
+                        for _, fraction in _compute_ray_grid_intersections(
+                            source_positions[sample],
+                            source_positions[sample + 1],
+                            frame.source.edges,
+                            frame.source.shape,
+                            1.0,
+                        )
+                    )
             for piece in retained_linear_intervals(env, times, positions, valid_mask):
                 weight = dt[piece.sample_index] if return_seconds else 1.0
+                if normalizers[piece.sample_index] <= 0:
+                    continue
                 occupancy[piece.bin_index] += (
-                    piece.stop_fraction - piece.start_fraction
-                ) * weight
+                    (piece.stop_fraction - piece.start_fraction)
+                    * weight
+                    / normalizers[piece.sample_index]
+                )
         else:
             assert grid is not None
             occupancy = _allocate_time_linear(

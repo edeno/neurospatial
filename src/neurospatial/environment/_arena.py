@@ -60,6 +60,11 @@ def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena
         return UnknownArena(n_dims)
     if binning.outline is not None:
         return OpenArena(binning.outline.geometry)
+    if binning.grid_frame is not None:
+        frame = binning.grid_frame
+        return MaskArena(frame.source.edges, frame.source.active_mask).transformed(
+            frame.forward
+        )
     if grid is not None and len(grid.shape) == n_dims:
         return MaskArena(grid.edges, grid.active_mask)
     # Exact area cells are sufficient to infer an analysis domain, but not
@@ -414,4 +419,13 @@ def apply_walls(
         )
     result_graph = graph.copy()
     result_graph.remove_edges_from(bins.pairs[~keep])
-    return replace(binning, bins=updated, faces=faces), result_graph
+    from neurospatial.layout._face_normals import FaceNormals
+
+    normals = (
+        FaceNormals(binning.face_normals.values[keep])
+        if binning.face_normals is not None
+        else None
+    )
+    return replace(
+        binning, bins=updated, faces=faces, face_normals=normals
+    ), result_graph

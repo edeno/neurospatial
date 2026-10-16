@@ -170,8 +170,13 @@ def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     # Cell vertices use this same array arithmetic. A different affine
     # implementation can round their common vertices differently, inventing
     # slivers where a transformed arena boundary meets its cells.
-    coordinates = _mapped(shapely.get_coordinates(geometry), matrix)
-    return shapely.set_coordinates(geometry, coordinates)
+    coordinates = shapely.get_coordinates(geometry)
+    # Map each stored vertex once, as polygon cells do. Matrix multiplication
+    # can round equal rows differently in separate vectorized/tail paths,
+    # breaking exact ring closure even though the inputs are identical.
+    unique, indices = np.unique(coordinates, axis=0, return_inverse=True)
+    mapped = _mapped(unique, matrix)
+    return shapely.set_coordinates(geometry, mapped[indices])
 
 
 class _ArrayState:

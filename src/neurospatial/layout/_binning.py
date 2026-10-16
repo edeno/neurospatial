@@ -25,6 +25,8 @@ from neurospatial.layout._diffusion import (
     FaceGeometry,
     FiniteVolumeGeometryProvider,
 )
+from neurospatial.layout._face_normals import FaceNormals, geometric_normals
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import LayoutEngine
 
@@ -518,7 +520,11 @@ class TrackLinearization:
 
 @dataclass(frozen=True, eq=False)
 class Binning:
-    """Published bins, point lookup, faces and optional structural components."""
+    """Published bins, lookup, faces and optional structural components.
+
+    ``face_normals`` holds physical directions in ``bins.pairs`` order. It is
+    independent of solver availability: only ``faces`` grants that capability.
+    """
 
     kind: str
     bins: SpatialBins
@@ -530,6 +536,8 @@ class Binning:
     outline: Outline | None = None
     clip_mapping: ClipMapping | None = None
     grid_spec: GridBinningSpec | None = None
+    face_normals: FaceNormals | None = None
+    grid_frame: FramedGrid | None = None
 
 
 def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:
@@ -591,14 +599,23 @@ def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning
                 np.eye(bins.n_dims + 1),
                 any(np.count_nonzero(centers[u] != centers[v]) > 1 for u, v in pairs),
             )
+    locator = _locator_of(layout)
+    normals = (
+        geometric_normals(locator, bins.centers, bins.pairs)
+        if not isinstance(cast("object", layout), _PolarGridLayout)
+        and track is None
+        and bins.n_dims in (2, 3)
+        else None
+    )
     return Binning(
         kind=getattr(layout, "_layout_type_tag", type(layout).__name__),
         bins=bins,
-        locator=_locator_of(layout),
+        locator=locator,
         faces=LayoutFaces(layout, connectivity),
         rectilinear=grid,
         linearization=track,
         grid_spec=spec,
+        face_normals=FaceNormals(normals) if normals is not None else None,
         shapes=_shapes_of(layout),
         outline=_outline_of(layout),
     )

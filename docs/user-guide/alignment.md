@@ -87,25 +87,150 @@ aligned_points = T_rigid(new_points)
 
 ## Transforming Environments
 
-Apply transformations to entire environments:
+`env.apply_transform(transform)` returns an environment in the new coordinates.
+It moves cells, the arena, physical walls and regions together. Bin IDs and the
+order of neighbor pairs stay the same, including after reflection. Supply query
+positions in the new world coordinates.
 
+A grid keeps its original coordinate axes internally. Interpolation and linear
+movement allocation use those axes; plots transform the cell corners into world
+coordinates. This lets a rotation preserve interpolation and draw the actual
+cells instead of replacing them with dots.
+
+### Start with an image mask
+
+This simulated example starts with an image mask whose center pixel is excluded.
+A mask defines the domain included in the analysis; it does not establish where
+physical walls exist. `pixel_size` gives the length of each pixel in the selected
+units. Estimate a map from corresponding landmarks, transform the environment
+and tracking positions together, then use the usual field and encoding APIs.
+
+<!-- docs-test: run -->
 ```python
-from neurospatial import Environment
-from neurospatial.ops import apply_transform_to_environment, translate_3d
+import matplotlib.pyplot as plt
+import numpy as np
 
-# Create 3D environment
-env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
+from neurospatial import Environment, compute_spatial_rates
+from neurospatial.ops import estimate_transform
+from neurospatial.ops.transforms import Affine2D
 
-# Transform the environment
-transform = translate_3d(100, 200, 50)
-env_transformed = apply_transform_to_environment(env_3d, transform, name="shifted")
+mask = np.ones((3, 3), dtype=bool)
+mask[1, 1] = False
+source = Environment.from_pixel_mask(mask, pixel_size=1.0, units="cm")
+assert not source.arena.physical_footprint_known
+assert not source.arena.walls
 
-# Transformations update:
-# - Bin centers
-# - Dimension ranges
-# - Edge distances
-# - Regions (if any)
+landmarks = np.array([[0., 0.], [3., 0.], [0., 3.], [3., 3.]])
+known_map = Affine2D(np.array([[.8, -.6, 10.], [.6, .8, 20.], [0., 0., 1.]]))
+transform = estimate_transform(landmarks, known_map(landmarks), kind="affine")
+room = source.apply_transform(transform).with_metadata(frame="room")
+np.testing.assert_array_equal(room.bin_at(transform(source.bin_centers)), np.arange(source.n_bins))
+
+# Values indexed by bin ID keep their order. Queries use room coordinates.
+field = source.bin_centers @ np.array([2., 3.])
+queries = np.array([[.5, 1.1], [.5, 1.75]])
+np.testing.assert_allclose(
+    room.interpolate(field, transform(queries), mode="linear"),
+    source.interpolate(field, queries, mode="linear"),
+)
+ax = room.plot_field(field, colorbar=False)
+plt.close(ax.figure)
+
+# Straight movement keeps the same time fractions after an affine map.
+times = np.array([0., 2.5])
+positions = np.array([[.25, .5], [2.75, .5]])
+spikes = [np.array([.25, .75, 1.25, 1.75, 2.25])]
+options = {
+    "method": "binned", "bandwidth": 0,
+    "time_allocation": "linear", "max_gap": None, "warn_on_drop": False,
+}
+source_rates = compute_spatial_rates(source, spikes, times, positions, **options)
+room_rates = compute_spatial_rates(room, spikes, times, transform(positions), **options)
+np.testing.assert_allclose(room_rates.occupancy, source_rates.occupancy)
+np.testing.assert_allclose(room_rates.firing_rates, source_rates.firing_rates, equal_nan=True)
+
+restored = Environment.from_dict(room.to_dict())
+np.testing.assert_allclose(restored.interpolate(field, transform(queries), mode="linear"), [4.3, 6.25])
 ```
+
+`compute_spatial_rate` and `compute_spatial_rates` use the same retained
+movement intervals for spike counts and dwell time when
+`time_allocation="linear"`. The example disables smoothing to compare the
+allocation directly. Smoothing requires valid numerical face geometry.
+Linear spatial spike encoding currently requires planar cells; 3-D grids
+support linear occupancy, but do not gain 3-D linear spike encoding in this stage.
+
+### Start with position samples
+
+If only tracking positions are available, `from_samples` can infer which bins
+were visited. That estimated domain also asserts no physical walls. You can
+transform it with the same API; add measured arena geometry separately when it
+is available.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.ops.transforms import Affine2D
+
+x = np.linspace(0., 10., 101)
+positions = np.column_stack((x, 2. + np.sin(x)))
+source = Environment.from_samples(positions, bin_size=.5, units="cm")
+reflection = Affine2D(np.diag([1., -1., 1.]))
+aligned = source.apply_transform(reflection).with_metadata(frame="room")
+assert not aligned.arena.physical_footprint_known
+assert not aligned.arena.walls
+np.testing.assert_array_equal(aligned.bin_at(reflection(source.bin_centers)), np.arange(source.n_bins))
+```
+
+### Geometry and numerical capabilities
+
+Exact cell geometry and a valid diffusion calculation are separate capabilities.
+The current diffusion solver needs each center-to-center link to be perpendicular
+to its shared physical face. A shear generally breaks that condition, even though
+lookup, plotting and dwell allocation remain well defined.
+
+| Current cells / transform | Linear field interpolation | Exact 2-D field plot | Smoothing and differential operators |
+| --- | --- | --- | --- |
+| Cartesian grid, translation or positive axis scaling | Yes | QuadMesh | Retained |
+| Cartesian 2-D/3-D grid, rotation or reflection | Yes, in source axes | QuadMesh | Retained |
+| Grid, unequal scaling along retained orthogonal axes | Yes | QuadMesh | Enabled when normals and flux distances certify the geometry |
+| Grid, shear | Yes | QuadMesh | Refused if shared faces lose orthogonality |
+| Whole-bin subset of a transformed grid | Yes; missing interpolation corners stay NaN | QuadMesh with the retained mask | Retains the parent's available geometry |
+| Partial polygon clipping | No tensor grid; use nearest mode | Exact polygon cells | Only when the clipping certificate remains valid |
+| Transformed triangles or deformed hexagons | No tensor grid; use nearest mode | Exact vertices/polygon cells | Existing similarity support; other maps require a valid face certificate |
+| Embedded track | Use existing track operations | Existing track renderer | Similarity transforms only |
+
+New face certification checks normalized orthogonality residuals against `1e-12`.
+Legacy records without stored face normals keep their existing guaranteed
+transforms, but cannot gain new numerical support from inferred directions.
+Once a transform discards numerical faces, applying its inverse does not restore
+them. Rebuild from the original environment to retain that authority.
+
+Floating-point projection can land just across a source center or edge plane.
+Interpolation and linear allocation recover a plane only within a calculated
+roundoff bound. The bound must remain below one quarter of the smallest source
+cell width on that axis; otherwise the operation asks you to recenter or rescale
+coordinates. Resolved missing support remains missing.
+
+Matplotlib plots and video, HTML and widget animations draw transformed grid
+corners. Napari's current raster/coordinate helpers explicitly refuse these
+framed grids. Raster FFT/grid metrics and 2-D circular grid shuffling also keep
+their world-aligned-grid restriction; saved source axes are not exposed as world
+`grid_edges` or a world-aligned `grid_shape`.
+
+`rebin(bin_size=...)` uses its separate construction specification and physical
+axis lengths. It creates new bins over the retained arena; it does not reuse
+current bin IDs or transfer fitted values. Partial clipping drops the current
+tensor-grid component even when a construction specification remains available.
+
+Transforms update geometry and cell measures, while bin-aligned arrays keep
+their indexing. They do not refit models or rescale firing-rate values. A matrix
+does not supply a unit label: use `with_metadata(units=..., frame=...)` when the
+coordinate conversion changes those labels. Dict/file/NWB round trips retain
+source frames and normals. New files use nested binning codec version 3; current
+readers accept versions 1 and 2, while older readers reject the new nested
+version. The outer Environment-v3 and NWB 3.0 envelopes are unchanged.
 
 ## Probability Alignment
 

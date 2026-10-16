@@ -562,7 +562,7 @@ def _restore_environment(
     from neurospatial.layout._binning import Binning, TrackLinearization
     from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._codecs import decode, graph_from_node_link
-    from neurospatial.layout._locators import MeshLocator
+    from neurospatial.layout._locators import HexLocator, MeshLocator
     from neurospatial.regions import Region, Regions
 
     try:
@@ -627,10 +627,17 @@ def _restore_environment(
             is_linearized_track=metadata["is_linearized_track"],
             coordinate_kind=coordinate_kind,
         )
+        if binning.grid_frame is not None and any(
+            key.startswith("grid_edges_") for key in arrays
+        ):
+            raise ValueError(
+                "Framed grid source axes cannot be stored as world grid_edges."
+            )
         if (
-            binning.rectilinear is not None
+            binning.grid_frame is not None
+            or binning.rectilinear is not None
             or isinstance(binning.linearization, TrackLinearization)
-            or isinstance(binning.locator, MeshLocator)
+            or isinstance(binning.locator, (HexLocator, MeshLocator))
         ):
             if (
                 "grid_shape" in metadata

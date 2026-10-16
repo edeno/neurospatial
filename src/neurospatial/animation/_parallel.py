@@ -110,11 +110,15 @@ def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
     from matplotlib.collections import QuadMesh
 
     if isinstance(artist, QuadMesh):
+        from neurospatial.layout._grid_frame import require_grid_context
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
+        grid, _ = require_grid_context(
+            env._binning, "animation", fix="use a cell renderer"
+        )
         grid_data = map_active_data_to_grid(
-            env.layout.grid_shape,  # type: ignore[arg-type]
-            env.layout.active_mask,  # type: ignore[arg-type]
+            grid.shape,
+            grid.active_mask,
             np.asarray(field, dtype=np.float64),
             fill_value=np.nan,
         )

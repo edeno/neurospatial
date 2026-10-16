@@ -20,6 +20,8 @@ from neurospatial.layout._binning import (
 from neurospatial.layout._capabilities import RectilinearGrid
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import FaceGeometry
+from neurospatial.layout._face_normals import FaceNormals
+from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._locators import (
     HexLocator,
     MeshLocator,
@@ -36,6 +38,8 @@ __all__ = [
     "ClipMapping",
     "ClippedLocator",
     "FaceGeometry",
+    "FaceNormals",
+    "FramedGrid",
     "GridBinningSpec",
     "HexLocator",
     "HexagonShapes",
