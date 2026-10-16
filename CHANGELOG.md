@@ -239,8 +239,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   polar environment). Points with NaN or inf coordinates, or outside the
   environment, raise `ValueError` that names the first such row.
   `distance_between` used to return `inf` for a point outside the
-  environment; it now raises. A target passed by position raises Python's
-  `TypeError`.
+  environment; it now raises. It also works on egocentric polar environments,
+  where it used to raise `CartesianOnlyError`: the path length follows the
+  graph, and points are (distance, angle). A target passed by position raises
+  Python's `TypeError`.
 
 ### Changed
 

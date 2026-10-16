@@ -738,6 +738,7 @@ What the old guesses did, and what happens now:
 | `env.neighbors([0, 1])` | neighbors of the point (0, 1) | use `bins=0`, or `points=[[0, 1]]` |
 | `env.distance_to(3)` | `TypeError: len() of unsized object` | `env.distance_to(bins=3)` works |
 | `env.distance_between(p, far_point)` | `inf` | `ValueError` naming the point outside the environment |
+| `polar_env.distance_between(...)` | `CartesianOnlyError` | graph path length between two bins or (distance, angle) points |
 | `env.bin_center_of(np.array([10.0, 10.0]))` | centers of bin 10, twice | `TypeError` pointing to `env.bin_at` |
 
 `points=` always has shape `(n_points, n_dims)`: wrap one point as

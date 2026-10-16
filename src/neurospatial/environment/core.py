@@ -182,8 +182,7 @@ class Environment(Generic[_C]):
     ``Environment`` is the central user-facing spatial type. Each instance
     declares whether ``bin_centers`` hold Cartesian ``(x, y[, z])`` positions
     or egocentric ``(distance, angle)`` coordinates. Methods such as ``bin_at``,
-    ``contains``, ``distance_between`` and ``apply_transform`` require Cartesian
-    positions. The shared ``distance_to`` method guards its Euclidean mode.
+    ``contains`` and ``apply_transform`` require Cartesian positions. The shared ``distance_to`` method guards its Euclidean mode.
 
     Instances are created via factory classmethods on ``Environment``
     (``from_samples``, ``from_polygon``, ``from_grid_mask``,
@@ -1264,9 +1263,8 @@ class Environment(Generic[_C]):
         indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
-    @cartesian_only
     def distance_between(
-        self: Environment[CartesianSystem],
+        self,
         *,
         bins: Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
@@ -1285,7 +1283,8 @@ class Environment(Generic[_C]):
             Start and end bin indices, ``[start, end]``.
         points : array-like, shape (2, n_dims), optional
             Start and end coordinates, one row each, in the same coordinates
-            and units as ``bin_centers``.
+            and units as ``bin_centers``: (distance, angle) on an egocentric
+            polar environment.
         edge_weight : str or None, default="distance"
             Edge attribute summed along the path. ``"distance"`` gives the
             path length in the environment's units; None counts edges (hops).

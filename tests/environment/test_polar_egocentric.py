@@ -4,6 +4,7 @@ This module tests the egocentric polar environment factory method which creates
 environments in polar coordinates (distance, angle) centered on the animal.
 """
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -762,14 +763,14 @@ class TestPolarCoordinateKindFlag:
 class TestPolarRaisesOnCartesianAssumingMethods:
     """Methods that interpret inputs as (x, y) must reject polar envs.
 
-    bin_at, distance_between, and distance_to(metric='euclidean') all
-    compute Euclidean operations on bin_centers; running them against a
-    polar env's (distance, angle) bin centers produces silently wrong
-    numbers. They should fail at the boundary instead.
+    bin_at and distance_to(metric='euclidean') compute Euclidean operations
+    on bin_centers; running them against a polar env's (distance, angle) bin
+    centers produces silently wrong numbers. They should fail at the boundary
+    instead.
 
     Methods that operate purely on the connectivity graph (path_between,
-    reachable_from, neighbors, distance_to(metric='geodesic')) are safe
-    on polar envs and must keep working.
+    reachable_from, neighbors, distance_between, distance_to(metric='geodesic'))
+    are safe on polar envs and must keep working.
     """
 
     @pytest.fixture
@@ -786,14 +787,15 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         with pytest.raises(NotImplementedError, match=r"polar.*bin_at|bin_at.*polar"):
             polar_env.bin_at(from_xy)
 
-    def test_distance_between_raises_on_polar_env(self, polar_env):
-        with pytest.raises(
-            NotImplementedError,
-            match=r"polar.*distance_between|distance_between.*polar",
-        ):
-            polar_env.distance_between(
-                points=[np.array([0.0, 0.0]), np.array([10.0, 10.0])]
-            )
+    def test_distance_between_follows_the_polar_graph(self, polar_env):
+        """Bins or (distance, angle) points give the graph path length."""
+        start, end = 0, polar_env.n_bins - 1
+        expected = nx.shortest_path_length(
+            polar_env.connectivity, start, end, weight="distance"
+        )
+        assert polar_env.distance_between(bins=[start, end]) == pytest.approx(expected)
+        points = polar_env.bin_centers[[start, end]] + 0.01
+        assert polar_env.distance_between(points=points) == pytest.approx(expected)
 
     def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
         with pytest.raises(
@@ -1267,10 +1269,6 @@ class TestPolarTypeAndGeometry:
         with pytest.raises(NotImplementedError):
             polar_env.contains(np.array([[1.0, 1.0]]))
         with pytest.raises(NotImplementedError):
-            polar_env.distance_between(
-                points=[np.array([0.0, 0.0]), np.array([1.0, 1.0])]
-            )
-        with pytest.raises(NotImplementedError):
             polar_env.distance_to(bins=[0], metric="euclidean")
 
     def test_polar_edge_distances_physical(self, polar_env):
@@ -1325,6 +1323,7 @@ _POLAR_INHERITED_MEMBERS = {
         "get_diffusion_geometry",
         "get_mrf_basis",
         "diffuse",
+        "distance_between",
         "distance_to",
         "get_differential_operator",
         "get_divergence_operator",
@@ -1506,7 +1505,6 @@ def test_cartesian_operations_are_the_capability_methods():
         "bin_sequence_with_runs",
         "clip",
         "contains",
-        "distance_between",
         "interpolate",
         "linear_to_nd",
         "occupancy",
