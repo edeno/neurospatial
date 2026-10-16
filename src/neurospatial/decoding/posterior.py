@@ -101,9 +101,9 @@ def _validate_encoding_environment(
     if source is None or source is env:
         return
 
-    from neurospatial.encoding._validation import validate_env_fitted
+    from neurospatial.encoding._validation import validate_env_argument
 
-    validate_env_fitted(
+    validate_env_argument(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
     mismatch = None
@@ -1095,9 +1095,9 @@ def _prepare_decode_inputs(
         ``True`` where ``encoding_models`` is non-finite (NaN or Inf), or
         ``None`` when the model is entirely finite.
     """
-    from neurospatial.encoding._validation import validate_env_fitted
+    from neurospatial.encoding._validation import validate_env_argument
 
-    validate_env_fitted(
+    validate_env_argument(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
 

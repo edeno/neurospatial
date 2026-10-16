@@ -125,7 +125,7 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert not child.connectivity.edges
     for variant in (
-        child.copy(),
+        child.with_metadata(),
         pickle.loads(pickle.dumps(child)),
         child.apply_transform(translate(10, 0)),
     ):

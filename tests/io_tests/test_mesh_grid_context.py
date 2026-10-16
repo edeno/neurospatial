@@ -47,7 +47,7 @@ def test_mesh_round_trip_preserves_full_simplex_grid_context(tmp_path, storage):
     assert not env.active_mask.all()
     restored = _round_trip(env, storage, tmp_path)
 
-    for candidate in (restored, restored.copy()):
+    for candidate in (restored, restored.with_metadata()):
         assert candidate.grid_shape == env.grid_shape
         np.testing.assert_array_equal(candidate.active_mask, env.active_mask)
         np.testing.assert_array_equal(

@@ -571,17 +571,6 @@ class TestWriteEnvironment:
             _stored_array(table, "binning/bins/pairs"), expected
         )
 
-    def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
-        """Test EnvironmentNotFittedError when writing unfitted Environment."""
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-        from neurospatial.io.nwb import write_environment
-
-        # Manually mark environment as unfitted to test validation
-        sample_environment._is_fitted = False
-
-        with pytest.raises(EnvironmentNotFittedError, match="write_environment"):
-            write_environment(empty_nwb, sample_environment)
-
 
 class TestReadEnvironment:
     """Tests for read_environment() function."""
@@ -1913,8 +1902,8 @@ class TestAllLayoutsRoundTrip:
         )
 
     @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
-    def test_roundtrip_is_fitted_all_layouts(self, tmp_path, layout_name, env_factory):
-        """Test loaded environment is fitted and usable for all layout types."""
+    def test_roundtrip_bins_all_layouts(self, tmp_path, layout_name, env_factory):
+        """Test the loaded environment keeps its bins for all layout types."""
         from pynwb import NWBHDF5IO
 
         from neurospatial.io.nwb import read_environment, write_environment
@@ -1931,7 +1920,8 @@ class TestAllLayoutsRoundTrip:
             nwbfile = io.read()
             loaded_env = read_environment(nwbfile)
 
-        assert loaded_env._is_fitted, f"Environment not fitted for {layout_name}"
+        assert loaded_env.n_bins == env.n_bins, layout_name
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
 
 
 # =============================================================================
@@ -1976,7 +1966,6 @@ class TestEnvironmentFromNwb:
 
         assert env is not None
         assert env.n_bins > 0
-        assert env._is_fitted
 
     def test_from_nwb_error_when_neither_parameter_provided(self, empty_nwb):
         """Test ValueError when neither scratch_name nor bin_size provided."""

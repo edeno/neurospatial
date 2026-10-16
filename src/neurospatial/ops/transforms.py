@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import CartesianOnlyError, EnvironmentNotFittedError
+from neurospatial._exceptions import CartesianOnlyError
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -1388,8 +1388,6 @@ def apply_transform_to_environment(
         If transform dimensionality doesn't match environment dimensionality,
         the transform is not invertible, or a track transform is not a
         similarity. Rebuild such tracks with ``Environment.from_graph``.
-    RuntimeError
-        If environment is not fitted.
 
     Examples
     --------
@@ -1453,10 +1451,6 @@ def apply_transform_to_environment(
 
     """
     consumer: AffineTransformConsumer = env
-    if not getattr(consumer, "_is_fitted", False):
-        raise EnvironmentNotFittedError(
-            "apply_transform_to_environment", is_function=True
-        )
     try:
         return consumer.apply_transform(transform, name=name)
     except CartesianOnlyError:

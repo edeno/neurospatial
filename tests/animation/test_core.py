@@ -308,31 +308,6 @@ class TestBackendSelection:
 class TestAnimateFieldsValidation:
     """Test animate_fields() validation and error handling."""
 
-    def test_animate_fields_not_fitted(self):
-        """Test error when environment is not fitted."""
-        from neurospatial.animation.core import animate_fields
-
-        rng = np.random.default_rng(42)
-        # Create environment with layout but not fitted
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-        # Manually set _is_fitted to False (simulating unfitted state)
-        env._is_fitted = False
-
-        fields = [rng.random(100) for _ in range(10)]
-        frame_times = np.linspace(0, 1, 10)
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        with pytest.raises(EnvironmentNotFittedError, match="animate_fields"):
-            animate_fields(
-                env,
-                fields,
-                backend="html",
-                save_path="test.html",
-                frame_times=frame_times,
-            )
-
     def test_animate_fields_empty(self):
         """Test error when fields is empty."""
         from neurospatial.animation.core import animate_fields

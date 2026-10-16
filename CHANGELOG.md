@@ -21,6 +21,28 @@
 - `neurospatial.environment._HAS_SHAPELY` is removed. Shapely is a required
   dependency.
 
+- `Environment` is now a plain immutable value. Two environments are equal only
+  when they are the same object (`env == other` used to be true for an
+  environment and its name string, and `env == "name"` no longer works), and
+  environments can be used in sets and as dictionary keys. Compare names with
+  `env.name`, and use `env.with_metadata(...)` to get a relabelled environment.
+
+- `Environment.copy()` is removed. An environment cannot be changed after it is
+  built, so there is nothing to copy: `copy.copy(env)` and `copy.deepcopy(env)`
+  return the same object. Use `with_regions`, `with_metadata`, `subset` or
+  `rebin` to get a changed environment.
+
+- `EnvironmentNotFittedError` (error code E1004) and the `check_fitted`
+  decorator are removed, together with the `neurospatial.environment.decorators`
+  module. An environment always has its bins and connectivity; calling
+  `Environment()` directly still raises E1006. Passing something that is not an
+  environment to an analysis function raises `TypeError` naming the corrected
+  call.
+
+- `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
+  instead of `AttributeError` when the environment is not a linearized track.
+  The message is unchanged.
+
 ### Fixed
 
 - Smoothing on an environment transformed by an affine map fitted to noisy

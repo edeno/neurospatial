@@ -16,7 +16,6 @@ import pytest
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
-    EnvironmentNotFittedError,
     GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
@@ -105,7 +104,6 @@ class TestPublicReExports:
         "name",
         [
             "BinIndexOutOfRangeError",
-            "EnvironmentNotFittedError",
             "GraphValidationError",
             "IncompatibleEnvironmentError",
             "LayoutNotBuiltError",
@@ -119,13 +117,6 @@ class TestPublicReExports:
             f"{name} should be importable from `neurospatial`"
         )
         assert name in neurospatial.__all__
-
-    def test_environment_not_fitted_error_is_same_class(self):
-        from neurospatial.environment.decorators import (
-            EnvironmentNotFittedError as DecoratorEnvErr,
-        )
-
-        assert EnvironmentNotFittedError is DecoratorEnvErr
 
     def test_graph_validation_error_is_same_class(self):
         from neurospatial.layout.validation import (
@@ -143,7 +134,6 @@ class TestPublicReExports:
         ("BinIndexOutOfRangeError", ValueError),
         ("IncompatibleEnvironmentError", ValueError),
         ("LayoutNotBuiltError", RuntimeError),
-        ("EnvironmentNotFittedError", RuntimeError),
         ("GraphValidationError", ValueError),
     ],
 )
@@ -251,7 +241,6 @@ def test_incompatible_environment_site():
             explanation="x",
         ),
         lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
-        lambda e: e.EnvironmentNotFittedError("Environment", "bin_at"),
         lambda e: e.GraphValidationError("bad graph"),
     ],
 )

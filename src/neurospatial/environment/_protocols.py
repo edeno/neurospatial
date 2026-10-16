@@ -267,9 +267,6 @@ class VisualizationConsumer(Protocol):
     """Only the environment members read by visualization operations."""
 
     @property
-    def _is_fitted(self) -> bool: ...
-
-    @property
     def _binning(self) -> Binning: ...
 
     @property
@@ -416,9 +413,6 @@ class FieldConsumer(Protocol):
 
 class AnimationConsumer(Protocol):
     """Environment members read by animation/core.py."""
-
-    @property
-    def _is_fitted(self) -> bool: ...
 
     @property
     def n_bins(self) -> int:
@@ -569,9 +563,6 @@ class SummaryConsumer(Protocol):
 
     @property
     def name(self) -> str: ...
-
-    @property
-    def _is_fitted(self) -> bool: ...
 
     @property
     def _layout_type_used(self) -> str | None: ...

@@ -145,13 +145,11 @@ def test_layout_parameters_are_independently_owned_exports():
 @pytest.mark.parametrize(
     "restore", [copy.copy, copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))]
 )
-def test_unfitted_environment_views_and_copies_remain_available(restore):
-    env = _environment().with_metadata(name="unfitted")
-    env._is_fitted = False
+def test_copies_and_pickles_keep_name_and_bins(restore):
+    env = _environment().with_metadata(name="session")
     expected = env.bin_centers.copy()
     clone = restore(env)
-    assert clone.name == "unfitted"
-    assert not clone._is_fitted
+    assert clone.name == "session"
     np.testing.assert_array_equal(clone.bin_centers, expected)
 
 

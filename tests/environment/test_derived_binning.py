@@ -481,7 +481,7 @@ def test_derived_round_trip(
         assert loaded._binning.faces.reason == child._binning.faces.reason
         with pytest.raises(NotImplementedError):
             loaded.smooth(np.ones(loaded.n_bins), 2.0)
-    copied = loaded.copy()
+    copied = loaded.with_metadata()
     np.testing.assert_array_equal(copied.bin_at(points), child.bin_at(points))
     assert not copied.bin_centers.flags.writeable
     assert not copied.bin_sizes.flags.writeable

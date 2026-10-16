@@ -128,30 +128,6 @@ def test_pillow_missing_error_message(test_env, test_fields):
 # ============================================================================
 
 
-def test_environment_not_fitted_error_message():
-    """Verify unfitted environment error suggests factory methods."""
-    from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-    rng = np.random.default_rng(42)
-    # Create environment and manually mark as unfitted
-    positions = rng.standard_normal((100, 2)) * 50
-    env = Environment.from_samples(positions, bin_size=10.0)
-    # Manually break the fitted state
-    env._is_fitted = False
-
-    with pytest.raises(EnvironmentNotFittedError) as exc_info:
-        frame_times = np.array([0.0])
-        animate_fields(env, [np.array([1, 2, 3])], frame_times=frame_times)
-
-    error_msg = str(exc_info.value)
-    # Check for key elements: error code, the calling free function name,
-    # the factory-method guidance, and an example call.
-    assert "[E1004]" in error_msg
-    assert "animate_fields()" in error_msg
-    assert "factory method" in error_msg
-    assert "Environment.from_samples(" in error_msg
-
-
 def test_field_shape_mismatch_error_message(test_env):
     """Verify field shape mismatch shows expected vs actual."""
     rng = np.random.default_rng(42)

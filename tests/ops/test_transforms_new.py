@@ -408,19 +408,3 @@ class TestApplyTransformToEnvironment:
         transform = translate(5, 5)
         with pytest.raises(ValueError, match="dimensionality"):
             apply_transform_to_environment(env_3d, transform)
-
-    def test_unfitted_environment_raises_error(self):
-        """Test that unfitted environment raises error."""
-        # Create a minimal layout that hasn't been built
-
-        # Don't call build(), so it remains unfitted
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-        transform = translate(5, 5)
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        with pytest.raises(
-            EnvironmentNotFittedError, match="apply_transform_to_environment"
-        ):
-            apply_transform_to_environment(env, transform)

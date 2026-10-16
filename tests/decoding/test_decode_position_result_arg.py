@@ -44,7 +44,7 @@ def test_rate_result_rejects_different_environment(
     small_rates, decode, validate, mismatch, monkeypatch
 ) -> None:
     """Equal bin counts cannot establish spatial or coordinate compatibility."""
-    env = small_rates.env.copy()
+    env = small_rates.env
     if mismatch == "coordinates":
         env = Environment.from_grid_mask(
             np.ones((2, 2), dtype=bool),
@@ -102,7 +102,7 @@ def test_rate_result_rejects_different_environment(
 def test_rate_result_accepts_equivalent_copied_environment(small_rates, decode) -> None:
     counts = np.array([[0], [1]])
     reference = decode(small_rates.env, counts, small_rates, 0.1)
-    copied = decode(small_rates.env.copy(), counts, small_rates, 0.1)
+    copied = decode(small_rates.env.with_metadata(), counts, small_rates, 0.1)
     np.testing.assert_array_equal(copied.map_position, reference.map_position)
     np.testing.assert_array_equal(copied.posterior_entropy, reference.posterior_entropy)
 

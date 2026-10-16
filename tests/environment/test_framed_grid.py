@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import pickle
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -89,7 +88,7 @@ def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
 
 @pytest.mark.parametrize(
     "transport",
-    ["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb), "deepcopy", "pickle"],
+    ["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb), "pickle"],
 )
 @pytest.mark.parametrize("n_dims", [2, 3])
 def test_frame_round_trip_owns_all_arrays(
@@ -133,8 +132,6 @@ def test_frame_round_trip_owns_all_arrays(
     elif transport == "file":
         to_file(env, tmp_path / "frame")
         restored = from_file(tmp_path / "frame")
-    elif transport == "deepcopy":
-        restored = copy.deepcopy(env)
     elif transport == "pickle":
         restored = pickle.loads(pickle.dumps(env))
     else:

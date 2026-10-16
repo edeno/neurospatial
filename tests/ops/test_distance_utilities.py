@@ -175,20 +175,6 @@ class TestDistanceToValidation:
         with pytest.raises(ValueError, match=r"targets cannot be empty"):
             env.distance_to([], metric="geodesic")
 
-    def test_distance_to_requires_fitted(self):
-        """distance_to() requires fitted environment."""
-        # Create an empty environment without calling factory method
-        # Since Environment() now requires layout, we test via monkey-patching
-        data = np.array([[0.0, 0.0]])
-        env = Environment.from_samples(data, bin_size=1.0)
-        # Set _is_fitted to False to simulate unfitted environment
-        env._is_fitted = False
-
-        with pytest.raises(
-            RuntimeError, match=r"requires the environment to be fully initialized"
-        ):
-            env.distance_to([0], metric="geodesic")
-
 
 class TestDistanceToEdgeCases:
     """Test edge cases for distance_to()."""
@@ -376,20 +362,6 @@ class TestRingsValidation:
 
         with pytest.raises(ValueError, match=r"hops must be non-negative"):
             env.rings(0, hops=-1)
-
-    def test_rings_requires_fitted(self):
-        """rings() requires fitted environment."""
-        # Create an empty environment without calling factory method
-        # Since Environment() now requires layout, we test via monkey-patching
-        data = np.array([[0.0, 0.0]])
-        env = Environment.from_samples(data, bin_size=1.0)
-        # Set _is_fitted to False to simulate unfitted environment
-        env._is_fitted = False
-
-        with pytest.raises(
-            RuntimeError, match=r"requires the environment to be fully initialized"
-        ):
-            env.rings(0, hops=2)
 
 
 class TestRingsEdgeCases:

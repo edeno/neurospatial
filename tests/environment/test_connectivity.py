@@ -441,22 +441,3 @@ class TestConnectivityMultipleLayouts:
 
 class TestConnectivityValidation:
     """Test input validation for connectivity operations."""
-
-    def test_components_fitted_check(self):
-        """Test that components() requires fitted environment."""
-        # This test verifies @check_fitted decorator is applied
-        # We can't easily create an unfitted Environment with public API,
-        # so this test mainly documents the expected behavior
-        data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
-        # Fitted environment should work
-        comps = env.components()
-        assert len(comps) >= 1
-
-    def test_reachable_from_fitted_check(self):
-        """Test that reachable_from() requires fitted environment."""
-        data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
-        # Fitted environment should work
-        mask = env.reachable_from(0)
-        assert mask.shape == (env.n_bins,)

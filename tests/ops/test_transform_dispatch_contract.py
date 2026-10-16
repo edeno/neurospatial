@@ -1,12 +1,10 @@
 """Affine entry points retain their public outputs and error contracts."""
 
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial._exceptions import CartesianOnlyError, EnvironmentNotFittedError
+from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.ops.transforms import (
     AffineND,
     apply_transform_to_environment,
@@ -45,17 +43,6 @@ def test_free_and_bound_transforms_preserve_the_same_geometry(n_dims):
             "lab_transformed",
         )
     np.testing.assert_array_equal(free.compute_kernel(0.5), bound.compute_kernel(0.5))
-
-
-@pytest.mark.parametrize(
-    "env", [object(), SimpleNamespace(), SimpleNamespace(_is_fitted=False)]
-)
-def test_free_transform_preserves_unfitted_object_errors(env):
-    with pytest.raises(EnvironmentNotFittedError) as error:
-        apply_transform_to_environment(env, translate(1, 2))
-    assert str(error.value) == str(
-        EnvironmentNotFittedError("apply_transform_to_environment", is_function=True)
-    )
 
 
 @pytest.mark.parametrize("entry", ["free", "bound"])

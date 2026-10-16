@@ -1871,7 +1871,7 @@ def _validate_object_vector_metric(
             _format_error(
                 f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
                 why="Why: nearest-object distance uses a straight line or the environment graph",
-                fix="pass metric='euclidean', or metric='geodesic' with a fitted env",
+                fix="pass metric='euclidean', or metric='geodesic' with an env",
             )
         )
     if metric == "geodesic" and env is None:
@@ -1879,7 +1879,7 @@ def _validate_object_vector_metric(
             _format_error(
                 f"{context}: metric='geodesic' requires env parameter.",
                 why="Why: geodesic distance needs the environment's connectivity graph",
-                fix="pass a fitted env, or use metric='euclidean' with env=None",
+                fix="pass an env, or use metric='euclidean' with env=None",
             )
         )
 
@@ -1921,7 +1921,7 @@ def _object_vector_rate(
         _validate_smoothing_parameters,
     )
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -1932,7 +1932,7 @@ def _object_vector_rate(
     # if the user supplied an env; the geodesic path raises its own
     # explicit error a few lines below if env is None.
     if env is not None:
-        validate_env_fitted(
+        validate_env_argument(
             env,
             context=context,
             arguments=(
@@ -2628,7 +2628,7 @@ def _object_vector_rates(
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -2636,7 +2636,7 @@ def _object_vector_rates(
     # `env` is optional in this function (None is permitted with the
     # euclidean distance metric); only validate fitted-state when supplied.
     if env is not None:
-        validate_env_fitted(
+        validate_env_argument(
             env,
             context=context,
             arguments=(
@@ -3575,7 +3575,7 @@ def _object_vector_significance(
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -3616,7 +3616,7 @@ def _object_vector_significance(
         unit_ids=ids,
     )
     if env is not None:
-        validate_env_fitted(
+        validate_env_argument(
             env,
             context=context,
             arguments=arguments,

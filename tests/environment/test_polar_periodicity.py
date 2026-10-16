@@ -63,7 +63,7 @@ def test_inferred_periodicity_survives_copy_and_storage(tmp_path, full_circle):
     env = _polar((0.0, span))
     env.to_file(tmp_path / "polar")
     for restored in (
-        env.copy(),
+        env.with_metadata(),
         Environment.from_dict(env.to_dict()),
         Environment.from_file(tmp_path / "polar"),
     ):

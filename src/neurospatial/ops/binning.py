@@ -99,7 +99,7 @@ def _typical_bin_spacing(env: Environment) -> float:
     Parameters
     ----------
     env : Environment
-        A fitted environment.
+        An environment.
 
     Returns
     -------

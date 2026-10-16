@@ -1389,13 +1389,13 @@ def compute_view_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
     from neurospatial.encoding._view_binning import prepare_view_binning
 
-    validate_env_fitted(
+    validate_env_argument(
         env,
         context="compute_view_rate",
         arguments="spike_times, times, positions, headings",
@@ -1830,13 +1830,13 @@ def _compute_view_rates(
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
     from neurospatial.encoding._view_binning import prepare_view_binning
 
-    validate_env_fitted(
+    validate_env_argument(
         env,
         context="compute_view_rates",
         arguments="spike_times, times, positions, headings",
@@ -2403,7 +2403,7 @@ def spatial_view_cell_significance(
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -2445,7 +2445,7 @@ def spatial_view_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    validate_env_fitted(
+    validate_env_argument(
         env,
         context="spatial_view_cell_significance",
         arguments="spike_times, times, positions, headings",

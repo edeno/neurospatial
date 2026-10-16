@@ -19,10 +19,7 @@ if TYPE_CHECKING:
 
 
 class AffineTransformConsumer(Protocol):
-    """Fitted status and the environment-owned affine construction adapter."""
-
-    @property
-    def _is_fitted(self) -> bool: ...
+    """The environment-owned affine construction adapter."""
 
     def apply_transform(
         self, transform: AffineND | Affine2D, *, name: str | None = None

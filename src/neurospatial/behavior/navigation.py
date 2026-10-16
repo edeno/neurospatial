@@ -606,11 +606,6 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    # Check fitted state
-    if not env._is_fitted:
-        from neurospatial import EnvironmentNotFittedError
-
-        raise EnvironmentNotFittedError("path_progress", is_function=True)
     if metric == "euclidean":
         from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
@@ -756,11 +751,6 @@ def distance_to_region(
     path_progress : Normalized progress along path
     cost_to_goal : Distance with terrain/learned cost
     """
-    # Check fitted state
-    if not env._is_fitted:
-        from neurospatial import EnvironmentNotFittedError
-
-        raise EnvironmentNotFittedError("distance_to_region", is_function=True)
     if metric == "euclidean":
         from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
@@ -1013,10 +1003,6 @@ def graph_turn_sequence(
     --------
     compute_trajectory_curvature : Continuous curvature for any trajectory
     """
-    if not env._is_fitted:
-        from neurospatial import EnvironmentNotFittedError
-
-        raise EnvironmentNotFittedError("graph_turn_sequence", is_function=True)
     from neurospatial.geometry._coordinates import _require_cartesian_coordinates
 
     _require_cartesian_coordinates(

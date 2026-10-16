@@ -1,8 +1,7 @@
-"""Copies and pickle carry geometry without transient analysis work."""
+"""Derived environments and pickle carry geometry without transient analysis work."""
 
 from __future__ import annotations
 
-import copy
 import pickle
 from functools import cached_property
 
@@ -27,16 +26,14 @@ def _environment():
     )
 
 
-@pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
-def test_copy_and_pickle_skip_transient_work_without_clearing_source(method):
+@pytest.mark.parametrize("method", ["derived", "pickle"])
+def test_derived_and_pickle_skip_transient_work_without_clearing_source(method):
     env = _environment()
     key = (0.5, "density")
     transient = _TransientWork()
     env._kernel_cache[key] = transient
-    if method == "copy":
-        restored = env.copy()
-    elif method == "deepcopy":
-        restored = copy.deepcopy(env)
+    if method == "derived":
+        restored = env.with_metadata()
     else:
         restored = pickle.loads(pickle.dumps(env))
 
@@ -64,16 +61,12 @@ def test_pickle_size_does_not_grow_after_analysis():
 
 
 def _copy_environment(env, method):
-    if method == "shallow":
-        return copy.copy(env)
-    if method == "copy":
-        return env.copy()
-    if method == "deepcopy":
-        return copy.deepcopy(env)
+    if method == "derived":
+        return env.with_metadata()
     return pickle.loads(pickle.dumps(env))
 
 
-@pytest.mark.parametrize("method", ["shallow", "copy", "deepcopy", "pickle"])
+@pytest.mark.parametrize("method", ["derived", "pickle"])
 def test_computed_properties_are_not_copied_or_pickled(method):
     env = _environment()
     env.get_differential_operator()

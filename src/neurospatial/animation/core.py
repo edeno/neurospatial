@@ -171,7 +171,7 @@ def animate_fields(
     Parameters
     ----------
     env : Environment
-        Fitted environment defining spatial structure.
+        Environment defining spatial structure.
     fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
         Fields to animate, dtype float64. If ndarray, first dimension is time.
         If list of arrays, each array represents one frame.
@@ -245,8 +245,6 @@ def animate_fields(
     ------
     FileExistsError
         If an output already exists and overwrite is False.
-    RuntimeError
-        If environment is not fitted
     ValueError
         If fields is empty, field shapes don't match, or backend is invalid
     RuntimeError
@@ -358,12 +356,6 @@ def animate_fields(
                 )
             )
         n_frames = len(fields)
-
-    # Validate environment is fitted
-    if not hasattr(env, "_is_fitted") or not env._is_fitted:
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        raise EnvironmentNotFittedError("animate_fields", is_function=True)
 
     # Detect multi-field format (napari-specific feature)
     # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])

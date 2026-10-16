@@ -67,11 +67,8 @@ def _repr(env: SummaryConsumer) -> str:
     # two into the same string and hid the difference from users
     # debugging an Environment they thought they had named.
     cls_name = type(env).__name__
-    if not env._is_fitted:
-        return f"{cls_name}(name={env.name!r}, not fitted)"
-
-    # Fitted environments: show name, dims, bins, layout. Truncate
-    # very long names but keep ``None`` distinct from ``""``.
+    # Show name, dims, bins, layout. Truncate very long names but keep
+    # ``None`` distinct from ``""``.
     name = env.name
     if isinstance(name, str) and len(name) > 40:
         name = name[:37] + "..."
@@ -91,9 +88,7 @@ def _repr(env: SummaryConsumer) -> str:
 
 
 def _str(env: SummaryConsumer) -> str:
-    """Return the diagnostic summary, retaining the unfitted fallback."""
-    if not env._is_fitted:
-        return env.__repr__()
+    """Return the diagnostic summary."""
     return env.info()
 
 
@@ -108,19 +103,6 @@ def _repr_html(env: SummaryConsumer) -> str:
     rows = []
     rows.append(_html_table_header(f"Environment: {name}"))
 
-    # Check if fitted
-    if not env._is_fitted:
-        rows.append(_html_table_row("Status", "Not fitted", highlight=True))
-        rows.append(_html_table_row("Layout Type", env._layout_type_used or "Unknown"))
-        return (
-            '<div style="margin: 10px;">'
-            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-            'font-family: monospace; font-size: 12px;">'
-            f"{''.join(rows)}"
-            "</table></div>"
-        )
-
-    # Fitted environment - show full details
     rows.append(_html_table_row("Layout Type", env._layout_type_used or "Unknown"))
 
     # Dimensions and bins

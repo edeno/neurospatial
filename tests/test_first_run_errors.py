@@ -254,8 +254,7 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
 
     r = recording
     bins = r.env.bin_at(r.positions)
-    # A local environment avoids mutating the shared fixture's regions.
-    env = r.env.copy()
+    env = r.env
     region_builder = Regions(env.regions.values())
     region_builder.add("home", point=tuple(env.bin_centers[0]))
     env = env.with_regions(region_builder)
@@ -380,7 +379,7 @@ def test_segmentation_unknown_region(site, recording):
     from neurospatial.events import distance_to_boundary
 
     r = recording
-    env = r.env.copy()
+    env = r.env
     region_builder = Regions(env.regions.values())
     region_builder.add("known", point=tuple(env.bin_centers[0]))
     env = env.with_regions(region_builder)

@@ -138,37 +138,6 @@ class TestErrorCodeE1003DimensionMismatch:
         assert "3" in error_msg  # Should mention 3D
 
 
-class TestErrorCodeE1004NotFitted:
-    """Tests for E1004: Environment not fitted error."""
-
-    def test_e1004_appears_for_unfitted_environment(self):
-        """Test that E1004 error code appears for unfitted environment."""
-        # Create minimal unfitted environment
-        # (Environment requires layout now, so we use a minimal setup)
-
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-
-        # Try to call a method that requires fitted state
-        with pytest.raises(RuntimeError, match=r"\[E1004\]"):
-            env.bin_at([[10.0, 20.0]])
-
-    def test_e1004_error_includes_usage_example(self):
-        """Test that E1004 error includes correct usage example."""
-
-        env = Environment.__new__(Environment)
-        env._is_fitted = False  # Not fitted
-
-        with pytest.raises(RuntimeError) as exc_info:
-            env.bin_at([[10.0, 20.0]])
-
-        error_msg = str(exc_info.value)
-        # Check for error code
-        assert "[E1004]" in error_msg
-        # Check for helpful example
-        assert "from_samples" in error_msg or "factory method" in error_msg
-
-
 class TestErrorCodeE1005PathTraversal:
     """Tests for E1005: Path traversal detected error."""
 
@@ -210,8 +179,8 @@ class TestErrorCodeDocumentation:
         with errors_doc_path.open(encoding="utf-8") as f:
             content = f.read()
 
-        # Check that all 5 error codes are documented
-        error_codes = ["E1001", "E1002", "E1003", "E1004", "E1005"]
+        # Check that all error codes are documented
+        error_codes = ["E1001", "E1002", "E1003", "E1005"]
         for code in error_codes:
             # Look for header like "### E1001: No active bins found"
             pattern = rf"###\s+{code}:"
@@ -238,19 +207,12 @@ class TestErrorCodeDocumentation:
     def test_error_links_point_to_live_docs_domain(self, grid_env_from_samples):
         """Error "learn more" links use the live docs site, not a dead domain.
 
-        Regression: the E1004 (not-fitted) and E1005 messages linked to
+        Regression: the E1005 message linked to
         ``neurospatial.readthedocs.io`` -- a domain with no readthedocs config
         (the docs are published to ``edeno.github.io/neurospatial`` per
         ``mkdocs.yml``), so the most-common errors' links 404'd.
         """
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
         from neurospatial.io import to_file
-
-        # E1004: EnvironmentNotFittedError message (constructed directly; a bare
-        # Environment() raises E1006 before any @check_fitted method is reached).
-        msg_e1004 = str(EnvironmentNotFittedError("Environment", method_name="bin_at"))
-        assert "edeno.github.io/neurospatial/errors/" in msg_e1004
-        assert "readthedocs.io" not in msg_e1004
 
         # E1005: path traversal on to_file.
         with pytest.raises(ValueError) as e1005:
@@ -271,7 +233,6 @@ class TestErrorCodeConstants:
         """
         # This test will be enhanced after constants are added
         # For now, just verify we can import the modules
-        import neurospatial.environment.decorators
         import neurospatial.io
         import neurospatial.layout.validation  # noqa: F401
 

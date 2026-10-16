@@ -24,6 +24,7 @@ presence differs. Outputs must match exactly.
 from __future__ import annotations
 
 import argparse
+import copy
 import inspect
 import sys
 import tempfile
@@ -353,7 +354,7 @@ def record(path: Path) -> None:
         for variant_name, variant in list(_variants(name, base)):
             for tag, env in (
                 (variant_name, variant),
-                (f"{variant_name}|copy", variant.copy()),
+                (f"{variant_name}|copy", copy.deepcopy(variant)),
             ):
                 regions = type(env.regions)(env.regions.values())
                 regions.add("baseline_point", point=x["point"])

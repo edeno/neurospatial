@@ -254,13 +254,13 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
     """Read-back environments and their copies keep 4-connectivity and polar seams.
 
     The rebuilt layout would otherwise supply an 8-connected grid graph (NWB) or
-    a Cartesian, seamless polar graph, which copy() and the geometry read.
+    a Cartesian, seamless polar graph, which derived environments and the geometry read.
     """
     original = make_env()
     field = np.sin(np.arange(original.n_bins) * 0.37)
     expected_divergence = divergence(original, gradient(original, field))
     restored = _round_trip(original, how, tmp_path)
-    for env in (restored, restored.copy()):
+    for env in (restored, restored.with_metadata()):
         assert list(env.connectivity.edges(data=True)) == list(
             env.connectivity.edges(data=True)
         )
@@ -297,7 +297,7 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
     )
     restored = from_dict(to_dict(hexagonal))
     assert tuple(restored.grid_edges) == ()
-    assert tuple(restored.copy().grid_edges) == ()
+    assert tuple(restored.with_metadata().grid_edges) == ()
     np.testing.assert_array_equal(
         restored.bin_at(hexagonal.bin_centers), np.arange(hexagonal.n_bins)
     )

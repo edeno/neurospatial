@@ -26,7 +26,6 @@ class TestEnvironmentFromGraph:
         """Test basic attributes after creation."""
         assert graph_env.name == "PlusMazeGraph"
         assert graph_env._binning.linearization is not None
-        assert graph_env._is_fitted
         assert graph_env.is_linearized_track
         assert graph_env.n_dims == 2
 
@@ -436,7 +435,6 @@ def test_from_mask():
         )
         assert env.name == "NDMaskTest"
         assert env._binning.rectilinear is not None
-        assert env._is_fitted
         assert env.n_dims == 2
         assert env.bin_centers.shape[0] == np.sum(active_mask_np)
         assert np.array_equal(env.active_mask, active_mask_np)
@@ -458,7 +456,6 @@ def test_from_image():
     )
     assert env.name == "ImageMaskTest"
     assert env._binning.rectilinear is not None
-    assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == np.sum(image_mask_np)
     # ImageMaskLayout.build uses (x, y) axis order, so a row-major (y, x) image
@@ -476,7 +473,6 @@ def test_from_polygon():
     assert env.name == "ShapelyTest"
     assert env._binning.outline is not None
     assert env._binning.outline.geometry.equals(polygon)
-    assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == 4
     assert np.sum(env.active_mask) == 4
@@ -1009,7 +1005,6 @@ class TestEnvironment3D:
     def test_creation_3d(self, simple_3d_env: Environment):
         """Test 3D environment creation and basic properties."""
         assert simple_3d_env.name == "Simple3DEnv"
-        assert simple_3d_env._is_fitted
         assert simple_3d_env.n_dims == 3
         assert not simple_3d_env.is_linearized_track  # RegularGrid is never 1D
 
@@ -1291,12 +1286,12 @@ class TestCacheManagement:
         This fixture creates a copy to avoid mutating the session-scoped
         fixture, which would affect other tests.
         """
-        return grid_env_from_samples.copy()
+        return grid_env_from_samples.with_metadata()
 
     @pytest.fixture
     def cache_test_graph_env(self, simple_graph_env):
         """Provide a fresh copy of simple_graph_env for cache testing."""
-        return simple_graph_env.copy()
+        return simple_graph_env.with_metadata()
 
     def test_kernel_cache_keeps_most_recently_used_kernels(
         self, cache_test_env, monkeypatch

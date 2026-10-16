@@ -154,11 +154,10 @@ def test_loaded_snapshot_pickle_restores_protected_arrays(environment_round_trip
         assert not array.flags.writeable
 
 
-@pytest.mark.parametrize("deep", [True, False])
-def test_copy_of_loaded_environment(environment_round_trip, forbid_layout_builds, deep):
+def test_derived_from_loaded_environment(environment_round_trip, forbid_layout_builds):
     original, restore = environment_round_trip
     loaded = restore()
-    copied = loaded.copy(deep=deep)
+    copied = loaded.with_metadata()
     np.testing.assert_array_equal(copied.bin_centers, original.bin_centers)
     np.testing.assert_array_equal(copied.bin_sizes, original.bin_sizes)
     np.testing.assert_array_equal(
@@ -169,8 +168,7 @@ def test_copy_of_loaded_environment(environment_round_trip, forbid_layout_builds
     region_builder = Regions(copied.regions.values())
     region_builder.add("copy_only", point=tuple(original.bin_centers[-1]))
     copied = copied.with_regions(region_builder)
-    if deep:
-        assert "copy_only" not in loaded.regions
+    assert "copy_only" not in loaded.regions
 
 
 def test_old_environment_file_refused():

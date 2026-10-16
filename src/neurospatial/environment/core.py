@@ -6,7 +6,7 @@ import copy as copy_module
 import logging
 import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
@@ -43,7 +43,6 @@ from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
 )
-from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.fields import _interpolate
 from neurospatial.environment.metrics import (
     _cartesian_boundary_bins,
@@ -109,7 +108,6 @@ else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
 
 
-@dataclass
 class Environment(Generic[_C]):
     """A discretized environment with owned coordinate meaning and connectivity.
 
@@ -146,7 +144,7 @@ class Environment(Generic[_C]):
 
     name = _MetadataView[str]()
 
-    _geometry: _PublishedGeometry = field(init=False, repr=False)
+    _geometry: _PublishedGeometry
 
     bin_centers = _GeometryView[NDArray[np.float64]]()
 
@@ -186,20 +184,18 @@ class Environment(Generic[_C]):
         """Coordinate kind from the owned per-instance descriptor."""
         return isinstance(self._geometry.coordinates, EgocentricPolarSystem)
 
-    _is_linearized_track_env: bool = field(init=False)
+    _is_linearized_track_env: bool
 
-    _is_fitted: bool = field(init=False, default=False)
-
-    _kdtree_cache: cKDTree | None = field(init=False, default=None, repr=False)
+    _kdtree_cache: cKDTree | None
 
     _kernel_cache: dict[
         tuple[float, KernelMode],
         NDArray[np.float64],
-    ] = field(init=False, default_factory=dict, repr=False)
+    ]
 
-    _layout_type_used: str | None = field(init=False, default=None)
+    _layout_type_used: str | None
 
-    _layout_params_used: dict[str, Any] = field(init=False, default_factory=dict)
+    _layout_params_used: dict[str, Any]
 
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
@@ -225,17 +221,16 @@ class Environment(Generic[_C]):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore owned state and reset transient caches without a builder."""
         self.__dict__.update(state)
-        if self._is_fitted:
-            from neurospatial.geometry._ownership import own_arena
+        from neurospatial.geometry._ownership import own_arena
 
-            assert self._geometry.arena is not None
-            self._geometry = replace(
-                self._geometry,
-                arena=own_arena(self._geometry.arena),
-            )
-            _freeze_graph_attributes(self._geometry.connectivity)
-            self._regions = self._validate_regions(self._regions)
-            self._reset_analysis_caches()
+        assert self._geometry.arena is not None
+        self._geometry = replace(
+            self._geometry,
+            arena=own_arena(self._geometry.arena),
+        )
+        _freeze_graph_attributes(self._geometry.connectivity)
+        self._regions = self._validate_regions(self._regions)
+        self._reset_analysis_caches()
         self._freeze_geometry_arrays()
 
     def _freeze_geometry_arrays(self) -> None:
@@ -250,7 +245,6 @@ class Environment(Generic[_C]):
         return binning
 
     @property
-    @check_fitted
     def binning(self) -> Binning:
         """Return a detached snapshot of bins, lookup and geometry components.
 
@@ -277,7 +271,6 @@ class Environment(Generic[_C]):
         return own_binning(self._binning)
 
     @property
-    @check_fitted
     def arena(self) -> Arena:
         """Continuous domain, distinguished from the active analysis bins."""
         arena = self._geometry.arena
@@ -285,13 +278,11 @@ class Environment(Generic[_C]):
         return copy_module.deepcopy(arena)
 
     @property
-    @check_fitted
     def clip_mapping(self) -> ClipMapping | None:
         """Most recent clip's source-bin mapping, or None before clipping."""
         return copy_module.deepcopy(self._geometry.clip_mapping)
 
     @property
-    @check_fitted
     def edge_pairs(self) -> NDArray[np.intp]:
         """Oriented neighbor pairs in gradient and flux order, shape (n_edges, 2).
 
@@ -302,7 +293,6 @@ class Environment(Generic[_C]):
         pairs.setflags(write=False)
         return pairs
 
-    @check_fitted
     def to_networkx(self) -> nx.Graph:
         """Return a detached editable graph with bin IDs and weighted edges.
 
@@ -366,8 +356,7 @@ class Environment(Generic[_C]):
 
     def _reset_analysis_caches(self) -> None:
         """Discard this instance's memoized analyses without clearing shared values."""
-        if self._is_fitted:
-            self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
         self._kernel_cache = {}
         self._kdtree_cache = None
 
@@ -379,9 +368,13 @@ class Environment(Generic[_C]):
         return result
 
     def __copy__(self) -> Self:
-        return self._replace_value()
+        """Return ``self``: an Environment is immutable, so no copy is needed."""
+        return self
 
-    @check_fitted
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        """Return ``self``: an Environment is immutable, so no copy is needed."""
+        return self
+
     def with_metadata(
         self,
         *,
@@ -423,7 +416,6 @@ class Environment(Generic[_C]):
             raise ValueError("Region coordinate dimensions must match the environment.")
         return regions._snapshot()
 
-    @check_fitted
     def with_regions(self, regions: Regions) -> Self:
         """Return a new environment owning a snapshot of a region collection.
 
@@ -443,34 +435,6 @@ class Environment(Generic[_C]):
         result = self._replace_value()
         result._regions = snapshot
         return result
-
-    def __eq__(self, other: object) -> bool:
-        """Check equality with another Environment or string.
-
-        Parameters
-        ----------
-        other : object
-            Object to compare with. If string, compares with environment name.
-
-        Returns
-        -------
-        bool
-            True if names match (when comparing with string), NotImplemented otherwise.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2)
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="test")
-        >>> env == "test"
-        True
-        >>> env == "other"
-        False
-        """
-        if isinstance(other, str):
-            return self.name == other
-        return NotImplemented
 
     def __repr__(self) -> str:
         """Generate an informative single-line string representation.
@@ -566,7 +530,6 @@ class Environment(Generic[_C]):
 
         return _repr_html(self)
 
-    @check_fitted
     def info(self) -> str:
         """Return a detailed multi-line diagnostic summary of the environment.
 
@@ -633,7 +596,6 @@ class Environment(Generic[_C]):
         return _info(self)
 
     @cached_property
-    @check_fitted
     def _source_flat_to_active_node_id_map(self) -> dict[int, int]:
         """Get or create the mapping from original full grid flat indices
         to active bin IDs (0 to n_active_bins - 1).
@@ -652,12 +614,6 @@ class Environment(Generic[_C]):
         RuntimeError
             If the connectivity graph is not available, or if all nodes are
             missing the 'source_grid_flat_index' attribute required for the map.
-
-        Notes
-        -----
-        **Decorator order**: @check_fitted is placed BELOW @cached_property.
-        This ensures the cached_property descriptor is outermost and the
-        check_fitted validation happens during the initial computation.
 
         """
         return {
@@ -681,7 +637,6 @@ class Environment(Generic[_C]):
         return self._is_linearized_track_env
 
     @property
-    @check_fitted
     def n_dims(self) -> int:
         """Return the number of spatial dimensions of the active bin centers.
 
@@ -694,14 +649,12 @@ class Environment(Generic[_C]):
         Raises
         ------
         RuntimeError
-            If called before the environment is fitted or if `bin_centers`
-            is not available.
+            If `bin_centers` is not available.
 
         """
         return int(self.bin_centers.shape[1])
 
     @property
-    @check_fitted
     def layout_parameters(self) -> dict[str, Any]:
         """Return the parameters used to build the layout engine.
 
@@ -714,16 +667,10 @@ class Environment(Generic[_C]):
             A dictionary of parameters used to create the layout.
             Useful for introspection and serialization.
 
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-
         """
         return copy_module.deepcopy(self._layout_params_used)
 
     @property
-    @check_fitted
     def layout_type(self) -> str:
         """Return the type of layout used in the environment.
 
@@ -738,7 +685,6 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @check_fitted
     def n_bins(self) -> int:
         """Return the number of active bins in the environment.
 
@@ -747,17 +693,11 @@ class Environment(Generic[_C]):
         Returns
         -------
         int
-            The number of active bins (0 if not fitted).
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
+            The number of active bins.
 
         """
-        return int(self.bin_centers.shape[0])
+        return int(self._geometry.bin_centers.shape[0])
 
-    @check_fitted
     def get_differential_operator(self) -> sparse.csc_matrix:
         """Compute and cache the inverse-distance edge differential operator.
 
@@ -774,8 +714,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If the layout has no finite-volume geometry builder.
 
@@ -820,7 +758,6 @@ class Environment(Generic[_C]):
         """
         return self._differential_operator_cached.copy()
 
-    @check_fitted
     def get_divergence_operator(self) -> sparse.csc_matrix:
         """Return the cached finite-volume divergence operator.
 
@@ -838,8 +775,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If the layout has no finite-volume cell geometry.
 
@@ -870,77 +805,6 @@ class Environment(Generic[_C]):
         faces = self._require_face_geometry("gradient/divergence")
         return _compute_divergence_operator(faces, self._differential_operator_cached)
 
-    @check_fitted
-    def copy(self, *, deep: bool = True) -> Self:
-        """Create a copy of the environment.
-
-        Parameters
-        ----------
-        deep : bool, default=True
-            If True, create a deep copy where modifying the copy will not
-            affect the original. Arrays and the connectivity graph are copied.
-            If False, create a shallow copy that shares underlying data with
-            the original.
-
-        Returns
-        -------
-        env_copy : Environment
-            New environment instance. Transient caches (KDTree, kernels) are
-            always cleared regardless of `deep` parameter.
-
-        See Also
-        --------
-        Environment.subset : Create new environment from bin selection.
-
-        Notes
-        -----
-        **Deep copy (deep=True, default)**:
-
-        - All numpy arrays are copied (bin_centers, dimension_ranges, etc.)
-        - Connectivity graph is deep copied
-        - Regions are deep copied
-        - Layout object is deep copied
-
-        Adding regions to the copy does not affect the original.
-
-        **Shallow copy (deep=False)**:
-
-        - Arrays, graph and regions are shared with the original
-
-        In both cases the geometry arrays are read-only and the graph is
-        frozen, as on every environment.
-
-        **Cache invalidation**:
-
-        Both deep and shallow copies always clear transient caches to ensure
-        consistency. Caches are rebuilt on-demand when needed:
-
-        - KDTree cache (used by spatial query methods)
-        - Kernel cache (used by smooth() and occupancy())
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> # Create environment
-        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
-        >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> env = env.with_metadata(units="cm")
-        >>>
-        >>> # Deep copy (default): separate, equal geometry
-        >>> env_copy = env.copy()
-        >>> bool(np.shares_memory(env_copy.bin_centers, env.bin_centers))
-        False
-        >>>
-        >>> # Shallow copy: the same geometry objects
-        >>> env_shallow = env.copy(deep=False)
-        >>> bool(np.shares_memory(env_shallow.bin_centers, env.bin_centers))
-        True
-        """
-        if deep:
-            return copy_module.deepcopy(self)
-        return self._replace_value()
-
     def _clear_explicit_caches(
         self, *, kdtree: bool = True, kernels: bool = True
     ) -> None:
@@ -961,7 +825,6 @@ class Environment(Generic[_C]):
             self._kernel_cache = {}
             self._gaussian_kernels.clear()
 
-    @check_fitted
     def clear_cache(
         self,
         *,
@@ -1019,10 +882,6 @@ class Environment(Generic[_C]):
         recomputing cached properties (especially differential_operator) can
         be expensive for large environments (>100,000 bins).
 
-        See Also
-        --------
-        copy : Create environment copy (also clears caches)
-
         Examples
         --------
         Clear all caches (default behavior):
@@ -1064,7 +923,6 @@ class Environment(Generic[_C]):
                         self.__dict__.pop(name, None)
 
     @property
-    @check_fitted
     def coordinate_kind(self) -> Literal["cartesian", "polar"]:
         """Coordinate meaning: Cartesian positions or egocentric radius/angle.
 
@@ -1079,7 +937,6 @@ class Environment(Generic[_C]):
         return cast("_C", self._geometry.coordinates)
 
     @property
-    @check_fitted
     def coordinate_system(self) -> _C:
         """Return this environment's immutable coordinate descriptor.
 
@@ -1136,7 +993,6 @@ class Environment(Generic[_C]):
         return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
 
     @cached_property
-    @check_fitted
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
         if not self._is_polar:
             return _cartesian_boundary_bins(self)
@@ -1235,7 +1091,6 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @check_fitted
     def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
         self._require_cartesian("component_keys()")
@@ -1244,7 +1099,6 @@ class Environment(Generic[_C]):
         return _component_keys(self._binning)
 
     @property
-    @check_fitted
     def bin_sources(
         self: Environment[CartesianSystem],
     ) -> tuple[tuple[str, int], ...] | None:
@@ -1257,7 +1111,6 @@ class Environment(Generic[_C]):
 
         return _bin_sources(self._binning)
 
-    @check_fitted
     def get_bridge_attributes(self: Environment[CartesianSystem]) -> pd.DataFrame:
         """Return an independent table of retained automatic navigation bridges.
 
@@ -1270,7 +1123,6 @@ class Environment(Generic[_C]):
 
         return _get_bridge_attributes(self._binning)
 
-    @check_fitted
     def bin_at(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.intp]:
@@ -1297,8 +1149,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If ``points_nd`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
@@ -1339,7 +1189,6 @@ class Environment(Generic[_C]):
         self._require_cartesian("bin_at()")
         return self._locate(points_nd)
 
-    @check_fitted
     def nearest_bin(
         self,
         points: NDArray[np.float64],
@@ -1376,8 +1225,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If the environment is not fitted.
         ValueError
             If distance limits or tie-breaking settings are invalid, or query
             points have the wrong coordinate width or nonfinite values.
@@ -1414,7 +1261,6 @@ class Environment(Generic[_C]):
             max_distance_factor=max_distance_factor,
         )
 
-    @check_fitted
     def contains(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
@@ -1433,8 +1279,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If ``points_nd`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
@@ -1470,7 +1314,6 @@ class Environment(Generic[_C]):
         indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
-    @check_fitted
     def distance_between(
         self: Environment[CartesianSystem],
         point1: NDArray[np.float64],
@@ -1529,7 +1372,7 @@ class Environment(Generic[_C]):
                     "Check that the points are inside the environment and in "
                     "the same coordinate frame/units as bin_centers.",
                     category=UserWarning,
-                    stacklevel=2,
+                    stacklevel=_external_stacklevel(),
                 )
             return np.inf
 
@@ -1545,7 +1388,6 @@ class Environment(Generic[_C]):
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return np.inf
 
-    @check_fitted
     def to_linear(
         self: Environment[CartesianSystem],
         nd_position: NDArray[np.float64],
@@ -1570,7 +1412,7 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        AttributeError
+        TypeError
             If this environment is not 1D (does not support linearization).
             Check `env.is_linearized_track` before calling this method.
 
@@ -1617,7 +1459,7 @@ class Environment(Generic[_C]):
                 f"This environment is {self.n_dims}D. "
                 "Use bin_at() to map positions to bins for N-D environments."
             )
-            raise AttributeError(msg)
+            raise TypeError(msg)
 
         linearization = self._binning.linearization
         if linearization is None:
@@ -1631,7 +1473,6 @@ class Environment(Generic[_C]):
             )
         return linearization.to_linear(nd_position)
 
-    @check_fitted
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],
@@ -1656,7 +1497,7 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        AttributeError
+        TypeError
             If this environment is not 1D (does not support linearization).
             Check `env.is_linearized_track` before calling this method.
 
@@ -1701,7 +1542,7 @@ class Environment(Generic[_C]):
                 f"This environment is {self.n_dims}D. "
                 "Use bin_center_of() to get bin centers for N-D environments."
             )
-            raise AttributeError(msg)
+            raise TypeError(msg)
 
         linearization = self._binning.linearization
         if linearization is None:
@@ -1715,7 +1556,6 @@ class Environment(Generic[_C]):
             )
         return linearization.linear_to_nd(linear_position)
 
-    @check_fitted
     def occupancy(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1782,8 +1622,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If times and positions have different lengths, if arrays are
             inconsistent, or if min_speed is provided without speed.
@@ -2094,8 +1932,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If field has wrong shape, wrong dimensionality, contains NaN/Inf,
             points have wrong dimensionality, mode is invalid, or dimensions
@@ -2151,7 +1987,6 @@ class Environment(Generic[_C]):
         self._require_cartesian("interpolate()")
         return _interpolate(self, field, points, mode=mode)
 
-    @check_fitted
     def rebin(
         self: Environment[CartesianSystem],
         factor: int | tuple[int, ...] | None = None,
@@ -2192,8 +2027,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If cells are not a uniform rectangular grid, or factor rebinning
             would replace custom navigation distances or connections.
@@ -2304,7 +2137,6 @@ class Environment(Generic[_C]):
         assert factor is not None
         return _rebin_factor(self, factor)
 
-    @check_fitted
     def subset(
         self: Environment[CartesianSystem],
         *,
@@ -2400,7 +2232,6 @@ class Environment(Generic[_C]):
             self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
         )
 
-    @check_fitted
     def clip(
         self: Environment[CartesianSystem],
         polygon: shapely.Polygon | shapely.MultiPolygon,
@@ -2437,7 +2268,6 @@ class Environment(Generic[_C]):
 
         return _clip(self, polygon, name=name)
 
-    @check_fitted
     def apply_transform(
         self: Environment[CartesianSystem],
         transform: AffineND | Affine2D,
@@ -2496,9 +2326,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If environment is not fitted (use factory methods like
-            `Environment.from_samples()`).
         ValueError
             If transform dimensionality doesn't match environment dimensionality,
             the transform is not invertible, or a track receives a non-similarity
@@ -3870,7 +3697,6 @@ class Environment(Generic[_C]):
             cls, nwbfile, scratch_name=scratch_name, bin_size=bin_size, **kwargs
         )
 
-    @check_fitted
     def bin_center_of(
         self,
         bin_indices: int | Sequence[int] | NDArray[np.int_],
@@ -3891,8 +3717,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If the environment is not fitted.
         BinIndexOutOfRangeError
             If any bin index is outside ``[0, n_bins)``, including negative
             indices (a ``ValueError`` subclass).
@@ -3915,7 +3739,6 @@ class Environment(Generic[_C]):
 
         return _bin_center_of(self, bin_indices)
 
-    @check_fitted
     def neighbors(self, bin_index: int | ArrayLike) -> list[int]:
         """Find indices of neighboring active bins for a bin or point.
 
@@ -3938,8 +3761,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         BinIndexOutOfRangeError
             If bin_index is an integer index outside [0, n_bins).
         ValueError
@@ -3961,7 +3782,6 @@ class Environment(Generic[_C]):
         return _neighbors(self, bin_index)
 
     @property
-    @check_fitted
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate the area (for 2D) or volume (for 3D+) of each active bin.
 
@@ -3976,11 +3796,6 @@ class Environment(Generic[_C]):
         -------
         NDArray[np.float64], shape (n_active_bins,)
             An array containing the area/volume/length of each active bin.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
 
         Notes
         -----
@@ -4010,7 +3825,6 @@ class Environment(Generic[_C]):
 
         return _bin_sizes_cached(self)
 
-    @check_fitted
     def path_between(
         self,
         source_active_bin_idx: int | ArrayLike,
@@ -4043,8 +3857,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         BinIndexOutOfRangeError
             If source/target is an integer index outside [0, n_bins).
         ValueError
@@ -4065,7 +3877,6 @@ class Environment(Generic[_C]):
 
         return _path_between(self, source_active_bin_idx, target_active_bin_idx)
 
-    @check_fitted
     def distance_to(
         self,
         targets: Sequence[int] | str,
@@ -4167,7 +3978,6 @@ class Environment(Generic[_C]):
 
         return _distance_to(self, targets, metric=metric)
 
-    @check_fitted
     def reachable_from(
         self,
         source_bin: int | ArrayLike,
@@ -4260,7 +4070,6 @@ class Environment(Generic[_C]):
 
         return _reachable_from(self, source_bin, radius=radius, metric=metric)
 
-    @check_fitted
     def components(
         self,
         *,
@@ -4610,8 +4419,6 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If environment with same name exists and overwrite=False.
-        RuntimeError
-            If Environment is not fitted (must be created with factory methods).
         ImportError
             If pynwb is not installed.
 
@@ -4661,7 +4468,6 @@ class Environment(Generic[_C]):
 
         return _to_nwb(self, nwbfile, name, overwrite=overwrite)
 
-    @check_fitted
     def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
         """Get active bin indices that fall within a specified named region.
 
@@ -4737,7 +4543,6 @@ class Environment(Generic[_C]):
 
         return _bins_in_region(self, region_name)
 
-    @check_fitted
     def region_membership(
         self,
         regions: Regions | None = None,
@@ -4851,7 +4656,6 @@ class Environment(Generic[_C]):
 
         return _region_membership(self, regions, include_boundary=include_boundary)
 
-    @check_fitted
     def region_mask(
         self,
         regions: str | list[str] | Region | Regions,
@@ -4998,7 +4802,6 @@ class Environment(Generic[_C]):
 
         return _region_mask(self, regions, include_boundary=include_boundary)
 
-    @check_fitted
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
@@ -5041,11 +4844,6 @@ class Environment(Generic[_C]):
         matplotlib.axes.Axes
             The axes on which the environment was plotted.
 
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-
         Examples
         --------
         >>> import numpy as np
@@ -5075,7 +4873,6 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
-    @check_fitted
     def plot_1d(
         self,
         ax: matplotlib.axes.Axes | None = None,
@@ -5106,8 +4903,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         AttributeError
             If `self.layout.is_linearized_track` is True but the layout does not have a
             `plot_linear_layout` method.
@@ -5130,7 +4925,6 @@ class Environment(Generic[_C]):
 
         return _plot_1d(self, ax, layout_plot_kwargs, **kwargs)
 
-    @check_fitted
     def plot_field(
         self,
         field: NDArray[np.float64],
@@ -5254,19 +5048,18 @@ class Environment(Generic[_C]):
         return _plot_field(
             self,
             field,
-            ax,
-            cmap,
-            vmin,
-            vmax,
-            colorbar,
-            colorbar_label,
-            nan_color,
-            rasterized,
-            scale_bar,
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            colorbar=colorbar,
+            colorbar_label=colorbar_label,
+            nan_color=nan_color,
+            rasterized=rasterized,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
-    @check_fitted
     def animate_fields(
         self,
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
@@ -5454,9 +5247,6 @@ class Environment(Generic[_C]):
         ------
         FileExistsError
             If an output already exists and overwrite is False.
-        RuntimeError
-            If environment is not fitted (use factory methods like
-            Environment.from_samples())
         ValueError
             If field shapes don't match environment n_bins
         ImportError
@@ -5660,7 +5450,6 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @check_fitted
     def boundary_bins(self) -> NDArray[np.intp]:
         """
         Identify boundary bins (bins on the edge of the active region).
@@ -5700,7 +5489,6 @@ class Environment(Generic[_C]):
         return _boundary_bins(self)
 
     @property
-    @check_fitted
     def linearization_properties(
         self,
     ) -> dict[str, Any]:
@@ -5761,7 +5549,6 @@ class Environment(Generic[_C]):
 
         return _linearization_properties_cached(self)
 
-    @check_fitted
     def get_bin_attributes(self) -> pd.DataFrame:
         """
         Extract bin (node) attributes as a pandas DataFrame.
@@ -5817,7 +5604,6 @@ class Environment(Generic[_C]):
 
         return _bin_attributes_cached(self)
 
-    @check_fitted
     def get_edge_attributes(self) -> pd.DataFrame:
         """
         Extract edge attributes as a pandas DataFrame.
@@ -5877,7 +5663,6 @@ class Environment(Generic[_C]):
 
         return _edge_attributes_cached(self)
 
-    @check_fitted
     def compute_kernel(
         self,
         bandwidth: float,
@@ -5928,8 +5713,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If bandwidth is not positive, or ``mode`` is not one of
             ``{'transition', 'density', 'average'}``.
@@ -5987,7 +5770,6 @@ class Environment(Generic[_C]):
 
         return _compute_kernel(self, bandwidth, mode=mode, cache=cache)
 
-    @check_fitted
     def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
         """Return Gaussian weights between bin centers, ignoring walls.
 
@@ -6018,7 +5800,6 @@ class Environment(Generic[_C]):
 
         return _compute_gaussian_kernel(self, bandwidth)
 
-    @check_fitted
     def get_diffusion_geometry(self) -> DiffusionGeometry:
         """Return read-only conductances, cell measures and diffusion components.
 
@@ -6046,7 +5827,6 @@ class Environment(Generic[_C]):
 
         return _diffusion_geometry_header(self._diffusion_geometry)
 
-    @check_fitted
     def diffusion_accuracy(self, bandwidth: float) -> float:
         """Return the relative numerical noise floor of diffuse() at a bandwidth.
 
@@ -6119,8 +5899,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If field has wrong shape, wrong dimensionality, bandwidth is not
             positive, or mode is invalid.
@@ -6211,7 +5989,6 @@ class Environment(Generic[_C]):
 
         return _smooth(self, field, bandwidth, mode=mode)
 
-    @check_fitted
     def diffuse(
         self,
         fields: Any,
@@ -6269,8 +6046,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If ``bandwidth`` is not positive, ``mode`` is invalid, ``backend`` is
             invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``.
@@ -6389,7 +6164,6 @@ class Environment(Generic[_C]):
 
         return _mrf_eigenbasis(self)
 
-    @check_fitted
     def get_mrf_basis(
         self,
         occupancy: NDArray[np.float64],
@@ -6728,7 +6502,6 @@ class Environment(Generic[_C]):
         env._layout_category = layout_type
         env._layout_params_used = copy_module.deepcopy(build_params)
         env._is_linearized_track_env = is_linearized_track
-        env._is_fitted = True
         env._geometry = _PublishedGeometry(
             binning=binning,
             bin_centers=binning.bins.centers,

@@ -84,7 +84,7 @@ def test_polar_declaration_and_fallback_lengths(polar_env):
 def test_gaussian_cache_reuses_only_its_own_kernel(cartesian_env):
     kernel = _get_gaussian_kernel(cartesian_env, 1.0)
     assert np.shares_memory(_get_gaussian_kernel(cartesian_env, 1.0), kernel)
-    copied = cartesian_env.copy()
+    copied = cartesian_env.with_metadata()
     other = _get_gaussian_kernel(copied, 1.0)
     assert not np.shares_memory(other, kernel)
     np.testing.assert_array_equal(other, kernel)

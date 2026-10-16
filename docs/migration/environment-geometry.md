@@ -39,8 +39,8 @@ np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
 np.testing.assert_array_equal(restored.edge_pairs, env.edge_pairs)
 ```
 
-For ordinary copying or persistence, use `env.copy()` or the existing storage
-methods. They preserve supported Cartesian and polar geometry directly.
+An `Environment` is immutable, so it needs no copy. For persistence, use the
+existing storage methods. They preserve supported Cartesian and polar geometry directly.
 `from_bins` constructs Cartesian environments; it is not a polar restoration API.
 
 ## Numerical operations

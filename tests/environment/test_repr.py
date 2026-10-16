@@ -66,14 +66,6 @@ class TestEnvironmentRepr:
         """``str(env)`` returns the same multi-line summary as ``env.info()``."""
         assert str(grid_env_from_samples) == grid_env_from_samples.info()
 
-    def test_str_falls_back_to_repr_for_unfitted(self):
-        """``str(env)`` for an unfitted env mirrors ``repr(env)`` (no info())."""
-        env = Environment.from_grid_mask(
-            np.ones((1, 1), dtype=bool), grid_edges=(np.arange(2.0),) * 2
-        )
-        env._is_fitted = False
-        assert str(env) == repr(env)
-
 
 class TestEnvironmentReprHtml:
     """Test Environment._repr_html_() for Jupyter notebooks."""
@@ -106,7 +98,7 @@ class TestEnvironmentReprHtml:
         """_repr_html_() reflects the region count when a region is added."""
         from shapely.geometry import Point
 
-        env = grid_env_from_samples.copy()
+        env = grid_env_from_samples
         region_builder = Regions(env.regions.values())
         region_builder.add("TestRegion", polygon=Point(0, 0).buffer(2))
         env = env.with_regions(region_builder)

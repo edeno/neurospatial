@@ -1106,7 +1106,7 @@ def diffusion_component_labels(
     Parameters
     ----------
     env : Environment
-        A fitted environment.
+        An environment.
 
     Returns
     -------
@@ -1130,7 +1130,7 @@ def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
     Parameters
     ----------
     env : Environment
-        A fitted environment.
+        An environment.
     sigma : float
         The bandwidth passed to ``env.diffuse``.
 

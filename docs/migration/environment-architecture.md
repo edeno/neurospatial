@@ -44,3 +44,32 @@ public API.
 
 `neurospatial.environment._HAS_SHAPELY` is removed. Shapely is a required
 dependency and is always available.
+
+## Environments are immutable values
+
+An `Environment` cannot be changed after it is built, so it now behaves like a
+plain value.
+
+**Equality.** Two environments are equal only when they are the same object.
+`env == "session1"` (comparing with the name) no longer works; compare
+`env.name == "session1"`. `env.with_metadata(name="other")` returns a new
+environment, which does not equal the original. Environments can be put in sets
+and used as dictionary keys.
+
+**Copying.** `Environment.copy()` is removed because there is nothing to copy.
+`copy.copy(env)` and `copy.deepcopy(env)` return the same object.
+
+| Before | Now |
+| --- | --- |
+| `env2 = env.copy()` | `env2 = env` (or `env.with_metadata()` for a separate object with its own empty caches) |
+| `env.copy()` then `with_regions(...)` | `env.with_regions(...)` |
+
+**No "fitted" state.** An environment always has its bins and connectivity, so
+`EnvironmentNotFittedError` (error code E1004), `check_fitted` and the
+`neurospatial.environment.decorators` module are removed. Calling
+`Environment()` directly still raises the E1006 error that points to the
+factories. Passing an object that is not an `Environment` to an analysis
+function raises a `TypeError` that shows the corrected call.
+
+**Linearization errors.** `to_linear` and `linear_to_nd` raise `TypeError`
+(not `AttributeError`) on an environment that is not a linearized track.

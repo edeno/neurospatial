@@ -25,7 +25,6 @@ from numpy.typing import NDArray
 from neurospatial._results import ResultMixin
 from neurospatial.encoding.spatial import PlaceFieldsResult, detect_place_fields
 from neurospatial.environment import Environment
-from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -174,7 +173,7 @@ def population_coverage(
     Parameters
     ----------
     env : Environment
-        Fitted environment defining the spatial bins.
+        Environment defining the spatial bins.
     firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
         Firing rate maps for each neuron.
     threshold : float, default=0.2
@@ -212,8 +211,6 @@ def population_coverage(
 
     Raises
     ------
-    RuntimeError
-        If environment is not fitted.
     ValueError
         If firing_rates shape doesn't match environment bins.
 
@@ -262,10 +259,6 @@ def population_coverage(
     .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the hippocampal
            ensemble code for space. Science, 261(5124), 1055-1058.
     """
-    # Validate environment is fitted
-    if not getattr(env, "_is_fitted", False):
-        raise EnvironmentNotFittedError("population_coverage", is_function=True)
-
     if env.n_bins <= 0:
         raise ValueError(f"Environment has no bins (n_bins={env.n_bins})")
 
@@ -391,7 +384,7 @@ def plot_population_coverage(
     Parameters
     ----------
     env : Environment
-        Fitted environment for plotting.
+        Environment for plotting.
     result : PopulationCoverageResult
         Output from population_coverage.
     show_field_count : bool, optional
@@ -418,11 +411,6 @@ def plot_population_coverage(
     matplotlib.axes.Axes
         The matplotlib axes containing the coverage plot.
 
-    Raises
-    ------
-    RuntimeError
-        If environment is not fitted.
-
     Notes
     -----
     For 1D environments, uses `env.plot_1d()` with vertical lines for gaps.
@@ -435,10 +423,6 @@ def plot_population_coverage(
     ...     env, result, show_field_count=True
     ... )  # doctest: +SKIP
     """
-    # Validate environment is fitted
-    if not getattr(env, "_is_fitted", False):
-        raise EnvironmentNotFittedError("plot_population_coverage", is_function=True)
-
     # Validate result type
     if not isinstance(result, PopulationCoverageResult):
         raise TypeError(

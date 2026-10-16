@@ -480,8 +480,6 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
         If connectivity graph is invalid (missing attributes, wrong dimensions).
     ValueError
         If bin_centers and connectivity graph are inconsistent.
-    RuntimeError
-        If environment is not fitted (was not created with factory method).
 
     Examples
     --------
@@ -514,14 +512,6 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
 
     """
     import warnings
-
-    # Check fitted status
-    if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            f"Environment '{env.name}' is not fitted. "
-            f"Environments must be created with factory methods "
-            f"(e.g., Environment.from_samples()) before validation."
-        )
 
     # Validate connectivity graph
     n_dims = env.n_dims

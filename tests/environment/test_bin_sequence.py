@@ -427,26 +427,6 @@ class TestBinSequenceValidation:
         with pytest.raises(ValueError, match=r"positions.*dimensions"):
             env.bin_sequence(times, positions_1d)
 
-    def test_requires_fitted_environment(self):
-        """Test that check_fitted decorator works."""
-        # Create environment normally - it will be fitted
-        # This test just verifies the decorator is applied
-        env = Environment.from_samples(
-            np.array([[0.0], [5.0], [10.0]]),
-            bin_size=5.0,
-        )
-
-        times = np.array([0.0, 1.0])
-        positions = np.array([[2.5], [7.5]])
-
-        # Should work fine - environment is fitted
-        bins = env.bin_sequence(times, positions, max_gap=None)
-        assert len(bins) > 0
-
-        # Note: We can't easily test unfitted environment without
-        # breaking encapsulation, but the @check_fitted decorator
-        # ensures this method requires fitted state
-
     def test_non_monotonic_times_error(self):
         """Test error for non-monotonic timestamps."""
         env = Environment.from_samples(

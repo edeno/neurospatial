@@ -106,7 +106,7 @@ class TestPublishedGeometryIsReadOnly:
         env = Environment.from_grid_mask(
             np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
         )
-        for env_or_copy in (env, env.copy()):
+        for env_or_copy in (env, env.with_metadata()):
             for array in (
                 env_or_copy.bin_centers,
                 env_or_copy.active_mask,
@@ -142,7 +142,7 @@ class TestPublishedGeometryIsReadOnly:
                 attrs.pop(key, None)
         assert env.distance_between(np.array([0.5]), np.array([2.5])) == 2.0
 
-    @pytest.mark.parametrize("how", ["copy", "deepcopy", "pickle"])
+    @pytest.mark.parametrize("how", ["deepcopy", "pickle"])
     def test_graph_attributes_stay_read_only_after_copy(self, how) -> None:
         import copy
         import pickle
@@ -151,11 +151,7 @@ class TestPublishedGeometryIsReadOnly:
             np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
         )
         restored = (
-            env.copy()
-            if how == "copy"
-            else copy.deepcopy(env)
-            if how == "deepcopy"
-            else pickle.loads(pickle.dumps(env))
+            copy.deepcopy(env) if how == "deepcopy" else pickle.loads(pickle.dumps(env))
         )
         with pytest.raises(TypeError, match="read-only"):
             restored.connectivity.edges[0, 1]["distance"] = 100.0

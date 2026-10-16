@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import pickle
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
@@ -197,15 +196,15 @@ def test_accuracy_query_reports_resolution_without_building_a_basis(monkeypatch)
     assert len(calls) == n_calls
 
 
-@pytest.mark.parametrize("method", ["shallow", "deepcopy", "pickle"])
-def test_copies_restore_analysis_with_independently_owned_caches(method):
+@pytest.mark.parametrize("method", ["derived", "pickle"])
+def test_derived_and_unpickled_environments_restore_analysis_with_independently_owned_caches(
+    method,
+):
     env = _grid()
     geometry = env.get_diffusion_geometry()
     gaussian = env.compute_gaussian_kernel(1.0)
-    if method == "shallow":
-        restored = copy.copy(env)
-    elif method == "deepcopy":
-        restored = copy.deepcopy(env)
+    if method == "derived":
+        restored = env.with_metadata()
     else:
         restored = pickle.loads(pickle.dumps(env))
     new_geometry = restored.get_diffusion_geometry()

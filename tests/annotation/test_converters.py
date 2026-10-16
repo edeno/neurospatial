@@ -230,7 +230,6 @@ class TestEnvFromBoundaryRegion:
 
         env = env_from_boundary_region(boundary, bin_size=10.0)
 
-        assert env._is_fitted
         assert env.n_bins > 0
 
     def test_rejects_non_polygon(self):
@@ -251,7 +250,10 @@ class TestEnvFromBoundaryRegion:
             connect_diagonal_neighbors=False,
         )
 
-        assert env._is_fitted
+        diagonal = env_from_boundary_region(boundary, bin_size=10.0)
+        assert (
+            env.connectivity.number_of_edges() < diagonal.connectivity.number_of_edges()
+        )
 
     def test_environment_with_holes(self):
         """Create environment with holes subtracted from boundary."""
@@ -267,7 +269,6 @@ class TestEnvFromBoundaryRegion:
         # Create environment with hole
         env = env_from_boundary_region(boundary, bin_size=10.0, holes=[hole])
 
-        assert env._is_fitted
         # Bin at center of hole should not exist (if bin resolution allows)
         # The environment should have fewer bins than without hole
         env_no_hole = env_from_boundary_region(boundary, bin_size=10.0)

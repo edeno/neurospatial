@@ -348,7 +348,7 @@ class TestLinearization:
         assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
-            AttributeError,
+            TypeError,
             match="to_linear\\(\\) is only available for 1D environments",
         ):
             medium_2d_env.to_linear(np.array([[0.0, 0.0]]))
@@ -358,7 +358,7 @@ class TestLinearization:
         assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
-            AttributeError,
+            TypeError,
             match="linear_to_nd\\(\\) is only available for 1D environments",
         ):
             medium_2d_env.linear_to_nd(np.array([0.0]))
@@ -606,7 +606,7 @@ class TestMetricsIntegration:
     def test_metrics_work_after_clear_cache(self, small_2d_env: Environment) -> None:
         """Test that metrics work after clearing cache."""
         # Make a copy to avoid mutating session-scoped fixture
-        env = small_2d_env.copy()
+        env = small_2d_env.with_metadata()
 
         # Access metrics
         _ = env.boundary_bins

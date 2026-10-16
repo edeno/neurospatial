@@ -10,8 +10,6 @@ Core Classes (Top-Level Exports)
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
     Factory methods: from_samples, from_polygon, from_graph, from_grid_mask, from_pixel_mask.
-EnvironmentNotFittedError : Exception for unfitted environments
-    Raised when methods requiring fitted state are called on unfitted environment.
 Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
@@ -230,7 +228,6 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
-    EnvironmentNotFittedError,
     GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
@@ -328,7 +325,6 @@ __all__ = [
     "BinIndexOutOfRangeError",
     "DecodingResult",
     "Environment",
-    "EnvironmentNotFittedError",
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",

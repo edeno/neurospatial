@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
@@ -44,7 +43,7 @@ def write_environment(
     nwbfile : NWBFile
         NWB file receiving the scratch record.
     env : Environment
-        Fitted environment to store.
+        Environment to store.
     name : str, default "spatial_environment"
         Scratch record name.
     overwrite : bool, default False
@@ -54,8 +53,6 @@ def write_environment(
     ------
     ValueError
         If the name exists and overwrite is false, or a component has no codec.
-    EnvironmentNotFittedError
-        If the environment has not been fitted.
     ImportError
         If pynwb is unavailable.
 
@@ -83,8 +80,6 @@ def write_environment(
 
     from neurospatial.io.files import _environment_payload
 
-    if not env._is_fitted:
-        raise EnvironmentNotFittedError("write_environment", is_function=True)
     if name in nwbfile.scratch and not overwrite:
         raise ValueError(
             f"Environment '{name}' already exists in scratch. Use overwrite=True to replace."

@@ -241,7 +241,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
 def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     r = continuous_recording
     positions, times = r.positions[:601:50], r.times[:601:50]
-    env = r.env.copy()
+    env = r.env
     bins = env.bin_at(positions)
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[-1]]))

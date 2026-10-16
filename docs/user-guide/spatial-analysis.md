@@ -21,7 +21,6 @@ This guide provides a comprehensive reference for spatial analysis operations in
 | [`distance_to()`](#distance-to) | Utilities | Geodesic distances to point | `NDArray[np.float64]` |
 | [`rings()`](#rings) | Utilities | Bins by graph hop distance (BFS layers) | `list[NDArray[np.int32]]` |
 | [`region_membership()`](#region-membership) | Utilities | Which region contains each bin | `NDArray[np.int64]` |
-| [`copy()`](#copy) | Utilities | Deep copy environment | `Environment` |
 
 ## Trajectory Analysis
 
@@ -1327,66 +1326,37 @@ for j in range(membership.shape[1]):
 
 ---
 
-### Copy
+### Copying
 
-Create a copy of the environment (deep or shallow).
-
-```python
-def copy(self, *, deep: bool = True) -> Environment:
-    """
-    Create copy of environment.
-
-    Parameters
-    ----------
-    deep : bool, optional
-        If True, create a deep copy (independent arrays and objects).
-        If False, create a shallow copy (shares array references).
-        Default is True.
-
-    Returns
-    -------
-    env_copy : Environment
-        Copy of environment.
-        - Deep copy: Independent geometry storage
-        - Shallow copy: Shares immutable geometry
-        Both copies have read-only public values and fresh analysis caches.
-    """
-```
-
-**Example:**
+An `Environment` cannot be changed after it is built, so there is nothing to
+copy. `copy.copy(env)` and `copy.deepcopy(env)` return the same object, and
+there is no `env.copy()` method. To get a variant, use a method that returns a
+new environment, such as `with_regions`, `with_metadata`, `subset` or `rebin`.
 
 ```python
 from neurospatial import Regions
 
-# Create baseline environment
 env_baseline = Environment.from_samples(positions, bin_size=3.0, name='Session1')
 
-# Deep copy (default) - fully independent
-env_deep = env_baseline.copy(deep=True)
-region_builder = Regions(env_deep.regions.values())
+# Add a goal region: returns a new environment, the baseline is unchanged.
+region_builder = Regions(env_baseline.regions.values())
 region_builder.add('goal', point=np.array([75.0, 75.0]))
-env_deep = env_deep.with_regions(region_builder)
+env_goal = env_baseline.with_regions(region_builder)
 
-# Original unchanged
 assert 'goal' not in env_baseline.regions
-assert 'goal' in env_deep.regions
-
-# Shallow copy - safely shares immutable geometry
-env_shallow = env_baseline.copy(deep=False)
+assert 'goal' in env_goal.regions
 
 # Export an editable array for separate calculations.
-centers = env_shallow.bin_centers.copy()
+centers = env_goal.bin_centers.copy()
 centers[0] = [999.0, 999.0]
 assert not np.allclose(env_baseline.bin_centers[0], centers[0])
 ```
 
 **Use Cases:**
 
-- Safe experimentation with deep copy
-- Creating environment variants
+- Creating environment variants (extra regions, new labels)
 - Before/after comparisons
-- Preserving original state
-- Performance optimization with shallow copy (read-only use)
+- Preserving the original environment
 
 ---
 

@@ -345,16 +345,6 @@ class TestRegionMembershipEdgeCases:
 class TestRegionMembershipValidation:
     """Test input validation."""
 
-    def test_requires_fitted_environment(self):
-        """Test that method requires fitted environment."""
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-
-        with pytest.raises(
-            RuntimeError, match="requires the environment to be fully initialized"
-        ):
-            env.region_membership()
-
     def test_regions_parameter_validation(self):
         """Test that regions parameter is validated."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])

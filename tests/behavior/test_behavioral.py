@@ -1685,30 +1685,6 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 # =============================================================================
 
 
-def test_path_progress_unfitted_environment():
-    """Test path_progress raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import path_progress
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="path_progress"):
-        path_progress(
-            np.array([0, 1, 2]),
-            env,
-            start_bins=np.array([0, 0, 0]),
-            goal_bins=np.array([2, 2, 2]),
-        )
-
-
 def test_path_progress_array_length_mismatch():
     """Test path_progress raises error for mismatched array lengths."""
     import pytest
@@ -1728,53 +1704,6 @@ def test_path_progress_array_length_mismatch():
             env,
             start_bins=np.array([0, 0]),  # Wrong length!
             goal_bins=np.array([2, 2, 2]),
-        )
-
-
-def test_distance_to_region_unfitted_environment():
-    """Test distance_to_region raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import distance_to_region
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="distance_to_region"):
-        distance_to_region(
-            np.array([0, 1, 2]),
-            env,
-            target_bins=5,
-        )
-
-
-def test_graph_turn_sequence_unfitted_environment():
-    """Test graph_turn_sequence raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import graph_turn_sequence
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="graph_turn_sequence"):
-        graph_turn_sequence(
-            env,
-            position_bins=np.array([0, 1, 2]),
-            start_bin=0,
-            end_bin=2,
         )
 
 

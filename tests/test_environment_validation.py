@@ -25,20 +25,6 @@ class TestValidateEnvironment:
         # Should not raise any errors
         validate_environment(valid_env)
 
-    def test_unfitted_environment_raises_error(self):
-        """Test that unfitted environment raises RuntimeError."""
-        # Create a minimal layout that hasn't been built
-
-        # Don't call build(), so it remains unfitted
-        from neurospatial.environment._publication import _Metadata
-
-        env = Environment.__new__(Environment)
-        env._metadata = _Metadata("unfitted", None, None)
-        env._is_fitted = False
-
-        with pytest.raises(RuntimeError, match="not fitted"):
-            validate_environment(env)
-
     def test_strict_mode_warns_missing_units(self):
         """Test that strict mode warns about missing units."""
         rng = np.random.default_rng(42)

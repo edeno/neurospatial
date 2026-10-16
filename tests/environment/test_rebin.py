@@ -260,7 +260,6 @@ class TestRebinBasic:
 
         # Verify it's a valid environment
         assert isinstance(coarse, Environment)
-        assert coarse._is_fitted
 
     def test_rebin_publishes_fitted_geometry(self):
         """Rebin publishes complete coarse geometry with independent caches."""
@@ -272,7 +271,6 @@ class TestRebinBasic:
 
         coarse = env.rebin(factor=2)
 
-        assert coarse._is_fitted
         assert coarse._layout_type_used == "RegularGrid"
         assert coarse._geometry is not env._geometry
         assert coarse._kernel_cache == {}

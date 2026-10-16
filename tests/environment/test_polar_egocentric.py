@@ -408,9 +408,9 @@ class TestAngularCircularDerivedFromGraph:
             loaded = Environment.from_file(path)
             assert loaded._angular_is_circular is circular
 
-    def test_survives_copy(self):
+    def test_survives_derivation(self):
         for circular in (True, False):
-            assert self._env(circular).copy()._angular_is_circular is circular
+            assert self._env(circular).with_metadata()._angular_is_circular is circular
 
 
 class TestPolarCacheFreshness:
@@ -982,7 +982,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 class TestPolarSerializationRoundTrip:
     """The polar type must survive copy and to_file/from_file round-trips."""
 
-    def test_copy_preserves_coordinate_kind(self):
+    def test_derived_environment_preserves_coordinate_kind(self):
         from neurospatial import Environment
 
         env = Environment.from_polar_egocentric(
@@ -991,7 +991,7 @@ class TestPolarSerializationRoundTrip:
             distance_bin_size=10.0,
             angle_bin_size=np.pi / 2,
         )
-        env_copy = env.copy()
+        env_copy = env.with_metadata(name="derived")
         assert isinstance(env_copy, Environment)
         assert env_copy._is_polar is True
 
@@ -1337,7 +1337,6 @@ _POLAR_INHERITED_MEMBERS = {
     "bin bookkeeping, metadata and diagnostics": {
         "bin_center_of",
         "clear_cache",
-        "copy",
         "frame",
         "get_bin_attributes",
         "get_edge_attributes",
@@ -1467,7 +1466,7 @@ def test_boundary_bins_respect_the_angular_seam(circular, n_angle, tmp_path):
     env.to_file(path)
     for restored in (
         env,
-        env.copy(),
+        env.with_metadata(),
         Environment.from_file(path),
         Environment.from_dict(env.to_dict()),
     ):

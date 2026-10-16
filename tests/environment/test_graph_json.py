@@ -22,12 +22,10 @@ def _environment():
     return Environment.from_dict(payload)
 
 
-@pytest.mark.parametrize("restore", ["fresh", "copy", "deepcopy", "pickle"])
+@pytest.mark.parametrize("restore", ["fresh", "deepcopy", "pickle"])
 def test_standard_node_link_export_is_json_serializable(restore):
     env = _environment()
-    if restore == "copy":
-        env = env.copy()
-    elif restore == "deepcopy":
+    if restore == "deepcopy":
         env = copy.deepcopy(env)
     elif restore == "pickle":
         env = pickle.loads(pickle.dumps(env))

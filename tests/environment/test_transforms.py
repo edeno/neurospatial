@@ -222,7 +222,7 @@ class TestRebin:
     def test_rebin_updates_name(self, medium_2d_env: Environment) -> None:
         """Test that rebinned environment has updated name."""
         # Set original name
-        env = medium_2d_env.copy()
+        env = medium_2d_env.with_metadata()
         env = env.with_metadata(name="OriginalEnv")
 
         rebinned = env.rebin(factor=2)
@@ -334,7 +334,7 @@ class TestSubset:
     def test_subset_by_region_names(self, medium_2d_env: Environment) -> None:
         """Test subsetting by named regions."""
         # Make a copy to avoid mutating session-scoped fixture
-        env = medium_2d_env.copy()
+        env = medium_2d_env.with_metadata()
 
         # Add a region to the copy
         center = env.bin_centers.mean(axis=0)
@@ -366,7 +366,7 @@ class TestSubset:
     def test_subset_point_region_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that point-type regions raise error."""
         # Make a copy to avoid mutating session-scoped fixture
-        env = medium_2d_env.copy()
+        env = medium_2d_env.with_metadata()
 
         # Add a point region to the copy
         region_builder = Regions(env.regions.values())
@@ -898,7 +898,7 @@ class TestApplyTransform:
         from neurospatial.ops.transforms import translate
 
         # Set original name
-        env = medium_2d_env.copy()
+        env = medium_2d_env.with_metadata()
         env = env.with_metadata(name="OriginalEnv")
 
         transform = translate(5, 5)
@@ -1020,21 +1020,3 @@ class TestApplyTransform:
 
         with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
             medium_2d_env.apply_transform(transform_3d)
-
-    def test_apply_transform_unfitted_env_raises_error(
-        self, small_2d_env: Environment
-    ) -> None:
-        """Test that applying transform to unfitted environment raises error."""
-        from neurospatial.ops.transforms import translate
-
-        # Create a fitted environment and then mark it as unfitted
-        # (simulates an environment that hasn't been properly initialized)
-        env = small_2d_env.copy()
-        env._is_fitted = False
-
-        transform = translate(5, 5)
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        with pytest.raises(EnvironmentNotFittedError):
-            env.apply_transform(transform)

@@ -306,13 +306,6 @@ class TestEnvironmentComputeKernel:
             kernel = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
         assert kernel.shape == (env.n_bins, env.n_bins)
 
-    def test_compute_kernel_requires_fitted(self):
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-        assert not env._is_fitted
-        with pytest.raises(RuntimeError, match="fully initialized"):
-            env.compute_kernel(bandwidth=1.0)
-
 
 class TestKernelHighBinWarning:
     """The high-bin memory WARNING (there is no hard limit)."""

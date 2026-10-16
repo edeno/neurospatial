@@ -3071,12 +3071,12 @@ default="diffusion_kde"
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    validate_env_fitted(
+    validate_env_argument(
         env, context="compute_spatial_rate", arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
@@ -3664,12 +3664,12 @@ default="diffusion_kde"
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    validate_env_fitted(
+    validate_env_argument(
         env, context="compute_spatial_rates", arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
@@ -5755,7 +5755,7 @@ def place_cell_significance(
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -5804,7 +5804,7 @@ def place_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    validate_env_fitted(
+    validate_env_argument(
         env,
         context="place_cell_significance",
         arguments="spike_times, times, positions",

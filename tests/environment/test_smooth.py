@@ -235,11 +235,6 @@ class TestSmoothValidation:
         with pytest.raises(ValueError, match=r"mode must be"):
             env.smooth(field, bandwidth=2.0, mode="invalid")
 
-    # NOTE: No test for @check_fitted decorator on unfitted environments because:
-    # - Cannot create unfitted Environment with current public API (by design)
-    # - The decorator is tested indirectly by all other tests in this suite
-    # - Factory methods always create fitted environments
-
     def test_smooth_2d_field_raises_error(self):
         """Field must be 1-D array. 2-D arrays should raise ValueError."""
         rng = np.random.default_rng(42)

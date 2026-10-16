@@ -24,7 +24,6 @@ class TestMakeHoneycombMaze:
         maze = make_honeycomb_maze()
         # Should have n_bins > 0 if fitted
         assert maze.env_2d.n_bins > 0
-        assert maze.env_2d._is_fitted
 
     def test_env_2d_has_correct_units(self):
         """env_2d should have units set to 'cm'."""

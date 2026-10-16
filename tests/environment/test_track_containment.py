@@ -44,7 +44,7 @@ def test_unknown_track_footprint_refuses_containment_but_retains_projection(fact
 
 @pytest.mark.parametrize("width", [None, 2.0])
 @pytest.mark.parametrize("derivation", ["native", "subset", "transform"])
-@pytest.mark.parametrize("storage", ["copy", "pickle", "dict", "file", "nwb"])
+@pytest.mark.parametrize("storage", ["derived", "pickle", "dict", "file", "nwb"])
 def test_track_containment_contract_survives_derivation_and_storage(
     tmp_path, width, derivation, storage
 ):
@@ -60,8 +60,8 @@ def test_track_containment_contract_survives_derivation_and_storage(
         probes = probes @ matrix[:2, :2].T + matrix[:2, 2]
 
     assigned = env.bin_at(probes)
-    if storage == "copy":
-        restored = env.copy()
+    if storage == "derived":
+        restored = env.with_metadata()
     elif storage == "pickle":
         restored = pickle.loads(pickle.dumps(env))
     elif storage == "dict":
