@@ -78,7 +78,6 @@ from neurospatial.environment._metrics import (
 from neurospatial.environment._polar import _create_polar_environment
 from neurospatial.environment._publication import (
     UNSET,
-    _Derivation,
     _diffusion_geometry_header,
     _freeze_geometry_arrays,
     _GeometryView,
@@ -99,7 +98,11 @@ from neurospatial.environment._queries import (
     _rings,
     resolve_bin,
 )
-from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
+from neurospatial.environment._rebin import (
+    _rebin_factor,
+    _rebin_resolution,
+    warn_rebin_losses,
+)
 from neurospatial.environment._regions import (
     _bins_in_region,
     _region_mask,
@@ -2057,17 +2060,16 @@ class Environment(Generic[_C]):
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
 
-        def publish(derivation: _Derivation) -> Environment[CartesianSystem]:
-            return publish_derived(self, derivation, name=name)
-
         if bin_size is not None:
-            return _rebin_resolution(
-                self._binning, self.arena, bin_size, publish=publish
+            derivation, check = _rebin_resolution(self._binning, self.arena, bin_size)
+        else:
+            assert factor is not None
+            derivation, check = _rebin_factor(
+                self._binning, self.connectivity, self.arena, factor
             )
-        assert factor is not None
-        return _rebin_factor(
-            self._binning, self.connectivity, self.arena, factor, publish=publish
-        )
+        rebinned = publish_derived(self, derivation, name=name)
+        warn_rebin_losses(self._binning, self.arena, rebinned, check)
+        return rebinned
 
     def subset(
         self: Environment[CartesianSystem],
@@ -2458,13 +2460,15 @@ class Environment(Generic[_C]):
         ValueError
             If coordinates disagree, components overlap, or support cannot be certified.
         """
-        return _combine(
+        derivation = _combine(
             components,
             auto_bridge=auto_bridge,
             max_mnn_distance=max_mnn_distance,
             bridge_conductances=bridge_conductances,
-            name=name,
         )
+        # Units and frame come from the first component; all components share them.
+        first = next(iter(components.values()))
+        return publish_derived(first, derivation, name=name)
 
     @classmethod
     def from_bins(

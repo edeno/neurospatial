@@ -3,17 +3,16 @@
 Factor mode retains integer truncation, native lazy faces and legacy construction
 metadata. Resolution mode rebuilds over the retained arena in its owned affine
 frame and materializes faces before transforming them. These construction paths
-remain distinct. Both hand their bins to a caller-supplied ``publish``
-function, which publishes them as a derivation of the source environment
+remain distinct. Both return a derivation, which Environment.rebin publishes
 (validating and owning geometry, applying physical walls and creating a fresh
-analysis cache), and then check the published result against the source bins.
+analysis cache), and a :class:`RebinCheck` that ``warn_rebin_losses`` applies to
+the published result to report source bins and barriers the new bins lose.
 """
 
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import product
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -48,7 +47,50 @@ if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
     from neurospatial.geometry._coordinates import CartesianSystem
 
-    Publish = Callable[[_Derivation], Environment[CartesianSystem]]
+
+@dataclass(frozen=True)
+class RebinCheck:
+    """How to check rebinned bins against the source bins after publication.
+
+    Parameters
+    ----------
+    considered : ndarray of bool, shape (n_source_bins,) or None
+        Source bins whose loss is reported by this check; ``None`` checks all.
+    lost_remedy : str
+        Mode-specific advice for covering source bins without a new bin.
+    crossing_remedy : str
+        Mode-specific advice for connections that cross an arena barrier.
+    """
+
+    considered: NDArray[np.bool_] | None
+    lost_remedy: str
+    crossing_remedy: str
+
+
+def warn_rebin_losses(
+    binning: Binning,
+    arena: Arena,
+    rebinned: Environment[CartesianSystem],
+    check: RebinCheck,
+) -> None:
+    """Warn about source bins and arena barriers the published new bins lose.
+
+    Parameters
+    ----------
+    binning : Binning
+        The source bins.
+    arena : Arena
+        The source arena, kept by the new bins.
+    rebinned : Environment
+        The published rebinned environment.
+    check : RebinCheck
+        Which source bins to check and the advice to give.
+    """
+    lost = rebinned.bin_at(binning.bins.centers) < 0
+    if check.considered is not None:
+        lost = check.considered & lost
+    _warn_unbinned(binning, arena, lost, check.lost_remedy)
+    _warn_outline_crossings(arena, rebinned, check.crossing_remedy)
 
 
 def _arena_bounds(arena: Arena) -> NDArray[np.float64]:
@@ -201,12 +243,8 @@ def _warn_outline_crossings(
 
 
 def _rebin_resolution(
-    binning: Binning,
-    arena: Arena,
-    bin_size: float | tuple[float, ...],
-    *,
-    publish: Publish,
-) -> Environment[CartesianSystem]:
+    binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
+) -> tuple[_Derivation, RebinCheck]:
     """Construct new bins over the retained arena, preserving lattice frame."""
     spec = binning.grid_spec
     if spec is None:
@@ -296,20 +334,14 @@ def _rebin_resolution(
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
     snapshot, graph, ranges, category = prepare_bins(grid)
-    rebinned = publish(
-        _Derivation(snapshot, graph, ranges, _Provenance(snapshot.kind, category, {}))
-    )
-    _warn_unbinned(
-        binning,
-        arena,
-        rebinned.bin_at(binning.bins.centers) < 0,
+    return _Derivation(
+        snapshot, graph, ranges, _Provenance(snapshot.kind, category, {})
+    ), RebinCheck(
+        None,
         "Use a smaller bin_size, or one that puts cell edges on the arena "
         "boundary, such as a divisor of a rectangular arena's side lengths.",
+        "Use a bin_size smaller than the barrier's width.",
     )
-    _warn_outline_crossings(
-        arena, rebinned, "Use a bin_size smaller than the barrier's width."
-    )
-    return rebinned
 
 
 def _require_native_grid_navigation(
@@ -381,9 +413,7 @@ def _rebin_factor(
     connectivity: nx.Graph,
     arena: Arena,
     factor: int | tuple[int, ...],
-    *,
-    publish: Publish,
-) -> Environment[CartesianSystem]:
+) -> tuple[_Derivation, RebinCheck]:
     """Coarsen a regular grid by an integer factor."""
     # --- Input validation ---
 
@@ -531,38 +561,30 @@ def _rebin_factor(
     coarse, graph, ranges, _, category, _, index = built_layout_data(
         cast("LayoutEngine", layout)
     )
-    coarse_env = publish(
-        _Derivation(
-            coarse,
-            graph,
-            ranges,
-            _Provenance(
-                "RegularGrid",
-                category,
-                {
-                    "bin_size": tuple(
-                        (edges[-1] - edges[0]) / (len(edges) - 1)
-                        for edges in coarse_edges
-                    ),
-                    "connect_diagonal_neighbors": connect_diagonal,
-                },
-            ),
-            grid_index=index,
-            check_center_lookup=index is None,
-        )
+    derivation = _Derivation(
+        coarse,
+        graph,
+        ranges,
+        _Provenance(
+            "RegularGrid",
+            category,
+            {
+                "bin_size": tuple(
+                    (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+                ),
+                "connect_diagonal_neighbors": connect_diagonal,
+            },
+        ),
+        grid_index=index,
+        check_center_lookup=index is None,
     )
 
     # Bins beyond the truncated extent are already reported above.
     within = np.all(
         source_centers < np.array([edges[-1] for edges in coarse_edges]), axis=1
     )
-    _warn_unbinned(
-        binning,
-        arena,
-        within & (coarse_env.bin_at(source_centers) < 0),
+    return derivation, RebinCheck(
+        within,
         "Use a smaller factor.",
+        "Use a factor whose bins are narrower than the barrier.",
     )
-    _warn_outline_crossings(
-        arena, coarse_env, "Use a factor whose bins are narrower than the barrier."
-    )
-    return coarse_env

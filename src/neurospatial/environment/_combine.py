@@ -17,7 +17,6 @@ from neurospatial._logging import log_environment_combine
 from neurospatial.environment._publication import (
     _Derivation,
     _Provenance,
-    publish_derived,
 )
 from neurospatial.geometry._arena import _CombinedArena
 from neurospatial.geometry._binning import Binning, KnownFaces, MissingFaces
@@ -72,9 +71,12 @@ def _combine(
     auto_bridge: bool,
     max_mnn_distance: float | None,
     bridge_conductances: Mapping[BridgeKey, float] | None,
-    name: str,
-) -> Environment:
-    """Validate geometry, infer path connections and publish owned combined data."""
+) -> _Derivation:
+    """Validate components and infer path connections between them.
+
+    The result is published as a derivation of the first component, whose
+    units and frame every component shares.
+    """
     from neurospatial.environment.core import Environment  # core imports this module
 
     if not isinstance(components, Mapping) or not components:
@@ -247,16 +249,11 @@ def _combine(
     snapshot, graph, ranges, category = prepare_bins(
         Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals)
     )
-    # Units and frame come from the first component; all components share them.
-    return publish_derived(
-        first,
-        _Derivation(
-            snapshot,
-            graph,
-            ranges,
-            _Provenance(snapshot.kind, category, {}),
-            regions=regions,
-            arena=_CombinedArena(arenas),
-        ),
-        name=name,
+    return _Derivation(
+        snapshot,
+        graph,
+        ranges,
+        _Provenance(snapshot.kind, category, {}),
+        regions=regions,
+        arena=_CombinedArena(arenas),
     )
