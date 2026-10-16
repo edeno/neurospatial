@@ -148,10 +148,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   default raises `ValueError`. The defaults are accepted with any layout, and
   the signatures show them (`dilate: bool = False`,
   `bin_count_threshold: int = 0`, `connect_diagonal_neighbors: bool = True`;
-  `fill_holes` defaults to `True` in `open_field`, which also accepts
-  `fill_holes=False` with either setting, because those bins have no holes
-  filled). A `layout=` other than
-  `"RegularGrid"` or `"Hexagonal"` raises `ValueError` listing the supported
+  `fill_holes` defaults to `True` in `open_field`). `open_field` also accepts
+  `fill_holes=False` with `layout="Hexagonal"` or `infer_active_bins=False`,
+  because neither fills holes. A `layout=` other than `"RegularGrid"` or
+  `"Hexagonal"` raises `ValueError` listing the supported
   layouts and the factory to use instead; it used to raise
   `NotImplementedError`. Errors from `environment_from_position` name that
   function.
