@@ -121,7 +121,7 @@ from neurospatial.geometry._coordinates import (
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.geometry._region_bins import region_bin_mask
-from neurospatial.layout.factories import LayoutType
+from neurospatial.layout._labels import LayoutType
 from neurospatial.ops.binning import TieBreakStrategy, _regions_mask
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
@@ -784,12 +784,16 @@ class Environment(Generic[_C]):
         """Return the scalar choices used to build the bins.
 
         These are the settings passed to the layout engine, such as
-        ``bin_size`` or ``connect_diagonal_neighbors``, or recorded by a
-        derivation. Input data (positions, masks, images, polygons and track
-        graphs) is not kept here; the geometry built from it is in
-        ``env.binning``, for example ``env.binning.linearization.graph`` for a
-        track. The values describe how the environment was built and do not
-        affect any analysis.
+        ``bin_size`` or ``connect_diagonal_neighbors``. Input data
+        (positions, masks, images, polygons and track graphs) is not kept
+        here; the geometry built from it is in ``env.binning``, for example
+        ``env.binning.linearization.graph`` for a track. The values describe
+        how the environment was built and do not affect any analysis.
+
+        ``subset``, ``clip`` and ``apply_transform`` keep the bins they were
+        given, so they keep these choices. ``rebin`` builds new bins and
+        records their ``bin_size`` and ``connect_diagonal_neighbors``.
+        ``combine`` records none. :attr:`derivations` lists what was applied.
 
         Returns
         -------
@@ -800,15 +804,63 @@ class Environment(Generic[_C]):
 
     @property
     def layout_type(self) -> str:
-        """Return the type of layout used in the environment.
+        """Return the label of the layout the bins were built with.
+
+        Built-in layouts report a :class:`~neurospatial.layout.LayoutType`
+        value, such as ``"RegularGrid"``, ``"Hexagonal"`` or ``"Polar"``; the
+        label is the same as the layout engine's ``layout_type`` and
+        ``env.binning.kind``. A derived environment (``subset``, ``clip``,
+        ``rebin``, ``apply_transform``) keeps its parent's label, and
+        :meth:`combine` reports ``"Combined"``; :attr:`derivations` records
+        what was applied. The label is descriptive: analyses read the bins,
+        never this label.
 
         Returns
         -------
         str
-            The layout type (e.g., "RegularGrid", "Hexagonal").
+            The layout label.
 
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> positions = np.random.default_rng(0).uniform(0, 20, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env.layout_type
+        'RegularGrid'
+        >>> env.subset(mask=np.arange(env.n_bins) < 4).layout_type
+        'RegularGrid'
         """
-        return self._provenance.layout_type
+        return self._binning.kind
+
+    @property
+    def derivations(self) -> tuple[str, ...]:
+        """Return the derivations applied since the bins were built, oldest first.
+
+        Each entry names the method that made a new environment from an
+        existing one: ``"subset"``, ``"clip"``, ``"rebin"``,
+        ``"apply_transform"`` or ``"combine"``. A factory-built environment
+        has none, and ``combine`` starts a new history because the result
+        has no single parent. Relabelling with ``with_metadata`` or
+        ``with_regions`` is not a derivation.
+
+        Returns
+        -------
+        tuple of str
+            Derivation names, oldest first.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> positions = np.random.default_rng(0).uniform(0, 20, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env.derivations
+        ()
+        >>> env.subset(mask=np.arange(env.n_bins) < 4).rebin(2).derivations
+        ('subset', 'rebin')
+        """
+        return self._provenance.derivations
 
     @property
     def n_bins(self) -> int:
@@ -2577,7 +2629,6 @@ class Environment(Generic[_C]):
         derivation = _apply_transform(
             transform,
             binning=self._binning,
-            provenance=self._provenance,
             regions=self.regions,
             arena=self._arena,
         )
@@ -3760,8 +3811,9 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            A new Environment instance. ``layout_type`` and
-            ``layout_parameters`` come from the engine's own record.
+            A new Environment instance. ``layout_type`` is the engine's
+            ``layout_type`` label, or its binning's ``kind`` when it has
+            none, and ``layout_parameters`` are its recorded build choices.
 
         Raises
         ------

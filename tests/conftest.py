@@ -1098,7 +1098,6 @@ def environment_round_trip(built_environment, request, tmp_path):
         original._binning,
         dimension_ranges=original.dimension_ranges,
         layout_type=original.layout_type,
-        category=original._provenance.category,
         build_params=original.layout_parameters,
         coordinates=original._geometry.coordinates,
         arena=original.arena,

@@ -1,3 +1,4 @@
+from ._labels import LayoutType
 from .base import LayoutEngine
 from .engines.graph import GraphLayout
 from .engines.hexagonal import HexagonalLayout
@@ -7,7 +8,6 @@ from .engines.regular_grid import RegularGridLayout
 from .engines.shapely_polygon import ShapelyPolygonLayout
 from .engines.triangular_mesh import TriangularMeshLayout
 from .factories import (
-    LayoutType,
     create_layout,
     get_layout_parameters,
     list_available_layouts,

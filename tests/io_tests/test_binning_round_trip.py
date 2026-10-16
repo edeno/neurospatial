@@ -210,7 +210,8 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
             assert "binning/bins/centers" in arrays
             assert "binning/faces/volumes" in arrays
     assert payload["schema_version"] == "Environment-v3"
-    assert payload["layout_category"] == simple_saved_grid._provenance.category
+    assert payload["layout_type"] == simple_saved_grid.layout_type
+    assert payload["derivations"] == list(simple_saved_grid.derivations)
     assert payload["binning"]["codec_version"] == 3
 
 
@@ -310,7 +311,6 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         binning,
         dimension_ranges=native.dimension_ranges,
         layout_type="Graph",
-        category=native._provenance.category,
         build_params=parameters,
     )
     original = publish_environment(layout=facade, layout_type_used="Graph")

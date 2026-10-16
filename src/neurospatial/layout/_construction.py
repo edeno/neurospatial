@@ -3,25 +3,28 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._explicit import _category
+from neurospatial.layout._labels import canonical_label
 from neurospatial.layout.base import LayoutEngine
 
 
 def built_layout_data(
     layout: LayoutEngine,
-) -> tuple[Binning, str, str, Mapping[str, Any]]:
-    """Take a built layout's binning once, with its descriptive labels.
+) -> tuple[Binning, Mapping[str, Any]]:
+    """Take a built layout's binning once, with its build choices.
 
     A layout engine supplies its geometry through ``binning()`` alone. The
     navigation graph, plotting ranges and grid index all follow from that
     record, so an engine needs only ``build(...)`` and ``binning()``. Two
-    descriptive labels are read when an engine has them: its ``layout_type``
-    category (otherwise inferred from the binning) and the build arguments it
-    records with ``capture_build_params`` (otherwise none). An external
+    descriptive members are read when an engine has them: its
+    ``layout_type`` label, which becomes the binning's ``kind`` (otherwise
+    the binning's own ``kind`` is the label), and the build arguments it
+    records with ``capture_build_params`` (otherwise none). Either label is
+    spelled canonically when it names a ``LayoutType``. An external
     object without ``binning()`` needs an installed snapshot adapter that
     converts it to a ``Binning``; neither the object nor its parameters are
     retained.
@@ -34,8 +37,10 @@ def built_layout_data(
 
     Returns
     -------
-    tuple
-        The binning, layout type tag, layout category and build choices.
+    binning : Binning
+        The layout's bins, with the layout label as ``kind``.
+    build_params : mapping of str to object
+        The recorded build choices.
 
     Raises
     ------
@@ -49,8 +54,8 @@ def built_layout_data(
         from neurospatial.geometry._adapters import _snapshot_provider
         from neurospatial.geometry._explicit import prepare_bins
 
-        binning, category = prepare_bins(_snapshot_provider(layout, "binning"))
-        return binning, binning.kind, category, {}
+        binning = prepare_bins(_snapshot_provider(layout, "binning"))
+        return replace(binning, kind=canonical_label(binning.kind)), {}
     binning = produce()
     if type(binning) is not Binning:
         raise TypeError(
@@ -69,9 +74,8 @@ def built_layout_data(
         )
     label = getattr(layout, "layout_type", None)
     params = getattr(layout, "_build_params_used", None)
+    kind = canonical_label(label if isinstance(label, str) else binning.kind)
     return (
-        binning,
-        binning.kind,
-        label if isinstance(label, str) else _category(binning),
+        binning if kind == binning.kind else replace(binning, kind=kind),
         params if isinstance(params, Mapping) else {},
     )

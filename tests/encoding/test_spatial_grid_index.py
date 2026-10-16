@@ -36,7 +36,6 @@ def test_legacy_grid_segmentation_follows_graph_despite_provenance():
         bins,
         dimension_ranges=original.dimension_ranges,
         layout_type="MaskedGrid",
-        category="grid",
         build_params={"connect_diagonal_neighbors": True},
     )
     env = publish_environment(layout=legacy, layout_type_used="MaskedGrid")

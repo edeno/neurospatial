@@ -347,7 +347,6 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
         env._binning,
         dimension_ranges=env.dimension_ranges,
         layout_type=env.layout_type,
-        category=env._provenance.category,
         build_params=env.layout_parameters,
     )
     assert bridge._binning.face_normals is not None
@@ -420,7 +419,6 @@ def test_polar_records_refuse_cartesian_normal_components(built_environment):
             replace(env._binning, face_normals=FaceNormals(normals)),
             dimension_ranges=env.dimension_ranges,
             layout_type=env.layout_type,
-            category=env._provenance.category,
             build_params=env.layout_parameters,
             coordinates=env._geometry.coordinates,
         )

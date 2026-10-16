@@ -503,7 +503,7 @@ class PersistentFigureRenderer:
                     self._mesh.set_array(mesh_data)
                 else:
                     # Fallback: re-render completely for non-grid layouts
-                    layout_type = self._env._provenance.category
+                    layout_type = self._env.layout_type
                     fallback_reason = (
                         f"set_array optimization not supported for layout type "
                         f"'{layout_type}' (no rectilinear grid)"

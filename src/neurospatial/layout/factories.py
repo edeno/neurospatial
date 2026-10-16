@@ -1,7 +1,8 @@
 import inspect
-from enum import Enum
 from typing import Any
 
+from neurospatial._exceptions import _format_error
+from neurospatial.layout._labels import LayoutType, find_layout_type
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
@@ -15,102 +16,53 @@ from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
-
-class LayoutType(str, Enum):
-    """Available layout engine types.
-
-    This enum provides IDE autocomplete and type safety for layout selection.
-    Each value corresponds to a concrete layout engine implementation.
-
-    Attributes
-    ----------
-    REGULAR_GRID : str
-        Standard rectangular/cuboid grids with uniform bin sizes.
-    MASKED_GRID : str
-        Grids with arbitrary active/inactive regions defined by a boolean mask.
-    IMAGE_MASK : str
-        Binary image-based layouts where white pixels define active bins.
-    HEXAGONAL : str
-        Hexagonal tessellations with more uniform neighbor distances.
-    GRAPH : str
-        1D linearized track representations for maze/track experiments.
-    TRIANGULAR_MESH : str
-        Triangular tessellations for specialized spatial discretization.
-    SHAPELY_POLYGON : str
-        Polygon-bounded grids using Shapely geometry.
-
-    Examples
-    --------
-    >>> from neurospatial.layout import LayoutType, create_layout
-    >>> # Use enum for autocomplete and type safety
-    >>> layout = create_layout(
-    ...     LayoutType.REGULAR_GRID, bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]
-    ... )  # doctest: +SKIP
-
-    Notes
-    -----
-    ``create_layout`` and the ``layout=`` option of the sample factories also
-    accept a layout name as a string. The match ignores case and any
-    character that is not a letter or digit, so ``"RegularGrid"``,
-    ``"regular_grid"`` and ``"regular-grid"`` all name ``REGULAR_GRID``.
-    ``list_available_layouts()`` returns the accepted names.
-
-    >>> layout = create_layout("regular_grid", bin_size=2.0)  # doctest: +SKIP
-    """
-
-    REGULAR_GRID = "RegularGrid"
-    MASKED_GRID = "MaskedGrid"
-    IMAGE_MASK = "ImageMask"
-    HEXAGONAL = "Hexagonal"
-    GRAPH = "Graph"
-    TRIANGULAR_MESH = "TriangularMesh"
-    SHAPELY_POLYGON = "ShapelyPolygon"
+# The engines ``create_layout`` builds, keyed by their ``layout_type`` label.
+_ENGINES = (
+    RegularGridLayout,
+    MaskedGridLayout,
+    ImageMaskLayout,
+    HexagonalLayout,
+    GraphLayout,
+    TriangularMeshLayout,
+    ShapelyPolygonLayout,
+)
+# LayoutEngine is a Protocol, and type[Protocol] does not accept these
+# concrete classes, so the values are typed as Any.
+_LAYOUT_MAP: dict[str, Any] = {engine.layout_type: engine for engine in _ENGINES}
 
 
-# Note: We use Any here because LayoutEngine is a Protocol, and type[Protocol]
-# causes mypy errors when used with concrete class types
-_LAYOUT_MAP: dict[str, Any] = {
-    LayoutType.REGULAR_GRID.value: RegularGridLayout,
-    LayoutType.MASKED_GRID.value: MaskedGridLayout,
-    LayoutType.IMAGE_MASK.value: ImageMaskLayout,
-    LayoutType.HEXAGONAL.value: HexagonalLayout,
-    LayoutType.GRAPH.value: GraphLayout,
-    LayoutType.TRIANGULAR_MESH.value: TriangularMeshLayout,
-    LayoutType.SHAPELY_POLYGON.value: ShapelyPolygonLayout,
-}
-
-
-def _normalize_name(name: str) -> str:
-    """Normalize a layout name by removing non-alphanumeric characters and
-    converting to lowercase.
-
-    Parameters
-    ----------
-    name : str
-        The layout name to normalize.
-
-    Returns
-    -------
-    str
-        The normalized name.
-
-    """
-    return "".join(filter(str.isalnum, name)).lower()
+def _engine_class(kind: object, caller: str) -> Any:
+    """Return the engine class that ``kind`` names, or explain the choices."""
+    member = find_layout_type(kind)
+    engine = None if member is None else _LAYOUT_MAP.get(member.value)
+    if engine is not None:
+        return engine
+    if member is LayoutType.POLAR:
+        why = "Why: polar sectors are egocentric coordinates, which only Environment.from_polar_egocentric declares."
+        fix = "build polar bins with Environment.from_polar_egocentric(...)"
+    elif member is LayoutType.COMBINED:
+        why = "Why: a combined environment joins existing environments."
+        fix = "join environments with Environment.combine({...})"
+    else:
+        why = "Why: the name matches no layout engine."
+        fix = f"use one of {', '.join(list_available_layouts())}"
+    name = kind.value if isinstance(kind, LayoutType) else kind
+    raise ValueError(
+        _format_error(f"{caller} cannot build layout {name!r}.", why=why, fix=fix)
+    )
 
 
 def list_available_layouts() -> list[str]:
-    """List user-friendly type strings for all available layout engines.
+    """List the layout names that ``create_layout`` builds.
 
     Returns
     -------
-    List[str]
-        A sorted list of unique string identifiers for available
-        `LayoutEngine` types (e.g., "RegularGrid", "Hexagonal").
+    list of str
+        Sorted ``LayoutType`` values with a layout engine (e.g.,
+        "Hexagonal", "RegularGrid").
 
     """
-    # dict preserves insertion order (Python 3.7+) and deduplicates by key
-    unique_layouts = {_normalize_name(name): name for name in _LAYOUT_MAP}
-    return sorted(unique_layouts.values())
+    return sorted(_LAYOUT_MAP)
 
 
 def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
@@ -121,9 +73,9 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
 
     Parameters
     ----------
-    layout_type : str
-        The string identifier of the layout engine type (case-insensitive,
-        ignores non-alphanumeric characters).
+    layout_type : LayoutType or str
+        The layout name; the match ignores case and characters that are not
+        letters or digits (see ``LayoutType``).
 
     Returns
     -------
@@ -140,20 +92,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
         If `layout_type` is unknown.
 
     """
-    normalized_kind_query = _normalize_name(layout_type)
-    found_key = next(
-        (
-            name
-            for name in _LAYOUT_MAP
-            if _normalize_name(name) == normalized_kind_query
-        ),
-        None,
-    )
-    if not found_key:
-        raise ValueError(
-            f"Unknown engine kind '{layout_type}'. Available: {list_available_layouts()}",
-        )
-    engine_class = _LAYOUT_MAP[found_key]
+    engine_class = _engine_class(layout_type, "get_layout_parameters()")
     sig = inspect.signature(engine_class.build)
     params_info: dict[str, dict[str, Any]] = {}
     for name, param in sig.parameters.items():
@@ -181,7 +120,8 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
     kind : LayoutType | str
         The layout engine type to create. Can be:
         - A LayoutType enum member (recommended for IDE autocomplete)
-        - A case-insensitive string name (e.g., "RegularGrid", "Hexagonal")
+        - A layout name, matched ignoring case and characters that are not
+          letters or digits (e.g., "RegularGrid", "regular-grid", "grid")
     **kwargs : any
         Parameters passed to the chosen engine's `build(...)` method.
 
@@ -213,21 +153,7 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
     ... )  # doctest: +SKIP
 
     """
-    # 1) Convert enum to string if needed
-    kind_str = kind.value if isinstance(kind, LayoutType) else kind
-
-    # 2) Normalize user input and find matching key
-    norm_query = _normalize_name(kind_str)
-    found_key = next(
-        (name for name in _LAYOUT_MAP if _normalize_name(name) == norm_query),
-        None,
-    )
-    if found_key is None:
-        suggestions = ", ".join(list_available_layouts())
-        raise ValueError(f"Unknown layout kind '{kind_str}'. Available: {suggestions}")
-
-    # 2) Instantiate the class
-    engine_cls = _LAYOUT_MAP[found_key]
+    engine_cls = _engine_class(kind, "create_layout()")
     engine: LayoutEngine = engine_cls()
 
     # 3) Validate `kwargs` against `build(...)` signature
@@ -235,7 +161,9 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
     allowed = {param for param in sig.parameters if param != "self"}
     unexpected = set(kwargs) - allowed
     if unexpected:
-        raise ValueError(f"Unexpected arguments for {found_key}.build(): {unexpected}")
+        raise ValueError(
+            f"Unexpected arguments for {engine_cls.layout_type}.build(): {unexpected}"
+        )
 
     # 4) Call `build(...)` with validated params
     engine.build(**{k: kwargs[k] for k in allowed if k in kwargs})

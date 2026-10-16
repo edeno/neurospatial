@@ -22,7 +22,7 @@ import shapely
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._publication import _Derivation, _Provenance
+from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import (
     Arena,
 )
@@ -282,9 +282,10 @@ def _rebin_resolution(
         connect_diagonal_neighbors=spec.connect_diagonal,
     )
     grid = layout.binning()
+    # The new bins keep the source's layout label.
     grid = replace(
         grid,
-        kind="RegularGrid",
+        kind=binning.kind,
         faces=KnownFaces(grid.faces.build()),
         grid_spec=None,
     )
@@ -293,8 +294,12 @@ def _rebin_resolution(
     grid = replace(grid, grid_spec=spec)
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
-    snapshot, category = prepare_bins(grid)
-    return _Derivation(snapshot, _Provenance(snapshot.kind, category, {})), RebinCheck(
+    choices = {
+        "bin_size": tuple(float(size) for size in sizes),
+        "connect_diagonal_neighbors": spec.connect_diagonal,
+    }
+    derivation = _Derivation(prepare_bins(grid), "rebin", build_params=choices)
+    return derivation, RebinCheck(
         None,
         "Use a smaller bin_size, or one that puts cell edges on the arena "
         "boundary, such as a divisor of a rectangular arena's side lengths.",
@@ -516,19 +521,17 @@ def _rebin_factor(
         connect_diagonal_neighbors=connect_diagonal,
         grid_spec=binning.grid_spec,
     )
-    coarse, _, category, _ = built_layout_data(cast("LayoutEngine", layout))
+    coarse, _ = built_layout_data(cast("LayoutEngine", layout))
     derivation = _Derivation(
-        coarse,
-        _Provenance(
-            "RegularGrid",
-            category,
-            {
-                "bin_size": tuple(
-                    (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
-                ),
-                "connect_diagonal_neighbors": connect_diagonal,
-            },
-        ),
+        # The coarse bins keep the source's layout label.
+        replace(coarse, kind=binning.kind),
+        "rebin",
+        build_params={
+            "bin_size": tuple(
+                (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+            ),
+            "connect_diagonal_neighbors": connect_diagonal,
+        },
     )
 
     # Bins beyond the truncated extent are already reported above.

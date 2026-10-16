@@ -439,18 +439,10 @@ class TestSubsetCropExample:
 
 
 class TestSubsetRoundTripsThroughToFileFromFile:
-    """Regression: subset envs must serialize round-trip cleanly.
+    """A subset environment survives the to_file/from_file round trip.
 
-    Pre-fix subset() returned an Environment whose layout_type_used was
-    "subset" -- a string the layout factory didn't recognize, so
-    Environment.from_file raised
-    ``ValueError: Unknown layout kind 'subset'`` while to_file silently
-    succeeded. The audit flagged this as a HIGH-severity silent
-    persistence loss: a user could subset(), save, restart, and lose
-    the env entirely.
-
-    Subset is rewritten to return a real ``MaskedGrid`` for grid-based
-    envs so the env survives the canonical to_file/from_file path.
+    Saved files store the bins directly, so a subset loads without
+    rebuilding a layout, and keeps its parent's layout label.
     """
 
     def _build_grid_env(self):
@@ -520,19 +512,14 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         assert loaded.units == "cm"
         assert loaded.frame == "session1"
 
-    def test_subset_layout_type_is_maskedgrid_for_grid_parent(self):
-        """Grid-parent subset envs report MaskedGrid as their layout, not 'subset'.
-
-        The 'subset' layout kind was not registered with the layout
-        factory, which is why the round-trip was broken. The fix builds
-        the env via Environment.from_grid_mask, so its
-        layout_type_used is the canonical 'MaskedGrid'.
-        """
+    def test_subset_keeps_the_grid_parent_layout_label(self):
+        """A grid subset reports its parent's label and records the subset."""
         env = self._build_grid_env()
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
         env_sub = env.subset(mask=mask)
-        assert env_sub.layout_type == "MaskedGrid"
+        assert env_sub.layout_type == env.layout_type == "RegularGrid"
+        assert env_sub.derivations == ("subset",)
 
 
 class TestSubsetKeepsParentConnectivity:

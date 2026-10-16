@@ -261,22 +261,15 @@ class LayoutEngine(Protocol):
           on the *original, full grid* (shape matches `grid_shape`).
         - For point-based/cell-based layouts: A 1D array of `True` values,
           shape `(n_active_bins,)`, corresponding to `bin_centers`.
-    _layout_type_tag : str
-        A string identifier for the type of layout (e.g., "RegularGrid").
-        Used for introspection and serialization.
     _build_params_used : Dict[str, Any]
         The scalar build choices recorded by :func:`capture_build_params`;
         input data arguments are not recorded.
     layout_type : str
-        A standardized category for the layout type. Values:
-        - "grid": Regular rectangular grid (RegularGridLayout)
-        - "mask": Grid with active/inactive regions (MaskedGridLayout, ImageMaskLayout)
-        - "polygon": Polygon-bounded grid (ShapelyPolygonLayout)
-        - "hexagonal": Hexagonal tessellation
-        - "mesh": Point-based mesh (TriangularMeshLayout)
-        - "graph": 1D linearized path (GraphLayout)
-        - "polar": Egocentric distance-by-angle sectors
-        - "other": Unknown or custom layouts
+        The layout's label. Each built-in engine's label is a ``LayoutType``
+        value, such as ``"RegularGrid"`` or ``"Hexagonal"``, and its
+        ``binning()`` records the same label as ``Binning.kind``. A custom
+        engine's label is its own; when it has none, the environment uses the
+        ``kind`` of its binning.
 
     """
 
@@ -302,19 +295,18 @@ class LayoutEngine(Protocol):
         ...
 
     # Internal Attributes for Introspection/Serialization
-    _layout_type_tag: str
     _build_params_used: dict[str, Any]
 
     # --- Public Properties for Layout Classification ---
     @property
     def layout_type(self) -> str:
-        """Return standardized category for this layout type.
+        """Return the layout's label, a ``LayoutType`` value for built-in engines.
 
         Returns
         -------
         str
-            One of: "grid", "mask", "polygon", "hexagonal", "mesh", "graph",
-            "polar", "other"
+            The label the environment reports as ``env.layout_type``, for
+            example ``"RegularGrid"``.
 
         """
         ...

@@ -790,6 +790,7 @@ def combine_binnings(
     auto_bridge: bool,
     max_mnn_distance: float | None,
     bridge_conductances: Mapping[BridgeKey, float] | None,
+    kind: str,
 ) -> tuple[Binning, int]:
     """Join disjoint Cartesian component binnings with inferred bridges.
 
@@ -812,6 +813,8 @@ def combine_binnings(
     bridge_conductances : mapping or None
         Conductance of inferred bridges, keyed by pairs of
         ``(component_key, local_bin_id)`` endpoints.
+    kind : str
+        Layout label of the combined binning.
 
     Returns
     -------
@@ -954,7 +957,7 @@ def combine_binnings(
         with suppress(ValueError):
             shapes = PolygonCells(cells_from_locator(locator))
     normals = combined_normals(locator) if not len(pairs) else None
-    snapshot, _category = prepare_bins(
-        Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals)
+    combined = prepare_bins(
+        Binning(kind, bins, locator, faces, shapes=shapes, face_normals=normals)
     )
-    return snapshot, len(pairs)
+    return combined, len(pairs)

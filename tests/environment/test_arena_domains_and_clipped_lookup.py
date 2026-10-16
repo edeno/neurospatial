@@ -170,7 +170,6 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         binning,
         dimension_ranges=source.dimension_ranges,
         layout_type="PolygonCells",
-        category="polygon",
         build_params={},
     )
     target = publish_environment(
@@ -328,10 +327,9 @@ class _CustomHexLayout:
         self.grid_edges = ()
         self.grid_shape = (native.n_bins,)
         self.active_mask = np.ones(native.n_bins, dtype=bool)
-        self._layout_type_tag = "CustomHex"
         self._build_params_used = {}
         self.is_linearized_track = False
-        self.layout_type = "custom"
+        self.layout_type = "CustomHex"
 
     def build(self, **kwargs):
         pass
@@ -361,7 +359,6 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
         built_environment._binning,
         dimension_ranges=built_environment.dimension_ranges,
         layout_type="CustomHex",
-        category="custom",
         build_params={},
     )
     env = publish_environment("custom", layout, "CustomHex", {})

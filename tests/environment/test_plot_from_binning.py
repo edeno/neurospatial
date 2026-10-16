@@ -282,7 +282,7 @@ def test_plot_field_renderer_by_component(built_environment, request, monkeypatc
     }
     case = request.node.callspec.params["built_environment"]
     layout = _detached_native_layout(built_environment, monkeypatch)
-    layout._layout_type_tag = "unknown_layout"
+    layout.layout_type = "unknown_layout"
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
     try:
         built_environment.plot_field(

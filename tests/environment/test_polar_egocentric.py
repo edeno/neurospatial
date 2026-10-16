@@ -1024,7 +1024,6 @@ class TestPolarSerializationRoundTrip:
             from_file(tmp_path / "polar_env"),
         ):
             assert restored.layout_type == "Polar"
-            assert restored._provenance.category == "polar"
             assert restored._binning.kind == "Polar"
             assert repr(restored).endswith("20 bins, Polar)")
 
@@ -1335,6 +1334,7 @@ _POLAR_INHERITED_MEMBERS = {
     "bin bookkeeping, metadata and diagnostics": {
         "bin_center_of",
         "clear_cache",
+        "derivations",
         "frame",
         "get_bin_attributes",
         "get_edge_attributes",

@@ -11,11 +11,14 @@ paths:
 The design intent is in the "Environment architecture" section of
 `docs/contributing.md`. These steps fail silently when skipped:
 
-- A new built-in layout engine needs a `LayoutType` member and a
-  `_LAYOUT_MAP` entry in `layout/factories.py`, an export from
-  `layout/__init__.py`, `@capture_build_params(data=(...))` on `build` naming
-  its data arguments (any other non-scalar argument is refused when the
-  engine is built), and an entry in `MINIMAL_BUILD_PARAMS` in
+- A new built-in layout engine needs a `LayoutType` member in
+  `layout/_labels.py`, the class attribute `layout_type =
+  LayoutType.<MEMBER>.value` (its `binning()` passes `kind=self.layout_type`),
+  a place in `_ENGINES` in `layout/factories.py` (the `create_layout`
+  registry is derived from it), an export from `layout/__init__.py`,
+  `@capture_build_params(data=(...))` on `build` naming its data arguments
+  (any other non-scalar argument is refused when the engine is built), and
+  an entry in `MINIMAL_BUILD_PARAMS` in
   `tests/layout/test_layout_engine.py`. The protocol-adherence test skips
   engines missing from that dict instead of failing.
 - A new `Environment` factory needs `@keyword_hint()` (from

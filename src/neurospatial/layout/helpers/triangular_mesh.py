@@ -6,7 +6,7 @@ inside the polygon is kept as an active bin. Connectivity is inferred by shared 
 Conforms to the LayoutEngine protocol:
   - Attributes:    bin_centers, connectivity, dimension_ranges,
                    grid_edges, grid_shape, active_mask,
-                   _layout_type_tag, _build_params_used
+                   layout_type, _build_params_used
   - Properties:    is_linearized_track
   - Methods:       build(boundary_polygon, point_spacing), binning(),
                    plot(ax, ...), bin_sizes()

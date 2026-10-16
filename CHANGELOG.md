@@ -79,7 +79,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   attributes, so attributes an engine adds to its own graph do not reach
   `env.connectivity`. Lookup and faces come only from `binning()`, so to
   change them, change what `binning()` returns. Two labels
-  are read when an engine has them: its `layout_type` category, and the
+  are read when an engine has them: its `layout_type` label, and the
   build arguments recorded with `neurospatial.layout.base.capture_build_params`
   (`env.layout_parameters`). All built-in engines implement `binning()`, a
   subclass of a built-in engine inherits a working one, and `LayoutEngine`
@@ -343,6 +343,29 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `_data_parameters` attribute, and their recorded choices are unchanged. A
   saved environment whose `layout_parameters` hold anything other than such
   choices is refused when it is read.
+
+- One layout label. `LayoutType` (now also with `POLAR` and `COMBINED`) is
+  the only vocabulary: a built-in engine's `layout_type` is its `LayoutType`
+  value (`RegularGridLayout().layout_type == "RegularGrid"`, it was the
+  category `"grid"`), `env.binning.kind` holds the same label, and
+  `env.layout_type` reports it. Engine categories such as `"grid"` or
+  `"mask"`, the private `_layout_type_tag` and the `layout_category` field of
+  saved files are gone. User spellings are reported canonically:
+  `from_samples(..., layout="regular-grid")` gives
+  `env.layout_type == "RegularGrid"` (it gave `"regular-grid"`), and
+  `create_layout` also accepts `"grid"`, `"polygon"` and `"mesh"`. Derived
+  environments keep their parent's label instead of `"MaskedGrid"` or
+  `"subset"` (subset), `"PolygonCells"` (clip), `"RegularGrid"` (rebin of
+  any grid) or `"<label>_transformed"` (apply_transform); `combine` reports
+  `"Combined"` (it was `"combined"`). The new `env.derivations` lists the
+  derivations applied, oldest first, for example `("subset", "rebin")`.
+  `layout_parameters` keeps the parent's build choices through `subset`,
+  `clip` and `apply_transform` (they used to be replaced by
+  `{"source": ..., "original_n_bins": ...}` or gain `"transformed": True`),
+  and `rebin(bin_size=...)` records `bin_size` and
+  `connect_diagonal_neighbors` as `rebin(factor)` does. A subclass of a
+  built-in engine that sets its own `layout_type` reports it everywhere; it
+  used to report the parent's label as `env.layout_type`.
 
 - Assigning or deleting a public attribute of an `Environment` raises an
   `AttributeError` that says what to call instead. That includes new names:

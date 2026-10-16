@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import Outline
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
@@ -36,7 +37,7 @@ class ShapelyPolygonLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.SHAPELY_POLYGON.value
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -44,7 +45,6 @@ class ShapelyPolygonLayout(_GridMixin):
 
     def __init__(self) -> None:
         """Initialize a ShapelyPolygonLayout engine."""
-        self._layout_type_tag = "ShapelyPolygon"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)  # 2D Layout
         self.connectivity = None
@@ -53,11 +53,6 @@ class ShapelyPolygonLayout(_GridMixin):
         self.grid_shape = None
         self.active_mask = None
         self.polygon_definition_ = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "polygon"
 
     @capture_build_params(data=("polygon",))
     def build(
@@ -197,7 +192,7 @@ class ShapelyPolygonLayout(_GridMixin):
 
         return plot_polygon_grid(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
             dimension_ranges=self.dimension_ranges,

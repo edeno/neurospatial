@@ -240,7 +240,6 @@ def test_wrapped_opaque_locator_requires_snapshot_migration(wrapper):
             binning,
             dimension_ranges=source.dimension_ranges,
             layout_type="RegularGrid",
-            category="grid",
             build_params={},
         )
 

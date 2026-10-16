@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
@@ -20,12 +21,8 @@ from neurospatial.geometry._arena import OpenArena, TrackArena
 from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._ownership import own_arena
-from neurospatial.layout.factories import (
-    LayoutType,
-    create_layout,
-    list_available_layouts,
-)
-from neurospatial.layout.factories import _normalize_name as _normalize_layout_name
+from neurospatial.layout._labels import LayoutType, canonical_label, find_layout_type
+from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
     maze_track_graph,
@@ -69,14 +66,16 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
-    snapshot, category = prepare_bins(binning)
+    snapshot = prepare_bins(binning)
+    # A label naming a LayoutType is spelled canonically; others are kept.
+    snapshot = replace(snapshot, kind=canonical_label(snapshot.kind))
     if arena is None and snapshot.outline is not None:
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
     result = _publication.publish(
         cls,
         snapshot,
         coordinates=CartesianSystem(),
-        provenance=_Provenance(snapshot.kind, category, {}),
+        provenance=_Provenance({}),
         metadata=declared_metadata(cls, name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
@@ -212,12 +211,11 @@ def _from_samples(
             f"Got {actual_type}: {bin_size!r}"
         )
 
-    # Convert LayoutType enum to string if needed, then normalize
     layout_str = layout.value if isinstance(layout, LayoutType) else layout
-    layout_normalized = _normalize_layout_name(layout_str)
+    layout_type = find_layout_type(layout)
 
     # Only a regular grid and a hexagonal tiling are built from samples.
-    if layout_normalized not in ("regulargrid", "hexagonal"):
+    if layout_type not in (LayoutType.REGULAR_GRID, LayoutType.HEXAGONAL):
         raise ValueError(
             _format_error(
                 f"{factory}() cannot build layout={layout_str!r}; it supports "
@@ -246,7 +244,7 @@ def _from_samples(
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
     changed_grid_options = _changed(options, defaults, _REGULAR_GRID_ONLY)
-    if layout_normalized == "hexagonal" and changed_grid_options:
+    if layout_type is LayoutType.HEXAGONAL and changed_grid_options:
         listed = ", ".join(changed_grid_options)
         raise ValueError(
             _format_error(
@@ -298,7 +296,7 @@ def _from_samples(
     }
 
     # Layout-specific parameters
-    if layout_normalized == "regulargrid":
+    if layout_type is LayoutType.REGULAR_GRID:
         specific_params: dict[str, Any] = {
             "bin_size": bin_size,
             **{name: options[name] for name in _REGULAR_GRID_ONLY},
@@ -337,7 +335,7 @@ def _from_samples(
             )
     return _build_layout(
         cls,
-        layout_str,
+        layout_type,
         layout_params,
         name=name,
         units=units,
@@ -703,7 +701,6 @@ def _build_layout(
         cls,
         layout_instance,
         metadata=metadata,
-        layout_type=kind,
         regions=regions,
         arena=arena,
         within_arena=True,

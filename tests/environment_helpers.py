@@ -13,15 +13,16 @@ from neurospatial import Environment
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
 from neurospatial.geometry._coordinates import CartesianSystem
+from neurospatial.layout._construction import built_layout_data
 
 
 def publish_binning(
     binning,
     *,
-    layout_type,
-    category,
+    layout_type=None,
     dimension_ranges=None,
     build_params=None,
+    derivations=(),
     coordinates=None,
     name="",
     units=None,
@@ -31,16 +32,18 @@ def publish_binning(
 ):
     """Publish an explicit binning, as factories and readers do.
 
-    ``dimension_ranges``, when given, replaces the binning's own ranges.
-    ``coordinates`` defaults to Cartesian.
+    ``layout_type`` and ``dimension_ranges``, when given, replace the
+    binning's own label and ranges. ``coordinates`` defaults to Cartesian.
     """
+    if layout_type is not None:
+        binning = replace(binning, kind=layout_type)
     if dimension_ranges is not None:
         binning = replace(binning, dimension_ranges=tuple(dimension_ranges))
     return _publication.publish(
         cls,
         binning,
         coordinates=CartesianSystem() if coordinates is None else coordinates,
-        provenance=_Provenance(layout_type, category, dict(build_params or {})),
+        provenance=_Provenance(dict(build_params or {}), derivations),
         metadata=_Metadata(name, units, frame),
         **kwargs,
     )
@@ -61,13 +64,13 @@ def publish_environment(
 
     A built layout records its own build choices; ``layout_params_used``
     replaces the choices only when republishing an environment.
+    ``layout_type_used`` replaces the layout label.
     """
     coordinates = kwargs.pop("_coordinates", None)
     if isinstance(layout, Environment):
         return publish_binning(
             layout._binning,
-            layout_type=layout_type_used or layout.layout_type,
-            category=layout._provenance.category,
+            layout_type=layout_type_used,
             build_params=layout.layout_parameters
             if layout_params_used is None
             else layout_params_used,
@@ -78,11 +81,23 @@ def publish_environment(
             regions=regions,
             **kwargs,
         )
+    if layout_type_used is not None:
+        binning, build_params = built_layout_data(layout)
+        return publish_binning(
+            binning,
+            layout_type=layout_type_used,
+            build_params=build_params,
+            coordinates=coordinates,
+            name=name,
+            units=units,
+            frame=frame,
+            regions=regions,
+            **kwargs,
+        )
     return _publication.publish_layout(
         Environment,
         layout,
         metadata=_Metadata(name, units, frame),
-        layout_type=layout_type_used,
         regions=regions,
         coordinates=coordinates,
         **kwargs,

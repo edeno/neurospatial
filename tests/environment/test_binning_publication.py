@@ -280,7 +280,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     with pytest.raises(ValueError, match="sizes"):
         layout.binning()
     with pytest.raises(ValueError, match="sizes"):
-        publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
+        publish_environment(layout=layout, layout_type_used=layout.layout_type)
     assert env._geometry is geometry
     assert env._binning is published
     assert env._cache is cache and len(cache) == n_cached
@@ -367,7 +367,6 @@ def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
         publish_binning(
             env._binning,
             layout_type=env.layout_type,
-            category=env._provenance.category,
             coordinates=EgocentricPolarSystem(False),
             arena=env.arena,
         )

@@ -22,7 +22,6 @@ def _owned_layout(parent, tag):
         parent._binning,
         dimension_ranges=parent.dimension_ranges,
         layout_type=tag,
-        category=parent._provenance.category,
         build_params={},
     )
 
@@ -38,10 +37,9 @@ class _ExternalGridLayout:
         self.grid_edges = ()
         self.grid_shape = (parent.n_bins,)
         self.active_mask = np.ones(parent.n_bins, dtype=bool)
-        self._layout_type_tag = "ExternalGrid"
         self._build_params_used = {}
         self.is_linearized_track = False
-        self.layout_type = "custom"
+        self.layout_type = "ExternalGrid"
 
     def build(self, **kwargs):
         pass
@@ -64,10 +62,9 @@ class _ExternalTrackLayout:
         self.grid_edges = tuple(edge.copy() for edge in parent.grid_edges)
         self.grid_shape = parent.grid_shape
         self.active_mask = parent.active_mask.copy()
-        self._layout_type_tag = "ExternalTrack"
         self._build_params_used = {}
         self.is_linearized_track = True
-        self.layout_type = "graph"
+        self.layout_type = "ExternalTrack"
 
     def build(self, **kwargs):
         pass

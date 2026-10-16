@@ -11,6 +11,7 @@ from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._face_builders import track_junctions
 from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_track, plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
@@ -41,7 +42,7 @@ class GraphLayout(_KDTreeMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.GRAPH.value
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -49,7 +50,6 @@ class GraphLayout(_KDTreeMixin):
 
     def __init__(self) -> None:
         """Initialize a GraphLayout engine."""
-        self._layout_type_tag = "Graph"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 0), dtype=np.float64)
         self.connectivity = None
@@ -59,11 +59,6 @@ class GraphLayout(_KDTreeMixin):
         self.active_mask = None
         self.linear_bin_centers_ = None
         self._linearization: TrackLinearization | None = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "graph"
 
     @capture_build_params(data=("graph_definition", "edge_order"))
     def build(
@@ -206,7 +201,7 @@ class GraphLayout(_KDTreeMixin):
         """
         return plot_track(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             linearization=self.linearization(),
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
@@ -242,7 +237,7 @@ class GraphLayout(_KDTreeMixin):
         """
         return plot_track_linear(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             linearization=self.linearization(),
             grid_edges=self.grid_edges,
             **kwargs,
@@ -315,7 +310,7 @@ class GraphLayout(_KDTreeMixin):
         track = self.linearization()
         return assemble_binning(
             self.connectivity,
-            kind=self._layout_type_tag,
+            kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
             measure_dim=1,

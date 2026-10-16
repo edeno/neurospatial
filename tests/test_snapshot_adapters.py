@@ -309,7 +309,6 @@ class _ExternalBinning:
 
 class _ExternalLayout(_ExternalBinning):
     is_linearized_track = False
-    _layout_type_tag = "external"
 
     def __init__(self, data):
         super().__init__(data)

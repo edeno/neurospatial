@@ -350,8 +350,8 @@ def _environment_payload(
         "n_bins": env.n_bins,
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
-        "layout_category": env._provenance.category,
         "layout_parameters": env.layout_parameters,
+        "derivations": list(env.derivations),
         "binning": binning_meta,
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
@@ -568,9 +568,7 @@ def _restore_environment(
             Environment,
             binning,
             coordinates=coordinates,
-            provenance=_Provenance(
-                metadata["layout_type"], metadata["layout_category"], params
-            ),
+            provenance=_Provenance(params, _saved_derivations(metadata)),
             metadata=declared_metadata(
                 Environment,
                 name=metadata["name"],
@@ -596,6 +594,16 @@ def _restore_environment(
                 fix="re-save the environment from its original factory-built object with this version",
             )
         ) from error
+
+
+def _saved_derivations(metadata: dict[str, Any]) -> tuple[str, ...]:
+    """Return the saved derivation history, oldest first."""
+    derivations = metadata.get("derivations", [])
+    if not isinstance(derivations, list) or not all(
+        isinstance(step, str) for step in derivations
+    ):
+        raise ValueError("derivations must be a list of derivation names")
+    return tuple(derivations)
 
 
 def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:

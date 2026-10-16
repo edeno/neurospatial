@@ -139,7 +139,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
                 "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
-        "MaskedGrid" if grid is not None else "subset",
+        binning.kind,
         bins,
         locator,
         faces,
@@ -538,7 +538,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
-        f"{binning.kind}_transformed",
+        binning.kind,
         bins,
         locator,
         faces,

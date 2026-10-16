@@ -8,14 +8,11 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_environment_combine
-from neurospatial.environment._publication import (
-    _Derivation,
-    _Provenance,
-)
+from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import _CombinedArena
 from neurospatial.geometry._combine_geometry import BridgeKey, combine_binnings
 from neurospatial.geometry._coordinates import require_cartesian
-from neurospatial.geometry._explicit import _category
+from neurospatial.layout._labels import LayoutType
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -78,6 +75,7 @@ def _combine(
         auto_bridge=auto_bridge,
         max_mnn_distance=max_mnn_distance,
         bridge_conductances=bridge_conductances,
+        kind=LayoutType.COMBINED.value,
     )
     regions = Regions(
         [
@@ -89,9 +87,13 @@ def _combine(
 
     log_environment_combine(len(values), binning.bins.n_bins, n_bridges)
 
+    # The components have no single parent: the history starts here and no
+    # one layout's build choices describe the joined bins.
     return _Derivation(
         binning,
-        _Provenance(binning.kind, _category(binning), {}),
+        "combine",
+        build_params={},
+        continues_history=False,
         regions=regions,
         arena=_CombinedArena(arenas),
     )

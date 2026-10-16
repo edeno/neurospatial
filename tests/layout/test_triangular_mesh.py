@@ -433,10 +433,10 @@ class TestTriangularMeshLayoutProperties:
         layout.build(poly, point_spacing=3.0)
         assert layout.is_linearized_track is False
 
-    def test_layout_type_tag(self):
-        """Test that _layout_type_tag is set correctly."""
+    def test_layout_type_label(self):
+        """The engine's label is the TriangularMesh layout type."""
         layout = TriangularMeshLayout()
-        assert layout._layout_type_tag == "TriangularMesh"
+        assert layout.layout_type == "TriangularMesh"
 
 
 class TestTriangularMeshLayoutBinSizes:

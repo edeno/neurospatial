@@ -78,7 +78,6 @@ def test_rate_result_rejects_different_environment(
             binning,
             dimension_ranges=env.dimension_ranges,
             layout_type="UnequalCells",
-            category="graph",
             build_params={},
         )
         env = publish_environment(

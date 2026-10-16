@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
-from neurospatial.environment._publication import _Derivation, _Provenance
+from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import transform_binning
@@ -21,7 +21,6 @@ def _apply_transform(
     transform: AffineND | Affine2D,
     *,
     binning: Binning,
-    provenance: _Provenance,
     regions: Regions,
     arena: Arena,
 ) -> _Derivation:
@@ -76,11 +75,9 @@ def _apply_transform(
             for dim in range(n_dims)
         )
 
-    tag = f"{provenance.layout_type}_transformed"
-    params = {**provenance.build_params, "transformed": True}
     return _Derivation(
         replace(transformed, dimension_ranges=transformed_dim_ranges),
-        _Provenance(tag, provenance.category, params),
+        "apply_transform",
         regions=Regions(
             _transformed_region(region, transform) for region in regions.values()
         ),

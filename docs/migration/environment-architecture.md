@@ -232,9 +232,11 @@ If you wrote your own layout engine:
   engines no longer have `point_to_bin_index`, `finite_volume_geometry` or
   `is_grid_compatible` (see below), and a custom engine does not need them. A layout whose methods were
   replaced on the instance is no longer refused.
-- An engine may also have a `layout_type` category string, and build
+- An engine may also have a `layout_type` label, and build
   arguments recorded with `neurospatial.layout.base.capture_build_params`
-  become `env.layout_parameters`. Both are optional labels. Name the
+  become `env.layout_parameters`. Both are optional. The label becomes
+  `env.layout_type` and the binning's `kind` (see "One layout label"
+  below); without one, the environment uses your binning's `kind`. Name the
   arguments that are input data, such as positions, masks, polygons or
   graphs, once in the decorator, as in
   `@capture_build_params(data=("positions",))`. They are not recorded, and
@@ -392,6 +394,59 @@ does not need them: the bins, graph and arena are stored directly.
 ranges = env.dimension_ranges
 bin_size = env.layout_parameters["bin_size"]  # scalar choices are still there
 ```
+
+## One layout label
+
+A layout used to have several names: `LayoutType.REGULAR_GRID` was
+`"RegularGrid"`, but `RegularGridLayout().layout_type` was the category
+`"grid"`, saved files also stored a `layout_category`, and
+`Environment.from_samples(..., layout="regular-grid")` reported
+`env.layout_type == "regular-grid"`. Derived environments invented more:
+`"subset"`, `"PolygonCells"` after `clip`, `"combined"`, and
+`"RegularGrid_transformed"` after each `apply_transform`.
+
+Now `LayoutType` is the one vocabulary. An engine's `layout_type`, the
+binning's `kind` and `env.layout_type` are the same `LayoutType` value. The
+user spellings that `create_layout` and `layout=` accept (`"regular-grid"`,
+`"regular_grid"`, and the short names `"grid"`, `"polygon"` and `"mesh"`)
+are reported in their canonical form. `LayoutType.POLAR` and
+`LayoutType.COMBINED` label environments from `from_polar_egocentric` and
+`combine`; `create_layout` refuses them and names the factory to use.
+
+Derived environments keep their parent's label, and `env.derivations` lists
+what was applied, oldest first:
+
+| Call | `layout_type` before | `layout_type` now | `derivations` |
+| --- | --- | --- | --- |
+| `grid.subset(...)` | `"MaskedGrid"` | `"RegularGrid"` | `("subset",)` |
+| `hexagons.subset(...)` | `"subset"` | `"Hexagonal"` | `("subset",)` |
+| `grid.clip(polygon)` | `"PolygonCells"` | `"RegularGrid"` | `("clip",)` |
+| `grid.apply_transform(T)` | `"RegularGrid_transformed"` | `"RegularGrid"` | `("apply_transform",)` |
+| `polygon_grid.rebin(2)` | `"RegularGrid"` | `"ShapelyPolygon"` | `("rebin",)` |
+| `Environment.combine({...})` | `"combined"` | `"Combined"` | `("combine",)` |
+
+`combine` starts a new history, because the result has no single parent.
+`env.layout_parameters` keeps the parent's build choices through `subset`,
+`clip` and `apply_transform` instead of being replaced by
+`{"source": "subset", "original_n_bins": ...}` or gaining
+`"transformed": True`. `rebin` builds new bins and records their `bin_size`
+and `connect_diagonal_neighbors`, whether you passed a factor or a
+`bin_size`. `combine` records no build choices.
+
+<!-- docs-test: run -->
+```python
+west = env.subset(mask=env.bin_centers[:, 0] < 50.0)
+# Before: west.layout_type == "MaskedGrid" and
+#         west.layout_parameters == {"source": "subset", ...}
+assert west.layout_type == env.layout_type
+assert west.derivations == ("subset",)
+assert west.layout_parameters == env.layout_parameters
+```
+
+Code that compared `engine.layout_type` with a category such as `"grid"` or
+`"mask"` should compare with a `LayoutType` value, or better, ask the bins
+what it needs (for example `env.binning.rectilinear is not None` for an
+axis-aligned grid).
 
 ## Subsets report the extent of the bins they keep
 

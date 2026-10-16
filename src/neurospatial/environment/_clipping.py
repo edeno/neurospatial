@@ -7,7 +7,7 @@ from dataclasses import replace
 import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
-from neurospatial.environment._publication import _Derivation, _Provenance
+from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import bridge_values
@@ -47,10 +47,5 @@ def _clip(
         for axis in range(2)
     )
     return _Derivation(
-        replace(clipped, clip_mapping=mapping, dimension_ranges=ranges),
-        _Provenance(
-            "PolygonCells",
-            "polygon",
-            {"source": "clip", "original_n_bins": binning.bins.n_bins},
-        ),
+        replace(clipped, clip_mapping=mapping, dimension_ranges=ranges), "clip"
     )

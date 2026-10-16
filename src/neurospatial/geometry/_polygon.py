@@ -665,7 +665,7 @@ def clip_binning(
     if normal_values is not None:
         normal_values[faces.build().A == 0] = 0
     return Binning(
-        "PolygonCells",
+        binning.kind,
         bins,
         locator,
         faces,

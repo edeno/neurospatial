@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning
 from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
@@ -29,18 +30,13 @@ class _PolarGridLayout(MaskedGridLayout):
         set by ``build()``.
     """
 
+    layout_type: str = LayoutType.POLAR.value
     circular_angle: bool
 
     def __init__(self) -> None:
         """Initialize an unbuilt polar grid."""
         super().__init__()
-        self._layout_type_tag = "Polar"
         self.circular_angle = False
-
-    @property
-    def layout_type(self) -> str:
-        """Return the standardized category for egocentric polar sectors."""
-        return "polar"
 
     @capture_build_params(data=("active_mask", "grid_edges"))
     def build(
@@ -131,7 +127,7 @@ class _PolarGridLayout(MaskedGridLayout):
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
         return assemble_binning(
             self.connectivity,
-            kind=self._layout_type_tag,
+            kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
             measure_dim=self.bin_centers.shape[1],

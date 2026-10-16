@@ -12,6 +12,7 @@ from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import HexagonShapes
 from neurospatial.geometry._locators import HexLocator
 from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
@@ -41,7 +42,7 @@ class HexagonalLayout:
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.HEXAGONAL.value
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -55,7 +56,6 @@ class HexagonalLayout:
 
     def __init__(self) -> None:
         """Initialize a HexagonalLayout engine."""
-        self._layout_type_tag = "Hexagonal"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2))
         self.connectivity = None
@@ -70,11 +70,6 @@ class HexagonalLayout:
         self.grid_offset_y_ = None
         self._source_flat_to_active_id_map = None
         self._locator = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "hexagonal"
 
     @capture_build_params(data=("positions", "dimension_ranges"))
     def build(
@@ -221,7 +216,7 @@ class HexagonalLayout:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
         return assemble_binning(
             self.connectivity,
-            kind=self._layout_type_tag,
+            kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
             measure_dim=self.bin_centers.shape[1],
@@ -270,7 +265,7 @@ class HexagonalLayout:
         """
         return plot_hexagons(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             shapes=(
                 self.bin_shapes()
                 if self.hex_radius_ is not None and self.bin_centers is not None

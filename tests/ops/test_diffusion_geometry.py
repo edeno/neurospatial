@@ -54,7 +54,6 @@ def _face_environment(scale=1.0):
         binning,
         dimension_ranges=layout.dimension_ranges,
         layout_type="Faces",
-        category="Graph",
         build_params={},
     )
     return publish_environment(layout=owned, layout_type_used="Faces")

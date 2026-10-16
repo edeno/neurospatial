@@ -98,7 +98,7 @@ class _GridMixin:
     bin_centers: NDArray[np.float64] | None = None
     connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
-    _layout_type_tag: str = "_Grid_Layout"
+    layout_type: str
     _active_mask_inverse_map: NDArray[np.intp] | None = None
     _locator: RectilinearLocator | None = None
     _grid_spec: GridBinningSpec | None = None
@@ -206,7 +206,7 @@ class _GridMixin:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
         return assemble_binning(
             self.connectivity,
-            kind=self._layout_type_tag,
+            kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
             measure_dim=self.bin_centers.shape[1],
@@ -290,7 +290,7 @@ class _GridMixin:
 
         return plot_grid(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
             dimension_ranges=self.dimension_ranges,

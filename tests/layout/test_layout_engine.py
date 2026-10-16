@@ -336,9 +336,6 @@ def test_layout_engine_protocol_adherence(
     assert hasattr(layout, "grid_edges"), f"{layout_kind} missing grid_edges"
     assert hasattr(layout, "grid_shape"), f"{layout_kind} missing grid_shape"
     assert hasattr(layout, "active_mask"), f"{layout_kind} missing active_mask"
-    assert hasattr(layout, "_layout_type_tag"), (
-        f"{layout_kind} missing _layout_type_tag"
-    )
     assert hasattr(layout, "_build_params_used"), (
         f"{layout_kind} missing _build_params_used"
     )
@@ -367,9 +364,7 @@ def test_layout_engine_protocol_adherence(
     assert isinstance(layout.is_linearized_track, bool), (
         f"{layout_kind}.is_linearized_track not bool"
     )
-    assert layout._layout_type_tag == layout_kind, (
-        f"{layout_kind}._layout_type_tag mismatch"
-    )
+    assert layout.layout_type == layout_kind, f"{layout_kind}.layout_type mismatch"
     # The record keeps every build choice and no input data (positions,
     # masks, polygons, graphs, nested ranges).
     from neurospatial.layout.base import _choice
@@ -447,7 +442,7 @@ def test_layout_engine_protocol_adherence(
     # 4. The owned binning snapshots this layout's own bins and connectivity.
     binning = layout.binning()
     edges = list(layout.connectivity.edges(data=True))
-    assert binning.kind == layout._layout_type_tag
+    assert binning.kind == layout.layout_type
     np.testing.assert_array_equal(binning.bins.centers, layout.bin_centers)
     np.testing.assert_array_equal(binning.bins.sizes, layout.bin_sizes())
     np.testing.assert_array_equal(
@@ -465,41 +460,6 @@ def test_layout_engine_protocol_adherence(
     assert binning.faces.available
     np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
     assert (binning.linearization is not None) == layout.is_linearized_track
-
-
-def test_normalize_layout_name_consistency():
-    """Ensure environment._factories._normalize_layout_name matches layout.factories._normalize_name.
-
-    This test prevents drift between the two normalization implementations.
-    Both functions should produce identical output for the same input.
-    """
-    from neurospatial.environment._factories import _normalize_layout_name
-    from neurospatial.layout.factories import _normalize_name
-
-    test_cases = [
-        "RegularGrid",
-        "regular_grid",
-        "REGULAR_GRID",
-        "Regular-Grid",
-        "regular__grid",
-        "Hexagonal",
-        "hexagonal",
-        "HEXAGONAL",
-        "Hex-agonal",
-        "Graph",
-        "GRAPH",
-        "MaskedGrid",
-        "masked_grid",
-        "ImageMask",
-        "image_mask",
-    ]
-
-    for name in test_cases:
-        assert _normalize_layout_name(name) == _normalize_name(name), (
-            f"Normalization mismatch for '{name}': "
-            f"_normalize_layout_name={_normalize_layout_name(name)}, "
-            f"_normalize_name={_normalize_name(name)}"
-        )
 
 
 def test_located_bin_dtype_is_intp():

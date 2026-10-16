@@ -32,7 +32,6 @@ def _facade(env, *, binning=None):
         source,
         dimension_ranges=env.dimension_ranges,
         layout_type=source.kind,
-        category=env._provenance.category,
         build_params=env.layout_parameters,
         coordinates=env._geometry.coordinates,
         arena=env.arena if env._is_polar else None,
@@ -45,7 +44,7 @@ def test_facade_exposes_the_decoded_snapshot(built_environment):
     binning = facade._binning
     assert binning is facade._binning
     assert facade._binning is binning
-    assert facade._provenance.category == env._provenance.category
+    assert facade.layout_type == env.layout_type
     np.testing.assert_array_equal(facade.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(facade.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
@@ -291,7 +290,6 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
             binning,
             dimension_ranges=env.dimension_ranges,
             layout_type=original.kind,
-            category=env._provenance.category,
             build_params=env.layout_parameters,
         )
 
@@ -343,7 +341,6 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
             binning,
             dimension_ranges=[(0.0, 3.0), (0.0, 1.0)],
             layout_type="MaskedGrid",
-            category="mask",
             build_params={},
         )
 

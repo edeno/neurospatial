@@ -221,7 +221,7 @@ class TestPublishedGeometryIsReadOnly:
         graph.edges[0, 1]["vector"] = vector
         layout.connectivity = graph
         published = publish_environment(
-            name="", layout=layout, layout_type_used=layout._layout_type_tag
+            name="", layout=layout, layout_type_used=layout.layout_type
         )
 
         pos[0] = index[0] = vector[0] = 99

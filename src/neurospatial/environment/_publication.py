@@ -262,30 +262,42 @@ class _PublishedGeometry(Generic[_CoordinatesT]):
 
 @dataclass(frozen=True, init=False)
 class _Provenance:
-    """How the bins were built: a layout label, a category and build choices.
+    """How the bins were built: scalar build choices and the derivations since.
 
     Provenance is descriptive. Geometry and behavior come from the owned
-    ``Binning``, graph and arena, never from these labels. Only scalar build
-    choices are kept (see :func:`neurospatial.layout.base.build_choices`), so
-    a saved environment does not grow with the data it was built from.
+    ``Binning``, graph and arena, never from these records. The layout label
+    is the binning's ``kind``. Only scalar build choices are kept (see
+    :func:`neurospatial.layout.base.build_choices`), so a saved environment
+    does not grow with the data it was built from.
+
+    Attributes
+    ----------
+    choices : tuple of (str, object)
+        The build choices, in recorded order.
+    derivations : tuple of str
+        Names of the derivations (``"subset"``, ``"clip"``, ``"rebin"``,
+        ``"apply_transform"``, ``"combine"``) applied since the bins were
+        built, oldest first.
 
     Raises
     ------
     TypeError
-        If a build choice is not a scalar or a flat sequence of scalars.
+        If a build choice is not a scalar or a flat sequence of scalars, or a
+        derivation name is not a string.
     """
 
-    layout_type: str
-    category: str
     choices: tuple[tuple[str, Any], ...]
+    derivations: tuple[str, ...]
 
     def __init__(
-        self, layout_type: str, category: str, build_params: Mapping[str, Any]
+        self, build_params: Mapping[str, Any], derivations: tuple[str, ...] = ()
     ) -> None:
-        object.__setattr__(self, "layout_type", layout_type)
-        object.__setattr__(self, "category", category)
         choices = build_choices(build_params, owner="layout_parameters")
         object.__setattr__(self, "choices", tuple(choices.items()))
+        derivations = tuple(derivations)
+        if not all(isinstance(step, str) for step in derivations):
+            raise TypeError("Derivation names must be strings.")
+        object.__setattr__(self, "derivations", derivations)
 
     @property
     def build_params(self) -> dict[str, Any]:
@@ -367,7 +379,7 @@ def publish(
     coordinates : CartesianSystem or EgocentricPolarSystem
         Meaning of the bin coordinates.
     provenance : _Provenance
-        Layout label, category and build choices.
+        Build choices and derivation history.
     metadata : _Metadata
         Name, units and frame.
     regions : Regions or None, optional
@@ -412,7 +424,7 @@ def publish(
         )
     except GraphValidationError as error:
         raise ValueError(
-            f"Invalid connectivity graph from layout engine '{provenance.layout_type}': {error}"
+            f"Invalid connectivity graph from layout engine '{binning.kind}': {error}"
         ) from error
     env = cls.__new__(cls)
     env._metadata = metadata
@@ -423,7 +435,7 @@ def publish(
     env._regions = env._validate_regions(Regions() if regions is None else regions)
     env._cache = AnalysisCache()
     log_environment_created(
-        env_type=provenance.layout_type,
+        env_type=binning.kind,
         n_bins=env.n_bins,
         n_dims=env.n_dims,
         env_name=metadata.name,
@@ -436,7 +448,6 @@ def publish_layout(
     layout: LayoutEngine,
     *,
     metadata: _Metadata,
-    layout_type: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
@@ -452,8 +463,6 @@ def publish_layout(
         Built layout engine; it is read, never modified.
     metadata : _Metadata
         Name, units and frame.
-    layout_type : str or None, optional
-        Layout label; defaults to the binning kind.
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
@@ -472,7 +481,7 @@ def publish_layout(
     Environment
         A new instance of ``cls``.
     """
-    binning, tag, category, resolved = built_layout_data(layout)
+    binning, resolved = built_layout_data(layout)
     coordinates = CartesianSystem() if coordinates is None else coordinates
     polar = isinstance(coordinates, EgocentricPolarSystem)
     if within_arena and arena is not None and arena.domain_known and not polar:
@@ -489,7 +498,7 @@ def publish_layout(
         cls,
         binning,
         coordinates=coordinates,
-        provenance=_Provenance(layout_type or tag, category, resolved),
+        provenance=_Provenance(resolved),
         metadata=metadata,
         regions=regions,
         arena=arena,
@@ -504,9 +513,14 @@ class _Derivation:
     ----------
     binning : Binning
         The derived bins, carrying their ``dimension_ranges`` and any clip
-        mapping.
-    provenance : _Provenance
-        Layout label, category and build choices.
+        mapping. Its ``kind`` is the layout label of the result.
+    step : str
+        Name of the derivation, appended to the derivation history.
+    build_params : mapping or None, optional
+        Build choices of new bins; ``None`` keeps the parent's choices.
+    continues_history : bool, default=True
+        Append ``step`` to the parent's derivation history. ``False`` starts
+        a new history at ``step``, for a result with no single parent.
     regions : Regions or None, optional
         Replacement regions; ``None`` keeps the parent's regions.
     arena : Arena or None, optional
@@ -514,7 +528,9 @@ class _Derivation:
     """
 
     binning: Binning
-    provenance: _Provenance
+    step: str
+    build_params: Mapping[str, Any] | None = None
+    continues_history: bool = True
     regions: Regions | None = None
     arena: Arena | None = None
 
@@ -529,9 +545,10 @@ def publish_derived(
     """Publish an environment derived from ``parent``, keeping its labels.
 
     Derivations (subset, clip, rebin, apply_transform and combine) keep the
-    parent's class, name, units, frame, regions, arena and coordinate meaning
-    unless the derivation supplies a replacement. Units are never changed by
-    a derivation, and an inherited label is not checked again.
+    parent's class, name, units, frame, regions, arena, coordinate meaning
+    and build choices unless the derivation supplies a replacement, and add
+    their name to the derivation history. Units are never changed by a
+    derivation, and an inherited label is not checked again.
 
     Parameters
     ----------
@@ -554,11 +571,19 @@ def publish_derived(
         parent.units,
         parent.frame if isinstance(frame, _Unset) else frame,
     )
+    inherited = parent._provenance
+    history = inherited.derivations if derivation.continues_history else ()
+    provenance = _Provenance(
+        inherited.build_params
+        if derivation.build_params is None
+        else derivation.build_params,
+        (*history, derivation.step),
+    )
     return publish(
         type(parent),
         derivation.binning,
         coordinates=parent._geometry.coordinates,
-        provenance=derivation.provenance,
+        provenance=provenance,
         metadata=metadata,
         regions=parent.regions if derivation.regions is None else derivation.regions,
         arena=parent._geometry.arena if derivation.arena is None else derivation.arena,

@@ -16,6 +16,7 @@ from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import Outline, TriangleShapes
 from neurospatial.geometry._locators import MeshLocator
 from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
@@ -38,7 +39,7 @@ class TriangularMeshLayout:
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
 
-    _layout_type_tag: str = "TriangularMesh"
+    layout_type: str = LayoutType.TRIANGULAR_MESH.value
     _build_params_used: dict[str, Any]
 
     bin_centers: NDArray[np.float64]
@@ -71,11 +72,6 @@ class TriangularMeshLayout:
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
         self._locator = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "mesh"
 
     @capture_build_params(data=("boundary_polygon",))
     def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
@@ -223,7 +219,7 @@ class TriangularMeshLayout:
             raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
         return assemble_binning(
             self.connectivity,
-            kind=self._layout_type_tag,
+            kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
             measure_dim=self.bin_centers.shape[1],
@@ -316,7 +312,7 @@ class TriangularMeshLayout:
 
         return plot_triangles(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             shapes=self.bin_shapes(),
             outline=self.outline(),
             connectivity=self.connectivity,

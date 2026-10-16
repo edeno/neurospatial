@@ -138,10 +138,15 @@ assigned, and equality is by identity, so cached analyses and
 `with_regions` return a new object over the same geometry and cache.
 
 The build record (`_Provenance`) only describes how the bins were built, as
-scalar choices such as `bin_size`. It never holds input data: an engine
+scalar choices such as `bin_size`, and the derivations applied since
+(`env.derivations`). It never holds input data: an engine
 declares its data arguments once, with `@capture_build_params(data=(...))` on
 its `build` method, and any other argument that is not a scalar or a flat
-sequence of scalars is refused when the engine is built. Behavior comes from the
+sequence of scalars is refused when the engine is built. The layout label is
+one vocabulary, `LayoutType` in `layout/_labels.py`: an engine's
+`layout_type` is a member's value, its binning carries the same label as
+`Binning.kind`, `env.layout_type` reads `Binning.kind`, and derivations keep
+the parent's label (`combine` reports `"Combined"`). Behavior comes from the
 owned binning, graph and arena, so do not branch on `layout_type` or build
 parameters.
 

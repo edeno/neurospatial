@@ -11,7 +11,7 @@ import shapely.geometry.base
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.environment._publication import _Derivation, _Provenance
+from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._region_bins import polygon_bin_mask, region_bin_mask
@@ -164,12 +164,4 @@ def _subset(
         include_boundary=include_boundary,
         invert=invert,
     )
-    selected = select_bins(binning, mask)
-    params = {"source": "subset", "original_n_bins": binning.bins.n_bins}
-    grid = selected.rectilinear is not None
-    return _Derivation(
-        selected,
-        _Provenance(
-            "MaskedGrid" if grid else "subset", "mask" if grid else "subset", params
-        ),
-    )
+    return _Derivation(select_bins(binning, mask), "subset")

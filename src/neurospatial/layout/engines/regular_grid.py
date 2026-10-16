@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
@@ -34,12 +35,11 @@ class RegularGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.REGULAR_GRID.value
     _build_params_used: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize a RegularGridLayout engine."""
-        self._layout_type_tag = "RegularGrid"
         self._build_params_used = {}
         # Initialize all protocol attributes to satisfy type checkers, even if None
         self.bin_centers = np.empty((0, 0))
@@ -48,11 +48,6 @@ class RegularGridLayout(_GridMixin):
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "grid"
 
     @capture_build_params(data=("positions", "dimension_ranges"))
     def build(

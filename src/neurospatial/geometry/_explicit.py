@@ -19,18 +19,6 @@ from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon import PolygonCells
 
 
-def _category(binning: Binning) -> str:
-    if binning.linearization is not None:
-        return "graph"
-    if isinstance(binning.shapes, HexagonShapes):
-        return "hexagonal"
-    if isinstance(binning.shapes, TriangleShapes):
-        return "mesh"
-    if isinstance(binning.shapes, PolygonCells) or binning.outline is not None:
-        return "polygon"
-    return "grid" if binning.rectilinear is not None else "other"
-
-
 def cell_extent(
     binning: Binning, *, shapeless: Literal["none", "centers"]
 ) -> tuple[tuple[float, float], ...] | None:
@@ -106,7 +94,7 @@ def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
     return cell_extent(binning, shapeless="none")
 
 
-def prepare_bins(binning: object) -> tuple[Binning, str]:
+def prepare_bins(binning: object) -> Binning:
     """Own and validate explicit Cartesian bins, with no layout builder.
 
     Parameters
@@ -117,10 +105,8 @@ def prepare_bins(binning: object) -> tuple[Binning, str]:
 
     Returns
     -------
-    binning : Binning
+    Binning
         Validated, independently owned bins.
-    category : str
-        Layout category inferred from the bins.
 
     Raises
     ------
@@ -160,4 +146,4 @@ def prepare_bins(binning: object) -> tuple[Binning, str]:
         else snapshot.faces
     )
     snapshot = replace(snapshot, bins=bins, faces=faces)
-    return snapshot, _category(snapshot)
+    return snapshot

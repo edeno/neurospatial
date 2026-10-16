@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
@@ -31,12 +32,11 @@ class ImageMaskLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.IMAGE_MASK.value
     _build_params_used: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize an ImageMaskLayout engine."""
-        self._layout_type_tag = "ImageMask"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)
         self.connectivity = None
@@ -44,11 +44,6 @@ class ImageMaskLayout(_GridMixin):
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
-
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "mask"
 
     @capture_build_params(data=("image_mask",))
     def build(
