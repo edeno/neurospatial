@@ -21,6 +21,14 @@ from neurospatial.io import from_dict, to_dict
 from neurospatial.layout import LayoutType, create_layout
 from neurospatial.ops.transforms import translate
 
+# These tests check labels, not geometry. The coarse and mesh parents raise
+# their documented geometry warnings, which other tests pin.
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:Triangular mesh is non-K-orthogonal"),
+    pytest.mark.filterwarnings("ignore:Grid shape .* is not evenly divisible"),
+    pytest.mark.filterwarnings("ignore:Rebinning leaves .* without a new bin"),
+]
+
 
 def _track():
     graph = nx.Graph()

@@ -253,15 +253,37 @@ def test_older_spellings_load_with_canonical_labels(case, how, tmp_path):
     np.testing.assert_array_equal(restored.bin_sizes, env.bin_sizes)
 
 
-def test_current_records_keep_their_labels_history_and_choices(tmp_path):
+def _save_and_read(env, how, tmp_path: Path):
+    """Save ``env`` with this version; return the saved metadata and the read-back."""
+    if how == "dict":
+        saved = json.loads(json.dumps(to_dict(env)))
+        return saved, from_dict(saved)
+    if how == "file":
+        to_file(env, tmp_path / "env")
+        saved = json.loads((tmp_path / "env.json").read_text())
+        return saved, from_file(tmp_path / "env")
+    pynwb = pytest.importorskip("pynwb")
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    nwbfile = pynwb.NWBFile(
+        session_description="current labels",
+        identifier="current labels",
+        session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    write_environment(nwbfile, env)
+    saved = json.loads(nwbfile.scratch["spatial_environment"].description)
+    return saved, read_environment(nwbfile)
+
+
+@pytest.mark.parametrize("how", ["dict", "file", "nwb"])
+def test_current_records_keep_their_labels_history_and_choices(how, tmp_path):
     env = _half(_grid()).apply_transform(translate(1.0, 2.0))
-    to_file(env, tmp_path / "env")
-    saved = json.loads((tmp_path / "env.json").read_text())
+    saved, restored = _save_and_read(env, how, tmp_path)
     assert saved["layout_type"] == "RegularGrid"
     assert saved["binning"]["kind"] == "RegularGrid"
     assert saved["derivations"] == ["subset", "apply_transform"]
     assert "layout_category" not in saved
-    restored = from_file(tmp_path / "env")
+    assert restored.layout_type == env.layout_type
     assert restored.derivations == env.derivations
     assert restored.layout_parameters == env.layout_parameters
 
