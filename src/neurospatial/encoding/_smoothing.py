@@ -81,7 +81,7 @@ from neurospatial.ops.diffusion import (
 _RESOLUTION_MARGIN = 1e3
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import SmoothingConsumer
+    from neurospatial import Environment
 
 __all__ = [
     "smooth_rate_map",
@@ -149,15 +149,13 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
     return float(bandwidth)
 
 
-def _get_gaussian_kernel(
-    env: SmoothingConsumer, bandwidth: float
-) -> NDArray[np.float64]:
+def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
     """Compatibility wrapper for environment-owned Gaussian weights."""
     return env.compute_gaussian_kernel(bandwidth)
 
 
 def smooth_rate_map(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -340,7 +338,7 @@ def smooth_rate_map(
 
 
 def smooth_rate_maps_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -459,7 +457,7 @@ def smooth_rate_maps_batch(
 
 
 def _validate_smoothing_inputs(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: str,
@@ -767,7 +765,7 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
         )
 
 
-def _resolution_floor(env: SmoothingConsumer, bandwidth: float) -> float:
+def _resolution_floor(env: Environment, bandwidth: float) -> float:
     """Fraction of its component maximum below which a smoothed value is noise.
 
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
@@ -777,7 +775,7 @@ def _resolution_floor(env: SmoothingConsumer, bandwidth: float) -> float:
 
 
 def _resolved_density_mask(
-    env: SmoothingConsumer,
+    env: Environment,
     occupancy: NDArray[np.float64],
     occupancy_density: NDArray[np.float64],
     bandwidth: float,
@@ -849,7 +847,7 @@ def _above_component_floor(
 
 
 def _resolved_density_mask_jax(
-    env: SmoothingConsumer, occupancy: Any, occupancy_density: Any, bandwidth: float
+    env: Environment, occupancy: Any, occupancy_density: Any, bandwidth: float
 ) -> Any:
     """JAX version of :func:`_resolved_density_mask` (traceable under ``jit``)."""
     import jax
@@ -868,7 +866,7 @@ def _resolved_density_mask_jax(
 
 
 def _diffusion_kde(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -930,7 +928,7 @@ def _diffusion_kde(
 
 
 def _gaussian_kde(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -974,7 +972,7 @@ def _gaussian_kde(
 
 
 def _binned(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1019,7 +1017,7 @@ def _binned(
 
 
 def _binned_gate(
-    env: SmoothingConsumer,
+    env: Environment,
     raw_rate: NDArray[np.float64],
     bandwidth: float,
 ) -> NDArray[np.float64]:
@@ -1085,7 +1083,7 @@ def _binned_gate(
 
 
 def _diffusion_kde_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1123,7 +1121,7 @@ def _diffusion_kde_batch(
 
 
 def _gaussian_kde_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1153,7 +1151,7 @@ def _gaussian_kde_batch(
 
 
 def _binned_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1190,7 +1188,7 @@ def _binned_batch(
 
 
 def _smooth_rate_map_jax(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
@@ -1270,7 +1268,7 @@ def _smooth_rate_map_jax(
 
 
 def _smooth_rate_maps_batch_jax(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],

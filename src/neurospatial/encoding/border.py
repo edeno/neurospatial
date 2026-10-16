@@ -19,11 +19,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import BorderConsumer
+    from neurospatial import Environment
 
 
 def border_score(
-    env: BorderConsumer,
+    env: Environment,
     firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.3,
@@ -42,7 +42,7 @@ def border_score(
 
     Parameters
     ----------
-    env : BorderConsumer
+    env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -386,7 +386,7 @@ def border_score(
 
 
 def compute_region_coverage(
-    env: BorderConsumer,
+    env: Environment,
     field_bins: NDArray[np.int64],
     *,
     regions: list[str] | None = None,

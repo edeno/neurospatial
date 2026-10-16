@@ -292,22 +292,26 @@ evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
 
 ### Environment architecture
 
-New operations are module functions with explicit inputs. When an operation
-needs an environment, declare a small consumer `Protocol` listing only the
-members it reads in `environment/_protocols.py`; numerical operators use
-`ops/_protocols.py`. An environment method is an optional scientist-facing
-entry point that delegates to the function in one call.
+New operations are module functions with explicit inputs: the published
+`Binning`, the connectivity graph, arrays, the arena, the coordinate descriptor
+and, for a function that caches, the environment's `AnalysisCache`. A function
+takes the environment only when it needs the whole facade. A package that
+consumes environments declares a small consumer `Protocol` of the members it
+reads, as `ops/_protocols.py` does. An environment method is an optional
+scientist-facing entry point that unpacks its owned data and delegates to the
+function in one call; the function does not call back into the environment.
 
 When extracting an existing implementation, preserve the method's name,
 signature, decorators and docstring exactly. Put its implementation in a private
-`_<method>` function in the same module, with `env` first and the remaining
-parameters in their original order and keyword-only positions. Forward keyword
-arguments by keyword. Type `env` with the narrow consumer protocol; functions
-that read only geometry take data components. Functions that read no environment
-members take no `env` argument. Keep builder inputs in construction adapters.
+`_<method>` function in a `_`-prefixed module, taking the components it reads
+followed by the method's parameters in their original order and keyword-only
+positions. Forward keyword arguments by keyword. Functions that read no
+environment members take no environment components. Keep builder inputs in
+construction adapters.
 
-Move logic unchanged: rename `self` to `env`, replace helper-method calls with
-module-function calls, and split long bodies only at existing section comments.
+Move logic unchanged: replace reads of `self` members with the passed
+components, replace helper-method calls with module-function calls, and split
+long bodies only at existing section comments.
 Fix discovered bugs separately. Moved warnings use
 `stacklevel=_external_stacklevel()` from `neurospatial._stacklevel` so the warning
 still points to the scientist's line. Keep implementation functions private and
@@ -334,7 +338,7 @@ restricted `self` annotations and a runtime `_require_cartesian` guard, includin
 unbound calls. `CARTESIAN_OPERATIONS` controls polar attribute availability;
 `test_every_public_member_is_classified_for_polar` checks that capability table.
 The attribute-filtering hook exists only at runtime: type checkers must still
-reject missing attributes and unsatisfied consumer protocols. Negative static
+reject missing attributes. Negative static
 contracts in `tests/typing` guard these failures with checked ignore comments.
 Shared code asks the owned coordinate descriptor about lengths, axes and
 circularity, or uses public `coordinate_kind` for metadata. Do not discriminate

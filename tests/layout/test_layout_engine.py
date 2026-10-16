@@ -499,7 +499,7 @@ def test_point_to_bin_index_dtype_is_intp():
     """Layout index arrays are ``np.intp`` (portable), never int32/int_.
 
     Tripwire for the index-dtype convention documented in
-    ``neurospatial.environment._protocols``: point/region *index* arrays are
+    ``neurospatial.environment.trajectory``: point/region *index* arrays are
     ``np.intp``, while trajectory *sequence* arrays (``bin_sequence`` /
     ``BinSequenceWithRuns``) deliberately stay ``int32`` (pinned in
     ``tests/environment/test_bin_sequence.py``). On 64-bit ``np.intp`` equals
