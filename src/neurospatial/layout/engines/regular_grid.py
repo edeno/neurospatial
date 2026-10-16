@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
@@ -233,3 +234,46 @@ class RegularGridLayout(_GridMixin):
         self._assign_cells(
             full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
+
+
+def regular_grid_from_cells(
+    grid_edges: tuple[NDArray[np.float64], ...],
+    active_mask: NDArray[np.bool_],
+    cell_centers: NDArray[np.float64],
+    *,
+    connect_diagonal_neighbors: bool,
+    grid_spec: GridBinningSpec | None = None,
+) -> RegularGridLayout:
+    """Build a regular grid over explicit cells, without inferring them.
+
+    Integer-factor re-binning uses this to build the coarse grid it has
+    already partitioned; the cell centers are taken as given.
+
+    Parameters
+    ----------
+    grid_edges : tuple of ndarray
+        Uniformly spaced cell edges along each axis.
+    active_mask : ndarray of bool, shape (n_0, ..., n_{d-1})
+        Active cells, with one entry per cell of ``grid_edges``.
+    cell_centers : ndarray of float64, shape (n_cells, n_dims)
+        Center of every cell, active or not, in flat grid order.
+    connect_diagonal_neighbors : bool
+        Whether cells that share only a corner are neighbors.
+    grid_spec : GridBinningSpec, optional
+        Anchor and frame that later re-binning keeps. By default, the first
+        edge of each axis with the identity frame.
+
+    Returns
+    -------
+    RegularGridLayout
+        Built layout whose ``binning()`` publishes the given cells.
+    """
+    layout = RegularGridLayout()
+    layout.grid_edges = grid_edges
+    layout.grid_shape = tuple(len(edges) - 1 for edges in grid_edges)
+    layout.active_mask = active_mask
+    layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in grid_edges)
+    layout._assign_cells(cell_centers, connect_diagonal=connect_diagonal_neighbors)
+    if grid_spec is not None:
+        layout._grid_spec = grid_spec
+    return layout

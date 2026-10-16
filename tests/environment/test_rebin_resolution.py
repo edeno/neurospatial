@@ -295,3 +295,29 @@ def test_thin_grid_preserves_construction_choice_before_diagonals_exist(
             for u, v in refined.edge_pairs
         )
         assert actual is diagonal
+
+
+def test_factor_rebin_without_spec_records_the_choice_it_built():
+    """A coarse grid records the diagonal choice used to connect it.
+
+    The coarse grid here is one cell wide, so it has no diagonal pair to show
+    the choice; later new-resolution re-binning must still add diagonals.
+    """
+    env = Environment.from_grid_mask(
+        np.ones((4, 2), dtype=bool), grid_edges=(np.arange(5.0), np.arange(3.0))
+    )
+    binning = replace(
+        env.binning, faces=KnownFaces(env.binning.faces.build()), grid_spec=None
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        coarse = Environment.from_bins(binning).rebin((2, 2))
+    assert coarse.grid_shape == (2, 1)
+    assert coarse.layout_parameters["connect_diagonal_neighbors"] is True
+    assert coarse._binning.grid_spec.connect_diagonal is True
+    np.testing.assert_array_equal(coarse._binning.grid_spec.origin, [0.0, 0.0])
+    refined = coarse.rebin(bin_size=1.0)
+    assert any(
+        np.count_nonzero(refined.bin_centers[u] != refined.bin_centers[v]) > 1
+        for u, v in refined.edge_pairs
+    )

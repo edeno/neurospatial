@@ -57,6 +57,13 @@
 
 ### Fixed
 
+- `Environment.rebin(factor)` on an environment without a stored grid
+  specification (for example one built with `Environment.from_bins` without
+  `grid_spec`) records the diagonal-neighbor choice it used to connect the
+  coarse grid. It previously guessed the choice from the coarse grid's
+  connections, which recorded "no diagonals" when the coarse grid was one cell
+  wide, so a later `rebin(bin_size=...)` dropped diagonal neighbors.
+
 - Smoothing on an environment transformed by an affine map fitted to noisy
   landmarks (`estimate_transform(..., kind="affine")`) still refuses, because
   the fit absorbs tracking noise as a real stretch or shear. The refusal now

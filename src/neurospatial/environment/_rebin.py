@@ -380,7 +380,7 @@ def _rebin_factor(
     factor: int | tuple[int, ...],
 ) -> Environment:
     """Coarsen a regular grid by an integer factor."""
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
+    from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
 
     # --- Input validation ---
 
@@ -406,22 +406,8 @@ def _rebin_factor(
         )
 
     # Parse factor
-    # Cast to RegularGridLayout to access grid-specific attributes
     grid_shape = grid.shape
     grid_edges = grid.edges
-
-    # Validate grid attributes (RegularGridLayout always has these)
-    if grid_shape is None:
-        raise RuntimeError(
-            "RegularGridLayout missing grid_shape. "
-            "This is an internal error - please report this bug."
-        )
-    if grid_edges is None:
-        raise RuntimeError(
-            "RegularGridLayout missing grid_edges. "
-            "This is an internal error - please report this bug."
-        )
-
     n_dims = len(grid_shape)
 
     factor_tuple = (factor,) * n_dims if isinstance(factor, int) else tuple(factor)
@@ -481,8 +467,6 @@ def _rebin_factor(
     # --- Compute new grid parameters ---
 
     # Truncate grid edges if needed
-    # grid_edges was already asserted non-None above but mypy needs reminder
-    assert grid_edges is not None
     truncated_edges = []
     for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
         # Keep edges up to truncated_size + 1 (edges define bins)
@@ -531,52 +515,31 @@ def _rebin_factor(
                 "Use a smaller factor or rebuild a grid with centers in the domain."
             )
 
-    # --- Build new connectivity graph ---
+    # --- Build the coarse grid and publish it ---
 
-    # Create new layout
-    from neurospatial.layout.helpers.regular_grid import (
-        _create_regular_grid_connectivity_graph,
+    # Connect only eligible coarse cells. The coarse grid keeps the source's
+    # binning specification, when it has one, for later re-binning.
+    layout = regular_grid_from_cells(
+        coarse_edges,
+        keep.reshape(coarse_shape),
+        coarse_bin_centers,
+        connect_diagonal_neighbors=connect_diagonal,
+        grid_spec=env._binning.grid_spec,
     )
-
-    # Build connectivity only between eligible coarse cells.
-    active_mask_coarse = keep.reshape(coarse_shape)
-
-    coarse_connectivity = _create_regular_grid_connectivity_graph(
-        full_grid_bin_centers=coarse_bin_centers,
-        active_mask_nd=active_mask_coarse,
-        grid_shape=coarse_shape,
-        connect_diagonal=connect_diagonal,
-    )
-
-    # --- Create new Environment ---
-
-    # Create new layout instance
-    new_layout = RegularGridLayout()
-    new_layout._grid_spec = env._binning.grid_spec
-    new_layout.bin_centers = coarse_bin_centers[keep]
-    new_layout.connectivity = coarse_connectivity
-    new_layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in coarse_edges)
-    new_layout.grid_edges = coarse_edges
-    new_layout.grid_shape = coarse_shape
-    new_layout.active_mask = active_mask_coarse
-    new_layout._layout_type_tag = "RegularGrid"
-    new_layout._build_params_used = {
-        "bin_size": tuple(
-            (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
-        ),
-        "dimension_ranges": new_layout.dimension_ranges,
-        "connect_diagonal_neighbors": connect_diagonal,
-    }
-
-    # Create new environment - cast to Environment class for proper type checking
     from neurospatial.layout.base import LayoutEngine
 
     env_cls = cast("type[Environment]", env.__class__)
     coarse_env = env_cls._from_built_layout(
-        cast("LayoutEngine", new_layout),
+        cast("LayoutEngine", layout),
         name=f"{env.name}_rebinned" if env.name else "",
         layout_type_used="RegularGrid",
-        layout_params_used=new_layout._build_params_used,
+        layout_params_used={
+            "bin_size": tuple(
+                (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+            ),
+            "dimension_ranges": layout.dimension_ranges,
+            "connect_diagonal_neighbors": connect_diagonal,
+        },
         regions=deepcopy(env.regions),
         arena=env.arena,
         units=env.units,
