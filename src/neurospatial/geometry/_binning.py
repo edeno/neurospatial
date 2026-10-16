@@ -11,6 +11,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, eq=False)
-class SpatialBins:
+class SpatialBins(ReadOnlyState):
     """Discrete bins with owned, read-only geometry arrays.
 
     Attributes
@@ -130,13 +131,6 @@ class SpatialBins:
             array.setflags(write=False)
             object.__setattr__(self, name, array)
 
-    def __setstate__(self, state: dict[str, object]) -> None:
-        """Restore array write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            object.__setattr__(self, name, value)
-
     @classmethod
     def from_arrays(
         cls,
@@ -221,7 +215,7 @@ class FacesSource(Protocol):
 
 
 @dataclass(frozen=True, eq=False)
-class KnownFaces:
+class KnownFaces(ReadOnlyState):
     """Owned finite-volume faces that no longer need their originating layout."""
 
     faces: FaceGeometry
@@ -258,11 +252,6 @@ class KnownFaces:
         object.__setattr__(
             self, "faces", FaceGeometry(owned_edges, areas, distances, volumes)
         )
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for array in state["faces"]:
-            array.setflags(write=False)
-        object.__setattr__(self, "faces", state["faces"])
 
     @property
     def available(self) -> bool:
@@ -326,7 +315,7 @@ class _ReadOnlyTrackAttributes(dict[str, Any]):
 
 
 @dataclass(frozen=True, eq=False)
-class TrackLinearization:
+class TrackLinearization(ReadOnlyState):
     """Owned track geometry and its absolute linear coordinate system.
 
     Parameters
@@ -385,14 +374,6 @@ class TrackLinearization:
             array.setflags(write=False)
         object.__setattr__(self, "grid_edges", edges)
         object.__setattr__(self, "active_mask", mask)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore array protection without storing derived lookup memos."""
-        for edge in state["grid_edges"]:
-            edge.setflags(write=False)
-        state["active_mask"].setflags(write=False)
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` coordinates onto the track."""

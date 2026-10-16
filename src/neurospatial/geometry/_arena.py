@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import ReadOnlyState
 
 __all__ = [
     "Arena",
@@ -195,20 +196,6 @@ def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     return shapely.set_coordinates(geometry, mapped[indices])
 
 
-class _ArrayState:
-    """Restore owned-array protection after pickle and deepcopy."""
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            elif isinstance(value, tuple):
-                for item in value:
-                    if isinstance(item, np.ndarray):
-                        item.setflags(write=False)
-            object.__setattr__(self, name, value)
-
-
 @dataclass(frozen=True, eq=False)
 class UnknownArena:
     """Explicitly unknown continuous geometry.
@@ -341,7 +328,7 @@ class OpenArena:
 
 
 @dataclass(frozen=True, eq=False)
-class MaskArena(_ArrayState):
+class MaskArena(ReadOnlyState):
     """Closed union of active Cartesian cells, without inferred physical walls.
 
     Parameters
@@ -493,7 +480,7 @@ class MaskArena(_ArrayState):
 
 
 @dataclass(frozen=True, eq=False)
-class TrackArena(_ArrayState):
+class TrackArena(ReadOnlyState):
     """Union of exact constant-width capsules around centerline segments.
 
     Parameters
@@ -684,7 +671,7 @@ class EgocentricSurround:
 
 
 @dataclass(frozen=True, eq=False)
-class _TransformedArena(_ArrayState):
+class _TransformedArena(ReadOnlyState):
     """Owned affine frame with locally bounded inverse arithmetic uncertainty."""
 
     base: Arena

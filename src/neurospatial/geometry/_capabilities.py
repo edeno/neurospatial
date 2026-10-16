@@ -9,13 +9,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import ReadOnlyState
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
 
 
 @dataclass(frozen=True, eq=False)
-class RectilinearGrid:
+class RectilinearGrid(ReadOnlyState):
     """Axis-aligned rectangular cells, in the layout's own coordinates.
 
     Attributes
@@ -43,13 +44,6 @@ class RectilinearGrid:
             array.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "active_mask", active_mask)
-
-    def __setstate__(self, state: dict[str, object]) -> None:
-        """Restore write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        for array in (*self.edges, self.active_mask):
-            array.setflags(write=False)
 
 
 def require_rectilinear(

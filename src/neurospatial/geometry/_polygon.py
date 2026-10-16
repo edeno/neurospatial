@@ -15,6 +15,7 @@ from shapely.ops import linemerge, polygonize, unary_union
 from shapely.strtree import STRtree
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -85,7 +86,7 @@ class PolygonCells:
 
 
 @dataclass(frozen=True, eq=False)
-class ClipMapping:
+class ClipMapping(ReadOnlyState):
     """Owned child-to-immediate-parent indices, shape ``(n_child_bins,)``."""
 
     parent_bin_indices: NDArray[np.intp]
@@ -115,11 +116,6 @@ class ClipMapping:
         indices.setflags(write=False)
         object.__setattr__(self, "parent_bin_indices", indices)
         object.__setattr__(self, "n_parent_bins", int(self.n_parent_bins))
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        state["parent_bin_indices"].setflags(write=False)
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
 
 
 @dataclass(frozen=True, eq=False)

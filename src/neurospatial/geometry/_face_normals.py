@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
+
+from neurospatial.geometry._arrays import ReadOnlyState
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning, Locator
 
 
 @dataclass(frozen=True, eq=False)
-class FaceNormals:
+class FaceNormals(ReadOnlyState):
     """Physical face normals in ``Binning.bins.pairs`` order.
 
     Parameters
@@ -43,12 +45,6 @@ class FaceNormals:
             raise ValueError("face normals must have unit length or be zero.")
         values.setflags(write=False)
         object.__setattr__(self, "values", values)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        self.values.setflags(write=False)
 
 
 def _unit_rows(values: NDArray[np.float64]) -> NDArray[np.float64]:

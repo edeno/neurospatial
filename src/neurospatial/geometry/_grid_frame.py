@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import product
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
 from neurospatial.geometry._locators import (
     RectilinearLocator,
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, eq=False)
-class FramedGrid:
+class FramedGrid(ReadOnlyState):
     """Owned current grid cells with an affine map into world coordinates.
 
     Parameters
@@ -87,12 +88,6 @@ class FramedGrid:
         )
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        self.forward.setflags(write=False)
-        self.inverse.setflags(write=False)
 
     def _map(
         self,

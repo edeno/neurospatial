@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._hex_lookup import _points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import _points_to_regular_grid_bin_ind
 
@@ -48,24 +49,14 @@ def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
     return owned
 
 
-class _LocatorState:
-    """Keep array protection and rebuildable memos out of serialized state."""
+class _LocatorState(ReadOnlyState):
+    """Keep rebuildable memos out of serialized state; arrays stay read-only."""
 
     def __getstate__(self) -> dict[str, Any]:
         state = vars(self).copy()
         state.pop("_tree", None)
         state.pop("_triangle_lookup", None)
         return state
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            elif isinstance(value, tuple):
-                for item in value:
-                    if isinstance(item, np.ndarray):
-                        item.setflags(write=False)
-            object.__setattr__(self, name, value)
 
 
 @dataclass(frozen=True, eq=False)
