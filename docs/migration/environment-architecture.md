@@ -779,3 +779,39 @@ keep = np.zeros(env.n_bins, dtype=bool)
 keep[north_bins] = True
 north_env = env.subset(mask=keep)
 ```
+
+## Missing data: NaN is a missing value, never zero
+
+A NaN position sample is a missing sample in every per-sample query: it gets
+bin `-1` from `bin_at` and `nearest_bin`, `False` from `contains` and NaN from
+`interpolate`, and adds no occupancy time and no transition. `nearest_bin` and
+`interpolate` used to raise for it, and `transitions(times=..., positions=...)`
+raised for any sample outside the environment. A NaN bin of a field is a bin
+with no value: `smooth` and `diffuse` average over the observed bins and fill
+holes from them, where `smooth` used to refuse the field and `diffuse` spread
+the NaN over its connected part. A bin stays NaN when its share of smoothing
+weight on observed bins is at most 0.1% of the largest share in its connected
+part, for example in a room with no visits. Fields without NaN give the same
+values as before.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, size=(2000, 2))  # cm
+env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+rate = np.where(env.bin_centers[:, 0] < 70.0, 5.0, np.nan)  # Hz, east unvisited
+# Before: env.smooth(rate, 8.0) raised "Field contains NaN values"
+smoothed = env.smooth(rate, 8.0)
+assert np.allclose(smoothed[np.isfinite(smoothed)], 5.0)
+# Before: env.nearest_bin([[np.nan, 10.0]]) raised a SciPy error
+assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
+```
+
+`occupancy`, `bin_sequence`, `bin_sequence_with_runs` and trajectory
+`transitions` now warn, like `compute_spatial_rate`, when `max_gap` and the
+other interval gates exclude every interval, or when the median sampling
+interval is longer than `max_gap`. Timestamps in milliseconds trigger it: each
+33 ms frame looks like a 33 s recording gap. Convert `times` to seconds.
