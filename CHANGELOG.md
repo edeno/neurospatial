@@ -177,8 +177,10 @@
   It now also accepts your own layout engine after its `build(...)`, with no
   registration. A layout name or an engine class raises `TypeError` with the
   corrected call. `layout_type` and `layout_parameters` come from the engine's
-  own record, which includes the defaults it resolved. Grids, polygons, masks
-  and tracks keep their dedicated factories.
+  own record, which includes the defaults it resolved but never its input
+  data: a built-in engine's positions, masks, polygons, graphs and boundary
+  coordinates are left out, whether or not they were given. Grids, polygons,
+  masks and tracks keep their dedicated factories.
 
 - `Environment.from_nwb` only loads an environment saved in the file:
   `Environment.from_nwb(nwbfile, name="linear_track")`. The record name is

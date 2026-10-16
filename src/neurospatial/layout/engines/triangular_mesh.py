@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import matplotlib.axes
 import networkx as nx
@@ -38,6 +38,15 @@ class TriangularMeshLayout:
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
 
+    # Build arguments that are input data, not choices; they are left out
+    # of the environment's recorded layout parameters.
+    _data_parameters: ClassVar[frozenset[str]] = frozenset(
+        {
+            "boundary_polygon",
+            "boundary_exterior_coords",
+            "boundary_interior_coords_list",
+        }
+    )
     _layout_type_tag: str = "TriangularMesh"
     _build_params_used: dict[str, Any]
 

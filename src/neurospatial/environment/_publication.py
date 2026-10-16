@@ -688,6 +688,19 @@ def publish(
     return env
 
 
+def _without_data(layout: object, params: Mapping[str, Any]) -> dict[str, Any]:
+    """Drop the build arguments a layout engine declares as input data.
+
+    Built-in engines list their data arguments (positions, masks, polygons,
+    graphs and the coordinates recorded from them) in ``_data_parameters``,
+    so the record keeps the same choices whether or not an optional data
+    argument was given. An engine without that declaration, such as a
+    custom one, keeps every recorded argument, including ``None`` choices.
+    """
+    data: frozenset[str] = getattr(type(layout), "_data_parameters", frozenset())
+    return {key: value for key, value in params.items() if key not in data}
+
+
 def publish_layout(
     cls: type[_EnvironmentT],
     layout: LayoutEngine,
@@ -713,7 +726,8 @@ def publish_layout(
     layout_type : str or None, optional
         Layout label; defaults to the binning kind.
     build_params : mapping or None, optional
-        Build choices to record; defaults to the layout's own record.
+        Build choices to record; defaults to the layout's own record. Either
+        way, arguments the engine declares as data are left out.
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
@@ -756,7 +770,7 @@ def publish_layout(
         provenance=_Provenance(
             layout_type or tag,
             category,
-            dict(resolved) if build_params is None else dict(build_params),
+            _without_data(layout, resolved if build_params is None else build_params),
         ),
         metadata=metadata,
         is_linearized_track=binning.linearization is not None,

@@ -396,7 +396,10 @@ The environment copies the bins from the engine's `binning()`, so changing the
 engine afterwards does not change the environment. `env.layout_parameters`
 comes from the engine's record of its `build(...)` arguments, including the
 defaults it resolved, for example `connect_diagonal_neighbors=True` for a
-masked grid.
+masked grid. Input data is never recorded: a hexagonal tiling built from
+ranges records `hexagon_width`, `infer_active_bins` and `bin_count_threshold`
+but no `positions`, and a triangular mesh records only `point_spacing`, with
+or without holes in its boundary.
 
 ### NWB: loading versus building
 

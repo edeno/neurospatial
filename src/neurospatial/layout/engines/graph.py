@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import matplotlib
 import matplotlib.axes
@@ -41,6 +41,11 @@ class GraphLayout(_KDTreeMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
+    # Build arguments that are input data, not choices; they are left out
+    # of the environment's recorded layout parameters.
+    _data_parameters: ClassVar[frozenset[str]] = frozenset(
+        {"graph_definition", "edge_order"}
+    )
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
 

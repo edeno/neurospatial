@@ -169,7 +169,11 @@ radius. A new layout or subclass does not need registration in the diffusion
 solver. A custom engine is published by building it and passing the engine to
 `Environment.from_layout(engine)`; only a new built-in engine needs a
 `LayoutType` member and a `_LAYOUT_MAP` entry so that
-`neurospatial.layout.create_layout` can build it by name. These are internal interfaces, not additional scientist-facing factory
+`neurospatial.layout.create_layout` can build it by name. A built-in engine
+also lists the `build` arguments that are input data (positions, masks,
+polygons, graphs and coordinates recorded from them) in its
+`_data_parameters` class attribute, so `layout_parameters` records only its
+scalar choices. These are internal interfaces, not additional scientist-facing factory
 requirements.
 
 `layout.engines._polar` also builds physical polar edge distances and circular

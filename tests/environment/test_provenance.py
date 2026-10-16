@@ -58,6 +58,18 @@ FACTORIES = {
             point_spacing=2.0,
         )
     ),
+    "mesh_with_hole": lambda: Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon(
+                [(0, 0), (8, 0), (8, 8), (0, 8)], [[(3, 3), (5, 3), (5, 5), (3, 5)]]
+            ),
+            point_spacing=2.0,
+        )
+    ),
+    "grid_from_ranges": lambda: Environment.from_layout(
+        create_layout("RegularGrid", bin_size=3.0, dimension_ranges=[(0, 12), (0, 12)])
+    ),
     "from_polar_egocentric": lambda: Environment.from_polar_egocentric(
         distance_range=(0.0, 10.0),
         angle_range=(-np.pi, np.pi),
@@ -78,8 +90,7 @@ def test_layout_parameters_hold_only_scalar_choices(factory):
     env = FACTORIES[factory]()
     params = env.layout_parameters
     assert all(_is_choice(value) for value in params.values()), params
-    # Data arguments are not choices. An engine's own record may list a data
-    # argument it was built without, as None, but never keeps the data.
+    # Data arguments are not choices, not even as a None placeholder.
     for data in (
         "positions",
         "active_mask",
@@ -90,8 +101,10 @@ def test_layout_parameters_hold_only_scalar_choices(factory):
         "graph_definition",
         "edge_order",
         "dimension_ranges",
+        "boundary_exterior_coords",
+        "boundary_interior_coords_list",
     ):
-        assert params.get(data) is None
+        assert data not in params
     json.dumps(params)
 
 
@@ -179,3 +192,39 @@ def test_saved_file_size_does_not_grow_with_trajectory_length(tmp_path):
     short, long = _saved_size(10, tmp_path), _saved_size(100_000, tmp_path)
     # Identical geometry; only timestamps and the like may differ.
     assert abs(long - short) <= 0.01 * short
+
+
+def test_a_layout_records_the_same_choices_with_or_without_optional_data():
+    mesh = FACTORIES["mesh"]().layout_parameters
+    assert mesh == FACTORIES["mesh_with_hole"]().layout_parameters
+    assert mesh == {"point_spacing": 2.0}
+    samples = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 12, (500, 2)),
+        bin_size=3.0,
+        layout="Hexagonal",
+    )
+    assert FACTORIES["hexagonal"]().layout_parameters.keys() == (
+        samples.layout_parameters.keys()
+    )
+
+
+def test_custom_engine_keeps_every_recorded_choice_including_none():
+    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+
+    class CustomEngine:
+        """A custom engine that declares no data arguments."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    inner = MaskedGridLayout()
+    inner.build(
+        active_mask=np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    )
+    inner._build_params_used["smoothing_choice"] = None
+    params = Environment.from_layout(CustomEngine(inner)).layout_parameters
+    assert params["smoothing_choice"] is None
+    assert params["connect_diagonal_neighbors"] is True
