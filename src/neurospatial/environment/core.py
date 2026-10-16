@@ -1081,24 +1081,19 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @cartesian_only
-    def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
+    def component_keys(self) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
         return _component_keys(self._binning)
 
     @property
-    @cartesian_only
-    def bin_sources(
-        self: Environment[CartesianSystem],
-    ) -> tuple[tuple[str, int], ...] | None:
+    def bin_sources(self) -> tuple[tuple[str, int], ...] | None:
         """Original component key and local bin ID for each bin, or None when native.
 
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
         return _bin_sources(self._binning)
 
-    @cartesian_only
-    def get_bridge_attributes(self: Environment[CartesianSystem]) -> pd.DataFrame:
+    def get_bridge_attributes(self) -> pd.DataFrame:
         """Return an independent table of retained automatic navigation bridges.
 
         Rows identify component/local endpoints, current bin IDs, path length

@@ -285,6 +285,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- On an egocentric polar environment, `env.component_keys`, `env.bin_sources`
+  and `env.get_bridge_attributes()` give the answers of any environment that
+  was not combined: an empty tuple, `None` and an empty table. They used to
+  raise `CartesianOnlyError`, although they read only the records that
+  `Environment.combine` keeps and never the coordinates.
+
 - `env.occupancy`, `env.bin_sequence`, `env.bin_sequence_with_runs` and
   `env.transitions(times=..., positions=...)` warn when the `max_gap` gate
   and the other interval gates exclude every interval, and when the median
