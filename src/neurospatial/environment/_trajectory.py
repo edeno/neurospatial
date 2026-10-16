@@ -37,9 +37,9 @@ from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import require_rectilinear
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._lookup import locate
-from neurospatial.ops._linear_allocation import linear_grid_occupancy, ray_grid_pieces
+from neurospatial.ops._linear_allocation import linear_grid_occupancy
 from neurospatial.ops._polygon_allocation import (
-    retained_linear_intervals,
+    polygon_linear_occupancy,
     source_grid,
     uses_polygon_allocation,
 )
@@ -213,34 +213,14 @@ def _occupancy(
 
     elif time_allocation == "linear":
         if polygon_allocation:
-            normalizers = np.ones(len(dt))
-            if framed_nd and not return_seconds:
-                # Preserve the native N-D count convention: normalize over
-                # the full grid extent before dropping inactive cells.
-                frame = binning.grid_frame
-                assert frame is not None
-                _, source_positions = source_grid(frame, positions)
-                samples = np.flatnonzero(valid_mask)
-                interval, _, fraction = ray_grid_pieces(
-                    source_positions[samples],
-                    source_positions[samples + 1],
-                    frame.source.edges,
-                    frame.source.shape,
-                    np.ones(len(samples)),
-                )
-                normalizers[samples] = 0.0
-                np.add.at(normalizers, samples[interval], fraction)
-            for piece in retained_linear_intervals(
-                binning, arena, times, positions, valid_mask
-            ):
-                weight = dt[piece.sample_index] if return_seconds else 1.0
-                if normalizers[piece.sample_index] <= 0:
-                    continue
-                occupancy[piece.bin_index] += (
-                    (piece.stop_fraction - piece.start_fraction)
-                    * weight
-                    / normalizers[piece.sample_index]
-                )
+            _, occupancy = polygon_linear_occupancy(
+                binning,
+                arena,
+                times,
+                positions,
+                valid_mask,
+                return_seconds=return_seconds,
+            )
         else:
             assert grid is not None
             occupancy = linear_grid_occupancy(

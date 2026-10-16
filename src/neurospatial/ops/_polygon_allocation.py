@@ -31,6 +31,7 @@ from neurospatial.geometry._polygon import (
     materialize_cells,
 )
 from neurospatial.geometry._wall_frame import _wall_source_frame
+from neurospatial.ops._linear_allocation import ray_grid_pieces
 
 if TYPE_CHECKING:
     from neurospatial.geometry._grid_frame import FramedGrid
@@ -419,6 +420,73 @@ def retained_linear_intervals(
                     )
                 )
     return tuple(retained)
+
+
+def polygon_linear_occupancy(
+    binning: Binning,
+    arena: Arena,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    valid_mask: NDArray[np.bool_],
+    *,
+    return_seconds: bool,
+) -> tuple[tuple[RetainedLinearInterval, ...], NDArray[np.float64]]:
+    """Split valid intervals on exact cells and add up each bin's share.
+
+    Parameters
+    ----------
+    binning : Binning
+        Published Cartesian bins with exact cells, as for
+        :func:`retained_linear_intervals`.
+    arena : Arena
+        Continuous domain and walls of the same environment.
+    times : ndarray of float64, shape (n_samples,)
+        Validated timestamps in seconds.
+    positions : ndarray of float64, shape (n_samples, n_dims)
+        Segment endpoints, which may lie outside the environment.
+    valid_mask : ndarray of bool, shape (n_samples - 1,)
+        Observation validity of each interval, independent of geometry.
+    return_seconds : bool
+        If True, each piece adds its share of the interval's duration. If
+        False, each interval adds one count split by path length. Framed N-D
+        grids normalize that count over the full source grid before inactive
+        cells drop their share, as native N-D linear allocation does.
+
+    Returns
+    -------
+    pieces : tuple of RetainedLinearInterval
+        The retained pieces, in sample order.
+    occupancy : ndarray of float64, shape (n_bins,)
+        Seconds (or proportional counts) in each bin. Dropped support is
+        never renormalized.
+    """
+    dt = np.diff(times)
+    normalizers = np.ones(len(dt))
+    frame = binning.grid_frame
+    if frame is not None and binning.bins.n_dims != 2 and not return_seconds:
+        _, source_positions = source_grid(frame, positions)
+        samples = np.flatnonzero(valid_mask)
+        interval, _, fraction = ray_grid_pieces(
+            source_positions[samples],
+            source_positions[samples + 1],
+            frame.source.edges,
+            frame.source.shape,
+            np.ones(len(samples)),
+        )
+        normalizers[samples] = 0.0
+        np.add.at(normalizers, samples[interval], fraction)
+    pieces = retained_linear_intervals(binning, arena, times, positions, valid_mask)
+    occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
+    for piece in pieces:
+        weight = dt[piece.sample_index] if return_seconds else 1.0
+        if normalizers[piece.sample_index] <= 0:
+            continue
+        occupancy[piece.bin_index] += (
+            (piece.stop_fraction - piece.start_fraction)
+            * weight
+            / normalizers[piece.sample_index]
+        )
+    return pieces, occupancy
 
 
 def _retained_box_intervals(

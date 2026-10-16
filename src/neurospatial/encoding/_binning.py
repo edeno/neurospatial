@@ -39,7 +39,7 @@ from neurospatial._intervals import (
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops._polygon_allocation import (
     RetainedLinearInterval,
-    retained_linear_intervals,
+    polygon_linear_occupancy,
     source_grid,
     uses_polygon_allocation,
 )
@@ -156,16 +156,14 @@ def prepare_linear_spatial_intervals(
             )
     finite = np.all(np.isfinite(positions), axis=1)
     mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
-    pieces = retained_linear_intervals(binning, arena, times, positions, mask)
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    pieces, occupancy = polygon_linear_occupancy(
+        binning, arena, times, positions, mask, return_seconds=True
+    )
     runs: list[list[float]] = []
     for piece in pieces:
         index = piece.sample_index
         start, stop = times[index], times[index + 1]
         duration = stop - start
-        occupancy[piece.bin_index] += duration * (
-            piece.stop_fraction - piece.start_fraction
-        )
         left = (
             float(start)
             if piece.start_fraction == 0
