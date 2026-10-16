@@ -323,7 +323,7 @@ recent `clip()` call. Subsets select its rows and transforms preserve them;
 a subsequent clip creates a new immediate-parent mapping. The array is
 read-only and survives saving and loading.
 
-Clipping preserves units, frame and arena, and drops analysis regions. It does
+Clipping preserves the name, units, frame, arena and named regions. It does
 not transfer counts, occupancy, rates or fitted decoders. Reassign raw positions
 and events to the new bins and fit again. A parent mapping alone cannot say
 how activity was distributed between split pieces. Splitting bins also changes
