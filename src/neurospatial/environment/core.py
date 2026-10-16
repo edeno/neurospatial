@@ -1241,7 +1241,7 @@ class Environment(Generic[_C]):
         self: Environment[CartesianSystem],
         point1: NDArray[np.float64],
         point2: NDArray[np.float64],
-        edge_weight: str = "distance",
+        edge_weight: str | None = "distance",
     ) -> float:
         """Calculate the geodesic distance between two points in the environment.
 
@@ -1256,9 +1256,10 @@ class Environment(Generic[_C]):
             The first N-dimensional point.
         point2 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
             The second N-dimensional point.
-        edge_weight : str, optional
+        edge_weight : str or None, optional
             The edge attribute to use as weight for path calculation,
-            by default "distance". If None, the graph is treated as unweighted.
+            by default "distance". If None, the graph is treated as unweighted
+            (the distance is the number of edges).
 
         Returns
         -------

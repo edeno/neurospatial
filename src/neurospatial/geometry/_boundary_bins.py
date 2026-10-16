@@ -321,22 +321,17 @@ def find_boundary_nodes(
     """Identify boundary nodes in a connectivity graph G.
 
     A node is considered "boundary" if:
-      1) For an N>1 grid layout (grid_shape and active_mask provided, and
-         connectivity_threshold_factor is None), it lies on the edge of the
-         active region (i.e., at least one of its N-D neighbors is either
-         out of bounds or inactive).
-      2) Otherwise, use a degree-based heuristic:
-         - Compute median_degree = median(node_degree) over all nodes.
-         - If connectivity_threshold_factor is provided (>0), threshold = factor * median_degree.
-           Nodes with degree < threshold are boundary.
-         - If no factor:
-           • For Hexagonal (layout_kind=="Hexagonal") and median_degree>5, threshold=5.5.
-           • For 1D (len(grid_shape)==1 or layout_kind=="Graph"), threshold=1.5 if max_degree>=2.
-           • For general fallback, threshold = median_degree.
-           Nodes with degree < threshold are boundary.
-      3) If no nodes found by the above and no factor given and not an N>1 grid, fallback:
-         - Let max_degree = max(node_degree). If median_degree == max_degree, do nothing.
-           Else, mark nodes with degree < max_degree.
+      1) For an N>1 grid layout (grid_shape and active_mask provided), it lies
+         on the edge of the active region: at least one of its orthogonal N-D
+         neighbors is out of bounds or inactive.
+      2) Otherwise, its degree is below a threshold set from the node degrees:
+         - Hexagonal (layout_kind=="Hexagonal") with median degree > 5: 5.5.
+         - Graph layouts (layout_kind=="Graph") and 1-D grids: 1.5 when the
+           maximum degree is at least 2, else the maximum degree.
+         - Other grids with median degree > 2*N - 1: 2*N - 0.5.
+         - Otherwise: the median degree.
+      3) If rule 2 finds no node, the layout has no grid_shape and the degrees
+         vary, nodes with degree below the maximum degree are boundary.
 
     Parameters
     ----------
