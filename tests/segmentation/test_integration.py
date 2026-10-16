@@ -243,8 +243,14 @@ class TestFullTrajectoryAnalysisWorkflow:
                 # Different choice → lower similarity expected
                 assert similarity >= 0.0  # Valid similarity score
 
-    def test_exploration_to_goal_directed_workflow(self) -> None:
-        """Test workflow detecting transition from exploration to goal-directed behavior."""
+    def test_goal_directed_run_in_a_recording_after_exploration(self) -> None:
+        """An approach recorded after a pause is found; exploration is not.
+
+        Exploration and the straight approach to the goal are two recordings,
+        separated by a pause longer than max_gap. detect_goal_directed_runs
+        scores each recording as one candidate, so this covers that case only,
+        not finding an approach inside one continuous recording.
+        """
         # Create environment
         x = np.linspace(0, 50, 250)
         y = np.linspace(0, 50, 250)
