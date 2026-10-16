@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 __all__ = [
     "BinIndexOutOfRangeError",
+    "CartesianOnlyError",
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
@@ -240,39 +241,40 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
         self.second = second
 
 
-class CartesianOnlyError(AttributeError, NotImplementedError, NeurospatialError):
-    """Raised when an operation needs Cartesian bin centers the environment lacks.
+class CartesianOnlyError(TypeError, NeurospatialError):
+    """Raised when an operation needs Cartesian positions and the environment is polar.
 
-    A polar ``Environment`` stores ``(distance, angle)`` bins, so an
-    operation that reads bin centers as Cartesian ``(x, y[, z])`` coordinates
-    would return geometric nonsense. Inherits :class:`AttributeError`, so
-    ``hasattr(polar_env, "bin_at")`` is ``False``, and
-    :class:`NotImplementedError`, so existing handlers keep working.
+    A polar ``Environment`` stores ``(distance, angle)`` bins around the
+    animal, so an operation that reads positions or bin centers as Cartesian
+    ``(x, y[, z])`` coordinates would return plausible but wrong numbers. The
+    operation does not apply to this kind of environment, so the error is a
+    :class:`TypeError`; static type checkers flag the same calls. Every
+    Cartesian-only method, Cartesian-only mode and Cartesian-only analysis
+    function raises it with the same message layout: what was refused, why it
+    needs Cartesian coordinates, and what works on a polar environment.
 
     Parameters
     ----------
-    environment_type : str
-        Name of the environment class, e.g. ``"Environment"``.
     operation : str
-        The refused call, e.g. ``"bin_at()"`` or
+        The refused call, e.g. ``"Environment.bin_at()"`` or
         ``"distance_to(metric='euclidean')"``.
-    reason : str
-        ``"Cartesian-coordinate operation"`` or ``"Cartesian-grid operation"``.
-    explanation : str
-        Why the environment cannot run the operation and what to use instead.
+    why : str
+        Why the operation needs Cartesian coordinates.
+    fix : str
+        What to use instead on a polar environment.
     """
 
-    # AttributeError defines __reduce__ and precedes NeurospatialError in the
-    # MRO; keep the base's rebuild-from-arguments pickling.
-    __reduce__ = NeurospatialError.__reduce__
-
-    def __init__(
-        self, environment_type: str, operation: str, *, reason: str, explanation: str
-    ) -> None:
+    def __init__(self, operation: str, *, why: str, fix: str) -> None:
         super().__init__(
-            f"{environment_type}.{operation} is not available ({reason}): {explanation}"
+            _format_error(
+                f"{operation} does not work on a polar environment.",
+                why=(
+                    f"Why: {why} This environment's bins are (distance, angle) "
+                    "pairs around the animal, not Cartesian (x, y) positions."
+                ),
+                fix=fix,
+            )
         )
-        self.environment_type = environment_type
         self.operation = operation
 
 

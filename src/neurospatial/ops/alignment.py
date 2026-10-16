@@ -57,6 +57,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -533,15 +534,17 @@ def map_probabilities(
         mode=mode,
         n_neighbors=n_neighbors,
     )
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
     for env in (source_env, target_env):
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "map_probabilities()",
-            instead=(
-                "Bins are matched by nearest Cartesian center; map probabilities "
-                "between allocentric Cartesian environments."
+            why=(
+                "It matches each target bin to the nearest Cartesian source bin center."
+            ),
+            fix=(
+                "map probabilities between allocentric environments; decode polar "
+                "maps on one shared Environment.from_polar_egocentric(...) "
+                "environment"
             ),
         )
     n_src = params.n_source_bins

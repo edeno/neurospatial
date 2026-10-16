@@ -37,9 +37,7 @@ from neurospatial.environment._cache import (
     AnalysisCache,
 )
 from neurospatial.environment._cartesian import (
-    GRID_REASON,
     cartesian_only,
-    cartesian_only_error,
     cartesian_only_members,
 )
 from neurospatial.environment._clipping import _clip
@@ -947,29 +945,6 @@ class Environment(Generic[_C]):
         """
         return copy_module.copy(self._coordinate_system)
 
-    # Runtime capability filtering must not make unknown attributes appear as
-    # Any to type checkers, which would also admit missing protocol members.
-    if not TYPE_CHECKING:
-
-        def __getattribute__(self, name: str) -> Any:
-            # Polar instances refuse @cartesian_only members, so hasattr is False.
-            if name in _CARTESIAN_ONLY:
-                geometry = object.__getattribute__(self, "__dict__").get("_geometry")
-                if geometry is not None and isinstance(
-                    geometry.coordinates, EgocentricPolarSystem
-                ):
-                    raise cartesian_only_error(
-                        type(self).__name__, f"{name}()", _CARTESIAN_ONLY[name]
-                    )
-            return super().__getattribute__(name)
-
-    def __dir__(self) -> list[str]:
-        """List attributes, leaving out Cartesian-only members on polar bins."""
-        names = super().__dir__()
-        if self._is_polar:
-            return [name for name in names if name not in _CARTESIAN_ONLY]
-        return list(names)
-
     @property
     def _angular_is_circular(self) -> bool:
         """Normalized polar circularity, retained through copies and storage."""
@@ -1102,7 +1077,11 @@ class Environment(Generic[_C]):
         """
         return _get_bridge_attributes(self._binning)
 
-    @cartesian_only
+    @cartesian_only(
+        why="Containment finds the cell around each Cartesian position.",
+        fix="find the bins of (distance, angle) rows with env.nearest_bin(points), "
+        "or pass the rows with points= to a query such as env.distance_to",
+    )
     def bin_at(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.intp]:
@@ -1231,7 +1210,11 @@ class Environment(Generic[_C]):
             max_distance_factor=max_distance_factor,
         )
 
-    @cartesian_only
+    @cartesian_only(
+        why="It tests Cartesian positions against the arena boundary.",
+        fix="compare the distance and angle columns of the points with "
+        "env.dimension_ranges",
+    )
     def contains(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
@@ -1348,7 +1331,12 @@ class Environment(Generic[_C]):
             self.connectivity, int(start), int(end), weight=edge_weight
         )
 
-    @cartesian_only(grid=True)
+    @cartesian_only(
+        why="It projects Cartesian positions onto a track that "
+        "Environment.from_graph built, and a polar environment is not a track.",
+        fix="build the track with Environment.from_graph(...) and call "
+        "to_linear() on that environment",
+    )
     def to_linear(
         self: Environment[CartesianSystem],
         nd_position: NDArray[np.float64],
@@ -1426,7 +1414,12 @@ class Environment(Generic[_C]):
         assert linearization is not None
         return linearization.to_linear(nd_position)
 
-    @cartesian_only(grid=True)
+    @cartesian_only(
+        why="It maps positions along a track that Environment.from_graph built "
+        "back to Cartesian positions, and a polar environment is not a track.",
+        fix="build the track with Environment.from_graph(...) and call "
+        "linear_to_nd() on that environment",
+    )
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],
@@ -1502,7 +1495,12 @@ class Environment(Generic[_C]):
         assert linearization is not None
         return linearization.linear_to_nd(linear_position)
 
-    @cartesian_only
+    @cartesian_only(
+        why="It assigns each Cartesian position sample to the cell that contains it.",
+        fix="for egocentric occupancy, pass the allocentric positions, headings "
+        "and object positions to neurospatial.encoding.compute_egocentric_rate, "
+        "whose result.occupancy is in seconds per (distance, angle) bin",
+    )
     def occupancy(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1678,7 +1676,10 @@ class Environment(Generic[_C]):
             return_seconds=return_seconds,
         )
 
-    @cartesian_only
+    @cartesian_only(
+        why="It assigns each Cartesian position sample to the cell that contains it.",
+        fix="map (distance, angle) samples to bins with env.nearest_bin(points)",
+    )
     def bin_sequence(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1776,7 +1777,10 @@ class Environment(Generic[_C]):
         )
         return result.bins
 
-    @cartesian_only
+    @cartesian_only(
+        why="It assigns each Cartesian position sample to the cell that contains it.",
+        fix="map (distance, angle) samples to bins with env.nearest_bin(points)",
+    )
     def bin_sequence_with_runs(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1858,7 +1862,11 @@ class Environment(Generic[_C]):
             epochs=epochs,
         )
 
-    @cartesian_only
+    @cartesian_only(
+        why="It evaluates the field at Cartesian query positions.",
+        fix="read the field at the bins of (distance, angle) rows: "
+        "field[env.nearest_bin(points)]",
+    )
     def interpolate(
         self: Environment[CartesianSystem],
         field: NDArray[np.float64],
@@ -1966,7 +1974,12 @@ class Environment(Generic[_C]):
             mode=mode,
         )
 
-    @cartesian_only(grid=True)
+    @cartesian_only(
+        why="It merges blocks of cells on a Cartesian grid.",
+        fix="build a coarser polar environment with "
+        "Environment.from_polar_egocentric(...) and a larger distance_bin_size "
+        "or angle_bin_size",
+    )
     def rebin(
         self: Environment[CartesianSystem],
         factor: int | tuple[int, ...] | None = None,
@@ -2127,7 +2140,12 @@ class Environment(Generic[_C]):
         warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
 
-    @cartesian_only(grid=True)
+    @cartesian_only(
+        why="It rebuilds the kept cells, their regions and their boundary in "
+        "Cartesian coordinates.",
+        fix="keep the full polar environment and select bins with a boolean mask, "
+        "for example near = env.bin_centers[:, 0] < 20.0, then use rates[near]",
+    )
     def subset(
         self: Environment[CartesianSystem],
         *,
@@ -2240,7 +2258,11 @@ class Environment(Generic[_C]):
         )
         return publish_derived(self, derivation, name=name)
 
-    @cartesian_only
+    @cartesian_only(
+        why="It intersects the cells with a polygon in Cartesian coordinates.",
+        fix="keep the full polar environment and select bins with a boolean mask, "
+        "for example ahead = np.abs(env.bin_centers[:, 1]) < np.pi / 2",
+    )
     def clip(
         self: Environment[CartesianSystem],
         polygon: shapely.Polygon | shapely.MultiPolygon,
@@ -2277,7 +2299,12 @@ class Environment(Generic[_C]):
             self, _clip(self._binning, self._arena, polygon), name=name
         )
 
-    @cartesian_only
+    @cartesian_only(
+        why="An affine map moves Cartesian positions; it has no meaning for "
+        "(distance, angle) pairs.",
+        fix="transform the allocentric positions before computing egocentric "
+        "distance and angle, for example with neurospatial.ops.allocentric_to_egocentric",
+    )
     def apply_transform(
         self: Environment[CartesianSystem],
         transform: AffineND | Affine2D,
@@ -6359,10 +6386,5 @@ class Environment(Generic[_C]):
         )
 
 
-# Each Cartesian-only member and its refusal reason, collected from the
-# @cartesian_only decorators; the derived sets name the same members.
-_CARTESIAN_ONLY = cartesian_only_members(Environment)
-CARTESIAN_OPERATIONS: frozenset[str] = frozenset(_CARTESIAN_ONLY)
-CARTESIAN_GRID_OPERATIONS: frozenset[str] = frozenset(
-    name for name, reason in _CARTESIAN_ONLY.items() if reason == GRID_REASON
-)
+# Each Cartesian-only member, collected from the @cartesian_only decorators.
+CARTESIAN_OPERATIONS: frozenset[str] = cartesian_only_members(Environment)

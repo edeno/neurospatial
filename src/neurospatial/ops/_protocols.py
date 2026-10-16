@@ -14,7 +14,10 @@ if TYPE_CHECKING:
 
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import (
+        CartesianSystem,
+        EgocentricPolarSystem,
+    )
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.binning import TieBreakStrategy
@@ -78,14 +81,20 @@ class BasisCentersConsumer(GraphConsumer, Protocol):
     """Centers and graph for choosing basis-function centers."""
 
     @property
+    def coordinate_system(self) -> CartesianSystem | EgocentricPolarSystem: ...
+
+    @property
     def n_dims(self) -> int: ...
 
     @property
     def bin_centers(self) -> NDArray[np.float64]: ...
 
 
-class SpatialBasisConsumer(BasisCentersConsumer, CartesianConsumer, Protocol):
+class SpatialBasisConsumer(BasisCentersConsumer, Protocol):
     """Cartesian bins with extents for sizing a default spatial basis."""
+
+    @property
+    def coordinate_system(self) -> CartesianSystem: ...
 
     @property
     def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...

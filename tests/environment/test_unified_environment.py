@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import CartesianOnlyError, Environment
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 
@@ -53,7 +53,8 @@ def test_common_class_restoration_keeps_polar_units_and_kernels(restore):
     assert type(result) is Environment
     assert result.units == "cm"
     assert result._coordinate_system == env._coordinate_system
-    assert not hasattr(result, "bin_at")
+    with pytest.raises(CartesianOnlyError):
+        result.bin_at(result.bin_centers)
     np.testing.assert_array_equal(result.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(result.compute_kernel(0.8), env.compute_kernel(0.8))
 

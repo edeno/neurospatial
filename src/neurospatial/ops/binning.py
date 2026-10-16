@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.geometry._region_bins import region_bin_mask
 
 if TYPE_CHECKING:
@@ -263,15 +264,11 @@ def map_points_to_bins(
       processing.
 
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "map_points_to_bins()",
-        instead=(
-            "Nearest-center lookup needs Cartesian bin centers; map points on "
-            "an allocentric Cartesian environment."
-        ),
+        why="It finds the nearest bin center to each Cartesian point.",
+        fix="find the bins of (distance, angle) rows with env.nearest_bin(points)",
     )
 
     return env.nearest_bin(
@@ -712,15 +709,17 @@ def resample_field(
     >>> np.allclose(resampled_identity, field)
     True
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
     for env in (src_env, dst_env):
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "resample_field()",
-            instead=(
-                "Bins are matched by nearest Cartesian center; resample between "
-                "allocentric Cartesian environments."
+            why=(
+                "It matches each target bin to the nearest Cartesian source bin center."
+            ),
+            fix=(
+                "resample between allocentric environments; build polar maps with the "
+                "same Environment.from_polar_egocentric(...) settings so their bins "
+                "match"
             ),
         )
     # Validate inputs

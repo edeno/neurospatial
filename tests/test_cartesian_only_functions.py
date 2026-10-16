@@ -166,7 +166,11 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
     with pytest.raises(CartesianOnlyError) as info:
         call(polar)
     assert info.value.operation == operation
-    assert "polar environment" in str(info.value)
+    assert isinstance(info.value, TypeError)
+    what, why, fix = str(info.value).split("\n")
+    assert what == f"{operation} does not work on a polar environment."
+    assert why.startswith("Why: ") and "(distance, angle)" in why
+    assert fix.startswith("Fix: ")
 
 
 @pytest.mark.parametrize(

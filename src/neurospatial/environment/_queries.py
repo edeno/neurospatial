@@ -11,9 +11,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._cartesian import require_cartesian
 from neurospatial.environment._targets import validate_bin_indices
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    require_cartesian,
+)
 from neurospatial.ops.distance import distance_field
 
 
@@ -74,7 +77,14 @@ def _distance_to(
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
     # Compute distances based on metric
     if metric == "euclidean":
-        require_cartesian(coordinates, "distance_to(metric='euclidean')")
+        require_cartesian(
+            coordinates,
+            "distance_to(metric='euclidean')",
+            why="The straight-line distance between bin centers treats them as "
+            "Cartesian positions.",
+            fix="use metric='geodesic', which follows the connectivity graph and "
+            "its physical edge lengths",
+        )
         # Euclidean distance: straight-line distance to nearest target
         # Vectorized implementation using broadcasting for performance
         target_positions = bin_centers[targets]  # (n_targets, n_dims)

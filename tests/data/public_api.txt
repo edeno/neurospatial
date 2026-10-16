@@ -1,4 +1,5 @@
 neurospatial.BinIndexOutOfRangeError (class)
+neurospatial.CartesianOnlyError (class)
 neurospatial.DecodingResult (class)
 neurospatial.Environment (class)
 neurospatial.GraphValidationError (class)

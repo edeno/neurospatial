@@ -84,6 +84,7 @@ from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -652,15 +653,14 @@ def detect_runs_between_regions(
     True
     """
     if min_speed is not None:
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "detect_runs_between_regions(min_speed=...)",
-            instead=(
-                "Run speed needs Cartesian bin centers; pass min_speed=None to "
-                "detect runs from region entries alone."
+            why=(
+                "Run speed comes from the Cartesian distance between successive bin "
+                "centers."
             ),
+            fix="pass min_speed=None to detect runs from region entries alone",
         )
     # Validate inputs
     if source not in env.regions:
@@ -1331,14 +1331,13 @@ def detect_laps(
            The reorganization and reactivation of hippocampal maps predict
            spatial memory performance. Nature Neuroscience, 13(8), 995-1002.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "detect_laps()",
-        instead=(
-            "Lap direction needs Cartesian bin centers; detect laps on an "
-            "allocentric Cartesian environment."
+        why="Lap direction comes from Cartesian steps between bin centers.",
+        fix=(
+            "detect laps on an allocentric environment built from the animal's "
+            "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
     # Validate method
@@ -2357,12 +2356,14 @@ def trajectory_similarity(
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
     if method in ("hausdorff", "dtw"):
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             f"trajectory_similarity(method={method!r})",
-            instead="Use method='jaccard' or method='correlation', which compare bins.",
+            why=(
+                "Hausdorff and DTW distances measure straight lines between bin "
+                "centers."
+            ),
+            fix="use method='jaccard' or method='correlation', which compare bins",
         )
 
     if method == "jaccard":

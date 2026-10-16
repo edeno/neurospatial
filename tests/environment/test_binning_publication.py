@@ -18,7 +18,7 @@ from environment_helpers import (
     publish_environment,
 )
 
-from neurospatial import Environment
+from neurospatial import CartesianOnlyError, Environment
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
@@ -163,8 +163,10 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
             np.testing.assert_array_equal(contains, expected != -1)
             assert contains_warnings == expected_warnings
     else:
-        assert not hasattr(env, "bin_at")
-        assert not hasattr(env, "contains")
+        with pytest.raises(CartesianOnlyError):
+            env.bin_at(points)
+        with pytest.raises(CartesianOnlyError):
+            env.contains(points)
     np.testing.assert_array_equal(points, untouched)
     assert points.flags.writeable
     assert actual.dtype == np.intp

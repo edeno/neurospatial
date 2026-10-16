@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 # Test imports from the new location
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     IDW_MIN_DISTANCE,
     ProbabilityMappingParams,
@@ -21,6 +22,8 @@ from neurospatial.ops.alignment import (
 # Minimal mock Environment class for testing
 class MockEnvironment:
     """Mock Environment class for testing alignment functions."""
+
+    coordinate_system = CartesianSystem()
 
     def __init__(self, bin_centers, n_dims):
         self.bin_centers = bin_centers

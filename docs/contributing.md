@@ -188,11 +188,17 @@ that grows in place, such as an eigenbasis, is read and grown inside
 There is one runtime `Environment` class; factories give it a static
 coordinate type, `Environment[CartesianSystem]` or
 `Environment[EgocentricPolarSystem]`. Mark a member that is meaningless on
-polar bins with `@cartesian_only` (or `@cartesian_only(grid=True)` when it
-needs a Cartesian grid) from `environment/_cartesian.py`, and annotate `self`
-as `Environment[CartesianSystem]`. The decorator is the only record of the
-capability: it refuses polar environments at call time, hides the member from
-`hasattr` and `dir()` on polar instances, and feeds `CARTESIAN_OPERATIONS`.
+polar bins with `@cartesian_only(why=..., fix=...)` from
+`environment/_cartesian.py`, and annotate `self` as
+`Environment[CartesianSystem]`. `why` says what the member does with Cartesian
+coordinates and `fix` names what works on a polar environment. The decorator is
+the only record of the capability: it refuses polar environments when the
+member is called and feeds `CARTESIAN_OPERATIONS`. The member stays visible, so
+`hasattr` is True. A Cartesian-only mode of a shared method, or an analysis
+function in another package, refuses with
+`geometry._coordinates.require_cartesian(env.coordinate_system, operation,
+why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
+message layout.
 Shared code asks the coordinate descriptor about lengths, axes and
 circularity, or reads `coordinate_kind`; it does not branch on classes or
 layout labels. Every other public member needs a stated polar meaning, which

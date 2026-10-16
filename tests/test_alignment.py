@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     apply_similarity_transform,
     get_2d_rotation_matrix,
@@ -10,6 +11,8 @@ from neurospatial.ops.alignment import (
 
 # Minimal mock Environment class for testing
 class MockEnvironment:
+    coordinate_system = CartesianSystem()
+
     def __init__(self, bin_centers, n_dims):
         self.bin_centers = bin_centers
         self.n_dims = n_dims

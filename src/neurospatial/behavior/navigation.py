@@ -118,6 +118,7 @@ from numpy.typing import NDArray
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _positive_dt
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -575,12 +576,17 @@ def path_progress(
     distance_to_region : Distance to target region over time
     """
     if metric == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "path_progress(metric='euclidean')",
-            instead="Use metric='geodesic', which follows physical graph edge lengths.",
+            why=(
+                "The straight-line distance between bin centers treats them as "
+                "Cartesian positions."
+            ),
+            fix=(
+                "use metric='geodesic', which follows the connectivity graph and its "
+                "physical edge lengths"
+            ),
         )
 
     from neurospatial.environment._targets import validate_sample_targets
@@ -733,12 +739,17 @@ def distance_to_region(
     cost_to_goal : Distance with terrain/learned cost
     """
     if metric == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "distance_to_region(metric='euclidean')",
-            instead="Use metric='geodesic', which follows physical graph edge lengths.",
+            why=(
+                "The straight-line distance between bin centers treats them as "
+                "Cartesian positions."
+            ),
+            fix=(
+                "use metric='geodesic', which follows the connectivity graph and its "
+                "physical edge lengths"
+            ),
         )
 
     from neurospatial.environment._targets import validate_sample_targets
@@ -1002,14 +1013,16 @@ def graph_turn_sequence(
     --------
     compute_trajectory_curvature : Continuous curvature for any trajectory
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "graph_turn_sequence()",
-        instead=(
-            "Turn direction needs Cartesian bin centers; classify turns on an "
-            "allocentric Cartesian environment."
+        why=(
+            "A turn's direction is the sign of the cross product of successive "
+            "Cartesian steps between bin centers."
+        ),
+        fix=(
+            "classify turns on an allocentric environment built from the animal's "
+            "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
     from neurospatial.environment._targets import validate_target_bins
@@ -1435,14 +1448,16 @@ def shortest_path_length(
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
 
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "shortest_path_length(metric='geodesic')",
-        instead=(
-            "start and goal are allocentric positions; use an allocentric "
-            "Cartesian environment, or metric='euclidean'."
+        why=(
+            "start and goal are allocentric Cartesian positions, located in the "
+            "environment's bins."
+        ),
+        fix=(
+            "use an allocentric environment, or metric='euclidean' for the "
+            "straight-line distance from start to goal"
         ),
     )
     return env.distance_between(points=np.vstack([start, goal]))
@@ -2101,14 +2116,16 @@ def approach_rate(
         distances = np.linalg.norm(goal_vec, axis=1)
     else:
         assert env is not None
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "approach_rate(metric='geodesic')",
-            instead=(
-                "positions and goal are allocentric positions; use an "
-                "allocentric Cartesian environment, or metric='euclidean'."
+            why=(
+                "positions and goal are allocentric Cartesian positions, located in "
+                "the environment's bins."
+            ),
+            fix=(
+                "use an allocentric environment, or metric='euclidean' for the "
+                "straight-line distance to the goal"
             ),
         )
         position_bins = env.bin_at(positions)

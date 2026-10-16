@@ -11,7 +11,6 @@ import pytest
 from neurospatial import Environment, Regions
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.environment.core import (
-    CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
 )
 
@@ -784,7 +783,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
     def test_bin_at_raises_on_polar_env(self, polar_env):
         from_xy = np.array([[5.0, 5.0]])
-        with pytest.raises(NotImplementedError, match=r"polar.*bin_at|bin_at.*polar"):
+        with pytest.raises(CartesianOnlyError, match=r"polar.*bin_at|bin_at.*polar"):
             polar_env.bin_at(from_xy)
 
     def test_distance_between_follows_the_polar_graph(self, polar_env):
@@ -799,7 +798,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
     def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
         with pytest.raises(
-            NotImplementedError,
+            CartesianOnlyError,
             match=r"polar.*distance_to.*euclidean|distance_to.*euclidean.*polar",
         ):
             polar_env.distance_to(bins=[0], metric="euclidean")
@@ -828,7 +827,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         field = np.arange(polar_env.n_bins, dtype=float)
         points = np.array([[5.0, 0.0], [25.0, 1.0]])
         with pytest.raises(
-            NotImplementedError, match=r"polar.*interpolate|interpolate.*polar"
+            CartesianOnlyError, match=r"polar.*interpolate|interpolate.*polar"
         ):
             polar_env.interpolate(field, points, mode="nearest")
 
@@ -836,7 +835,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
         with pytest.raises(
-            NotImplementedError, match=r"polar.*occupancy|occupancy.*polar"
+            CartesianOnlyError, match=r"polar.*occupancy|occupancy.*polar"
         ):
             polar_env.occupancy(times, positions)
 
@@ -844,7 +843,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
         with pytest.raises(
-            NotImplementedError, match=r"polar.*bin_sequence|bin_sequence.*polar"
+            CartesianOnlyError, match=r"polar.*bin_sequence|bin_sequence.*polar"
         ):
             polar_env.bin_sequence(times, positions)
 
@@ -852,30 +851,30 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
         with pytest.raises(
-            NotImplementedError,
+            CartesianOnlyError,
             match=r"polar.*bin_sequence_with_runs|bin_sequence_with_runs.*polar",
         ):
             polar_env.bin_sequence_with_runs(times, positions)
 
     def test_to_linear_raises_on_polar_env(self, polar_env):
         with pytest.raises(
-            NotImplementedError, match=r"polar.*to_linear|to_linear.*polar"
+            CartesianOnlyError, match=r"polar.*to_linear|to_linear.*polar"
         ):
             polar_env.to_linear(np.array([[5.0, 0.0]]))
 
     def test_linear_to_nd_raises_on_polar_env(self, polar_env):
         with pytest.raises(
-            NotImplementedError, match=r"polar.*linear_to_nd|linear_to_nd.*polar"
+            CartesianOnlyError, match=r"polar.*linear_to_nd|linear_to_nd.*polar"
         ):
             polar_env.linear_to_nd(np.array([5.0]))
 
     def test_rebin_raises_on_polar_env(self, polar_env):
-        with pytest.raises(NotImplementedError, match=r"polar.*rebin|rebin.*polar"):
+        with pytest.raises(CartesianOnlyError, match=r"polar.*rebin|rebin.*polar"):
             polar_env.rebin(2)
 
     def test_subset_raises_on_polar_env(self, polar_env):
         mask = np.ones(polar_env.n_bins, dtype=bool)
-        with pytest.raises(NotImplementedError, match=r"polar.*subset|subset.*polar"):
+        with pytest.raises(CartesianOnlyError, match=r"polar.*subset|subset.*polar"):
             polar_env.subset(mask=mask)
 
     # --- Graph operations remain valid on polar and must not regress.
@@ -912,9 +911,9 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         )
         assert type(restored) is type(polar_env)
         np.testing.assert_array_equal(restored.bin_centers, polar_env.bin_centers)
-        assert not hasattr(restored, "bin_at")
+        assert hasattr(restored, "bin_at")
         with pytest.raises(CartesianOnlyError):
-            _ = restored.bin_at
+            restored.bin_at(np.array([[5.0, 0.0]]))
 
     def test_unknown_attribute_preserves_standard_attribute_error(self, polar_env):
         with pytest.raises(AttributeError) as caught:
@@ -931,7 +930,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
                     times=np.array([0.0, 0.1]),
                     positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
                 ),
-                "transitions() from times and positions",
+                "transitions(times=..., positions=...)",
             ),
             (
                 lambda env: env.distance_to(bins=[0], metric="euclidean"),
@@ -947,8 +946,10 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         polar_env = polar_env.with_regions(region_builder)
         with pytest.raises(CartesianOnlyError) as caught:
             call(polar_env)
-        assert str(caught.value).startswith(f"Environment.{operation} is not available")
-        assert "()()" not in str(caught.value)
+        assert str(caught.value).startswith(
+            f"{operation} does not work on a polar environment."
+        )
+        assert caught.value.operation == operation
 
     def test_points_and_point_regions_use_distance_and_angle(self, polar_env):
         """Polar points and point regions are read in bin-center coordinates."""
@@ -1050,7 +1051,7 @@ class TestPolarBoundaryGuardsExtended:
     def test_contains_raises_on_polar_env(self, polar_env):
         """contains is the boolean partner of bin_at and is unavailable on polar."""
         with pytest.raises(
-            NotImplementedError, match=r"polar.*contains|contains.*polar"
+            CartesianOnlyError, match=r"polar.*contains|contains.*polar"
         ):
             polar_env.contains(np.array([[5.0, 5.0]]))
 
@@ -1086,22 +1087,16 @@ class TestPolarBoundaryGuardsExtended:
         )
 
         T = translate(1.0, 1.0)
-        with pytest.raises(ValueError, match=r"polar") as caught:
+        with pytest.raises(CartesianOnlyError, match=r"apply_transform.*polar"):
             apply_transform_to_environment(polar_env, T)
-        assert str(caught.value) == (
-            "apply_transform requires a Cartesian environment but got an "
-            "egocentric polar environment (an affine transform on "
-            "(distance, angle) pairs is not geometrically meaningful). For "
-            "polar envs, work in the egocentric coordinate space directly."
-        )
 
     def test_apply_transform_method_refuses_polar_env(self, polar_env):
-        """The apply_transform method on a polar env raises NotImplementedError."""
+        """The apply_transform method on a polar env raises CartesianOnlyError."""
         from neurospatial.ops.transforms import translate
 
         T = translate(1.0, 1.0)
         with pytest.raises(
-            NotImplementedError, match=r"polar.*apply_transform|apply_transform.*polar"
+            CartesianOnlyError, match=r"polar.*apply_transform|apply_transform.*polar"
         ):
             polar_env.apply_transform(T)
 
@@ -1264,11 +1259,11 @@ class TestPolarTypeAndGeometry:
         assert isinstance(polar_env, Environment)
 
         # Cartesian-only methods are absent/clearly errored, not silently disabled.
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(CartesianOnlyError):
             polar_env.bin_at(np.array([[1.0, 1.0]]))
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(CartesianOnlyError):
             polar_env.contains(np.array([[1.0, 1.0]]))
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(CartesianOnlyError):
             polar_env.distance_to(bins=[0], metric="euclidean")
 
     def test_polar_edge_distances_physical(self, polar_env):
@@ -1514,9 +1509,6 @@ def test_cartesian_operations_are_the_capability_methods():
         "subset",
         "to_linear",
     } == CARTESIAN_OPERATIONS
-    assert {"to_linear", "linear_to_nd", "rebin", "subset"} == (
-        CARTESIAN_GRID_OPERATIONS
-    )
     assert set(dir(Environment)) >= CARTESIAN_OPERATIONS
 
 
@@ -1533,3 +1525,21 @@ def test_polar_environment_reports_no_combined_components():
     bridges = polar_env.get_bridge_attributes()
     assert bridges.empty
     assert "conductance" in bridges.columns
+
+
+def test_combine_refuses_polar_components_with_the_shared_error():
+    polar_env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 2,
+    )
+    room = Environment.from_samples(np.zeros((4, 2)), bin_size=1.0)
+    with pytest.raises(CartesianOnlyError) as refused:
+        Environment.combine({"room": room, "surround": polar_env})
+    assert refused.value.operation == "Environment.combine()"
+    assert str(refused.value).startswith(
+        "Environment.combine() does not work on a polar environment."
+    )
+    with pytest.raises(TypeError, match="takes Environment values"):
+        Environment.combine({"room": room, "other": object()})

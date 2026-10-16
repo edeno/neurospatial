@@ -235,10 +235,7 @@ def test_incompatible_environment_site():
         lambda e: e.BinIndexOutOfRangeError(99, n_bins=4),
         lambda e: e.IncompatibleEnvironmentError("dims differ", fix="match them."),
         lambda e: e.CartesianOnlyError(
-            "Environment",
-            "bin_at()",
-            reason="Cartesian-coordinate operation",
-            explanation="x",
+            "Environment.bin_at()", why="It reads positions.", fix="use bins."
         ),
         lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
         lambda e: e.GraphValidationError("bad graph"),

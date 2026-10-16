@@ -46,8 +46,6 @@ from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import CartesianOnlyError
-
 if TYPE_CHECKING:
     from neurospatial.ops._protocols import AffineTransformConsumer
 
@@ -1455,15 +1453,7 @@ def apply_transform_to_environment(
     For 2D environments, edge 'angle_2d' attributes are also recomputed.
 
     """
-    try:
-        return env.apply_transform(transform, name=name, frame=frame)
-    except CartesianOnlyError:
-        raise ValueError(
-            "apply_transform requires a Cartesian environment but got an "
-            "egocentric polar environment (an affine transform on "
-            "(distance, angle) pairs is not geometrically meaningful). For "
-            "polar envs, work in the egocentric coordinate space directly."
-        ) from None
+    return env.apply_transform(transform, name=name, frame=frame)
 
 
 # ---------------------------------------------------------------------

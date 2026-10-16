@@ -26,7 +26,7 @@ polar = Environment.from_polar_egocentric(
 assert type(room) is type(polar) is Environment
 assert room.coordinate_kind == "cartesian"
 assert polar.coordinate_kind == "polar"
-assert not hasattr(polar, "bin_at")
+assert hasattr(polar, "bin_at")  # visible; calling it raises CartesianOnlyError
 assert polar.smooth(np.ones(polar.n_bins), bandwidth=1.0).shape == (polar.n_bins,)
 ```
 

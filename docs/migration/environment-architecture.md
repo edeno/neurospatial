@@ -817,3 +817,51 @@ assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
 other interval gates exclude every interval, or when the median sampling
 interval is longer than `max_gap`. Timestamps in milliseconds trigger it: each
 33 ms frame looks like a 33 s recording gap. Convert `times` to seconds.
+
+## Cartesian-only methods on polar environments
+
+An egocentric polar environment stores `(distance, angle)` bins around the
+animal. Methods that read positions as Cartesian `(x, y)`, such as `bin_at`,
+`contains`, `occupancy` and `subset`, still refuse it, but the refusal now
+happens when you call the method, not when you look it up:
+
+- `hasattr(polar_env, "bin_at")` is `True` and `dir(polar_env)` lists the
+  method. Calling it raises `CartesianOnlyError`.
+- `CartesianOnlyError` is a `TypeError`, and it is importable as
+  `neurospatial.CartesianOnlyError`. It is no longer an `AttributeError` or a
+  `NotImplementedError`.
+- Every Cartesian-only refusal raises this one error: the methods, the
+  Cartesian modes of shared methods such as `distance_to(metric="euclidean")`,
+  analysis functions such as `spatial_autocorrelation`, `Environment.combine`
+  and `ops.apply_transform_to_environment` (which used to raise `ValueError`).
+- The message says what was refused, why it needs Cartesian positions, and what
+  to use on a polar environment.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import CartesianOnlyError, Environment
+
+polar_env = Environment.from_polar_egocentric(
+    distance_range=(0.0, 40.0),  # cm from the animal
+    angle_range=(-np.pi, np.pi),
+    distance_bin_size=10.0,
+    angle_bin_size=np.pi / 4,
+    units="cm",
+)
+points = np.array([[15.0, 0.3]])  # (distance, angle) of an object
+# Before: if hasattr(polar_env, "bin_at"): ...
+# Before: except (AttributeError, NotImplementedError):
+try:
+    bins = polar_env.bin_at(points)
+except CartesianOnlyError as error:
+    print(error)  # what, why, and the polar alternative
+    bins = polar_env.nearest_bin(points)
+# To branch before calling, read the coordinate kind instead of hasattr
+if polar_env.coordinate_kind == "polar":
+    bins = polar_env.nearest_bin(points)
+```
+
+A polar environment now answers `component_keys`, `bin_sources` and
+`get_bridge_attributes()` like any environment that was not combined: an empty
+tuple, `None` and an empty table.

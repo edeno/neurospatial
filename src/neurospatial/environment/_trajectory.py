@@ -32,11 +32,14 @@ from neurospatial._intervals import (
 )
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
-from neurospatial.environment._cartesian import require_cartesian
 from neurospatial.environment._fields import _compute_kernel
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import require_rectilinear
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    require_cartesian,
+)
 from neurospatial.geometry._lookup import locate
 from neurospatial.ops._linear_allocation import linear_grid_occupancy
 from neurospatial.ops._polygon_allocation import (
@@ -611,7 +614,14 @@ def _empirical_transitions(
             )
 
         # Compute bin sequence from trajectory
-        require_cartesian(coordinates, "transitions() from times and positions")
+        require_cartesian(
+            coordinates,
+            "transitions(times=..., positions=...)",
+            why="It assigns each Cartesian position sample to the cell that "
+            "contains it.",
+            fix="map (distance, angle) samples to bins with env.nearest_bin(points) "
+            "and pass them as env.transitions(bins)",
+        )
         bins = _bin_sequence(
             times,
             positions,

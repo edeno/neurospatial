@@ -13,6 +13,8 @@ from typing import ClassVar, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import CartesianOnlyError
+
 
 class CellLengthConsumer(Protocol):
     """Cell measures, dimension count and radial edges for length-scale defaults."""
@@ -147,42 +149,35 @@ class EgocentricPolarSystem:
         return f"Distance{suffix}", "Angle (rad)"
 
 
-_POLAR_COORDINATES = (
-    "this is a polar environment whose bin_centers[:, 0] is distance and "
-    "bin_centers[:, 1] is angle in radians, so operations that assume Cartesian "
-    "(x, y[, z]) coordinates or a Cartesian grid would silently return "
-    "geometric nonsense."
-)
-
-
-def _require_cartesian_coordinates(
-    env: object, operation: str, *, instead: str
+def require_cartesian(
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    operation: str,
+    *,
+    why: str,
+    fix: str,
 ) -> None:
-    """Refuse a domain function that reads polar bin centers as Cartesian.
+    """Refuse an operation that reads polar ``(distance, angle)`` bins as Cartesian.
+
+    Every Cartesian-only refusal goes through this check: the
+    ``@cartesian_only`` Environment members, the Cartesian-only modes of shared
+    methods, and analysis functions in other packages.
 
     Parameters
     ----------
-    env : Environment
-        Environment whose bin centers the operation reads. Duck-typed
-        objects without owned coordinates are treated as Cartesian.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        The environment's coordinate descriptor, ``env.coordinate_system``.
     operation : str
-        The refused call as the caller wrote it, e.g. ``"mean_position()"``
+        The refused call as the caller wrote it, e.g. ``"Environment.bin_at()"``
         or ``"rate_map_centroid(method='euclidean')"``.
-    instead : str
-        One sentence naming the polar-safe alternative.
+    why : str
+        One sentence on why the operation needs Cartesian coordinates.
+    fix : str
+        What works on a polar environment instead.
 
     Raises
     ------
     CartesianOnlyError
-        If ``env`` stores polar ``(distance, angle)`` bins.
+        If ``coordinates`` is an :class:`EgocentricPolarSystem`.
     """
-    # Duck-typed environments without owned coordinates are Cartesian arrays.
-    if isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem):
-        from neurospatial._exceptions import CartesianOnlyError
-
-        raise CartesianOnlyError(
-            type(env).__name__,
-            operation,
-            reason="Cartesian-coordinate operation",
-            explanation=f"{_POLAR_COORDINATES} {instead}",
-        )
+    if isinstance(coordinates, EgocentricPolarSystem):
+        raise CartesianOnlyError(operation, why=why, fix=fix)

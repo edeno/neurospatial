@@ -283,6 +283,24 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   one entry per bin. Integer values in `mask=` raise `ValueError` that shows how
   to build a mask from bin indices.
 
+- Cartesian-only methods stay visible on egocentric polar environments and
+  refuse when called. `hasattr(polar_env, "bin_at")` is now `True` and
+  `dir(polar_env)` lists `bin_at`, `contains`, `occupancy`, `subset` and the
+  other Cartesian-only methods; calling one raises `CartesianOnlyError`.
+  `CartesianOnlyError` is now a `TypeError` (the operation does not apply to
+  this kind of environment) and no longer an `AttributeError` or
+  `NotImplementedError`; import it as `neurospatial.CartesianOnlyError`.
+  Replace `hasattr` checks with `env.coordinate_kind == "polar"`, and
+  `except (AttributeError, NotImplementedError)` with
+  `except CartesianOnlyError`. Every Cartesian-only refusal now raises this
+  error with one message layout: what was refused, why it needs Cartesian
+  positions, and what works on a polar environment. That includes the
+  Cartesian modes of shared methods (`distance_to(metric="euclidean")`,
+  `transitions(times=..., positions=...)`), analysis functions such as
+  `spatial_autocorrelation` and `field_shape_metrics`, `Environment.combine`
+  (it raised a plain `TypeError`) and `ops.apply_transform_to_environment`
+  (it raised `ValueError`).
+
 ### Changed
 
 - On an egocentric polar environment, `env.component_keys`, `env.bin_sources`
@@ -381,15 +399,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - A `CartesianOnlyError` from a Cartesian-only method or property, such as
   `bin_at`, `contains` or `occupancy`, names the class of the environment that
   refused the call. On a subclass of `Environment`, `polar_env.bin_at(points)`
-  reports `MyEnvironment.bin_at() is not available ...`, for the bound call
-  and for `Environment.bin_at(polar_env, points)` alike. Messages from
-  `Environment` itself are unchanged.
-
-- `dir(env)` on a polar environment, and tools that read it such as
-  `inspect.getmembers(env)`, no longer list the Cartesian-only members such as
-  `bin_at`, `contains`, `occupancy` and `subset`. It now matches
-  `hasattr(env, "bin_at")`, which was already `False`. Cartesian environments
-  list them as before.
+  reports `MyEnvironment.bin_at() does not work on a polar environment.`, for
+  the bound call and for `Environment.bin_at(polar_env, points)` alike.
 
 - Derived environments no longer repeat the warning about unrecognized units.
 

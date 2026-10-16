@@ -75,6 +75,7 @@ from scipy import fft, ndimage, stats
 from scipy.signal import find_peaks
 
 from neurospatial._results import ResultMixin
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -273,14 +274,13 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "spatial_autocorrelation()",
-        instead=(
-            "A 2D autocorrelogram needs a Cartesian grid; compute it on an "
-            "allocentric Cartesian environment."
+        why="The autocorrelogram shifts the rate map along Cartesian x and y.",
+        fix=(
+            "compute it on an allocentric environment, for example "
+            "Environment.from_samples(positions, bin_size=...)"
         ),
     )
     _validate_autocorr_input(env, firing_rate)

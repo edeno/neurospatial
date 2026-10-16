@@ -83,7 +83,7 @@ def test_transform_entry_points_preserve_invalid_transform_errors(entry, invalid
     assert str(error.value) == message
 
 
-def test_polar_entry_points_keep_their_distinct_public_errors():
+def test_polar_entry_points_raise_the_same_refusal():
     env = Environment.from_polar_egocentric(
         distance_range=(0, 2),
         angle_range=(-np.pi, np.pi),
@@ -91,7 +91,7 @@ def test_polar_entry_points_keep_their_distinct_public_errors():
         angle_bin_size=np.pi / 2,
     )
     transform = translate(1, 2)
-    with pytest.raises(ValueError, match="egocentric polar environment"):
+    with pytest.raises(CartesianOnlyError, match=r"Environment.apply_transform\(\)"):
         apply_transform_to_environment(env, transform)
     with pytest.raises(CartesianOnlyError, match=r"Environment.apply_transform\(\)"):
         env.apply_transform(transform)

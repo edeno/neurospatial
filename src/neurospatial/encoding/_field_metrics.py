@@ -27,6 +27,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
+from neurospatial.geometry._coordinates import require_cartesian
+
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.geometry._coordinates import CartesianSystem
@@ -175,14 +177,16 @@ def rate_map_centroid(
     import networkx as nx
 
     if method == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "rate_map_centroid(method='euclidean')",
-            instead=(
-                "Use method='geodesic', which returns the field bin that "
-                "minimizes rate-weighted graph distance."
+            why=(
+                "A rate-weighted mean of bin centers averages them as Cartesian "
+                "positions."
+            ),
+            fix=(
+                "use method='geodesic', which returns the field bin that minimizes "
+                "rate-weighted graph distance"
             ),
         )
 
@@ -674,14 +678,16 @@ def field_shape_metrics(
     .. [2] Knierim et al. (1995). Place cells, head direction cells, and the
            learning of landmark stability. J Neurosci 15(3).
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "field_shape_metrics()",
-        instead=(
-            "Eccentricity and orientation need Cartesian bin centers; compute "
-            "field shape on an allocentric Cartesian environment."
+        why=(
+            "Eccentricity and orientation come from the covariance of Cartesian bin "
+            "centers."
+        ),
+        fix=(
+            "compute field shape on an allocentric environment, for example "
+            "Environment.from_samples(positions, bin_size=...)"
         ),
     )
     # Initialize with NaN defaults
@@ -898,15 +904,17 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
     for env in (env_1, env_2):
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "field_shift_distance()",
-            instead=(
-                "Field centroids need Cartesian bin centers; compare field "
-                "positions on allocentric Cartesian environments."
+            why=(
+                "It measures the straight-line distance between Cartesian field "
+                "centroids."
+            ),
+            fix=(
+                "compare field positions on allocentric environments, for example "
+                "Environment.from_samples(positions, bin_size=...)"
             ),
         )
     # Compute centroids for both fields
@@ -1108,14 +1116,13 @@ def compute_field_emd(
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
     if metric == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "compute_field_emd(metric='euclidean')",
-            instead=(
-                "Use metric='geodesic', whose ground distance follows physical "
-                "graph edge lengths."
+            why="Its ground distance is the straight line between bin centers.",
+            fix=(
+                "use metric='geodesic', whose ground distance follows physical graph "
+                "edge lengths"
             ),
         )
 

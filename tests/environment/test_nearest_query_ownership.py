@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from neurospatial import Environment
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.binning import map_points_to_bins
 
 
@@ -46,6 +47,8 @@ def test_public_nearest_query_keeps_raw_polar_coordinate_semantics():
 
 def test_compatibility_wrappers_need_no_private_cache_attributes():
     class Queries:
+        coordinate_system = CartesianSystem()
+
         def nearest_bin(self, points, **options):
             assert options["max_distance"] == 2.0
             return np.zeros(len(points), dtype=np.int64)

@@ -102,6 +102,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._coordinates import require_cartesian
+
 if TYPE_CHECKING:
     import networkx as nx
     from scipy import sparse
@@ -210,15 +212,13 @@ def select_basis_centers(
         generator = np.random.default_rng(rng)
 
     if method == "kmeans":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "select_basis_centers(method='kmeans')",
-            instead=(
-                "Use method='farthest_point', which spreads centers by graph "
-                "distance, or method='random' (center_method= in the basis "
-                "functions)."
+            why="k-means clusters bin centers as Cartesian positions.",
+            fix=(
+                "use method='farthest_point', which spreads centers by graph "
+                "distance, or method='random' (center_method= in the basis functions)"
             ),
         )
         return _select_centers_kmeans(env.bin_centers, n_centers, generator)
@@ -1103,15 +1103,13 @@ def spatial_basis(
     The function creates a multi-scale basis with 3 octave-spaced sigma
     values centered around the coverage-determined scale.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "spatial_basis()",
-        instead=(
-            "Its automatic scale assumes Cartesian extents. Use "
-            "geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
-            "with sigma in distance units."
+        why="Its automatic scale comes from the Cartesian extent of the bins.",
+        fix=(
+            "use geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
+            "with sigma in distance units"
         ),
     )
     # Compute environment extent

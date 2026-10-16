@@ -26,6 +26,7 @@ from neurospatial.geometry._combine_geometry import (
     segment_enters_component,
 )
 from neurospatial.geometry._composition import CombinedLocator, combined_normals
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._polygon import (
@@ -86,9 +87,16 @@ def _combine(
     keys, values = tuple(components), tuple(components.values())
     if any(not isinstance(key, str) or not key or "/" in key for key in keys):
         raise ValueError("Component keys must be nonempty strings without '/'.")
-    if any(not isinstance(env, Environment) or env._is_polar for env in values):
-        raise TypeError(
-            "Combine Cartesian Environment values; polar charts require their own coordinate contract."
+    if any(not isinstance(env, Environment) for env in values):
+        raise TypeError("Environment.combine() takes Environment values.")
+    for env in values:
+        require_cartesian(
+            env._coordinate_system,
+            "Environment.combine()",
+            why="It joins the cells of each component, and the bridges between "
+            "them, in one shared Cartesian frame.",
+            fix="combine allocentric Cartesian environments, and analyze each "
+            "polar environment on its own",
         )
     first = values[0]
     for env in values[1:]:
