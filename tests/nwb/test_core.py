@@ -332,6 +332,60 @@ class TestRequireNdxEvents:
         assert module.__name__ == "ndx_events"
 
 
+def _read_pose(nwbfile):
+    from neurospatial.io.nwb import read_pose
+
+    return read_pose(nwbfile)
+
+
+def _read_events(nwbfile):
+    from neurospatial.io.nwb import read_events
+
+    return read_events(nwbfile, "laps")
+
+
+_EXTENSIONS = pytest.mark.parametrize(
+    "read,module,missing_message",
+    [
+        (_read_pose, "ndx_pose", "ndx-pose is required"),
+        (_read_events, "ndx_events", "ndx-events is required"),
+    ],
+    ids=["ndx_pose", "ndx_events"],
+)
+
+
+class TestMissingNwbExtension:
+    """A missing extension is reported; other import failures pass through."""
+
+    @_EXTENSIONS
+    def test_missing_extension_is_reported(
+        self, read, module, missing_message, empty_nwb, monkeypatch
+    ):
+        import sys
+
+        monkeypatch.setitem(sys.modules, module, None)
+        with pytest.raises(ImportError, match=missing_message):
+            read(empty_nwb)
+
+    @_EXTENSIONS
+    def test_broken_extension_dependency_is_not_reported_as_missing_extension(
+        self, read, module, missing_message, empty_nwb, monkeypatch, tmp_path
+    ):
+        import sys
+
+        # The extension is installed but one of its own imports fails.
+        package = tmp_path / module
+        package.mkdir()
+        (package / "__init__.py").write_text("import absent_extension_dependency\n")
+        for name in [m for m in sys.modules if m.split(".")[0] == module]:
+            monkeypatch.delitem(sys.modules, name)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        with pytest.raises(ModuleNotFoundError) as caught:
+            read(empty_nwb)
+        assert caught.value.name == "absent_extension_dependency"
+        assert missing_message not in str(caught.value)
+
+
 class TestGetOrCreateProcessingModule:
     """Tests for _get_or_create_processing_module() helper."""
 
