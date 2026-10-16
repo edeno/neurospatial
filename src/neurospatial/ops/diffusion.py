@@ -47,6 +47,8 @@ from neurospatial import _constants
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from neurospatial.ops._protocols import (
         DiffusionAccuracyConsumer,
         DiffusionGeometryConsumer,
@@ -1224,6 +1226,72 @@ def above_component_floor(
     component_max = np.zeros((flat.shape[0], n_components))
     np.maximum.at(component_max, (np.arange(flat.shape[0])[:, None], labels), flat)
     return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
+
+
+def masked_diffusion_average(
+    apply_average: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    values: NDArray[np.float64],
+    valid: NDArray[np.bool_],
+    labels: NDArray[np.int_],
+    n_components: int,
+    *,
+    floor: float | Callable[[], float] | None,
+) -> NDArray[np.float64]:
+    """Average intensive fields over their valid bins with the diffusion operator.
+
+    Nadaraya-Watson with the row-stochastic ``mode="average"`` operator ``A``:
+    ``A(values * valid) / A(valid)``. Invalid bins contribute no weight, so they
+    neither pull valid neighbors toward zero nor spread NaN, and an invalid bin
+    near valid ones is filled from them. The filled values and the validity
+    weights are smoothed together in one batch, ``[values | weights]``.
+
+    A bin is NaN when its connected ``W``-component holds no valid bin (exact
+    and truncation-proof; see :func:`component_support_mask`) or, when
+    ``floor`` is given, when its smoothed weight is at most ``floor`` times the
+    largest weight in its component (see :func:`above_component_floor`). Far
+    from every valid bin both smoothed sums approach the apply's truncation
+    noise, so their ratio would be noise too. The numerator is never floored,
+    so signed fields keep their sign; the denominator is floored at
+    ``_DIFFUSE_DENOM_EPS`` to keep the division finite.
+
+    Parameters
+    ----------
+    apply_average : callable
+        The environment's average-mode diffusion, ``(n_bins, k) -> (n_bins, k)``.
+    values : NDArray[np.float64], shape (n_bins, n_fields)
+        Fields to average; entries at invalid bins are ignored.
+    valid : NDArray[np.bool_], shape (n_bins, n_fields)
+        Which bins of each field are observed.
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin ``W``-component id.
+    n_components : int
+        Number of components.
+    floor : float, callable or None
+        The far-field gate: a relative floor on the smoothed weight, or None
+        for the component-support gate alone. Each caller states its own. A
+        callable is evaluated after smoothing, for a floor that depends on the
+        operator the smoothing resolved (``diffusion_apply_rtol``).
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_bins, n_fields)
+        The averaged fields, NaN where unsupported.
+    """
+    n_fields = values.shape[1]
+    filled = np.where(valid, values, 0.0)
+    smoothed = np.asarray(
+        apply_average(np.concatenate([filled, valid.astype(np.float64)], axis=1))
+    )
+    numerator = smoothed[:, :n_fields].T
+    weights = smoothed[:, n_fields:].T
+    support = component_support_mask(labels, n_components, valid.T)
+    if floor is not None:
+        relative = floor() if callable(floor) else floor
+        support &= above_component_floor(labels, n_components, weights, relative)
+    denominator = np.maximum(weights, _DIFFUSE_DENOM_EPS)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        averaged = np.where(support, numerator / denominator, np.nan)
+    return np.asarray(averaged.T, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------

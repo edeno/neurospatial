@@ -68,12 +68,12 @@ from numpy.typing import ArrayLike, NDArray
 # estimate) and proceeds.
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import (
-    _DIFFUSE_DENOM_EPS,
     _RESOLUTION_MARGIN,
     above_component_floor,
     component_support_mask,
     diffusion_apply_rtol,
     diffusion_component_labels,
+    masked_diffusion_average,
 )
 
 if TYPE_CHECKING:
@@ -988,24 +988,10 @@ def _binned_gate(
 ) -> NDArray[np.float64]:
     """Masked diffusion average of a (possibly NaN) intensive rate.
 
-    Nadaraya-Watson with the row-stochastic average operator on the input's
-    valid (finite) bins: ``diffuse(rate * valid) / diffuse(valid)``, so uncovered
-    / NaN bins contribute no weight (they do not pull covered neighbours toward
-    zero) and an interior NaN is interpolated rather than propagating. Both the
-    filled rate and the validity mask are smoothed in one matrix-free
-    ``env.diffuse(mode="average")`` pass.
-
-    The final ``> 0`` support is derived from the **W-component structure**, NOT
-    the smoothed weight's sign: within a connected component the average operator
-    is entrywise positive, so a bin is supported iff its component holds a valid
-    input bin. This is exact and truncation-proof (a ``max(den, 0)`` floor would
-    still fail ``> 0`` where truncation flipped a tiny-positive dense denominator,
-    spuriously emitting NaN). Where support holds we divide by ``max(den, eps)``.
-
-    This helper is **sign-preserving** (the numerator is not floored), so it is
-    also the pattern ``resample_field`` uses for signed intensive fields; callers
-    that need a non-negative result (the ``binned`` firing-rate wrappers) clip
-    the output themselves.
+    The shared :func:`~neurospatial.ops.diffusion.masked_diffusion_average`
+    over the rate's valid (finite) bins, so NaN bins contribute no weight and an
+    interior NaN is interpolated rather than propagating. It is
+    **sign-preserving**; the ``binned`` firing-rate wrappers clip the output.
 
     **Far field.** Many bandwidths from any valid bin, both ``num`` and ``den``
     approach the truncated apply's noise, and their ratio is noise (it reached
@@ -1016,35 +1002,20 @@ def _binned_gate(
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
-    nan_mask = np.isnan(raw_rate)
-    valid = ~nan_mask
-    rate_filled = np.where(nan_mask, 0.0, raw_rate)
-    weights = valid.astype(np.float64)
-
-    # Smooth [rate_filled | weights] together (columns of an (n_bins, 2*k) batch).
-    if raw_rate.ndim == 1:
-        stacked = np.column_stack([rate_filled, weights])  # (n_bins, 2)
-    else:
-        stacked = np.concatenate([rate_filled.T, weights.T], axis=1)
-    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="average"))
-    if raw_rate.ndim == 1:
-        rate_smoothed = smoothed[:, 0]
-        weights_smoothed = smoothed[:, 1]
-    else:
-        n_neurons = raw_rate.shape[0]
-        rate_smoothed = smoothed[:, :n_neurons].T
-        weights_smoothed = smoothed[:, n_neurons:].T
-
     n_components, labels = diffusion_component_labels(env)
-    support = component_support_mask(labels, n_components, valid)
-    # Far from every valid bin both smoothed sums approach the apply's
-    # truncation noise; leave those bins NaN rather than report noise/noise.
-    support &= above_component_floor(
-        labels, n_components, weights_smoothed, _resolution_floor(env, bandwidth)
-    )
-    den = np.maximum(weights_smoothed, _DIFFUSE_DENOM_EPS)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(support, rate_smoothed / den, np.nan)
+    rates = np.atleast_2d(raw_rate)  # (n_neurons, n_bins)
+    averaged = masked_diffusion_average(
+        lambda columns: np.asarray(env.diffuse(columns, bandwidth, mode="average")),
+        rates.T,
+        ~np.isnan(rates.T),
+        labels,
+        n_components,
+        # Far from every valid bin both smoothed sums approach the apply's
+        # truncation noise; leave those bins NaN rather than report noise/noise.
+        floor=lambda: _resolution_floor(env, bandwidth),
+    ).T
+    result: NDArray[np.float64] = averaged[0] if raw_rate.ndim == 1 else averaged
+    return result
 
 
 def _diffusion_kde_batch(

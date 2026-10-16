@@ -780,40 +780,27 @@ def resample_field(
         # A pullback field is *intensive* (a rate map / probability density
         # sampled onto dst_env), so smooth it with the row-stochastic average
         # operator (masked Nadaraya-Watson), not the mass-conserving transition
-        # kernel. This removes the volume bias on non-uniform M and, crucially,
-        # avoids the down-bias of a zero-fill-then-single-smooth: uncovered / NaN
-        # bins contribute *no weight* (rather than a real 0 that pulls covered
-        # neighbours toward zero). env.diffuse applies it matrix-free (no (n, n)).
+        # kernel: uncovered / NaN bins contribute *no weight* rather than a real
+        # 0 that pulls covered neighbours toward zero. Only a bin outside the
+        # source or in a component with no valid bin is left NaN (no far-field
+        # floor), and the signed numerator is never clipped.
         from neurospatial.ops.diffusion import (
-            _DIFFUSE_DENOM_EPS,
-            component_support_mask,
             diffusion_component_labels,
+            masked_diffusion_average,
         )
 
-        # `valid` bins are covered by the source AND finite; only those
-        # contribute. The value is zero-filled where invalid so an un-zeroed NaN
-        # cannot poison every reachable bin. The **numerator is NOT floored** --
-        # a resampled field can be signed, so clipping it would be a behavior
-        # change; only the (inherently non-negative) validity denominator is.
         valid = (~outside_source) & np.isfinite(resampled)
-        values = np.where(valid, resampled, 0.0)
-        both = np.column_stack([values, valid.astype(np.float64)])
-        smoothed_both = np.asarray(dst_env.diffuse(both, bandwidth, mode="average"))
-        num = smoothed_both[:, 0]
-        den = smoothed_both[:, 1]
-
-        # Strict `den > 0` support from the W-component structure, NOT the
-        # (truncation-noisy) smoothed denominator's sign: within a connected
-        # component the average operator is entrywise positive, so a bin is
-        # supported iff its component holds a valid bin -- exact and
-        # truncation-proof. An interior source-NaN bin in a supported component
-        # is interpolated (distance-weighted); only a bin outside the source or
-        # in a component with no valid bin at all is left NaN.
         n_components, labels = diffusion_component_labels(dst_env)
-        support = component_support_mask(labels, n_components, valid)
-        den_safe = np.maximum(den, _DIFFUSE_DENOM_EPS)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            smoothed = np.where(support, num / den_safe, np.nan)
+        smoothed = masked_diffusion_average(
+            lambda columns: np.asarray(
+                dst_env.diffuse(columns, bandwidth, mode="average")
+            ),
+            resampled[:, None],
+            valid[:, None],
+            labels,
+            n_components,
+            floor=None,
+        )[:, 0]
 
         smoothed[outside_source] = np.nan
         resampled = smoothed
