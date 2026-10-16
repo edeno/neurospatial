@@ -517,7 +517,7 @@ def _restore_environment(
         binning = replace(
             binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
         )
-        params, derivations = _saved_history(metadata)
+        params, derivations = _saved_history(metadata, binning.kind)
         ranges = metadata.get("dimension_ranges")
         if ranges is not None:
             binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
@@ -600,7 +600,10 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
     same way: their polar bins (labelled ``"MaskedGrid"``) are ``"Polar"``,
     an ``"_transformed"`` suffix per ``apply_transform`` is dropped, and
     ``"subset"`` and ``"PolygonCells"`` (a subset of non-grid bins and a
-    clip) take the label of the bins they were cut from.
+    clip) take the label of the bins they were cut from. A subset or clip
+    whose bins came from none of the built-in lookups (for example
+    ``from_bins`` bins with nearest-center lookup) keeps its saved spelling,
+    because the file does not record the original label.
 
     Parameters
     ----------
@@ -651,22 +654,24 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
 
 
 def _saved_history(
-    metadata: dict[str, Any],
+    metadata: dict[str, Any], label: str
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     """Return the saved build choices and derivation history.
 
     Files without a ``"derivations"`` record kept the input data among the
     layout parameters and marked derivations there: ``"source"`` named a
     subset or clip and ``"transformed": True`` an ``apply_transform``, with
-    one ``"_transformed"`` suffix on the layout label for each, and a
-    ``"combined"`` label a ``combine``. Input data is
-    dropped (the bins are stored directly), and the markers become the
-    derivation history.
+    one ``"_transformed"`` suffix on the layout label for each. Bins that
+    read as ``"Combined"`` were made by ``combine``, which comes first in
+    their history. Input data is dropped (the bins are stored directly), and
+    the markers become the derivation history.
 
     Parameters
     ----------
     metadata : dict
         The saved environment metadata.
+    label : str
+        The canonical layout label read from the bins (see ``_saved_label``).
 
     Returns
     -------
@@ -681,6 +686,7 @@ def _saved_history(
         If ``layout_parameters`` is not a dictionary or ``derivations`` is not
         a list of names.
     """
+    from neurospatial.layout._labels import LayoutType
     from neurospatial.layout.base import build_choices
 
     params = metadata["layout_parameters"]
@@ -698,7 +704,7 @@ def _saved_history(
             raise ValueError("derivations must be a list of derivation names")
         return choices, tuple(derivations)
     kind = str(metadata.get("binning", {}).get("kind", ""))
-    history = ["combine"] if kind == "combined" else []
+    history = ["combine"] if label == LayoutType.COMBINED.value else []
     if choices.get("source") in ("subset", "clip"):
         history.append(choices.pop("source"))
         choices.pop("original_n_bins", None)
