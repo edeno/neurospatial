@@ -252,7 +252,6 @@ class TestPublishedGeometryIsReadOnly:
 
         np.testing.assert_array_equal(env.bin_at(point), before)
         assert env.active_mask[0, 0]
-        assert env.layout_parameters["active_mask"][0, 0]
         np.testing.assert_array_equal(env.grid_edges[0], np.arange(4.0))
 
     @pytest.mark.parametrize(

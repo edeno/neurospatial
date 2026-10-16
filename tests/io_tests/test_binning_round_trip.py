@@ -327,7 +327,6 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         to_file(original, path)
         loaded = from_file(path)
     assert list(loaded._binning.linearization.graph) == list(labels)
-    assert list(loaded.layout_parameters["graph_definition"]) == list(labels)
     assert loaded._binning.linearization.edge_order == (labels,)
     np.testing.assert_array_equal(
         loaded.bin_at(original.bin_centers), np.arange(original.n_bins)

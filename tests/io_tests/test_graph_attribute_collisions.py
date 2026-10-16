@@ -63,11 +63,7 @@ def test_reserved_user_attributes_survive_environment_storage(
         pairs = [(env.connectivity, restored.connectivity)]
     else:
         pairs = [
-            (env._binning.linearization.graph, restored._binning.linearization.graph),
-            (
-                env.layout_parameters["graph_definition"],
-                restored.layout_parameters["graph_definition"],
-            ),
+            (env._binning.linearization.graph, restored._binning.linearization.graph)
         ]
     for source, loaded in pairs:
         assert list(loaded) == list(source)

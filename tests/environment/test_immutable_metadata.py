@@ -136,12 +136,9 @@ def test_layout_parameters_are_independently_owned_exports():
     env = _environment()
     original = env.layout_parameters
     exported = env.layout_parameters
-    exported["positions"][:] = -1000
+    exported["bin_size"] = -1000
     exported["custom"] = "changed"
-    assert "custom" not in env.layout_parameters
-    np.testing.assert_array_equal(
-        env.layout_parameters["positions"], original["positions"]
-    )
+    assert env.layout_parameters == original
 
 
 @pytest.mark.parametrize(

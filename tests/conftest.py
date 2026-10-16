@@ -41,7 +41,11 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning, publish_environment
+from environment_helpers import (
+    publish_binning,
+    publish_environment,
+    record_source_layouts,
+)
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
@@ -98,6 +102,10 @@ _THREAD_LIMIT_VARIABLES = (
     "MKL_NUM_THREADS",
     "VECLIB_MAXIMUM_THREADS",
 )
+
+
+# Oracle tests compare environments with the layout engine they came from.
+record_source_layouts()
 
 
 def pytest_configure(config: pytest.Config) -> None:

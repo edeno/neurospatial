@@ -14,6 +14,7 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import native_layout
 
 from neurospatial import Environment
 
@@ -89,7 +90,7 @@ class TestLinearTrack:
         env = Environment.linear_track(
             node_positions=[(0, 0), (50, 0), (50, 50)], bin_size=5.0
         )
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 3
         assert graph.number_of_edges() == 2
 
@@ -132,7 +133,7 @@ class TestMaze:
     def test_w_from_node_positions(self):
         env = Environment.maze("w", node_positions=self._w_nodes(), bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         # 6 nodes; base has 2 connector edges + 3 vertical arm edges = 5 edges.
         assert graph.number_of_nodes() == 6
         assert graph.number_of_edges() == 5
@@ -140,7 +141,7 @@ class TestMaze:
     def test_w_edge_topology_and_to_linear(self):
         """W graph edges match the order-based contract and to_linear() works."""
         env = Environment.maze("w", node_positions=self._w_nodes(), bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             # Horizontal connector: base_left -- base_mid -- base_right.
@@ -174,7 +175,7 @@ class TestMaze:
             "arm_right": (100, 50),
         }
         env = Environment.maze("w", node_positions=arms_down, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"base_left", "base_mid"}),
@@ -196,7 +197,7 @@ class TestMaze:
             "west": (-50, 0),
         }
         env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"center", "north"}),
@@ -220,7 +221,7 @@ class TestMaze:
             "d": (-100, 0),
         }
         env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"center", "a"}),
@@ -239,7 +240,7 @@ class TestMaze:
             "right": (50, 50),
         }
         env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"start", "junction"}),
@@ -265,7 +266,7 @@ class TestMaze:
             "arm_right": (50, 0),
         }
         env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"stem_end", "junction"}),
@@ -284,7 +285,7 @@ class TestMaze:
         }
         env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 5
         assert graph.number_of_edges() == 4
 
@@ -297,7 +298,7 @@ class TestMaze:
         }
         env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 4
         # stem + crossbar (2 arms) = 3 edges.
         assert graph.number_of_edges() == 3
@@ -463,7 +464,7 @@ class TestGraphLinearization:
 
     def test_w_maze_to_linear_agrees_with_bin_at(self, w_maze_env):
         env = w_maze_env
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         rng = np.random.default_rng(0)
         edges = list(graph.edges())
         edge_index = rng.integers(0, len(edges), 2000)
@@ -472,7 +473,7 @@ class TestGraphLinearization:
         stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
         samples = starts * (1 - t) + stops * t
 
-        layout = _native_oracle(env)
+        layout = native_layout(env)
         via_linear = layout.linear_point_to_bin_ind(env.to_linear(samples))
         assert np.mean(via_linear != env.bin_at(samples)) == 0.0
 
@@ -526,15 +527,3 @@ class TestGraphLinearization:
         np.testing.assert_allclose(
             env.to_linear(np.asarray(query, float)), expected, atol=1e-9
         )
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

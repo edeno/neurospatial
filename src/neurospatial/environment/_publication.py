@@ -412,17 +412,76 @@ def _freeze_geometry_arrays(geometry: _PublishedGeometry) -> _PublishedGeometry:
     )
 
 
-@dataclass(frozen=True)
+_SCALAR_CHOICES = (bool, int, float, str, type(None))
+
+
+def _scalar_choice(value: Any) -> Any:
+    """Return ``value`` as a plain scalar, or ``UNSET`` if it is not one."""
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value[()]
+    if isinstance(value, np.generic):
+        value = value.item()
+    return value if isinstance(value, _SCALAR_CHOICES) else UNSET
+
+
+def build_choices(params: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the scalar build choices of layout parameters and drop their data.
+
+    A choice is a scalar (bool, number, string or None) or a flat list or
+    tuple of scalars, such as a per-axis ``bin_size``; lists become tuples
+    and NumPy scalars become Python scalars. Everything else is input data,
+    not a choice, and is dropped: arrays (positions, masks, images), graphs,
+    polygons and nested sequences (grid edges, edge orders, ranges). The
+    geometry built from that data is owned by the environment's binning.
+
+    Parameters
+    ----------
+    params : mapping of str to object
+        Parameters passed to a layout engine or recorded by a derivation.
+
+    Returns
+    -------
+    dict of str to object
+        The choices, in ``params`` order.
+    """
+    choices: dict[str, Any] = {}
+    for key, value in params.items():
+        if isinstance(value, (list, tuple)):
+            items = tuple(_scalar_choice(item) for item in value)
+            if not any(isinstance(item, _Unset) for item in items):
+                choices[key] = items
+            continue
+        choice = _scalar_choice(value)
+        if not isinstance(choice, _Unset):
+            choices[key] = choice
+    return choices
+
+
+@dataclass(frozen=True, init=False)
 class _Provenance:
     """How the bins were built: a layout label, a category and build choices.
 
     Provenance is descriptive. Geometry and behavior come from the owned
-    ``Binning``, graph and arena, never from these labels.
+    ``Binning``, graph and arena, never from these labels. Only scalar build
+    choices are kept (see :func:`build_choices`), so a saved environment does
+    not grow with the data it was built from.
     """
 
     layout_type: str
     category: str
-    build_params: dict[str, Any]
+    choices: tuple[tuple[str, Any], ...]
+
+    def __init__(
+        self, layout_type: str, category: str, build_params: Mapping[str, Any]
+    ) -> None:
+        object.__setattr__(self, "layout_type", layout_type)
+        object.__setattr__(self, "category", category)
+        object.__setattr__(self, "choices", tuple(build_choices(build_params).items()))
+
+    @property
+    def build_params(self) -> dict[str, Any]:
+        """Return the build choices as a new dict."""
+        return dict(self.choices)
 
 
 def declared_metadata(
@@ -580,9 +639,7 @@ def publish(
     graph = _published_graph(graph)
     env = cls.__new__(cls)
     env._metadata = metadata
-    env._provenance = replace(
-        provenance, build_params=copy_module.deepcopy(provenance.build_params)
-    )
+    env._provenance = provenance
     env._is_linearized_track_env = is_linearized_track
     env._geometry = _freeze_geometry_arrays(
         _PublishedGeometry(

@@ -10,6 +10,7 @@ from dataclasses import FrozenInstanceError, replace
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import native_layout
 
 from neurospatial.geometry._binning import TrackLinearization
 
@@ -42,7 +43,7 @@ def _assert_previous_projection(component, layout, prefix, recorded):
 @pytest.mark.parametrize("built_environment", ["track"], indirect=True)
 def test_track_linearization_matches_previous(built_environment, locator_parity):
     """On- and off-track points retain their recorded branching-track projections."""
-    layout = _native_oracle(built_environment)
+    layout = native_layout(built_environment)
     component = built_environment._binning.linearization
     assert isinstance(component, TrackLinearization)
     assert built_environment._binning.linearization is component
@@ -167,15 +168,3 @@ def test_stored_track_graph_attributes_cannot_change_projections(
     np.testing.assert_array_equal(component.to_linear(points), expected)
     with pytest.raises(nx.NetworkXError):
         component.graph.add_node("new")
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

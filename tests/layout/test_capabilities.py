@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from environment_helpers import native_layout
 from shapely.geometry import box
 
 from neurospatial import Environment
@@ -34,7 +35,7 @@ def grid_layout(request):
             distance_bin_size=1.0,
             angle_bin_size=np.pi / 2,
         )
-    return _native_oracle(env)
+    return native_layout(env)
 
 
 def test_grid_capability_matches_cell_centers(grid_layout):
@@ -81,13 +82,3 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
     assert loaded._binning.linearization is not None
     points = np.array([[0.5, 0.0], [1.5, 0.0]])
     np.testing.assert_array_equal(loaded.to_linear(points), original.to_linear(points))
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

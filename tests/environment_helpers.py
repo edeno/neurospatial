@@ -1,13 +1,11 @@
 """Test construction helpers using owned geometry publication."""
 
+import copy
+import weakref
+
 from neurospatial import Environment
 from neurospatial.environment import _publication
-from neurospatial.environment._publication import (
-    _Metadata,
-    _Provenance,
-    publish,
-    publish_layout,
-)
+from neurospatial.environment._publication import _Metadata, _Provenance
 
 
 def publish_binning(
@@ -26,7 +24,7 @@ def publish_binning(
     **kwargs,
 ):
     """Publish an explicit binning and graph, as factories and readers do."""
-    return publish(
+    return _publication.publish(
         cls,
         binning,
         connectivity=connectivity,
@@ -71,7 +69,7 @@ def publish_environment(
             regions=regions,
             **kwargs,
         )
-    return publish_layout(
+    return _publication.publish_layout(
         Environment,
         layout,
         metadata=_Metadata(name, units, frame),
@@ -95,3 +93,33 @@ def record_publications(monkeypatch):
 
     monkeypatch.setattr(_publication, "publish", recording)
     return published
+
+
+_SOURCE_LAYOUTS = weakref.WeakKeyDictionary()
+
+
+def record_source_layouts():
+    """Remember the layout engine each layout-built environment came from.
+
+    Environments keep no layout or input data, so tests that compare a
+    published environment against its native layout engine look the engine
+    up here instead of rebuilding it from recorded parameters.
+    """
+    original = _publication.publish_layout
+    if getattr(original, "records_source_layouts", False):
+        return
+
+    def recording(cls, layout, **kwargs):
+        env = original(cls, layout, **kwargs)
+        # Only built-in engines: tests check that external providers are freed.
+        if type(layout).__module__.startswith("neurospatial."):
+            _SOURCE_LAYOUTS[env] = layout
+        return env
+
+    recording.records_source_layouts = True
+    _publication.publish_layout = recording
+
+
+def native_layout(env):
+    """Return an independent copy of the layout engine ``env`` was built from."""
+    return copy.deepcopy(_SOURCE_LAYOUTS[env])

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning, publish_environment
+from environment_helpers import native_layout, publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.geometry._diffusion import (
@@ -23,7 +23,7 @@ _BuiltEnvironment = Environment | Environment
 
 def _source_layout(env: _BuiltEnvironment):
     """Build an independent native oracle for the published snapshot."""
-    return _native_oracle(env)
+    return native_layout(env)
 
 
 def _query_points(env: _BuiltEnvironment) -> np.ndarray:
@@ -353,13 +353,3 @@ def test_require_rectilinear_message_unchanged() -> None:
         "Why: it reads the cell edges along each axis, which grids built by from_samples, from_grid_mask, from_pixel_mask and from_polygon provide.\n"
         "Fix: use mode='nearest', which works on every layout"
     )
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

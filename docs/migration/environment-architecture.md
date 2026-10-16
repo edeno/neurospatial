@@ -161,3 +161,24 @@ Regions are annotations and may extend beyond the retained bins. To drop them,
 call `child.with_regions(Regions())`. To rename a derived environment, pass
 `name=` to `subset`, `clip`, `rebin` or `apply_transform`, or call
 `with_metadata(name=...)`.
+
+## `layout_parameters` keeps choices, not data
+
+`env.layout_parameters` used to keep every argument given to the layout
+engine, including the full position array passed to `from_samples`. Saved
+files therefore grew with the length of the recording. It now keeps only the
+scalar choices that describe how the bins were built, such as `bin_size`,
+`connect_diagonal_neighbors`, `pixel_size` or `circular_angle`. Lists of
+numbers come back as tuples.
+
+| Value you used to read | Read it from |
+| --- | --- |
+| `layout_parameters["graph_definition"]` | `env.binning.linearization.graph` |
+| `layout_parameters["edge_order"]` | `env.binning.linearization.edge_order` |
+| `layout_parameters["active_mask"]`, `["grid_edges"]` | `env.active_mask`, `env.grid_edges` |
+| `layout_parameters["dimension_ranges"]` | `env.dimension_ranges` |
+| `layout_parameters["polygon"]`, `["boundary_polygon"]` | `env.arena` (for example `env.arena.polygonal_domain()`) |
+| `layout_parameters["positions"]` | keep your own position array |
+
+The parameters never affected any analysis, and loading a saved environment
+does not need them: the bins, graph and arena are stored directly.

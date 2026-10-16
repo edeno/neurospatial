@@ -347,29 +347,6 @@ class TestAtomicWriteAndDtypes:
         with pytest.raises(ValueError, match=r"bin_centers.*dtype"):
             from_file(output_path)
 
-    def test_string_list_layout_param_survives_round_trip(self, simple_env, tmp_path):
-        """A list-of-strings layout parameter must not be coerced to an object array.
-
-        _convert_lists_to_arrays used to blindly np.array() every list, turning
-        a list of strings into a dtype=object numpy array on load.
-        """
-        from neurospatial.io.files import _convert_lists_to_arrays
-
-        params = {
-            "labels": ["north", "south", "east"],
-            "numeric": [1.0, 2.0, 3.0],
-            "nested": {"more_labels": ["a", "b"]},
-        }
-        restored = _convert_lists_to_arrays(params)
-
-        # String lists stay as plain Python lists of strings.
-        assert restored["labels"] == ["north", "south", "east"]
-        assert all(isinstance(x, str) for x in restored["labels"])
-        assert restored["nested"]["more_labels"] == ["a", "b"]
-        # Numeric lists are still converted to numeric arrays.
-        assert isinstance(restored["numeric"], np.ndarray)
-        assert np.issubdtype(restored["numeric"].dtype, np.floating)
-
 
 def _make_graph_env() -> Environment:
     """Build a 1D linearized-track (Graph layout) environment."""
@@ -489,18 +466,6 @@ class TestAllLayoutRoundTrip:
             np.sort(restored.bin_centers, axis=0),
             np.sort(env.bin_centers, axis=0),
         )
-
-    def test_to_file_graph_layout_parameters_roundtrip(self, tmp_path):
-        """layout_parameters['graph_definition'] decodes back to an nx.Graph."""
-        env = _make_graph_env()
-
-        output_path = tmp_path / "graph_env"
-        to_file(env, output_path)
-        loaded = from_file(output_path)
-
-        graph_def = loaded.layout_parameters["graph_definition"]
-        assert isinstance(graph_def, nx.Graph)
-        assert not isinstance(graph_def, dict)
 
 
 class TestAnisotropicPixelMaskRoundTrip:

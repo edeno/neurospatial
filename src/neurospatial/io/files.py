@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from zipfile import BadZipFile
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -71,119 +70,6 @@ def _convert_arrays_to_lists(obj: Any) -> Any:
         return obj.item()
     else:
         return obj
-
-
-def _convert_lists_to_arrays(obj: Any) -> Any:
-    """Recursively convert lists to numpy arrays where appropriate.
-
-    Parameters
-    ----------
-    obj : Any
-        Object that may contain lists representing arrays.
-
-    Returns
-    -------
-    Any
-        Object with numeric lists converted to arrays.
-
-    """
-    if isinstance(obj, list):
-        # Only convert to a numpy array when the result is numeric (int/float/
-        # bool/complex). A list of strings (or other objects) would otherwise
-        # become a dtype=object array, silently corrupting non-numeric layout
-        # parameters (e.g. dimension labels). Such lists are recursed into and
-        # left as Python lists instead.
-        try:
-            arr = np.asarray(obj)
-        except (ValueError, TypeError):
-            return [_convert_lists_to_arrays(item) for item in obj]
-        if arr.dtype.kind in "biufc":  # bool, int, uint, float, complex
-            return arr
-        # Non-numeric (e.g. strings, ragged/object): recurse element-wise.
-        return [_convert_lists_to_arrays(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {k: _convert_lists_to_arrays(v) for k, v in obj.items()}
-    else:
-        return obj
-
-
-def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]:
-    """Return a JSON-serializable copy of layout-engine parameters.
-
-    ``env.layout_parameters`` may contain objects that ``json`` cannot encode:
-    a ``networkx.Graph`` (Graph layout) or a Shapely geometry (Polygon layout).
-    These are converted to portable, self-describing forms so the metadata JSON
-    round-trips. The geometry itself is restored on read from the stored
-    ``bin_centers``/``active_mask``/``grid_edges`` arrays and the node-link
-    ``graph`` (see ``from_file``); these serialized parameters are introspection
-    metadata, not the source of truth for reconstruction.
-
-    Parameters
-    ----------
-    params : dict or None
-        The ``env.layout_parameters`` dict (or None).
-
-    Returns
-    -------
-    dict
-        A new dict with every value JSON-serializable.
-    """
-    if not params:
-        return {}
-
-    def _encode(value: Any) -> Any:
-        # networkx graph -> node-link dict (same form used for connectivity)
-        if isinstance(value, nx.Graph):
-            from neurospatial.geometry._codecs import graph_to_node_link
-
-            return {"__nx_graph__": graph_to_node_link(value)}
-        # shapely geometry -> WKT string (round-trippable, human-readable)
-        wkt = getattr(value, "wkt", None)
-        geom_type = getattr(value, "geom_type", None)
-        if wkt is not None and geom_type is not None:
-            return {"__shapely_wkt__": wkt}
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, (np.integer, np.floating)):
-            return value.item()
-        if isinstance(value, dict):
-            return {k: _encode(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [_encode(v) for v in value]
-        return value
-
-    return {k: _encode(v) for k, v in params.items()}
-
-
-def _decode_layout_parameters(params: Any) -> Any:
-    """Inverse of ``_jsonsafe_layout_parameters`` for the sentinel dicts."""
-    if isinstance(params, dict):
-        if set(params) == {"__nx_graph__"}:
-            from neurospatial.geometry._codecs import graph_from_node_link
-
-            return graph_from_node_link(params["__nx_graph__"])
-        if set(params) == {"__shapely_wkt__"}:
-            try:
-                from shapely import wkt as _wkt
-
-                return _wkt.loads(params["__shapely_wkt__"])
-            except ImportError:
-                # shapely absent at load time: leave the WKT string in place
-                # rather than fail; geometry is reconstructed from arrays anyway.
-                return params["__shapely_wkt__"]
-        decoded = {k: _decode_layout_parameters(v) for k, v in params.items()}
-        # The Graph layout's ``edge_order`` is a list of node-id tuples in the
-        # original parameters; the generic numeric-list converter turns it into
-        # a 2-D ndarray on read, which the Graph engine's ``build`` cannot index
-        # (it expects an iterable of edge tuples). Restore the list-of-tuples
-        # form so the round-tripped parameters reconstruct an equivalent env.
-        edge_order = decoded.get("edge_order")
-        if isinstance(edge_order, np.ndarray):
-            decoded["edge_order"] = [tuple(e) for e in edge_order.tolist()]
-        return decoded
-    if isinstance(params, list):
-        return [_decode_layout_parameters(v) for v in params]
-    return params
 
 
 def _get_library_version() -> str:
@@ -464,7 +350,7 @@ def _environment_payload(
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
         "layout_category": env._provenance.category,
-        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
+        "layout_parameters": env.layout_parameters,
         "binning": binning_meta,
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
@@ -617,9 +503,9 @@ def _restore_environment(
                 raise ValueError(
                     "stored arena coordinate_kind differs from the environment"
                 )
-        params = _decode_layout_parameters(
-            _convert_lists_to_arrays(metadata["layout_parameters"])
-        )
+        params = metadata["layout_parameters"]
+        if not isinstance(params, dict):
+            raise ValueError("layout_parameters must be a dictionary of build choices")
         ranges = metadata.get("dimension_ranges")
         graph = graph_from_node_link(metadata["graph"])
         context = grid_index(binning)

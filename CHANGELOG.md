@@ -96,6 +96,18 @@
   faster graph publication, a 200 × 200 grid mask cropped by an arena builds
   about 2.7 times faster.
 
+- `env.layout_parameters` (and the `layout_parameters` record in files, dicts
+  and NWB) holds only the scalar build choices, such as `bin_size`,
+  `connect_diagonal_neighbors` or `circular_angle`. Input data is no longer
+  kept: the positions given to `from_samples`, the masks of `from_grid_mask`,
+  `from_pixel_mask` and polar environments, polygons, the track graph and
+  edge order of `from_graph`, and nested values such as `dimension_ranges`
+  (read `env.dimension_ranges`). A saved environment no longer grows with the
+  length of the trajectory it was built from (a 100,000-sample `from_samples`
+  file went from 7.5 MB to 0.46 MB, the same size as a 10-sample one). The
+  track graph is still owned by the environment: read it from
+  `env.binning.linearization.graph` (and `.edge_order`).
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

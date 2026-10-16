@@ -7,7 +7,7 @@ from unittest.mock import patch
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning, publish_environment
+from environment_helpers import native_layout, publish_binning, publish_environment
 from scipy import linalg
 from shapely.geometry import Polygon
 
@@ -439,7 +439,7 @@ def test_polar_layout_supplies_annular_sector_geometry():
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
     np.testing.assert_allclose(env.bin_sizes, sectors)
     np.testing.assert_allclose(env.bin_sizes, sectors)
-    graph, volumes = _native_oracle(env).finite_volume_geometry()
+    graph, volumes = native_layout(env).finite_volume_geometry()
     np.testing.assert_allclose(volumes, sectors)
     geometry = DiffusionGeometry.from_graph(graph, volumes)
     assert (geometry.W != env._diffusion_geometry.W).nnz == 0
@@ -470,7 +470,7 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
         circular_angle=circular,
         connect_diagonal_neighbors=diagonal,
     )
-    graph, _ = _native_oracle(env).finite_volume_geometry()
+    graph, _ = native_layout(env).finite_volume_geometry()
     for ring in range(3):
         assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
     for u, v, data in graph.edges(data=True):
@@ -709,15 +709,3 @@ def test_invalid_layout_faces_fail_before_publication(volumes, scale, match):
         graph.edges[u, v]["A"] = area * scale
     with pytest.raises(ValueError, match=match):
         FaceGeometry.from_graph(graph, volumes)
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

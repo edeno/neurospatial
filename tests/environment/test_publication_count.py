@@ -160,5 +160,5 @@ def test_arena_cropping_matches_subset_and_keeps_factory_provenance():
     assert uncropped.n_bins == full.n_bins
     for env in (cropped, uncropped):
         assert env.layout_type == full.layout_type == "MaskedGrid"
-        assert env._provenance.category == full._provenance.category
-        assert env.layout_parameters.keys() == full.layout_parameters.keys()
+        assert env._provenance == full._provenance
+        assert env.layout_parameters == full.layout_parameters

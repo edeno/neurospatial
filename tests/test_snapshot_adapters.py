@@ -529,7 +529,10 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     )
     if ingress == "layout_factory":
         env = Environment.from_layout(
-            "MaskedGrid", native.layout_parameters, name="adapted", arena=provider
+            "MaskedGrid",
+            {"active_mask": native.active_mask, "grid_edges": native.grid_edges},
+            name="adapted",
+            arena=provider,
         )
     elif ingress == "from_bins":
         env = Environment.from_bins(_explicit_binning(native), arena=provider)

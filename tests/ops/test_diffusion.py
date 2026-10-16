@@ -21,7 +21,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import scipy.sparse
-from environment_helpers import publish_environment
+from environment_helpers import native_layout, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
@@ -272,7 +272,7 @@ def test_sigma_recovery_graph():
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
         env = build_track(bin_size, straight=False)
-        graph_fv, _ = _native_oracle(env).finite_volume_geometry()
+        graph_fv, _ = native_layout(env).finite_volume_geometry()
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
         junction_edges = [
@@ -355,7 +355,7 @@ def test_density_integrates_to_one(polar_env):
 
 def test_low_level_average_row_stochastic(polar_env):
     """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
-    graph_fv, volumes = _native_oracle(polar_env).finite_volume_geometry()
+    graph_fv, volumes = native_layout(polar_env).finite_volume_geometry()
     kernel = compute_diffusion_kernels(
         graph_fv, volumes=volumes, sigma=5.0, mode="average"
     )
@@ -366,7 +366,7 @@ def test_low_level_average_row_stochastic(polar_env):
 def test_raw_heat_operator_m_self_adjoint(polar_env):
     """Raw operator (pre clip/normalize): H @ 1 = 1 and M_i H_ij = M_j H_ji on a
     non-uniform-M (polar) env -- the C1 invariants the mode outputs no longer expose."""
-    graph_fv, volumes = _native_oracle(polar_env).finite_volume_geometry()
+    graph_fv, volumes = native_layout(polar_env).finite_volume_geometry()
     W = build_W_from_graph(graph_fv)
     H = _raw_heat_operator(W, volumes, sigma=5.0)
 
@@ -391,7 +391,7 @@ def test_corner_split_gives_two_diffusion_components():
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"
 
-    graph_fv, _ = _native_oracle(env).finite_volume_geometry()
+    graph_fv, _ = native_layout(env).finite_volume_geometry()
     assert graph_fv.edges[0, 1]["A"] == 0.0, "corner-touching edge must have A == 0"
     assert env._diffusion_geometry.n_components == 2, (
         "corner-only pair must be two W-components"
@@ -602,15 +602,3 @@ def test_mesh_skew_guard_warns():
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
         _ = env_skew._face_geometry
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

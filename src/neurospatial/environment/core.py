@@ -647,19 +647,22 @@ class Environment(Generic[_C]):
 
     @property
     def layout_parameters(self) -> dict[str, Any]:
-        """Return the parameters used to build the layout engine.
+        """Return the scalar choices used to build the bins.
 
-        This includes all parameters that were passed to the `build` method
-        of the underlying `LayoutEngine`.
+        These are the settings passed to the layout engine, such as
+        ``bin_size`` or ``connect_diagonal_neighbors``, or recorded by a
+        derivation. Input data (positions, masks, images, polygons and track
+        graphs) is not kept here; the geometry built from it is in
+        ``env.binning``, for example ``env.binning.linearization.graph`` for a
+        track. The values describe how the environment was built and do not
+        affect any analysis.
 
         Returns
         -------
-        Dict[str, Any]
-            A dictionary of parameters used to create the layout.
-            Useful for introspection and serialization.
-
+        dict of str to object
+            A new dict of scalars and tuples of scalars.
         """
-        return copy_module.deepcopy(self._provenance.build_params)
+        return self._provenance.build_params
 
     @property
     def layout_type(self) -> str:
@@ -3569,7 +3572,9 @@ class Environment(Generic[_C]):
             (e.g., "RegularGrid", "Hexagonal").
         layout_params : Dict[str, Any]
             A dictionary of parameters that will be passed to the `build`
-            method of the chosen `LayoutEngine`.
+            method of the chosen `LayoutEngine`. Only the scalar choices among
+            them are kept in ``layout_parameters``; input data such as
+            positions, masks and polygons is not stored.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
@@ -3595,9 +3600,8 @@ class Environment(Generic[_C]):
         from_graph : Create 1D linearized track environment.
 
         """
-        # The environment owns its inputs: it later publishes geometry read-only,
-        # and the saved layout parameters must not change if the caller edits
-        # their arrays (or the base of a view) afterwards.
+        # The layout is built from copies of the inputs, so editing the caller's
+        # arrays (or the base of a view) afterwards cannot change it.
         from neurospatial.environment.factories import _from_layout
 
         return _from_layout(
