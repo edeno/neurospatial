@@ -746,8 +746,8 @@ def geodesic_voronoi_labels(
 
     Examples
     --------
-    >>> left_bin = env.bin_at([10, 55])  # doctest: +SKIP
-    >>> right_bin = env.bin_at([90, 55])  # doctest: +SKIP
+    >>> left_bin = int(env.bin_at([[10, 55]])[0])  # doctest: +SKIP
+    >>> right_bin = int(env.bin_at([[90, 55]])[0])  # doctest: +SKIP
     >>> labels = geodesic_voronoi_labels(env, [left_bin, right_bin])  # doctest: +SKIP
     >>> # labels[i] == 0 means bin i is closer to left goal
     >>> # labels[i] == 1 means bin i is closer to right goal

@@ -182,7 +182,8 @@ class Environment(Generic[_C]):
     ``Environment`` is the central user-facing spatial type. Each instance
     declares whether ``bin_centers`` hold Cartesian ``(x, y[, z])`` positions
     or egocentric ``(distance, angle)`` coordinates. Methods such as ``bin_at``,
-    ``contains`` and ``apply_transform`` require Cartesian positions. The shared ``distance_to`` method guards its Euclidean mode.
+    ``contains`` and ``apply_transform`` require Cartesian positions. The
+    shared ``distance_to`` method guards its Euclidean mode.
 
     Instances are created via factory classmethods on ``Environment``
     (``from_samples``, ``from_polygon``, ``from_grid_mask``,

@@ -971,6 +971,7 @@ def subset(
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
+    include_boundary: bool = True,
     invert: bool = False,
     name: str | None = None,
 ) -> Environment:
@@ -983,9 +984,14 @@ def subset(
         Boolean mask of bins to keep. True = keep, False = discard.
     region_names : Sequence[str], optional
         Keep the bins these named regions cover: the bin containing a point
-        region, or the bins whose centers lie inside a polygon region.
+        region, or the bins whose centers lie inside a polygon region or on
+        its edge.
     polygon : shapely.Polygon, optional
-        Keep bins whose centers lie inside this polygon (2D only).
+        Keep bins whose centers lie inside this polygon or on its edge
+        (2D only).
+    include_boundary : bool, default=True
+        For polygons, keep bins whose centers lie exactly on the edge; with
+        False keep only centers strictly inside. Refused with ``mask=``.
     invert : bool, default=False
         If True, keep the complement of the selection.
     name : str, optional
