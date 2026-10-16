@@ -99,7 +99,7 @@ def _corner_missing_environment(kind):
     if kind == "polygon":
         footprint = box(0, 0, 4, 4).difference(box(0, 0, 1, 1))
         return Environment.from_polygon(
-            footprint, 1.0, connect_diagonal_neighbors=False
+            footprint, bin_size=1.0, connect_diagonal_neighbors=False
         )
     n_dims = 3 if kind == "mask-3d" else 2
     mask = np.ones((4,) * n_dims, dtype=bool)
@@ -152,7 +152,7 @@ def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
     # Perimeter coarse cells of a circle have centers outside it, so some
     # recorded fine bins have no coarse cell. The warning quantifies the loss.
     circle = Point(0, 0).buffer(10.0, quad_segs=64)
-    fine = Environment.from_polygon(circle, 1.0)
+    fine = Environment.from_polygon(circle, bin_size=1.0)
     with pytest.warns(UserWarning, match="without a new bin") as record:
         coarse = fine.rebin(2)
     lost = coarse.bin_at(fine.bin_centers) < 0
@@ -166,7 +166,7 @@ def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
 
     # The suggested route covers the whole arena: no fine bin is lost and
     # the exact cells add up to the arena's area.
-    covering = Environment.from_polygon(box(*circle.bounds), 2.0)
+    covering = Environment.from_polygon(box(*circle.bounds), bin_size=2.0)
     exact = Environment.from_bins(covering.clip(circle).binning, arena=fine.arena)
     assert np.all(exact.bin_at(fine.bin_centers) >= 0)
     assert exact.bin_sizes.sum() == pytest.approx(circle.area)

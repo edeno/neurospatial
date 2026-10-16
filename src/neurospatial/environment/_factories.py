@@ -655,13 +655,14 @@ def _from_graph(
 def _from_polygon(
     cls: type[Environment[Any]],
     polygon: PolygonType,
-    bin_size: float | Sequence[float],
     *,
+    bin_size: float | Sequence[float],
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    connect_diagonal_neighbors: bool = True,
+    regions: Regions | None = None,
     arena: Arena | None = None,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_polygon using explicit construction inputs."""
     layout_params = {
@@ -676,6 +677,7 @@ def _from_polygon(
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         arena=arena,
     )
 
@@ -688,8 +690,9 @@ def _from_grid_mask(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    connect_diagonal_neighbors: bool = True,
+    regions: Regions | None = None,
     arena: Arena | None = None,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_grid_mask using explicit construction inputs."""
     layout_params = {
@@ -705,6 +708,7 @@ def _from_grid_mask(
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         arena=arena,
     )
 
@@ -712,13 +716,14 @@ def _from_grid_mask(
 def _from_pixel_mask(
     cls: type[Environment[Any]],
     image_mask: NDArray[np.bool_],
-    pixel_size: float | tuple[float, float],
     *,
-    connect_diagonal_neighbors: bool = True,
+    pixel_size: float | tuple[float, float],
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
+    regions: Regions | None = None,
     arena: Arena | None = None,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_pixel_mask using explicit construction inputs."""
     layout_params = {
@@ -734,6 +739,7 @@ def _from_pixel_mask(
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
         arena=arena,
     )
 

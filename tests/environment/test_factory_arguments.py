@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 
@@ -21,10 +23,45 @@ def _same_bins(first, second):
     np.testing.assert_array_equal(first.edge_pairs, second.edge_pairs)
 
 
-@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
-def test_bin_size_is_keyword_only(factory, positions):
-    with pytest.raises(TypeError, match="positional"):
-        getattr(Environment, factory)(positions, 3.0)
+# Each factory's data arguments, in order. Everything else is keyword-only.
+_DATA_ARGUMENTS = {
+    "from_samples": ("positions",),
+    "open_field": ("positions",),
+    "from_graph": ("graph", "edge_order"),
+    "linear_track": (),
+    "maze": (),
+    "from_polygon": ("polygon",),
+    "from_grid_mask": ("active_mask", "grid_edges"),
+    "from_pixel_mask": ("image_mask",),
+    "from_bins": ("binning",),
+    "combine": ("components",),
+}
+_LABELS = ("name", "units", "frame", "regions")
+
+
+@pytest.mark.parametrize(("factory", "data"), _DATA_ARGUMENTS.items())
+def test_factories_take_only_their_data_positionally(factory, data):
+    parameters = inspect.signature(getattr(Environment, factory)).parameters
+    positional = tuple(
+        name
+        for name, parameter in parameters.items()
+        if parameter.kind
+        in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
+    )
+    assert positional == data
+    assert all(
+        parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+        for parameter in parameters.values()
+    )
+
+
+@pytest.mark.parametrize(
+    "factory", [factory for factory in _DATA_ARGUMENTS if factory != "combine"]
+)
+def test_cartesian_factories_accept_the_same_labels(factory):
+    parameters = inspect.signature(getattr(Environment, factory)).parameters
+    for label in _LABELS:
+        assert parameters[label].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.parametrize("factory", ["from_samples", "open_field"])
@@ -134,13 +171,3 @@ def test_track_factories_share_the_edge_spacing_default():
         from_graph.to_linear(np.array([[20.0, 1.0]])), [21.0], atol=1e-12
     )
     assert from_graph.layout_parameters["edge_spacing"] == 0.0
-
-
-def test_track_factories_take_bin_size_and_kind_by_keyword():
-    graph = _l_track_graph()
-    with pytest.raises(TypeError, match="positional"):
-        Environment.from_graph(graph, [(0, 1), (1, 2)], 0.0, 2.0)
-    nodes = {"start": (0, 0), "junction": (0, 5), "left": (-5, 5), "right": (5, 5)}
-    with pytest.raises(TypeError, match="positional"):
-        Environment.maze("t", node_positions=nodes, bin_size=1.0)
-    assert Environment.maze(kind="t", node_positions=nodes, bin_size=1.0).n_bins > 0

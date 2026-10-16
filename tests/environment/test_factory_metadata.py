@@ -44,13 +44,15 @@ def _create(kind, **metadata):
             graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, **metadata
         )
     if kind == "polygon":
-        return Environment.from_polygon(box(0, 0, 3, 3), 1.0, **metadata)
+        return Environment.from_polygon(box(0, 0, 3, 3), bin_size=1.0, **metadata)
     if kind == "grid_mask":
         return Environment.from_grid_mask(
             np.ones((3, 3), dtype=bool), (np.arange(4.0), np.arange(4.0)), **metadata
         )
     if kind == "pixel_mask":
-        return Environment.from_pixel_mask(np.ones((3, 3), dtype=bool), 1.0, **metadata)
+        return Environment.from_pixel_mask(
+            np.ones((3, 3), dtype=bool), pixel_size=1.0, **metadata
+        )
     if kind == "layout":
         return Environment.from_layout(
             "MaskedGrid",
@@ -88,6 +90,18 @@ def test_all_factories_publish_metadata_without_coordinate_conversion(kind):
     np.testing.assert_array_equal(
         env._locate(env.bin_centers), baseline._locate(baseline.bin_centers)
     )
+
+
+@pytest.mark.parametrize(
+    "kind", [kind for kind in _FACTORIES if kind != "polar_public"]
+)
+def test_every_cartesian_factory_snapshots_regions(kind):
+    regions = Regions([Region("goal", "point", [1.0, 0.0])])
+    env = _create(kind, regions=regions)
+    regions.remove("goal")
+    assert env.regions.list_names() == ["goal"]
+    np.testing.assert_array_equal(env.regions["goal"].data, [1.0, 0.0])
+    np.testing.assert_array_equal(env.bin_centers, _create(kind).bin_centers)
 
 
 def test_explicit_arena_center_selection_retains_requested_name_labels_and_regions():

@@ -160,6 +160,12 @@
   `Environment.maze(kind="plus", node_positions=..., bin_size=...)`.
   `from_graph`, `linear_track` and `maze` accept `regions=`.
 
+- `Environment.from_polygon` takes `bin_size` and `Environment.from_pixel_mask`
+  takes `pixel_size` as keywords: write
+  `Environment.from_polygon(polygon, bin_size=2.0)` and
+  `Environment.from_pixel_mask(mask, pixel_size=0.5)`. `from_polygon`,
+  `from_grid_mask` and `from_pixel_mask` accept `regions=`.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

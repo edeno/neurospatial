@@ -40,7 +40,7 @@ def test_rebin_new_resolution_restores_arena_after_analysis_crop():
 def test_rebin_reports_original_area_left_without_a_new_bin():
     # 4-unit cells over a 6-unit arena: only the cell centered at (2, 2) lies
     # strictly inside, so 20 of the 36 original bins lose their bin.
-    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    env = Environment.from_polygon(box(0, 0, 6, 6), bin_size=1.0)
     with pytest.warns(UserWarning, match="without a new bin") as record:
         coarse = env.rebin(bin_size=4.0)
     lost = coarse.bin_at(env.bin_centers) < 0
@@ -52,7 +52,7 @@ def test_rebin_reports_original_area_left_without_a_new_bin():
 
 @pytest.mark.parametrize("size", [1.0, 2.0, 3.0, 0.5])
 def test_rebin_covering_the_arena_does_not_warn(size):
-    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    env = Environment.from_polygon(box(0, 0, 6, 6), bin_size=1.0)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         coarse = env.rebin(bin_size=size)
@@ -63,7 +63,9 @@ def test_rebin_covering_the_arena_does_not_warn(size):
 def _u_maze():
     """Fine U-maze: a 2-wide barrier separates two arms joined below y = 5."""
     footprint = box(0, 0, 20, 20).difference(box(9, 5, 11, 20))
-    return Environment.from_polygon(footprint, 1.0, connect_diagonal_neighbors=False)
+    return Environment.from_polygon(
+        footprint, bin_size=1.0, connect_diagonal_neighbors=False
+    )
 
 
 def _arm_to_arm_path(env):

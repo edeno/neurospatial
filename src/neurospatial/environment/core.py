@@ -3245,13 +3245,14 @@ class Environment(Generic[_C]):
     def from_polygon(
         cls,
         polygon: PolygonType,
-        bin_size: float | Sequence[float],
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        connect_diagonal_neighbors: bool = True,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
 
@@ -3273,6 +3274,8 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -3328,12 +3331,13 @@ class Environment(Generic[_C]):
         return _from_polygon(
             cls,
             polygon,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod
@@ -3345,8 +3349,9 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        connect_diagonal_neighbors: bool = True,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
@@ -3373,6 +3378,8 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -3421,21 +3428,23 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod
     def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
-        pixel_size: float | tuple[float, float],
         *,
-        connect_diagonal_neighbors: bool = True,
+        pixel_size: float | tuple[float, float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D Environment from a binary image / pixel mask.
 
@@ -3453,15 +3462,17 @@ class Environment(Generic[_C]):
             ``(width, height)``, specifies pixel dimensions. For example,
             if your camera captures images where each pixel represents
             0.5 cm, pass ``pixel_size=0.5``.
-        connect_diagonal_neighbors : bool, optional
-            Whether to connect diagonally adjacent active pixel-bins.
-            Defaults to True.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
+        connect_diagonal_neighbors : bool, optional
+            Whether to connect diagonally adjacent active pixel-bins.
+            Defaults to True.
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
@@ -3503,12 +3514,13 @@ class Environment(Generic[_C]):
         return _from_pixel_mask(
             cls,
             image_mask,
-            pixel_size,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            pixel_size=pixel_size,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod

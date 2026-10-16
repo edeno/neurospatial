@@ -323,3 +323,21 @@ env = Environment.maze(kind="plus", node_positions=nodes, bin_size=2.0)
 `from_graph`, `linear_track` and `maze` now accept `regions=` like the other
 factories.
 
+### Polygon, grid-mask and pixel-mask factories
+
+The bin size of a polygon and the pixel size of an image mask are keywords; the
+polygon, the mask and the grid edges stay positional:
+
+```python
+# Before
+env = Environment.from_polygon(arena_polygon, 2.0)
+env = Environment.from_pixel_mask(image_mask, 0.5)
+# Now
+env = Environment.from_polygon(arena_polygon, bin_size=2.0)
+env = Environment.from_pixel_mask(image_mask, pixel_size=0.5)
+env = Environment.from_grid_mask(active_mask, grid_edges)  # unchanged
+```
+
+All three accept `regions=`, so every Cartesian factory takes the same `name=`,
+`units=`, `frame=` and `regions=` keywords.
+
