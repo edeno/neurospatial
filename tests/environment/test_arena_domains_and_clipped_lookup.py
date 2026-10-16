@@ -1,4 +1,4 @@
-"""Independent review witnesses for continuous domains and clipped lookup."""
+"""Continuous arena domains, clipped-cell lookup and walls through derivations."""
 
 import copy
 import pickle

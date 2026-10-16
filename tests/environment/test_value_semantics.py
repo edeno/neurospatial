@@ -74,7 +74,7 @@ class TestAnalysisCacheInitialisation:
         assert len(env._cache) == 0
 
 
-class TestRuleFixes:
+class TestBinCountWarningsAndRefusals:
     def test_n_bins_matches_bin_centers(self, env):
         assert env.n_bins == env.bin_centers.shape[0] == 100
 

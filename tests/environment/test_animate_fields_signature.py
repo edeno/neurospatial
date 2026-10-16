@@ -1,16 +1,8 @@
-"""Regression anchors for Environment.animate_fields()'s API.
+"""Environment.animate_fields() takes frame times and a playback speed.
 
-Task 4.1 changed two things about the signature:
-
-- ``frame_times`` became required (no default).
-- ``speed`` replaced ``fps`` as the playback-rate knob; ``fps`` is no
-  longer in the signature.
-
-These two properties are the ones we want to pin. The previous version of
-this file had eight near-duplicate variants (slow motion, fast forward,
-explicit-default, default-when-omitted, etc.) plus a "no synthesis from
-fps" test that was just ``test_frame_times_is_required`` again. Those are
-collapsed here.
+- ``frame_times`` is required (no default), so every frame has a time.
+- ``speed`` sets the playback rate relative to real time; there is no
+  ``fps`` parameter.
 """
 
 from __future__ import annotations
@@ -45,7 +37,7 @@ def test_frame_times_is_required(env_and_fields):
 
 
 def test_fps_is_gone_and_speed_is_present():
-    """Signature audit pinning the Task 4.1 rename."""
+    """Playback rate is set by ``speed``; there is no ``fps`` parameter."""
     sig = inspect.signature(Environment.animate_fields)
     param_names = list(sig.parameters.keys())
     assert "fps" not in param_names
