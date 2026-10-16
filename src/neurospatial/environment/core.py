@@ -285,7 +285,11 @@ class Environment(Generic[_C]):
     def to_networkx(self) -> nx.Graph:
         """Return a detached editable graph with bin IDs and weighted edges.
 
-        Nested graph, node and edge attributes are independently owned. Node
+        ``env.connectivity`` stores its graph, node and edge attributes as
+        immutable values: lists read back as tuples, dicts as read-only
+        mappings and arrays as read-only arrays. This export restores them as
+        independent, editable copies: lists, dicts, sets and writable arrays,
+        at every nesting level. Values stored as tuples stay tuples. Node
         identities are the bin IDs; ``edge_pairs`` defines numerical edge order.
         Standard NetworkX drawing, editing and JSON conversion can use this graph.
 

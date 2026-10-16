@@ -37,28 +37,44 @@ def test_standard_node_link_export_is_json_serializable(restore):
     assert list(exported.nodes) == list(env.connectivity.nodes)
 
 
-def test_json_compatible_metadata_exports_cannot_change_owned_graph_state():
+def test_published_graph_metadata_is_frozen_once_and_read_without_copying():
     env = _environment()
-    with pytest.raises(TypeError, match="read-only"):
-        env.connectivity.graph["caller"] = 1
     metadata = env.connectivity.graph
-    # Even base-dict operations affect only the detached export header.
-    dict.__setitem__(metadata, "caller", 1)
-    metadata["session"]["tags"].append("caller")
+    assert metadata is env.connectivity.graph
+    assert metadata["session"]["tags"] == ("first", "second")
+    with pytest.raises(TypeError, match="read-only"):
+        metadata["caller"] = 1
+    with pytest.raises(TypeError, match="read-only"):
+        metadata["session"]["tags"] = ["caller"]
+    with pytest.raises(AttributeError):
+        metadata["session"]["tags"].append("caller")
     assert "caller" not in env.connectivity.graph
-    assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
 
 
-@pytest.mark.parametrize("method", ["copy", "pickle"])
-def test_graph_metadata_exports_support_copy_and_pickle(method):
+def test_exported_graph_metadata_is_editable_and_independent():
+    env = _environment()
+    exported = env.to_networkx().graph
+    copied = env.connectivity.copy().graph
+    for metadata in (exported, copied):
+        assert metadata == {"session": {"tags": ["first", "second"]}}
+        metadata["session"]["tags"].append("caller")
+        metadata["caller"] = 1
+    assert env.connectivity.graph["session"]["tags"] == ("first", "second")
+    assert "caller" not in env.connectivity.graph
+
+
+@pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
+def test_graph_metadata_survives_copy_and_pickle_read_only(method):
     env = _environment()
     original = env.connectivity.graph
-    exported = (
-        copy.copy(original)
-        if method == "copy"
-        else pickle.loads(pickle.dumps(original))
-    )
-    assert exported == original
-    assert json.loads(json.dumps(exported)) == original
-    exported["session"]["tags"].append("caller")
-    assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
+    restored = {
+        "copy": copy.copy,
+        "deepcopy": copy.deepcopy,
+        "pickle": lambda value: pickle.loads(pickle.dumps(value)),
+    }[method](original)
+    assert restored == original
+    assert json.loads(json.dumps(restored)) == {
+        "session": {"tags": ["first", "second"]}
+    }
+    with pytest.raises(TypeError, match="read-only"):
+        restored["session"]["caller"] = 1

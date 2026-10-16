@@ -182,8 +182,9 @@ array views reject writes and its graph rejects topology and attribute edits.
 
 `environment/_publication.py:publish` validates and publishes owned data
 atomically and starts fresh caches. Every factory, derivation and reader calls
-it exactly once per returned environment; `Environment` itself only allocates. Readers decode binning and graph records directly through
-this path, without replaying build parameters. Readers validate the storage
+it exactly once per returned environment; `Environment` itself only
+allocates. Readers decode binning and graph records directly through this
+path, without replaying build parameters. Readers validate the storage
 format; publication runs the shared geometry checks once.
 `geometry/_validation.py` checks positions, ordered faces and distances, measures,
 locator/component agreement, frames and immediate clip mappings. Center lookup

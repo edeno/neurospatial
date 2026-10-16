@@ -120,6 +120,7 @@ def test_pickle_round_trip_keeps_published_values_immutable():
         restored.connectivity.add_node(99)
     with pytest.raises(TypeError, match="read-only"):
         restored.connectivity.nodes[0]["pos"] = (99.0, 99.0)
-    exported = restored.connectivity.graph
-    exported["recording"]["tags"].append("caller")
-    assert restored.connectivity.graph["recording"]["tags"] == ["original"]
+    metadata = restored.connectivity.graph
+    with pytest.raises(TypeError, match="read-only"):
+        metadata["recording"]["tags"] = ["caller"]
+    assert metadata["recording"]["tags"] == ("original",)

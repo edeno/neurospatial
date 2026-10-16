@@ -69,13 +69,16 @@
   environment in one of them is refused with a message to re-save it. Cartesian
   environments in those files still load.
 
-- Node and edge attributes of `env.connectivity` are stored as immutable values
-  and are no longer copied on every read. A list attribute reads back as a
-  tuple, a dict attribute as a read-only mapping and a numeric array as a
-  read-only array. Reading attributes is about 6 times faster and Dijkstra
-  shortest paths on `env.connectivity` about 2 times faster. `env.to_networkx()`
-  still returns an independent graph whose attributes, including nested
-  dictionaries, can be edited.
+- Graph, node and edge attributes of `env.connectivity` are stored as
+  immutable values and are no longer copied on every read. A list attribute
+  reads back as a tuple, a dict as a read-only mapping, a set as a frozenset
+  and a numeric array as a read-only array, at every nesting level; this
+  includes `env.connectivity.graph`, which used to return a fresh editable
+  copy on each read. Reading attributes is about 5 times faster and Dijkstra
+  shortest paths on `env.connectivity` about 2 times faster.
+  `env.to_networkx()` and `env.connectivity.copy()` still return independent
+  graphs whose attributes are editable lists, dicts, sets and writable arrays,
+  as before.
 
 - Derived environments keep the labels of the environment they came from.
   `subset()` and `clip()` now keep the named regions (they used to drop them),

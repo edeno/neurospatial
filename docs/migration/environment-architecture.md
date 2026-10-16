@@ -125,16 +125,19 @@ If you wrote your own layout engine:
 
 ## Graph attributes are immutable values
 
-`env.connectivity` was already read-only. Its node and edge attribute values
-are now stored as immutable values, so reading them no longer makes a copy:
+`env.connectivity` was already read-only. Its graph, node and edge attribute
+values (including `env.connectivity.graph`) are now stored as immutable
+values, so reading them no longer makes a copy:
 
-| Attribute value you stored | What you read back |
+| Attribute value you stored | What you read from `env.connectivity` |
 | --- | --- |
 | list, e.g. `["measured", 7]` | tuple, `("measured", 7)` |
 | dict | read-only mapping |
+| set | frozenset |
 | NumPy array | read-only array |
 
-To edit attributes, export an ordinary NetworkX graph:
+`env.to_networkx()` returns an independent graph with the original types
+(lists, dicts, sets and writable arrays), so edit attributes there:
 
 ```python
 graph = env.to_networkx()

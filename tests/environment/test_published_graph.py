@@ -96,20 +96,38 @@ def test_to_networkx_returns_an_independent_editable_graph(annotated):
     assert type(exported) is nx.Graph
     assert list(exported.nodes) == list(env.connectivity.nodes)
     assert list(exported.edges) == list(env.connectivity.edges)
-    exported.nodes[0]["details"]["nested"]["name"] = "changed"
+    node = exported.nodes[0]
+    # Stored types come back as editable values at every level.
+    assert node["tags"] == ["start", 1]
+    assert isinstance(node["pos"], tuple)
+    node["tags"].append("caller")
+    node["details"]["nested"]["name"] = "changed"
+    node["samples"][0] = -99.0
+    exported.edges[edge]["notes"].append("caller")
     exported.edges[edge]["distance"] = 99.0
     exported.add_edge(0, 8)
-    assert env.connectivity.nodes[0]["details"]["nested"]["name"] == "original"
-    assert env.connectivity.edges[edge]["distance"] != 99.0
-    assert not env.connectivity.has_edge(0, 8)
+    published = env.connectivity
+    assert published.nodes[0]["tags"] == ("start", 1)
+    assert published.nodes[0]["details"]["nested"]["name"] == "original"
+    np.testing.assert_array_equal(published.nodes[0]["samples"], [1.0, 2.0])
+    assert published.edges[edge]["notes"] == ("measured",)
+    assert published.edges[edge]["distance"] != 99.0
+    assert not published.has_edge(0, 8)
 
 
-def test_shortest_paths_match_an_ordinary_graph(annotated):
+def test_shortest_paths_match_center_distances(annotated):
     env, _, _ = annotated
-    expected = nx.single_source_dijkstra_path_length(
-        env.to_networkx(), 0, weight="distance"
-    )
+    # Independent oracle: straight-line grid distances between bin centers.
+    centers = env.bin_centers
+    oracle = nx.Graph()
+    for u, v in env.edge_pairs:
+        oracle.add_edge(
+            int(u), int(v), distance=float(np.linalg.norm(centers[u] - centers[v]))
+        )
+    expected = nx.single_source_dijkstra_path_length(oracle, 0, weight="distance")
     actual = nx.single_source_dijkstra_path_length(
         env.connectivity, 0, weight="distance"
     )
-    assert actual == expected
+    assert actual.keys() == expected.keys()
+    for node, length in expected.items():
+        assert actual[node] == pytest.approx(length, rel=1e-12)

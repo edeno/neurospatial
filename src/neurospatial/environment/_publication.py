@@ -152,36 +152,70 @@ def _refuse_graph_edit(*args: Any, **kwargs: Any) -> NoReturn:
 _IMMUTABLE_SCALARS = (bool, int, float, complex, str, bytes, type(None), np.generic)
 
 
+class _FrozenList(tuple[Any, ...]):
+    """An immutable stand-in for a list attribute; exports thaw it to a list."""
+
+    __slots__ = ()
+
+
+class _FrozenSet(frozenset[Any]):
+    """An immutable stand-in for a set attribute; exports thaw it to a set."""
+
+    __slots__ = ()
+
+
 def _frozen_value(value: Any) -> Any:
     """Return an immutable equivalent of a graph attribute value.
 
-    Scalars are kept. Lists and tuples become tuples, numeric arrays become
-    read-only arrays over their own buffer, sets become frozensets and
-    mappings become read-only attribute mappings, recursively. Any other
-    object is copied once; neurospatial never reads it.
+    Scalars are kept. Tuples stay tuples, lists become tuples that remember
+    they were lists, numeric arrays become read-only arrays over their own
+    buffer, sets become frozensets and mappings become read-only attribute
+    mappings, recursively. Any other object is copied once; neurospatial
+    never reads it.
     """
     if isinstance(value, _IMMUTABLE_SCALARS):
         return value
-    if isinstance(value, (list, tuple)):
+    if type(value) is tuple:
         return tuple(_frozen_value(item) for item in value)
+    if isinstance(value, (list, tuple)):
+        return _FrozenList(_frozen_value(item) for item in value)
     if isinstance(value, np.ndarray):
         if value.dtype.hasobject:
-            return _frozen_value(value.tolist())
+            return _FrozenList(_frozen_value(item) for item in value.tolist())
         return _immutable_array(value)
     if type(value) is _ReadOnlyGraphAttributes:
         return value
     if isinstance(value, Mapping):
         return _ReadOnlyGraphAttributes(value)
-    if isinstance(value, (set, frozenset)):
+    if isinstance(value, frozenset) and not isinstance(value, _FrozenSet):
         return frozenset(_frozen_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return _FrozenSet(_frozen_value(item) for item in value)
     return copy_module.deepcopy(value)
 
 
 def _thawed_value(value: Any) -> Any:
-    """Return an editable equivalent of a frozen attribute mapping value."""
+    """Return an independent, editable equivalent of a frozen attribute value.
+
+    Read-only mappings become dicts, frozen lists and sets become lists and
+    sets, read-only arrays become writable copies, recursively. Tuples and
+    frozensets stay tuples and frozensets, as they were stored.
+    """
+    if isinstance(value, _IMMUTABLE_SCALARS):
+        return value
     if type(value) is _ReadOnlyGraphAttributes:
         return value.copy()
-    return value
+    if type(value) is _FrozenList:
+        return [_thawed_value(item) for item in value]
+    if type(value) is tuple:
+        return tuple(_thawed_value(item) for item in value)
+    if type(value) is _FrozenSet:
+        return {_thawed_value(item) for item in value}
+    if type(value) is frozenset:
+        return frozenset(_thawed_value(item) for item in value)
+    if isinstance(value, np.ndarray):
+        return np.array(value)
+    return copy_module.deepcopy(value)
 
 
 class _ReadOnlyGraphAttributes(dict[str, Any]):
@@ -220,25 +254,6 @@ class _ReadOnlyGraphAttributes(dict[str, Any]):
         return type(self), (dict(self),)
 
 
-class _ReadOnlyGraphMetadata(dict[str, Any]):
-    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
-
-    __setitem__ = _refuse_graph_edit
-    __delitem__ = _refuse_graph_edit
-    clear = _refuse_graph_edit
-    pop = _refuse_graph_edit
-    popitem = _refuse_graph_edit
-    setdefault = _refuse_graph_edit
-    update = _refuse_graph_edit
-    __ior__ = _refuse_graph_edit
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
-        return copy_module.deepcopy(dict(self), memo)
-
-    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return dict, (dict(self),)
-
-
 class _PublishedGraph(nx.Graph):
     """Freeze public graph bindings as well as topology and attribute values.
 
@@ -248,13 +263,9 @@ class _PublishedGraph(nx.Graph):
 
     @property
     def graph(self) -> dict[str, Any]:
-        # node_link_data retains this object directly, unlike node/edge
-        # attributes. Return a detached dict so standard JSON encoding works
-        # without exposing the authoritative metadata to base-dict mutation.
-        attributes = self.__dict__["graph"]
-        if not self.__dict__.get("_published", False):
-            return cast("dict[str, Any]", attributes)
-        return _ReadOnlyGraphMetadata(copy_module.deepcopy(attributes))
+        # A published graph stores read-only metadata, frozen once like node
+        # and edge attributes; it is a dict, so JSON encoding works.
+        return cast("dict[str, Any]", self.__dict__["graph"])
 
     @graph.setter
     def graph(self, attributes: dict[str, Any]) -> None:
@@ -263,6 +274,15 @@ class _PublishedGraph(nx.Graph):
                 "Environment.connectivity is read-only; copy the graph to edit it."
             )
         self.__dict__["graph"] = attributes
+
+    def copy(self, as_view: bool = False) -> nx.Graph:
+        """Return an editable copy, thawing published metadata as well."""
+        result = super().copy(as_view=as_view)
+        if not as_view and self.__dict__.get("_published", False):
+            result.graph = {
+                key: _thawed_value(value) for key, value in self.graph.items()
+            }
+        return result
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
@@ -282,12 +302,11 @@ class _PublishedGraph(nx.Graph):
 def _published_graph(source: nx.Graph) -> _PublishedGraph:
     """Build the frozen graph an environment publishes, leaving ``source`` as is.
 
-    Node and edge attribute values are converted to immutable values once.
-    Node order, adjacency order and edge orientation follow ``source``.
-    Graph-level metadata is copied once and exported as a detached copy.
+    Graph, node and edge attribute values are converted to immutable values
+    once. Node order, adjacency order and edge orientation follow ``source``.
     """
     graph = _PublishedGraph()
-    graph.__dict__["graph"] = copy_module.deepcopy(dict(source.graph))
+    graph.__dict__["graph"] = _ReadOnlyGraphAttributes(source.graph)
     nodes: dict[Any, _ReadOnlyGraphAttributes] = {}
     for node, attrs in source._node.items():
         nodes[node] = _ReadOnlyGraphAttributes(
@@ -320,6 +339,7 @@ def _published_graph(source: nx.Graph) -> _PublishedGraph:
 def editable_graph(graph: nx.Graph) -> nx.Graph:
     """Return an independent ordinary graph whose attributes can be edited."""
     result = nx.Graph(graph)
+    result.graph = {key: _thawed_value(value) for key, value in graph.graph.items()}
     for attrs in result._node.values():
         for key, value in attrs.items():
             attrs[key] = _thawed_value(value)
