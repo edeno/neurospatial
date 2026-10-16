@@ -104,7 +104,21 @@ def test_minus_one_still_marks_samples_without_a_target(env, position_bins):
         position_bins, env, start_bins=targets, goal_bins=targets[::-1]
     )
     assert np.all(np.isnan(progress))  # every sample lacks a start or a goal
-    assert np.all(np.isnan(distance_to_region(position_bins, env, target_bins=-1)))
+
+
+@pytest.mark.parametrize("name", _NAMES)
+def test_minus_one_is_never_a_single_target(env, position_bins, name):
+    """-1 is bin_at's outside marker; as one target it is refused, not NaN."""
+    if name == "path_progress":
+        pytest.skip("path_progress takes only per-sample arrays")
+    with pytest.raises(BinIndexOutOfRangeError, match=r"-1 is the value bin_at gives"):
+        _calls(env, position_bins, -1)[name]()
+
+
+@pytest.mark.parametrize("bins", [-1, -2, [3, -1]])
+def test_queries_refuse_negative_bins(env, bins):
+    with pytest.raises(BinIndexOutOfRangeError, match=r"Fix: pass a bin index in \[0,"):
+        env.distance_to(bins=bins)
 
 
 def test_polar_hint_names_a_polar_lookup():

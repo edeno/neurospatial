@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, Regions
+from neurospatial import BinIndexOutOfRangeError, Environment, Regions
 from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
 
@@ -656,10 +656,10 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
     assert np.isnan(distances[1])  # Invalid bin → NaN
     assert not np.isnan(distances[2])  # Valid bin
 
-    # Test 2: Invalid target bin (scalar)
+    # Test 2: -1 is the outside marker, never a single target
     position_bins = np.array([0, 1, 2])
-    distances = distance_to_region(position_bins, env, target_bins=-1)
-    assert np.all(np.isnan(distances))  # All should be NaN with invalid target
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        distance_to_region(position_bins, env, target_bins=-1)
 
     # Test 3: Dynamic targets with some invalid
     target_bins = np.array([goal_bin, -1, goal_bin])
@@ -1395,10 +1395,10 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
     assert np.isnan(cost[1])  # Invalid bin → NaN
     assert not np.isnan(cost[2])  # Valid bin
 
-    # Test 2: Invalid goal bin (scalar)
+    # Test 2: -1 is the outside marker, never a single goal
     position_bins = np.array([0, 1, 2])
-    cost = cost_to_goal(position_bins, env, goal_bins=-1)
-    assert np.all(np.isnan(cost))  # All should be NaN with invalid goal
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        cost_to_goal(position_bins, env, goal_bins=-1)
 
     # Test 3: Dynamic goals with some invalid
     goal_bins_array = np.array([goal_bin, -1, goal_bin])
@@ -1755,8 +1755,8 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
     assert costs[0] > 0
 
 
-def test_distance_to_region_invalid_scalar_target():
-    """Test distance_to_region with invalid scalar target (-1)."""
+def test_distance_to_region_refuses_scalar_outside_marker():
+    """A single target of -1 (bin_at's outside marker) raises."""
     from neurospatial.behavior.navigation import distance_to_region
 
     # Deterministic grid - no randomness needed
@@ -1767,9 +1767,5 @@ def test_distance_to_region_invalid_scalar_target():
 
     position_bins = np.array([0, 1, 2, 3, 4])
 
-    # Invalid scalar target
-    distances = distance_to_region(position_bins, env, target_bins=-1)
-
-    # Should return all NaN
-    assert distances.shape == (5,)
-    assert np.all(np.isnan(distances))
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        distance_to_region(position_bins, env, target_bins=-1)

@@ -188,9 +188,16 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
             if coordinate_kind == "polar"
             else "int(env.bin_at([point])[0])"
         )
+        why = (
+            "Why: -1 is the value bin_at gives a position outside the "
+            "environment; it marks no bin."
+            if index == -1
+            else None
+        )
         super().__init__(
             _format_error(
                 msg,
+                why=why,
                 fix=f"pass a bin index in [0, {n_bins}); obtain one with {lookup}.",
             )
         )

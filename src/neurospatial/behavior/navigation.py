@@ -693,9 +693,11 @@ def distance_to_region(
         Spatial environment.
     target_bins : NDArray[np.int_] or int
         Target bin specification:
-        - int: Single target bin (constant over time)
-        - NDArray[np.int_], shape (n_samples,): Target bin at each timepoint
-          (allows dynamic goals)
+        - int: Single target bin (constant over time), in ``[0, n_bins)``;
+          ``-1`` (the outside marker of ``bin_at``) is refused.
+        - NDArray[np.int_], shape (n_samples,): Target bin at each timepoint;
+          ``-1`` marks a sample with no target, which gives NaN.
+          This allows dynamic goals.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         Distance metric.
 
@@ -748,16 +750,13 @@ def distance_to_region(
         coordinates=env.coordinate_system,
         operation="distance_to_region()",
         argument="target_bins",
-        allow_missing=True,
+        # -1 marks a per-sample "no target"; a single target must be a bin.
+        allow_missing=np.ndim(target_bins) > 0,
     )
 
     if np.ndim(target_bins) == 0:
         n_samples = len(position_bins)
         (target,) = targets
-
-        if target == -1:
-            return np.full(n_samples, np.nan, dtype=np.float64)
-
         dist_field = env.distance_to(bins=target, metric=metric)
         distances = dist_field[position_bins].astype(np.float64)
 
@@ -823,7 +822,8 @@ def cost_to_goal(
     env : Environment
         Spatial environment.
     goal_bins : NDArray[np.int_] or int
-        Target bin(s). Can be scalar (constant goal) or array (dynamic goal).
+        Target bin(s). Can be scalar (constant goal, in ``[0, n_bins)``) or
+        array (dynamic goal, where ``-1`` marks a sample with no goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
         Per-bin traversal cost. Default: uniform cost (geodesic distance).
     terrain_difficulty : NDArray[np.float64], shape (n_bins,), optional
@@ -859,7 +859,8 @@ def cost_to_goal(
         coordinates=env.coordinate_system,
         operation="cost_to_goal()",
         argument="goal_bins",
-        allow_missing=True,
+        # -1 marks a per-sample "no target"; a single target must be a bin.
+        allow_missing=np.ndim(goal_bins) > 0,
     )
 
     # Case 1: No cost modifications
@@ -885,9 +886,6 @@ def cost_to_goal(
         g_weighted[u][v]["weight"] = base_dist
 
     if np.ndim(goal_bins) == 0:
-        (goal,) = goals
-        if goal == -1:
-            return np.full(len(position_bins), np.nan, dtype=np.float64)
         dist_field = distance_field(g_weighted, goals, weight="weight")
         costs = dist_field[position_bins]
 
