@@ -458,8 +458,10 @@ its diagonal connections (`dilate`, `fill_holes`, `close_gaps`,
 layout, so setting any of them to a value other than its default with
 `layout="Hexagonal"` raises `ValueError` (it used to be ignored). Remove
 those values from the call; leaving them out gives the same hexagons as
-before. The defaults themselves are accepted, so a parameter set that sweeps
-`layout` over `["RegularGrid", "Hexagonal"]` can spell them out:
+before. The defaults themselves are accepted, and so is `fill_holes=False` in
+`open_field` (whose default is `True`), because a hexagonal layout fills no
+holes. A parameter set that sweeps `layout` over `["RegularGrid", "Hexagonal"]`
+can therefore spell the options out:
 
 <!-- docs-test: run -->
 ```python

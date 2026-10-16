@@ -87,10 +87,32 @@ def _default(factory, option):
     return inspect.signature(getattr(Environment, factory)).parameters[option].default
 
 
+# Values that ask for nothing: no clean-up, no threshold, the neighbors a
+# layout has anyway. A layout that ignores an option accepts these and the
+# factory's default.
+_NO_OP = {
+    "bin_count_threshold": 0,
+    "dilate": False,
+    "fill_holes": False,
+    "close_gaps": False,
+    "add_boundary_bins": False,
+    "connect_diagonal_neighbors": True,
+}
+
+
 def _changed(factory, option):
-    """A value that differs from the factory's default for ``option``."""
-    default = _default(factory, option)
-    return 5 if option == "bin_count_threshold" else not default
+    """A value that is neither the factory's default nor the no-op value."""
+    return 5 if option == "bin_count_threshold" else not _NO_OP[option]
+
+
+def _refusable(options):
+    """(factory, option) pairs for which some value would be refused."""
+    return [
+        (factory, option)
+        for factory in ("from_samples", "open_field")
+        for option in options
+        if _changed(factory, option) != _default(factory, option)
+    ]
 
 
 @pytest.mark.parametrize("factory", ["from_samples", "open_field"])
@@ -109,8 +131,7 @@ def test_sample_option_signatures_show_their_real_defaults(factory):
     }
 
 
-@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
-@pytest.mark.parametrize("option", _REGULAR_GRID_ONLY)
+@pytest.mark.parametrize(("factory", "option"), _refusable(_REGULAR_GRID_ONLY))
 def test_regular_grid_option_with_hexagonal_layout_is_refused(
     factory, option, positions
 ):
@@ -135,6 +156,24 @@ def test_hexagonal_layout_accepts_the_regular_grid_defaults(factory, positions):
     omitted = getattr(Environment, factory)(positions, bin_size=3.0, layout="Hexagonal")
     _same_bins(explicit, omitted)
     assert explicit.layout_parameters == omitted.layout_parameters
+
+
+@pytest.mark.parametrize(
+    "setting", [{"layout": "Hexagonal"}, {"infer_active_bins": False}]
+)
+def test_open_field_accepts_fill_holes_false_where_nothing_is_filled(
+    setting, positions
+):
+    """``fill_holes=False`` describes what these bins are, so it is no error."""
+    unfilled = Environment.open_field(
+        positions, bin_size=3.0, fill_holes=False, **setting
+    )
+    default = Environment.open_field(positions, bin_size=3.0, **setting)
+    _same_bins(unfilled, default)
+    assert (
+        unfilled.n_bins
+        == Environment.from_samples(positions, bin_size=3.0, **setting).n_bins
+    )
 
 
 def test_refusal_lists_every_inapplicable_option(positions):
@@ -245,8 +284,7 @@ def test_from_layout_owns_a_copy_of_the_engine_bins():
     assert (env.name, env.units, env.n_bins) == ("arena", "cm", 6)
 
 
-@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
-@pytest.mark.parametrize("option", _MASK_OPTIONS)
+@pytest.mark.parametrize(("factory", "option"), _refusable(_MASK_OPTIONS))
 def test_mask_option_without_inferred_bins_is_refused(factory, option, positions):
     value = _changed(factory, option)
     with pytest.raises(ValueError, match=f"{option}={value!r}") as caught:

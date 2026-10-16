@@ -2818,7 +2818,8 @@ class Environment(Generic[_C]):
             If `layout` is neither "RegularGrid" nor "Hexagonal", if a
             regular-grid-only option differs from its default with
             ``layout="Hexagonal"``, or if a mask option differs from its
-            default with ``infer_active_bins=False``.
+            default with ``infer_active_bins=False``. Those layouts never
+            fill holes, so ``fill_holes=False`` is accepted with them too.
 
         See Also
         --------

@@ -216,9 +216,12 @@ def _from_bins(
 
 
 # Defaults of the options shared by from_samples, open_field and
-# environment_from_position. An option that the chosen layout or
-# infer_active_bins=False ignores is refused only when it differs from its
-# default, so passing the default explicitly is always accepted.
+# environment_from_position. They are also the values that leave the bins as
+# a layout without the option builds them: no clean-up, no threshold, and the
+# neighbors the layout has anyway. An option that the chosen layout or
+# infer_active_bins=False ignores is refused only when its value is neither
+# the factory's default nor that no-op value, because only then would the
+# call ask for bins it does not build.
 _SAMPLE_OPTION_DEFAULTS: dict[str, Any] = {
     "bin_count_threshold": 0,
     "dilate": False,
@@ -242,9 +245,16 @@ _MASK_OPTIONS = ("bin_count_threshold", "dilate", "fill_holes", "close_gaps")
 def _changed(
     options: dict[str, Any], defaults: dict[str, Any], names: Sequence[str]
 ) -> list[str]:
-    """Show each option in ``names`` whose value differs from its default."""
+    """Show each option in ``names`` that asks for something the bins lack.
+
+    A value is accepted when it is the factory's default (``defaults``) or
+    the no-op value in ``_SAMPLE_OPTION_DEFAULTS``.
+    """
     return [
-        f"{name}={options[name]!r}" for name in names if options[name] != defaults[name]
+        f"{name}={options[name]!r}"
+        for name in names
+        if options[name] != defaults[name]
+        and options[name] != _SAMPLE_OPTION_DEFAULTS[name]
     ]
 
 
