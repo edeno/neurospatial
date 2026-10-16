@@ -436,8 +436,41 @@ class TestEnvironmentFromPosition:
             environment_from_position(
                 sample_nwb_with_position, bin_size=5.0, layout="Hexagonal", dilate=True
             )
-        with pytest.raises(TypeError, match="positional"):
+        with pytest.raises(TypeError, match="positional") as caught:
             environment_from_position(sample_nwb_with_position, 5.0)
+        assert (
+            "pass bin_size=5.0 by keyword, as in "
+            "environment_from_position(nwbfile, bin_size=5.0)"
+        ) in str(caught.value)
+
+    def test_from_nwb_points_building_options_to_environment_from_position(
+        self, sample_nwb_with_position
+    ):
+        from neurospatial import Environment
+
+        with pytest.raises(TypeError, match="does not take bin_size") as caught:
+            Environment.from_nwb(sample_nwb_with_position, bin_size=4.0)
+        assert (
+            "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=4.0)"
+            in str(caught.value).split("Fix: ")[1]
+        )
+        # Keywords that no builder takes keep Python's own message.
+        with pytest.raises(TypeError, match="unexpected keyword argument 'colour'"):
+            Environment.from_nwb(sample_nwb_with_position, colour="red")
+
+    def test_from_nwb_without_saved_environment_points_to_the_builder(
+        self, sample_nwb_with_position
+    ):
+        from neurospatial import Environment
+
+        with pytest.raises(KeyError) as caught:
+            Environment.from_nwb(sample_nwb_with_position)
+        message = str(caught.value)
+        assert "No environment named 'spatial_environment'" in message
+        assert "saved environments: none" in message
+        fix = message.split("Fix: ")[1]
+        assert "Position data at processing/behavior/" in fix
+        assert "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=" in fix
 
     def test_default_options_are_accepted_with_any_layout(
         self, sample_nwb_with_position
@@ -809,7 +842,7 @@ class TestReadEnvironment:
         """Test KeyError when environment not found in scratch/."""
         from neurospatial.io.nwb import read_environment
 
-        with pytest.raises(KeyError, match="not found"):
+        with pytest.raises(KeyError, match="No environment named 'nonexistent'"):
             read_environment(empty_nwb, name="nonexistent")
 
     def test_custom_name_parameter(self, empty_nwb, sample_environment):

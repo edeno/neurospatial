@@ -425,6 +425,18 @@ keyword, following the argument order used across neurospatial. An option
 that the layout would ignore raises an error when you change it from its
 default, instead of being ignored.
 
+An old call that passes an option by position raises a `TypeError` that names
+the keyword to use and shows the corrected call, so the error tells you how to
+update each line:
+
+<!-- docs-test: run -->
+```python
+try:
+    Environment.from_samples(positions, 2.0)
+except TypeError as error:
+    assert "pass bin_size=2.0 by keyword" in str(error)
+```
+
 ### `from_samples` and `open_field`
 
 `bin_size` is keyword-only:
@@ -608,3 +620,10 @@ env = Environment.from_nwb(nwbfile, name="linear_track")
 # Before: env = environment_from_position(nwbfile, 5.0)
 env = environment_from_position(nwbfile, bin_size=5.0, units="cm")
 ```
+
+The old calls tell you what to use instead.
+`Environment.from_nwb(nwbfile, bin_size=5.0)` raises a `TypeError` that shows
+the `environment_from_position(nwbfile, bin_size=5.0)` call, and
+`Environment.from_nwb(nwbfile)` on a file with no saved environment raises a
+`KeyError` that lists the environments the file does store and, when the file
+has Position data, names it and points to `environment_from_position`.

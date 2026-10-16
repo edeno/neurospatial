@@ -25,6 +25,7 @@ from scipy import sparse
 from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._cache import (
@@ -959,6 +960,7 @@ class Environment(Generic[_C]):
         return self._cache.get(BOUNDARY_BINS, build)
 
     @classmethod
+    @keyword_hint()
     def from_polar_egocentric(
         cls,
         *,
@@ -2427,6 +2429,7 @@ class Environment(Generic[_C]):
         return publish_derived(self, derivation, name=name, frame=frame)
 
     @classmethod
+    @keyword_hint()
     def combine(
         cls,
         components: Mapping[str, Environment],
@@ -2476,6 +2479,7 @@ class Environment(Generic[_C]):
         return publish_derived(first, derivation, name=name)
 
     @classmethod
+    @keyword_hint()
     def from_bins(
         cls,
         binning: object,
@@ -2523,6 +2527,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def from_samples(
         cls,
         positions: NDArray[np.float64],
@@ -2724,6 +2729,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def open_field(
         cls,
         positions: NDArray[np.float64],
@@ -2848,6 +2854,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint("endpoints", "bin_size")
     def linear_track(
         cls,
         *,
@@ -2951,6 +2958,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def maze(
         cls,
         *,
@@ -3100,6 +3108,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint("edge_spacing", "bin_size")
     def from_graph(
         cls,
         graph: nx.Graph,
@@ -3260,6 +3269,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def from_polygon(
         cls,
         polygon: PolygonType,
@@ -3359,6 +3369,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def from_grid_mask(
         cls,
         active_mask: NDArray[np.bool_],
@@ -3452,6 +3463,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
@@ -3542,6 +3554,15 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint(
+        fix=(
+            "build the engine first and pass it alone, e.g. "
+            "Environment.from_layout(create_layout('TriangularMesh', "
+            "boundary_polygon=polygon, point_spacing=2.0)), with create_layout "
+            "from neurospatial.layout; pass name=, units=, frame=, regions= "
+            "and arena= by keyword"
+        )
+    )
     def from_layout(
         cls,
         layout: LayoutEngine,
@@ -3634,6 +3655,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint(redirect="neurospatial.io.nwb.environment_from_position")
     def from_nwb(
         cls,
         nwbfile: Any,
@@ -3665,7 +3687,12 @@ class Environment(Generic[_C]):
         Raises
         ------
         KeyError
-            If no record called `name` is in the NWB scratch space.
+            If no record called `name` is in the NWB scratch space. The
+            message lists the saved environments and points to
+            :func:`neurospatial.io.nwb.environment_from_position`.
+        TypeError
+            If a building option such as ``bin_size`` is passed; the message
+            shows the ``environment_from_position`` call that takes it.
         ValueError
             If the stored record uses an unsupported schema or is inconsistent.
         ImportError

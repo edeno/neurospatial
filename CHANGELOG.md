@@ -128,6 +128,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     angle_range=(-np.pi, np.pi), distance_bin_size=5.0,
     angle_bin_size=np.pi / 8)`. Four positional numbers were easy to swap.
 
+  An option passed by position raises a `TypeError` that names the keyword
+  and shows the corrected call: `Environment.from_samples(positions, 4.0)`
+  says to pass `bin_size=4.0` by keyword, and
+  `Environment.from_graph(graph, edge_order, 0.0, 2.0)` says to pass
+  `edge_spacing=0.0, bin_size=2.0`. Other argument errors, such as a
+  misspelled option, keep Python's own message.
+
 - `Environment.from_samples`, `Environment.open_field` and
   `neurospatial.io.nwb.environment_from_position` refuse option values that
   the call would ignore, instead of ignoring them without a word. A
@@ -165,7 +172,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   instead of `from_nwb(nwbfile, bin_size=...)`. It takes `bin_size` as a
   keyword and lists every `from_samples` option (`name=`, `regions=`,
   `arena=`, `layout=`, `fill_holes=` and so on) instead of forwarding
-  `**kwargs`.
+  `**kwargs`. `from_nwb(nwbfile, bin_size=...)` raises a `TypeError` that
+  shows that call. When the file has no saved environment of that name,
+  `from_nwb` and `read_environment` raise a `KeyError` that lists the saved
+  environments and, if the file has Position data, names it and points to
+  `environment_from_position`.
 
 ### Changed
 

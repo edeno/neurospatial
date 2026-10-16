@@ -311,3 +311,81 @@ def test_from_layout_refuses_an_unbuilt_engine():
 
     with pytest.raises(LayoutNotBuiltError, match="not built yet"):
         Environment.from_layout(MaskedGridLayout())
+
+
+@pytest.mark.parametrize("factory", _DATA_ARGUMENTS)
+def test_misuse_guard_keeps_the_factory_signature_and_docstring(factory):
+    method = getattr(Environment, factory)
+    wrapped = method.__func__.__wrapped__
+    assert inspect.signature(wrapped) == inspect.signature(method.__func__)
+    assert method.__doc__ == wrapped.__doc__
+    assert method.__name__ == wrapped.__name__ == factory
+
+
+def _graph():
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(10.0, 0.0))
+    graph.add_edge(0, 1, distance=10.0)
+    return graph
+
+
+@pytest.mark.parametrize(
+    ("call", "advice"),
+    [
+        (
+            lambda p: Environment.from_samples(p, 4.0),
+            "pass bin_size=4.0 by keyword, as in "
+            "Environment.from_samples(positions, bin_size=4.0)",
+        ),
+        (
+            lambda p: Environment.open_field(p, 4.0, name="arena"),
+            "Environment.open_field(positions, bin_size=4.0, name='arena')",
+        ),
+        # The track factory took edge_spacing before bin_size.
+        (
+            lambda p: Environment.from_graph(_graph(), [(0, 1)], 0.0, 2.0),
+            "pass edge_spacing=0.0, bin_size=2.0 by keyword",
+        ),
+        (
+            lambda p: Environment.maze("plus", bin_size=2.0),
+            "Environment.maze(kind='plus', bin_size=2.0)",
+        ),
+        (
+            lambda p: Environment.from_polar_egocentric((0, 50), (-1, 1), 5.0, 0.5),
+            "distance_range=(0, 50), angle_range=(-1, 1), distance_bin_size=5.0, "
+            "angle_bin_size=0.5",
+        ),
+        (
+            lambda p: Environment.from_layout("TriangularMesh", {"point_spacing": 2}),
+            "Environment.from_layout(create_layout('TriangularMesh'",
+        ),
+    ],
+)
+def test_option_passed_by_position_names_the_keyword(call, advice, positions):
+    with pytest.raises(TypeError, match="positional argument") as caught:
+        call(positions)
+    message = str(caught.value)
+    assert "Why: options are keyword-only" in message
+    assert advice in message.split("Fix: ")[1]
+
+
+def test_long_values_are_named_by_type_in_the_advice(positions):
+    with pytest.raises(TypeError) as caught:
+        Environment.from_samples(positions, np.full(2, 4.0) + np.arange(30)[:2])
+    assert "bin_size=array([4., 5.])" in str(caught.value)
+    with pytest.raises(TypeError) as caught:
+        Environment.from_samples(positions, positions)
+    assert "bin_size=<ndarray>" in str(caught.value)
+
+
+def test_other_argument_errors_keep_their_python_message(positions):
+    with pytest.raises(TypeError, match="Did you mean 'bin_size'"):
+        Environment.from_samples(positions, bin_sizee=4.0)
+    with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
+        Environment.from_samples(positions)
+    # A TypeError raised while the factory runs is not rewritten.
+    with pytest.raises(TypeError, match="bin_size must be a numeric value"):
+        Environment.from_samples(positions, bin_size="four")

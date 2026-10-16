@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
@@ -117,6 +118,43 @@ def write_environment(
     nwbfile.add_scratch(record)
 
 
+class _MissingEnvironmentError(KeyError):
+    """No saved environment of the requested name; prints its message as written."""
+
+    def __str__(self) -> str:
+        return str(self.args[0])
+
+
+def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
+    """Say which environments the file stores and how to build one instead."""
+    from pynwb.behavior import Position
+
+    from neurospatial._exceptions import _format_error
+    from neurospatial.io.nwb._core import _find_containers_by_type
+
+    stored = sorted(nwbfile.scratch) if nwbfile.scratch else []
+    positions = [path for path, _ in _find_containers_by_type(nwbfile, Position)]
+    build = "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)"
+    if positions:
+        build_fix = (
+            f"to bin the Position data at {positions[0]} into a new environment, "
+            f"call {build}"
+        )
+    else:
+        build_fix = f"to bin a Position container into a new environment, call {build}"
+    fix = f"pass name= one of {stored}, or {build_fix}" if stored else build_fix
+    return _format_error(
+        f"No environment named {name!r} is saved in this NWB file "
+        f"(saved environments: {stored or 'none'}).",
+        why=(
+            "Why: read_environment and Environment.from_nwb load an environment "
+            "saved with env.to_nwb or write_environment; they do not bin "
+            "position data."
+        ),
+        fix=fix,
+    )
+
+
 def read_environment(
     nwbfile: NWBFile,
     name: str = DEFAULT_ENVIRONMENT_NAME,
@@ -143,7 +181,9 @@ def read_environment(
     Raises
     ------
     KeyError
-        If the scratch record does not exist.
+        If no environment of that name is saved in the file. The message
+        lists the saved environments and, for building one from position
+        data, :func:`environment_from_position`.
     ValueError
         If the schema is unsupported or the saved data is inconsistent.
     ImportError
@@ -169,10 +209,7 @@ def read_environment(
     from neurospatial.io.files import _restore_environment
 
     if name not in nwbfile.scratch:
-        available = list(nwbfile.scratch) if nwbfile.scratch else []
-        raise KeyError(
-            f"Environment '{name}' not found in scratch/. Available: {available}"
-        )
+        raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
     record = nwbfile.scratch[name]
     source = f"NWB scratch/{name}"
     try:
@@ -355,6 +392,7 @@ def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
     return Regions(regions_list)
 
 
+@keyword_hint()
 def environment_from_position(
     nwbfile: NWBFile,
     *,
