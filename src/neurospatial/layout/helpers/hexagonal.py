@@ -37,6 +37,9 @@ from neurospatial.geometry._hex_lookup import (
     _cartesian_to_fractional_cube as _cartesian_to_fractional_cube,
 )
 from neurospatial.geometry._hex_lookup import (
+    _get_hex_grid_neighbor_deltas as _get_hex_grid_neighbor_deltas,
+)
+from neurospatial.geometry._hex_lookup import (
     _points_to_hex_bin_ind as _points_to_hex_bin_ind,
 )
 from neurospatial.geometry._hex_lookup import (
@@ -232,35 +235,6 @@ def _infer_active_bins_from_hex_grid(
     bin_ind = bin_ind[bin_count >= bin_count_threshold]
 
     return bin_ind.astype(int)
-
-
-def _get_hex_grid_neighbor_deltas(is_odd_row: bool) -> list[tuple[int, int]]:
-    """Return (delta_col, delta_row) coordinate deltas for hexagon neighbors.
-
-    This is for an "odd-r" pointy-top hex grid, where odd rows (1, 3, ...)
-    are typically shifted right relative to even rows (0, 2, ...).
-    The y-axis (row index) increases "upwards" in grid coordinates.
-
-    Parameters
-    ----------
-    is_odd_row : bool
-        True if the current hexagon's row index is odd, False otherwise.
-
-    Returns
-    -------
-    List[Tuple[int, int]]
-        A list of 6 (delta_col, delta_row) tuples, each representing the
-        offset to one of the 6 neighbors.
-
-    """
-    if is_odd_row:
-        # Neighbors for an odd row (shifted right): E, W, NW, NE, SW, SE
-        # (dc, dr)
-        return [(1, 0), (-1, 0), (0, 1), (1, 1), (0, -1), (1, -1)]
-    # Even row
-    # Neighbors for an even row: E, W, NW, NE, SW, SE
-    # (dc, dr)
-    return [(1, 0), (-1, 0), (-1, 1), (0, 1), (-1, -1), (0, -1)]
 
 
 def _create_hex_connectivity_graph(
