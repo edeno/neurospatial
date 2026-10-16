@@ -31,7 +31,7 @@ from neurospatial.geometry._polygon import (
     materialize_cells,
 )
 from neurospatial.geometry._wall_frame import _wall_source_frame
-from neurospatial.ops._linear_allocation import ray_grid_pieces
+from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 
 if TYPE_CHECKING:
     from neurospatial.geometry._grid_frame import FramedGrid
@@ -466,15 +466,17 @@ def polygon_linear_occupancy(
     if frame is not None and binning.bins.n_dims != 2 and not return_seconds:
         _, source_positions = source_grid(frame, positions)
         samples = np.flatnonzero(valid_mask)
-        interval, _, fraction = ray_grid_pieces(
-            source_positions[samples],
-            source_positions[samples + 1],
-            frame.source.edges,
-            frame.source.shape,
-            np.ones(len(samples)),
-        )
         normalizers[samples] = 0.0
-        np.add.at(normalizers, samples[interval], fraction)
+        starts, stops = source_positions[samples], source_positions[samples + 1]
+        for block in crossing_blocks(starts, stops, frame.source.edges):
+            interval, _, fraction = ray_grid_pieces(
+                starts[block],
+                stops[block],
+                frame.source.edges,
+                frame.source.shape,
+                np.ones(block.stop - block.start),
+            )
+            np.add.at(normalizers, samples[block][interval], fraction)
     pieces = retained_linear_intervals(binning, arena, times, positions, valid_mask)
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     for piece in pieces:

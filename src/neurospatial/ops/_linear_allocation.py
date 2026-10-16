@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 # smaller than this is parallel to that axis's cell edges (no crossings).
 RAY_EPSILON = 1e-12
 
+# Candidate edge crossings handled per block. Each crossing holds about 200
+# bytes of intermediate arrays, so a block stays near 50 MB however far the
+# trajectory jumps between samples.
+BLOCK_CROSSINGS = 1 << 18
+
 
 def _grid_cells(
     points: NDArray[np.float64],
@@ -54,6 +59,51 @@ def _grid_cells(
         stride *= shape[axis]
     flat[~inside] = -1
     return flat
+
+
+def crossing_blocks(
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
+    edges: Sequence[NDArray[np.float64]],
+    *,
+    max_crossings: int = BLOCK_CROSSINGS,
+) -> list[slice]:
+    """Split intervals into consecutive blocks with a bounded number of crossings.
+
+    Parameters
+    ----------
+    starts, stops : ndarray of float64, shape (n_intervals, n_dims)
+        Segment endpoints of each interval.
+    edges : sequence of ndarray
+        Cell edges per axis.
+    max_crossings : int
+        Budget of candidate edge crossings per block. A single interval with
+        more candidates than the budget forms a block of its own.
+
+    Returns
+    -------
+    list of slice
+        Consecutive blocks covering ``range(n_intervals)`` in order.
+    """
+    # Upper bound on the crossings ray_grid_pieces examines for each interval,
+    # plus one for the interval's own boundaries.
+    counts = np.ones(len(starts), dtype=np.int64)
+    for axis, axis_edges in enumerate(edges):
+        low = np.minimum(starts[:, axis], stops[:, axis])
+        high = np.maximum(starts[:, axis], stops[:, axis])
+        first = np.searchsorted(axis_edges, low, side="left") - 1
+        last = np.searchsorted(axis_edges, high, side="right") + 1
+        counts += np.clip(last - first, 0, len(axis_edges))
+    total = np.cumsum(counts)
+    blocks = []
+    start = 0
+    while start < len(starts):
+        done = total[start - 1] if start else 0
+        stop = int(np.searchsorted(total, done + max_crossings, side="right"))
+        stop = max(stop, start + 1)
+        blocks.append(slice(start, stop))
+        start = stop
+    return blocks
 
 
 def ray_grid_pieces(
@@ -205,7 +255,48 @@ def linear_grid_occupancy(
     active = np.flatnonzero(grid.active_mask.ravel())
     full_to_active[active] = np.arange(active.size, dtype=np.intp)
 
+    occupancy = np.zeros(n_bins, dtype=np.float64)
     valid = np.flatnonzero(valid_mask)
+    # Blocks follow interval order, so accumulating block by block adds every
+    # piece in the same order as a sequential traversal.
+    for block in crossing_blocks(positions[valid], positions[valid + 1], grid.edges):
+        _accumulate_block(
+            occupancy,
+            full_to_active,
+            grid,
+            positions,
+            dt,
+            valid[block],
+            bin_indices,
+            return_seconds=return_seconds,
+        )
+    return occupancy
+
+
+def _accumulate_block(
+    occupancy: NDArray[np.float64],
+    full_to_active: NDArray[np.intp],
+    grid: RectilinearGrid,
+    positions: NDArray[np.float64],
+    dt: NDArray[np.float64],
+    valid: NDArray[np.intp],
+    bin_indices: NDArray[np.intp],
+    *,
+    return_seconds: bool,
+) -> None:
+    """Add one block of valid intervals to ``occupancy``, in interval order.
+
+    Parameters
+    ----------
+    occupancy : ndarray of float64, shape (n_bins,)
+        Accumulated seconds (or counts), updated in place.
+    full_to_active : ndarray of intp, shape (n_cells,)
+        Active-bin index of each full-grid cell, or ``-1``.
+    valid : ndarray of intp, shape (n_block,)
+        Indices of the block's valid intervals, increasing.
+    grid, positions, dt, bin_indices, return_seconds
+        As for :func:`linear_grid_occupancy`.
+    """
     start_bin, end_bin = bin_indices[valid], bin_indices[valid + 1]
     # Both endpoints in one active bin: the whole interval belongs to it.
     within = (start_bin == end_bin) & (start_bin >= 0)
@@ -237,6 +328,4 @@ def linear_grid_occupancy(
     bins = np.concatenate([start_bin[within], target[retained]])
     values = np.concatenate([weights[within], time[retained]])
     order = np.argsort(order_key, kind="stable")
-    occupancy = np.zeros(n_bins, dtype=np.float64)
     np.add.at(occupancy, bins[order], values[order])
-    return occupancy

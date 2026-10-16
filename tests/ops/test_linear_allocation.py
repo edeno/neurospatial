@@ -1,9 +1,13 @@
 """Straight-path time allocation across rectangular cells."""
 
+import functools
+import itertools
+
 import numpy as np
 import pytest
 
 from neurospatial.geometry._capabilities import RectilinearGrid
+from neurospatial.ops import _linear_allocation as _allocation
 from neurospatial.ops._linear_allocation import linear_grid_occupancy, ray_grid_pieces
 
 
@@ -94,3 +98,51 @@ def test_interval_inside_one_bin_and_invalid_intervals(unit_grid):
     expected = np.zeros(12)
     expected[0] = 2.0
     np.testing.assert_array_equal(occupancy, expected)
+
+
+def test_crossing_blocks_cover_intervals_in_order_within_budget():
+    rng = np.random.default_rng(1)
+    edges = (np.arange(101.0), np.arange(101.0))
+    starts = rng.uniform(0, 100, (500, 2))
+    stops = rng.uniform(0, 100, (500, 2))
+    blocks = _allocation.crossing_blocks(starts, stops, edges, max_crossings=300)
+    assert blocks[0].start == 0
+    assert blocks[-1].stop == 500
+    assert all(a.stop == b.start for a, b in itertools.pairwise(blocks))
+    assert len(blocks) > 1
+    # One interval with more candidates than the budget is a block on its own.
+    single = _allocation.crossing_blocks(starts[:3], stops[:3], edges, max_crossings=1)
+    assert single == [slice(0, 1), slice(1, 2), slice(2, 3)]
+
+
+@pytest.mark.parametrize("return_seconds", [True, False])
+def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
+    rng = np.random.default_rng(2)
+    edges = (np.arange(31.0), np.arange(21.0), np.arange(11.0))
+    active = rng.random((30, 20, 10)) < 0.8
+    grid = RectilinearGrid(edges, (30, 20, 10), active)
+    positions = rng.uniform(-1, 31, (400, 3)) * np.array([1.0, 0.7, 0.35])
+    dt = rng.exponential(0.1, 399)
+    valid = rng.random(399) < 0.9
+    bins = np.full(400, -1, dtype=np.intp)  # every interval takes the traversal
+    whole = linear_grid_occupancy(
+        int(active.sum()),
+        grid,
+        positions,
+        dt,
+        valid,
+        bins,
+        return_seconds=return_seconds,
+    )
+    small = functools.partial(_allocation.crossing_blocks, max_crossings=5)
+    monkeypatch.setattr(_allocation, "crossing_blocks", small)
+    blocked = linear_grid_occupancy(
+        int(active.sum()),
+        grid,
+        positions,
+        dt,
+        valid,
+        bins,
+        return_seconds=return_seconds,
+    )
+    np.testing.assert_array_equal(blocked, whole)
