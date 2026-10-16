@@ -184,7 +184,7 @@ def test_no_import_cycle():
         elif isinstance(node, ast.ImportFrom):
             imports.append(node.module or "")
     assert not any(name.startswith("neurospatial") for name in imports)
-    queries = ast.parse((source / "environment" / "queries.py").read_text())
+    queries = ast.parse((source / "environment" / "_queries.py").read_text())
     for node in ast.walk(queries):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             assert not any(
