@@ -21,7 +21,7 @@ Generate histogram:
 
 import numpy as np
 import pytest
-from environment_helpers import native_layout
+from environment_helpers import built_from, native_layout
 
 from neurospatial import Environment
 from neurospatial.encoding import PlaceFieldsResult
@@ -141,7 +141,7 @@ def small_env(benchmark_data_small):
 def medium_env(benchmark_data_medium):
     """Pre-built medium environment for benchmarks."""
     positions, _, _ = benchmark_data_medium
-    return Environment.from_samples(positions, bin_size=5.0)
+    return built_from(lambda: Environment.from_samples(positions, bin_size=5.0))
 
 
 @pytest.fixture(scope="module")

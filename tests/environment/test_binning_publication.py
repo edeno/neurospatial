@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import native_layout, publish_binning, publish_environment
+from environment_helpers import (
+    built_from,
+    native_layout,
+    publish_binning,
+    publish_environment,
+)
 
 from neurospatial import Environment
 from neurospatial.geometry._diffusion import (
@@ -259,8 +264,10 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
 
 def test_invalid_binning_is_not_published(monkeypatch) -> None:
     """An invalid measure must leave the previous geometry and caches intact."""
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
     )
     geometry, published = env._geometry, env._binning
     kernel = env.compute_kernel(1.0)
@@ -279,8 +286,10 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
 
 def test_faces_reject_changed_pair_order() -> None:
     """Native recipes retain the supplied authoritative pair order."""
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
     )
     reordered = nx.Graph()
     reordered.add_nodes_from(reversed(list(env.connectivity.nodes)))

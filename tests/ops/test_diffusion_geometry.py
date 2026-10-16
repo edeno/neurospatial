@@ -7,7 +7,12 @@ from unittest.mock import patch
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import native_layout, publish_binning, publish_environment
+from environment_helpers import (
+    built_from,
+    native_layout,
+    publish_binning,
+    publish_environment,
+)
 from scipy import linalg
 from shapely.geometry import Polygon
 
@@ -433,7 +438,7 @@ def test_native_faces_remain_independent_of_later_builder_graph_changes():
 # ---------------------------------------------------------------------------
 def test_polar_layout_supplies_annular_sector_geometry():
     """Asking the layout directly gives sector areas, not Cartesian dr*dtheta."""
-    env = _polar()
+    env = built_from(_polar)
     assert env._binning.rectilinear is not None
     distance_edges, angle_edges = env.grid_edges
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
@@ -462,13 +467,15 @@ def test_common_class_from_layout_builds_cartesian_geometry():
 @pytest.mark.parametrize("diagonal", [False, True])
 def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal):
     """Half-annuli have one shared face on an open axis and two on a circle."""
-    env = Environment.from_polar_egocentric(
-        (1.0, 4.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
-        circular_angle=circular,
-        connect_diagonal_neighbors=diagonal,
+    env = built_from(
+        lambda: Environment.from_polar_egocentric(
+            (1.0, 4.0),
+            (-np.pi, np.pi),
+            1.0,
+            np.pi,
+            circular_angle=circular,
+            connect_diagonal_neighbors=diagonal,
+        )
     )
     graph, _ = native_layout(env).finite_volume_geometry()
     for ring in range(3):

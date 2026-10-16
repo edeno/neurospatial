@@ -21,7 +21,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import scipy.sparse
-from environment_helpers import native_layout, publish_environment
+from environment_helpers import built_from, native_layout, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
@@ -172,11 +172,13 @@ def nearest_bin(coords: np.ndarray, target) -> int:
 @pytest.fixture(scope="module")
 def polar_env() -> Environment:
     """Full-circle polar env (non-uniform mass matrix M = annular-sector area)."""
-    return Environment.from_polar_egocentric(
-        distance_range=(0.0, 40.0),
-        angle_range=(-np.pi, np.pi),
-        distance_bin_size=2.0,
-        angle_bin_size=np.pi / 12,
+    return built_from(
+        lambda: Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=2.0,
+            angle_bin_size=np.pi / 12,
+        )
     )
 
 
@@ -271,7 +273,7 @@ def test_sigma_recovery_graph():
     so a source near the junction is not oversmoothed."""
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
-        env = build_track(bin_size, straight=False)
+        env = built_from(lambda size=bin_size: build_track(size, straight=False))
         graph_fv, _ = native_layout(env).finite_volume_geometry()
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
@@ -385,8 +387,10 @@ def test_corner_split_gives_two_diffusion_components():
     # them in env.connectivity, but the diagonal shares only a corner => A = 0.
     mask = np.array([[True, False], [False, True]], dtype=bool)
     edges = np.array([0.0, 1.0, 2.0])
-    env = Environment.from_grid_mask(
-        active_mask=mask, grid_edges=(edges, edges), connect_diagonal_neighbors=True
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            active_mask=mask, grid_edges=(edges, edges), connect_diagonal_neighbors=True
+        )
     )
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"

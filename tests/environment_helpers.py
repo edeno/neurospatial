@@ -2,6 +2,7 @@
 
 import copy
 import weakref
+from unittest import mock
 
 from neurospatial import Environment
 from neurospatial.environment import _publication
@@ -95,31 +96,40 @@ def record_publications(monkeypatch):
     return published
 
 
-_SOURCE_LAYOUTS = weakref.WeakKeyDictionary()
+_BUILD_RECIPES = weakref.WeakKeyDictionary()
 
 
-def record_source_layouts():
-    """Remember the layout engine each layout-built environment came from.
+def built_from(build):
+    """Return ``build()`` and remember how it was built, for ``native_layout``."""
+    env = build()
+    _BUILD_RECIPES[env] = build
+    return env
 
-    Environments keep no layout or input data, so tests that compare a
-    published environment against its native layout engine look the engine
-    up here instead of rebuilding it from recorded parameters.
+
+def layout_of(build):
+    """Return the layout engine ``build()`` publishes, copied before publication.
+
+    The publisher is patched only while ``build`` runs. Copying the engine
+    before publication keeps the oracle independent of anything publication
+    might do to it.
     """
+    captured = []
     original = _publication.publish_layout
-    if getattr(original, "records_source_layouts", False):
-        return
 
     def recording(cls, layout, **kwargs):
-        env = original(cls, layout, **kwargs)
-        # Only built-in engines: tests check that external providers are freed.
-        if type(layout).__module__.startswith("neurospatial."):
-            _SOURCE_LAYOUTS[env] = layout
-        return env
+        captured.append(copy.deepcopy(layout))
+        return original(cls, layout, **kwargs)
 
-    recording.records_source_layouts = True
-    _publication.publish_layout = recording
+    with mock.patch.object(_publication, "publish_layout", recording):
+        build()
+    (layout,) = captured
+    return layout
 
 
 def native_layout(env):
-    """Return an independent copy of the layout engine ``env`` was built from."""
-    return copy.deepcopy(_SOURCE_LAYOUTS[env])
+    """Rebuild the layout engine of an environment made with ``built_from``.
+
+    Environments keep no layout or input data, so engine-versus-snapshot
+    tests rebuild the engine from the same deterministic recipe.
+    """
+    return layout_of(_BUILD_RECIPES[env])

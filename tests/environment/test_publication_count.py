@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 
 import networkx as nx
 import numpy as np
@@ -121,15 +122,27 @@ def test_each_derivation_publishes_at_most_once(derivation, monkeypatch):
     assert published == expected
 
 
-@pytest.mark.parametrize("how", ["dict", "file"])
+@pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 def test_readers_publish_once(how, monkeypatch, tmp_path):
     env = _grid()
+    if how == "nwb":
+        pynwb = pytest.importorskip("pynwb")
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        nwbfile = pynwb.NWBFile(
+            session_description="count",
+            identifier="count",
+            session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        write_environment(nwbfile, env)
     published = record_publications(monkeypatch)
     if how == "dict":
         restored = Environment.from_dict(env.to_dict())
-    else:
+    elif how == "file":
         env.to_file(tmp_path / "grid")
         restored = Environment.from_file(tmp_path / "grid")
+    else:
+        restored = read_environment(nwbfile)
     assert published == [restored]
 
 

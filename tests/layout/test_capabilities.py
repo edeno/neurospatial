@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from environment_helpers import native_layout
+from environment_helpers import layout_of
 from shapely.geometry import box
 
 from neurospatial import Environment
@@ -15,7 +15,10 @@ from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 @pytest.fixture(params=["samples", "mask", "pixels", "polygon", "polar"])
 def grid_layout(request):
     """Built grids whose coordinates match their per-axis cells."""
-    kind = request.param
+    return layout_of(lambda: _grid_environment(request.param))
+
+
+def _grid_environment(kind):
     if kind == "samples":
         env = Environment.from_samples(
             np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=float), bin_size=1.0
@@ -35,7 +38,7 @@ def grid_layout(request):
             distance_bin_size=1.0,
             angle_bin_size=np.pi / 2,
         )
-    return native_layout(env)
+    return env
 
 
 def test_grid_capability_matches_cell_centers(grid_layout):

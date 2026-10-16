@@ -14,7 +14,7 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import native_layout
+from environment_helpers import built_from, native_layout
 
 from neurospatial import Environment
 
@@ -449,7 +449,7 @@ def _w_maze(labels):
 
 @pytest.fixture(scope="module")
 def w_maze_env():
-    return _w_maze(["bl", "bm", "br", "al", "am", "ar"])
+    return built_from(lambda: _w_maze(["bl", "bm", "br", "al", "am", "ar"]))
 
 
 class TestGraphLinearization:

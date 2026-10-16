@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import built_from
 
 from neurospatial import Environment
 
@@ -25,10 +26,14 @@ def uniform_grid():
 def fv_env(request, uniform_grid):
     """Supported geometries, including the track-junction distance correction."""
     if request.param == "grid":
-        return uniform_grid(2.0, n=10)
+        return built_from(lambda: uniform_grid(2.0, n=10))
     if request.param == "hex":
         positions = np.random.default_rng(0).uniform(0, 100, (2000, 2))
-        return Environment.from_samples(positions, layout="Hexagonal", bin_size=5.0)
+        return built_from(
+            lambda: Environment.from_samples(
+                positions, layout="Hexagonal", bin_size=5.0
+            )
+        )
     nodes = dict(
         zip(
             ["bl", "bm", "br", "al", "am", "ar"],
@@ -36,7 +41,7 @@ def fv_env(request, uniform_grid):
             strict=True,
         )
     )
-    return Environment.maze("w", node_positions=nodes, bin_size=5.0)
+    return built_from(lambda: Environment.maze("w", node_positions=nodes, bin_size=5.0))
 
 
 @pytest.fixture

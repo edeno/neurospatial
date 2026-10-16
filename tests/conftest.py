@@ -42,9 +42,9 @@ import networkx as nx
 import numpy as np
 import pytest
 from environment_helpers import (
+    built_from,
     publish_binning,
     publish_environment,
-    record_source_layouts,
 )
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
@@ -102,10 +102,6 @@ _THREAD_LIMIT_VARIABLES = (
     "MKL_NUM_THREADS",
     "VECLIB_MAXIMUM_THREADS",
 )
-
-
-# Oracle tests compare environments with the layout engine they came from.
-record_source_layouts()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -1019,6 +1015,11 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
 def built_environment(request) -> Environment | Environment:
     """Small deterministic environments covering every built-in geometry."""
     kind = request.param
+    return built_from(lambda: _build_environment(kind))
+
+
+def _build_environment(kind: str) -> Environment:
+    """Build one ``built_environment`` case from its fixed inputs."""
     if kind in {"grid8", "grid4"}:
         positions = np.random.default_rng(0).uniform(0, 12, (1000, 2))
         return Environment.from_samples(

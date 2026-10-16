@@ -295,3 +295,63 @@ def test_custom_arena_is_refused_even_under_native_transform():
     for value in (source, _TransformedArena(source, np.eye(3))):
         with pytest.raises(TypeError, match="snapshot"):
             own_arena(value)
+
+
+def _layout_state(layout):
+    """Everything publication reads from a built layout, as comparable values."""
+    from neurospatial.geometry._codecs import encode, graph_to_node_link
+
+    metadata, arrays = encode(layout.binning(), "layout")
+    return (
+        metadata,
+        {key: np.asarray(value).tolist() for key, value in arrays.items()},
+        graph_to_node_link(layout.connectivity),
+        pickle.dumps(layout._build_params_used),
+    )
+
+
+_TRACK = nx.Graph()
+_TRACK.add_node(0, pos=(0.0, 0.0))
+_TRACK.add_node(1, pos=(6.0, 0.0))
+_TRACK.add_node(2, pos=(6.0, 6.0))
+_TRACK.add_edge(0, 1, distance=6.0)
+_TRACK.add_edge(1, 2, distance=6.0)
+
+
+@pytest.mark.parametrize(
+    "kind,params",
+    [
+        ("RegularGrid", {"bin_size": 1.0, "dimension_ranges": [(0.0, 4.0)] * 2}),
+        ("Hexagonal", {"hexagon_width": 2.0, "dimension_ranges": [(0.0, 8.0)] * 2}),
+        (
+            "Graph",
+            {
+                "graph_definition": _TRACK,
+                "edge_order": [(0, 1), (1, 2)],
+                "edge_spacing": 0.0,
+                "bin_size": 1.0,
+            },
+        ),
+        (
+            "TriangularMesh",
+            {"boundary_polygon": box(0.0, 0.0, 6.0, 6.0), "point_spacing": 2.0},
+        ),
+    ],
+)
+def test_publication_leaves_the_built_layout_unchanged(kind, params):
+    from neurospatial import Environment
+    from neurospatial.environment import _publication
+
+    layout = create_layout(kind, **params)
+    before = _layout_state(layout)
+    arena = None if kind == "Graph" else OpenArena(box(0.0, 0.0, 3.0, 8.0))
+    env = _publication.publish_layout(
+        Environment,
+        layout,
+        metadata=_publication._Metadata("", None, None),
+        arena=arena,
+        within_arena=True,
+    )
+    if arena is not None:
+        assert env.n_bins < layout.binning().bins.n_bins
+    assert _layout_state(layout) == before
