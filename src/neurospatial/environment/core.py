@@ -2478,6 +2478,9 @@ class Environment(Generic[_C]):
         transforms need stored face normals, certified source flux distances and
         perpendicular transformed center links (normalized residual at most 1e-12). Smoothing
         refuses when those right angles are lost; exact cells remain available.
+        A general affine fitted to noisy landmarks absorbs the noise as a small
+        stretch or shear, so smoothing refuses; fit landmarks with
+        ``estimate_transform(..., kind="similarity")`` to keep it.
         Triangle vertices and deformed hexagon polygons retain their exact mapped
         shapes. Tracks accept translation and similarity only.
 

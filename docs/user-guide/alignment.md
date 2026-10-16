@@ -201,6 +201,34 @@ lookup, plotting and dwell allocation remain well defined.
 | Transformed triangles or deformed hexagons | No tensor grid; use nearest mode | Exact vertices/polygon cells | Existing similarity support; other maps require a valid face certificate |
 | Embedded track | Use existing track operations | Existing track renderer | Similarity transforms only |
 
+Landmarks measured from video carry tracking noise. A general affine fit
+(`kind="affine"`) absorbs that noise as a small stretch or shear, so smoothing on
+the transformed environment refuses and reports the measured stretch. When the
+arena's shape is known, fit `kind="similarity"` instead (or `kind="rigid"` when
+both coordinate systems use the same length units). The fitted map keeps right
+angles, so smoothing with the bandwidth multiplied by the fitted scale matches
+smoothing in the source coordinates.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial import Environment
+from neurospatial.ops import estimate_transform
+
+rng = np.random.default_rng(0)
+camera = Environment.from_samples(rng.uniform(0, 100, (5000, 2)), bin_size=5.0, units="px")
+corners_px = np.array([[0., 0.], [100., 0.], [0., 100.], [100., 100.]])
+detected_px = corners_px + rng.normal(0, 0.5, corners_px.shape)  # 0.5 px tracking noise
+corners_cm = np.array([[0., 0.], [50., 0.], [0., 50.], [50., 50.]])
+
+to_cm = estimate_transform(detected_px, corners_cm, kind="similarity")
+room = camera.apply_transform(to_cm).with_metadata(units="cm")
+cm_per_px = np.sqrt(abs(np.linalg.det(to_cm.A[:2, :2])))
+field = rng.random(camera.n_bins)
+np.testing.assert_allclose(room.smooth(field, 5.0), camera.smooth(field, 5.0 / cm_per_px))
+```
+
 New face certification checks normalized orthogonality residuals against `1e-12`.
 Legacy records without stored face normals keep their existing guaranteed
 transforms, but cannot gain new numerical support from inferred directions.

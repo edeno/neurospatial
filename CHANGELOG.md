@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- Smoothing on an environment transformed by an affine map fitted to noisy
+  landmarks (`estimate_transform(..., kind="affine")`) still refuses, because
+  the fit absorbs tracking noise as a real stretch or shear. The refusal now
+  reports the measured stretch and angle error, explains that the bandwidth
+  would not be applied equally in every direction, and names the fix: fit
+  `kind="similarity"` (or `"rigid"`) or smooth on the source environment. It
+  previously suggested recentering coordinates, which does not help.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam
