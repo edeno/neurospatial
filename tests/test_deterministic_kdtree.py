@@ -480,16 +480,13 @@ class TestIntegrationWithEnvironment:
     """Test that enhancements integrate properly with Environment methods."""
 
     def test_occupancy_with_outliers(self):
-        """occupancy() benefits from outlier filtering via max_distance."""
-        # This test verifies that when map_points_to_bins is called internally
-        # by occupancy(), outliers are handled properly
-
+        """occupancy() gives no time to an interval that starts at an outlier."""
         # Create environment
         data = np.array([[i, j] for i in range(10) for j in range(10)])
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Trajectory with outlier
-        times = np.array([0.0, 1.0, 2.0, 3.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3])
         positions = np.array(
             [
                 [2.0, 2.0],
@@ -499,21 +496,21 @@ class TestIntegrationWithEnvironment:
             ]
         )
 
-        # Without max_distance, outlier gets assigned to some bin
-        occ_no_filter = env.occupancy(times, positions)
-        # With max_distance in map_points_to_bins (if occupancy uses it),
-        # outlier would be excluded
-
-        # Note: This test depends on whether occupancy() is modified to use max_distance
-        # For now, just verify occupancy runs without error
-        assert occ_no_filter.shape == (env.n_bins,)
+        # Occupancy uses containment, so the outlier is outside: only the two
+        # intervals that start inside count.
+        occupancy = env.occupancy(times, positions)
+        bins = env.bin_at(positions)
+        assert bins[2] == -1
+        expected = np.zeros(env.n_bins)
+        np.add.at(expected, bins[:2], 0.1)
+        np.testing.assert_allclose(occupancy, expected)
 
     def test_bin_sequence_deterministic(self):
         """bin_sequence() produces deterministic results."""
         data = np.array([[i, j] for i in range(10) for j in range(10)])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
         positions = np.array(
             [
                 [2.0, 2.0],
@@ -529,3 +526,6 @@ class TestIntegrationWithEnvironment:
         seq2 = env.bin_sequence(times, positions)
 
         np.testing.assert_array_equal(seq1, seq2)
+        per_sample = env.bin_at(positions)
+        runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
+        np.testing.assert_array_equal(seq1, runs)

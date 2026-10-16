@@ -627,7 +627,7 @@ class TestSummaryEmptyResult:
         """
         from neurospatial.encoding.directional import compute_directional_rates
 
-        result = compute_directional_rates([], np.arange(3.0), np.zeros(3))
+        result = compute_directional_rates([], np.arange(3.0) / 10.0, np.zeros(3))
         s = result.summary()
 
         assert isinstance(s, dict)
