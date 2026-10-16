@@ -615,6 +615,20 @@ def path_progress(
             instead="Use metric='geodesic', which follows physical graph edge lengths.",
         )
 
+    from neurospatial.environment._targets import validate_target_bins
+
+    start_bins, goal_bins = (
+        validate_target_bins(
+            bins,
+            n_bins=env.n_bins,
+            coordinates=env.coordinate_system,
+            operation="path_progress()",
+            argument=argument,
+            allow_missing=True,
+        )
+        for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
+    )
+
     # Validate array lengths
     n_samples = len(position_bins)
     if len(start_bins) != n_samples or len(goal_bins) != n_samples:
@@ -665,7 +679,7 @@ def path_progress(
 
             start_dist_field = distance_field(
                 env.connectivity,
-                [int(start_bin)],
+                [start_bin],
                 metric=metric,
                 bin_centers=env.bin_centers if metric == "euclidean" else None,
             )
@@ -760,16 +774,25 @@ def distance_to_region(
             instead="Use metric='geodesic', which follows physical graph edge lengths.",
         )
 
-    is_scalar_target = np.isscalar(target_bins)
+    from neurospatial.environment._targets import validate_target_bins
 
-    if is_scalar_target:
+    targets = validate_target_bins(
+        target_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="distance_to_region()",
+        argument="target_bins",
+        allow_missing=True,
+    )
+
+    if np.ndim(target_bins) == 0:
         n_samples = len(position_bins)
-        target_int = int(target_bins)
+        (target,) = targets
 
-        if target_int == -1:
+        if target == -1:
             return np.full(n_samples, np.nan, dtype=np.float64)
 
-        dist_field = env.distance_to(bins=target_int, metric=metric)
+        dist_field = env.distance_to(bins=target, metric=metric)
         distances = dist_field[position_bins].astype(np.float64)
 
         invalid_mask = position_bins == -1
@@ -792,20 +815,20 @@ def distance_to_region(
             else:
                 dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
-            distances = dist_matrix[position_bins, target_bins]
+            distances = dist_matrix[position_bins, targets]
         else:
-            unique_targets = np.unique(target_bins)
+            unique_targets = np.unique(targets)
             unique_targets = unique_targets[unique_targets != -1]
 
             distances = np.full(n_samples, np.nan, dtype=np.float64)
 
             for target in unique_targets:
-                mask = target_bins == target
+                mask = targets == target
                 if np.any(mask):
-                    dist_field = env.distance_to(bins=int(target), metric=metric)
+                    dist_field = env.distance_to(bins=target, metric=metric)
                     distances[mask] = dist_field[position_bins[mask]]
 
-        invalid_mask = (position_bins == -1) | (target_bins == -1)
+        invalid_mask = (position_bins == -1) | (targets == -1)
         distances[invalid_mask] = np.nan
 
         return distances
@@ -861,7 +884,17 @@ def cost_to_goal(
     --------
     distance_to_region : Simple geometric distance
     """
+    from neurospatial.environment._targets import validate_target_bins
     from neurospatial.ops.distance import distance_field
+
+    goals = validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="cost_to_goal()",
+        argument="goal_bins",
+        allow_missing=True,
+    )
 
     # Case 1: No cost modifications
     if cost_map is None and terrain_difficulty is None:
@@ -885,27 +918,29 @@ def cost_to_goal(
 
         g_weighted[u][v]["weight"] = base_dist
 
-    if isinstance(goal_bins, (int, np.integer)):
-        dist_field = distance_field(g_weighted, [int(goal_bins)], weight="weight")
+    if np.ndim(goal_bins) == 0:
+        (goal,) = goals
+        if goal == -1:
+            return np.full(len(position_bins), np.nan, dtype=np.float64)
+        dist_field = distance_field(g_weighted, goals, weight="weight")
         costs = dist_field[position_bins]
 
-        invalid_mask = (position_bins == -1) | (goal_bins == -1)
-        costs[invalid_mask] = np.nan
+        costs[position_bins == -1] = np.nan
 
         return costs
     else:
-        unique_goals = np.unique(goal_bins)
+        unique_goals = np.unique(goals)
         unique_goals = unique_goals[unique_goals != -1]
 
         costs = np.full(len(position_bins), np.nan, dtype=np.float64)
 
         for goal in unique_goals:
-            mask = goal_bins == goal
+            mask = goals == goal
             if np.any(mask):
-                dist_field = distance_field(g_weighted, [int(goal)], weight="weight")
+                dist_field = distance_field(g_weighted, [goal], weight="weight")
                 costs[mask] = dist_field[position_bins[mask]]
 
-        invalid_mask = (position_bins == -1) | (goal_bins == -1)
+        invalid_mask = (position_bins == -1) | (goals == -1)
         costs[invalid_mask] = np.nan
 
         return costs
@@ -1013,6 +1048,16 @@ def graph_turn_sequence(
             "allocentric Cartesian environment."
         ),
     )
+    from neurospatial.environment._targets import validate_target_bins
+
+    for bins, argument in ((start_bin, "start_bin"), (end_bin, "end_bin")):
+        validate_target_bins(
+            bins,
+            n_bins=env.n_bins,
+            coordinates=env.coordinate_system,
+            operation="graph_turn_sequence()",
+            argument=argument,
+        )
 
     consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
     transition_counts = Counter(map(tuple, consecutive_bins))
@@ -1405,6 +1450,13 @@ def shortest_path_length(
         Shortest path distance in environment units.
         Returns inf if no path exists (disconnected graph).
 
+    Raises
+    ------
+    ValueError
+        For ``metric="geodesic"``, if ``start`` or ``goal`` is outside the
+        environment or has NaN coordinates; the geodesic path starts and ends
+        at the bins that contain them, as in ``env.distance_between``.
+
     Examples
     --------
     >>> dist = shortest_path_length(env, start_pos, goal_pos)  # doctest: +SKIP
@@ -1416,14 +1468,7 @@ def shortest_path_length(
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
 
-    from neurospatial.ops.distance import distance_field
-
-    start_bin = env.bin_at(start.reshape(1, -1))[0]
-    goal_bin = env.bin_at(goal.reshape(1, -1))[0]
-
-    distances = distance_field(env.connectivity, [int(goal_bin)], metric="geodesic")
-
-    return float(distances[start_bin])
+    return env.distance_between(points=np.vstack([start, goal]))
 
 
 def time_efficiency(

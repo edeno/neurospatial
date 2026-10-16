@@ -348,8 +348,8 @@ class TestGeodesicVoronoiLabels:
         env = t_maze_environment
 
         # Get bin indices for left and right goals
-        left_bin = env.bin_at(np.array([10.0, 55.0]))
-        right_bin = env.bin_at(np.array([90.0, 55.0]))
+        left_bin = env.bin_at(np.array([[10.0, 55.0]]))[0]
+        right_bin = env.bin_at(np.array([[90.0, 55.0]]))[0]
         goal_bins = [left_bin, right_bin]
 
         labels = geodesic_voronoi_labels(env, goal_bins)
@@ -359,11 +359,11 @@ class TestGeodesicVoronoiLabels:
         assert set(np.unique(labels)).issubset({-1, 0, 1})
 
         # Left side bins should be labeled 0 (closer to left goal)
-        left_side_bin = env.bin_at(np.array([20.0, 55.0]))
+        left_side_bin = env.bin_at(np.array([[20.0, 55.0]]))[0]
         assert labels[left_side_bin] == 0
 
         # Right side bins should be labeled 1 (closer to right goal)
-        right_side_bin = env.bin_at(np.array([80.0, 55.0]))
+        right_side_bin = env.bin_at(np.array([[80.0, 55.0]]))[0]
         assert labels[right_side_bin] == 1
 
     def test_unreachable_bins_labeled_minus_one(self, simple_2d_environment):
@@ -371,7 +371,7 @@ class TestGeodesicVoronoiLabels:
         from neurospatial.behavior.decisions import geodesic_voronoi_labels
 
         env = simple_2d_environment
-        goal_bin = env.bin_at(np.array([50.0, 50.0]))
+        goal_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
 
         labels = geodesic_voronoi_labels(env, [goal_bin])
 
@@ -398,12 +398,12 @@ class TestDistanceToDecisionBoundary:
         env = t_maze_environment
 
         # Get goal bins
-        left_bin = env.bin_at(np.array([10.0, 55.0]))
-        right_bin = env.bin_at(np.array([90.0, 55.0]))
+        left_bin = env.bin_at(np.array([[10.0, 55.0]]))[0]
+        right_bin = env.bin_at(np.array([[90.0, 55.0]]))[0]
         goal_bins = [left_bin, right_bin]
 
         # Trajectory at center (on boundary)
-        center_bin = env.bin_at(np.array([50.0, 55.0]))
+        center_bin = env.bin_at(np.array([[50.0, 55.0]]))[0]
         position_bins = np.array([center_bin])
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
@@ -420,8 +420,8 @@ class TestDistanceToDecisionBoundary:
         env = t_maze_environment
 
         # Get goal bins
-        left_bin = env.bin_at(np.array([10.0, 55.0]))
-        right_bin = env.bin_at(np.array([90.0, 55.0]))
+        left_bin = env.bin_at(np.array([[10.0, 55.0]]))[0]
+        right_bin = env.bin_at(np.array([[90.0, 55.0]]))[0]
         goal_bins = [left_bin, right_bin]
 
         # Trajectory at left goal (far from boundary)

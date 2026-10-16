@@ -741,6 +741,8 @@ What the old guesses did, and what happens now:
 | `env.distance_between(p, far_point)` | `inf` | `ValueError` naming the point outside the environment |
 | `polar_env.distance_between(...)` | `CartesianOnlyError` | graph path length between two bins or (distance, angle) points |
 | `env.bin_center_of(np.array([10.0, 10.0]))` | centers of bin 10, twice | `TypeError` pointing to `env.bin_at` |
+| `distance_to_region(position_bins, env, target_bins=50.7)` | distance to bin 50 | `TypeError`; pass a bin index, for example `int(env.bin_at(goal)[0])` |
+| `shortest_path_length(env, start_outside, goal)` | distance from the last bin | `ValueError` naming the point outside |
 
 `points=` always has shape `(n_points, n_dims)`: wrap one point as
 `[[x, y]]`. Points with NaN coordinates or outside the environment raise a

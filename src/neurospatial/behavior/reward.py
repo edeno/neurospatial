@@ -313,18 +313,15 @@ def goal_reward_field(
     region_reward_field : Reward fields from spatial regions
     neurospatial.distance_field : Compute distance maps
     """
-    # Convert scalar to array
-    goal_bins_array = np.asarray(goal_bins)
-    if goal_bins_array.ndim == 0:
-        goal_bins_array = goal_bins_array[None]
+    from neurospatial.environment._targets import validate_target_bins
 
-    # Validate goal bins
-    goal_bins_list = goal_bins_array.tolist()
-    if not all(0 <= g < env.n_bins for g in goal_bins_list):
-        raise ValueError(
-            f"Invalid goal bins. All indices must be in range [0, {env.n_bins}). "
-            f"Got: {goal_bins_list}"
-        )
+    goal_bins_list = validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="goal_reward_field()",
+        argument="goal_bins",
+    ).tolist()
 
     # Compute distance field from goals
     distances = distance_field(env.connectivity, sources=goal_bins_list)

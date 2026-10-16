@@ -246,6 +246,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   graph, and points are (distance, angle). A target passed by position raises
   Python's `TypeError`.
 
+- Behavior functions that take bin targets check them the way the queries
+  check `bins=`: `distance_to_region(target_bins=)`, `cost_to_goal(goal_bins=)`,
+  `path_progress(start_bins=, goal_bins=)`, `geodesic_voronoi_labels`,
+  `distance_to_decision_boundary`, `goal_reward_field` and
+  `graph_turn_sequence`. Floats and booleans raise `TypeError` instead of being
+  truncated to bin indices, and out-of-range bins raise
+  `BinIndexOutOfRangeError` (a `ValueError`). In the per-sample arrays `-1`
+  still marks a sample with no target. `shortest_path_length(...,
+  metric="geodesic")` measures with `env.distance_between`: a start outside
+  the environment used to return the distance from the last bin without a
+  warning, and a goal outside raised an unrelated graph error; both now raise
+  `ValueError` naming the point.
+
 - `Environment.subset(bins=mask)` is now `env.subset(mask=mask)`, so `bins=`
   means integer bin indices everywhere. `mask=` is still a boolean array with
   one entry per bin. Integer values in `mask=` raise `ValueError` that shows how

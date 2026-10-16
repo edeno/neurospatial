@@ -53,7 +53,13 @@ def coordinate_hint(
 
 
 def validate_bin_indices(
-    bins: object, *, n_bins: int, operation: str, fix: str
+    bins: object,
+    *,
+    n_bins: int,
+    operation: str,
+    fix: str,
+    argument: str = "bins",
+    allow_missing: bool = False,
 ) -> NDArray[np.intp]:
     """Check that ``bins`` holds integer active-bin indices.
 
@@ -67,6 +73,12 @@ def validate_bin_indices(
         The call named in errors, e.g. ``"distance_to()"``.
     fix : str
         What to do instead when ``bins`` holds floats or booleans.
+    argument : str, default="bins"
+        The parameter name shown in errors, e.g. ``"goal_bins"``.
+    allow_missing : bool, default=False
+        Accept per-sample targets: ``-1`` marks a sample with no target (as
+        ``bin_at`` marks a position outside), and an empty array is an empty
+        recording.
 
     Returns
     -------
@@ -78,23 +90,28 @@ def validate_bin_indices(
     TypeError
         If ``bins`` is a bool, holds booleans, floats or non-numbers.
     ValueError
-        If ``bins`` is empty or has more than one dimension.
+        If ``bins`` is empty (unless ``allow_missing``) or has more than one
+        dimension.
     BinIndexOutOfRangeError
-        If an index is outside ``[0, n_bins)``.
+        If an index is outside ``[0, n_bins)`` (``-1`` is allowed with
+        ``allow_missing``).
     """
     array = np.asarray(bins)
     if array.dtype.kind == "b":
         raise TypeError(
             _format_error(
-                f"{operation} got booleans in bins=; bins= takes integer bin indices.",
+                f"{operation} got booleans in {argument}=; {argument}= takes "
+                "integer bin indices.",
                 why="Why: True and False would be read as bins 1 and 0.",
                 fix=f"turn a boolean mask into indices with np.flatnonzero(mask), or {fix}",
             )
         )
     if array.size == 0:
+        if allow_missing:
+            return np.empty(0, dtype=np.intp)
         raise ValueError(
             _format_error(
-                f"{operation} got an empty bins=.",
+                f"{operation} got an empty {argument}=.",
                 why="Why: a query needs at least one bin to start from.",
                 fix="pass at least one integer bin index",
             )
@@ -102,8 +119,8 @@ def validate_bin_indices(
     if array.dtype.kind not in "iu":
         raise TypeError(
             _format_error(
-                f"{operation} got {array.dtype} values in bins=; bins= takes "
-                "integer bin indices.",
+                f"{operation} got {array.dtype} values in {argument}=; "
+                f"{argument}= takes integer bin indices.",
                 why="Why: a coordinate cast to an integer names an unrelated bin.",
                 fix=fix,
             )
@@ -111,16 +128,63 @@ def validate_bin_indices(
     if array.ndim > 1:
         raise ValueError(
             _format_error(
-                f"{operation} got bins= with shape {array.shape}.",
-                why="Why: bins= is a list of bin indices.",
+                f"{operation} got {argument}= with shape {array.shape}.",
+                why=f"Why: {argument}= is a list of bin indices.",
                 fix="pass an int or a 1-D integer array of bin indices",
             )
         )
     indices = array.reshape(-1)
     out_of_range = (indices < 0) | (indices >= n_bins)
+    if allow_missing:
+        out_of_range &= indices != -1
     if np.any(out_of_range):
         raise BinIndexOutOfRangeError(int(indices[out_of_range][0]), n_bins=n_bins)
     return indices.astype(np.intp, copy=False)
+
+
+def validate_target_bins(
+    bins: object,
+    *,
+    n_bins: int,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    operation: str,
+    argument: str,
+    allow_missing: bool = False,
+) -> NDArray[np.intp]:
+    """Validate an analysis function's bin-target argument.
+
+    The same check as the environment queries' ``bins=``, with a fix that
+    names the lookup for this geometry, since the function takes no
+    ``points=`` of its own.
+
+    Parameters
+    ----------
+    bins : object
+        An int, or an integer array of shape ``(n,)``.
+    n_bins : int
+        Number of active bins.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        The environment's coordinate descriptor, for the fix.
+    operation : str
+        The call named in errors, e.g. ``"path_progress()"``.
+    argument : str
+        The parameter name, e.g. ``"goal_bins"``.
+    allow_missing : bool, default=False
+        Accept ``-1`` (no target for that sample) and an empty array.
+
+    Returns
+    -------
+    ndarray of intp, shape (n,)
+        The indices, flattened.
+    """
+    return validate_bin_indices(
+        bins,
+        n_bins=n_bins,
+        operation=operation,
+        fix=coordinate_hint(coordinates, takes_points=False),
+        argument=argument,
+        allow_missing=allow_missing,
+    )
 
 
 def locate_points(

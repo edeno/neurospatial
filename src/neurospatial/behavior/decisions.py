@@ -751,22 +751,23 @@ def geodesic_voronoi_labels(
     >>> # labels[i] == 0 means bin i is closer to left goal
     >>> # labels[i] == 1 means bin i is closer to right goal
     """
+    from neurospatial.environment._targets import validate_target_bins
     from neurospatial.ops.distance import distance_field
 
-    goal_bins_arr = np.asarray(goal_bins)
+    goal_bins_arr = validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="geodesic_voronoi_labels()",
+        argument="goal_bins",
+    )
     n_goals = len(goal_bins_arr)
     n_bins = env.n_bins
 
     # Compute distance field from each goal
     distances = np.full((n_goals, n_bins), np.inf)
     for i, goal_bin in enumerate(goal_bins_arr):
-        # Ensure goal_bin is a Python int, not numpy scalar
-        goal_bin_int = (
-            int(goal_bin.item()) if hasattr(goal_bin, "item") else int(goal_bin)
-        )
-        distances[i] = distance_field(
-            env.connectivity, [goal_bin_int], metric="geodesic"
-        )
+        distances[i] = distance_field(env.connectivity, [goal_bin], metric="geodesic")
 
     # Label by nearest goal
     labels = np.argmin(distances, axis=0)
@@ -816,9 +817,16 @@ def distance_to_decision_boundary(
     ... )  # doctest: +SKIP
     >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
     """
+    from neurospatial.environment._targets import validate_target_bins
     from neurospatial.ops.distance import distance_field
 
-    goal_bins_arr = np.asarray(goal_bins)
+    goal_bins_arr = validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="distance_to_decision_boundary()",
+        argument="goal_bins",
+    )
     n_goals = len(goal_bins_arr)
 
     if n_goals < 2:
@@ -828,12 +836,8 @@ def distance_to_decision_boundary(
     # Compute distance from each goal to all bins
     all_distances = np.zeros((n_goals, env.n_bins))
     for i, goal_bin in enumerate(goal_bins_arr):
-        # Ensure goal_bin is a Python int, not numpy scalar
-        goal_bin_int = (
-            int(goal_bin.item()) if hasattr(goal_bin, "item") else int(goal_bin)
-        )
         all_distances[i] = distance_field(
-            env.connectivity, [goal_bin_int], metric="geodesic"
+            env.connectivity, [goal_bin], metric="geodesic"
         )
 
     # For each trajectory bin, the boundary distance is the gap between the two
