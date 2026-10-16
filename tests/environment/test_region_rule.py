@@ -10,6 +10,7 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import Point, Polygon, box
 
 from neurospatial import Environment
@@ -47,12 +48,22 @@ _LAYOUTS = {
         )
     ),
     "track": _track,
+    # Regions on a polar environment are read in (distance, angle) coordinates.
+    "polar": lambda: Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+    ),
 }
+# Layouts that subset() accepts: Cartesian bins with cell geometry.
+_SUBSET_LAYOUTS = ["grid", "hexagonal", "mesh", "polygon"]
+# Publishing a subset of this coarse mesh re-checks its triangle shapes.
+_MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
 
 
-@pytest.fixture(params=sorted(_LAYOUTS))
-def env_with_regions(request) -> Environment:
-    env = _LAYOUTS[request.param]()
+def _with_regions(layout: str) -> Environment:
+    env = _LAYOUTS[layout]()
     centers = env.bin_centers
     lo, hi = centers.min(axis=0), centers.max(axis=0)
     mid = (lo + hi) / 2.0
@@ -62,6 +73,32 @@ def env_with_regions(request) -> Environment:
     # A box whose lower edges pass exactly through the lowest bin centers.
     regions.add("zone", polygon=box(lo[0], lo[1], mid[0], hi[1]))
     return env.with_regions(regions)
+
+
+@pytest.fixture(params=sorted(_LAYOUTS))
+def env_with_regions(request) -> Environment:
+    return _with_regions(request.param)
+
+
+@pytest.fixture(params=_SUBSET_LAYOUTS)
+def subset_env(request) -> Environment:
+    return _with_regions(request.param)
+
+
+def _containing_bin(env: Environment, point: np.ndarray) -> int:
+    """The bin containing ``point``, found without the environment's locator."""
+    if env.coordinate_kind == "polar":
+        # A polar bin is a rectangle in (distance, angle): find its cell by edges.
+        cell_center = [
+            (edges[i] + edges[i + 1]) / 2.0
+            for edges, value in zip(env.grid_edges, point, strict=True)
+            for i in [int(np.searchsorted(edges, value, side="right")) - 1]
+        ]
+        (index,) = np.flatnonzero(
+            np.all(np.isclose(env.bin_centers, cell_center), axis=1)
+        )
+        return int(index)
+    return int(env.bin_at(point[np.newaxis])[0])
 
 
 def _consumers(env: Environment, name: str, include_boundary: bool) -> dict:
@@ -92,6 +129,24 @@ def test_region_queries_agree_on_every_layout(env_with_regions, name, include_bo
         np.testing.assert_array_equal(bins, reference, err_msg=consumer)
 
 
+@pytest.mark.parametrize("include_boundary", [True, False])
+def test_polygon_region_matches_an_independent_shapely_oracle(
+    env_with_regions, include_boundary
+):
+    """The polygon column is shapely's covers (or contains) on the bin centers."""
+    env = env_with_regions
+    polygon = env.regions["zone"].data
+    predicate = shapely.covers if include_boundary else shapely.contains
+    expected = np.flatnonzero(predicate(polygon, shapely.points(env.bin_centers)))
+    np.testing.assert_array_equal(
+        env.bins_in_region("zone", include_boundary=include_boundary), expected
+    )
+    np.testing.assert_array_equal(
+        np.flatnonzero(regions_to_mask(env, "zone", include_boundary=include_boundary)),
+        expected,
+    )
+
+
 @pytest.mark.parametrize("name", ["reward", "zone"])
 def test_distance_to_region_is_zero_exactly_on_its_bins(env_with_regions, name):
     env = env_with_regions
@@ -105,7 +160,7 @@ def test_point_region_covers_exactly_the_bin_containing_it(env_with_regions):
     env = env_with_regions
     point = env.regions["reward"].data
     np.testing.assert_array_equal(
-        env.bins_in_region("reward"), env.bin_at(point[np.newaxis])
+        env.bins_in_region("reward"), [_containing_bin(env, point)]
     )
 
 
@@ -136,10 +191,9 @@ def test_polygon_edge_through_centers_follows_include_boundary():
     np.testing.assert_array_equal(interior, [[5.0, 5.0]])
 
 
-def test_subset_by_region_keeps_exactly_the_region_bins(env_with_regions):
-    env = env_with_regions
-    if env.is_linearized_track:
-        pytest.skip("subset is a Cartesian-grid operation")
+@pytest.mark.filterwarnings(_MESH_WARNING)
+def test_subset_by_region_keeps_exactly_the_region_bins(subset_env):
+    env = subset_env
     for name in ("reward", "zone"):
         sub = env.subset(region_names=[name])
         np.testing.assert_array_equal(
@@ -147,10 +201,9 @@ def test_subset_by_region_keeps_exactly_the_region_bins(env_with_regions):
         )
 
 
-def test_subset_by_polygon_matches_the_polygon_region(env_with_regions):
-    env = env_with_regions
-    if env.is_linearized_track:
-        pytest.skip("subset is a Cartesian-grid operation")
+@pytest.mark.filterwarnings(_MESH_WARNING)
+def test_subset_by_polygon_matches_the_polygon_region(subset_env):
+    env = subset_env
     polygon = env.regions["zone"].data
     np.testing.assert_array_equal(
         env.subset(polygon=polygon).bin_centers,
