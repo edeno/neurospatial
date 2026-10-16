@@ -833,13 +833,10 @@ def _from_nwb(
             "to create a new environment from Position data."
         )
 
-    # Lazy import to keep pynwb optional
-    try:
-        from neurospatial.io.nwb import environment_from_position, read_environment
-    except ImportError as e:
-        raise ImportError(
-            "pynwb is required for NWB integration. Install with: pip install pynwb"
-        ) from e
+    # Lazy import keeps pynwb optional. Both readers raise the "pynwb is
+    # required" ImportError themselves when pynwb is missing; any other
+    # ImportError propagates unchanged.
+    from neurospatial.io.nwb import environment_from_position, read_environment
 
     # Load from scratch if scratch_name is provided (takes precedence)
     if scratch_name is not None:

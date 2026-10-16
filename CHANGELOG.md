@@ -233,6 +233,11 @@
 
 ### Fixed
 
+- `Environment.from_nwb` reports "pynwb is required" only when pynwb is not
+  installed. Any other `ImportError` while loading the NWB reader, such as a
+  broken dependency, now reaches you unchanged instead of being reported as a
+  missing pynwb.
+
 - `Environment.rebin(factor)` on an environment without a stored grid
   specification (for example one built with `Environment.from_bins` without
   `grid_spec`) records the diagonal-neighbor choice it used to connect the

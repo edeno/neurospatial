@@ -2029,6 +2029,31 @@ class TestEnvironmentFromNwb:
         # Should match stored environment, not newly created one
         assert loaded_env.n_bins == sample_environment.n_bins
 
+    def test_from_nwb_reports_missing_pynwb(self, empty_nwb, monkeypatch):
+        import sys
+
+        from neurospatial import Environment
+
+        monkeypatch.setitem(sys.modules, "pynwb", None)
+        with pytest.raises(ImportError, match="pynwb is required"):
+            Environment.from_nwb(empty_nwb, scratch_name="spatial_environment")
+
+    def test_from_nwb_does_not_relabel_other_import_errors(
+        self, empty_nwb, monkeypatch
+    ):
+        import sys
+
+        import neurospatial.io.nwb as nwb_io
+        from neurospatial import Environment
+
+        # A broken reader module, with pynwb installed, is not a missing pynwb.
+        for name in ("read_environment", "environment_from_position"):
+            monkeypatch.delattr(nwb_io, name, raising=False)
+        monkeypatch.setitem(sys.modules, "neurospatial.io.nwb._environment", None)
+        with pytest.raises(ImportError, match="_environment") as caught:
+            Environment.from_nwb(empty_nwb, scratch_name="spatial_environment")
+        assert "pynwb is required" not in str(caught.value)
+
 
 class TestEnvironmentToNwb:
     """Tests for Environment.to_nwb() method."""
