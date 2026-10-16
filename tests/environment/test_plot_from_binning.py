@@ -422,3 +422,21 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 )
     finally:
         plt.close(figure)
+
+
+def test_drawn_hexagons_are_the_environment_cells():
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    from neurospatial.geometry._polygon import materialize_cells
+    from neurospatial.layout._plotting import hexagon_patches
+
+    env = Environment.from_layout(
+        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+    )
+    shapes = env.binning.shapes
+    cells = materialize_cells(env.binning)
+    patches = hexagon_patches(shapes, shapes.centers)
+    assert len(patches) == env.n_bins
+    for patch, cell in zip(patches, cells, strict=True):
+        drawn = ShapelyPolygon(patch.get_verts())
+        assert drawn.symmetric_difference(cell).area < 1e-9 * cell.area

@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from matplotlib.collections import PatchCollection
-from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
@@ -23,7 +22,11 @@ from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._grid_frame import require_grid_context
 from neurospatial.geometry._polygon import PolygonCells
-from neurospatial.layout._plotting import plot_track_linear, polygon_patches
+from neurospatial.layout._plotting import (
+    hexagon_patches,
+    plot_track_linear,
+    polygon_patches,
+)
 from neurospatial.layout._plotting_binning import plot_binning
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.regions import Regions
@@ -233,33 +236,24 @@ def _plot_hex_field(
     if not isinstance(shapes, HexagonShapes):
         raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
 
-    # Create hexagon patches
     # Note: Unlike grid layouts which use colormap's built-in NaN handling,
     # PatchCollection requires manual filtering of NaN values to avoid creating
     # empty patches that matplotlib doesn't handle well.
-    patches = []
-    colors = []
-
-    for center, value in zip(shapes.centers, field, strict=True):
-        # Skip NaN bins if nan_color is None
-        if np.isnan(value) and nan_color is None:
-            continue
-
-        patch = RegularPolygon(
-            xy=center,
-            numVertices=6,
-            radius=shapes.radius,
-            orientation=shapes.orientation,
-        )
-        patches.append(patch)
-        colors.append(value)
-
-    if not patches:
+    # Skip NaN bins if nan_color is None
+    drawn = (
+        np.ones(len(field), dtype=bool) if nan_color is not None else ~np.isnan(field)
+    )
+    if not np.any(drawn):
         return None
 
     # Create collection
-    collection = PatchCollection(patches, cmap=cmap, rasterized=rasterized, **kwargs)
-    collection.set_array(np.array(colors))
+    collection = PatchCollection(
+        hexagon_patches(shapes, shapes.centers[drawn]),
+        cmap=cmap,
+        rasterized=rasterized,
+        **kwargs,
+    )
+    collection.set_array(np.asarray(field)[drawn])
     collection.set_clim(vmin, vmax)
     collection.set_edgecolor("none")
 

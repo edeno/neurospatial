@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+    from matplotlib.patches import RegularPolygon
 
     from neurospatial.geometry._binning import TrackLinearization
     from neurospatial.geometry._capabilities import RectilinearGrid
@@ -188,6 +189,35 @@ def plot_polygon_grid(
     return ax
 
 
+def hexagon_patches(
+    shapes: HexagonShapes, centers: NDArray[np.float64]
+) -> list[RegularPolygon]:
+    """Build one hexagon patch per center, with the cells' radius and orientation.
+
+    Parameters
+    ----------
+    shapes : HexagonShapes
+        Hexagonal cells supplying the radius and orientation.
+    centers : ndarray of float64, shape (n_patches, 2)
+        Centers of the hexagons to draw.
+
+    Returns
+    -------
+    list of matplotlib.patches.RegularPolygon
+    """
+    from matplotlib.patches import RegularPolygon
+
+    return [
+        RegularPolygon(
+            (x, y),
+            numVertices=6,
+            radius=shapes.radius,
+            orientation=shapes.orientation,
+        )
+        for x, y in centers
+    ]
+
+
 def plot_hexagons(
     ax: Axes | None = None,
     *,
@@ -199,7 +229,6 @@ def plot_hexagons(
 ) -> Axes:
     """Draw hexagonal cells and the graph of active bin centers."""
     from matplotlib.collections import PatchCollection
-    from matplotlib.patches import RegularPolygon
 
     from neurospatial.layout.helpers.utils import _generic_graph_plot
 
@@ -217,16 +246,7 @@ def plot_hexagons(
         ax.scatter(
             shapes.centers[:, 0], shapes.centers[:, 1], s=1, label="hexagonal grid"
         )
-        patches = [
-            RegularPolygon(
-                (x, y),
-                numVertices=6,
-                radius=shapes.radius,
-                orientation=shapes.orientation,
-            )
-            for x, y in shapes.centers
-        ]
-        collection = PatchCollection(patches, **hex_kws)
+        collection = PatchCollection(hexagon_patches(shapes, shapes.centers), **hex_kws)
         ax.add_collection(collection)
         ax.plot(
             shapes.centers[:, 0],
