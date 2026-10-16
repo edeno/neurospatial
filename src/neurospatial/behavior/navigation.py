@@ -440,8 +440,8 @@ def trials_to_region_arrays(
     - If a region has multiple bins (polygon region), the region is represented
       by its centroid bin: the region bin whose center is closest to the
       centroid of the region's bin centers. This representative always lies
-      inside the region (robust for non-convex regions) and does not depend on
-      arbitrary bin ordering.
+      inside the region (robust for non-convex regions); among equally near
+      bins the lowest index is chosen.
     - Failed trials (`trial.end_region is None`) have goal_bins = -1
     - Timepoints outside all trials have both arrays = -1
 

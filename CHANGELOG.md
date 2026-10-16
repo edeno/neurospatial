@@ -279,7 +279,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - `compute_decision_analysis` represents each goal region by the region bin
   nearest the centroid of the region's bins, the same bin
   `trials_to_region_arrays` uses. It used the lowest-index bin, which depends
-  on how bins are numbered and moved to the region's corner. The goal labels
+  on how bins are numbered and sits at the region's corner; the new choice
+  depends on numbering only for ties, where the lowest index among the
+  equally near bins is chosen. The goal labels
   and `distance_to_boundary` change for goal regions that cover more than one
   bin.
 

@@ -15,8 +15,9 @@ def region_representative_bin(env: Environment, region_name: str) -> int | None:
 
     The representative is the region bin whose center is closest to the
     centroid of the region's bin centers. It always lies inside the region,
-    also for non-convex regions whose geometric centroid falls outside, and it
-    does not depend on the order of bin indices.
+    also for non-convex regions whose geometric centroid falls outside. When
+    several region bins are equally close to the centroid, as in a symmetric
+    box on a grid, the lowest bin index among them is chosen.
 
     Parameters
     ----------
