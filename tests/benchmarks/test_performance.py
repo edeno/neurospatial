@@ -320,11 +320,7 @@ class TestGraphOperationPerformance:
     def test_compute_diffusion_kernels(self, benchmark, medium_env):
         """Benchmark diffusion kernel computation."""
         # Resolve the finite-volume geometry once; benchmark just the primitive.
-        graph_fv, volumes = (
-            type(medium_env)
-            ._create_layout(medium_env.layout_type, medium_env.layout_parameters)
-            .finite_volume_geometry()
-        )
+        graph_fv, volumes = _native_oracle(medium_env).finite_volume_geometry()
         result = benchmark(
             compute_diffusion_kernels,
             graph_fv,
@@ -476,3 +472,15 @@ class TestTrajectoryAnalysisPerformance:
         )
 
         assert result.shape == (medium_env.n_bins, medium_env.n_bins)
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

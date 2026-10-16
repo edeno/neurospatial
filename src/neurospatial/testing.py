@@ -16,14 +16,16 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
+    from neurospatial.environment._coordinates import EgocentricPolarSystem
     from neurospatial.environment.core import Environment
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+    PolarEnvironment = Environment[EgocentricPolarSystem]
 
 __all__ = ["assert_environment_contract"]
 
 
 def assert_environment_contract(
-    env: Environment | EgocentricPolarEnvironment,
+    env: Environment | PolarEnvironment,
     points: ArrayLike,
     expected_bins: ArrayLike,
 ) -> None:
@@ -31,7 +33,7 @@ def assert_environment_contract(
 
     Parameters
     ----------
-    env : Environment or EgocentricPolarEnvironment
+    env : Environment or PolarEnvironment
         Fitted environment, including one produced by an installed adapter.
     points : array-like of float, shape (n_points, n_dims)
         Native coordinates. Include boundary points with independently known
@@ -52,7 +54,7 @@ def assert_environment_contract(
     assert np.all((expected >= -1) & (expected < env.n_bins))
     original_query = query.copy()
 
-    def check_lookup(value: Environment | EgocentricPolarEnvironment) -> None:
+    def check_lookup(value: Environment | PolarEnvironment) -> None:
         actual = value._locate(query)
         assert actual.dtype == np.dtype(np.intp)
         np.testing.assert_array_equal(actual, expected)

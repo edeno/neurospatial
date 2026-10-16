@@ -14,7 +14,6 @@ from hypothesis import strategies as st
 from neurospatial import Environment
 from neurospatial.io import from_dict, to_dict
 from neurospatial.layout._binning import MissingFaces
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._codecs import encode
 from neurospatial.layout._components import TriangleShapes
 from neurospatial.ops.transforms import Affine2D
@@ -78,7 +77,7 @@ class TestCartesianDerivedGeometry:
         np.testing.assert_array_equal(actual.volumes, faces.volumes[keep])
         for array in (*actual, child.bin_sizes):
             assert not array.flags.writeable
-        assert isinstance(child.layout, BinningLayout)
+        assert isinstance(child, Environment)
 
     def test_subset_lookup_uses_parent_bin_ownership(self, built_environment):
         parent = built_environment

@@ -388,7 +388,10 @@ class DecodingResult(ResultMixin):
 
         Notes
         -----
-        Computed as: ``posterior @ bin_centers``
+        On Cartesian environments this is ``posterior @ bin_centers``. On
+        egocentric polar environments it is the centroid in the animal's
+        egocentric plane, returned as ``(distance, angle)``; see
+        :func:`~neurospatial.decoding.estimates.mean_position`.
 
         For unimodal posteriors, this is similar to the MAP position.
         For multimodal posteriors, this may fall between modes.
@@ -397,7 +400,9 @@ class DecodingResult(ResultMixin):
         --------
         map_position : MAP position (mode of posterior)
         """
-        return self.posterior @ self.env.bin_centers
+        from neurospatial.decoding.estimates import mean_position
+
+        return mean_position(self.env, self.posterior)
 
     @cached_property
     def posterior_entropy(self) -> NDArray[np.float64]:

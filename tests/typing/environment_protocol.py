@@ -17,32 +17,27 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.environment._protocols import (
-        CartesianEnvironmentProtocol,
+        CartesianLookupConsumer,
         CellLengthConsumer,
-        EnvironmentProtocol,
+        FieldConsumer,
         InterpolationConsumer,
         RebinConsumer,
         SubsetConsumer,
         TrajectoryBinningConsumer,
         TransitionsConsumer,
     )
-    from neurospatial.environment.core import _BaseEnvironment
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
 
-    def _environment(env: EnvironmentProtocol) -> None: ...
+    def _environment(env: FieldConsumer) -> None: ...
 
     def _check(
-        cartesian: Environment,
-        polar: EgocentricPolarEnvironment,
-        base: _BaseEnvironment,
+        cartesian: Environment[CartesianSystem],
+        polar: Environment[EgocentricPolarSystem],
         field: NDArray[np.float64],
     ) -> None:
         _environment(cartesian)
         _environment(polar)
-        _environment(base)
-        assert_type(base.diffuse(field, 1.0), NDArray[np.float64])
-        _cartesian: CartesianEnvironmentProtocol = cartesian
-        _ = polar.bin_at  # type: ignore[attr-defined]
+        _cartesian: CartesianLookupConsumer = cartesian
+        _ = polar.bin_at  # type: ignore[misc]
         assert_type(cartesian.smooth(field, 1.0), NDArray[np.float64])
         assert_type(polar.smooth(field, 1.0), NDArray[np.float64])
         assert_type(cartesian.diffuse(field, 1.0), NDArray[np.float64])
@@ -50,8 +45,8 @@ if TYPE_CHECKING:
         assert_type(cartesian.neighbors(0), list[int])
 
     def _check_signatures(
-        cartesian: Environment,
-        protocol: CartesianEnvironmentProtocol,
+        cartesian: Environment[CartesianSystem],
+        protocol: CartesianLookupConsumer,
         points: NDArray[np.float64],
         times: NDArray[np.float64],
     ) -> None:
@@ -61,24 +56,28 @@ if TYPE_CHECKING:
         cartesian.bin_at(points, nonexistent_keyword=True)  # type: ignore[call-arg]
         cartesian.neighbors(0, 1, 2)  # type: ignore[call-arg]
         cartesian.occupancy(times)  # type: ignore[call-arg]
-        assert_type(protocol.occupancy(times, points, epochs=None), NDArray[np.float64])
+        assert_type(
+            cartesian.occupancy(times, points, epochs=None), NDArray[np.float64]
+        )
 
     def _check_trajectory(
-        cartesian: Environment, polar: EgocentricPolarEnvironment
+        cartesian: Environment[CartesianSystem],
+        polar: Environment[EgocentricPolarSystem],
     ) -> None:
         _binning: TrajectoryBinningConsumer = cartesian
         _cartesian_transitions: TransitionsConsumer = cartesian
         _polar_transitions: TransitionsConsumer = polar
 
-    def _check_transforms(cartesian: Environment) -> None:
+    def _check_transforms(cartesian: Environment[CartesianSystem]) -> None:
         _rebin: RebinConsumer = cartesian
         _subset: SubsetConsumer = cartesian
 
-    def _check_interpolation(cartesian: Environment) -> None:
+    def _check_interpolation(cartesian: Environment[CartesianSystem]) -> None:
         _interpolation: InterpolationConsumer = cartesian
 
     def _check_coordinates(
-        cartesian: Environment, polar: EgocentricPolarEnvironment
+        cartesian: Environment[CartesianSystem],
+        polar: Environment[EgocentricPolarSystem],
     ) -> None:
         _cartesian_lengths: CellLengthConsumer = cartesian
         _polar_lengths: CellLengthConsumer = polar
@@ -88,3 +87,17 @@ if TYPE_CHECKING:
         assert_type(polar._coordinate_system, EgocentricPolarSystem)
         assert_type(cartesian._gaussian_kernels, dict[float, NDArray[np.float64]])
         assert_type(polar._gaussian_kernels, dict[float, NDArray[np.float64]])
+
+
+if TYPE_CHECKING:
+
+    def _factory_coordinate_inference(points: NDArray[np.float64]) -> None:
+        cartesian = Environment.from_samples(points, bin_size=1.0)
+        polar = Environment.from_polar_egocentric((0.0, 3.0), (-3.0, 3.0), 1.0, 1.0)
+        assert_type(cartesian, Environment[CartesianSystem])
+        assert_type(polar, Environment[EgocentricPolarSystem])
+        cartesian.bin_at(points)
+        polar.bin_at(points)  # type: ignore[misc]
+        Environment.bin_at(polar, points)  # type: ignore[arg-type]
+        _ = polar.apply_transform  # type: ignore[misc]
+        assert_type(polar.copy(), Environment[EgocentricPolarSystem])

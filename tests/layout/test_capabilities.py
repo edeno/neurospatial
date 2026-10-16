@@ -38,7 +38,7 @@ def grid_layout(request):
             distance_bin_size=1.0,
             angle_bin_size=np.pi / 2,
         )
-    return type(env)._create_layout(env.layout_type, env.layout_parameters)
+    return _native_oracle(env)
 
 
 def test_grid_capability_matches_cell_centers(grid_layout):
@@ -84,11 +84,20 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
         endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
     )
     loaded = from_dict(to_dict(original))
-    layout = loaded.layout
+    layout = loaded
     assert not isinstance(layout, RectilinearGridProvider)
-    assert not isinstance(layout, TrackLinearizationProvider)
     assert not isinstance(layout, FiniteVolumeGeometryProvider)
     assert loaded._binning.faces.available
     assert loaded._binning.linearization is not None
     points = np.array([[0.5, 0.0], [1.5, 0.0]])
     np.testing.assert_array_equal(loaded.to_linear(points), original.to_linear(points))
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

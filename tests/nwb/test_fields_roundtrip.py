@@ -1,6 +1,6 @@
 """Round-trip and lazy-read tests for NWB spatial-rate and behavior I/O.
 
-Covers Phase 3.3:
+Covers population field storage and lazy behavior reads:
 
 - ``write_spatial_rates`` / ``read_place_field`` population round-trip with a
   unit axis (``unit_ids`` and ``unit_table`` preserved).

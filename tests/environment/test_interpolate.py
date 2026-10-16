@@ -483,8 +483,8 @@ class TestInterpolateLinearHoledGrid:
             np.float64
         )
 
-        edges_x = env.layout.grid_edges[0]
-        edges_y = env.layout.grid_edges[1]
+        edges_x = env.grid_edges[0]
+        edges_y = env.grid_edges[1]
         centers_x = (edges_x[:-1] + edges_x[1:]) / 2
         centers_y = (edges_y[:-1] + edges_y[1:]) / 2
 

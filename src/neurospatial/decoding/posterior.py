@@ -1367,6 +1367,7 @@ def _decode_and_reduce_block(
     nonfinite_mask: NDArray[np.bool_] | None,
     validate: bool,
     dtype: Any,
+    mean_basis: NDArray[np.float64] | None = None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.float64],
@@ -1403,6 +1404,9 @@ def _decode_and_reduce_block(
         If ``True``, run the per-block posterior-sum output check.
     dtype : np.float32 or np.float64
         Working dtype of the posterior block.
+    mean_basis : NDArray[np.float64] or None, shape (n_bins, n_dims)
+        Coordinates averaged for the posterior mean; defaults to
+        ``bin_centers``. Polar callers pass egocentric-plane coordinates.
 
     Returns
     -------
@@ -1428,7 +1432,7 @@ def _decode_and_reduce_block(
     if validate:
         _validate_output(post_block)
     block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
-        post_block, bin_centers
+        post_block, bin_centers if mean_basis is None else mean_basis
     )
     block_map_position = bin_centers[block_map_bin]
     # post_block goes out of scope and is reclaimed before the next block.
@@ -1602,7 +1606,13 @@ def decode_position_summary(
             n_bins=encoding_models.shape[1],
         )
 
+    from neurospatial.decoding.estimates import (
+        _finish_posterior_mean,
+        _posterior_mean_basis,
+    )
+
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    mean_basis = _posterior_mean_basis(env)
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
@@ -1644,6 +1654,7 @@ def decode_position_summary(
             nonfinite_mask=nonfinite_mask,
             validate=validate,
             dtype=dtype,
+            mean_basis=mean_basis,
         )
         map_bin[start:stop] = block_map_bin
         map_position[start:stop] = block_map_position
@@ -1654,7 +1665,7 @@ def decode_position_summary(
     return DecodingSummary(
         times=times_arr,
         map_position=map_position,
-        mean_position=mean_position,
+        mean_position=_finish_posterior_mean(env, mean_position),
         posterior_entropy=posterior_entropy,
         peak_prob=peak_prob,
         map_bin=map_bin,

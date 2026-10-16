@@ -472,7 +472,7 @@ def env_fingerprint(env: Any) -> str:
     Parameters
     ----------
     env : Any
-        An ``Environment`` or ``EgocentricPolarEnvironment`` instance.
+        A Cartesian or polar ``Environment`` instance.
 
     Returns
     -------
@@ -544,7 +544,7 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.environment._coordinates import EgocentricPolarSystem
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is
@@ -572,7 +572,7 @@ def _bin_center_coords(
             "recompute the result against this environment."
         )
 
-    if isinstance(env, EgocentricPolarEnvironment):
+    if isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem):
         return {
             "bin_center_distance": ("bin", bin_centers[:, 0]),
             "bin_center_angle": ("bin", bin_centers[:, 1]),

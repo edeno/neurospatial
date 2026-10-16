@@ -14,7 +14,7 @@ Design rules:
 - **Duck-typing, never ``isinstance`` on third-party types.** The adapters
   test for attributes (``.t`` / ``.values`` / ``.index``), not concrete types.
 - **Import-light.** This module imports only ``typing`` + ``numpy`` and the
-  first-party :class:`EnvironmentProtocol`; it never imports pynapple, pynwb,
+  first-party narrow environment consumer protocols; it never imports pynapple, pynwb,
   xarray, or any other optional/heavy dependency.
 
 Types
@@ -31,11 +31,10 @@ SpikeGroupLike
     ``collections.UserDict`` — iterating it yields **keys**, not trains)
     satisfies this.
 EnvironmentLike
-    The minimal structural surface shared by
-    :class:`~neurospatial.environment.Environment` and its polar sibling
-    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
-    (``bin_centers`` / ``connectivity`` / ``neighbors``) — matched to the
-    runtime :func:`is_environment_like` check.
+    Minimal structural environment surface (bin centers, connectivity and
+    neighbors), matched to the runtime :func:`is_environment_like` check.
+    Cartesian and polar Environment values both satisfy this contract.
+
 """
 
 from __future__ import annotations
@@ -117,19 +116,11 @@ result.
 class EnvironmentLike(Protocol):
     """Minimal structural surface of a neurospatial spatial environment.
 
-    The **narrow** public contract shared by
-    :class:`~neurospatial.environment.Environment` and its sibling
-    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment` (which is
-    NOT an ``Environment`` subclass, so ``isinstance(polar, Environment)`` is
-    ``False``). Deliberately just the three members a consumer needs to treat an
-    object as a spatial environment — ``bin_centers``, ``connectivity``,
-    ``neighbors`` — matched exactly to the runtime :func:`is_environment_like`
-    duck-check (:data:`_ENVIRONMENT_LIKE_ATTRS`).
-
-    It intentionally does NOT republish the internal ``EnvironmentProtocol`` (the
-    mixin ``self`` type), whose ~14 members are private implementation surface,
-    not a public contract. Use this in annotations, and use
-    :func:`is_environment_like` for the runtime duck-check.
+    Cartesian and polar :class:`~neurospatial.environment.Environment` values
+    both provide bin centers, connectivity and neighbors. This protocol also
+    accepts compatible external objects without requiring a concrete class.
+    Its members match :func:`is_environment_like` exactly. Numerical consumers
+    declare additional coordinate or geometry requirements separately.
     """
 
     @property
@@ -147,20 +138,8 @@ class EnvironmentLike(Protocol):
         ...
 
 
-# Attributes shared by ``Environment`` and ``EgocentricPolarEnvironment`` that a
-# consumer needs to treat an object as a spatial environment. Kept intentionally
-# minimal: enough to distinguish a real environment from an arbitrary object,
-# without pinning down the (large) full ``EnvironmentProtocol`` surface (a
-# runtime ``isinstance`` against that Protocol misfires — even a real
-# ``Environment`` lacks some of its lazily-created private attributes at the
-# instance level).
-#
-# Deliberately excludes the ``@check_fitted``-guarded ``n_bins`` / ``n_dims``
-# properties: probing those on an *unfitted* environment raises
-# ``EnvironmentNotFittedError`` (not ``AttributeError``), which ``hasattr`` would
-# let propagate. ``bin_centers`` / ``connectivity`` / ``neighbors`` are present
-# regardless of fitted state, so an unfitted environment is still recognized as
-# environment-like (and any downstream fitted check reports the real problem).
+# Keep the duck check small and avoid fitted-only n_bins/n_dims properties.
+# Compatible providers need not inherit the public Environment runtime class.
 _ENVIRONMENT_LIKE_ATTRS: tuple[str, ...] = (
     "bin_centers",
     "connectivity",
@@ -171,15 +150,10 @@ _ENVIRONMENT_LIKE_ATTRS: tuple[str, ...] = (
 def is_environment_like(obj: object) -> bool:
     """Return whether ``obj`` is duck-typed as a spatial environment.
 
-    Checks for the minimal shared surface of
-    :class:`~neurospatial.environment.Environment` and its sibling
-    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
-    (``bin_centers``, ``connectivity``, ``neighbors``).
-
-    Use this in place of ``isinstance(obj, Environment)`` at internal call sites
-    that must also accept the polar sibling — ``isinstance(polar, Environment)``
-    is ``False`` because ``EgocentricPolarEnvironment`` is a sibling type, not a
-    subclass, which would wrongly reject a legitimate environment.
+    Checks bin_centers, connectivity and neighbors on Cartesian or polar
+    environments and compatible external providers. It does not establish
+    coordinate meaning or numerical capabilities; consumers check those
+    requirements separately.
 
     Parameters
     ----------

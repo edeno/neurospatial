@@ -37,7 +37,6 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment.core import _BaseEnvironment
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -464,7 +463,7 @@ def _environment_payload(
         "n_bins": env.n_bins,
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
-        "layout_category": env.layout.layout_type,
+        "layout_category": env._layout_category,
         "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
         "binning": binning_meta,
         "arena": arena_meta,
@@ -472,7 +471,7 @@ def _environment_payload(
         "grid_shape": env.grid_shape,
         "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
-        "coordinate_kind": "polar" if getattr(env, "_POLAR", False) else "cartesian",
+        "coordinate_kind": "polar" if env._is_polar else "cartesian",
     }
     for attribute in ("units", "frame"):
         value = getattr(env, attribute)
@@ -560,8 +559,8 @@ def _restore_environment(
     from neurospatial.arena import Arena, UnknownArena, decode_arena
     from neurospatial.environment import Environment
     from neurospatial.layout._binning import Binning, TrackLinearization
-    from neurospatial.layout._binning_layout import BinningLayout
     from neurospatial.layout._codecs import decode, graph_from_node_link
+    from neurospatial.layout._context import grid_index
     from neurospatial.layout._locators import HexLocator, MeshLocator
     from neurospatial.regions import Region, Regions
 
@@ -617,16 +616,8 @@ def _restore_environment(
             _convert_lists_to_arrays(metadata["layout_parameters"])
         )
         ranges = metadata.get("dimension_ranges")
-        layout = BinningLayout(
-            binning,
-            connectivity=graph_from_node_link(metadata["graph"]),
-            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
-            layout_type_tag=metadata["layout_type"],
-            layout_type=metadata["layout_category"],
-            build_params=params,
-            is_linearized_track=metadata["is_linearized_track"],
-            coordinate_kind=coordinate_kind,
-        )
+        graph = graph_from_node_link(metadata["graph"])
+        context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
         ):
@@ -642,34 +633,34 @@ def _restore_environment(
             if (
                 "grid_shape" in metadata
                 and metadata["grid_shape"] is not None
-                and tuple(metadata["grid_shape"]) != layout.grid_shape
+                and tuple(metadata["grid_shape"]) != context.shape
             ):
                 raise ValueError("stored grid_shape differs from the binning")
             if "active_mask" in arrays and not np.array_equal(
-                arrays["active_mask"], layout.active_mask
+                arrays["active_mask"], context.active_mask
             ):
                 raise ValueError("stored active_mask differs from the binning")
-            for index, edges in enumerate(layout.grid_edges or ()):
+            for index, edges in enumerate(context.edges or ()):
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        env_cls: type[_BaseEnvironment] = Environment
-        if coordinate_kind == "polar":
-            from neurospatial.environment.polar import EgocentricPolarEnvironment
-
-            env_cls = EgocentricPolarEnvironment
-        env = env_cls(
-            metadata["name"],
-            layout,
-            metadata["layout_type"],
-            params,
+        env = Environment._from_binning(
+            binning,
+            connectivity=graph,
+            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
+            layout_type_tag=metadata["layout_type"],
+            layout_type=metadata["layout_category"],
+            build_params=params,
+            is_linearized_track=metadata["is_linearized_track"],
+            name=metadata["name"],
+            coordinate_kind=coordinate_kind,
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
             restored_from=source,
             arena=arena,
             units=metadata.get("units"),
             frame=metadata.get("frame"),
         )
-        return cast("Environment", env)
+        return env
     except (
         ValueError,
         TypeError,

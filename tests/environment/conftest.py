@@ -27,7 +27,7 @@ def holed_grid_env():
     )
     pts = pts[~hole]
     env = Environment.from_samples(pts, bin_size=2.0, bin_count_threshold=1)
-    assert env.n_bins < np.prod(env.layout.grid_shape), (
+    assert env.n_bins < np.prod(env.grid_shape), (
         "fixture must have inactive bins to exercise the index mapping"
     )
     return env
@@ -62,7 +62,7 @@ def holed_grid_env_8conn():
         bin_count_threshold=1,
         connect_diagonal_neighbors=True,
     )
-    assert env.n_bins < np.prod(env.layout.grid_shape)
+    assert env.n_bins < np.prod(env.grid_shape)
     return env
 
 
@@ -75,7 +75,7 @@ def holed_grid_env_4conn():
         bin_count_threshold=1,
         connect_diagonal_neighbors=False,
     )
-    assert env.n_bins < np.prod(env.layout.grid_shape)
+    assert env.n_bins < np.prod(env.grid_shape)
     return env
 
 

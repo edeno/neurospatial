@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial import Environment
@@ -229,9 +230,9 @@ def test_polygon_shared_edge_uses_single_bin_owner():
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0), np.array([0.0, 1.0])),
     )
-    env = Environment(
+    env = publish_environment(
         base.name,
-        base.layout,
+        base,
         base.layout_type,
         base.layout_parameters,
         arena=OpenArena(box(0, 0, 2, 1)),
@@ -306,9 +307,9 @@ def test_rotated_native_cells_allocate_without_rectilinear_capability(known_poly
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
     if known_polygon:
-        env = Environment(
+        env = publish_environment(
             env.name,
-            env.layout,
+            env,
             env.layout_type,
             env.layout_parameters,
             arena=OpenArena(box(0, 0, 2, 2)),
@@ -412,9 +413,9 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
         TypeError,
         match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
     ):
-        Environment(
+        publish_environment(
             base.name,
-            base.layout,
+            base,
             base.layout_type,
             base.layout_parameters,
             arena=UnitDiskArena(),

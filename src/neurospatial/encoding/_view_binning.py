@@ -81,9 +81,9 @@ def _resolve_wall_contacts(
     import shapely
 
     from neurospatial.arena import _feature_cap
-    from neurospatial.layout._binning_layout import _polygon_coordinate_errors
     from neurospatial.layout._locators import RectilinearLocator, SubsetLocator
     from neurospatial.layout._polygon import ClippedLocator
+    from neurospatial.layout._validation import _polygon_coordinate_errors
 
     def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
         parent = locator
@@ -370,9 +370,9 @@ def _precompute_view_bins(
                     "Physical wall hit has no retained bin on the observer's side. "
                     "Build bins that reach the measured wall before computing view rates; "
                     "adding OpenArena or clipping existing cells cannot add missing bins. "
-                    "For curved or slanted walls, clip a grid that covers the arena to the "
-                    "measured polygon and attach its walls: Environment.from_bins("
-                    "grid.clip(polygon).layout.binning(), arena=OpenArena(polygon)). "
+                    "For curved or slanted walls, clip a grid that covers the arena with "
+                    "grid.clip(polygon) and pass those cells to Environment.from_bins(..., "
+                    "arena=OpenArena(polygon)). "
                     "For rotated rectangular arenas, construct bins in the arena-aligned frame "
                     "and transform bins, arena and observations together. Alternatively, explicitly "
                     "choose boundary_source='analysis' to encode the retained analysis boundary. "

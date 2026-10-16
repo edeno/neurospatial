@@ -12,39 +12,12 @@ After the move from a monolithic ``environment.py`` to an
 """
 
 
-def test_mixins_are_not_dataclasses():
-    """The dataclass is ``_BaseEnvironment``; the mixins must be plain.
+def test_environment_has_no_mixin_hosts():
+    from typing import Generic
 
-    Mixing dataclasses into another dataclass produces broken MRO and
-    silently-wrong field inheritance. This is the architectural invariant
-    that lets the mixin pattern work.
-    """
-    from neurospatial.environment.cartesian import CartesianCoordinates
-    from neurospatial.environment.factories import EnvironmentFactories
-    from neurospatial.environment.fields import EnvironmentFields
-    from neurospatial.environment.metrics import EnvironmentMetrics
-    from neurospatial.environment.queries import EnvironmentQueries
-    from neurospatial.environment.regions import EnvironmentRegions
-    from neurospatial.environment.serialization import EnvironmentSerialization
-    from neurospatial.environment.trajectory import EnvironmentTrajectory
-    from neurospatial.environment.visualization import EnvironmentVisualization
+    from neurospatial import Environment
 
-    mixins = [
-        EnvironmentFactories,
-        EnvironmentQueries,
-        EnvironmentSerialization,
-        EnvironmentRegions,
-        EnvironmentVisualization,
-        EnvironmentMetrics,
-        EnvironmentFields,
-        EnvironmentTrajectory,
-        CartesianCoordinates,
-    ]
-
-    for mixin in mixins:
-        assert not hasattr(mixin, "__dataclass_fields__"), (
-            f"{mixin.__name__} must not be a dataclass."
-        )
+    assert Environment.__bases__ == (Generic,)
 
 
 def test_all_public_methods_present():

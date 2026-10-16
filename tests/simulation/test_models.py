@@ -78,7 +78,7 @@ class TestPlaceCellModel:
 
         pc = PlaceCellModel(env, center=[50.0, 50.0])
 
-        spacing = np.diff(env.layout.grid_edges[0])[0]
+        spacing = np.diff(env.grid_edges[0])[0]
         np.testing.assert_allclose(pc.width, 3 * spacing, rtol=1e-12)
         np.testing.assert_allclose(pc.width, 3 * bin_size, rtol=0.05)
 

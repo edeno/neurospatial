@@ -47,7 +47,7 @@ def region_reward_field(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment with regions defined.
     region_name : str
         Name of region in env.regions to use as reward source.
@@ -239,7 +239,7 @@ def goal_reward_field(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Spatial environment.
     goal_bins : int or list[int] or NDArray[np.int_]
         Goal bin index or indices. Can be scalar or array.

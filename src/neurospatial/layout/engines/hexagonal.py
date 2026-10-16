@@ -350,7 +350,6 @@ class HexagonalLayout:
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        g = self.connectivity.copy()
-        for _u, _v, data in g.edges(data=True):
-            data["A"] = float(data["distance"]) / np.sqrt(3.0)
-        return g, self.bin_sizes()
+        from neurospatial.layout._face_builders import hex_geometry
+
+        return hex_geometry(self.connectivity, self.bin_sizes())

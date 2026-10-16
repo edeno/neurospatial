@@ -78,6 +78,7 @@ from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
 
 __all__ = [
     # Dataclass
@@ -172,7 +173,7 @@ class GridProperties(ResultMixin):
 
 
 def spatial_autocorrelation(
-    env: Environment,
+    env: Environment[CartesianSystem],
     firing_rate: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
@@ -188,7 +189,7 @@ def spatial_autocorrelation(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Spatial environment with a regular 2D grid layout.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -206,6 +207,9 @@ def spatial_autocorrelation(
         If ``env`` is not a regular 2D grid (use
         :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
+    CartesianOnlyError
+        If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
+        lattice, so its 2D autocorrelogram and grid score are meaningless.
 
     Notes
     -----
@@ -269,6 +273,16 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
+
+    _require_cartesian_coordinates(
+        env,
+        "spatial_autocorrelation()",
+        instead=(
+            "A 2D autocorrelogram needs a Cartesian grid; compute it on an "
+            "allocentric Cartesian environment."
+        ),
+    )
     _validate_autocorr_input(env, firing_rate)
 
     if _detect_grid_method(env) != "fft":
@@ -298,7 +312,7 @@ def spatial_autocorrelation_radial(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -368,7 +382,7 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment to check.
 
     Returns
@@ -377,10 +391,10 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
         'fft' if environment is a regular 2D grid, 'graph' otherwise.
     """
     # Check if environment has grid_shape attribute (regular grid)
-    if not hasattr(env.layout, "grid_shape"):
+    if not hasattr(env, "grid_shape"):
         return "graph"
 
-    grid_shape = env.layout.grid_shape
+    grid_shape = env.grid_shape
 
     # grid_shape can be None or tuple
     if grid_shape is None or len(grid_shape) != 2:
@@ -388,8 +402,8 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
 
     # Check if grid is reasonably regular (not too sparse)
     # If active_mask exists, check that most bins are active
-    if hasattr(env.layout, "active_mask"):
-        active_mask = env.layout.active_mask
+    if hasattr(env, "active_mask"):
+        active_mask = env.active_mask
         if active_mask is not None:
             # If less than 50% of bins are active, treat as irregular
             fill_fraction = np.sum(active_mask) / active_mask.size
@@ -408,7 +422,7 @@ def _spatial_autocorrelation_fft(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment (must be regular 2D grid).
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map.
@@ -424,13 +438,13 @@ def _spatial_autocorrelation_fft(
         If environment is not a regular 2D grid.
     """
     # Validate environment has grid structure
-    if not hasattr(env.layout, "grid_shape"):
+    if not hasattr(env, "grid_shape"):
         raise ValueError(
             "FFT method requires environment with grid_shape attribute. "
             "Use spatial_autocorrelation_radial for irregular topologies."
         )
 
-    grid_shape = env.layout.grid_shape
+    grid_shape = env.grid_shape
 
     if grid_shape is None:
         raise ValueError(
@@ -449,8 +463,8 @@ def _spatial_autocorrelation_fft(
 
     # Fill in values from firing_rate
     # Need to map flat bin indices to grid indices
-    if hasattr(env.layout, "active_mask"):
-        active_mask = env.layout.active_mask
+    if hasattr(env, "active_mask"):
+        active_mask = env.active_mask
         if active_mask is not None:
             rate_map_2d[active_mask] = firing_rate
         else:
@@ -507,7 +521,7 @@ def _spatial_autocorrelation_graph(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map.

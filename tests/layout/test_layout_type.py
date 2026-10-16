@@ -102,7 +102,7 @@ def test_field_to_rgb_for_napari_grid_layout():
     rng = np.random.default_rng(42)
     positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
-    assert env.layout.is_grid_compatible is True
+    assert env._binning.rectilinear is not None
 
     cmap_obj = plt.get_cmap("viridis")
     cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)

@@ -72,7 +72,9 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
-    from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.environment._coordinates import EgocentricPolarSystem
+
+    PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -272,7 +274,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
     firing_rate: ArrayLike
     occupancy: ArrayLike
-    env: EgocentricPolarEnvironment
+    env: PolarEnvironment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -773,7 +775,7 @@ class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
 
     firing_rates: ArrayLike
     occupancy: ArrayLike
-    env: EgocentricPolarEnvironment
+    env: PolarEnvironment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -1370,7 +1372,7 @@ def _raw_polar_rate(
 
 
 def _egocentric_firing_rate(
-    polar_env: EgocentricPolarEnvironment,
+    polar_env: PolarEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -2599,7 +2601,7 @@ def _object_vector_rates(
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
     frame_bins: NDArray[np.int64] | None = None,
-    polar_env: EgocentricPolarEnvironment | None = None,
+    polar_env: PolarEnvironment | None = None,
 ) -> ObjectVectorRatesResult:
     """Compute either frame through the shared binning and smoothing path.
 

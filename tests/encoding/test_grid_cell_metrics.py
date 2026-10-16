@@ -68,7 +68,7 @@ class TestSpatialAutocorrelation:
 
         # Should return 2D array
         assert autocorr.ndim == 2
-        assert autocorr.shape == env.layout.grid_shape
+        assert autocorr.shape == env.grid_shape
 
         # Center should have highest autocorrelation (≈1.0)
         center_y, center_x = autocorr.shape[0] // 2, autocorr.shape[1] // 2

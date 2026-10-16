@@ -249,11 +249,11 @@ def test_similarity_preserves_declared_navigation_weights(
     # These are navigation weights; finite-volume distances have their own units.
     if source_factory is _rectilinear:
         np.testing.assert_array_equal(
-            derived.layout.binning().faces.build().distance,
+            derived._binning.faces.build().distance,
             source.faces.build().distance * scale,
         )
     np.testing.assert_array_equal(
-        env.layout.binning().bins.pair_distances, source.bins.pair_distances
+        env._binning.bins.pair_distances, source.bins.pair_distances
     )
 
 
@@ -382,7 +382,7 @@ def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     native = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    for faces in (None, object(), native.layout.binning().faces):
+    for faces in (None, object(), native._binning.faces):
         with pytest.raises(TypeError, match=r"KnownFaces|MissingFaces"):
             Environment.from_bins(replace(source, faces=faces))
 
@@ -497,7 +497,7 @@ def test_clipped_records_refuse_nested_custom_providers_before_copy(slot):
         np.ones((1, 2), dtype=bool),
         grid_edges=(np.array([0.0, 1.0]), np.arange(3.0)),
     )
-    source = parent.clip(box(0.1, 0.1, 0.9, 1.9)).layout.binning()
+    source = parent.clip(box(0.1, 0.1, 0.9, 1.9))._binning
     mapping = source.locator.mapping
     polygons = source.locator.cells.polygons
 
@@ -559,7 +559,7 @@ def test_explicit_native_data_retains_lookup_measures_boundaries_and_faces(
     built_environment,
 ):
     source = built_environment
-    exported = source.layout.binning()
+    exported = source._binning
     explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
     env = Environment.from_bins(explicit, arena=source.arena)
     np.testing.assert_array_equal(env.bin_centers, source.bin_centers)
@@ -606,7 +606,7 @@ def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
         source.to_file(path)
         restored = Environment.from_file(path)
     else:
-        exported = source.layout.binning()
+        exported = source._binning
         explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
         restored = Environment.from_bins(explicit, arena=source.arena)
     rates = np.arange(source.n_bins, dtype=float)
@@ -637,7 +637,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
         source = parent.clip(box(0.2, 0.2, 2.8, 2.8))
     else:
         source = parent.subset(bins=keep).apply_transform(translate(1.0, 2.0))
-    exported = source.layout.binning()
+    exported = source._binning
     explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
     env = Environment.from_bins(explicit, arena=source.arena)
     np.testing.assert_array_equal(env.boundary_bins, source.boundary_bins)
@@ -729,7 +729,7 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
         env = env.subset(bins=np.arange(env.n_bins) != env.n_bins - 1)
     elif history == "load":
         env = Environment.from_dict(env.to_dict())
-    exported = env.layout.binning()
+    exported = env._binning
     np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
     assert np.all(exported.bins.pair_distances > exported.faces.build().distance)
 
@@ -788,7 +788,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
     if history == "subset_similarity":
         env = env.subset(bins=np.arange(env.n_bins) != 3)
     derived = env.apply_transform(Affine2D(matrix))
-    source = derived.layout.binning()
+    source = derived._binning
     Environment.from_bins(source)
     faces = source.faces.build()
     with pytest.raises(ValueError, match=r"grid faces"):
@@ -812,7 +812,7 @@ def test_legacy_tiny_grid_zero_faces_require_rebuilding():
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * 1e-10, np.arange(2.0) * 1e-10),
     )
-    source = env.layout.binning()
+    source = env._binning
     faces = source.faces.build()
     with pytest.raises(ValueError, match="Older tiny-grid records"):
         Environment.from_bins(
@@ -830,7 +830,7 @@ def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_
     env = Environment.from_grid_mask(
         np.ones((3,) * n_dims, dtype=bool), grid_edges=edges
     )
-    source = env.layout.binning()
+    source = env._binning
     explicit = Environment.from_bins(
         replace(source, faces=KnownFaces(source.faces.build()))
     )
@@ -938,7 +938,7 @@ def _cell_face_source(kind, history):
         matrix[:2, :2] = linear
         matrix[:2, 2] = [100.0, -50.0]
         env = env.apply_transform(Affine2D(matrix))
-    source = env.layout.binning()
+    source = env._binning
     return env, replace(source, faces=KnownFaces(source.faces.build()))
 
 

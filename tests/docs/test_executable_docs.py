@@ -20,6 +20,7 @@ RUN_ALL = {
     "docs/getting-started/quickstart.md": False,
 }
 OPT_IN = (
+    "docs/getting-started/core-concepts.md",
     "docs/user-guide/composite-environments.md",
     "docs/user-guide/environments.md",
     "docs/user-guide/alignment.md",
@@ -32,6 +33,7 @@ OPT_IN = (
     "docs/user-guide/neuroscience-metrics.md",
     "docs/user-guide/signal-processing-primitives.md",
     "docs/migration/v0.6.md",
+    "docs/migration/environment-unified.md",
 )
 SETUPS = {
     "docs_animation_quick_start": """import os

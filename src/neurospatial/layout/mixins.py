@@ -376,19 +376,9 @@ class _GridMixin:
         """
         if self.connectivity is None:
             raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        g = self.connectivity.copy()
+        from neurospatial.layout._face_builders import grid_geometry
+
         assert self.bin_centers is not None
-        centers = self.bin_centers
-        n_dims = centers.shape[1]
-        widths = self._axis_widths()
-        for u, v, data in g.edges(data=True):
-            offset = centers[u] - centers[v]
-            # Native grid centers share exactly stored coordinates along every
-            # unchanged axis. An absolute threshold would depend on units.
-            moved = offset != 0.0
-            if moved.sum() != 1:  # diagonal / Moore edge -> shares only a corner
-                data["A"] = 0.0
-                continue
-            axis = int(np.flatnonzero(moved)[0])
-            data["A"] = float(np.prod([widths[d] for d in range(n_dims) if d != axis]))
-        return g, self.bin_sizes()
+        return grid_geometry(
+            self.connectivity, self.bin_centers, self.bin_sizes(), self._axis_widths()
+        )

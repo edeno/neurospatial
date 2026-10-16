@@ -558,23 +558,23 @@ def field_to_rgb_for_napari(
 
     # For grid-compatible 2D layouts, reshape to 2D image
     # Use is_grid_compatible property for type checking, then verify 2D grid_shape
-    is_grid = getattr(env.layout, "is_grid_compatible", False)
+    is_grid = env._binning.rectilinear is not None
     has_2d_grid = (
-        hasattr(env.layout, "grid_shape")
-        and env.layout.grid_shape is not None
-        and len(env.layout.grid_shape) == 2
+        hasattr(env, "grid_shape")
+        and env.grid_shape is not None
+        and len(env.grid_shape) == 2
     )
     if is_grid and has_2d_grid:
         # Determine which bins are active
-        grid_shape = env.layout.grid_shape
+        grid_shape = env.grid_shape
         assert grid_shape is not None  # for mypy
         rgb_shape = (grid_shape[0], grid_shape[1], 3)
-        if hasattr(env.layout, "active_mask") and env.layout.active_mask is not None:
+        if hasattr(env, "active_mask") and env.active_mask is not None:
             # Create full grid RGB
             full_rgb = np.zeros(rgb_shape, dtype=np.uint8)
 
             # Fill active bins
-            active_indices = env.layout.active_mask.flatten()
+            active_indices = env.active_mask.flatten()
             full_rgb_flat = full_rgb.reshape(-1, 3)
             full_rgb_flat[active_indices] = rgb
 

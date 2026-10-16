@@ -1104,7 +1104,7 @@ def diffusion_component_labels(
 
     Parameters
     ----------
-    env : Environment or EgocentricPolarEnvironment
+    env : Environment
         A fitted environment.
 
     Returns
@@ -1128,7 +1128,7 @@ def diffusion_apply_rtol(env: DiffusionAccuracyConsumer, sigma: float) -> float:
 
     Parameters
     ----------
-    env : Environment or EgocentricPolarEnvironment
+    env : Environment
         A fitted environment.
     sigma : float
         The bandwidth passed to ``env.diffuse``.
@@ -1199,7 +1199,7 @@ def diffusion_kernel(
 
     Parameters
     ----------
-    env : Environment or EgocentricPolarEnvironment
+    env : Environment
         Fitted environment (any supported layout).
     sigma : float
         Physical smoothing standard deviation (finite, > 0).

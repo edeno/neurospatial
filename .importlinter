@@ -1,0 +1,57 @@
+[importlinter]
+root_package = neurospatial
+include_external_packages = True
+exclude_type_checking_imports = True
+
+[importlinter:contract:geometry]
+name = Geometry data stays independent of public environments and builders
+type = forbidden
+source_modules =
+    neurospatial.arena
+    neurospatial.layout._binning
+    neurospatial.layout._validation
+    neurospatial.layout._locators
+    neurospatial.layout._diffusion
+    neurospatial.layout._components
+    neurospatial.layout._native_faces
+    neurospatial.layout._face_builders
+    neurospatial.layout._face_normals
+    neurospatial.layout._face_transform
+    neurospatial.layout._grid_frame
+    neurospatial.layout._rebin_spec
+    neurospatial.layout._derive
+    neurospatial.layout._composition
+    neurospatial.layout._combine_geometry
+    neurospatial.layout._polygon
+    neurospatial.layout._context
+    neurospatial.layout._graph
+    neurospatial.layout._codecs
+forbidden_modules =
+    neurospatial.environment
+    neurospatial.layout.engines
+    neurospatial.layout.factories
+    neurospatial.layout.base
+    neurospatial.encoding
+    neurospatial.decoding
+    neurospatial.animation
+    neurospatial.simulation
+    neurospatial.io
+    pynwb
+    napari
+    xarray
+    pynapple
+ignore_imports =
+    neurospatial.ops.transforms -> neurospatial.environment._affine
+
+[importlinter:contract:numerics]
+name = Numerical operations avoid concrete environment APIs and builders
+type = forbidden
+source_modules =
+    neurospatial.ops
+forbidden_modules =
+    neurospatial.environment.core
+    neurospatial.layout.engines
+    neurospatial.layout.factories
+    neurospatial.layout.base
+ignore_imports =
+    neurospatial.ops.transforms -> neurospatial.environment._affine

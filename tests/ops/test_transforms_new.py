@@ -412,11 +412,10 @@ class TestApplyTransformToEnvironment:
     def test_unfitted_environment_raises_error(self):
         """Test that unfitted environment raises error."""
         # Create a minimal layout that hasn't been built
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-        layout = RegularGridLayout()
         # Don't call build(), so it remains unfitted
-        env = Environment(name="unfitted", layout=layout)
+        env = Environment.__new__(Environment)
+        env._is_fitted = False
         transform = translate(5, 5)
 
         from neurospatial.environment.decorators import EnvironmentNotFittedError

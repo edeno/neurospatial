@@ -25,10 +25,9 @@ if TYPE_CHECKING:
 
     from neurospatial.arena import _TransformedArena
     from neurospatial.layout._binning import Binning, Locator
-    from neurospatial.layout.base import LayoutEngine
 
 
-def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena:
+def infer_arena(binning: Binning, *, polar: bool, circular: bool = False) -> Arena:
     """Use declared shapes or an inferred cell domain, without asserting walls."""
     combined = _composition_arena(binning.locator)
     if combined is not None:
@@ -42,7 +41,7 @@ def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena
             return EgocentricSurround(
                 (float(grid.edges[0][0]), float(grid.edges[0][-1])),
                 (float(grid.edges[1][0]), float(grid.edges[1][-1])),
-                circular=bool(layout._build_params_used.get("circular_angle", False)),
+                circular=circular,
             )
         return UnknownArena(n_dims, coordinate_kind="polar")
     track = binning.linearization
@@ -70,10 +69,6 @@ def infer_arena(binning: Binning, *, polar: bool, layout: LayoutEngine) -> Arena
     # Exact area cells are sufficient to infer an analysis domain, but not
     # measured physical walls. Keep unsupported custom layouts usable.
     if binning.shapes is not None and n_dims == 2:
-        from neurospatial.layout._binning import LayoutLocator
-
-        if isinstance(binning.locator, LayoutLocator):
-            return UnknownArena(n_dims)
         from shapely.ops import unary_union
 
         from neurospatial.layout._polygon import materialize_cells
@@ -179,7 +174,7 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
     if isinstance(binning.shapes, PolygonCells) and combined_arena is None:
         domain = arena.polygonal_domain()
         if domain is not None:
-            from neurospatial.layout._binning_layout import _polygon_area_allowance
+            from neurospatial.layout._validation import _polygon_area_allowance
 
             domain_clearance = domain.minimum_clearance
             for index, cell in enumerate(binning.shapes.polygons):
@@ -244,7 +239,7 @@ def _wall_source_frame(
                 import shapely
                 from shapely.geometry import MultiPolygon, Polygon
 
-                from neurospatial.layout._binning_layout import (
+                from neurospatial.layout._validation import (
                     _polygon_coordinate_errors,
                 )
 

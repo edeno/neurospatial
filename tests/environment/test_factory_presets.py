@@ -31,9 +31,7 @@ class TestOpenField:
         reference = Environment.from_samples(positions, bin_size=5.0, fill_holes=True)
 
         assert preset.n_bins == reference.n_bins
-        np.testing.assert_array_equal(
-            preset.layout.active_mask, reference.layout.active_mask
-        )
+        np.testing.assert_array_equal(preset.active_mask, reference.active_mask)
 
     def test_differs_from_default_when_holes_present(self):
         """fill_holes=True changes the active mask vs the bare default."""
@@ -474,7 +472,7 @@ class TestGraphLinearization:
         stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
         samples = starts * (1 - t) + stops * t
 
-        layout = type(env)._create_layout(env.layout_type, env.layout_parameters)
+        layout = _native_oracle(env)
         via_linear = layout.linear_point_to_bin_ind(env.to_linear(samples))
         assert np.mean(via_linear != env.bin_at(samples)) == 0.0
 
@@ -528,3 +526,15 @@ class TestGraphLinearization:
         np.testing.assert_allclose(
             env.to_linear(np.asarray(query, float)), expected, atol=1e-9
         )
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

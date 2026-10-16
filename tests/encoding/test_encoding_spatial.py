@@ -5072,12 +5072,12 @@ def _make_batch_inputs(
 
 
 class TestComputeSpatialRatesThroughputContract:
-    """Deterministic throughput contract for the Phase 2 batch encode path.
+    """Deterministic throughput contract for shared batch encoding work.
 
     ``compute_spatial_rates`` MUST share the expensive per-population work
     (occupancy computation + diffusion smoothing kernel build) across all
     neurons, computing each ONCE per call rather than once per neuron. A
-    regression to per-neuron work is the throughput cliff that Phase 2 removed.
+    regression to per-neuron work repeats those expensive computations.
 
     These tests assert *call counts*, not wall-clock time, so they are fully
     deterministic and cannot flake. The load-bearing property is that the call

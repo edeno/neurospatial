@@ -482,7 +482,7 @@ def sample_polar_environment():
     Returns
     -------
     Environment
-        An ``EgocentricPolarEnvironment`` (egocentric polar coordinates).
+        An ``Environment`` (egocentric polar coordinates).
     """
     from neurospatial import Environment
 

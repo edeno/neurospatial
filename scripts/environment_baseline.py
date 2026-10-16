@@ -6,8 +6,8 @@ a triangular mesh, and circular and open polar grids), each also read back
 from a dict, a file and NWB, and copied. A probe stores its output as a float
 array, or the exception type and message it raised, so refusals are compared
 too, and a probe that yields text (warnings, plot labels) stores the text. The
-signature and docstring of every public member of Environment and
-EgocentricPolarEnvironment are recorded as well.
+signature and docstring of every public member of the common Environment
+are recorded as well. Cartesian and polar numerical cases remain separate.
 
 Usage
 -----
@@ -47,7 +47,6 @@ from shapely.geometry import Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import resolve_spatial_bandwidth, smooth_rate_map
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
@@ -326,7 +325,7 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
 
 def _record_api(out: dict[str, np.ndarray]) -> None:
     """Record each public member's kind, signature (without self) and docstring."""
-    for cls in (Environment, EgocentricPolarEnvironment):
+    for cls in (Environment,):
         for name in sorted(n for n in dir(cls) if not n.startswith("_")):
             member = inspect.getattr_static(cls, name)
             function = (

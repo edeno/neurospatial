@@ -27,11 +27,11 @@ from pathlib import Path
 
 import networkx as nx
 import numpy as np
+from environment_helpers import publish_environment
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 
 BASELINE_PATH = Path(__file__).parent / "data" / "diffusion_perf_baseline.pkl"
@@ -73,7 +73,7 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
     }
     layout = GraphLayout()
     layout.build(**params)
-    env = Environment(
+    env = publish_environment(
         name="track",
         layout=layout,
         layout_type_used="Graph",
@@ -140,9 +140,9 @@ def build_hex(bin_size: float = 3.0) -> tuple[Environment, list[float]]:
     return env, [24.0, 24.0]
 
 
-def build_polar() -> tuple[EgocentricPolarEnvironment, list[float]]:
+def build_polar() -> tuple[Environment, list[float]]:
     """Full-circle egocentric polar env (non-uniform mass M = annular-sector area)."""
-    env = EgocentricPolarEnvironment.create(
+    env = Environment.from_polar_egocentric(
         distance_range=(0.0, 40.0),
         angle_range=(-np.pi, np.pi),
         distance_bin_size=2.5,

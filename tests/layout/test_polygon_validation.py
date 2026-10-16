@@ -12,7 +12,6 @@ from shapely.affinity import translate
 from shapely.geometry import Polygon, box
 
 from neurospatial.layout._binning import Binning, KnownFaces, MissingFaces, SpatialBins
-from neurospatial.layout._binning_layout import BinningLayout
 from neurospatial.layout._derive import subset_binning, transform_binning
 from neurospatial.layout._locators import RectilinearLocator
 from neurospatial.layout._polygon import (
@@ -22,6 +21,7 @@ from neurospatial.layout._polygon import (
     _representative,
     certify_faces,
 )
+from neurospatial.layout._validation import _validate_components, _validate_graph
 
 
 def _binning(polygons, *, pairs=(), known=False):
@@ -60,15 +60,8 @@ def _publish(binning):
         binning.bins.pairs, binning.bins.pair_distances, strict=True
     ):
         graph.add_edge(int(u), int(v), distance=distance)
-    return BinningLayout(
-        binning,
-        connectivity=graph,
-        dimension_ranges=None,
-        layout_type_tag="fixture",
-        layout_type="fixture",
-        build_params={},
-        is_linearized_track=False,
-    )
+    _validate_graph(binning, graph)
+    _validate_components(binning, False, "cartesian")
 
 
 def _matrix(angle=0.0, offset=0.0):

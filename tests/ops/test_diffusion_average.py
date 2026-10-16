@@ -15,7 +15,6 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _binned
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.ops.binning import (
     TieBreakStrategy,
     map_points_to_bins,
@@ -25,9 +24,9 @@ from neurospatial.ops.smoothing import apply_kernel
 
 
 @pytest.fixture(scope="module")
-def polar_env() -> EgocentricPolarEnvironment:
+def polar_env() -> Environment:
     """Full-circle polar env (non-uniform M = annular-sector area)."""
-    return EgocentricPolarEnvironment.create(
+    return Environment.from_polar_egocentric(
         distance_range=(0.0, 40.0),
         angle_range=(-np.pi, np.pi),
         distance_bin_size=2.0,

@@ -14,7 +14,7 @@ paths:
   raises "'rewards' is not an EventsTable (got EventsTable)".
 - Environment records write schema `3.0`: Arena, explicit walls, exact binning,
   lookup, faces, components, clip mapping, graph attributes and coordinate
-  metadata are saved. Loading uses `BinningLayout` and never runs a layout
+  metadata are saved. Loading publishes owned binning data directly and never runs a layout
   builder. Schema `2.0` remains readable with an explicit `UnknownArena`;
   never infer a physical footprint from old outlines, parameters or masks.
   Schemas `1.0` and `1.1` are refused with recreation instructions.

@@ -41,12 +41,12 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment, Regions
-from neurospatial.environment.polar import EgocentricPolarEnvironment
 from neurospatial.layout.engines.graph import GraphLayout
 
 # =============================================================================
@@ -317,7 +317,7 @@ def graph_env(
     layout_instance = GraphLayout()
     layout_instance.build(**layout_build_params)
 
-    return Environment(
+    return publish_environment(
         name="PlusMazeGraph",
         layout=layout_instance,
         layout_type_used="Graph",
@@ -395,7 +395,7 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
     }
     layout_instance = GraphLayout()
     layout_instance.build(**layout_build_params)
-    return Environment(
+    return publish_environment(
         name="SimpleGraphEnvForMask",
         layout=layout_instance,
         layout_type_used="Graph",
@@ -486,7 +486,7 @@ def ymaze_env(ymaze_graph: nx.Graph) -> Environment:
     layout_instance = GraphLayout()
     layout_instance.build(**layout_build_params)
 
-    return Environment(
+    return publish_environment(
         name="YMaze",
         layout=layout_instance,
         layout_type_used="Graph",
@@ -538,7 +538,7 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
     layout_instance = GraphLayout()
     layout_instance.build(**layout_build_params)
 
-    return Environment(
+    return publish_environment(
         name="TMaze",
         layout=layout_instance,
         layout_type_used="Graph",
@@ -1008,7 +1008,7 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
         "mesh_boundary",
     ],
 )
-def built_environment(request) -> Environment | EgocentricPolarEnvironment:
+def built_environment(request) -> Environment | Environment:
     """Small deterministic environments covering every built-in geometry."""
     kind = request.param
     if kind in {"grid8", "grid4"}:
@@ -1076,8 +1076,8 @@ def built_environment(request) -> Environment | EgocentricPolarEnvironment:
 @pytest.fixture(params=["file", "dict", pytest.param("nwb", marks=pytest.mark.nwb)])
 def environment_round_trip(built_environment, request, tmp_path):
     """Save labelled geometry once and expose an independently repeatable loader."""
+    from neurospatial import Environment
     from neurospatial.io.files import from_dict, from_file, to_dict, to_file
-    from neurospatial.layout._binning_layout import BinningLayout
 
     original = copy.deepcopy(built_environment)
     original = original.with_metadata(name="saved_arena")
@@ -1092,17 +1092,17 @@ def environment_round_trip(built_environment, request, tmp_path):
     graph.nodes[0]["label"] = "start"
     first_edge = next(iter(graph.edges))
     graph.edges[first_edge]["annotation"] = ["measured", 7]
-    layout = BinningLayout(
+    layout = Environment._from_binning(
         original._binning,
         connectivity=graph,
         dimension_ranges=original.dimension_ranges,
-        layout_type_tag=original.layout._layout_type_tag,
-        layout_type=original.layout.layout_type,
+        layout_type_tag=original.layout_type,
+        layout_type=original._layout_category,
         build_params=original.layout_parameters,
         is_linearized_track=original.is_linearized_track,
         coordinate_kind=original.arena.coordinate_kind,
     )
-    original = type(original)(
+    original = publish_environment(
         original.name,
         layout,
         original.layout_type,
@@ -1111,6 +1111,7 @@ def environment_round_trip(built_environment, request, tmp_path):
         units=original.units,
         frame=original.frame,
         arena=original.arena,
+        _coordinates=original._coordinate_system,
     )
 
     if request.param == "file":

@@ -78,7 +78,10 @@ def _combine(
     keys, values = tuple(components), tuple(components.values())
     if any(not isinstance(key, str) or not key or "/" in key for key in keys):
         raise ValueError("Component keys must be nonempty strings without '/'.")
-    if any(not isinstance(env, Environment) or not env._is_fitted for env in values):
+    if any(
+        not isinstance(env, Environment) or not env._is_fitted or env._is_polar
+        for env in values
+    ):
         raise TypeError(
             "Combine fitted Cartesian Environment values; polar charts require their own coordinate contract."
         )

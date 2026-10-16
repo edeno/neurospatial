@@ -1,8 +1,4 @@
-"""Transform implementations for Cartesian environments.
-
-Private module functions create environments with modified spatial structure.
-The scientist-facing entry points belong to ``CartesianCoordinates``.
-"""
+"""Cartesian re-binning and selection algorithms for owned environment data."""
 
 from __future__ import annotations
 
@@ -11,6 +7,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import TYPE_CHECKING, cast
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,10 +30,10 @@ def _rebin(
     # --- Input validation ---
 
     # Check layout type using _layout_type_tag (Protocol-safe check)
-    if env.layout._layout_type_tag != "RegularGrid":
+    if env.layout_type != "RegularGrid":
         raise NotImplementedError(
             "rebin() is only supported for RegularGridLayout. "
-            f"Current layout type: {env.layout._layout_type_tag}. "
+            f"Current layout type: {env.layout_type}. "
             "For other layout types, consider using smooth() for field smoothing "
             "or subset() for spatial cropping."
         )
@@ -63,9 +60,8 @@ def _rebin(
 
     # Parse factor
     # Cast to RegularGridLayout to access grid-specific attributes
-    layout = cast("RegularGridLayout", env.layout)
-    grid_shape = layout.grid_shape
-    grid_edges = layout.grid_edges
+    grid_shape = grid.shape
+    grid_edges = grid.edges
 
     # Validate grid attributes (RegularGridLayout always has these)
     if grid_shape is None:
@@ -185,7 +181,7 @@ def _rebin(
     # A diagonal changes more than one coordinate. Inspect actual edges:
     # small or sparsely active grids need not have any full-degree nodes.
     connect_diagonal = any(
-        np.count_nonzero(layout.bin_centers[u] != layout.bin_centers[v]) > 1
+        np.count_nonzero(env.bin_centers[u] != env.bin_centers[v]) > 1
         for u, v in env.connectivity.edges()
     )
 
@@ -228,9 +224,9 @@ def _rebin(
     from neurospatial.layout.base import LayoutEngine
 
     env_cls = cast("type[Environment]", env.__class__)
-    coarse_env = env_cls(
+    coarse_env = env_cls._from_built_layout(
+        cast("LayoutEngine", new_layout),
         name=f"{env.name}_rebinned" if env.name else "",
-        layout=cast("LayoutEngine", new_layout),
         layout_type_used="RegularGrid",
         layout_params_used=new_layout._build_params_used,
         regions=deepcopy(env.regions),
@@ -372,3 +368,81 @@ def _subset_mask(
         )
 
     return mask
+
+
+def _subset(
+    env: SubsetConsumer,
+    *,
+    bins: NDArray[np.bool_] | None = None,
+    region_names: Sequence[str] | None = None,
+    polygon: shapely.Polygon | None = None,
+    invert: bool = False,
+) -> Environment:
+    """Derive selected bins and their graph, bounds and preserved metadata."""
+    mask = _subset_mask(
+        env, bins=bins, region_names=region_names, polygon=polygon, invert=invert
+    )
+    from neurospatial.layout._components import HexagonShapes, TriangleShapes
+    from neurospatial.layout._derive import subset_binning
+
+    binning = subset_binning(env._binning, mask)
+    selected = np.flatnonzero(mask)
+    child_of = {int(old): new for new, old in enumerate(selected)}
+    graph = nx.Graph()
+    graph.graph.update(env.connectivity.graph)
+    # Retain the parent's node iteration order as well as edge order and
+    # orientation; edge fields index that order even on loaded graphs.
+    for old, data in env.connectivity.nodes(data=True):
+        if old in child_of:
+            graph.add_node(child_of[old], **data)
+    for index, (u, v) in enumerate(binning.bins.pairs):
+        old_u, old_v = selected[u], selected[v]
+        data = dict(env.connectivity.edges[old_u, old_v])
+        if binning.rectilinear is not None:
+            data["edge_id"] = index
+        graph.add_edge(int(u), int(v), **data)
+    params = {"source": "subset", "original_n_bins": env.n_bins}
+    tag = "MaskedGrid" if binning.rectilinear is not None else "subset"
+    if binning.rectilinear is not None:
+        ranges = [
+            (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
+        ]
+    else:
+        shapes = binning.shapes
+        vertices = binning.bins.centers
+        if binning.grid_frame is not None:
+            vertices = binning.grid_frame.corners()
+        elif isinstance(shapes, HexagonShapes):
+            angles = shapes.orientation + np.pi / 2 + np.arange(6) * np.pi / 3
+            offsets = shapes.radius * np.column_stack((np.cos(angles), np.sin(angles)))
+            vertices = (shapes.centers[:, None, :] + offsets).reshape(-1, 2)
+        elif isinstance(shapes, TriangleShapes):
+            vertices = shapes.points[shapes.triangles].reshape(-1, 2)
+        else:
+            from neurospatial.layout._polygon import PolygonCells
+
+            if isinstance(shapes, PolygonCells):
+                import shapely
+
+                vertices = np.concatenate(
+                    [shapely.get_coordinates(cell) for cell in shapes.polygons]
+                )
+        ranges = []
+        for axis in vertices.T:
+            low, high = float(axis.min()), float(axis.max())
+            margin = 0.05 * (high - low) if shapes is not None else 0.0
+            ranges.append((low - margin, high + margin))
+    env_cls = cast("type[Environment]", type(env))
+    result = env_cls._from_binning(
+        binning,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        layout_type_tag=tag,
+        layout_type="mask" if binning.rectilinear is not None else "subset",
+        build_params=params,
+        is_linearized_track=env.is_linearized_track,
+        arena=env.arena,
+        units=env.units,
+        frame=env.frame,
+    )
+    return result

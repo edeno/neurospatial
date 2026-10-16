@@ -80,11 +80,7 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
 def test_divergence_is_negative_adjoint_of_gradient(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
 
-    graph, volumes = (
-        type(fv_env)
-        ._create_layout(fv_env.layout_type, fv_env.layout_parameters)
-        .finite_volume_geometry()
-    )
+    graph, volumes = _native_oracle(fv_env).finite_volume_geometry()
     rng = np.random.default_rng(3)
     field = rng.normal(size=fv_env.n_bins)
     flux = rng.normal(size=graph.number_of_edges())
@@ -111,11 +107,7 @@ def test_goal_is_a_sink(uniform_grid, spacing):
 def test_operator_edge_order_matches_connectivity(fv_env):
     from neurospatial.ops.calculus import gradient
 
-    graph, _ = (
-        type(fv_env)
-        ._create_layout(fv_env.layout_type, fv_env.layout_parameters)
-        .finite_volume_geometry()
-    )
+    graph, _ = _native_oracle(fv_env).finite_volume_geometry()
     assert list(graph.edges()) == list(fv_env.connectivity.edges())
     field = np.random.default_rng(5).normal(size=fv_env.n_bins)
     expected = [
@@ -511,3 +503,15 @@ class TestDivergenceOperator:
 
         with pytest.raises(ValueError, match=r"edge_field.*shape"):
             divergence(env, edge_field_too_large)
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

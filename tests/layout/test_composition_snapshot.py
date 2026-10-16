@@ -24,7 +24,7 @@ def snapshot():
     return CombinedLocator(
         ("left", "right"),
         tuple(
-            replace(env.layout.binning(), faces=KnownFaces(env._face_geometry))
+            replace(env._binning, faces=KnownFaces(env._face_geometry))
             for env in children
         ),
         tuple(env.arena for env in children),
@@ -153,7 +153,7 @@ def test_mutated_nested_face_array_is_revalidated():
         np.ones((2, 1, 1), dtype=bool),
         grid_edges=(np.arange(3.0), np.arange(2.0), np.arange(2.0)),
     )
-    child = replace(env.layout.binning(), faces=KnownFaces(env._face_geometry))
+    child = replace(env._binning, faces=KnownFaces(env._face_geometry))
     child.faces.faces.A.setflags(write=True)
     child.faces.faces.A[:] = -1
     combined = CombinedLocator(

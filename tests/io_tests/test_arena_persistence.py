@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
 from neurospatial.io import to_dict
@@ -49,9 +50,9 @@ def test_open_arena_walls_and_provenance_round_trip(
     )
     domain = box(0, 0, 2, 2)
     wall = LineString([(1, 0), (1, 1)])
-    original = Environment(
+    original = publish_environment(
         base.name,
-        base.layout,
+        base,
         base.layout_type,
         base.layout_parameters,
         arena=OpenArena(

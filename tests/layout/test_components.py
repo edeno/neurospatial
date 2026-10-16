@@ -19,7 +19,7 @@ def test_hexagon_shapes_match_layout(built_environment):
     env = built_environment
     shapes = env._binning.shapes
     assert isinstance(shapes, HexagonShapes)
-    source = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    source = _native_oracle(env)
     assert shapes.radius == source.hex_radius_
     assert shapes.orientation == source.hex_orientation_
     np.testing.assert_array_equal(shapes.centers, env.bin_centers)
@@ -32,7 +32,7 @@ def test_triangle_shapes_cover_active_bins(built_environment):
     shapes = env._binning.shapes
     assert isinstance(shapes, TriangleShapes)
     assert shapes.triangles.shape == (env.n_bins, 3)
-    source = type(env)._create_layout(env.layout_type, env.layout_parameters)
+    source = _native_oracle(env)
     np.testing.assert_array_equal(shapes.points, source._full_delaunay_tri.points)
     np.testing.assert_array_equal(
         shapes.triangles,
@@ -132,3 +132,15 @@ def test_components_keep_identity_and_ownership_after_copying(
             assert not np.shares_memory(actual, original)
         else:
             assert actual == original
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    from neurospatial import Environment
+
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

@@ -43,7 +43,7 @@ class TestPointsToBinIndReference:
     def test_single_point_in_grid(self, simple_grid_env):
         """Test single point mapping."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         point = np.array([[5.0, 5.0]])
         result = _points_to_regular_grid_bin_ind(
@@ -60,7 +60,7 @@ class TestPointsToBinIndReference:
     def test_multiple_points(self, simple_grid_env):
         """Test multiple points mapping."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         points = np.array(
             [
@@ -85,7 +85,7 @@ class TestPointsToBinIndReference:
     def test_out_of_bounds_points(self, simple_grid_env):
         """Test points outside grid boundaries."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         points = np.array(
             [
@@ -108,7 +108,7 @@ class TestPointsToBinIndReference:
     def test_nan_points(self, simple_grid_env):
         """Test points with NaN values."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         points = np.array(
             [
@@ -135,7 +135,7 @@ class TestPointsToBinIndReference:
     def test_sparse_grid_inactive_bins(self, sparse_grid_env):
         """Test that points in inactive bins return -1."""
         env = sparse_grid_env
-        layout = env.layout
+        layout = env
 
         # Find a point that would be in an inactive bin
         # (upper right corner in L-shaped environment)
@@ -154,7 +154,7 @@ class TestPointsToBinIndReference:
     def test_large_batch_consistency(self, simple_grid_env):
         """Test that large batches produce consistent results."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         # Generate many random points
         rng = np.random.default_rng(42)
@@ -177,7 +177,7 @@ class TestPointsToBinIndReference:
     def test_bin_center_mapping(self, simple_grid_env):
         """Test that bin centers map to their own bins."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         bin_centers = env.bin_centers
         result = _points_to_regular_grid_bin_ind(
@@ -194,7 +194,7 @@ class TestPointsToBinIndReference:
     def test_edge_cases_at_bin_boundaries(self, simple_grid_env):
         """Test points exactly at bin boundaries."""
         env = simple_grid_env
-        layout = env.layout
+        layout = env
 
         # Points at exact bin edges
         edges = layout.grid_edges

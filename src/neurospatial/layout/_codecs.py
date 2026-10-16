@@ -18,7 +18,6 @@ from shapely.geometry import MultiPolygon, Polygon
 from neurospatial.layout._binning import (
     Binning,
     KnownFaces,
-    LayoutLocator,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
@@ -79,13 +78,8 @@ def encode(obj: object, prefix: str) -> Payload:
     name = type(obj).__name__
     codec = _CODECS.get(name)
     if codec is None or type(obj) is not codec.kind:
-        layout = (
-            f" (layout {type(obj.layout).__name__})"
-            if isinstance(obj, LayoutLocator)
-            else ""
-        )
         raise ValueError(
-            f"cannot save {name}{layout}: no codec is registered for it.\n"
+            f"cannot save {name}: no codec is registered for it.\n"
             "Fix: use an environment with supported built-in binning data; "
             "layout-backed lookup and custom layout linearization cannot be saved."
         )

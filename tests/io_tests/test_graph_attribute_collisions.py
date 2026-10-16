@@ -25,9 +25,7 @@ def _environment(context):
         layout = RegularGridLayout()
         layout.build(bin_size=1.0, dimension_ranges=[(0, 2), (0, 1)])
         _annotate(layout.connectivity)
-        return Environment(
-            "annotated", layout, "RegularGrid", layout._build_params_used
-        )
+        return Environment._from_built_layout(layout, name="annotated")
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))

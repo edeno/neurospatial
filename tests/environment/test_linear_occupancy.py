@@ -556,8 +556,8 @@ class TestLinearOccupancyMaskedGrid:
         time minus the time the straight-line path spends over the hole.
         """
         env = holed_grid_env
-        edges_x = env.layout.grid_edges[0]
-        edges_y = env.layout.grid_edges[1]
+        edges_x = env.grid_edges[0]
+        edges_y = env.grid_edges[1]
         centers_x = (edges_x[:-1] + edges_x[1:]) / 2
         centers_y = (edges_y[:-1] + edges_y[1:]) / 2
 
@@ -604,8 +604,8 @@ class TestLinearOccupancyMaskedGrid:
         correct, not merely that the total is right.
         """
         env = holed_grid_env
-        edges_x = env.layout.grid_edges[0]
-        edges_y = env.layout.grid_edges[1]
+        edges_x = env.grid_edges[0]
+        edges_y = env.grid_edges[1]
         centers_x = (edges_x[:-1] + edges_x[1:]) / 2
         centers_y = (edges_y[:-1] + edges_y[1:]) / 2
 
@@ -635,8 +635,8 @@ class TestLinearOccupancyMaskedGrid:
     def test_occupancy_linear_matches_start_on_fully_active_grid(self, full_grid_env):
         """On an all-active grid, linear and start totals agree (no-op guard)."""
         env = full_grid_env
-        edges_x = env.layout.grid_edges[0]
-        edges_y = env.layout.grid_edges[1]
+        edges_x = env.grid_edges[0]
+        edges_y = env.grid_edges[1]
         centers_x = (edges_x[:-1] + edges_x[1:]) / 2
         centers_y = (edges_y[:-1] + edges_y[1:]) / 2
 

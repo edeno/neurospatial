@@ -13,7 +13,7 @@ from shapely.ops import unary_union
 
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment._protocols import BorderConsumer
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class _PhysicalBorderContact:
 
 
 def _prepare_physical_border(
-    env: EnvironmentProtocol,
+    env: BorderConsumer,
     firing_rate: NDArray[np.float64],
     walls: shapely.Geometry,
 ) -> _PhysicalBorderContact:
@@ -122,7 +122,7 @@ def _prepare_physical_border(
 
 
 def _physical_border_score(
-    env: EnvironmentProtocol,
+    env: BorderConsumer,
     field_bins: NDArray[np.int64],
     walls: shapely.Geometry,
     metric: Literal["geodesic", "euclidean"],

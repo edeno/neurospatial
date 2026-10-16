@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import publish_environment
 
 from neurospatial import Environment
 from neurospatial.environment.decorators import versioned_cached_property
@@ -90,7 +91,7 @@ class TestStateVersionField:
         layout.connectivity = broken
 
         with pytest.raises(ValueError, match="layout engine bug"):
-            Environment("invalid", layout, "MaskedGrid", {})
+            publish_environment("invalid", layout, "MaskedGrid", {})
 
         assert env.connectivity is connectivity
         assert env._state_version == version
@@ -230,7 +231,7 @@ class TestPublishedGeometryIsReadOnly:
         graph.nodes[0]["original_grid_nd_index"] = index
         graph.edges[0, 1]["vector"] = vector
         layout.connectivity = graph
-        published = Environment(
+        published = publish_environment(
             name="", layout=layout, layout_type_used=layout._layout_type_tag
         )
 

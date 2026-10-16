@@ -451,7 +451,7 @@ class TestLinearizationProperties:
         props = graph_env.linearization_properties
 
         # GraphLayout should provide linear_bin_edges
-        if hasattr(graph_env.layout, "linear_bin_edges"):
+        if hasattr(graph_env, "linear_bin_edges"):
             assert "linear_bin_edges" in props
 
     def test_linearization_properties_has_track_graph(
@@ -463,7 +463,7 @@ class TestLinearizationProperties:
         props = graph_env.linearization_properties
 
         # GraphLayout should provide track_graph
-        if hasattr(graph_env.layout, "track_graph"):
+        if hasattr(graph_env, "track_graph"):
             assert "track_graph" in props
 
 

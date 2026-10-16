@@ -307,10 +307,8 @@ class TestEnvironmentComputeKernel:
         assert kernel.shape == (env.n_bins, env.n_bins)
 
     def test_compute_kernel_requires_fitted(self):
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
-        layout = RegularGridLayout()
-        env = Environment(name="test", layout=layout)
+        env = Environment.__new__(Environment)
+        env._is_fitted = False
         assert not env._is_fitted
         with pytest.raises(RuntimeError, match="fully initialized"):
             env.compute_kernel(bandwidth=1.0)

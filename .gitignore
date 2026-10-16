@@ -203,3 +203,6 @@ session.nwb
 
 # subagent-driven per-task worktrees (local, not tracked)
 .claude/worktrees/
+
+# Development architecture checks
+.import_linter_cache/

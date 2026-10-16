@@ -82,12 +82,13 @@ neurospatial.spatial_view_field : Spatial view field computation
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.environment import Environment
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
 
 __all__ = [
     "FieldOfView",

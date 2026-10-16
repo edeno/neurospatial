@@ -9,7 +9,7 @@ paths:
 
 Before a structural change, read the "Environment architecture" and "Diffusion
 geometry providers" sections of `docs/contributing.md`. They define where new
-operations live, how to extract mixin methods, the published-geometry
+operations live, how thin public methods delegate to domain functions, the published-geometry
 construction path, Cartesian versus polar capabilities, and the
 `scripts/environment_baseline.py` comparison every refactor needs.
 

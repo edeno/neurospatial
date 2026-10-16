@@ -1,15 +1,11 @@
-"""Owned bin geometry and the capabilities used by environment operations.
-
-Layout-backed adapters retain point lookup and finite-volume geometry behavior
-while exposing their capabilities together with the published bin arrays.
-"""
+"""Owned bin geometry, lookup and finite-volume face capabilities."""
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 import networkx as nx
 import numpy as np
@@ -17,18 +13,15 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.layout._capabilities import (
     RectilinearGrid,
-    RectilinearGridProvider,
     TrackLinearizationProvider,
 )
 from neurospatial.layout._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.layout._diffusion import (
     FaceGeometry,
-    FiniteVolumeGeometryProvider,
 )
-from neurospatial.layout._face_normals import FaceNormals, geometric_normals
+from neurospatial.layout._face_normals import FaceNormals
 from neurospatial.layout._grid_frame import FramedGrid
 from neurospatial.layout._rebin_spec import GridBinningSpec
-from neurospatial.layout.base import LayoutEngine
 
 if TYPE_CHECKING:
     from neurospatial.layout._polygon import ClipMapping, PolygonCells
@@ -211,17 +204,6 @@ class Locator(Protocol):
         ...
 
 
-@dataclass(frozen=True, eq=False)
-class LayoutLocator:
-    """Point lookup delegated to a built layout."""
-
-    layout: LayoutEngine
-
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Return the layout's bin indices with native integer dtype."""
-        return self.layout.point_to_bin_index(points).astype(np.intp, copy=False)
-
-
 class FacesSource(Protocol):
     """Source of an environment's finite-volume cell faces."""
 
@@ -237,83 +219,6 @@ class FacesSource(Protocol):
     def missing_error(self, operation: str) -> Exception:
         """Return an actionable error when the named operation needs faces."""
         ...
-
-
-def _missing_geometry_error(layout: object, operation: str) -> NotImplementedError:
-    """Explain which operation needs cell geometry that ``layout`` cannot supply.
-
-    Parameters
-    ----------
-    layout : object
-        The environment's layout engine, which lacks ``finite_volume_geometry``.
-    operation : str
-        Name of the analysis the scientist called, used to start the message.
-
-    Returns
-    -------
-    NotImplementedError
-        Error with What / Why / Fix sections, ready to raise.
-    """
-    from neurospatial._exceptions import _format_error
-
-    return NotImplementedError(
-        _format_error(
-            f"{operation} needs finite-volume cell geometry, which layout "
-            f"{type(layout).__name__!r} does not provide.",
-            why=(
-                "Why: layouts built by Environment factories supply cell faces "
-                f"and measures; {type(layout).__name__!r} does not."
-            ),
-            fix=(
-                "build the environment with a factory method, e.g. "
-                "Environment.from_samples(positions, bin_size=...)"
-            ),
-        )
-    )
-
-
-@dataclass(frozen=True, eq=False)
-class LayoutFaces:
-    """Finite-volume faces delegated to a layout, checked against connectivity."""
-
-    layout: LayoutEngine
-    connectivity: nx.Graph
-    _available: bool = field(init=False, repr=False)
-    _n_bins: int = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "_available", isinstance(self.layout, FiniteVolumeGeometryProvider)
-        )
-        object.__setattr__(self, "_n_bins", self.layout.bin_centers.shape[0])
-
-    @property
-    def available(self) -> bool:
-        """Whether the layout supplied finite-volume geometry at publication."""
-        return self._available
-
-    def build(self) -> FaceGeometry:
-        """Build validated cell faces in the published connectivity order."""
-        layout = cast("FiniteVolumeGeometryProvider", self.layout)
-        graph, volumes = layout.finite_volume_geometry()
-        # Gradient and divergence index edge fields by env.connectivity's edge
-        # order, so the layout's graph must be that graph, edge for edge.
-        n_bins = self._n_bins
-        if graph.number_of_nodes() != n_bins or list(graph.edges()) != list(
-            self.connectivity.edges()
-        ):
-            raise ValueError(
-                f"{type(layout).__name__}.finite_volume_geometry() returned a graph "
-                f"with {graph.number_of_nodes()} bins and {graph.number_of_edges()} "
-                f"edges that does not match the environment's {n_bins} bins "
-                f"and {self.connectivity.number_of_edges()} connectivity edges in "
-                "order; the layout's graph is out of sync with env.connectivity."
-            )
-        return FaceGeometry.from_graph(graph, volumes)
-
-    def missing_error(self, operation: str) -> NotImplementedError:
-        """Explain why the named operation cannot obtain cell geometry."""
-        return _missing_geometry_error(self.layout, operation)
 
 
 @dataclass(frozen=True, eq=False)
@@ -538,110 +443,3 @@ class Binning:
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     grid_frame: FramedGrid | None = None
-
-
-def binning_from_layout(layout: LayoutEngine, connectivity: nx.Graph) -> Binning:
-    """Snapshot a built layout's bins and validated connectivity capabilities.
-
-    Parameters
-    ----------
-    layout : LayoutEngine
-        Built layout supplying bin coordinates, measures and point lookup.
-    connectivity : networkx.Graph
-        Validated environment connectivity in its published edge order.
-
-    Returns
-    -------
-    Binning
-        Owned bin arrays and adapters retaining the layout's capabilities.
-    """
-    factory = getattr(layout, "binning", None)
-    if factory is not None:
-        return cast("Binning", factory())
-    edges = list(connectivity.edges(data=True))
-    pairs = np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2)
-    distances = np.array([data["distance"] for _, _, data in edges], dtype=np.float64)
-    centers = np.asarray(layout.bin_centers, dtype=np.float64)
-    bins = SpatialBins.from_arrays(
-        centers=centers,
-        sizes=layout.bin_sizes(),
-        measure_dim=1 if layout.is_linearized_track else centers.shape[1],
-        pairs=pairs,
-        pair_distances=distances,
-    )
-    grid = (
-        layout.rectilinear_grid()
-        if isinstance(layout, RectilinearGridProvider)
-        else None
-    )
-    track = _linearization_of(layout)
-    from neurospatial.layout.engines._polar import _PolarGridLayout
-
-    spec = None
-    if (
-        not isinstance(cast("object", layout), _PolarGridLayout)
-        and grid is not None
-        and len(grid.edges) == bins.n_dims
-        and track is None
-        and np.allclose(
-            bins.sizes,
-            np.prod([edge[1] - edge[0] for edge in grid.edges]),
-            rtol=64 * np.finfo(float).eps,
-            atol=0,
-        )
-    ):
-        spec = getattr(layout, "_grid_spec", None)
-        if spec is None:
-            # Manually constructed legacy layouts only establish their current
-            # edge pattern; native builders supply the actual choice above.
-            spec = GridBinningSpec(
-                np.array([edge[0] for edge in grid.edges]),
-                np.eye(bins.n_dims + 1),
-                any(np.count_nonzero(centers[u] != centers[v]) > 1 for u, v in pairs),
-            )
-    locator = _locator_of(layout)
-    normals = (
-        geometric_normals(locator, bins.centers, bins.pairs)
-        if not isinstance(cast("object", layout), _PolarGridLayout)
-        and track is None
-        and bins.n_dims in (2, 3)
-        else None
-    )
-    return Binning(
-        kind=getattr(layout, "_layout_type_tag", type(layout).__name__),
-        bins=bins,
-        locator=locator,
-        faces=LayoutFaces(layout, connectivity),
-        rectilinear=grid,
-        linearization=track,
-        grid_spec=spec,
-        face_normals=FaceNormals(normals) if normals is not None else None,
-        shapes=_shapes_of(layout),
-        outline=_outline_of(layout),
-    )
-
-
-def _locator_of(layout: LayoutEngine) -> Locator:
-    """Use owned lookup data when a layout supplies it."""
-    factory = getattr(layout, "locator", None)
-    return cast("Locator", factory()) if factory is not None else LayoutLocator(layout)
-
-
-def _linearization_of(layout: LayoutEngine) -> TrackLinearizationProvider | None:
-    """Use owned track coordinates, retaining compatibility with custom layouts."""
-    factory = getattr(layout, "linearization", None)
-    if factory is not None:
-        return cast("TrackLinearizationProvider", factory())
-    return layout if isinstance(layout, TrackLinearizationProvider) else None
-
-
-def _shapes_of(layout: LayoutEngine) -> HexagonShapes | TriangleShapes | None:
-    """Read optional drawing shapes without knowing the layout class."""
-    factory = getattr(layout, "bin_shapes", None)
-    return cast("HexagonShapes | TriangleShapes", factory()) if factory else None
-
-
-def _outline_of(layout: LayoutEngine) -> Outline | None:
-    """Read an optional immutable boundary for drawing."""
-    factory = getattr(layout, "outline", None)
-    return cast("Outline | None", factory()) if factory else None

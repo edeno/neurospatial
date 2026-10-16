@@ -20,7 +20,6 @@ from matplotlib.patches import RegularPolygon
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
-from neurospatial.layout._binning import LayoutFaces
 
 
 def record_path(data, prefix, path):
@@ -259,10 +258,9 @@ def test_plot_artists_unchanged(built_environment, request, plot_artists, operat
 
 def _detached_native_layout(env, monkeypatch):
     """Inject a detached builder for tests deliberately corrupting layout data."""
-    faces = env.layout.binning().faces
-    assert isinstance(faces, LayoutFaces)
-    monkeypatch.setattr(env, "_layout", faces.layout)
-    return faces.layout
+    layout = _native_oracle(env)
+    monkeypatch.setattr(env, "_layout", layout, raising=False)
+    return layout
 
 
 def test_plot_field_renderer_by_component(built_environment, request, monkeypatch):
@@ -423,3 +421,13 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 )
     finally:
         plt.close(figure)
+
+
+def _native_oracle(env):
+    if env._is_polar:
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(**env.layout_parameters)
+        return layout
+    return Environment._create_layout(env.layout_type, env.layout_parameters)

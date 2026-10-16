@@ -321,7 +321,7 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
 
 
 def test_native_capture_does_not_materialize_faces(monkeypatch):
-    from neurospatial.layout._binning_layout import BinningLayout
+    from neurospatial import Environment
     from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
     def refuse(self):
@@ -332,12 +332,12 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
         np.array([[0.0, 0.0], [3.0, 4.0]]), bin_size=1.0, infer_active_bins=False
     )
     assert env._binning.face_normals is not None
-    bridge = BinningLayout(
+    bridge = Environment._from_binning(
         env._binning,
         connectivity=env.to_networkx(),
         dimension_ranges=env.dimension_ranges,
-        layout_type_tag=env.layout._layout_type_tag,
-        layout_type=env.layout.layout_type,
+        layout_type_tag=env.layout_type,
+        layout_type=env._layout_category,
         build_params=env.layout_parameters,
         is_linearized_track=False,
     )
@@ -401,7 +401,7 @@ def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
 
 @pytest.mark.parametrize("built_environment", ["polar_open"], indirect=True)
 def test_polar_records_refuse_cartesian_normal_components(built_environment):
-    from neurospatial.layout._binning_layout import BinningLayout
+    from neurospatial import Environment
 
     env = built_environment
     delta = (
@@ -409,12 +409,12 @@ def test_polar_records_refuse_cartesian_normal_components(built_environment):
     )
     normals = delta / np.linalg.norm(delta, axis=1)[:, None]
     with pytest.raises(ValueError, match="Cartesian"):
-        BinningLayout(
+        Environment._from_binning(
             replace(env._binning, face_normals=FaceNormals(normals)),
             connectivity=env.to_networkx(),
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout._layout_type_tag,
-            layout_type=env.layout.layout_type,
+            layout_type_tag=env.layout_type,
+            layout_type=env._layout_category,
             build_params=env.layout_parameters,
             is_linearized_track=False,
             coordinate_kind="polar",

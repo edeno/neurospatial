@@ -28,11 +28,13 @@ class TestValidateEnvironment:
     def test_unfitted_environment_raises_error(self):
         """Test that unfitted environment raises RuntimeError."""
         # Create a minimal layout that hasn't been built
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-        layout = RegularGridLayout()
         # Don't call build(), so it remains unfitted
-        env = Environment(name="unfitted", layout=layout)
+        from neurospatial.environment._metadata import _Metadata
+
+        env = Environment.__new__(Environment)
+        env._metadata = _Metadata("unfitted", None, None)
+        env._is_fitted = False
 
         with pytest.raises(RuntimeError, match="not fitted"):
             validate_environment(env)

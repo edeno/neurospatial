@@ -58,12 +58,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
-from neurospatial.environment.decorators import EnvironmentNotFittedError
+from neurospatial._exceptions import EnvironmentNotFittedError
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.environment import Environment
+    from neurospatial.environment._coordinates import CartesianSystem
 
 __all__ = [
     "ProbabilityMappingParams",
@@ -444,8 +445,8 @@ def _map_inverse_distance_weighted(
 
 
 def map_probabilities(
-    source_env: Environment,
-    target_env: Environment,
+    source_env: Environment[CartesianSystem],
+    target_env: Environment[CartesianSystem],
     source_probs: NDArray[np.float64],
     *,
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
@@ -500,6 +501,9 @@ def map_probabilities(
         If either `source_env` or `target_env` is not fitted.
     ValueError
         If `source_probabilities` has incorrect shape, or if dims mismatch.
+    CartesianOnlyError
+        If either environment is polar: bins are matched by nearest Cartesian
+        bin center after a similarity transform.
 
     Examples
     --------
@@ -544,6 +548,17 @@ def map_probabilities(
         mode=mode,
         n_neighbors=n_neighbors,
     )
+    from neurospatial.environment._coordinates import _require_cartesian_coordinates
+
+    for env in (source_env, target_env):
+        _require_cartesian_coordinates(
+            env,
+            "map_probabilities()",
+            instead=(
+                "Bins are matched by nearest Cartesian center; map probabilities "
+                "between allocentric Cartesian environments."
+            ),
+        )
     n_src = params.n_source_bins
     n_tgt = params.n_target_bins
 

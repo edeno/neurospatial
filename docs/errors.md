@@ -155,7 +155,7 @@ if nan_count > 0:
 ```
 
 **See Also:**
-- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
+- [Environment.from_samples() documentation](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.from_samples)
 - [Quickstart Guide](getting-started/quickstart.md)
 
 ---
@@ -223,7 +223,7 @@ env = Environment.from_samples(
 - Mixing up bin_size with number of bins: bin_size is spatial extent, not count
 
 **See Also:**
-- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
+- [Environment.from_samples() documentation](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.from_samples)
 - [Layout validation module](api/neurospatial/layout/validation.md#neurospatial.layout.validation)
 
 ---
@@ -327,6 +327,11 @@ composite_3d = Environment.combine({str(i): env for i, env in enumerate(envs_3d)
 <a id="e1004"></a>
 
 ### E1004: Environment not fitted
+
+This is a legacy initialization guard for partially constructed internal
+objects. Normal factory calls return complete environments; they do not require
+a separate fit step. Calling `Environment()` directly raises
+[E1006](#e1006-environment-constructed-directly) immediately, before any query.
 
 **Error Message Example:**
 ```
@@ -494,7 +499,7 @@ This restriction is intentional and cannot be disabled. If you have a legitimate
 
 **See Also:**
 - [I/O Module Documentation](api/neurospatial/io/index.md#neurospatial.io)
-- [Environment serialization API](api/neurospatial/environment/serialization.md#neurospatial.environment.serialization.EnvironmentSerialization)
+- [Environment serialization API](api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.to_file)
 
 ---
 

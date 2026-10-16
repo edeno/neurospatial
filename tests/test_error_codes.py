@@ -145,10 +145,9 @@ class TestErrorCodeE1004NotFitted:
         """Test that E1004 error code appears for unfitted environment."""
         # Create minimal unfitted environment
         # (Environment requires layout now, so we use a minimal setup)
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-        layout = RegularGridLayout()
-        env = Environment(layout=layout)  # Not fitted yet (no _is_fitted=True)
+        env = Environment.__new__(Environment)
+        env._is_fitted = False
 
         # Try to call a method that requires fitted state
         with pytest.raises(RuntimeError, match=r"\[E1004\]"):
@@ -156,10 +155,9 @@ class TestErrorCodeE1004NotFitted:
 
     def test_e1004_error_includes_usage_example(self):
         """Test that E1004 error includes correct usage example."""
-        from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-        layout = RegularGridLayout()
-        env = Environment(layout=layout)  # Not fitted
+        env = Environment.__new__(Environment)
+        env._is_fitted = False  # Not fitted
 
         with pytest.raises(RuntimeError) as exc_info:
             env.bin_at([[10.0, 20.0]])
