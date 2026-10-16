@@ -1,14 +1,14 @@
 """Decorators for Environment methods.
 
 This module provides utility decorators used throughout the Environment class
-to enforce initialization and cache contracts.
+to enforce initialization contracts.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Generic, ParamSpec, TypeVar, overload
+from typing import ParamSpec, TypeVar
 
 from neurospatial._exceptions import (
     EnvironmentNotFittedError as EnvironmentNotFittedError,
@@ -77,114 +77,3 @@ def check_fitted(method: Callable[P, T]) -> Callable[P, T]:
         return method(*args, **kwargs)
 
     return _inner
-
-
-# ----------------------------------------------------------------------
-# Versioned cached property
-# ----------------------------------------------------------------------
-
-
-class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.cached_property
-    """Cached property that auto-invalidates on a host ``_state_version`` bump.
-
-    Behaves like :func:`functools.cached_property`, but the cached
-    value is keyed by the host instance's ``_state_version`` integer.
-    When a property is accessed, the wrapper compares the version
-    captured at cache time against the instance's current
-    ``_state_version``; on mismatch the underlying function is re-run
-    and the new value is cached.
-
-    Environment uses ordinary private cached properties over immutable geometry.
-    This descriptor remains available for hosts that advance their version
-    explicitly. The host class must expose an
-    integer attribute named ``_state_version`` and must allow
-    per-instance attribute storage (no ``__slots__`` without
-    ``_state_version`` plus the versioned cache keys).
-
-    Limitations
-    -----------
-    Invalidation is **only** triggered by ``_state_version`` bumps. The
-    descriptor does **not** fingerprint the underlying state. The host must own
-    and protect its state so edits cannot bypass invalidation. Assigning or
-    deleting a cached property raises rather than shadowing its descriptor and
-    bypassing future version checks.
-
-    Cache layout
-    ------------
-    The cached value lives at
-    ``instance.__dict__[f"_versioned_cache__{attr_name}"]`` and the
-    captured version at
-    ``instance.__dict__[f"_versioned_cache__{attr_name}__version"]``.
-    These private keys keep computed values separate from the read-only
-    descriptor's attribute name. The descriptor checks the version on every
-    access.
-
-    Examples
-    --------
-    >>> class Env:
-    ...     _state_version = 0
-    ...
-    ...     @versioned_cached_property
-    ...     def expensive(self) -> int:
-    ...         print("computing")
-    ...         return 42
-    >>> e = Env()
-    >>> e.expensive
-    computing
-    42
-    >>> e.expensive  # cached
-    42
-    >>> e._state_version += 1
-    >>> e.expensive  # recomputes after version bump
-    computing
-    42
-    """
-
-    def __init__(self, func: Callable[[Any], T]) -> None:
-        self.func = func
-        self.attrname: str | None = None
-        self.__doc__ = func.__doc__
-
-    def __set_name__(self, owner: type, name: str) -> None:
-        if self.attrname is None:
-            self.attrname = name
-        elif self.attrname != name:
-            raise TypeError(
-                "Cannot assign the same versioned_cached_property to two "
-                f"different names ({self.attrname!r} and {name!r})."
-            )
-
-    @overload
-    def __get__(
-        self, instance: None, owner: type | None = None
-    ) -> versioned_cached_property[T]: ...
-
-    @overload
-    def __get__(self, instance: object, owner: type | None = None) -> T: ...
-
-    def __get__(
-        self, instance: object | None, owner: type | None = None
-    ) -> T | versioned_cached_property[T]:
-        if instance is None:
-            return self
-        if self.attrname is None:
-            raise TypeError(
-                "Cannot use versioned_cached_property without calling __set_name__ on it."
-            )
-        cache = instance.__dict__
-        # Keep cache storage separate from the read-only descriptor's name.
-        value_key = f"_versioned_cache__{self.attrname}"
-        version_key = f"{value_key}__version"
-        current_version = getattr(instance, "_state_version", 0)
-        if value_key in cache and cache.get(version_key) == current_version:
-            return cache[value_key]  # type: ignore[no-any-return]
-        value = self.func(instance)
-        cache[value_key] = value
-        cache[version_key] = current_version
-        return value
-
-    def __set__(self, instance: object, value: T) -> None:
-        raise AttributeError(f"{type(instance).__name__}.{self.attrname} is read-only.")
-
-    def __delete__(self, instance: object) -> None:
-        raise AttributeError(f"{type(instance).__name__}.{self.attrname} is read-only.")

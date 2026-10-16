@@ -11,7 +11,6 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.environment.decorators import versioned_cached_property
 from neurospatial.ops.calculus import divergence, gradient
 
 
@@ -198,29 +197,3 @@ def test_public_cached_properties_cannot_be_rebound(env, name, access_first, ope
             setattr(env, name, "caller value")
         else:
             delattr(env, name)
-
-
-class _VersionedValue:
-    _state_version = 0
-
-    def __init__(self):
-        self.calls = 0
-
-    @versioned_cached_property
-    def value(self):
-        self.calls += 1
-        return self.calls
-
-
-@pytest.mark.parametrize("operation", ["set", "delete"])
-def test_versioned_cached_property_rejects_rebinding(operation):
-    host = _VersionedValue()
-    assert host.value == 1
-    with pytest.raises(AttributeError, match="read-only"):
-        if operation == "set":
-            host.value = 99
-        else:
-            del host.value
-    assert host.value == 1
-    host._state_version += 1
-    assert host.value == 2
