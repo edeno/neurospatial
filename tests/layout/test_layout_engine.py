@@ -577,30 +577,50 @@ class TestBuildChoices:
         }
         assert type(engine._build_params_used["bin_size"]) is float
 
-    def test_undeclared_data_is_refused_before_building(self):
+    @pytest.mark.parametrize("style", ["named", "kwargs"])
+    def test_undeclared_data_is_refused_and_the_printed_fix_works(self, style):
+        """Both build signatures refuse data, and declaring it as the error says works."""
         from neurospatial.layout.base import capture_build_params
 
-        built = []
+        def engine(decorator):
+            if style == "named":
 
-        class Engine:
-            @capture_build_params
-            def build(self, *, positions):
-                built.append(positions)
+                class Engine:
+                    @decorator
+                    def build(self, *, positions, bin_size):
+                        self.built = positions
 
+            else:
+
+                class Engine:  # the protocol's documented build(**kwargs) form
+                    @decorator
+                    def build(self, **kwargs):
+                        self.built = kwargs["positions"]
+
+            return Engine()
+
+        refused = engine(capture_build_params)
         with pytest.raises(TypeError, match=r"'positions' is not a build choice") as e:
-            Engine().build(positions=np.zeros((4, 2)))
-        assert "data=('positions',)" in str(e.value)
-        assert not built
+            refused.build(positions=np.zeros((4, 2)), bin_size=2.0)
+        assert "@capture_build_params(data=('positions',))" in str(e.value)
+        assert not hasattr(refused, "built")
+
+        declared = engine(capture_build_params(data=("positions",)))
+        declared.build(positions=np.zeros((4, 2)), bin_size=2.0)
+        assert declared._build_params_used == {"bin_size": 2.0}
+        assert declared.built.shape == (4, 2)
 
     def test_unknown_data_name_is_refused_at_decoration(self):
         from neurospatial.layout.base import capture_build_params
 
-        with pytest.raises(TypeError, match="does not take"):
+        with pytest.raises(TypeError, match="does not take") as error:
 
             class Engine:
                 @capture_build_params(data=("points",))
                 def build(self, *, positions):
                     pass
+
+        assert "Fix: list only names" in str(error.value)
 
     def test_subclass_build_record_wins_over_its_parent_build(self):
         """A subclass that calls super().build() records its own choices."""

@@ -39,7 +39,15 @@ def _choice(value: Any) -> Any:
     raise TypeError(f"{type(value).__name__} is not a scalar or a flat sequence")
 
 
-def build_choices(params: Mapping[str, Any], *, owner: str) -> dict[str, Any]:
+_DECLARE_DATA = (
+    "declare it as data with @capture_build_params(data=({name!r},)) on the "
+    "engine's build method"
+)
+
+
+def build_choices(
+    params: Mapping[str, Any], *, owner: str, fix: str = _DECLARE_DATA
+) -> dict[str, Any]:
     """Return build choices as plain values, refusing anything that is data.
 
     A choice is a scalar (bool, number, string or None) or a flat sequence of
@@ -53,6 +61,9 @@ def build_choices(params: Mapping[str, Any], *, owner: str) -> dict[str, Any]:
         from a saved environment.
     owner : str
         Where the choices come from, named in the error.
+    fix : str, optional
+        How to fix a refused value, formatted with the argument's ``name``;
+        by default, declare it as data in :func:`capture_build_params`.
 
     Returns
     -------
@@ -77,10 +88,7 @@ def build_choices(params: Mapping[str, Any], *, owner: str) -> dict[str, Any]:
                         "such as bin_size; input data (positions, masks, "
                         "polygons, graphs) is described by its bins instead."
                     ),
-                    fix=(
-                        f"declare it as data with @capture_build_params(data=({name!r},)) "
-                        "on the engine's build method"
-                    ),
+                    fix=fix.format(name=name),
                 )
             ) from None
     return choices
@@ -127,8 +135,9 @@ def capture_build_params(
     Raises
     ------
     TypeError
-        At decoration, if ``data`` names an argument ``build`` does not have.
-        At build, if an argument outside ``data`` is not a build choice.
+        At decoration, if ``data`` names an argument ``build`` does not have
+        (not checked when ``build`` takes ``**kwargs``). At build, if an
+        argument outside ``data`` is not a build choice.
 
     Examples
     --------
@@ -146,17 +155,24 @@ def capture_build_params(
 
     def decorate(method: Callable[..., T]) -> Callable[..., T]:
         signature = inspect.signature(method)
-        unknown = sorted(data_names - set(signature.parameters))
-        if unknown:
-            raise TypeError(
-                f"capture_build_params(data=...) names {unknown}, which "
-                f"{method.__qualname__} does not take."
-            )
         variadic = {
             name
             for name, parameter in signature.parameters.items()
             if parameter.kind is inspect.Parameter.VAR_KEYWORD
         }
+        # A build(**kwargs) method may receive any name, so only a method
+        # without **kwargs can be checked against its parameters.
+        unknown = sorted(data_names - set(signature.parameters))
+        if unknown and not variadic:
+            raise TypeError(
+                _format_error(
+                    f"capture_build_params(data=...) names {unknown}, which "
+                    f"{method.__qualname__} does not take.",
+                    why="Why: data names must be build arguments, or they would "
+                    "silently never match.",
+                    fix="list only names of the build method's parameters in data=",
+                )
+            )
 
         @wraps(method)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> T:
@@ -165,7 +181,11 @@ def capture_build_params(
             params: dict[str, Any] = {}
             for name, value in list(bound.arguments.items())[1:]:
                 if name in variadic:
-                    params.update(value)
+                    params.update(
+                        (key, item)
+                        for key, item in value.items()
+                        if key not in data_names
+                    )
                 elif name not in data_names:
                     params[name] = value
             # Refuse data before building; record after, so the outermost
