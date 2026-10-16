@@ -23,6 +23,14 @@
   repeated vertices are still refused, now with a message that names the
   triangles.
 
+- `Environment.rebin(factor=...)` keeps a coarse cell whose center lies on the
+  arena boundary, such as the cell beside a missing corner of a grid mask or of
+  a grid-aligned polygon. Two-dimensional arenas previously required strictly
+  interior centers, unlike 1-D and 3-D masks, so a factor of 2 dropped coarse
+  cells that held recorded fine bins (3 of 15 bins of a 4-by-4 mask without one
+  corner), and positions in them mapped to `-1`. A factor of 2 now merges every
+  fine bin of a grid mask inside the (possibly truncated) coarse extent.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam
@@ -191,7 +199,8 @@
   Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB
   storage; new sizes are physical lengths along those axes. Other families and
   records without a specification refuse this mode. Integer-factor coarsening
-  retains its existing behavior. Fields and fitted models are not transferred.
+  keeps its truncation warning and now also accepts masked and polygon grids
+  with uniform rectangular cells. Fields and fitted models are not transferred.
 
 - Add `Environment.combine` for owned disjoint components, with stable keyed
   bin sources, qualified regions and deterministic mutual-nearest-neighbor

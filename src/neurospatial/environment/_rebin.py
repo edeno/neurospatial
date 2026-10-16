@@ -410,18 +410,12 @@ def _rebin_factor(
     coarse_bin_centers = np.column_stack(center_coords)
 
     # Finalize active cells before constructing the graph or publishing an
-    # environment. The original arena remains the continuous authority.
+    # environment. The original arena remains the continuous authority. Its
+    # closed containment keeps a coarse cell centered on the domain boundary,
+    # such as the corner beside a missing fine cell, in every dimension.
     keep = np.ones(len(coarse_bin_centers), dtype=bool)
     if env.arena.domain_known:
-        domain = env.arena.polygonal_domain()
-        if domain is not None:
-            from shapely import contains_xy
-
-            keep = contains_xy(
-                domain, coarse_bin_centers[:, 0], coarse_bin_centers[:, 1]
-            )
-        else:
-            keep = env.arena.contains(coarse_bin_centers)
+        keep = env.arena.contains(coarse_bin_centers)
         if not np.any(keep):
             raise ValueError(
                 "Rebinning retains no coarse bin center inside the original arena. "

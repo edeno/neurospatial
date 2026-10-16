@@ -2270,9 +2270,13 @@ class Environment(Generic[_C]):
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: Keep centers strictly inside a polygonal arena, or
-        contained by another known arena. Unknown domains retain the full
-        coarse grid. Rebinning preserves the arena rather than filling its holes.
+        **Active bins**: With ``factor``, keep coarse cells whose centers lie
+        in the known arena, including on its boundary, as ``contains`` does;
+        a factor of 2 therefore merges every fine bin of a grid mask. With
+        ``bin_size``, keep new cells whose centers lie strictly inside a
+        polygonal arena, or are contained by another known arena. Unknown
+        domains retain the full coarse grid. Rebinning preserves the arena
+        rather than filling its holes.
 
         **Metadata preservation**: The arena, units, frame and named regions
         are preserved. Region coordinates and metadata remain intact even when
