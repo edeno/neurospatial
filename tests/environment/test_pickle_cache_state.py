@@ -32,7 +32,7 @@ def _refuse_build():
 
 def _derive_or_pickle(env, method):
     if method == "derived":
-        return env.subset(bins=np.ones(env.n_bins, dtype=bool))
+        return env.subset(mask=np.ones(env.n_bins, dtype=bool))
     return pickle.loads(pickle.dumps(env))
 
 

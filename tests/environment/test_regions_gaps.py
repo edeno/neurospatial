@@ -763,7 +763,7 @@ class TestRegionIntegrationAdvanced:
         subset_mask = np.zeros(env.n_bins, dtype=bool)
         subset_mask[subset_bins_idx] = True
 
-        subset_env = env.subset(bins=subset_mask)
+        subset_env = env.subset(mask=subset_mask)
 
         # Subset should have fewer bins
         assert subset_env.n_bins < env.n_bins

@@ -26,7 +26,7 @@ def room(*, wall=True):
 
 def test_physical_wall_hit_is_exact_and_independent_of_analysis_crop():
     env = room()
-    crop = env.subset(bins=env.bin_centers[:, 0] < 4)
+    crop = env.subset(mask=env.bin_centers[:, 0] < 4)
     for e in (env, crop, Environment.from_dict(crop.to_dict())):
         np.testing.assert_allclose(
             compute_viewed_location(
@@ -208,7 +208,7 @@ def test_cues_and_viewed_bins_are_occluded_by_internal_wall():
 
 def test_missing_analysis_bins_do_not_occlude_physical_cues():
     full = room(wall=False)
-    crop = full.subset(bins=full.bin_centers[:, 0] < 4)
+    crop = full.subset(mask=full.bin_centers[:, 0] < 4)
     cues = np.array([[7.5, 4.5]])
     visible, _, _ = visible_cues(crop, np.array([2.5, 4.5]), 0.0, cues)
     assert visible[0]
@@ -377,7 +377,7 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
         ]
     )
     parent = room()
-    cropped = parent.subset(bins=parent.bin_centers[:, 0] < 4).apply_transform(
+    cropped = parent.subset(mask=parent.bin_centers[:, 0] < 4).apply_transform(
         Affine2D(matrix)
     )
     clipped = parent.clip(box(4.2, 4.2, 5, 4.8)).apply_transform(Affine2D(matrix))
@@ -429,7 +429,7 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
     one = _precompute_view_bins(env, origins[:1], headings[:1], gaze_model="ray_cast")[
         0
     ]
-    selected = env.subset(bins=np.arange(env.n_bins) != one)
+    selected = env.subset(mask=np.arange(env.n_bins) != one)
     np.testing.assert_array_equal(
         _precompute_view_bins(
             selected, origins[:1], headings[:1], gaze_model="ray_cast"
@@ -536,7 +536,7 @@ def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
         grid_edges=(np.arange(11.0),) * 2,
         arena=OpenArena(box(0, 0, 10, 10)),
     )
-    selected = full.subset(bins=np.arange(full.n_bins) != 94)
+    selected = full.subset(mask=np.arange(full.n_bins) != 94)
     observer = np.array([[2.5, 2.5]])
     target = np.array([10.0, 4.0 + offset])
     delta = target - observer[0]
@@ -673,7 +673,7 @@ def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
     from neurospatial.encoding._view_binning import prepare_view_binning
 
     full = room(wall=False)
-    cropped = full.subset(bins=full.bin_centers[:, 0] < 4)
+    cropped = full.subset(mask=full.bin_centers[:, 0] < 4)
     positions = np.tile([2.5, 4.5], (3, 1))
     with pytest.raises(NotImplementedError, match=r"Physical wall hit.*retained bin"):
         prepare_view_binning(
@@ -696,7 +696,7 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     from neurospatial.encoding.view import compute_view_rate, compute_view_rates
 
     full = room(wall=False)
-    env = full.subset(bins=full.bin_centers[:, 0] < 4)
+    env = full.subset(mask=full.bin_centers[:, 0] < 4)
     times = np.arange(3.0)
     headings = np.array([np.pi, 0.0, 0.0])
     options = {"max_gap": None}

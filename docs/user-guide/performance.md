@@ -312,7 +312,7 @@ coarse_result = analyze(coarse_env)
 roi_mask = identify_interesting_regions(coarse_result)
 
 # Refine only interesting regions
-refined_env = large_env.subset(bins=roi_mask)
+refined_env = large_env.subset(mask=roi_mask)
 refined_result = analyze(refined_env)
 ```
 

@@ -132,7 +132,7 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     linear_scale = 1.0
     forward = Affine2D(np.eye(3))
     if operation == "subset":
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         indices = indices[keep]
     elif operation == "translation":
         child = parent.apply_transform(translation)
@@ -144,9 +144,9 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     else:
         child = (
             parent.apply_transform(similarity)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(similarity.inverse())
-            .subset(bins=np.array([True, False, True]))
+            .subset(mask=np.array([True, False, True]))
         )
         indices = indices[keep][[0, 2]]
 
@@ -222,7 +222,7 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     )
     keep = np.arange(parent.n_bins) % 3 != 1
     if operation == "subset":
-        child, expected = parent.subset(bins=keep), native.subset(bins=keep)
+        child, expected = parent.subset(mask=keep), native.subset(mask=keep)
     elif operation == "translation":
         child, expected = (
             parent.apply_transform(transform),
@@ -231,10 +231,10 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     else:
         child = (
             parent.apply_transform(transform)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(transform.inverse())
         )
-        expected = native.subset(bins=keep)
+        expected = native.subset(mask=keep)
     points = np.vstack((expected.bin_centers, [[-100.0, -100.0]]))
     np.testing.assert_array_equal(child.bin_at(points), expected.bin_at(points))
     np.testing.assert_array_equal(child.bin_sizes, expected.bin_sizes)
@@ -258,7 +258,7 @@ def test_subset_plot_bounds_include_whole_retained_cells(
     keep[0] = True
     if selection == "outer_cells":
         keep[-1] = True
-    child = parent.subset(bins=keep)
+    child = parent.subset(mask=keep)
     if child._binning.rectilinear is not None:
         grid = child._binning.rectilinear
         low = np.array([axis[0] for axis in grid.edges])

@@ -90,7 +90,7 @@ def test_native_explicit_grid_navigation_survives_copy_and_load(spec, diagonal):
 def test_factor_rebin_accepts_subset_and_wall_filtered_native_graph(diagonal):
     arena = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),))
     source = _grid(diagonal=diagonal, arena=arena)
-    for parent in (source, source.subset(bins=source.bin_centers[:, 1] < 2)):
+    for parent in (source, source.subset(mask=source.bin_centers[:, 1] < 2)):
         child = parent.rebin(1)
         # The original arena still determines the target support, including when
         # the input is a selected analysis region within that physical arena.

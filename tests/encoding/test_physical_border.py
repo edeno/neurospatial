@@ -44,7 +44,7 @@ def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     env = physical(wall=True)
     field = (env.bin_centers[:, 0] == 3.5).astype(float)
     keep = env.bin_centers[:, 0] < 4
-    cropped = env.subset(bins=keep)
+    cropped = env.subset(mask=keep)
     with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
         border_score(cropped, field[keep], metric="euclidean")
     assert border_score(cropped, field[keep], boundary_source="analysis") == 1.0
@@ -62,7 +62,7 @@ def test_internal_wall_changes_contact_and_distance():
 
 def test_no_represented_wall_coverage_is_not_silently_scored():
     env = physical().subset(
-        bins=(physical().bin_centers[:, 0] > 4)
+        mask=(physical().bin_centers[:, 0] > 4)
         & (physical().bin_centers[:, 0] < 6)
         & (physical().bin_centers[:, 1] > 4)
         & (physical().bin_centers[:, 1] < 6)

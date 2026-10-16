@@ -32,7 +32,7 @@ def _parent(units="cm"):
 
 
 DERIVATIONS = {
-    "subset": lambda env, **kw: env.subset(bins=env.bin_centers[:, 0] < 5, **kw),
+    "subset": lambda env, **kw: env.subset(mask=env.bin_centers[:, 0] < 5, **kw),
     "subset_polygon": lambda env, **kw: env.subset(polygon=box(0, 0, 6, 6), **kw),
     "clip": lambda env, **kw: env.clip(box(1, 1, 6, 6), **kw),
     "rebin_factor": lambda env, **kw: env.rebin(2, **kw),

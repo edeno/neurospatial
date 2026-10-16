@@ -97,7 +97,7 @@ def test_clearing_a_copy_clears_the_shared_cache(env):
 @pytest.mark.parametrize(
     "derive",
     [
-        lambda env: env.subset(bins=np.ones(env.n_bins, dtype=bool)),
+        lambda env: env.subset(mask=np.ones(env.n_bins, dtype=bool)),
         lambda env: env.rebin(factor=2),
         lambda env: env.clip(box(0.0, 0.0, 30.0, 30.0)),
         lambda env: env.apply_transform(translate(5.0, 0.0)),

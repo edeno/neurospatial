@@ -168,7 +168,7 @@ def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
     keep = np.zeros(env.n_bins, dtype=bool)
     keep[::2] = True
 
-    sub = env.subset(bins=keep)
+    sub = env.subset(mask=keep)
 
     parent_grid = env._binning.rectilinear
     grid = sub._binning.rectilinear

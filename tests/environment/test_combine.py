@@ -73,7 +73,7 @@ def test_combined_planar_boundary_survives_subset_and_rotation():
         for key, offset in (("left", 0.0), ("right", 3.0))
     }
     combined = Environment.combine(children)
-    subset = combined.subset(bins=combined.bin_centers[:, 0] < 4.0)
+    subset = combined.subset(mask=combined.bin_centers[:, 0] < 4.0)
     assert len(subset.boundary_bins) == 10
     angle = 0.3
     rotated = subset.apply_transform(
@@ -177,7 +177,7 @@ def test_metadata_regions_and_cutoff():
 
 def test_subsets_remove_bridges_and_keep_original_sources():
     env = Environment.combine({"a": grid(), "b": grid(4.0)})
-    subset = env.subset(bins=np.array([True, False, True, True]))
+    subset = env.subset(mask=np.array([True, False, True, True]))
     assert subset.bin_sources == (("a", 0), ("b", 0), ("b", 1))
     assert subset.get_bridge_attributes().empty
     np.testing.assert_allclose(subset.diffuse(np.ones(3), 1.0), np.ones(3))
@@ -217,7 +217,7 @@ def test_uncertified_combined_clip_cannot_regain_its_parents_diffusion(history):
     assert parent._binning.faces.available
     clipped = parent.clip(Polygon([(0, 0), (2, 0), (0, 2)]))
     if history == "subset":
-        clipped = clipped.subset(bins=np.ones(clipped.n_bins, dtype=bool))
+        clipped = clipped.subset(mask=np.ones(clipped.n_bins, dtype=bool))
     elif history == "transform":
         clipped = clipped.apply_transform(translate(10, 0))
     elif history == "load":
@@ -311,8 +311,8 @@ def test_complementary_unbounded_nearest_subsets_are_valid():
         )
     )
     a, b = (
-        parent.subset(bins=np.array([True, False])),
-        parent.subset(bins=np.array([False, True])),
+        parent.subset(mask=np.array([True, False])),
+        parent.subset(mask=np.array([False, True])),
     )
     combined = Environment.combine({"a": a, "b": b})
     np.testing.assert_array_equal(combined.bin_at([[-100, 0], [100, 0]]), [0, 1])
@@ -345,7 +345,7 @@ def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
         )
     )
     components = {
-        key: parent.subset(bins=np.arange(3) == index)
+        key: parent.subset(mask=np.arange(3) == index)
         for index, key in enumerate(("a", "b", "c"))
     }
     joined = Environment.combine(components)
@@ -458,7 +458,7 @@ def test_bounded_nearest_clearance_uses_its_retained_partition():
             MissingFaces("Sites lack faces."),
         )
     )
-    middle = parent.subset(bins=np.array([True, False]))
+    middle = parent.subset(mask=np.array([True, False]))
     # The radius ball extends across this bridge, but its retained Voronoi
     # cell does not: the dropped site owns the whole y=-0.5 line.
     joined = Environment.combine(
@@ -642,7 +642,7 @@ def test_removed_missing_geometry_no_longer_blocks_certified_subset():
     env = Environment.combine(
         {"grid": grid(), "site": nearest([10.0, 0.5], radius=0.1)}
     )
-    reduced = env.subset(bins=np.array([True, True, False]))
+    reduced = env.subset(mask=np.array([True, True, False]))
     np.testing.assert_allclose(
         reduced.diffuse(np.array([1.0, 0.0]), 1.0),
         grid().diffuse(np.array([1.0, 0.0]), 1.0),
@@ -710,7 +710,7 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
 
     env = Environment.combine({"a": grid(), "b": grid(4)}, auto_bridge=with_bridge)
     env = (
-        env.subset(bins=np.array([True, True, True, True]))
+        env.subset(mask=np.array([True, True, True, True]))
         if derive == "subset"
         else env.apply_transform(translate(2, 3))
     )

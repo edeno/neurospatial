@@ -209,7 +209,7 @@ def test_derived_and_unpickled_environments_restore_analysis_with_independently_
     geometry = env.get_diffusion_geometry()
     gaussian = env.compute_gaussian_kernel(1.0)
     if method == "derived":
-        restored = env.subset(bins=np.ones(env.n_bins, dtype=bool))
+        restored = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     else:
         restored = pickle.loads(pickle.dumps(env))
     new_geometry = restored.get_diffusion_geometry()

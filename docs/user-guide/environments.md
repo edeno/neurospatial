@@ -548,7 +548,7 @@ env = Environment.from_grid_mask(
     np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
     arena=OpenArena(box(0, 0, 10, 10), walls=(LineString([(5, 0), (5, 10)]),)),
 )
-crop = env.subset(bins=env.bin_centers[:, 0] < 4)
+crop = env.subset(mask=env.bin_centers[:, 0] < 4)
 hit = compute_viewed_location(
     np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
     method="ray_cast", max_distance=30,
@@ -627,7 +627,7 @@ env = Environment.from_grid_mask(
     np.ones((6, 6), dtype=bool),
     grid_edges=(np.arange(7.0),) * 2, units="cm", frame="lab",
 )
-crop = env.subset(bins=env.bin_centers[:, 0] < 2)
+crop = env.subset(mask=env.bin_centers[:, 0] < 2)
 coarse = crop.rebin(bin_size=2.0)
 assert coarse.n_bins == 9  # rebuild the whole retained arena
 np.testing.assert_allclose(coarse.bin_sizes, 4.0)

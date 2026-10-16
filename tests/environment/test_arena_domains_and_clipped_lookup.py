@@ -421,7 +421,7 @@ def test_transformed_physical_walls_survive_history_and_transport(
     parent = _walled_grid()
     child = parent.apply_transform(_wall_transform(1e6, 1.3))
     if history == "subset":
-        child = child.subset(bins=np.arange(child.n_bins) % 4 != 3)
+        child = child.subset(mask=np.arange(child.n_bins) % 4 != 3)
     elif history == "clip":
         from shapely.affinity import affine_transform
 
@@ -432,7 +432,7 @@ def test_transformed_physical_walls_survive_history_and_transport(
         )
         child = child.clip(region)
     elif history == "nested":
-        child = child.subset(bins=np.arange(child.n_bins) % 4 != 3)
+        child = child.subset(mask=np.arange(child.n_bins) % 4 != 3)
         child = child.apply_transform(_wall_transform(0.0, 0.75))
     loaded = round_trip_environment(child)
     np.testing.assert_array_equal(loaded._binning.bins.pairs, child._binning.bins.pairs)

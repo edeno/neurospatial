@@ -287,7 +287,7 @@ def test_clipped_cell_occupancy_survives_nested_derivations_and_transport(
     positions = np.array([[-1.0, 1.0], [7.0, 1.0]])
     expected = [2.0, 2.0]
     if derivation in {"subset", "chain"}:
-        env = env.subset(bins=np.array([True, False]))
+        env = env.subset(mask=np.array([True, False]))
         expected = [2.0]
     if derivation in {"transform", "chain"}:
         matrix = np.array([[1.0, 0.5, 10.0], [0.0, 2.0, -3.0], [0.0, 0.0, 1.0]])
@@ -353,7 +353,7 @@ def test_matching_native_nd_mask_preserves_linear_allocation(subset):
     expected = np.zeros(8)
     expected[[0, 7]] = 0.5
     if subset:
-        env = env.subset(bins=np.array([True] + [False] * 6 + [True]))
+        env = env.subset(mask=np.array([True] + [False] * 6 + [True]))
         expected = expected[[0, 7]]
     result = env.occupancy(
         np.array([0.0, 1.0]),

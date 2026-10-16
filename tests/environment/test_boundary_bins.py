@@ -35,17 +35,17 @@ def test_removing_an_interior_grid_bin_exposes_its_orthogonal_neighbors():
     expected = set(child_of[np.setdiff1d(env.boundary_bins, center)]) | set(
         child_of[orthogonal]
     )
-    assert set(env.subset(bins=keep).boundary_bins.tolist()) == expected
+    assert set(env.subset(mask=keep).boundary_bins.tolist()) == expected
 
 
 @pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])
 def test_boundary_bins_do_not_depend_on_an_affine_map(layout):
     env, _, keep = _with_hole(layout)
-    subset = env.subset(bins=keep).boundary_bins
+    subset = env.subset(mask=keep).boundary_bins
     assert len(subset) > len(env.boundary_bins) - 1
     np.testing.assert_array_equal(
-        env.apply_transform(_rotation(0.7)).subset(bins=keep).boundary_bins, subset
+        env.apply_transform(_rotation(0.7)).subset(mask=keep).boundary_bins, subset
     )
     np.testing.assert_array_equal(
-        env.subset(bins=keep).apply_transform(_rotation(-0.3)).boundary_bins, subset
+        env.subset(mask=keep).apply_transform(_rotation(-0.3)).boundary_bins, subset
     )

@@ -289,7 +289,7 @@ def test_environment_binning_records_its_ranges() -> None:
     assert env.binning.dimension_ranges == env.dimension_ranges
     explicit = replace(env.binning, faces=MissingFaces("Not needed here."))
     assert Environment.from_bins(explicit).dimension_ranges == env.dimension_ranges
-    subset = env.subset(bins=np.arange(env.n_bins) < env.n_bins // 2)
+    subset = env.subset(mask=np.arange(env.n_bins) < env.n_bins // 2)
     assert subset.binning.dimension_ranges == subset.dimension_ranges
 
 

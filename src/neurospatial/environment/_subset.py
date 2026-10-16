@@ -11,6 +11,7 @@ import shapely
 import shapely.geometry.base
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import select_bins
@@ -26,7 +27,7 @@ def _subset_mask(
     arena: Arena,
     regions: Regions,
     *,
-    bins: NDArray[np.bool_] | None = None,
+    mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
@@ -36,36 +37,35 @@ def _subset_mask(
     # --- Input Validation ---
 
     # Exactly one selection parameter must be provided
-    n_params = sum([bins is not None, region_names is not None, polygon is not None])
+    n_params = sum([mask is not None, region_names is not None, polygon is not None])
     if n_params == 0:
         raise ValueError(
-            "Exactly one of {bins, region_names, polygon} must be provided."
+            "Exactly one of {mask, region_names, polygon} must be provided."
         )
     if n_params > 1:
         raise ValueError(
-            "Exactly one of {bins, region_names, polygon} must be provided. "
+            "Exactly one of {mask, region_names, polygon} must be provided. "
             f"Got {n_params} parameters."
         )
 
     # --- Build Selection Mask ---
 
-    if bins is not None:
-        # Validate bins parameter
-        bins = np.asarray(bins)
-
-        # Check dtype
-        if bins.dtype != bool:
+    if mask is not None:
+        mask = np.asarray(mask)
+        if mask.dtype != bool:
             raise ValueError(
-                f"bins must be boolean array (dtype=bool), got dtype={bins.dtype}"
+                _format_error(
+                    f"subset() got mask= with dtype {mask.dtype}; mask= is a "
+                    "boolean array with one entry per bin.",
+                    why="Why: integers would be read as bin indices, not as keep flags.",
+                    fix="for bin indices, build a mask: keep = np.zeros(env.n_bins, "
+                    "dtype=bool); keep[indices] = True; env.subset(mask=keep)",
+                )
             )
-
-        # Check shape
-        if bins.shape != (n_bins,):
+        if mask.shape != (n_bins,):
             raise ValueError(
-                f"bins must have shape (n_bins,) = ({n_bins},), got shape {bins.shape}"
+                f"mask must have shape (n_bins,) = ({n_bins},), got shape {mask.shape}"
             )
-
-        mask = bins
 
     elif region_names is not None:
         # Validate region_names parameter
@@ -127,7 +127,7 @@ def _subset(
     connectivity: nx.Graph,
     regions: Regions,
     *,
-    bins: NDArray[np.bool_] | None = None,
+    mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
@@ -137,7 +137,7 @@ def _subset(
         binning,
         arena,
         regions,
-        bins=bins,
+        mask=mask,
         region_names=region_names,
         polygon=polygon,
         invert=invert,

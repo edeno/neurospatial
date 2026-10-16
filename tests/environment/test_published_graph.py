@@ -174,7 +174,7 @@ def test_subset_numbers_edge_ids_by_kept_pair_row(layout):
     env = _edge_id_environments()[layout]()
     _edge_ids_are_pair_rows(env)
     # Dropping every third bin removes pairs from the middle of the list.
-    child = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+    child = env.subset(mask=np.arange(env.n_bins) % 3 != 0)
     assert child.edge_pairs.shape[0] < env.edge_pairs.shape[0]
     _edge_ids_are_pair_rows(child)
 

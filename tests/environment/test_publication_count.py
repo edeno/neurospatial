@@ -104,7 +104,7 @@ def test_from_bins_and_combine_publish_once(monkeypatch):
 
 
 DERIVATIONS = {
-    "subset": lambda env: env.subset(bins=env.bin_centers[:, 0] < 5),
+    "subset": lambda env: env.subset(mask=env.bin_centers[:, 0] < 5),
     "clip": lambda env: env.clip(box(1, 1, 6, 6)),
     "rebin_factor": lambda env: env.rebin(2),
     "rebin_bin_size": lambda env: env.rebin(bin_size=2.0),
@@ -158,7 +158,7 @@ def test_arena_cropping_matches_subset_and_keeps_factory_provenance():
     cropped = _arena_grid(cropping)
     full = _grid()
     keep = full.bin_centers[:, 0] < 6
-    expected = full.subset(bins=keep)
+    expected = full.subset(mask=keep)
     assert cropped.n_bins == int(keep.sum()) < full.n_bins
     np.testing.assert_array_equal(cropped.bin_centers, expected.bin_centers)
     np.testing.assert_array_equal(cropped.edge_pairs, expected.edge_pairs)

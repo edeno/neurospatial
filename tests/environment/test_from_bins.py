@@ -628,7 +628,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     keep = np.ones(parent.n_bins, dtype=bool)
     keep[4] = False
     if derivation == "subset":
-        source = parent.subset(bins=keep)
+        source = parent.subset(mask=keep)
     elif derivation == "transform":
         cosine, sine = np.cos(0.2), np.sin(0.2)
         source = parent.apply_transform(
@@ -637,7 +637,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     elif derivation == "clip":
         source = parent.clip(box(0.2, 0.2, 2.8, 2.8))
     else:
-        source = parent.subset(bins=keep).apply_transform(translate(1.0, 2.0))
+        source = parent.subset(mask=keep).apply_transform(translate(1.0, 2.0))
     exported = source._binning
     explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
     env = Environment.from_bins(explicit, arena=source.arena)
@@ -727,7 +727,7 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
     source = _variable_grid_faces(n_dims)
     env = Environment.from_bins(source)
     if history == "subset":
-        env = env.subset(bins=np.arange(env.n_bins) != env.n_bins - 1)
+        env = env.subset(mask=np.arange(env.n_bins) != env.n_bins - 1)
     elif history == "load":
         env = Environment.from_dict(env.to_dict())
     exported = env._binning
@@ -787,7 +787,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
             ]
         )
     if history == "subset_similarity":
-        env = env.subset(bins=np.arange(env.n_bins) != 3)
+        env = env.subset(mask=np.arange(env.n_bins) != 3)
     derived = env.apply_transform(Affine2D(matrix))
     source = derived._binning
     Environment.from_bins(source)
@@ -926,7 +926,7 @@ def _cell_face_source(kind, history):
             )
         )
     if history == "subset":
-        env = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+        env = env.subset(mask=np.arange(env.n_bins) % 3 != 0)
     elif history in {"similarity", "reflection"}:
         angle, scale = 0.3, 2.5
         rotation = np.array(

@@ -48,7 +48,7 @@ def test_polygon_gate_and_inactive_support_are_distinct():
     probes = np.array([[4.9, 1.8], [4.5, 2.5], [0.0, 0.0]])
     np.testing.assert_array_equal(env.bin_at(probes), [-1, -1, 10])
     np.testing.assert_array_equal(env.contains(probes), env.bin_at(probes) >= 0)
-    child = env.subset(bins=np.arange(env.n_bins) != 10)
+    child = env.subset(mask=np.arange(env.n_bins) != 10)
     assert _arena_record(child.arena) == _arena_record(env.arena)
     assert child.arena.contains(np.array([[0.0, 0.0]]))[0]
     assert not child.contains(np.array([[0.0, 0.0]]))[0]
@@ -95,7 +95,7 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     assert all(left[u] == left[v] for u, v in env.connectivity.edges)
     kernel = env.compute_kernel(1.0)
     assert np.all(kernel[np.ix_(left, ~left)] == 0)
-    child = env.subset(bins=env.bin_centers[:, 1] < 2)
+    child = env.subset(mask=env.bin_centers[:, 1] < 2)
     assert _arena_record(child.arena) == _arena_record(arena)
     assert child.arena.walls[0].equals(arena.walls[0])
 
@@ -133,7 +133,7 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     ):
         np.testing.assert_array_equal(variant.clip_mapping.parent_bin_indices, [0, 0])
         assert not variant.clip_mapping.parent_bin_indices.flags.writeable
-    subset = child.subset(bins=np.array([False, True]))
+    subset = child.subset(mask=np.array([False, True]))
     np.testing.assert_array_equal(subset.clip_mapping.parent_bin_indices, [0])
     assert not subset.contains(np.array([[0.1, 0.5]]))[0]
     assert parent.n_bins == 1

@@ -312,7 +312,7 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         "region_membership": lambda: env.region_membership(),
         # Environments derived from this one.
         "rebin": lambda: env.rebin(2),
-        "subset": lambda: env.subset(bins=x["half"]),
+        "subset": lambda: env.subset(mask=x["half"]),
         "subset_inverted_polygon": lambda: env.subset(
             polygon=x["polygon"], invert=True
         ),

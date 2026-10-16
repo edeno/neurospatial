@@ -74,7 +74,7 @@ def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
     child = moved(moved(env, first), second)
     np.testing.assert_allclose(child._binning.grid_frame.forward, second @ first)
     keep = np.arange(child.n_bins) % 3 != 1
-    subset = child.subset(bins=keep)
+    subset = child.subset(mask=keep)
     frame = subset._binning.grid_frame
     expected = env.active_mask.copy()
     expected.flat[np.flatnonzero(expected)] = keep

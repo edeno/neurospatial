@@ -27,7 +27,7 @@ def linearized_parent_and_subset() -> tuple[Environment, Environment, np.ndarray
     )
     keep = np.zeros(env.n_bins, dtype=bool)
     keep[: env.n_bins // 2] = True
-    return env, env.subset(bins=keep), keep
+    return env, env.subset(mask=keep), keep
 
 
 class TestSubsetKDTreeCaching:

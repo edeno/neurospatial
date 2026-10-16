@@ -461,7 +461,7 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
         np.ones((3, 2), dtype=bool), (np.arange(4.0), np.arange(3.0))
     ).clip(box(0.2, 0.2, 2.8, 1.8))
     if operation in ("subset", "nested"):
-        env = env.subset(bins=np.array([True, False, True, True, False, True]))
+        env = env.subset(mask=np.array([True, False, True, True, False, True]))
     if operation in ("transform", "nested"):
         env = env.apply_transform(translate(10, -3))
     original = _explicit_binning(env)

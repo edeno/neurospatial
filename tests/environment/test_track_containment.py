@@ -54,7 +54,7 @@ def test_track_containment_contract_survives_derivation_and_storage(
     probes = np.array([[1.0, 0.75], [9.0, 0.0], [5.0, 1000.0]])
     expected = np.array([True, True, False])
     if derivation == "subset":
-        env = env.subset(bins=env.bin_centers[:, 0] < 5)
+        env = env.subset(mask=env.bin_centers[:, 0] < 5)
         expected[1] = False
     elif derivation == "transform":
         matrix = np.array([[0.0, -2.0, 20.0], [2.0, 0.0, -10.0], [0.0, 0.0, 1.0]])

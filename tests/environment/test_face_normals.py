@@ -71,7 +71,7 @@ def test_planar_normals_are_perpendicular_to_true_shared_edges(built_environment
 def test_subset_normal_rows_keep_edge_orientation(built_environment):
     env = built_environment
     keep = np.arange(env.n_bins) % 3 != 0
-    child = env.subset(bins=keep)
+    child = env.subset(mask=keep)
     edges = keep[env.edge_pairs].all(axis=1)
     np.testing.assert_array_equal(
         child._binning.face_normals.values, env._binning.face_normals.values[edges]

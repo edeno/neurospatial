@@ -167,7 +167,7 @@ def test_combined_normal_duplicates_must_match_children(derivation):
     if derivation != "native":
         env = env.apply_transform(affine(np.array([[0.0, -1.0], [1.0, 0.0]]), 1e9))
     if derivation == "subset":
-        env = env.subset(bins=np.arange(env.n_bins) % 3 != 1)
+        env = env.subset(mask=np.arange(env.n_bins) % 3 != 1)
     values = env._binning.face_normals.values.copy()
     first = values[0].copy()
     values[0] += 0.1 * np.array([-first[1], first[0]])
@@ -193,7 +193,7 @@ def test_explicit_combined_normals_keep_zero_bridge_rows_through_derivation():
     for child in (
         env.apply_transform(affine(np.eye(2))),
         env.apply_transform(affine(np.array([[0.0, -2.0], [2.0, 0.0]]))),
-        env.subset(bins=np.arange(env.n_bins) != 1),
+        env.subset(mask=np.arange(env.n_bins) != 1),
     ):
         loaded = from_dict(to_dict(child))
         np.testing.assert_array_equal(

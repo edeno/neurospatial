@@ -347,7 +347,7 @@ from neurospatial.ops.transforms import translate
 
 west = env.bin_centers[:, 0] < 50.0
 # Before: env.subset(bins=west) dropped the regions and the name
-west_env = env.subset(bins=west, name="west half").with_regions(Regions())
+west_env = env.subset(mask=west, name="west half").with_regions(Regions())
 
 edges = np.linspace(0.0, 100.0, 21)
 square = Environment.from_grid_mask(np.ones((20, 20), dtype=bool), (edges, edges))
@@ -414,7 +414,7 @@ after plotting:
 import matplotlib.pyplot as plt
 
 hex_env = Environment.from_samples(positions, bin_size=8.0, layout="Hexagonal")
-child = hex_env.subset(bins=hex_env.bin_centers[:, 0] < 50.0)
+child = hex_env.subset(mask=hex_env.bin_centers[:, 0] < 50.0)
 fig, ax = plt.subplots()
 child.plot(ax=ax)
 low, high = child.dimension_ranges[0]
@@ -747,3 +747,18 @@ What the old guesses did, and what happens now:
 that start from one bin (`neighbors`, `reachable_from`, `rings`) take one bin
 or one point; `path_between` and `distance_between` take two, the start and the
 end.
+
+`subset` selects bins with a boolean mask, so its keyword is `mask=`; `bins=`
+always means integer bin indices:
+
+<!-- docs-test: run -->
+```python
+west = env.bin_centers[:, 0] < 50.0  # one True/False per bin
+# Before: env.subset(bins=west)
+west_env = env.subset(mask=west)
+# From bin indices, build the mask first
+north_bins = np.flatnonzero(env.bin_centers[:, 1] > 50.0)
+keep = np.zeros(env.n_bins, dtype=bool)
+keep[north_bins] = True
+north_env = env.subset(mask=keep)
+```

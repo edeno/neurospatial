@@ -244,6 +244,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   graph, and points are (distance, angle). A target passed by position raises
   Python's `TypeError`.
 
+- `Environment.subset(bins=mask)` is now `env.subset(mask=mask)`, so `bins=`
+  means integer bin indices everywhere. `mask=` is still a boolean array with
+  one entry per bin. Integer values in `mask=` raise `ValueError` that shows how
+  to build a mask from bin indices.
+
 ### Changed
 
 - `env.connectivity` is built from the environment's bins for every layout,

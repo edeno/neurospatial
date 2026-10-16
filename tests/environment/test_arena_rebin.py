@@ -261,7 +261,7 @@ def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
 
 def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
     child = _walled().rebin(2)
-    child = child.subset(bins=child.bin_centers[:, 1] < 4)
+    child = child.subset(mask=child.bin_centers[:, 1] < 4)
     restored = from_dict(to_dict(child))
     for variant in (child, copy.deepcopy(child), restored):
         assert variant.arena.domain_known and variant.arena.physical_footprint_known

@@ -21,7 +21,7 @@ def _cell_bounds(env: Environment) -> np.ndarray:
 
 @pytest.mark.parametrize("built_environment", ["hex", "mesh"], indirect=True)
 def test_subset_ranges_are_the_kept_cells_extent(built_environment):
-    child = built_environment.subset(bins=_keep_first_quarter(built_environment))
+    child = built_environment.subset(mask=_keep_first_quarter(built_environment))
     np.testing.assert_allclose(
         child.dimension_ranges, _cell_bounds(child), rtol=0, atol=1e-12
     )
@@ -32,13 +32,13 @@ def test_subset_of_clipped_polygon_cells_bounds_the_kept_polygons():
         np.ones((6, 6), dtype=bool), grid_edges=(np.linspace(0, 12, 7),) * 2
     )
     clipped = grid.clip(Point(6, 6).buffer(5.0))
-    child = clipped.subset(bins=_keep_first_quarter(clipped))
+    child = clipped.subset(mask=_keep_first_quarter(clipped))
     np.testing.assert_array_equal(child.dimension_ranges, _cell_bounds(child))
 
 
 @pytest.mark.parametrize("built_environment", ["track"], indirect=True)
 def test_subset_without_cell_shapes_bounds_the_kept_centers(built_environment):
-    child = built_environment.subset(bins=_keep_first_quarter(built_environment))
+    child = built_environment.subset(mask=_keep_first_quarter(built_environment))
     centers = child.bin_centers
     np.testing.assert_array_equal(
         child.dimension_ranges,
@@ -50,7 +50,7 @@ def test_subset_without_cell_shapes_bounds_the_kept_centers(built_environment):
 def test_grid_subset_keeps_the_grid_extent(built_environment):
     # A grid subset keeps its full lattice (inactive cells included), so its
     # extent is the lattice's, matching grid_edges.
-    child = built_environment.subset(bins=_keep_first_quarter(built_environment))
+    child = built_environment.subset(mask=_keep_first_quarter(built_environment))
     np.testing.assert_array_equal(
         child.dimension_ranges,
         [(edge[0], edge[-1]) for edge in child.grid_edges],
@@ -62,7 +62,7 @@ def test_mesh_subset_shrinks_to_its_kept_triangles(built_environment):
     parent = built_environment
     corner = np.all(parent.bin_centers < 4.0, axis=1)
     assert 0 < corner.sum() < parent.n_bins
-    child = parent.subset(bins=corner)
+    child = parent.subset(mask=corner)
     shapes = child.binning.shapes
     vertices = shapes.points[shapes.triangles].reshape(-1, 2)
     np.testing.assert_array_equal(

@@ -27,7 +27,7 @@ def grid():
 
 
 def test_rebin_new_resolution_restores_arena_after_analysis_crop():
-    env = grid().subset(bins=grid().bin_centers[:, 0] < 2)
+    env = grid().subset(mask=grid().bin_centers[:, 0] < 2)
     coarse = env.rebin(bin_size=2.0)
     expected = np.array([[x, y] for x in [1, 3, 5] for y in [1, 3, 5]])
     np.testing.assert_array_equal(coarse.bin_centers, expected)

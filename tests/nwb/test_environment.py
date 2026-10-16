@@ -133,7 +133,7 @@ def test_subset_of_read_four_connected_grid_keeps_its_connectivity(empty_nwb, tm
         np.ones(env.n_bins, dtype=bool),
         np.arange(env.n_bins) < env.n_bins // 2,
     ):
-        expected, result = env.subset(bins=mask), restored.subset(bins=mask)
+        expected, result = env.subset(mask=mask), restored.subset(mask=mask)
         assert sorted(result.connectivity.edges()) == sorted(
             expected.connectivity.edges()
         )

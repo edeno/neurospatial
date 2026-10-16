@@ -65,7 +65,7 @@ class TestCartesianDerivedGeometry:
     def test_subset_keeps_sizes_and_faces(self, built_environment):
         parent = built_environment
         keep = _keep_bins(parent)
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         np.testing.assert_array_equal(child.bin_sizes, parent.bin_sizes[keep])
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
@@ -83,7 +83,7 @@ class TestCartesianDerivedGeometry:
     def test_subset_lookup_uses_parent_bin_ownership(self, built_environment):
         parent = built_environment
         keep = _keep_bins(parent)
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         points = np.vstack((_queries(parent), [[np.nan, 0.0], [np.inf, 0.0]]))
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
@@ -141,10 +141,10 @@ class TestCartesianDerivedGeometry:
         keep = _keep_bins(parent)
         actual = (
             parent.apply_transform(transform)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(transform.inverse())
         )
-        expected = parent.subset(bins=keep)
+        expected = parent.subset(mask=keep)
         points = parent.bin_centers
         np.testing.assert_array_equal(actual.bin_at(points), expected.bin_at(points))
         field = np.sin(np.arange(expected.n_bins))
@@ -159,7 +159,7 @@ class TestCartesianDerivedGeometry:
 @pytest.mark.parametrize("built_environment", ["grid8", "grid4"], indirect=True)
 def test_grid_subset_equals_mask_build(built_environment):
     parent = built_environment
-    child = parent.subset(bins=_keep_bins(parent))
+    child = parent.subset(mask=_keep_bins(parent))
     diagonal = any(
         np.count_nonzero(parent.bin_centers[u] != parent.bin_centers[v]) > 1
         for u, v in parent.connectivity.edges
@@ -395,7 +395,7 @@ def test_noisy_landmark_affine_fit_refusal_reports_distortion_and_fix(
 def test_hexagonal_subset_boundary_matches_native_support(built_environment):
     parent = built_environment
     keep = _keep_bins(parent)
-    child = parent.subset(bins=keep)
+    child = parent.subset(mask=keep)
     expected = Environment.from_layout(
         create_layout(
             "Hexagonal",
@@ -415,7 +415,7 @@ def test_hexagonal_subset_boundary_matches_native_support(built_environment):
 
 def _derive_environment(parent, derivation):
     if derivation == "subset":
-        return parent.subset(bins=_keep_bins(parent))
+        return parent.subset(mask=_keep_bins(parent))
     if derivation == "translation":
         return parent.apply_transform(_affine(offset=(1.25, -2.5)))
     if derivation == "uniform_scaling":
@@ -432,7 +432,7 @@ def _derive_environment(parent, derivation):
     )
     child = parent.apply_transform(_affine(rotation, (2.0, -3.0)))
     if derivation == "nested":
-        return child.subset(bins=_keep_bins(parent)).apply_transform(
+        return child.subset(mask=_keep_bins(parent)).apply_transform(
             _affine(offset=(-0.5, 1.5))
         )
     return child
@@ -559,9 +559,9 @@ def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
     assert isinstance(mapped._binning.shapes, TriangleShapes)
     keep = _keep_bins(mapped)
     offset = _affine(offset=(-0.5, 1.5))
-    child = mapped.subset(bins=keep).apply_transform(offset)
+    child = mapped.subset(mask=keep).apply_transform(offset)
     second_keep = _keep_bins(child)
-    child = child.subset(bins=second_keep)
+    child = child.subset(mask=second_keep)
     expected_points = offset(mapped._binning.shapes.points)
     expected_triangles = parent._binning.shapes.triangles[keep][second_keep]
     loaded = round_trip_environment(child)
@@ -609,7 +609,7 @@ def test_retained_affine_triangle_corruption_is_rejected(
     built_environment, corruption, corrupted_environment_round_trip
 ):
     child = _derive_environment(built_environment, "shear")
-    child = child.subset(bins=_keep_bins(child))
+    child = child.subset(mask=_keep_bins(child))
     assert isinstance(child._binning.shapes, TriangleShapes)
 
     def corrupt(metadata, arrays):

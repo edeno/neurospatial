@@ -876,7 +876,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     def test_subset_raises_on_polar_env(self, polar_env):
         mask = np.ones(polar_env.n_bins, dtype=bool)
         with pytest.raises(NotImplementedError, match=r"polar.*subset|subset.*polar"):
-            polar_env.subset(bins=mask)
+            polar_env.subset(mask=mask)
 
     # --- Graph operations remain valid on polar and must not regress.
 
@@ -1157,7 +1157,7 @@ class TestSubsetPreservesGraphLayout:
 
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:5] = True
-        sub = env.subset(bins=mask)
+        sub = env.subset(mask=mask)
 
         assert sub.is_linearized_track is True, "graph subset must remain 1-D"
         assert sub.n_dims == 2, "graph subset must keep its 2-D embedding"
@@ -1170,7 +1170,7 @@ class TestSubsetPreservesGraphLayout:
         env = self._build_graph_env()
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:5] = True
-        sub = env.subset(bins=mask)
+        sub = env.subset(mask=mask)
         assert sub.layout_type != "MaskedGrid"
 
 

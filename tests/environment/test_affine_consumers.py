@@ -191,7 +191,7 @@ def test_interpolation_does_not_snap_nearby_queries_over_a_hole():
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
 def test_nested_subset_3d_fractions_preserve_native_outside_stop_normalization(offset):
-    env = grid(3, hole=True).subset(bins=np.arange(26) % 5 != 1)
+    env = grid(3, hole=True).subset(mask=np.arange(26) % 5 != 1)
     rotation = np.eye(3)
     rotation[:2, :2] = [[0.8, -0.6], [0.6, 0.8]]
     first = transform(rotation, offset)

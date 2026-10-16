@@ -2087,7 +2087,7 @@ class Environment(Generic[_C]):
     def subset(
         self: Environment[CartesianSystem],
         *,
-        bins: NDArray[np.bool_] | None = None,
+        mask: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
         invert: bool = False,
@@ -2104,7 +2104,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        bins : NDArray[np.bool_], shape (n_bins,), optional
+        mask : NDArray[np.bool_], shape (n_bins,), optional
             Boolean mask of bins to keep. True = keep, False = discard.
         region_names : Sequence[str], optional
             Keep the bins these named regions cover, by the rule of
@@ -2134,7 +2134,7 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Exactly one of {bins, region_names, polygon} must be provided.
+        Exactly one of {mask, region_names, polygon} must be provided.
 
         The connectivity graph is the induced subgraph: only edges where both
         endpoints are in the selection are kept. This may create disconnected
@@ -2168,7 +2168,7 @@ class Environment(Generic[_C]):
         >>>
         >>> # Select bins by boolean mask
         >>> mask = env.bin_centers[:, 0] < 50  # Left half  # doctest: +SKIP
-        >>> left_env = env.subset(bins=mask)  # doctest: +SKIP
+        >>> left_env = env.subset(mask=mask)  # doctest: +SKIP
         >>>
         >>> # Inverted selection (everything except region)
         >>> outside = env.subset(
@@ -2181,7 +2181,7 @@ class Environment(Generic[_C]):
             self._arena,
             self.connectivity,
             self.regions,
-            bins=bins,
+            mask=mask,
             region_names=region_names,
             polygon=polygon,
             invert=invert,

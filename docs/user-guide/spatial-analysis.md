@@ -968,7 +968,7 @@ Extract a sub-environment containing only specified bins.
 def subset(
     self,
     *,
-    bins: NDArray[np.bool_] | None = None,
+    mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
@@ -979,10 +979,11 @@ def subset(
 
     Parameters
     ----------
-    bins : NDArray[np.bool_], shape (n_bins,), optional
+    mask : NDArray[np.bool_], shape (n_bins,), optional
         Boolean mask of bins to keep. True = keep, False = discard.
     region_names : Sequence[str], optional
-        Keep bins whose centers lie inside these named polygon regions.
+        Keep the bins these named regions cover: the bin containing a point
+        region, or the bins whose centers lie inside a polygon region.
     polygon : shapely.Polygon, optional
         Keep bins whose centers lie inside this polygon (2D only).
     invert : bool, default=False
@@ -1008,7 +1009,7 @@ distances = np.linalg.norm(env.bin_centers - north_center, axis=1)
 north_bins = distances < 15.0  # boolean mask, one entry per bin
 
 # Create subset environment
-env_north = env.subset(bins=north_bins, name="NorthArm")
+env_north = env.subset(mask=north_bins, name="NorthArm")
 
 print(f"Original: {env.n_bins} bins")
 print(f"North arm: {env_north.n_bins} bins")

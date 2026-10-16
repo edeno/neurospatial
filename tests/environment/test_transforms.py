@@ -231,7 +231,7 @@ class TestSubset:
         # Select first 10 bins
         bin_ids = np.array([True] * 10 + [False] * (medium_2d_env.n_bins - 10))
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_bins == 10
         assert subset_env.n_dims == medium_2d_env.n_dims
@@ -246,7 +246,7 @@ class TestSubset:
         distances = np.linalg.norm(medium_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 10.0
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         # Should have connectivity
         assert subset_env.connectivity.number_of_edges() > 0
@@ -272,7 +272,7 @@ class TestSubset:
         bin_ids = np.zeros(medium_2d_env.n_bins, dtype=bool)
 
         with pytest.raises(ValueError, match="No bins selected"):
-            medium_2d_env.subset(bins=bin_ids)
+            medium_2d_env.subset(mask=bin_ids)
 
     def test_subset_wrong_shape_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that mask with wrong shape raises error."""
@@ -280,15 +280,15 @@ class TestSubset:
         bin_ids = np.ones(10, dtype=bool)
 
         with pytest.raises(ValueError, match="must have shape"):
-            medium_2d_env.subset(bins=bin_ids)
+            medium_2d_env.subset(mask=bin_ids)
 
     def test_subset_wrong_dtype_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that mask with wrong dtype raises error."""
         # Integer array instead of bool
         bin_ids = np.arange(medium_2d_env.n_bins)
 
-        with pytest.raises(ValueError, match="must be boolean array"):
-            medium_2d_env.subset(bins=bin_ids)  # type: ignore
+        with pytest.raises(ValueError, match="mask= is a boolean array"):
+            medium_2d_env.subset(mask=bin_ids)  # type: ignore
 
     def test_subset_by_polygon(self, medium_2d_env: Environment) -> None:
         """Test subsetting by Shapely polygon."""
@@ -363,7 +363,7 @@ class TestSubset:
         n_selected = np.sum(bin_ids)
 
         # Get inverted selection (everything except center)
-        subset_env = medium_2d_env.subset(bins=bin_ids, invert=True)
+        subset_env = medium_2d_env.subset(mask=bin_ids, invert=True)
 
         # Should have complementary number of bins
         assert subset_env.n_bins == medium_2d_env.n_bins - n_selected
@@ -381,7 +381,7 @@ class TestSubset:
         poly = box(0, 0, 10, 10)
 
         with pytest.raises(ValueError, match="Exactly one of"):
-            medium_2d_env.subset(bins=bin_ids, polygon=poly)
+            medium_2d_env.subset(mask=bin_ids, polygon=poly)
 
     def test_subset_preserves_metadata(self, medium_2d_env: Environment) -> None:
         """Test that subsetting preserves units and frame metadata."""
@@ -394,7 +394,7 @@ class TestSubset:
 
         # Select subset
         bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
-        subset_env = env_copy.subset(bins=bin_ids)
+        subset_env = env_copy.subset(mask=bin_ids)
 
         assert subset_env.units == "cm"
         assert subset_env.frame == "arena1"
@@ -405,7 +405,7 @@ class TestSubset:
         bin_ids = np.zeros(small_2d_env.n_bins, dtype=bool)
         bin_ids[::2] = True
 
-        subset_env = small_2d_env.subset(bins=bin_ids)
+        subset_env = small_2d_env.subset(mask=bin_ids)
 
         # Node IDs should be 0, 1, 2, ..., n-1
         node_ids = sorted(subset_env.connectivity.nodes())
@@ -523,7 +523,7 @@ class TestSubsetProperties:
             [True] * n_select + [False] * (medium_2d_env.n_bins - n_select)
         )
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_bins == n_select
 
@@ -538,7 +538,7 @@ class TestSubsetProperties:
             [True] * n_select + [False] * (medium_2d_env.n_bins - n_select)
         )
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_dims == medium_2d_env.n_dims
 
@@ -549,8 +549,8 @@ class TestSubsetProperties:
         bin_ids[: small_2d_env.n_bins // 2] = True
 
         # Get subset and its complement
-        subset_env = small_2d_env.subset(bins=bin_ids)
-        complement_env = small_2d_env.subset(bins=bin_ids, invert=True)
+        subset_env = small_2d_env.subset(mask=bin_ids)
+        complement_env = small_2d_env.subset(mask=bin_ids, invert=True)
 
         # Together they should cover all bins
         assert subset_env.n_bins + complement_env.n_bins == small_2d_env.n_bins
@@ -598,7 +598,7 @@ class TestSubsetIntegration:
         distances = np.linalg.norm(medium_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 15.0
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         # Query neighbors for each bin (should work without errors)
         for bin_id in range(min(10, subset_env.n_bins)):
@@ -616,7 +616,7 @@ class TestSubsetIntegration:
         distances = np.linalg.norm(small_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 10.0
 
-        subset_env = small_2d_env.subset(bins=bin_ids)
+        subset_env = small_2d_env.subset(mask=bin_ids)
 
         # Should be able to compute paths (if connected)
         if nx.is_connected(subset_env.connectivity):
