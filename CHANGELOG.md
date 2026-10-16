@@ -482,6 +482,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   hexagonal, triangular-mesh or track environment after `subset()`, used to
   keep IDs that did not match their rows.
 
+- `env.boundary_bins` on a hexagonal environment checks all six neighbors of
+  each hexagon, so every hexagon next to a hole, a concave notch or a
+  `subset()` cut is a boundary bin. It used to check only four of the six
+  (east, west and one diagonal pair), so two of the six hexagons around a
+  removed interior hexagon were missed. Border scores with
+  `boundary_source="analysis"` and `BoundaryCellModel` firing on hexagonal
+  environments with holes or irregular outlines change accordingly; full
+  rectangular hexagonal arenas are unchanged.
+
 - `Environment.open_field(..., fill_holes=False)` works; it used to fail with
   a `TypeError` about multiple values for `fill_holes`.
 

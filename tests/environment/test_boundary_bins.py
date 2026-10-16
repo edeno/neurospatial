@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import AffineND
 
 
@@ -49,3 +50,34 @@ def test_boundary_bins_do_not_depend_on_an_affine_map(layout):
     np.testing.assert_array_equal(
         env.subset(mask=keep).apply_transform(_rotation(-0.3)).boundary_bins, subset
     )
+
+
+@pytest.mark.parametrize("derive", ["subset", "native", "transformed"])
+def test_removing_an_interior_hexagon_exposes_all_six_neighbors(derive):
+    env, center, keep = _with_hole("Hexagonal")
+    neighbors = np.array(env.neighbors(bins=center))
+    assert len(neighbors) == 6
+    assert center not in env.boundary_bins
+    child_of = np.cumsum(keep) - 1
+    expected = set(child_of[np.setdiff1d(env.boundary_bins, center)]) | set(
+        child_of[neighbors]
+    )
+    if derive == "native":
+        # A hexagonal layout built directly with the same hole.
+        child = Environment.from_layout(
+            create_layout(
+                "Hexagonal",
+                **{
+                    **env.layout_parameters,
+                    "positions": env.bin_centers[keep],
+                    "infer_active_bins": True,
+                    "bin_count_threshold": 0,
+                },
+            )
+        )
+        np.testing.assert_array_equal(child.bin_centers, env.bin_centers[keep])
+    else:
+        child = env.subset(mask=keep)
+        if derive == "transformed":
+            child = child.apply_transform(_rotation(0.7))
+    assert set(child.boundary_bins.tolist()) == expected
