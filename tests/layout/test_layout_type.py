@@ -60,8 +60,6 @@ def test_layout_type_values(layout_kind, expected_type):
     """Each layout reports its canonical ``layout_type`` tag."""
     if layout_kind == "Graph":
         pytest.importorskip("track_linearization")
-    if layout_kind == "ShapelyPolygon":
-        pytest.importorskip("shapely")
 
     layout_class = _get_layout_class(layout_kind)
     layout = layout_class()
@@ -84,8 +82,6 @@ def test_is_grid_compatible(layout_kind, expected_compatible):
     """``is_grid_compatible`` reflects whether the layout can rasterize."""
     if layout_kind == "Graph":
         pytest.importorskip("track_linearization")
-    if layout_kind == "ShapelyPolygon":
-        pytest.importorskip("shapely")
 
     layout_class = _get_layout_class(layout_kind)
     layout = layout_class()

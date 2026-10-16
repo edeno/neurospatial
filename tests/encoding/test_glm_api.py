@@ -1148,7 +1148,7 @@ def test_all_layouts_smoke(
     Each layout exercises a distinct connectivity + bin-volume geometry that the
     ``get_mrf_basis`` -> ``live_bins`` scatter runs over.
     """
-    import importlib.util
+    from shapely.geometry import Polygon
 
     hex_env = Environment.from_layout(
         kind="hexagonal",
@@ -1164,18 +1164,13 @@ def test_all_layouts_smoke(
         "hexagonal": hex_env,
         "polar": polar_env,
     }
-    # Triangular mesh needs shapely for the boundary polygon; skip that entry if
-    # shapely is absent rather than the whole test.
-    if importlib.util.find_spec("shapely") is not None:
-        from shapely.geometry import Polygon
-
-        envs["triangular_mesh"] = Environment.from_layout(
-            kind="TriangularMesh",
-            layout_params={
-                "boundary_polygon": Polygon([(0, 0), (24, 0), (24, 24), (0, 24)]),
-                "point_spacing": 8.0,
-            },
-        )
+    envs["triangular_mesh"] = Environment.from_layout(
+        kind="TriangularMesh",
+        layout_params={
+            "boundary_polygon": Polygon([(0, 0), (24, 0), (24, 24), (0, 24)]),
+            "point_spacing": 8.0,
+        },
+    )
     for name, env in envs.items():
         centers = [tuple(np.asarray(env.bin_centers)[0])]
         counts, occ = simulate_place_fields(env, centers, sigma=3.0)

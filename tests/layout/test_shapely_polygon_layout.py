@@ -1,10 +1,6 @@
 """Behavioral tests for ShapelyPolygonLayout driven directly through the engine."""
 
 import numpy as np
-import pytest
-
-pytest.importorskip("shapely")
-
 import shapely
 from shapely.geometry import Polygon
 

@@ -73,10 +73,6 @@ def plot_regions(
     * Legend labels default to the region name.
 
     """
-    try:
-        import shapely.geometry as _shp
-    except ModuleNotFoundError:  # polygon plotting will warn later if needed
-        _shp = None
 
     if region_names is None:
         region_names = tuple(regions.keys())
@@ -124,14 +120,6 @@ def plot_regions(
             )
 
         elif reg.kind == "polygon":
-            if _shp is None:
-                warnings.warn(
-                    f"Can't draw polygon '{name}': shapely not installed.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-                continue
-
             # Narrow type to Polygon
             from shapely.geometry import Polygon
 

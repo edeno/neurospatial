@@ -392,8 +392,9 @@ def _make_graph_env() -> Environment:
 
 def _make_polygon_env() -> Environment:
     """Build a ShapelyPolygon-layout environment."""
-    shapely_geom = pytest.importorskip("shapely.geometry")
-    return Environment.from_polygon(shapely_geom.box(0, 0, 20, 20), bin_size=4.0)
+    from shapely.geometry import box
+
+    return Environment.from_polygon(box(0, 0, 20, 20), bin_size=4.0)
 
 
 def _make_hexagonal_env() -> Environment:

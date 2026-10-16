@@ -66,19 +66,10 @@ class _KDTreeMixin:
     def locator(self) -> NearestBinLocator:
         """Return the built layout's owned nearest-bin locator."""
         if self._locator is None:
-            # Older pickles contain the tree and source mapping rather than a
-            # locator; their data is sufficient to construct the new record.
-            legacy_tree = getattr(self, "_kdtree", None)
-            if legacy_tree is not None:
-                self._locator = NearestBinLocator(
-                    legacy_tree.data,
-                    bin_indices=getattr(self, "_kdtree_nodes_to_bin_indices_map", None),
-                )
-            else:
-                centers = getattr(self, "bin_centers", None)
-                if centers is None or len(centers) == 0:
-                    raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
-                self._build_kdtree(centers)
+            centers = getattr(self, "bin_centers", None)
+            if centers is None or len(centers) == 0:
+                raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
+            self._build_kdtree(centers)
         assert self._locator is not None
         return self._locator
 
@@ -88,7 +79,7 @@ class _KDTreeMixin:
         An unbuilt or empty layout returns -1 for every query point. Built
         layouts reject a coordinate width that differs from their bin centers.
         """
-        if self._locator is None and getattr(self, "_kdtree", None) is None:
+        if self._locator is None:
             centers = getattr(self, "bin_centers", None)
             if centers is None or len(centers) == 0:
                 return np.full(np.atleast_2d(points).shape[0], -1, dtype=np.intp)

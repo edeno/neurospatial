@@ -2,15 +2,9 @@ from collections.abc import Mapping
 
 import numpy as np
 import pytest
+import shapely.geometry as shp
 
 from neurospatial.regions.core import Region, Regions
-
-try:
-    import shapely.geometry as shp
-
-    HAS_SHAPELY = True
-except ImportError:
-    HAS_SHAPELY = False
 
 
 @pytest.mark.parametrize(
@@ -42,7 +36,6 @@ def test_region_polygon_creation():
     assert r.data.equals(poly)
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_polygon_invalid_type():
     with pytest.raises(TypeError):
         Region(name="badpoly", kind="polygon", data=[(0, 0), (1, 1)])
@@ -63,7 +56,6 @@ def test_region_to_dict_and_from_dict_point():
     assert r2.metadata["color"] == "red"
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_to_dict_and_from_dict_polygon():
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     r = Region(name="poly", kind="polygon", data=poly, metadata={"label": "square"})
@@ -96,7 +88,6 @@ def test_region_point_value_equality():
     assert region != object()
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_add_polygon_and_area():
     regs = Regions()
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
@@ -118,10 +109,9 @@ def test_regions_add_both_point_and_polygon():
     regs = Regions()
     with pytest.raises(ValueError):
         regs.add(name="bad", point=(1.0, 2.0), polygon=[(0, 0), (1, 0), (0, 1)])
-    if HAS_SHAPELY:
-        poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        with pytest.raises(ValueError):
-            regs.add("bar", point=[1, 2], polygon=poly)
+    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    with pytest.raises(ValueError):
+        regs.add("bar", point=[1, 2], polygon=poly)
 
 
 def test_regions_setitem_key_mismatch():
@@ -168,7 +158,6 @@ def test_regions_set_rejects_name_mismatch():
         regs.set("foo", Region(name="bar", kind="point", data=[1, 2]))
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_buffer_point_and_polygon(tmp_path):
     regs = Regions()
     pt = [0.0, 0.0]
@@ -183,14 +172,12 @@ def test_regions_buffer_point_and_polygon(tmp_path):
     assert "buf2" in regs
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_buffer_raw_point():
     regs = Regions()
     regs.buffer(np.array([0.0, 0.0]), distance=1.0, new_name="buf")
     assert "buf" in regs
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_buffer_invalid_shape():
     regs = Regions()
     with pytest.raises(ValueError):
@@ -203,14 +190,12 @@ def test_regions_area_point():
     assert regs.area("pt") == 0.0
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_center_empty_polygon_returns_none():
     """An empty polygon has no centroid; region_center returns None, not IndexError."""
     regs = Regions([Region("e", kind="polygon", data=shp.Polygon())])
     assert regs.region_center("e") is None
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_center_nonempty_polygon_centroid():
     """A unit-square polygon's center is its centroid (no regression)."""
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
@@ -279,7 +264,6 @@ def test_regions_update_region_point():
     assert updated is regs["pt"]  # Returned region is the stored one
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_update_region_polygon():
     """Test updating an existing polygon region."""
     regs = Regions()
@@ -447,7 +431,6 @@ class TestRegionMetadataImmutability:
         assert region.metadata["properties"]["size"] == 10
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_update_region_change_kind():
     """Test updating a region to a different kind (point -> polygon)."""
     regs = Regions()
@@ -480,7 +463,6 @@ def test_regions_update_region_neither_point_nor_polygon():
         regs.update_region("pt")
 
 
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_update_region_both_point_and_polygon():
     """Test that update rejects both point and polygon."""
     regs = Regions()
