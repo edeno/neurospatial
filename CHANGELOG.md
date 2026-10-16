@@ -254,11 +254,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `graph_turn_sequence`. Floats and booleans raise `TypeError` instead of being
   truncated to bin indices, and out-of-range bins raise
   `BinIndexOutOfRangeError` (a `ValueError`). `-1`, the value `bin_at` gives
-  a position outside the environment, is never accepted as a target: a
-  single `target_bins=-1` or `goal_bins=-1` used to return all-NaN distances
-  and now raises. In the per-sample arrays of `distance_to_region`,
-  `cost_to_goal` and `path_progress` (as built by `trials_to_region_arrays`),
-  `-1` still marks a sample with no target and gives NaN. `shortest_path_length(...,
+  a position outside the environment, is never accepted as a single target,
+  whether it is an int or a one-element array such as
+  `env.bin_at([[x, y]])`: `target_bins=-1` and `goal_bins=-1` used to return
+  all-NaN distances and now raise. Only an array with one entry per sample
+  (shape `(len(position_bins),)`, as built by `trials_to_region_arrays`) is
+  per sample, and there `-1` still marks a sample with no target and gives
+  NaN; an array of any other length raises `ValueError`. `path_progress`
+  also accepts one start and one goal bin for every sample.
+  `approach_rate(..., metric="geodesic")` raises for a goal outside the
+  environment; it used to return all-NaN rates. `shortest_path_length(...,
   metric="geodesic")` measures with `env.distance_between`: a start outside
   the environment used to return the distance from the last bin without a
   warning, and a goal outside raised an unrelated graph error; both now raise

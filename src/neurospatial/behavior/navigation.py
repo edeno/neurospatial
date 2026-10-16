@@ -508,11 +508,13 @@ def path_progress(
         Current bin index at each timepoint.
     env : Environment
         Spatial environment.
-    start_bins : NDArray[np.int_], shape (n_samples,)
-        Start bin for each timepoint. Can be constant (single trial) or
-        vary per-timepoint (multiple trials).
-    goal_bins : NDArray[np.int_], shape (n_samples,)
-        Goal bin for each timepoint. Can be constant or vary per-timepoint.
+    start_bins : int or NDArray[np.int_], shape (n_samples,)
+        Start bin for each timepoint, or one start bin for every timepoint.
+        In a per-sample array ``-1`` marks a sample with no start (NaN); a
+        single start must be a bin.
+    goal_bins : int or NDArray[np.int_], shape (n_samples,)
+        Goal bin for each timepoint, or one goal bin for every timepoint,
+        with the same ``-1`` rule.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         Distance metric.
 
@@ -581,28 +583,24 @@ def path_progress(
             instead="Use metric='geodesic', which follows physical graph edge lengths.",
         )
 
-    from neurospatial.environment._targets import validate_target_bins
+    from neurospatial.environment._targets import validate_sample_targets
 
+    n_samples = len(position_bins)
+    # A single start or goal applies to every sample.
     start_bins, goal_bins = (
-        validate_target_bins(
-            bins,
-            n_bins=env.n_bins,
-            coordinates=env.coordinate_system,
-            operation="path_progress()",
-            argument=argument,
-            allow_missing=True,
+        np.broadcast_to(
+            validate_sample_targets(
+                bins,
+                n_samples=n_samples,
+                n_bins=env.n_bins,
+                coordinates=env.coordinate_system,
+                operation="path_progress()",
+                argument=argument,
+            )[0],
+            (n_samples,),
         )
         for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
     )
-
-    # Validate array lengths
-    n_samples = len(position_bins)
-    if len(start_bins) != n_samples or len(goal_bins) != n_samples:
-        raise ValueError(
-            f"Array length mismatch: position_bins has {n_samples} samples, "
-            f"but start_bins has {len(start_bins)} and goal_bins has {len(goal_bins)}. "
-            f"All arrays must have the same length."
-        )
 
     # Import distance functions
     from neurospatial.ops.distance import (
@@ -693,8 +691,9 @@ def distance_to_region(
         Spatial environment.
     target_bins : NDArray[np.int_] or int
         Target bin specification:
-        - int: Single target bin (constant over time), in ``[0, n_bins)``;
-          ``-1`` (the outside marker of ``bin_at``) is refused.
+        - int, or a one-element array such as ``env.bin_at([[x, y]])``: one
+          target bin for every sample, in ``[0, n_bins)``; ``-1`` (the outside
+          marker of ``bin_at``) is refused.
         - NDArray[np.int_], shape (n_samples,): Target bin at each timepoint;
           ``-1`` marks a sample with no target, which gives NaN.
           This allows dynamic goals.
@@ -742,20 +741,18 @@ def distance_to_region(
             instead="Use metric='geodesic', which follows physical graph edge lengths.",
         )
 
-    from neurospatial.environment._targets import validate_target_bins
+    from neurospatial.environment._targets import validate_sample_targets
 
-    targets = validate_target_bins(
+    targets, per_sample = validate_sample_targets(
         target_bins,
+        n_samples=len(position_bins),
         n_bins=env.n_bins,
         coordinates=env.coordinate_system,
         operation="distance_to_region()",
         argument="target_bins",
-        # -1 marks a per-sample "no target"; a single target must be a bin.
-        allow_missing=np.ndim(target_bins) > 0,
     )
 
-    if np.ndim(target_bins) == 0:
-        n_samples = len(position_bins)
+    if not per_sample:
         (target,) = targets
         dist_field = env.distance_to(bins=target, metric=metric)
         distances = dist_field[position_bins].astype(np.float64)
@@ -822,8 +819,9 @@ def cost_to_goal(
     env : Environment
         Spatial environment.
     goal_bins : NDArray[np.int_] or int
-        Target bin(s). Can be scalar (constant goal, in ``[0, n_bins)``) or
-        array (dynamic goal, where ``-1`` marks a sample with no goal).
+        Target bin(s). One bin for every sample (an int or a one-element
+        array, in ``[0, n_bins)``), or an array of shape ``(n_samples,)``
+        (dynamic goal, where ``-1`` marks a sample with no goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
         Per-bin traversal cost. Default: uniform cost (geodesic distance).
     terrain_difficulty : NDArray[np.float64], shape (n_bins,), optional
@@ -850,23 +848,25 @@ def cost_to_goal(
     --------
     distance_to_region : Simple geometric distance
     """
-    from neurospatial.environment._targets import validate_target_bins
+    from neurospatial.environment._targets import validate_sample_targets
     from neurospatial.ops.distance import distance_field
 
-    goals = validate_target_bins(
+    goals, per_sample = validate_sample_targets(
         goal_bins,
+        n_samples=len(position_bins),
         n_bins=env.n_bins,
         coordinates=env.coordinate_system,
         operation="cost_to_goal()",
         argument="goal_bins",
-        # -1 marks a per-sample "no target"; a single target must be a bin.
-        allow_missing=np.ndim(goal_bins) > 0,
     )
 
     # Case 1: No cost modifications
     if cost_map is None and terrain_difficulty is None:
         return distance_to_region(
-            position_bins, env, target_bins=goal_bins, metric="geodesic"
+            position_bins,
+            env,
+            target_bins=goals if per_sample else goals[0],
+            metric="geodesic",
         )
 
     # Case 2: Cost modifications - build weighted graph
@@ -885,7 +885,7 @@ def cost_to_goal(
 
         g_weighted[u][v]["weight"] = base_dist
 
-    if np.ndim(goal_bins) == 0:
+    if not per_sample:
         dist_field = distance_field(g_weighted, goals, weight="weight")
         costs = dist_field[position_bins]
 
@@ -2045,7 +2045,8 @@ def approach_rate(
     Raises
     ------
     ValueError
-        If metric="geodesic" but env is None.
+        If metric="geodesic" but env is None, or the goal is outside the
+        environment or has NaN coordinates.
     ValueError
         If positions and times have different lengths.
     ValueError
@@ -2088,10 +2089,10 @@ def approach_rate(
     else:
         assert env is not None
         position_bins = env.bin_at(positions)
-        goal_bin = env.bin_at(goal)
-        distances = distance_to_region(
-            position_bins, env, target_bins=goal_bin, metric="geodesic"
-        )
+        # The goal is an explicit point: one outside the environment raises.
+        to_goal = env.distance_to(points=goal.reshape(1, -1), metric="geodesic")
+        distances = to_goal[position_bins]
+        distances[position_bins == -1] = np.nan
 
     from neurospatial._intervals import observed_interval_mask
     from neurospatial.behavior._kinematics import interval_velocity

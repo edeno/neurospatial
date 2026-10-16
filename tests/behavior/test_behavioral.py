@@ -1698,7 +1698,9 @@ def test_path_progress_array_length_mismatch():
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Mismatched lengths
-    with pytest.raises(ValueError, match="Array length mismatch"):
+    with pytest.raises(
+        ValueError, match=r"start_bins= with shape \(2,\), but there are 3 samples"
+    ):
         path_progress(
             np.array([0, 1, 2]),
             env,

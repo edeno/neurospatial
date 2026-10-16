@@ -48,11 +48,14 @@ def _calls(env, position_bins, target):
         "path_progress": lambda: path_progress(
             position_bins, env, start_bins=per_sample, goal_bins=per_sample
         ),
+        "path_progress_single": lambda: path_progress(
+            position_bins, env, start_bins=target, goal_bins=target
+        ),
         "geodesic_voronoi_labels": lambda: geodesic_voronoi_labels(
-            env, [target, target]
+            env, np.r_[target, target]
         ),
         "distance_to_decision_boundary": lambda: distance_to_decision_boundary(
-            env, position_bins, [target, target]
+            env, position_bins, np.r_[target, target]
         ),
         "goal_reward_field": lambda: goal_reward_field(env, target),
         "graph_turn_sequence": lambda: graph_turn_sequence(
@@ -62,6 +65,8 @@ def _calls(env, position_bins, target):
 
 
 _NAMES = sorted(_calls(None, np.zeros(1), 0))
+# Every call whose target is one bin, not a per-sample array.
+_SINGLE_TARGET_NAMES = [name for name in _NAMES if name != "path_progress"]
 
 
 @pytest.mark.parametrize("name", _NAMES)
@@ -106,13 +111,56 @@ def test_minus_one_still_marks_samples_without_a_target(env, position_bins):
     assert np.all(np.isnan(progress))  # every sample lacks a start or a goal
 
 
-@pytest.mark.parametrize("name", _NAMES)
-def test_minus_one_is_never_a_single_target(env, position_bins, name):
-    """-1 is bin_at's outside marker; as one target it is refused, not NaN."""
-    if name == "path_progress":
-        pytest.skip("path_progress takes only per-sample arrays")
+@pytest.mark.parametrize("name", _SINGLE_TARGET_NAMES)
+@pytest.mark.parametrize("shape", ["scalar", "one_element"])
+def test_minus_one_is_never_a_single_target(env, position_bins, name, shape):
+    """-1 is bin_at's outside marker; as one target it is refused, not NaN.
+
+    ``env.bin_at([[x, y]])`` returns a one-element array, so a shape-(1,)
+    target must be read as one bin, not as a per-sample array.
+    """
+    target = -1 if shape == "scalar" else np.array([-1])
     with pytest.raises(BinIndexOutOfRangeError, match=r"-1 is the value bin_at gives"):
-        _calls(env, position_bins, -1)[name]()
+        _calls(env, position_bins, target)[name]()
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+def test_bin_at_output_of_an_outside_goal_is_refused(env, position_bins, weighted):
+    goal = env.bin_at(np.array([[500.0, 500.0]]))  # shape (1,), value -1
+    cost_map = np.ones(env.n_bins) if weighted else None
+    with pytest.raises(BinIndexOutOfRangeError):
+        distance_to_region(position_bins, env, target_bins=goal)
+    with pytest.raises(BinIndexOutOfRangeError):
+        cost_to_goal(position_bins, env, goal_bins=goal, cost_map=cost_map)
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+def test_one_element_target_equals_the_scalar_target(env, position_bins, weighted):
+    cost_map = np.ones(env.n_bins) if weighted else None
+    np.testing.assert_array_equal(
+        cost_to_goal(position_bins, env, goal_bins=np.array([40]), cost_map=cost_map),
+        cost_to_goal(position_bins, env, goal_bins=40, cost_map=cost_map),
+    )
+    np.testing.assert_array_equal(
+        distance_to_region(position_bins, env, target_bins=np.array([40])),
+        distance_to_region(position_bins, env, target_bins=40),
+    )
+
+
+def test_per_sample_targets_of_the_wrong_length_raise(env, position_bins):
+    with pytest.raises(ValueError, match=r"shape \(3,\), but there are 10 samples"):
+        distance_to_region(position_bins, env, target_bins=np.array([1, 2, 3]))
+
+
+def test_approach_rate_refuses_a_goal_outside(env):
+    from neurospatial.behavior import approach_rate
+
+    times = np.arange(5) / 10.0
+    positions = np.c_[np.linspace(2.0, 20.0, 5), np.full(5, 5.0)]
+    with pytest.raises(ValueError, match="outside the environment"):
+        approach_rate(times, positions, [500.0, 3.0], env=env, metric="geodesic")
+    rates = approach_rate(times, positions, [27.0, 5.0], env=env, metric="geodesic")
+    assert np.all(rates[1:] < 0)  # moving east toward the goal
 
 
 @pytest.mark.parametrize("bins", [-1, -2, [3, -1]])
