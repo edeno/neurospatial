@@ -182,6 +182,39 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   environments and, if the file has Position data, names it and points to
   `environment_from_position`.
 
+- Every region query now uses one rule for which bins a region covers. A
+  point region covers the bin that contains the point. A polygon region covers
+  the bins whose centers lie inside it or on its edge; pass
+  `include_boundary=False` to count only centers strictly inside. The rule is
+  shared by `bins_in_region`, `region_mask`, `region_membership`,
+  `distance_to` with a region name, `subset(region_names=...)`,
+  `subset(polygon=...)` and `neurospatial.ops.binning.regions_to_mask`, so
+  they agree on every layout. Before, they disagreed:
+  - `region_membership()` and `regions_to_mask()` gave a point region no bins
+    (`regions_to_mask` also warned). They now give the bin that contains the
+    point. Time spent at a point region, and visits, crossings and laps found
+    through `regions_to_mask`, now count that bin.
+  - `bins_in_region()`, `subset(region_names=...)` and `subset(polygon=...)`
+    left out bins whose centers lie exactly on a polygon's edge, while
+    `region_mask` included them. All of them now include those bins.
+    `bins_in_region` takes `include_boundary=False` for the old interior-only
+    selection. Analyses built on `bins_in_region` can change when a polygon
+    edge passes through bin centers: the decision-region entry time in
+    `decision_region_entry_time`, `compute_decision_analysis` and
+    `compute_vte_session`, the goal bins and decision boundary of
+    `compute_decision_analysis`, the start and goal bins of
+    `trials_to_region_arrays`, and the region boundary of
+    `neurospatial.events.distance_to_boundary(region_name=...)`.
+  - `subset(region_names=[...])` keeps the bin that contains a point region
+    instead of raising `ValueError`.
+  - `distance_to("reward")` with a point region measures the distance to the
+    bin that contains the point. It used to warn that the region had no bins
+    and then raise. A region that covers no bin, such as a point outside the
+    environment, raises a `ValueError` that says so.
+  - On egocentric polar environments a point region is read in the same
+    (distance, angle) coordinates as `bin_centers`; `bins_in_region` and
+    `region_mask` used to refuse point regions there.
+
 ### Changed
 
 - `env.connectivity` is built from the environment's bins for every layout,

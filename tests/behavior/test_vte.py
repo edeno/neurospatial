@@ -933,7 +933,7 @@ def zig_zag_then_run(simple_2d_environment):
 
     env = simple_2d_environment
     region_builder = Regions(env.regions.values())
-    region_builder.add("decision", polygon=box(45, 40, 60, 60))
+    region_builder.add("decision", polygon=box(46, 40, 60, 60))
     env = env.with_regions(region_builder)
     times = np.arange(0, 10, 1 / 30)
     phase = (times * 3.0 + 0.5) % 1.0

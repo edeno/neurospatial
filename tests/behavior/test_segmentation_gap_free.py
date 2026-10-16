@@ -2,7 +2,9 @@
 
 Every segmentation/window/sequence entry point is compared to a detached
 baseline capture using identical fixture builders, with exact segment/index
-structure and rtol=1e-12 for floating metrics.
+structure and rtol=1e-12 for floating metrics. The ``compute_decision_analysis``
+entry was captured again when ``bins_in_region`` began to include bins whose
+centers lie on a polygon's edge, which moves the goal-region boundary.
 """
 
 import json

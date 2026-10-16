@@ -17,10 +17,10 @@ from neurospatial._exceptions import (
 )
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cartesian import require_cartesian
-from neurospatial.environment._regions import _region_membership
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._lookup import locate
+from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.ops.distance import distance_field
 from neurospatial.regions import Regions
 
@@ -133,12 +133,14 @@ def _distance_to(
     targets: Sequence[int] | str,
     *,
     metric: Literal["euclidean", "geodesic"],
-    bin_centers: NDArray[np.float64],
+    binning: Binning,
+    arena: Arena,
     graph: nx.Graph,
     regions: Regions,
     coordinates: CartesianSystem | EgocentricPolarSystem,
 ) -> NDArray[np.float64]:
     """Distance from every bin to the nearest target bin or region bin."""
+    bin_centers = binning.bins.centers
     n_bins = len(bin_centers)
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
@@ -150,17 +152,15 @@ def _distance_to(
             raise RegionNotFoundError(
                 region_name, available=list(regions.keys()), argument="targets"
             )
-
-        # Get bins in region via membership
-        membership = _region_membership(bin_centers, regions)
-        region_idx = list(regions.keys()).index(region_name)
-        targets = np.where(membership[:, region_idx])[0].tolist()
-
+        covered = region_bin_mask(regions[region_name], binning=binning, arena=arena)
+        targets = np.flatnonzero(covered).tolist()
         if len(targets) == 0:
-            warnings.warn(
-                f"Region '{region_name}' contains no bins. All distances will be inf.",
-                category=UserWarning,
-                stacklevel=_external_stacklevel(),
+            raise ValueError(
+                _format_error(
+                    f"Region {region_name!r} covers no bins, so there is nothing to measure distance to.",
+                    why="Why: a point region outside the environment, or a polygon that contains no bin center, selects no bins.",
+                    fix="move the region inside the environment, or enlarge the polygon until it contains a bin center",
+                )
             )
 
     # Convert to numpy array for validation

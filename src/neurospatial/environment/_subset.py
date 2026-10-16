@@ -3,22 +3,27 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
 import shapely
 import shapely.geometry.base
 from numpy.typing import NDArray
-from shapely import contains_xy
 
 from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import select_bins
+from neurospatial.geometry._region_bins import polygon_bin_mask, region_bin_mask
 from neurospatial.regions import Regions
+
+if TYPE_CHECKING:
+    from neurospatial.geometry._arena import Arena
 
 
 def _subset_mask(
-    bin_centers: NDArray[np.float64],
+    binning: Binning,
+    arena: Arena,
     regions: Regions,
     *,
     bins: NDArray[np.bool_] | None = None,
@@ -27,7 +32,7 @@ def _subset_mask(
     invert: bool = False,
 ) -> NDArray[np.bool_]:
     """Validate a spatial selection and build its active-bin mask."""
-    n_bins = len(bin_centers)
+    n_bins = binning.bins.n_bins
     # --- Input Validation ---
 
     # Exactly one selection parameter must be provided
@@ -81,29 +86,9 @@ def _subset_mask(
                     f"Available regions: {available}"
                 )
 
-        # Build mask from regions
         mask = np.zeros(n_bins, dtype=bool)
         for name in region_names:
-            region = regions[name]
-            if region.kind == "point":
-                raise ValueError(
-                    f"Region '{name}' is a point-type region. "
-                    "subset() only supports polygon-type regions. "
-                    "Use a boolean mask (bins parameter) to select bins containing specific points."
-                )
-            elif region.kind == "polygon":
-                if bin_centers.shape[1] != 2:
-                    raise ValueError(
-                        f"Polygon regions only work for 2D environments. "
-                        f"This environment has {bin_centers.shape[1]} dimensions. "
-                        "Use bins parameter for N-dimensional selection."
-                    )
-
-                # Vectorized containment check (much faster than loop)
-                in_region = contains_xy(
-                    region.data, bin_centers[:, 0], bin_centers[:, 1]
-                )
-                mask |= in_region
+            mask |= region_bin_mask(regions[name], binning=binning, arena=arena)
 
     elif polygon is not None:
         # Validate polygon parameter
@@ -114,15 +99,7 @@ def _subset_mask(
                     f"polygon must be a Shapely geometry object, got {type(polygon)}"
                 )
 
-            # Dimension check
-            if bin_centers.shape[1] != 2:
-                raise ValueError(
-                    f"Polygon selection only works for 2D environments. "
-                    f"This environment has {bin_centers.shape[1]} dimensions."
-                )
-
-            # Vectorized containment check (150x faster than Python loop)
-            mask = contains_xy(polygon, bin_centers[:, 0], bin_centers[:, 1])
+            mask = polygon_bin_mask(polygon, binning.bins.centers)
 
         except (AttributeError, TypeError, ValueError) as e:
             raise ValueError(f"Invalid polygon: {e}") from e
@@ -146,6 +123,7 @@ def _subset_mask(
 
 def _subset(
     binning: Binning,
+    arena: Arena,
     connectivity: nx.Graph,
     regions: Regions,
     *,
@@ -156,7 +134,8 @@ def _subset(
 ) -> _Derivation:
     """Derive selected bins and their graph and bounds."""
     mask = _subset_mask(
-        binning.bins.centers,
+        binning,
+        arena,
         regions,
         bins=bins,
         region_names=region_names,

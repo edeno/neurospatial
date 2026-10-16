@@ -198,8 +198,8 @@ class TestRegionsToMaskEdgeCases:
         # No bins should be inside
         assert not np.any(mask)
 
-    def test_point_region_returns_false(self):
-        """Test that point regions return all False (points have no area)."""
+    def test_point_region_selects_the_bin_containing_it(self):
+        """A point region selects the one bin that contains the point."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
@@ -208,8 +208,9 @@ class TestRegionsToMaskEdgeCases:
 
         mask = regions_to_mask(env, regions)
 
-        # Points have no area, so no bins can be "inside"
-        assert not np.any(mask)
+        np.testing.assert_array_equal(
+            np.flatnonzero(mask), env.bin_at(np.array([[5.0, 5.0]]))
+        )
 
     def test_mixed_point_and_polygon(self):
         """Test with both point and polygon regions."""
@@ -222,7 +223,7 @@ class TestRegionsToMaskEdgeCases:
 
         mask = regions_to_mask(env, regions)
 
-        # Should only capture polygon bins (point has no area)
+        # The union of the polygon bins and the bin containing the point
         assert np.any(mask)
 
 

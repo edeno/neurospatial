@@ -105,11 +105,7 @@ from neurospatial.environment._rebin import (
     _rebin_resolution,
     warn_rebin_losses,
 )
-from neurospatial.environment._regions import (
-    _bins_in_region,
-    _region_mask,
-    _region_membership,
-)
+from neurospatial.environment._regions import _region_membership
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import _info, _repr, _repr_html
 from neurospatial.environment._trajectory import (
@@ -133,8 +129,9 @@ from neurospatial.geometry._coordinates import (
 )
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
+from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.layout.factories import LayoutType
-from neurospatial.ops.binning import TieBreakStrategy
+from neurospatial.ops.binning import TieBreakStrategy, _regions_mask
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
     _compute_divergence_operator,
@@ -2104,12 +2101,13 @@ class Environment(Generic[_C]):
         bins : NDArray[np.bool_], shape (n_bins,), optional
             Boolean mask of bins to keep. True = keep, False = discard.
         region_names : Sequence[str], optional
-            Keep bins whose centers lie inside these named regions.
-            Regions must exist in self.regions. Only polygon-type regions
-            are supported (point-type regions will raise ValueError).
+            Keep the bins these named regions cover, by the rule of
+            :meth:`bins_in_region`: the bin containing a point region, and
+            the bins whose centers lie inside (or on the edge of) a polygon
+            region. Regions must exist in self.regions.
         polygon : shapely.Polygon, optional
-            Keep bins whose centers lie inside this polygon. Only works
-            for 2D environments.
+            Keep bins whose centers lie inside this polygon or on its edge.
+            Only works for 2D environments.
         invert : bool, default=False
             If True, invert the selection mask (select complement).
         name : str, optional
@@ -2174,6 +2172,7 @@ class Environment(Generic[_C]):
         """
         derivation = _subset(
             self._binning,
+            self._arena,
             self.connectivity,
             self.regions,
             bins=bins,
@@ -3998,7 +3997,8 @@ class Environment(Generic[_C]):
         return _distance_to(
             targets,
             metric=metric,
-            bin_centers=self.bin_centers,
+            binning=self._binning,
+            arena=self._arena,
             graph=self.connectivity,
             regions=self.regions,
             coordinates=self._coordinate_system,
@@ -4489,83 +4489,73 @@ class Environment(Generic[_C]):
 
         write_environment(nwbfile, self, name=name, overwrite=overwrite)
 
-    def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
-        """Get active bin indices that fall within a specified named region.
+    def bins_in_region(
+        self, region_name: str, *, include_boundary: bool = True
+    ) -> NDArray[np.intp]:
+        """Return the indices of the bins a named region covers.
 
-        This method identifies all active bins whose centers fall within the
-        geometric bounds of a named region. For point regions, returns the
-        bin containing that point. For polygon regions (2D only), returns all
-        bins whose centers are contained by the polygon.
+        A point region covers the one bin that contains the point. A polygon
+        region covers the bins whose centers lie inside it. This is the same
+        rule as :meth:`region_mask`, :meth:`region_membership`,
+        ``distance_to(region=...)`` and ``subset(region_names=...)``.
 
         Parameters
         ----------
         region_name : str
-            The name of a defined region in `self.regions`.
+            The name of a region in ``self.regions``.
+        include_boundary : bool, default=True
+            For a polygon region, count a bin whose center lies exactly on the
+            polygon's edge as inside. Point regions ignore it.
 
         Returns
         -------
         NDArray[np.intp]
-            Array of active bin indices (0 to n_active_bins - 1)
-            that are part of the region. Returns empty array if no bins
-            fall within the region.
+            Sorted active-bin indices in the region. Empty when the region
+            covers no bin, for example a point outside the environment.
 
         Raises
         ------
         KeyError
-            If `region_name` is not found in `self.regions`.
+            If ``region_name`` is not found in ``self.regions``.
         ValueError
-            If region point dimension does not match environment dimension,
-            if polygon regions are used in non-2D environments, or if
-            region kind is unsupported.
-        RuntimeError
-            If polygon region is requested but shapely is not installed.
-
-        Notes
-        -----
-        - Point regions return at most one bin (the bin containing the point,
-          or empty array if point is outside environment)
-        - Polygon regions require shapely library and 2D environments
-        - Bin membership is determined by whether the bin center falls within
-          the region geometry
+            If a point region has a different number of coordinates than the
+            bins, or a polygon region is used in an environment that is not
+            2-D.
 
         Examples
         --------
         >>> import numpy as np
+        >>> from shapely.geometry import box
         >>> from neurospatial import Environment
-        >>> data = np.array([[0.0, 0.0], [10.0, 10.0]])
-        >>> env = Environment.from_samples(data, bin_size=2.0, infer_active_bins=False)
         >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> _ = regions.add("center", point=(5.0, 5.0))
+        >>> edges = np.arange(0.0, 11.0, 2.0)  # bin centers 1, 3, 5, 7, 9
+        >>> env = Environment.from_grid_mask(
+        ...     np.ones((5, 5), dtype=bool), (edges, edges)
+        ... )
+        >>> regions = Regions()
+        >>> _ = regions.add("reward", point=(5.2, 4.9))
+        >>> _ = regions.add("roi", polygon=box(3, 3, 7, 7))
         >>> env = env.with_regions(regions)
-        >>> bins = env.bins_in_region("center")
-        >>> bins.shape
-        (1,)
-
-        For polygon regions (requires shapely):
-
-        >>> from shapely.geometry import box  # doctest: +SKIP
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> regions.add("roi", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
-        >>> env = env.with_regions(regions)
-        >>> bins = env.bins_in_region("roi")  # doctest: +SKIP
-        >>> len(bins)  # Number of bins in the 6x6 square  # doctest: +SKIP
-        9  # doctest: +SKIP
+        >>> env.bin_centers[env.bins_in_region("reward")]
+        array([[5., 5.]])
+        >>> len(env.bins_in_region("roi"))  # centers 3, 5 and 7 in x and y
+        9
+        >>> len(env.bins_in_region("roi", include_boundary=False))  # only (5, 5)
+        1
 
         See Also
         --------
-        region_mask : Get boolean mask for one or more regions (canonical
-            method form for "is this bin in this region?").
-        neurospatial.regions.Region : Region data structure
+        region_mask : Boolean mask over bins for one or more regions.
+        region_membership : Bins-by-regions membership table.
 
         """
-        return _bins_in_region(
+        mask = region_bin_mask(
             self.regions[region_name],
             binning=self._binning,
             arena=self._arena,
-            coordinates=self._coordinate_system,
+            include_boundary=include_boundary,
         )
+        return np.flatnonzero(mask).astype(np.intp, copy=False)
 
     def region_membership(
         self,
@@ -4589,9 +4579,10 @@ class Environment(Generic[_C]):
             Allows testing against external region sets without modifying
             the environment.
         include_boundary : bool, default=True
-            How to handle bins on region boundaries:
+            How to handle bins whose centers lie on a polygon's edge:
             - True: Bins on boundary count as inside (shapely.covers).
             - False: Only bins strictly inside count (shapely.contains).
+            Point regions ignore it.
 
         Returns
         -------
@@ -4614,8 +4605,11 @@ class Environment(Generic[_C]):
         Notes
         -----
         **Region Types**:
-        - Polygon regions: Uses Shapely containment (covers/contains).
-        - Point regions: Always return False (points have no area).
+        - Polygon regions: bins whose centers lie inside (covers/contains).
+        - Point regions: the one bin that contains the point.
+
+        This is the same rule as :meth:`bins_in_region`, :meth:`region_mask`
+        and ``distance_to(region=...)``.
 
         **Performance**:
         This method uses vectorized Shapely operations for efficiency.
@@ -4676,158 +4670,89 @@ class Environment(Generic[_C]):
 
         """
         return _region_membership(
-            self.bin_centers,
             self.regions if regions is None else regions,
+            binning=self._binning,
+            arena=self._arena,
             include_boundary=include_boundary,
         )
 
     def region_mask(
         self,
-        regions: str | list[str] | Region | Regions,
+        regions: str | list[str | Region] | Region | Regions,
         *,
         include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
-        """Get boolean mask over bins for one or more regions.
+        """Boolean mask over bins for one or more regions.
 
-        This method provides a convenient interface to rasterize continuous regions
-        onto discrete environment bins. It accepts multiple input types and returns
-        a boolean mask indicating which bins fall within the region(s).
-
-        This is the method-based interface to the `regions_to_mask()` free function,
-        providing better discoverability and ergonomics when working with a single
-        environment.
+        A point region covers the one bin that contains the point. A polygon
+        region covers the bins whose centers lie inside it. This is the same
+        rule as :meth:`bins_in_region`, :meth:`region_membership`,
+        ``distance_to(region=...)`` and
+        :func:`neurospatial.ops.binning.regions_to_mask`.
 
         Parameters
         ----------
-        regions : str, list[str], Region, or Regions
-            Region(s) to rasterize. Can be:
-            - A single region name (str) from self.regions
-            - A list of region names (list[str]) from self.regions
-            - A single Region object
-            - A Regions collection
+        regions : str, list of str or Region, Region, or Regions
+            Region(s) to select. A name refers to an entry in ``self.regions``;
+            Region objects are used directly.
         include_boundary : bool, default=True
-            Whether to include bins whose centers lie on region boundaries:
-            - True: Include boundary bins (uses shapely.covers)
-            - False: Exclude boundary bins (uses shapely.contains)
+            For polygon regions, count a bin whose center lies exactly on the
+            polygon's edge as inside (``shapely.covers``); with False only
+            centers strictly inside count (``shapely.contains``). Point
+            regions ignore it.
 
         Returns
         -------
         mask : NDArray[np.bool_], shape (n_bins,)
-            Boolean mask where True indicates bin center is inside region(s).
-            For multiple regions, returns the union (logical OR).
-            Point regions always return all False (points have no area).
+            True for each bin covered by any of the regions (their union).
 
         Raises
         ------
-        KeyError
-            If a region name is not found in self.regions.
+        RegionNotFoundError
+            If a region name is not in ``self.regions`` (a ``KeyError``).
         TypeError
-            If regions parameter has invalid type or include_boundary is not bool.
+            If ``regions`` has an invalid type or ``include_boundary`` is not
+            a bool.
 
         Notes
         -----
-        **Region Types**:
-        - Polygon regions: Rasterized using Shapely containment checks
-        - Point regions: Always return all False (points have no area)
-
-        **Multiple Regions**:
-
-        When multiple regions are provided, the result is their **union** (logical OR).
-        Bins are included if they fall inside ANY of the regions. Overlapping
-        regions are counted only once.
-
-        For intersection or difference, use boolean operations on separate masks:
+        For intersection or difference, combine separate masks:
 
         >>> left_mask = env.region_mask("left")  # doctest: +SKIP
         >>> right_mask = env.region_mask("right")  # doctest: +SKIP
         >>> intersection = left_mask & right_mask  # doctest: +SKIP
         >>> difference = left_mask & ~right_mask  # doctest: +SKIP
 
-        **Boundary Semantics**:
-
-        - include_boundary=True: Uses shapely.covers (includes boundary)
-        - include_boundary=False: Uses shapely.contains (excludes boundary)
-
         Examples
         --------
         >>> import numpy as np
         >>> from shapely.geometry import box
         >>> from neurospatial import Environment
-
-        Create environment with regions:
-
+        >>> from neurospatial.regions import Regions
         >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
+        >>> regions = Regions()
         >>> _ = regions.add("center", polygon=box(3, 3, 7, 7))
-        >>> _ = regions.add("left", polygon=box(0, 0, 4, 10))
-        >>> _ = regions.add("right", polygon=box(6, 0, 10, 10))
+        >>> _ = regions.add("reward", point=(9.0, 9.0))
         >>> env = env.with_regions(regions)
-
-        Single region by name:
-
-        >>> mask = env.region_mask("center")
-        >>> mask.shape  # doctest: +ELLIPSIS
-        (...,)
-        >>> mask.dtype
-        dtype('bool')
-
-        Multiple regions (union):
-
-        >>> mask = env.region_mask(["left", "right"])  # doctest: +SKIP
-        >>> np.any(mask)  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        All regions in environment:
-
-        >>> mask = env.region_mask(env.regions)  # doctest: +SKIP
-        >>> mask.shape  # doctest: +SKIP
-        (36,)  # doctest: +SKIP
-
-        Exclude boundary bins:
-
-        >>> mask_no_boundary = env.region_mask(
-        ...     "center", include_boundary=False
-        ... )  # doctest: +SKIP
-        >>> mask_with_boundary = env.region_mask(
-        ...     "center", include_boundary=True
-        ... )  # doctest: +SKIP
-        >>> bool(mask_no_boundary.sum() <= mask_with_boundary.sum())  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        Use with external Region object:
-
-        >>> from neurospatial.regions import Region  # doctest: +SKIP
-        >>> external_region = Region(
-        ...     name="ext", kind="polygon", data=box(4, 4, 6, 6)
-        ... )  # doctest: +SKIP
-        >>> mask = env.region_mask(external_region)  # doctest: +SKIP
-        >>> mask.shape  # doctest: +SKIP
-        (36,)  # doctest: +SKIP
+        >>> int(env.region_mask("center").sum())
+        4
+        >>> int(env.region_mask("reward").sum())  # the bin containing the point
+        1
+        >>> int(env.region_mask(["center", "reward"]).sum())
+        5
 
         See Also
         --------
-        region_membership : 2D membership array for all regions
-        bins_in_region : Get bin indices for a specific region
-        neurospatial.spatial.regions_to_mask : Free function version
-
-        Notes
-        -----
-        **Point regions**: ``region_mask`` reports the single bin
-        whose center is closest to the point (via :meth:`bins_in_region`,
-        which uses :meth:`bin_at`). The free-function
-        :func:`regions_to_mask` returns an empty mask for points
-        because points have no area; the method-form here special-cases
-        them so ``env.region_mask("goal")`` matches what users mean
-        when they write that.
+        region_membership : Bins-by-regions membership table.
+        bins_in_region : Bin indices for one named region.
+        neurospatial.ops.binning.regions_to_mask : Free-function form.
         """
-        return _region_mask(
+        return _regions_mask(
             regions,
             named_regions=self.regions,
             binning=self._binning,
             arena=self._arena,
-            coordinates=self._coordinate_system,
             include_boundary=include_boundary,
         )
 

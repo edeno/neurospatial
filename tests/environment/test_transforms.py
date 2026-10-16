@@ -352,19 +352,6 @@ class TestSubset:
         with pytest.raises(ValueError, match=r"Region .* not found"):
             medium_2d_env.subset(region_names=["nonexistent_region"])
 
-    def test_subset_point_region_raises_error(self, medium_2d_env: Environment) -> None:
-        """Test that point-type regions raise error."""
-        # Make a copy to avoid mutating session-scoped fixture
-        env = medium_2d_env.with_metadata()
-
-        # Add a point region to the copy
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", point=np.array([0.0, 0.0]))
-        env = env.with_regions(region_builder)
-
-        with pytest.raises(ValueError, match="point-type region"):
-            env.subset(region_names=["goal"])
-
     def test_subset_inverted_selection(self, medium_2d_env: Environment) -> None:
         """Test inverted selection (complement)."""
         # Select center bins
@@ -428,7 +415,7 @@ class TestSubset:
         """Test that polygon subsetting on 3D environment raises error."""
         poly = box(0, 0, 10, 10)
 
-        with pytest.raises(ValueError, match="only works for 2D"):
+        with pytest.raises(ValueError, match="needs 2-D bins"):
             simple_3d_env.subset(polygon=poly)
 
     def test_subset_region_names_empty_raises_error(

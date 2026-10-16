@@ -261,19 +261,19 @@ class TestSubsetValidation:
         with pytest.raises(ValueError, match=r"region_names.*empty"):
             env.subset(region_names=[])
 
-    def test_subset_point_region_raises_error(self):
-        """Point-type regions raise ValueError with helpful message."""
+    def test_subset_point_region_keeps_the_bin_containing_it(self):
+        """A point region selects the bin that contains the point."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-
-        # Add a point region
         region_builder = Regions(env.regions.values())
         region_builder.add("goal", point=[50, 50])
         env = env.with_regions(region_builder)
 
-        # Should raise error with clear message
-        with pytest.raises(ValueError, match=r"point-type region"):
-            env.subset(region_names=["goal"])
+        sub = env.subset(region_names=["goal"])
+
+        (goal_bin,) = env.bins_in_region("goal")
+        assert sub.n_bins == 1
+        np.testing.assert_array_equal(sub.bin_centers, env.bin_centers[[goal_bin]])
 
 
 class TestSubsetInvert:

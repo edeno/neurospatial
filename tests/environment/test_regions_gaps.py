@@ -200,12 +200,7 @@ class TestRegionMembership:
         assert with_boundary.sum() >= without_boundary.sum()
 
     def test_region_membership_point_regions(self):
-        """Test region_membership with point regions.
-
-        Notes
-        -----
-        Tests that point regions return all False (points have no area).
-        """
+        """Each point-region column marks the one bin that contains its point."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
         region_builder = Regions(env.regions.values())
@@ -215,35 +210,12 @@ class TestRegionMembership:
 
         membership = env.region_membership()
 
-        # Points have no area, so all False
         assert membership.shape == (env.n_bins, 2)
-        assert not np.any(membership)
-
-    def test_region_membership_mixed_types(self):
-        """Test region_membership with mixed region types.
-
-        Notes
-        -----
-        Tests that point and polygon regions can coexist and are
-        handled correctly.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("point", point=(0.0, 0.0))
-        region_builder.add("polygon", polygon=box(-5, -5, 5, 5))
-        env = env.with_regions(region_builder)
-
-        membership = env.region_membership()
-
-        # Should have 2 columns
-        assert membership.shape == (env.n_bins, 2)
-
-        # Point column (0) should be all False
-        assert not np.any(membership[:, 0])
-
-        # Polygon column (1) should have some True
-        assert np.any(membership[:, 1])
+        expected = env.bin_at(np.array([[0.0, 0.0], [5.0, 5.0]]))
+        for column, bin_index in enumerate(expected):
+            np.testing.assert_array_equal(
+                np.flatnonzero(membership[:, column]), [bin_index]
+            )
 
     def test_region_membership_invalid_regions_type(self):
         """Test region_membership raises TypeError for invalid regions.

@@ -115,13 +115,13 @@ class BinSpacingConsumer(BinCentersConsumer, Protocol):
 
 
 class RegionMaskConsumer(Protocol):
-    """Bin centers and named regions for region membership masks."""
+    """Bins, their domain and named regions for region membership masks."""
 
     @property
-    def n_bins(self) -> int: ...
+    def binning(self) -> Binning: ...
 
     @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
+    def arena(self) -> Arena: ...
 
     @property
     def regions(self) -> Regions: ...

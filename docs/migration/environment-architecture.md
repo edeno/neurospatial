@@ -632,3 +632,52 @@ the `environment_from_position(nwbfile, bin_size=5.0)` call, and
 `Environment.from_nwb(nwbfile)` on a file with no saved environment raises a
 `KeyError` that lists the environments the file does store and, when the file
 has Position data, names it and points to `environment_from_position`.
+
+## Which bins a region covers
+
+Every region query uses one rule. A point region, such as a reward port,
+covers the bin that contains the point. A polygon region, such as a reward
+zone or a maze arm, covers the bins whose centers lie inside it or exactly on
+its edge. `bins_in_region`, `region_mask`, `region_membership`,
+`distance_to` with a region, `subset(region_names=...)`,
+`subset(polygon=...)` and `regions_to_mask` all follow it, so the bins you
+count time in are the bins you measure distance to.
+
+| Call | Before | Now |
+| --- | --- | --- |
+| `env.region_membership()`, point region | no bins | the bin containing the point |
+| `regions_to_mask(env, "reward")`, point region | no bins and a warning | the bin containing the point |
+| `env.distance_to("reward")`, point region | warning, then `ValueError` | distance to the bin containing the point |
+| `env.subset(region_names=["reward"])`, point region | `ValueError` | keeps the bin containing the point |
+| `env.bins_in_region("zone")`, centers on the polygon's edge | left out | included |
+| `env.subset(polygon=...)` and `subset(region_names=...)`, centers on the edge | left out | included |
+
+A bin center lies exactly on a polygon's edge when the polygon is drawn on the
+bin grid, for example `box(0, 0, 50, 100)` on a grid with a center at
+`x = 50`. Analyses that use `bins_in_region` then see those edge bins too:
+decision-region entry times (`decision_region_entry_time`,
+`compute_decision_analysis`, `compute_vte_session`), the goal bins and
+decision boundary of `compute_decision_analysis`, `trials_to_region_arrays`
+and `distance_to_boundary(region_name=...)`. To keep only the interior, pass
+`include_boundary=False`:
+
+<!-- docs-test: run -->
+```python
+from shapely.geometry import box
+
+from neurospatial import Regions
+
+edges = np.linspace(0.0, 100.0, 11)  # bin centers at 5, 15, ..., 95 cm
+grid = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), (edges, edges))
+regions = Regions()
+regions.add("reward", point=(52.0, 48.0))
+regions.add("west", polygon=box(0.0, 0.0, 55.0, 100.0))  # edge on x = 55
+grid = grid.with_regions(regions)
+
+reward_bins = grid.bins_in_region("reward")  # the bin containing the point
+assert np.array_equal(np.flatnonzero(grid.region_membership()[:, 0]), reward_bins)
+# Before: grid.bins_in_region("west") left out the column of centers at x = 55
+west_bins = grid.bins_in_region("west")
+west_interior = grid.bins_in_region("west", include_boundary=False)
+assert len(west_bins) == len(west_interior) + 10
+```

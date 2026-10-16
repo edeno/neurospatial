@@ -927,11 +927,6 @@ class TestPolarRaisesOnCartesianAssumingMethods:
                 "neighbors() from a coordinate point",
             ),
             (
-                lambda env: env.bins_in_region("p"),
-                "bins_in_region() for a point region",
-            ),
-            (lambda env: env.region_mask("p"), "region_mask() for a point region"),
-            (
                 lambda env: env.transitions(
                     times=np.array([0.0, 0.1]),
                     positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
@@ -954,6 +949,22 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             call(polar_env)
         assert str(caught.value).startswith(f"Environment.{operation} is not available")
         assert "()()" not in str(caught.value)
+
+    def test_point_region_covers_the_bin_at_its_distance_and_angle(self, polar_env):
+        """A polar point region is read in bin-center (distance, angle) coordinates."""
+        region_builder = Regions(polar_env.regions.values())
+        region_builder.add("p", point=(25.0, 0.1))
+        polar_env = polar_env.with_regions(region_builder)
+        (covered,) = polar_env.bins_in_region("p")
+        distance, angle = polar_env.bin_centers[covered]
+        assert distance == pytest.approx(25.0)
+        assert 0.0 <= angle < np.pi / 2
+        np.testing.assert_array_equal(
+            np.flatnonzero(polar_env.region_mask("p")), [covered]
+        )
+        np.testing.assert_array_equal(
+            np.flatnonzero(polar_env.region_membership()[:, 0]), [covered]
+        )
 
 
 class TestPolarSerializationRoundTrip:
