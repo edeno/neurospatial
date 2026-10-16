@@ -4,71 +4,50 @@
 
 ### Breaking
 
+These `Environment` changes come with before-and-after code on the environment
+architecture [migration
+page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
+
 - Pickle files of an `Environment` written by an earlier version can no longer
   be loaded. Pickle still works for passing an environment between processes
   of the same version (for example with `multiprocessing`), but it is not a
   storage format. Save with `env.to_file(...)` or NWB export and reload with
-  `Environment.from_file(...)`. See the
-  [migration page](docs/migration/environment-architecture.md).
+  `Environment.from_file(...)`.
 
-- Compatibility import paths are removed: `neurospatial.environment.transforms`,
-  `neurospatial.environment._coordinates`, `neurospatial.environment._metadata`,
-  `neurospatial.environment._ownership`, `neurospatial.environment._from_bins`
-  and the former private geometry modules under `neurospatial.layout`. The
-  private names that `neurospatial.arena` re-exported are gone as well; its
-  public arena classes are unchanged.
-
-- `neurospatial.environment._HAS_SHAPELY` is removed. Shapely is a required
-  dependency.
-
-- The modules that implement `Environment` methods are private:
+- Old import paths are removed. The compatibility modules
+  `neurospatial.environment.transforms`, `._coordinates`, `._metadata`,
+  `._ownership` and `._from_bins`, the former private geometry modules under
+  `neurospatial.layout`, the private names re-exported by `neurospatial.arena`
+  and `neurospatial.environment._HAS_SHAPELY` are gone (shapely is a required
+  dependency). The modules that implement `Environment` methods are private:
   `neurospatial.environment.fields`, `.queries`, `.metrics`, `.trajectory`,
   `.regions`, `.visualization`, `.polar`, `.cartesian` and `.factories` are
   now `_fields`, `_queries` and so on, and
   `neurospatial.environment.serialization` is removed. Call the `Environment`
-  methods (for example `env.smooth`, `env.occupancy`, `env.to_file`) instead
-  of the functions in these modules. Import `BinSequenceWithRuns` from
-  `neurospatial.environment`. See the
-  [migration page](docs/migration/environment-architecture.md#removed-import-paths).
+  methods (for example `env.smooth`, `env.occupancy`, `env.to_file`) instead,
+  and import `BinSequenceWithRuns` from `neurospatial.environment`. The public
+  arena classes in `neurospatial.arena` are unchanged.
 
-- `Environment` is now a plain immutable value. Two environments are equal only
-  when they are the same object (`env == other` used to be true for an
-  environment and its name string, and `env == "name"` no longer works), and
-  environments can be used in sets and as dictionary keys. Compare names with
-  `env.name`, and use `env.with_metadata(...)` to get a relabelled environment.
-
-- `Environment.copy()` is removed. An environment cannot be changed after it is
-  built, so there is nothing to copy: `copy.copy(env)` and `copy.deepcopy(env)`
-  return the same object. Use `with_regions`, `with_metadata`, `subset` or
+- `Environment` is an immutable value. Two environments are equal only when
+  they are the same object: `env == "name"` (comparing with the name) no
+  longer works, so compare `env.name`. Environments can be used in sets and as
+  dictionary keys. `Environment.copy()` is removed because an environment
+  cannot change after it is built; `copy.copy(env)` and `copy.deepcopy(env)`
+  return the same object. Use `with_metadata`, `with_regions`, `subset` or
   `rebin` to get a changed environment.
 
-- `EnvironmentNotFittedError` (error code E1004) and the `check_fitted`
-  decorator are removed, together with the `neurospatial.environment.decorators`
-  module. An environment always has its bins and connectivity; calling
-  `Environment()` directly still raises E1006. Passing something that is not an
-  environment to an analysis function raises `TypeError` naming the corrected
-  call.
+- `EnvironmentNotFittedError` (error code E1004), the `check_fitted`
+  decorator and the `neurospatial.environment.decorators` module are removed.
+  An environment always has its bins and connectivity; calling
+  `Environment()` directly still raises E1006. Passing something that is not
+  an environment to an analysis function raises `TypeError` naming the
+  corrected call.
 
 - `Environment.clear_cache()` takes no arguments and releases every cached
   analysis (KD-tree, smoothing kernels, eigenbases, operators, boundary bins
   and attribute tables). The `kdtree=`, `kernels=` and `cached_properties=`
   options and `neurospatial.ops.binning.clear_kdtree_cache` are removed; call
   `env.clear_cache()` instead.
-
-- `env.with_metadata(...)` and `env.with_regions(...)` share their parent's
-  analysis cache instead of starting with an empty one, because the bins are
-  the same. A rate map computed again after renaming an environment reuses the
-  cached eigenbasis: on a 3,586-bin open field, the first
-  `compute_spatial_rate` call after `with_metadata(name=...)` took 0.51 s
-  instead of 0.88 s. Clearing the cache of one clears it for all of them.
-  Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
-  `combine`) and environments loaded from files, dicts, NWB or pickles start
-  with their own empty cache. Each cached analysis is computed once even when
-  several threads request it at the same time. `smooth`, `diffuse` and
-  `get_mrf_basis` calls on one environment and its relabelled copies run one
-  at a time: each holds the eigenbasis lock for the whole call, so threads
-  do not speed up smoothing on a shared environment. Use worker processes for
-  parallel smoothing.
 
 - `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
   instead of `AttributeError` when the environment is not a linearized track.
@@ -78,57 +57,39 @@
   `env.layout_type == "Polar"` instead of `"MaskedGrid"`, and their printed
   summary says `Polar`. Their bins are distance-by-angle sectors, not
   Cartesian grid cells. Files saved before this change still load and keep the
-  layout name they were saved with. Code that checked
-  `layout_type == "MaskedGrid"` to detect a polar environment should use
-  `env.coordinate_kind == "polar"`.
+  layout name they were saved with. To detect a polar environment, test
+  `env.coordinate_kind == "polar"` instead of the layout name.
 
-- Every layout engine now supplies its geometry through a `binning()` method
-  that returns a `Binning` (bins, point lookup, finite-volume faces and its
-  grid, track, shape and outline records). `LayoutEngine` lists this method.
-  A custom layout engine, including a subclass of a built-in engine, is
-  published by implementing `binning()`; subclasses of built-in engines were
-  previously refused. The environment keeps only what `binning()` returns
-  (with the layout's connectivity, ranges and grid attributes); it never calls
-  `point_to_bin_index` or `finite_volume_geometry`, and a layout whose
-  methods were replaced on the instance is no longer refused. Objects without
-  `binning()` still need an installed snapshot adapter. The private `neurospatial.layout._capabilities` module
-  (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
-
-- A polar environment now takes the choice of whether its angle wraps around
-  only from its stored `EgocentricSurround` arena. Old files (`Environment-v2`
+- A polar environment takes the choice of whether its angle wraps around only
+  from its stored `EgocentricSurround` arena. Old files (`Environment-v2`
   files and NWB environment schema 2.0) stored no arena, so a polar
-  environment in one of them is refused with a message to re-save it. Cartesian
-  environments in those files still load.
+  environment in one of them is refused with a message to re-save it.
+  Cartesian environments in those files still load.
+
+- Every layout engine supplies its geometry through a `binning()` method that
+  returns a `Binning` (bins, point lookup, finite-volume faces and its grid,
+  track, shape and outline records), and `LayoutEngine` lists this method. A
+  custom layout engine, including a subclass of a built-in engine, is used by
+  implementing `binning()`. The environment keeps only what `binning()`
+  returns, with the layout's connectivity, ranges and grid attributes; it
+  never calls `point_to_bin_index` or `finite_volume_geometry`. Objects
+  without `binning()` still need an installed snapshot adapter. The private
+  `neurospatial.layout._capabilities` module (`RectilinearGridProvider`) is
+  removed; read `layout.binning().rectilinear`.
 
 - Graph, node and edge attributes of `env.connectivity` are stored as
-  immutable values and are no longer copied on every read. A list attribute
-  reads back as a tuple, a dict as a read-only mapping, a set as a frozenset
-  and a numeric array as a read-only array, at every nesting level; this
-  includes `env.connectivity.graph`, which used to return a fresh editable
-  copy on each read. Reading attributes is about 5 times faster and Dijkstra
-  shortest paths on `env.connectivity` about 2 times faster.
-  `env.to_networkx()` and `env.connectivity.copy()` still return independent
-  graphs whose attributes are editable lists, dicts, sets and writable arrays,
-  as before.
+  immutable values. A list attribute reads back as a tuple, a dict as a
+  read-only mapping, a set as a frozenset and a numeric array as a read-only
+  array, at every nesting level. This includes `env.connectivity.graph`, which
+  used to return a fresh editable copy on each read. `env.to_networkx()` and
+  `env.connectivity.copy()` still return independent graphs whose attributes
+  are editable lists, dicts, sets and writable arrays.
 
 - Derived environments keep the labels of the environment they came from.
-  `subset()` and `clip()` now keep the named regions (they used to drop them),
-  and `subset()` keeps the name. `rebin()` keeps the name (no `_rebinned`
-  suffix). `apply_transform()` keeps the name (no `_transformed` suffix) and no
-  longer invents a frame: the new frame is the `frame=` you pass, or `None`.
-  `subset()` and `rebin()` accept `name=` like `clip()` and `apply_transform()`,
-  and `neurospatial.ops.apply_transform_to_environment` accepts `frame=`.
-  Derived environments no longer repeat the warning about unrecognized units.
-
-- A factory given an `arena=` that leaves out some bins (for example
-  `from_grid_mask(..., arena=OpenArena(polygon))`) now selects the bins before
-  building the environment, instead of building it, subsetting it and building
-  it again. The bins, graph and ranges are unchanged, but `layout_type` and
-  `layout_parameters` now describe the factory's layout (for example
-  `"MaskedGrid"` with `connect_diagonal_neighbors`) whether or not the arena
-  dropped a bin; they used to switch to a subset record. Together with the
-  faster graph publication, a 200 × 200 grid mask cropped by an arena builds
-  about 2.7 times faster.
+  `subset()` and `clip()` keep the named regions (they used to drop them), and
+  `subset()` keeps the name. `rebin()` keeps the name (no `_rebinned` suffix).
+  `apply_transform()` keeps the name (no `_transformed` suffix) and no longer
+  invents a frame: the new frame is the `frame=` you pass, or `None`.
 
 - `env.layout_parameters` (and the `layout_parameters` record in files, dicts
   and NWB) holds only the scalar build choices, such as `bin_size`,
@@ -142,45 +103,45 @@
   track graph is still owned by the environment: read it from
   `env.binning.linearization.graph` (and `.edge_order`).
 
-- `Environment.from_samples` and `Environment.open_field` take `bin_size` as a
-  keyword: write `Environment.from_samples(positions, bin_size=2.0)`, not
-  `from_samples(positions, 2.0)`. Their signatures list every option, so a
-  misspelled option raises `TypeError` instead of reaching the layout engine;
-  `dimension_ranges=` is now a named option. The regular-grid-only options
-  (`dilate`, `fill_holes`, `close_gaps`, `add_boundary_bins`,
-  `connect_diagonal_neighbors`) raise `ValueError` with `layout="Hexagonal"`
-  instead of being ignored. `open_field` accepts `fill_holes=False` (it used to
-  fail with a `TypeError` about multiple values), `regions=` and `arena=`. See
-  the [migration page](docs/migration/environment-architecture.md#factory-arguments).
+- Factories take their data positionally and every option by keyword:
+  - `Environment.from_samples(positions, bin_size=2.0)` and
+    `Environment.open_field(positions, bin_size=2.0)`, not
+    `from_samples(positions, 2.0)`. Their signatures list every option, so a
+    misspelled option raises `TypeError` instead of reaching the layout
+    engine.
+  - `Environment.from_graph(graph, edge_order, bin_size=2.0)`. `edge_spacing`
+    was a required positional argument before `bin_size`; it is now a keyword
+    that defaults to `0.0` (edges end to end), as in `linear_track` and
+    `maze`.
+  - `Environment.maze(kind="plus", node_positions=..., bin_size=...)`.
+  - `Environment.from_polygon(polygon, bin_size=2.0)` and
+    `Environment.from_pixel_mask(mask, pixel_size=0.5)`.
+  - `Environment.from_polar_egocentric(distance_range=(0, 50),
+    angle_range=(-np.pi, np.pi), distance_bin_size=5.0,
+    angle_bin_size=np.pi / 8)`. Four positional numbers were easy to swap.
 
-- `Environment.from_graph(graph, edge_order, *, bin_size, edge_spacing=0.0)`
-  takes `bin_size` and `edge_spacing` as keywords, and `edge_spacing` defaults
-  to `0.0` (edges end to end), as it already did for `linear_track` and
-  `maze`. `Environment.maze` takes `kind=` as a keyword:
-  `Environment.maze(kind="plus", node_positions=..., bin_size=...)`.
-  `from_graph`, `linear_track` and `maze` accept `regions=`.
-
-- `Environment.from_polygon` takes `bin_size` and `Environment.from_pixel_mask`
-  takes `pixel_size` as keywords: write
-  `Environment.from_polygon(polygon, bin_size=2.0)` and
-  `Environment.from_pixel_mask(mask, pixel_size=0.5)`. `from_polygon`,
-  `from_grid_mask` and `from_pixel_mask` accept `regions=`.
-
-- `Environment.from_polar_egocentric` takes every argument by keyword:
-  `from_polar_egocentric(distance_range=(0, 50), angle_range=(-np.pi, np.pi),
-  distance_bin_size=5.0, angle_bin_size=np.pi / 8)`. The ranges and bin sizes
-  are choices, not data, and four positional numbers were easy to swap.
+- `Environment.from_samples`, `Environment.open_field` and
+  `neurospatial.io.nwb.environment_from_position` refuse options that the
+  call would ignore, instead of ignoring them without a word. The
+  regular-grid-only options (`dilate`, `fill_holes`, `close_gaps`,
+  `add_boundary_bins`, `connect_diagonal_neighbors`) raise `ValueError` with
+  `layout="Hexagonal"`. With `infer_active_bins=False` every bin in the extent
+  is active, so `bin_count_threshold`, `dilate`, `fill_holes` and
+  `close_gaps` raise `ValueError`. A `layout=` other than `"RegularGrid"` or
+  `"Hexagonal"` raises `ValueError` listing the supported layouts and the
+  factory to use instead; it used to raise `NotImplementedError`. Errors from
+  `environment_from_position` name that function.
 
 - `Environment.from_layout` takes a built layout engine instead of a layout
   name and a dictionary of build parameters:
-  `Environment.from_layout(create_layout("TriangularMesh", boundary_polygon=arena, point_spacing=2.5))`.
-  It now also accepts your own layout engine after its `build(...)`, with no
-  registration. A layout name or an engine class raises `TypeError` with the
-  corrected call. `layout_type` and `layout_parameters` come from the engine's
-  own record, which includes the defaults it resolved but never its input
-  data: a built-in engine's positions, masks, polygons, graphs and boundary
-  coordinates are left out, whether or not they were given. Grids, polygons,
-  masks and tracks keep their dedicated factories.
+  `Environment.from_layout(create_layout("TriangularMesh",
+  boundary_polygon=arena, point_spacing=2.5))`. A layout name or an engine
+  class raises `TypeError` with the corrected call. `layout_type` and
+  `layout_parameters` come from the engine's own record, which includes the
+  defaults it resolved but never its input data: a built-in engine's
+  positions, masks, polygons, graphs and boundary coordinates are left out,
+  whether or not they were given. Grids, polygons, masks and tracks keep
+  their dedicated factories.
 
 - `Environment.from_nwb` only loads an environment saved in the file:
   `Environment.from_nwb(nwbfile, name="linear_track")`. The record name is
@@ -188,26 +149,80 @@
   `read_environment`, and defaults to `"spatial_environment"`. To build an
   environment from the file's Position data, call
   `neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)`
-  instead of `from_nwb(nwbfile, bin_size=...)`.
-  `environment_from_position` takes `bin_size` as a keyword and lists every
-  `from_samples` option (`name=`, `regions=`, `arena=`, `layout=`,
-  `fill_holes=` and so on) instead of forwarding `**kwargs`.
+  instead of `from_nwb(nwbfile, bin_size=...)`. It takes `bin_size` as a
+  keyword and lists every `from_samples` option (`name=`, `regions=`,
+  `arena=`, `layout=`, `fill_holes=` and so on) instead of forwarding
+  `**kwargs`.
 
-- `Environment.from_samples`, `Environment.open_field` and
-  `neurospatial.io.nwb.environment_from_position` refuse options that the
-  call would ignore. With `infer_active_bins=False` every bin in the extent is
-  active, so passing `bin_count_threshold`, `dilate`, `fill_holes` or
-  `close_gaps` raises `ValueError` (they used to be ignored without a word).
-  An unsupported `layout=` (anything but `"RegularGrid"` or `"Hexagonal"`)
-  raises `ValueError` listing the supported layouts and the factory to use
-  instead; it used to raise `NotImplementedError`. Errors from
-  `environment_from_position` name that function.
+### Changed
+
+- `env.with_metadata(...)` and `env.with_regions(...)` share their parent's
+  analysis cache instead of starting with an empty one, because the bins are
+  the same, so renaming an environment keeps the kernels and eigenbases
+  already computed. Clearing the cache of one clears it for all of them.
+  Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
+  `combine`) and environments loaded from files, dicts, NWB or pickles start
+  with their own empty cache. Each cached analysis is computed once even when
+  several threads request it at the same time. `smooth`, `diffuse` and
+  `get_mrf_basis` calls on one environment and its relabelled copies run one
+  at a time, because each holds the eigenbasis lock for the whole call; use
+  worker processes for parallel smoothing.
+
+- A factory given an `arena=` that leaves out some bins (for example
+  `from_grid_mask(..., arena=OpenArena(polygon))`) selects the bins before
+  building the environment, instead of building it, subsetting it and
+  building it again. The bins, graph and ranges are unchanged, but
+  `layout_type` and `layout_parameters` now describe the factory's layout (for
+  example `"MaskedGrid"` with `connect_diagonal_neighbors`) whether or not the
+  arena dropped a bin; they used to switch to a subset record.
+
+- `Environment.subset()` reports the extent of the bins it keeps as
+  `dimension_ranges`, with no added margin. Subsets of hexagonal,
+  triangular-mesh and clipped polygon-cell environments (`env.clip(...)`)
+  used to add 5% on each side; a mesh subset now bounds only its kept
+  triangles, so a subset of one corner of a mesh no longer reports the extent
+  of the whole mesh. Plots of these subsets fit the kept cells more tightly.
+  Grid subsets keep the extent of their grid, and bins without cell shapes
+  (tracks) keep the bounds of the kept bin centers, as before. The same
+  applies to the bins an `arena=` removes in `Environment.from_layout`,
+  `from_grid_mask` and `from_pixel_mask`. For `Environment.from_bins`, the
+  ranges of triangular-mesh bins bound the triangles' vertices rather than
+  every stored mesh point. The migration page has a table for each layout.
+
+- A `CartesianOnlyError` from a Cartesian-only method or property, such as
+  `bin_at`, `contains` or `occupancy`, names the class of the environment that
+  refused the call. On a subclass of `Environment`, `polar_env.bin_at(points)`
+  reports `MyEnvironment.bin_at() is not available ...`, for the bound call
+  and for `Environment.bin_at(polar_env, points)` alike. Messages from
+  `Environment` itself are unchanged.
+
+- `dir(env)` on a polar environment, and tools that read it such as
+  `inspect.getmembers(env)`, no longer list the Cartesian-only members such as
+  `bin_at`, `contains`, `occupancy` and `subset`. It now matches
+  `hasattr(env, "bin_at")`, which was already `False`. Cartesian environments
+  list them as before.
+
+- Derived environments no longer repeat the warning about unrecognized units.
 
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of
   `Environment.bin_sequence_with_runs()`, is importable from a public path for
   type annotations and `isinstance` checks.
+
+- `Environment.from_layout` accepts your own layout engine after its
+  `build(...)`, with no registration. Subclasses of built-in engines, which
+  used to be refused, now build environments normally.
+
+- `subset()` and `rebin()` accept `name=` like `clip()` and
+  `apply_transform()`, and `neurospatial.ops.apply_transform_to_environment`
+  accepts `frame=`.
+
+- `from_polygon`, `from_grid_mask`, `from_pixel_mask`, `from_graph`,
+  `linear_track` and `maze` accept `regions=`, so every Cartesian factory
+  takes the same `name=`, `units=`, `frame=` and `regions=` keywords.
+  `open_field` accepts `regions=` and `arena=`, and `from_samples` and
+  `open_field` accept `dimension_ranges=` as a named option.
 
 - Every arena type has `domain_bounds()`, the lower and upper corners of a box
   that encloses its known Cartesian domain (`None` for an unknown domain, a
@@ -219,21 +234,18 @@
   edges). `Environment.distance_between` now calls it, so the two always
   agree.
 
-### Changed
+### Performance
 
-- A `CartesianOnlyError` from a Cartesian-only method or property, such as
-  `bin_at`, `contains` or `occupancy`, names the class of the environment that
-  refused the call. On a subclass of `Environment`, `polar_env.bin_at(points)`
-  reports
-  `MyEnvironment.bin_at() is not available ...`, for the bound call and for
-  `Environment.bin_at(polar_env, points)` alike. Messages from `Environment`
-  itself are unchanged.
+- Renaming an environment no longer discards its cached analyses: on a
+  3,586-bin open field, the first `compute_spatial_rate` call after
+  `with_metadata(name=...)` takes 0.51 s instead of 0.88 s.
 
-- `dir(env)` on a polar environment, and tools that read it such as
-  `inspect.getmembers(env)`, no longer list the Cartesian-only members such as
-  `bin_at`, `contains`, `occupancy` and `subset`. It now matches
-  `hasattr(env, "bin_at")`, which was already `False`. Cartesian environments
-  list them as before.
+- Reading graph attributes of `env.connectivity` is about 5 times faster, and
+  Dijkstra shortest paths on `env.connectivity` about 2 times faster, because
+  attributes are frozen once instead of copied on every read.
+
+- A 200 × 200 grid mask cropped by an `arena=` builds about 2.7 times faster,
+  because the bins are selected before the environment is built.
 
 - `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
   rectangular grids splits every interval across the cells its straight path
@@ -241,20 +253,10 @@
   trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
   1.2 s. Occupancy values are unchanged.
 
-- `Environment.subset()` reports the extent of the bins it keeps as
-  `dimension_ranges`, with no added margin. Subsets of hexagonal,
-  triangular-mesh and clipped polygon-cell environments (`env.clip(...)`)
-  used to add 5% on each side; a mesh subset now bounds only its kept
-  triangles, so a subset of one corner of a mesh no longer reports the extent
-  of the whole mesh. Plots of these subsets fit the kept cells more tightly.
-  See the [migration page](docs/migration/environment-architecture.md). Grid subsets keep the extent of their grid, and bins
-  without cell shapes (tracks) keep the bounds of the kept bin centers, as
-  before. The same applies to the bins an `arena=` removes in
-  `Environment.from_layout`, `from_grid_mask` and `from_pixel_mask`. For
-  `Environment.from_bins`, the ranges of triangular-mesh bins bound the
-  triangles' vertices rather than every stored mesh point.
-
 ### Fixed
+
+- `Environment.open_field(..., fill_holes=False)` works; it used to fail with
+  a `TypeError` about multiple values for `fill_holes`.
 
 - NWB reading and writing (`Environment.from_nwb`, `env.to_nwb` and the
   `neurospatial.io.nwb` functions) report "pynwb is required" only when pynwb

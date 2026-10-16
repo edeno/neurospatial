@@ -37,6 +37,7 @@ OPT_IN = (
     "docs/migration/v0.6.md",
     "docs/migration/environment-unified.md",
     "docs/migration/environment-geometry.md",
+    "docs/migration/environment-architecture.md",
 )
 SETUPS = {
     "docs_animation_quick_start": """import os
