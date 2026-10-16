@@ -33,7 +33,13 @@ class _PolarGridLayout(MaskedGridLayout):
     def __init__(self) -> None:
         """Initialize an unbuilt polar grid."""
         super().__init__()
+        self._layout_type_tag = "Polar"
         self.circular_angle = False
+
+    @property
+    def layout_type(self) -> str:
+        """Return the standardized category for egocentric polar sectors."""
+        return "polar"
 
     def build(
         self,

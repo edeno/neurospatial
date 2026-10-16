@@ -75,6 +75,22 @@ function raises a `TypeError` that shows the corrected call.
 **Linearization errors.** `to_linear` and `linear_to_nd` raise `TypeError`
 (not `AttributeError`) on an environment that is not a linearized track.
 
+## Polar environments report their own layout type
+
+`Environment.from_polar_egocentric(...)` environments now report
+`env.layout_type == "Polar"` (it was `"MaskedGrid"`), and `print(env)` shows
+`Polar`. The bins are sectors in distance and egocentric angle, so the old
+name suggested a Cartesian grid. To test whether an environment is polar, use
+the coordinate kind rather than the layout name:
+
+```python
+if env.coordinate_kind == "polar":
+    ...
+```
+
+A polar environment saved with an earlier version loads unchanged and keeps
+the layout name stored in its file.
+
 ## Custom layout engines supply `binning()`
 
 Each layout engine now hands its geometry to the environment through one

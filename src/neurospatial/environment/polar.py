@@ -86,7 +86,6 @@ def _create_polar_environment(
     return Environment._from_built_layout(
         cast("LayoutEngine", layout),
         name=name,
-        layout_type_used="MaskedGrid",
         layout_params_used=params,
         units=units,
         frame=frame,

@@ -43,6 +43,14 @@
   instead of `AttributeError` when the environment is not a linearized track.
   The message is unchanged.
 
+- Egocentric polar environments (`Environment.from_polar_egocentric`) report
+  `env.layout_type == "Polar"` instead of `"MaskedGrid"`, and their printed
+  summary says `Polar`. Their bins are distance-by-angle sectors, not
+  Cartesian grid cells. Files saved before this change still load and keep the
+  layout name they were saved with. Code that checked
+  `layout_type == "MaskedGrid"` to detect a polar environment should use
+  `env.coordinate_kind == "polar"`.
+
 - Every layout engine now supplies its geometry through a `binning()` method
   that returns a `Binning` (bins, point lookup, finite-volume faces and its
   grid, track, shape and outline records). `LayoutEngine` lists this method.

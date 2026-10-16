@@ -1011,6 +1011,27 @@ class TestPolarSerializationRoundTrip:
         assert isinstance(loaded, Environment)
         assert loaded._is_polar is True
 
+    def test_polar_layout_type_is_its_own_and_survives_storage(self, tmp_path):
+        """Polar sectors are not described as a Cartesian masked grid."""
+        from neurospatial.io import from_dict, from_file, to_dict, to_file
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+        to_file(env, tmp_path / "polar_env")
+        for restored in (
+            env,
+            from_dict(to_dict(env)),
+            from_file(tmp_path / "polar_env"),
+        ):
+            assert restored.layout_type == "Polar"
+            assert restored._layout_category == "polar"
+            assert restored._binning.kind == "Polar"
+            assert repr(restored).endswith("20 bins, Polar)")
+
 
 class TestPolarBoundaryGuardsExtended:
     """Regression coverage for review-found polar holes.
