@@ -54,8 +54,11 @@
   Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
   `combine`) and environments loaded from files, dicts, NWB or pickles start
   with their own empty cache. Each cached analysis is computed once even when
-  several threads request it at the same time, and smoothing calls on one
-  environment take turns while they grow the shared eigenbasis.
+  several threads request it at the same time. `smooth`, `diffuse` and
+  `get_mrf_basis` calls on one environment and its relabelled copies run one
+  at a time: each holds the eigenbasis lock for the whole call, so threads
+  do not speed up smoothing on a shared environment. Use worker processes for
+  parallel smoothing.
 
 - `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
   instead of `AttributeError` when the environment is not a linearized track.

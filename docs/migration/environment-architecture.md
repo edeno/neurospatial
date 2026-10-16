@@ -111,8 +111,12 @@ environment with its own empty cache, derive one (`subset`, `clip`, `rebin`,
 `apply_transform`, `combine`) or load one from a file, dict, NWB or pickle.
 
 **Threads.** Threads can share one environment: each cached analysis is
-computed once even when several threads ask for it at the same time, and
-smoothing calls take turns while they grow the shared eigenbasis.
+computed once even when several threads ask for it at the same time.
+`smooth`, `diffuse` and `get_mrf_basis` calls on one environment and its
+relabelled copies run one at a time, because each holds the eigenbasis lock
+for the whole call. To smooth in parallel (for example one neuron per
+worker), use worker processes; each unpickles its own environment with an
+empty cache.
 
 ## Polar environments report their own layout type
 
