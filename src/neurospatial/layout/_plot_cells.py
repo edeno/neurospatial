@@ -17,7 +17,6 @@ from neurospatial.layout._plotting import (
     plot_polygon_cells,
     plot_polygon_grid,
     plot_track,
-    plot_track_linear,
     plot_triangles,
 )
 
@@ -104,21 +103,3 @@ def plot_binning(
     if binning.bins.centers.shape[1] == 2:
         ax.scatter(binning.bins.centers[:, 0], binning.bins.centers[:, 1], **kwargs)
     return ax
-
-
-def plot_linear_binning(
-    binning: Binning, title: str, ax: Axes | None = None, **kwargs: Any
-) -> Axes:
-    """Draw a retained track in its absolute linear coordinate system."""
-    track = binning.linearization
-    if not isinstance(track, TrackLinearization):
-        raise NotImplementedError(
-            "plot_linear_layout needs stored track linearization."
-        )
-    return plot_track_linear(
-        ax,
-        title=title,
-        linearization=track,
-        grid_edges=track.grid_edges,
-        **kwargs,
-    )
