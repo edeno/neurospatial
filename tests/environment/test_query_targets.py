@@ -187,6 +187,21 @@ class TestFloatHintFollowsGeometry:
             grid.bin_center_of(1.5)
 
 
+class TestOutOfRangeHintFollowsGeometry:
+    """An out-of-range bin index names a lookup that works on the geometry."""
+
+    def test_polar_out_of_range_names_nearest_bin(self):
+        polar = _LAYOUTS["polar"]()
+        with pytest.raises(BinIndexOutOfRangeError) as caught:
+            polar.distance_to(bins=polar.n_bins)
+        assert "env.nearest_bin([[distance, angle]])" in str(caught.value)
+        assert "bin_at" not in str(caught.value)
+
+    def test_cartesian_out_of_range_names_bin_at(self, grid):
+        with pytest.raises(BinIndexOutOfRangeError, match=r"env\.bin_at\(\[point\]\)"):
+            grid.distance_to(bins=grid.n_bins)
+
+
 class TestPointsAreValidated:
     def test_one_dimensional_points_raise_with_fix(self, grid):
         with pytest.raises(ValueError, match=r"shape \(2,\)[\s\S]*points=\[\[x, y\]\]"):

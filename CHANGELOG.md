@@ -236,7 +236,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `bins=` takes an int or an integer array. Floats and booleans raise
   `TypeError` and point to `points=`; `env.bin_center_of` refuses them too and
   points to `env.bin_at` (`env.nearest_bin` on polar environments, where
-  `bin_at` is not available). `points=` has shape `(n_points, n_dims)`, one row per
+  `bin_at` is not available). `BinIndexOutOfRangeError` names the same
+  polar lookup on polar environments. `points=` has shape `(n_points, n_dims)`, one row per
   point, in the same coordinates as `bin_centers` (distance and angle on a
   polar environment). Points with NaN or inf coordinates, or outside the
   environment, raise `ValueError` that names the first such row.

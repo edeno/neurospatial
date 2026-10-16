@@ -56,8 +56,9 @@ def validate_bin_indices(
     bins: object,
     *,
     n_bins: int,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     operation: str,
-    fix: str,
+    takes_points: bool,
     argument: str = "bins",
     allow_missing: bool = False,
 ) -> NDArray[np.intp]:
@@ -69,10 +70,13 @@ def validate_bin_indices(
         An int, or an integer array of shape ``(n,)``.
     n_bins : int
         Number of active bins; valid indices are ``[0, n_bins)``.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        The environment's coordinate descriptor; the fixes name lookups that
+        work on this geometry.
     operation : str
         The call named in errors, e.g. ``"distance_to()"``.
-    fix : str
-        What to do instead when ``bins`` holds floats or booleans.
+    takes_points : bool
+        Whether the refused call itself takes ``points=``.
     argument : str, default="bins"
         The parameter name shown in errors, e.g. ``"goal_bins"``.
     allow_missing : bool, default=False
@@ -96,6 +100,7 @@ def validate_bin_indices(
         If an index is outside ``[0, n_bins)`` (``-1`` is allowed with
         ``allow_missing``).
     """
+    fix = coordinate_hint(coordinates, takes_points=takes_points)
     array = np.asarray(bins)
     if array.dtype.kind == "b":
         raise TypeError(
@@ -138,7 +143,15 @@ def validate_bin_indices(
     if allow_missing:
         out_of_range &= indices != -1
     if np.any(out_of_range):
-        raise BinIndexOutOfRangeError(int(indices[out_of_range][0]), n_bins=n_bins)
+        raise BinIndexOutOfRangeError(
+            int(indices[out_of_range][0]),
+            n_bins=n_bins,
+            coordinate_kind=(
+                "polar"
+                if isinstance(coordinates, EgocentricPolarSystem)
+                else "cartesian"
+            ),
+        )
     return indices.astype(np.intp, copy=False)
 
 
@@ -180,8 +193,9 @@ def validate_target_bins(
     return validate_bin_indices(
         bins,
         n_bins=n_bins,
+        coordinates=coordinates,
         operation=operation,
-        fix=coordinate_hint(coordinates, takes_points=False),
+        takes_points=False,
         argument=argument,
         allow_missing=allow_missing,
     )
@@ -351,8 +365,9 @@ def resolve_targets(
         resolved = validate_bin_indices(
             bins,
             n_bins=binning.bins.n_bins,
+            coordinates=coordinates,
             operation=operation,
-            fix=coordinate_hint(coordinates, takes_points=True),
+            takes_points=True,
         )
     elif points is not None:
         resolved = locate_points(

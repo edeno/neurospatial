@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cartesian import require_cartesian
-from neurospatial.environment._targets import coordinate_hint, validate_bin_indices
+from neurospatial.environment._targets import validate_bin_indices
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops.distance import distance_field
 
@@ -26,8 +26,9 @@ def _bin_center_of(
     indices = validate_bin_indices(
         bin_indices,
         n_bins=len(bin_centers),
+        coordinates=coordinates,
         operation="bin_center_of()",
-        fix=coordinate_hint(coordinates, takes_points=False),
+        takes_points=False,
     )
     return np.asarray(bin_centers[indices.reshape(np.shape(bin_indices))])
 

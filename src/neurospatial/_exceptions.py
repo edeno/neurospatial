@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import functools
 from difflib import get_close_matches
-from typing import Any
+from typing import Any, Literal
 
 __all__ = [
     "BinIndexOutOfRangeError",
@@ -159,17 +159,39 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
     Traceback (most recent call last):
         ...
     neurospatial._exceptions.BinIndexOutOfRangeError: Bin index 99 ...
+
+    Parameters
+    ----------
+    index : int
+        The refused index.
+    n_bins : int
+        Number of active bins.
+    coordinate_kind : {"cartesian", "polar"}, default="cartesian"
+        The environment's coordinates, so the fix names a lookup that works
+        there: ``bin_at`` for Cartesian bins, ``nearest_bin`` with
+        (distance, angle) rows for egocentric polar bins.
     """
 
-    def __init__(self, index: int, *, n_bins: int) -> None:
+    def __init__(
+        self,
+        index: int,
+        *,
+        n_bins: int,
+        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
+    ) -> None:
         msg = (
             f"Bin index {index} is out of range for an environment with "
             f"{n_bins} bin(s); valid indices are [0, {n_bins})."
         )
+        lookup = (
+            "int(env.nearest_bin([[distance, angle]])[0])"
+            if coordinate_kind == "polar"
+            else "int(env.bin_at([point])[0])"
+        )
         super().__init__(
             _format_error(
                 msg,
-                fix=f"pass a bin index in [0, {n_bins}); obtain one with int(env.bin_at([point])[0]).",
+                fix=f"pass a bin index in [0, {n_bins}); obtain one with {lookup}.",
             )
         )
         self.index = index
