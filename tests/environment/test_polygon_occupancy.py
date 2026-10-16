@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pytest
 from environment_helpers import publish_environment
@@ -44,12 +46,19 @@ def _wall_environment():
 )
 def test_polygon_linear_occupancy_exact_duration(positions, duration, expected):
     env = _one_cell_environment()
-    result = env.occupancy(
-        np.array([0.0, duration]),
-        np.asarray(positions, dtype=float),
-        max_gap=None,
-        time_allocation="linear",
+    # A path that never enters the cell keeps no time, and a warning says so.
+    flagged = (
+        pytest.warns(UserWarning, match="excluded ALL.*out of bounds")
+        if expected == 0.0
+        else contextlib.nullcontext()
     )
+    with flagged:
+        result = env.occupancy(
+            np.array([0.0, duration]),
+            np.asarray(positions, dtype=float),
+            max_gap=None,
+            time_allocation="linear",
+        )
     np.testing.assert_allclose(result, [expected], rtol=0, atol=1e-14)
 
 

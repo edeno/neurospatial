@@ -289,8 +289,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `env.transitions(times=..., positions=...)` warn when the `max_gap` gate
   and the other interval gates exclude every interval, and when the median
   sampling interval is longer than `max_gap`, which usually means `times` are
-  not in seconds (milliseconds turn every frame into a recording gap). They
-  used to return an empty or mostly empty result silently. The same warning
+  not in seconds (milliseconds turn every frame into a recording gap).
+  `occupancy` also warns when no interval keeps any time because every sample
+  is NaN or outside, with either `time_allocation`. They used to return an
+  empty or mostly empty result silently. The same warning
   comes from `compute_spatial_rate(s)` and the behavior analyses that share
   the gate, which now also warn about a median interval longer than
   `max_gap` when some intervals survive.

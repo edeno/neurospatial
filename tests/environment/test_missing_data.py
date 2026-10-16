@@ -379,3 +379,59 @@ def test_smooth_still_refuses_infinite_values(any_env):
     field[0] = np.inf
     with pytest.raises(ValueError, match="infinite"):
         any_env.smooth(field, 3.0)
+
+
+def _polygon() -> Environment:
+    from shapely.geometry import Point
+
+    return Environment.from_polygon(Point(15, 15).buffer(15), bin_size=3.0)
+
+
+_OCCUPANCY_ENVS = {**_CARTESIAN, "polygon": _polygon}
+
+# A track without a declared width maps every finite point to its nearest
+# bin, so it has no "outside" case. Start allocation keeps intervals that
+# start inside, so only linear allocation has the inside-then-NaN case.
+_NO_USABLE_SAMPLE_CASES = [
+    (name, samples, allocation)
+    for name in sorted(_OCCUPANCY_ENVS)
+    for samples in ("all_nan", "all_outside", "inside_then_nan")
+    for allocation in ("start", "linear")
+    if not (name == "track" and samples == "all_outside")
+    and not (samples == "inside_then_nan" and allocation == "start")
+]
+
+
+@pytest.fixture(scope="module")
+def occupancy_envs() -> dict[str, Environment]:
+    return {name: build() for name, build in _OCCUPANCY_ENVS.items()}
+
+
+@pytest.mark.parametrize(("name", "samples", "allocation"), _NO_USABLE_SAMPLE_CASES)
+def test_occupancy_with_no_usable_sample_warns(
+    occupancy_envs, name, samples, allocation
+):
+    env = occupancy_envs[name]
+    times = np.arange(8) / 30.0
+    inside = np.tile(np.asarray(env.bin_centers[0], dtype=float), (8, 1))
+    try:
+        env.occupancy(times, inside, time_allocation=allocation)
+    except NotImplementedError as error:
+        # Linear allocation needs rectangular or exact polygon cells.
+        assert allocation == "linear"
+        assert "time_allocation='linear'" in str(error)
+        return
+
+    if samples == "all_nan":
+        positions = np.full((8, 2), np.nan)
+    elif samples == "all_outside":
+        positions = np.tile(env.bin_centers.max(axis=0) + 100.0, (8, 1))
+    else:
+        # Every interval has a NaN end, so a straight path has no length.
+        positions = inside.copy()
+        positions[1::2] = np.nan
+    with pytest.warns(
+        UserWarning, match="excluded ALL.*so occupancy is zero in every bin"
+    ):
+        occupancy = env.occupancy(times, positions, time_allocation=allocation)
+    np.testing.assert_array_equal(occupancy, 0.0)

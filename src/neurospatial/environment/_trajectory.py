@@ -199,15 +199,8 @@ def _occupancy(
         start_bin=None if observation_only else bin_indices,
         epochs=resolved_epochs,
     )
-    warn_excluded_intervals(
-        times,
-        valid_mask,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        min_speed=min_speed,
-        start_bin_gate=not observation_only,
-        result="occupancy is zero in every bin",
-    )
+    # Intervals that kept time; polygon allocation narrows this below.
+    retained_mask = valid_mask
 
     # Initialize occupancy array
     occupancy = np.zeros(n_bins, dtype=np.float64)
@@ -224,7 +217,7 @@ def _occupancy(
 
     elif time_allocation == "linear":
         if polygon_allocation:
-            _, occupancy = polygon_linear_occupancy(
+            pieces, occupancy = polygon_linear_occupancy(
                 binning,
                 arena,
                 times,
@@ -232,6 +225,11 @@ def _occupancy(
                 valid_mask,
                 return_seconds=return_seconds,
             )
+            # The observation mask has no bounds gate here, so an interval
+            # whose path never enters the environment (outside, or with a NaN
+            # end) is excluded only by the geometry.
+            retained_mask = np.zeros_like(valid_mask)
+            retained_mask[[piece.sample_index for piece in pieces]] = True
         else:
             assert grid is not None
             occupancy = linear_grid_occupancy(
@@ -243,6 +241,19 @@ def _occupancy(
                 bin_indices,
                 return_seconds=return_seconds,
             )
+            # A straight path to a NaN end has no length to divide.
+            finite: NDArray[np.bool_] = np.all(np.isfinite(positions), axis=1)
+            retained_mask = valid_mask & finite[:-1] & finite[1:]
+
+    warn_excluded_intervals(
+        times,
+        retained_mask,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        min_speed=min_speed,
+        start_bin_gate=not observation_only or bool(valid_mask.any()),
+        result="occupancy is zero in every bin",
+    )
 
     # Apply kernel smoothing if requested
     if bandwidth is not None:
