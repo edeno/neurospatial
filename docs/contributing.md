@@ -294,7 +294,9 @@ by `Environment.occupancy` and linear spatial encoding, lives in
 `ops/_polygon_allocation.py`. Point-to-bin lookup gated by the arena is
 `geometry/_lookup.py:locate`. Inferring an arena for a binning, checking that
 they agree and removing wall-blocked faces live in `geometry/_arena_binning.py`;
-each arena type bounds its own domain (`Arena.domain_bounds`). Physical wall-frame
+each arena type bounds its own domain (`Arena.domain_bounds`). Boundary bins
+for every layout come from `geometry/_boundary_bins.py`, which asks each locator
+for its logical cell grid. Physical wall-frame
 evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
 `ops/_boundaries.py` calculation with explicit geometry inputs.
 

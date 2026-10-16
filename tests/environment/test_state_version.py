@@ -162,7 +162,7 @@ class TestPublishedGeometryIsReadOnly:
     def test_restored_graph_sequences_reject_edits(
         self, restored_grid, attribute
     ) -> None:
-        from neurospatial.layout.helpers.utils import find_boundary_nodes
+        from neurospatial.geometry._boundary_bins import find_boundary_nodes
 
         env = restored_grid
         boundary = env.boundary_bins.copy()

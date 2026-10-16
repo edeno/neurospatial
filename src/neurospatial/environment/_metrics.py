@@ -9,18 +9,9 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
 
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import bridge_values, composition_view
-from neurospatial.geometry._locators import (
-    HexLocator,
-    RectilinearLocator,
-    SubsetLocator,
-    TransformedLocator,
-)
-from neurospatial.geometry._polygon import PolygonCells, _boundary_cell_indices
-from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
 def _copy_export(value: Any) -> Any:
@@ -46,47 +37,6 @@ def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
             dtype=object,
         )
     return result
-
-
-def _cartesian_boundary_bins(
-    binning: Binning,
-    graph: nx.Graph,
-    grid_shape: tuple[int, ...] | None,
-    active_mask: NDArray[np.bool_] | None,
-) -> NDArray[np.intp]:
-    """Boundary IDs from retained logical indexing, including transformed subsets."""
-    shapes = binning.shapes
-    if isinstance(shapes, PolygonCells):
-        return _boundary_cell_indices(shapes.polygons)
-    locator = binning.locator
-    selections = []
-    while isinstance(locator, (SubsetLocator, TransformedLocator)):
-        if isinstance(locator, SubsetLocator):
-            selections.append(locator.parent_to_child)
-        locator = locator.base
-    if isinstance(locator, HexLocator):
-        grid_shape = locator.centers_shape
-        mapping = locator.flat_to_active.copy()
-    elif isinstance(locator, RectilinearLocator):
-        grid_shape = locator.shape
-        mask = locator.active_mask
-        mask = np.ones(grid_shape, dtype=bool) if mask is None else mask
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-    else:
-        mapping = None
-    if mapping is not None:
-        # Cell adjacency survives coordinate transforms. Compose subset
-        # maps before deriving support, without indexing the -1 sentinel.
-        for selection in reversed(selections):
-            inside = mapping >= 0
-            mapping[inside] = selection[mapping[inside]]
-        active_mask = (mapping >= 0).reshape(grid_shape)
-    return find_boundary_nodes(
-        graph=graph,
-        grid_shape=grid_shape,
-        active_mask=active_mask,
-    ).astype(np.intp, copy=False)
 
 
 def _bin_attributes(graph: nx.Graph) -> pd.DataFrame:

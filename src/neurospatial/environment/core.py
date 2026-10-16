@@ -70,7 +70,6 @@ from neurospatial.environment._fields import (
 from neurospatial.environment._lookup import nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
-    _cartesian_boundary_bins,
     _copy_attributes,
     _edge_attributes,
     _get_bridge_attributes,
@@ -123,6 +122,7 @@ from neurospatial.environment._visualization import (
     _plot_field,
 )
 from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._boundary_bins import boundary_bins
 from neurospatial.geometry._composition import _bin_sources, _component_keys
 from neurospatial.geometry._coordinates import (
     CartesianSystem,
@@ -131,7 +131,6 @@ from neurospatial.geometry._coordinates import (
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.layout.factories import LayoutType
-from neurospatial.layout.helpers.utils import find_boundary_nodes
 from neurospatial.ops.binning import TieBreakStrategy
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
@@ -937,16 +936,13 @@ class Environment(Generic[_C]):
     @property
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
         def build() -> NDArray[np.intp]:
-            if not self._is_polar:
-                return _cartesian_boundary_bins(
-                    self._binning, self.connectivity, self.grid_shape, self.active_mask
-                )
-            return find_boundary_nodes(
-                graph=self.connectivity,
-                grid_shape=self.grid_shape,
-                active_mask=self.active_mask,
+            return boundary_bins(
+                self._binning,
+                self.connectivity,
+                self.grid_shape,
+                self.active_mask,
                 periodic_axes=(1,) if self._angular_is_circular else (),
-            ).astype(np.intp, copy=False)
+            )
 
         return self._cache.get(BOUNDARY_BINS, build)
 
