@@ -30,7 +30,6 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._publication import (
     UNSET,
     _freeze_geometry_arrays,
-    _freeze_graph_attributes,
     _GeometryView,
     _Metadata,
     _MetadataView,
@@ -219,7 +218,6 @@ class Environment(Generic[_C]):
             self._geometry,
             arena=own_arena(self._geometry.arena),
         )
-        _freeze_graph_attributes(self._geometry.connectivity)
         self._regions = self._validate_regions(self._regions)
         self._reset_analysis_caches()
         self._freeze_geometry_arrays()
@@ -296,7 +294,9 @@ class Environment(Generic[_C]):
         networkx.Graph
             Editable navigation graph, independent of the environment.
         """
-        return nx.Graph(self.connectivity)
+        from neurospatial.environment._publication import editable_graph
+
+        return editable_graph(self.connectivity)
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""

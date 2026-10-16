@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy as copy_module
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import (
@@ -139,57 +139,98 @@ def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry
     )
 
 
-class _ReadOnlyGraphAttributes(Mapping[str, Any]):
-    """Published graph attributes, with pickle and editable-copy support."""
+def _refuse_graph_edit(*args: Any, **kwargs: Any) -> NoReturn:
+    raise TypeError(
+        _format_error(
+            "Environment.connectivity attributes are read-only.",
+            why="Why: editing geometry would leave cached kernels and operators stale.",
+            fix="build a new environment; use env.to_networkx() for an editable graph for separate analyses",
+        )
+    )
 
-    def __init__(self, attributes: Mapping[str, Any], **kwargs: Any) -> None:
-        self._data = copy_module.deepcopy({**attributes, **kwargs})
 
-    def __getitem__(self, key: str) -> Any:
-        return copy_module.deepcopy(self._data[key])
+_IMMUTABLE_SCALARS = (bool, int, float, complex, str, bytes, type(None), np.generic)
 
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._data)
 
-    def __len__(self) -> int:
-        return len(self._data)
+def _frozen_value(value: Any) -> Any:
+    """Return an immutable equivalent of a graph attribute value.
+
+    Scalars are kept. Lists and tuples become tuples, numeric arrays become
+    read-only arrays over their own buffer, sets become frozensets and
+    mappings become read-only attribute mappings, recursively. Any other
+    object is copied once; neurospatial never reads it.
+    """
+    if isinstance(value, _IMMUTABLE_SCALARS):
+        return value
+    if isinstance(value, (list, tuple)):
+        return tuple(_frozen_value(item) for item in value)
+    if isinstance(value, np.ndarray):
+        if value.dtype.hasobject:
+            return _frozen_value(value.tolist())
+        return _immutable_array(value)
+    if type(value) is _ReadOnlyGraphAttributes:
+        return value
+    if isinstance(value, Mapping):
+        return _ReadOnlyGraphAttributes(value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_frozen_value(item) for item in value)
+    return copy_module.deepcopy(value)
+
+
+def _thawed_value(value: Any) -> Any:
+    """Return an editable equivalent of a frozen attribute mapping value."""
+    if type(value) is _ReadOnlyGraphAttributes:
+        return value.copy()
+    return value
+
+
+class _ReadOnlyGraphAttributes(dict[str, Any]):
+    """Published node or edge attributes, with immutable values.
+
+    Values are converted once, when the attributes are created, so reads
+    return them without copying. Every edit is refused.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, attributes: Mapping[str, Any] | None = None, **kwargs: Any):
+        merged = {**(attributes or {}), **kwargs}
+        super().__init__((key, _frozen_value(value)) for key, value in merged.items())
 
     def copy(self) -> dict[str, Any]:
-        return copy_module.deepcopy(self._data)
+        """Return an editable dict with the same keys and values."""
+        return {key: _thawed_value(value) for key, value in self.items()}
 
-    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
-        raise TypeError(
-            _format_error(
-                "Environment.connectivity attributes are read-only.",
-                why="Why: editing geometry would leave cached kernels and operators stale.",
-                fix="build a new environment; use env.connectivity.copy() for an editable graph for separate analyses",
-            )
-        )
+    __setitem__ = _refuse_graph_edit
+    __delitem__ = _refuse_graph_edit
+    clear = _refuse_graph_edit
+    pop = _refuse_graph_edit
+    popitem = _refuse_graph_edit
+    setdefault = _refuse_graph_edit
+    update = _refuse_graph_edit
+    __ior__ = _refuse_graph_edit
 
-    __setitem__ = _refuse_edit
-    __delitem__ = _refuse_edit
-    clear = _refuse_edit
-    pop = _refuse_edit
-    popitem = _refuse_edit
-    setdefault = _refuse_edit
-    update = _refuse_edit
-    __ior__ = _refuse_edit
+    def __copy__(self) -> _ReadOnlyGraphAttributes:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _ReadOnlyGraphAttributes:
+        return self
 
     def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return type(self), (self.copy(),)
+        return type(self), (dict(self),)
 
 
 class _ReadOnlyGraphMetadata(dict[str, Any]):
     """Detached JSON-compatible metadata that refuses ordinary graph edits."""
 
-    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    clear = _ReadOnlyGraphAttributes._refuse_edit
-    pop = _ReadOnlyGraphAttributes._refuse_edit
-    popitem = _ReadOnlyGraphAttributes._refuse_edit
-    setdefault = _ReadOnlyGraphAttributes._refuse_edit
-    update = _ReadOnlyGraphAttributes._refuse_edit
-    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
+    __setitem__ = _refuse_graph_edit
+    __delitem__ = _refuse_graph_edit
+    clear = _refuse_graph_edit
+    pop = _refuse_graph_edit
+    popitem = _refuse_graph_edit
+    setdefault = _refuse_graph_edit
+    update = _refuse_graph_edit
+    __ior__ = _refuse_graph_edit
 
     def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
         return copy_module.deepcopy(dict(self), memo)
@@ -213,7 +254,7 @@ class _PublishedGraph(nx.Graph):
         attributes = self.__dict__["graph"]
         if not self.__dict__.get("_published", False):
             return cast("dict[str, Any]", attributes)
-        return _ReadOnlyGraphMetadata(attributes.copy())
+        return _ReadOnlyGraphMetadata(copy_module.deepcopy(attributes))
 
     @graph.setter
     def graph(self, attributes: dict[str, Any]) -> None:
@@ -238,28 +279,54 @@ class _PublishedGraph(nx.Graph):
         super().__delattr__(name)
 
 
-def _freeze_graph_attributes(graph: nx.Graph) -> None:
-    """Protect node, edge and graph attributes when publishing connectivity."""
-    graph._published = False
-    # NetworkX's freeze protects topology only. Replace its attribute mappings
-    # in place so the layout and environment keep sharing the same graph.
-    for node, attrs in graph.nodes(data=True):
-        graph._node[node] = _ReadOnlyGraphAttributes(
+def _published_graph(source: nx.Graph) -> _PublishedGraph:
+    """Build the frozen graph an environment publishes, leaving ``source`` as is.
+
+    Node and edge attribute values are converted to immutable values once.
+    Node order, adjacency order and edge orientation follow ``source``.
+    Graph-level metadata is copied once and exported as a detached copy.
+    """
+    graph = _PublishedGraph()
+    graph.__dict__["graph"] = copy_module.deepcopy(dict(source.graph))
+    nodes: dict[Any, _ReadOnlyGraphAttributes] = {}
+    for node, attrs in source._node.items():
+        nodes[node] = _ReadOnlyGraphAttributes(
             attrs,
             pos=tuple(float(value) for value in attrs["pos"]),
             original_grid_nd_index=tuple(
                 int(value) for value in attrs["original_grid_nd_index"]
             ),
         )
-    for u, v, attrs in graph.edges(data=True):
-        frozen = _ReadOnlyGraphAttributes(
-            attrs, vector=tuple(float(value) for value in attrs["vector"])
-        )
-        graph._adj[u][v] = graph._adj[v][u] = frozen
-    graph.graph = _ReadOnlyGraphAttributes(graph.graph)
+    # Undirected NetworkX graphs share one attribute dict between (u, v) and
+    # (v, u); freeze each edge once and keep that sharing.
+    frozen_edges: dict[int, _ReadOnlyGraphAttributes] = {}
+    adjacency: dict[Any, dict[Any, _ReadOnlyGraphAttributes]] = {}
+    for u, neighbors in source._adj.items():
+        row = adjacency[u] = {}
+        for v, attrs in neighbors.items():
+            frozen = frozen_edges.get(id(attrs))
+            if frozen is None:
+                frozen = frozen_edges[id(attrs)] = _ReadOnlyGraphAttributes(
+                    attrs, vector=tuple(float(value) for value in attrs["vector"])
+                )
+            row[v] = frozen
+    graph._node = nodes
+    graph._adj = adjacency
     nx.freeze(graph)
-    graph.__class__ = _PublishedGraph
     graph._published = True
+    return graph
+
+
+def editable_graph(graph: nx.Graph) -> nx.Graph:
+    """Return an independent ordinary graph whose attributes can be edited."""
+    result = nx.Graph(graph)
+    for attrs in result._node.values():
+        for key, value in attrs.items():
+            attrs[key] = _thawed_value(value)
+    for _, _, attrs in result.edges(data=True):
+        for key, value in attrs.items():
+            attrs[key] = _thawed_value(value)
+    return result
 
 
 @dataclass(frozen=True)
@@ -398,8 +465,8 @@ def publish(
 
     Every factory, derivation and reader creates its environment here, once.
     The connectivity graph and the binning are owned and validated, the
-    arena's physical walls are applied, and the graph is frozen. The caller's
-    ``connectivity`` graph is never modified.
+    arena's physical walls are applied, and a frozen copy of the graph is
+    published. The caller's ``connectivity`` graph is never modified.
 
     Parameters
     ----------
@@ -459,7 +526,7 @@ def publish(
     if coordinate_kind not in ("cartesian", "polar"):
         raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
     binning = own_binning(binning)
-    graph = copy_module.deepcopy(connectivity)
+    graph = connectivity
     _validate_graph(binning, graph)
     _validate_components(
         binning,
@@ -510,7 +577,7 @@ def publish(
         raise ValueError(
             f"Invalid connectivity graph from layout engine '{provenance.layout_type}': {error}"
         ) from error
-    _freeze_graph_attributes(graph)
+    graph = _published_graph(graph)
     env = cls.__new__(cls)
     env._metadata = metadata
     env._provenance = replace(

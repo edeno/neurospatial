@@ -69,6 +69,14 @@
   environment in one of them is refused with a message to re-save it. Cartesian
   environments in those files still load.
 
+- Node and edge attributes of `env.connectivity` are stored as immutable values
+  and are no longer copied on every read. A list attribute reads back as a
+  tuple, a dict attribute as a read-only mapping and a numeric array as a
+  read-only array. Reading attributes is about 6 times faster and Dijkstra
+  shortest paths on `env.connectivity` about 2 times faster. `env.to_networkx()`
+  still returns an independent graph whose attributes, including nested
+  dictionaries, can be edited.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

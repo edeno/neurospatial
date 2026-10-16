@@ -122,3 +122,21 @@ If you wrote your own layout engine:
   snapshot adapter (see the interoperability guide).
 - `neurospatial.layout._capabilities.RectilinearGridProvider` is removed. Read
   the grid record from `layout.binning().rectilinear`.
+
+## Graph attributes are immutable values
+
+`env.connectivity` was already read-only. Its node and edge attribute values
+are now stored as immutable values, so reading them no longer makes a copy:
+
+| Attribute value you stored | What you read back |
+| --- | --- |
+| list, e.g. `["measured", 7]` | tuple, `("measured", 7)` |
+| dict | read-only mapping |
+| NumPy array | read-only array |
+
+To edit attributes, export an ordinary NetworkX graph:
+
+```python
+graph = env.to_networkx()
+graph.nodes[0]["label"] = "start"
+```
