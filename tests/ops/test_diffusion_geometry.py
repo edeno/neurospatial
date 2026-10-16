@@ -124,7 +124,9 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
 
 
-def test_layout_subclass_requires_owned_data_migration(monkeypatch):
+def test_layout_subclass_publishes_through_its_binning(monkeypatch):
+    """A registered engine subclass uses the same binning() contract and faces."""
+
     class RenamedGrid(MaskedGridLayout):
         pass
 
@@ -134,23 +136,10 @@ def test_layout_subclass_requires_owned_data_migration(monkeypatch):
         "grid_edges": (np.arange(3.0), np.arange(4.0)),
     }
     original = Environment.from_layout("MaskedGrid", params)
-    with pytest.raises(
-        TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
-    ):
-        Environment.from_layout("Renamed", params)
-    layout = Environment._from_binning(
-        original._binning,
-        connectivity=original.connectivity,
-        dimension_ranges=original.dimension_ranges,
-        layout_type_tag="Renamed",
-        layout_type=original._layout_category,
-        build_params=params,
-        is_linearized_track=False,
-    )
-    migrated = publish_environment(layout=layout, layout_type_used="Renamed")
+    renamed = Environment.from_layout("Renamed", params)
+    assert renamed.layout_type == "Renamed"
     np.testing.assert_array_equal(
-        migrated.compute_kernel(1.0), original.compute_kernel(1.0)
+        renamed.compute_kernel(1.0), original.compute_kernel(1.0)
     )
 
 
@@ -425,15 +414,13 @@ def test_invalid_saved_graph_names_the_saved_data():
 
 
 def test_native_faces_remain_independent_of_later_builder_graph_changes():
-    from neurospatial.layout._construction import binning_from_layout
-
     layout = MaskedGridLayout()
     layout.build(
         active_mask=np.ones((3, 3), dtype=bool),
         grid_edges=(np.arange(4.0),) * 2,
         connect_diagonal_neighbors=False,
     )
-    binning = binning_from_layout(layout, layout.connectivity)
+    binning = layout.binning()
     expected = binning.faces.build()
     layout.connectivity.clear()
     actual = binning.faces.build()

@@ -28,7 +28,6 @@ from neurospatial.layout import (
     TriangularMeshLayout,
     create_layout,
 )
-from neurospatial.layout._construction import binning_from_layout
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 
@@ -204,6 +203,38 @@ def test_track_faces_come_from_the_layout_not_its_parameters():
     np.testing.assert_allclose(actual.distance[bend], 2.0)
 
 
+def test_custom_engine_publishes_through_its_binning_without_being_copied():
+    """A non-native engine uses the same binning() contract as built-ins."""
+
+    class CustomLayout(RegularGridLayout):
+        def __deepcopy__(self, memo):
+            pytest.fail("the layout itself must not be copied")
+
+    source = CustomLayout()
+    source.build(
+        bin_size=1.0, dimension_ranges=[(0.0, 3.0), (0.0, 2.0)], infer_active_bins=False
+    )
+    env = Environment._from_built_layout(source)
+    np.testing.assert_array_equal(env.bin_centers, source.bin_centers)
+    np.testing.assert_array_equal(env.bin_sizes, np.ones(6))
+    np.testing.assert_array_equal(
+        env.bin_at(source.bin_centers + 0.25), np.arange(env.n_bins)
+    )
+    assert env._binning.faces.available
+    assert env.layout_type == "RegularGrid"
+
+
+def test_layout_without_binning_is_refused_before_copying():
+    """An object that cannot supply owned bins gets an actionable refusal."""
+
+    class Opaque:
+        def __deepcopy__(self, memo):
+            pytest.fail("opaque provider copied")
+
+    with pytest.raises(TypeError, match=r"snapshot adapter.*binning\(\) method"):
+        Environment._from_built_layout(Opaque())
+
+
 @pytest.mark.parametrize(
     "layout_type",
     [
@@ -224,27 +255,6 @@ def test_unbuilt_layout_refuses_binning(layout_type):
         layout_type().binning()
 
 
-def test_custom_layout_refuses_before_opaque_deepcopy():
-    class CustomLayout(RegularGridLayout):
-        def __deepcopy__(self, memo):
-            pytest.fail("opaque custom provider copied")
-
-    with pytest.raises(TypeError, match="snapshot"):
-        Environment._from_built_layout(CustomLayout())
-
-
-@pytest.mark.parametrize(
-    "method",
-    ["finite_volume_geometry", "bin_sizes", "_axis_widths", "point_to_bin_index"],
-)
-def test_native_method_overrides_require_snapshot_migration(method):
-    source = _grid()
-    original = getattr(source, method)
-    setattr(source, method, lambda *a, **kw: original(*a, **kw))
-    with pytest.raises(TypeError, match=r"owned.*snapshot"):
-        Environment._from_built_layout(source)
-
-
 @pytest.mark.parametrize("wrapper", ["plain", "subset", "transform", "nested"])
 def test_wrapped_opaque_locator_requires_snapshot_migration(wrapper):
     source = _grid()
@@ -253,7 +263,7 @@ def test_wrapped_opaque_locator_requires_snapshot_migration(wrapper):
         locator = SubsetLocator(locator, np.arange(9, dtype=np.intp))
     if wrapper in {"transform", "nested"}:
         locator = TransformedLocator(locator, np.eye(3))
-    binning = replace(binning_from_layout(source, source.connectivity), locator=locator)
+    binning = replace(source.binning(), locator=locator)
     with pytest.raises(TypeError, match="snapshot"):
         Environment._from_binning(
             binning,

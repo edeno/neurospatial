@@ -21,7 +21,6 @@ from neurospatial.geometry._capabilities import (
 )
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import HexLocator, MeshLocator, RectilinearLocator
-from neurospatial.layout._capabilities import RectilinearGridProvider
 
 
 def _facade(env, *, binning=None, connectivity=None):
@@ -52,7 +51,7 @@ def test_facade_exposes_the_decoded_snapshot(built_environment):
     np.testing.assert_array_equal(
         facade._binning.locator.locate(env.bin_centers), np.arange(env.n_bins)
     )
-    assert not isinstance(facade, RectilinearGridProvider)
+    assert not hasattr(facade, "rectilinear_grid")
     if binning.rectilinear is not None:
         component = binning.rectilinear
         assert facade.grid_shape == component.shape

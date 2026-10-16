@@ -187,8 +187,6 @@ def _rebin_resolution(
     from neurospatial.geometry._binning import KnownFaces
     from neurospatial.geometry._derive import transform_binning
     from neurospatial.geometry._explicit import prepare_bins
-    from neurospatial.layout._construction import binning_from_layout
-    from neurospatial.layout.base import LayoutEngine
     from neurospatial.layout.engines.masked_grid import MaskedGridLayout
     from neurospatial.layout.helpers.utils import check_grid_size_safety
 
@@ -269,8 +267,7 @@ def _rebin_resolution(
         grid_edges=edges,
         connect_diagonal_neighbors=spec.connect_diagonal,
     )
-    assert layout.connectivity is not None
-    binning = binning_from_layout(cast("LayoutEngine", layout), layout.connectivity)
+    binning = layout.binning()
     binning = replace(
         binning,
         kind="RegularGrid",

@@ -84,10 +84,14 @@ each adapter actually needs.
 ## Custom construction
 
 Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
-`Environment.from_layout(...)` for supported layout construction. Native
-builders supply owned snapshots; live lookup or track-conversion callbacks do
-not remain attached to the environment. Custom providers use registered adapters
-to supported built-in snapshots.
+`Environment.from_layout(...)` for supported layout construction. Every layout
+engine, built-in or custom, hands its geometry to the environment through
+`binning()`, which returns a `Binning` built from the engine's own state: bins in
+connectivity edge order, point lookup, lazily computed faces and any grid,
+track, shape or outline records. The environment keeps that record, not the
+engine, so live lookup or track-conversion callbacks do not remain attached.
+External objects without `binning()` use registered adapters to supported
+built-in snapshots.
 
 Centers and a graph alone establish neither exact cell ownership nor diffusion
 faces. Supply a supported locator and explicit `KnownFaces` or `MissingFaces`;

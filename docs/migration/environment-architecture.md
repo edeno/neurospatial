@@ -36,6 +36,7 @@ public API.
 | `neurospatial.environment._from_bins` | `Environment.from_bins` |
 | `neurospatial.environment.transforms` | `Environment.subset`, `Environment.rebin` |
 | `neurospatial.layout._binning`, `_locators`, `_polygon`, ... | `neurospatial.geometry` (same module names) |
+| `neurospatial.layout._capabilities` (`RectilinearGridProvider`) | `layout.binning().rectilinear` |
 
 `neurospatial.arena` still provides the public arena classes (`Arena`,
 `OpenArena`, `MaskArena`, `TrackArena`, `UnknownArena`, `EgocentricSurround`).
@@ -73,3 +74,28 @@ function raises a `TypeError` that shows the corrected call.
 
 **Linearization errors.** `to_linear` and `linear_to_nd` raise `TypeError`
 (not `AttributeError`) on an environment that is not a linearized track.
+
+## Custom layout engines supply `binning()`
+
+Each layout engine now hands its geometry to the environment through one
+method, `binning()`, which returns a `Binning`: the bins in connectivity edge
+order, point lookup, finite-volume faces (or the reason they are missing) and
+any grid, track, shape and outline records. All built-in engines implement it,
+and the `LayoutEngine` protocol lists it.
+
+If you wrote your own layout engine:
+
+- Implement `binning()` from the engine's built state. Returning only built-in
+  records is required, because the environment keeps a copy of the record and
+  never calls back into the engine. A subclass of a built-in engine inherits a
+  working `binning()`; such subclasses used to be refused and now publish
+  normally.
+- The environment keeps only what `binning()` returns (plus `connectivity`,
+  `dimension_ranges` and the grid attributes). It never calls
+  `point_to_bin_index` or `finite_volume_geometry`, so to change lookup or
+  faces, change what `binning()` returns. A layout whose methods were replaced
+  on the instance is no longer refused.
+- An external object that has no `binning()` method still needs an installed
+  snapshot adapter (see the interoperability guide).
+- `neurospatial.layout._capabilities.RectilinearGridProvider` is removed. Read
+  the grid record from `layout.binning().rectilinear`.

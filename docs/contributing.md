@@ -339,10 +339,12 @@ Environment adapters read components from the owned binning; other packages
 use `env.binning`: faces for
 smoothing, a rectilinear grid for grid interpolation and native N-D time
 allocation, exact planar cells for polygon time allocation, and linearization
-for track coordinate conversions. The construction adapter reads a
-`RectilinearGridProvider` snapshot when available and obtains track data through
-`track_linearization()`. Custom builders supply supported owned binning
-snapshots. Do not dispatch new behavior by comparing
+for track coordinate conversions. Each layout engine's `binning()` assembles
+these components from its own state through `layout/_assembly.py`; the
+construction adapter in `layout/_construction.py` takes that record with the
+engine's connectivity, ranges and provenance, and never inspects layout
+classes or build parameters. Custom engines implement the same `binning()`.
+Do not dispatch new behavior by comparing
 `_layout_type_tag` strings. Refusals name the operation and suggest a supported
 alternative. Integer-factor `rebin` requires uniform rectangular cells and
 native grid navigation, allowing physical walls to remove connections. It

@@ -17,8 +17,6 @@ from neurospatial import Environment
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
-from neurospatial.layout._capabilities import RectilinearGridProvider
-from neurospatial.layout._construction import binning_from_layout
 
 _BuiltEnvironment = Environment | Environment
 
@@ -78,9 +76,7 @@ def test_binning_capabilities_match_layout_protocols(
     env = built_environment
     layout = _source_layout(env)
     binning = env._binning
-    assert (binning.rectilinear is not None) == isinstance(
-        layout, RectilinearGridProvider
-    )
+    assert (binning.rectilinear is not None) == hasattr(layout, "rectilinear_grid")
     assert (binning.linearization is not None) == layout.is_linearized_track
     assert binning.faces.available == callable(
         getattr(layout, "finite_volume_geometry", None)
@@ -123,7 +119,7 @@ def test_binning_published_once(built_environment: _BuiltEnvironment) -> None:
         env._binning = published
     with pytest.raises(FrozenInstanceError):
         published.kind = "different"
-    other = binning_from_layout(_source_layout(env), env.connectivity)
+    other = _source_layout(env).binning()
     assert other != published
     assert len({published, other}) == 2
 
@@ -272,8 +268,8 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     layout = _source_layout(env)
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
     with pytest.raises(ValueError, match="sizes"):
-        binning_from_layout(layout, layout.connectivity)
-    with pytest.raises(TypeError, match=r"owned.*snapshot|Migrate custom"):
+        layout.binning()
+    with pytest.raises(ValueError, match="sizes"):
         publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
     assert env._geometry is geometry
     assert env._binning is published
@@ -293,7 +289,9 @@ def test_faces_reject_changed_pair_order() -> None:
         map(frozenset, env.connectivity.edges)
     )
     assert list(reordered.edges) != list(env.connectivity.edges)
-    binning = binning_from_layout(_source_layout(env), reordered)
+    layout = _source_layout(env)
+    layout.connectivity = reordered
+    binning = layout.binning()
     faces = binning.faces.build()
     np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
     expected = env._face_geometry

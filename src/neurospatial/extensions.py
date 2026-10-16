@@ -178,10 +178,16 @@ def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
     for adapter in _snapshot_adapters():
         if type(provider) is adapter.provider_type and role == adapter.role:
             return _normalize_snapshot(adapter.snapshot(provider), role)
+    hint = (
+        " A layout engine instead supplies its geometry from a binning() "
+        "method that returns a Binning."
+        if role == "binning"
+        else ""
+    )
     raise TypeError(
         f"No installed snapshot adapter for {type(provider).__name__} "
         f"with role {role!r}. Install the provider's adapter package or supply "
-        "supported built-in snapshot data."
+        f"supported built-in snapshot data.{hint}"
     )
 
 

@@ -43,6 +43,18 @@
   instead of `AttributeError` when the environment is not a linearized track.
   The message is unchanged.
 
+- Every layout engine now supplies its geometry through a `binning()` method
+  that returns a `Binning` (bins, point lookup, finite-volume faces and its
+  grid, track, shape and outline records). `LayoutEngine` lists this method.
+  A custom layout engine, including a subclass of a built-in engine, is
+  published by implementing `binning()`; subclasses of built-in engines were
+  previously refused. The environment keeps only what `binning()` returns
+  (with the layout's connectivity, ranges and grid attributes); it never calls
+  `point_to_bin_index` or `finite_volume_geometry`, and a layout whose
+  methods were replaced on the instance is no longer refused. Objects without
+  `binning()` still need an installed snapshot adapter. The private `neurospatial.layout._capabilities` module
+  (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
+
 ### Fixed
 
 - Smoothing on an environment transformed by an affine map fitted to noisy
