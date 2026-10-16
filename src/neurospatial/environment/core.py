@@ -1384,15 +1384,8 @@ class Environment(Generic[_C]):
             raise TypeError(msg)
 
         linearization = self._binning.linearization
-        if linearization is None:
-            raise AttributeError(
-                _format_error(
-                    "to_linear() needs the track graph that defines the linearization, and "
-                    f"this environment's {self._binning.kind} layout does not keep it.",
-                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
-                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
-                )
-            )
+        # Publication refuses a linearized track without its linearization.
+        assert linearization is not None
         return linearization.to_linear(nd_position)
 
     def linear_to_nd(
@@ -1467,15 +1460,8 @@ class Environment(Generic[_C]):
             raise TypeError(msg)
 
         linearization = self._binning.linearization
-        if linearization is None:
-            raise AttributeError(
-                _format_error(
-                    "linear_to_nd() needs the track graph that defines the linearization, and "
-                    f"this environment's {self._binning.kind} layout does not keep it.",
-                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
-                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
-                )
-            )
+        # Publication refuses a linearized track without its linearization.
+        assert linearization is not None
         return linearization.linear_to_nd(linear_position)
 
     def occupancy(
