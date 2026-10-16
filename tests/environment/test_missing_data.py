@@ -246,16 +246,25 @@ def test_smoothing_without_nan_is_the_plain_operator(any_env, mode):
     np.testing.assert_array_equal(any_env.diffuse(field, 3.0, mode=mode), plain)
 
 
-@pytest.mark.parametrize("mode", _MODES)
-def test_a_constant_field_with_holes_smooths_like_the_full_constant(any_env, mode):
-    full = np.full(any_env.n_bins, 2.5)
-    holed = full.copy()
+def test_a_constant_field_with_holes_stays_constant(any_env):
+    holed = np.full(any_env.n_bins, 2.5)
     holed[_holes(any_env)] = np.nan
-    smoothed = any_env.smooth(holed, 3.0, mode=mode)
+    smoothed = any_env.smooth(holed, 3.0)
     assert np.isfinite(smoothed).all()
-    np.testing.assert_allclose(
-        smoothed, any_env.smooth(full, 3.0, mode=mode), rtol=1e-11
-    )
+    np.testing.assert_allclose(smoothed, 2.5, rtol=1e-11)
+
+
+@pytest.mark.parametrize("mode", ["transition", "density"])
+@pytest.mark.parametrize("call", ["smooth", "diffuse"])
+def test_extensive_modes_refuse_missing_bins_with_a_choice(any_env, mode, call):
+    counts = np.ones(any_env.n_bins)
+    counts[[0, 1]] = np.nan
+    with pytest.raises(ValueError) as error:
+        getattr(any_env, call)(counts, 3.0, mode=mode)
+    message = str(error.value)
+    assert f"2 NaN (missing) bins in mode='{mode}'" in message
+    assert "no defensible mass under a conserving operator" in message
+    assert "np.nan_to_num" in message and "mode='average'" in message
 
 
 def test_an_interior_hole_is_filled_from_its_neighbors(any_env):
@@ -291,34 +300,31 @@ def two_rooms() -> Environment:
     return Environment.from_grid_mask(mask, grid_edges=edges)
 
 
-@pytest.mark.parametrize("mode", _MODES)
-def test_a_room_with_no_observed_bin_stays_nan(two_rooms, mode):
+def test_a_room_with_no_observed_bin_stays_nan(two_rooms):
     labels = two_rooms.get_diffusion_geometry().labels
     assert two_rooms.get_diffusion_geometry().n_components == 2
     field = np.sin(np.arange(two_rooms.n_bins) * 0.37)
     holed = np.where(labels == 1, np.nan, field)
-    smoothed = two_rooms.smooth(holed, 2.0, mode=mode)
+    smoothed = two_rooms.smooth(holed, 2.0)
 
     assert np.isnan(smoothed[labels == 1]).all()
     # The observed room is fully observed, so it smooths as if alone.
-    reference = two_rooms.smooth(np.where(labels == 1, 0.0, field), 2.0, mode=mode)
+    reference = two_rooms.smooth(np.where(labels == 1, 0.0, field), 2.0)
     np.testing.assert_allclose(
         smoothed[labels == 0], reference[labels == 0], rtol=1e-12
     )
 
 
-@pytest.mark.parametrize("mode", _MODES)
-def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor(mode):
+def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor():
     from neurospatial.environment._fields import MISSING_SUPPORT_FLOOR
 
     track = Environment.from_samples(np.linspace(0.0, 60.0, 400)[:, None], bin_size=1.0)
     observed = track.bin_centers[:, 0] < 15.0
     field = np.where(observed, np.cos(track.bin_centers[:, 0] / 4.0), np.nan)
-    smoothed = track.smooth(field, 2.0, mode=mode)
+    smoothed = track.smooth(field, 2.0)
 
-    kernel = track.compute_kernel(2.0, mode=mode, cache=False)
     # The share of each bin's smoothing weight that falls on observed bins.
-    support = (kernel @ observed) / (kernel @ np.ones(track.n_bins))
+    support = track.compute_kernel(2.0, mode="average", cache=False) @ observed
     relative = support / support.max()
     clear = np.abs(relative / MISSING_SUPPORT_FLOOR - 1.0) > 0.01
     np.testing.assert_array_equal(

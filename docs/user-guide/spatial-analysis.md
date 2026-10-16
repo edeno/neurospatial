@@ -724,13 +724,15 @@ smoothing per-bin counts, occupancy, or probability mass while keeping their sum
 `compute_kernel` and the lower-level `diffuse` retain their existing defaults;
 select their mode explicitly when composing operators.
 
-`env.smooth` treats NaN bins as missing, never as zero. It smooths the field
-with NaN read as 0, smooths the observed-bin mask with the same operator, and
-divides, so holes are filled from their observed neighbors and a constant
-field with holes stays constant. A bin stays NaN when the share of its
-smoothing weight on observed bins is at most 0.1% of the largest share in its
-connected part of the environment, for example a room with no visits. Inf is
-refused. For spike-derived rate maps, prefer `compute_spatial_rate`, which
+With the default `mode="average"`, `env.smooth` treats NaN bins as missing,
+never as zero. It smooths the field with NaN read as 0, smooths the
+observed-bin mask with the same operator, and divides, so holes are filled
+from their observed neighbors and a constant field with holes stays constant.
+A bin stays NaN when the share of its smoothing weight on observed bins is at
+most 0.1% of the largest share in its connected part of the environment, for
+example a room with no visits. `mode="transition"` and `mode="density"`
+refuse NaN, since a missing bin has no defensible count or mass; fill it
+explicitly first. Inf is refused. For spike-derived rate maps, prefer `compute_spatial_rate`, which
 handles shared spike/occupancy support and estimator-specific smoothing.
 Applying another smoothing pass to a returned map changes that estimator, and
 the filled holes are estimates: restore the original NaN mask if unvisited

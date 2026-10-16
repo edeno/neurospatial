@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import _constants
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cache import (
     DIFFUSION_EIGENBASIS,
@@ -49,17 +50,14 @@ from neurospatial.ops.diffusion import (
     _symmetric_conjugate,
     _target_live_rank,
     _validate_occupancy,
-    above_component_floor,
-    component_support_mask,
     diffusion_apply,
     heat_kernel_from_W,
+    masked_diffusion_average,
     select_live_basis,
 )
 from neurospatial.ops.smoothing import _gaussian_kernel
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from neurospatial.geometry._arena import Arena
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
@@ -72,7 +70,7 @@ if TYPE_CHECKING:
 # this fraction of the largest support in its connected part. The truncated
 # operator reproduces the heat kernel to _HEAT_KERNEL_RANK_TOL (1e-6) of its
 # largest output, so a support 1e3 times above that keeps the error of the
-# normalized value near 0.1%; below it the ratio is truncation noise.
+# averaged value near 0.1%; below it the ratio is truncation noise.
 MISSING_SUPPORT_FLOOR = _RESOLUTION_MARGIN * _HEAT_KERNEL_RANK_TOL
 
 
@@ -531,64 +529,40 @@ def _diffuse(
     missing = np.isnan(fields_2d) if backend == "numpy" else None
     if missing is None or not missing.any():
         result = apply(fields_2d)
+    elif mode != "average":
+        raise ValueError(
+            _format_error(
+                f"Cannot smooth a field with {int(missing.sum())} NaN (missing) "
+                f"bins in mode={mode!r}.",
+                why=(
+                    "Why: missing bins have no defensible mass under a conserving "
+                    "operator, so their counts or density cannot be smoothed "
+                    "around them."
+                ),
+                fix=(
+                    "fill the missing bins explicitly (for example "
+                    "np.nan_to_num(field) if they are truly zero), or use "
+                    "mode='average' if the field is intensive, such as a rate map"
+                ),
+            )
+        )
     else:
-        result = _apply_over_observed(apply, fields_2d, missing, labels, n_components)
+        # Every field goes through one plain apply of the original shape, so
+        # NaN-free columns stay identical; holed ones are averaged over their
+        # observed bins with a second apply.
+        result = apply(np.where(missing, 0.0, fields_2d))
+        holed = np.flatnonzero(missing.any(axis=0))
+        result[:, holed] = masked_diffusion_average(
+            apply,
+            fields_2d[:, holed],
+            ~missing[:, holed],
+            labels,
+            n_components,
+            floor=MISSING_SUPPORT_FLOOR,
+        )
     # numpy backend -> ndarray; jax backend -> jax.Array (documented above).
     # The NDArray annotation is the numpy-path type; cast covers both.
     return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
-
-
-def _apply_over_observed(
-    apply: Callable[[NDArray[np.float64]], NDArray[np.float64]],
-    fields: NDArray[np.float64],
-    missing: NDArray[np.bool_],
-    labels: NDArray[np.int_],
-    n_components: int,
-) -> NDArray[np.float64]:
-    """Normalized smoothing of fields whose NaN bins are missing observations.
-
-    With ``K`` the mode's operator and ``m`` a field's observed mask, the result
-    is ``K(f m) / s`` where ``s = K(m) / K(1)`` is the share of each bin's
-    smoothing weight that falls on observed bins. A constant field with holes
-    therefore smooths to the same values as the full constant field, in every
-    mode. Bins whose ``s`` is at most :data:`MISSING_SUPPORT_FLOOR` of the
-    largest ``s`` in their connected part, including every bin of a part with
-    no observed bin, are NaN. Fields without NaN get the plain ``K f``.
-
-    Parameters
-    ----------
-    apply : callable
-        The cached operator, ``(n_bins, k) -> (n_bins, k)``.
-    fields : NDArray[np.float64], shape (n_bins, n_fields)
-        Field batch, NaN at missing bins.
-    missing : NDArray[np.bool_], shape (n_bins, n_fields)
-        ``np.isnan(fields)``.
-    labels : NDArray[np.int_], shape (n_bins,)
-        Connected-part id of each bin.
-    n_components : int
-        Number of connected parts.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_bins, n_fields)
-        Smoothed fields.
-    """
-    # Smoothing every field in one batch of the original shape keeps the
-    # NaN-free columns identical to a plain apply.
-    result = apply(np.where(missing, 0.0, fields))
-    holed = np.flatnonzero(missing.any(axis=0))
-    observed = ~missing[:, holed]
-    weights = apply(
-        np.column_stack([observed.astype(np.float64), np.ones(fields.shape[0])])
-    )
-    support = weights[:, :-1] / weights[:, -1:]
-    resolved = component_support_mask(labels, n_components, observed.T).T
-    resolved &= above_component_floor(
-        labels, n_components, support.T, MISSING_SUPPORT_FLOOR
-    ).T
-    with np.errstate(divide="ignore", invalid="ignore"):
-        result[:, holed] = np.where(resolved, result[:, holed] / support, np.nan)
-    return result
 
 
 def _mrf_basis(

@@ -787,12 +787,14 @@ bin `-1` from `bin_at` and `nearest_bin`, `False` from `contains` and NaN from
 `interpolate`, and adds no occupancy time and no transition. `nearest_bin` and
 `interpolate` used to raise for it, and `transitions(times=..., positions=...)`
 raised for any sample outside the environment. A NaN bin of a field is a bin
-with no value: `smooth` and `diffuse` average over the observed bins and fill
-holes from them, where `smooth` used to refuse the field and `diffuse` spread
-the NaN over its connected part. A bin stays NaN when its share of smoothing
+with no value: `smooth` and `diffuse` with `mode="average"` average over the
+observed bins and fill holes from them, where `smooth` used to refuse the field
+and `diffuse` turned every bin NaN. A bin stays NaN when its share of smoothing
 weight on observed bins is at most 0.1% of the largest share in its connected
-part, for example in a room with no visits. Fields without NaN give the same
-values as before.
+part, for example in a room with no visits. `mode="transition"` and
+`mode="density"` refuse NaN, because a missing bin has no defensible mass:
+fill it explicitly, or use `mode="average"` if the field is a rate. Fields
+without NaN give the same values as before.
 
 <!-- docs-test: run -->
 ```python

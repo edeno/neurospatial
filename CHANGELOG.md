@@ -295,16 +295,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   the gate, which now also warn about a median interval longer than
   `max_gap` when some intervals survive.
 
-- `env.smooth` and `env.diffuse` treat NaN bins as missing observations
-  instead of zeros. They smooth the field with NaN read as 0 and the observed
-  mask with the same operator, then divide, so holes are filled from their
-  observed neighbors and a constant field with holes stays constant in every
-  mode. A bin stays NaN when the share of its smoothing weight on observed
-  bins is at most 0.1% of the largest share in its connected part of the
-  environment, which includes every bin of a part with no observed bin.
-  Before, `smooth` refused any NaN and `diffuse` spread one NaN over its whole
-  connected part. Fields without NaN give exactly the same values as before.
-  `diffuse(backend="jax")` does not inspect NaN.
+- `env.smooth` and `env.diffuse` with `mode="average"` treat NaN bins as
+  missing observations instead of zeros. They smooth the field with NaN read
+  as 0 and the observed mask with the same operator, then divide, so holes
+  are filled from their observed neighbors and a constant field with holes
+  stays constant. A bin stays NaN when the share of its smoothing weight on
+  observed bins is at most 0.1% of the largest share in its connected part of
+  the environment, which includes every bin of a part with no observed bin.
+  This is the same masked average that binned rate maps and
+  `resample_field(method="diffuse")` use. `mode="transition"` and
+  `mode="density"` refuse a field with NaN, because missing bins have no
+  defensible mass under a conserving operator: fill them explicitly, or use
+  `mode="average"` for an intensive field. Before, `smooth`
+  refused any NaN and `diffuse` silently turned every bin NaN. Fields without
+  NaN give exactly the same values as before.
 
 - `compute_decision_analysis` represents each goal region by the region bin
   nearest the centroid of the region's bins, the same bin
