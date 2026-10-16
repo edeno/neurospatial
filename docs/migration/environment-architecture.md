@@ -236,3 +236,30 @@ numbers come back as tuples.
 
 The parameters never affected any analysis, and loading a saved environment
 does not need them: the bins, graph and arena are stored directly.
+
+## Subsets report the extent of the bins they keep
+
+`env.subset(...)` sets `dimension_ranges` to the extent of the bins it keeps,
+with no margin. Plot limits follow `dimension_ranges`, so plots of a subset now
+fit its kept cells instead of leaving extra space around them.
+
+| Layout of the parent | Before | Now |
+| --- | --- | --- |
+| Hexagonal | kept hexagons' extent plus 5% on each side | kept hexagons' extent |
+| Triangular mesh | kept triangles' extent plus 5% on each side | kept triangles' extent |
+| Clipped polygon cells (`env.clip(...)`) | kept polygons' extent plus 5% on each side | kept polygons' extent |
+| Rectangular grid (including `from_polygon`, masks and images) | the grid's extent | unchanged |
+| Track or other bins without cell shapes | kept bin centers' extent | unchanged |
+
+A mesh subset bounds only the triangles it keeps, so a subset of one corner of
+an arena no longer reports the extent of the whole arena. The same rule applies
+when an `arena=` passed to `from_layout`, `from_grid_mask` or `from_pixel_mask`
+removes bins. `Environment.from_bins` bounds triangular-mesh bins by their
+triangles' vertices rather than every stored mesh point. Grid subsets keep the
+full grid's extent because they keep its whole lattice, matching
+`env.grid_edges`.
+
+If you want space around a subset's cells in a figure, widen the axes limits
+after plotting, for example
+`(low, high) = child.dimension_ranges[0]; ax.set_xlim(low - 1, high + 1)`.
+

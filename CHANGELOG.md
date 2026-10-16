@@ -167,10 +167,12 @@
   1.2 s. Occupancy values are unchanged.
 
 - `Environment.subset()` reports the extent of the bins it keeps as
-  `dimension_ranges`, with no added margin. Hexagonal and triangular-mesh
-  subsets used to add 5% on each side; a mesh subset now bounds only its kept
+  `dimension_ranges`, with no added margin. Subsets of hexagonal,
+  triangular-mesh and clipped polygon-cell environments (`env.clip(...)`)
+  used to add 5% on each side; a mesh subset now bounds only its kept
   triangles, so a subset of one corner of a mesh no longer reports the extent
-  of the whole mesh. Grid subsets keep the extent of their grid, and bins
+  of the whole mesh. Plots of these subsets fit the kept cells more tightly.
+  See the [migration page](docs/migration/environment-architecture.md). Grid subsets keep the extent of their grid, and bins
   without cell shapes (tracks) keep the bounds of the kept bin centers, as
   before. The same applies to the bins an `arena=` removes in
   `Environment.from_layout`, `from_grid_mask` and `from_pixel_mask`. For
