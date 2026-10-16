@@ -58,8 +58,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Egocentric polar environments (`Environment.from_polar_egocentric`) report
   `env.layout_type == "Polar"` instead of `"MaskedGrid"`, and their printed
   summary says `Polar`. Their bins are distance-by-angle sectors, not
-  Cartesian grid cells. Files saved before this change still load and keep the
-  layout name they were saved with. To detect a polar environment, test
+  Cartesian grid cells. Files saved before this change load as `"Polar"` too.
+  To detect a polar environment, test
   `env.coordinate_kind == "polar"` instead of the layout name.
 
 - A polar environment takes the choice of whether its angle wraps around only
@@ -340,9 +340,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   a scalar or a flat sequence of scalars now raises a `TypeError` naming it
   when the engine is built; it used to be dropped without notice. The
   built-in engines declare their data the same way, replacing their
-  `_data_parameters` attribute, and their recorded choices are unchanged. A
-  saved environment whose `layout_parameters` hold anything other than such
-  choices is refused when it is read.
+  `_data_parameters` attribute, and their recorded choices are unchanged.
+  When a saved environment's `layout_parameters` hold input data, as files
+  from earlier versions do, the data is dropped on reading and the scalar
+  choices are kept; the bins are stored in the file.
 
 - One layout label. `LayoutType` (now also with `POLAR` and `COMBINED`) is
   the only vocabulary: a built-in engine's `layout_type` is its `LayoutType`
@@ -363,9 +364,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `clip` and `apply_transform` (they used to be replaced by
   `{"source": ..., "original_n_bins": ...}` or gain `"transformed": True`),
   and `rebin(bin_size=...)` records `bin_size` and
-  `connect_diagonal_neighbors` as `rebin(factor)` does. A subclass of a
-  built-in engine that sets its own `layout_type` reports it everywhere; it
-  used to report the parent's label as `env.layout_type`.
+  `connect_diagonal_neighbors` as `rebin(factor)` does. Files from earlier
+  versions load with the canonical label and their derivation markers as
+  `derivations`. A subclass of a built-in engine that sets its own
+  `layout_type` reports it everywhere; it used to report the parent's
+  label as `env.layout_type`.
 
 - Assigning or deleting a public attribute of an `Environment` raises an
   `AttributeError` that says what to call instead. That includes new names:

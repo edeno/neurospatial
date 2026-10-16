@@ -196,8 +196,8 @@ assert polar_env.coordinate_kind == "polar"
 assert env.coordinate_kind == "cartesian"
 ```
 
-A polar environment saved with an earlier version loads unchanged and keeps
-the layout name stored in its file.
+A polar environment saved with an earlier version loads with
+`layout_type == "Polar"` too.
 
 Whether the angle wraps around at ±π is read only from the environment's
 `EgocentricSurround` arena. Files from before arenas were saved
@@ -446,7 +446,14 @@ assert west.layout_parameters == env.layout_parameters
 Code that compared `engine.layout_type` with a category such as `"grid"` or
 `"mask"` should compare with a `LayoutType` value, or better, ask the bins
 what it needs (for example `env.binning.rectilinear is not None` for an
-axis-aligned grid).
+axis-aligned grid). Files saved by earlier versions load with the canonical
+label: suffixes are dropped, `"subset"` and `"PolygonCells"` take the label
+of the bins they were cut from (a grid subset or clip reads as
+`"MaskedGrid"`, as such a subset was labelled), polar bins read as
+`"Polar"`, and the `"source"` and `"transformed"` markers become
+`env.derivations`. Input data that earlier versions kept in the layout
+parameters (positions, masks, polygons) is dropped when such a file is read;
+the bins themselves are stored in the file.
 
 ## Subsets report the extent of the bins they keep
 

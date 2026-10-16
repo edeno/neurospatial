@@ -37,6 +37,7 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.geometry._binning import Binning
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -463,7 +464,6 @@ def _restore_environment(
         EgocentricPolarSystem,
     )
     from neurospatial.geometry._locators import HexLocator, MeshLocator
-    from neurospatial.layout.base import build_choices
     from neurospatial.regions import Region, Regions
 
     try:
@@ -514,17 +514,10 @@ def _restore_environment(
                 raise ValueError(
                     "stored arena coordinate_kind differs from the environment"
                 )
-        params = metadata["layout_parameters"]
-        if not isinstance(params, dict):
-            raise ValueError("layout_parameters must be a dictionary of build choices")
-        params = build_choices(
-            params,
-            owner="The saved layout_parameters",
-            fix=(
-                "remove {name!r} from layout_parameters, or re-save the "
-                "environment from a factory-built Environment"
-            ),
+        binning = replace(
+            binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
         )
+        params, derivations = _saved_history(metadata)
         ranges = metadata.get("dimension_ranges")
         if ranges is not None:
             binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
@@ -568,7 +561,7 @@ def _restore_environment(
             Environment,
             binning,
             coordinates=coordinates,
-            provenance=_Provenance(params, _saved_derivations(metadata)),
+            provenance=_Provenance(params, derivations),
             metadata=declared_metadata(
                 Environment,
                 name=metadata["name"],
@@ -596,14 +589,126 @@ def _restore_environment(
         ) from error
 
 
-def _saved_derivations(metadata: dict[str, Any]) -> tuple[str, ...]:
-    """Return the saved derivation history, oldest first."""
-    derivations = metadata.get("derivations", [])
-    if not isinstance(derivations, list) or not all(
-        isinstance(step, str) for step in derivations
+_TRANSFORMED = "_transformed"
+
+
+def _saved_label(binning: Binning, *, polar: bool) -> str:
+    """Return the canonical layout label of saved bins.
+
+    The label is the binning's ``kind``, spelled as a ``LayoutType`` value.
+    Files written before derivations kept their parent's label are read the
+    same way: their polar bins (labelled ``"MaskedGrid"``) are ``"Polar"``,
+    an ``"_transformed"`` suffix per ``apply_transform`` is dropped, and
+    ``"subset"`` and ``"PolygonCells"`` (a subset of non-grid bins and a
+    clip) take the label of the bins they were cut from.
+
+    Parameters
+    ----------
+    binning : Binning
+        The decoded bins.
+    polar : bool
+        Whether the bins have egocentric polar coordinates, which only
+        ``Environment.from_polar_egocentric`` builds.
+
+    Returns
+    -------
+    str
+        The layout label.
+    """
+    from neurospatial.geometry._composition import CombinedLocator
+    from neurospatial.geometry._locators import (
+        HexLocator,
+        MeshLocator,
+        RectilinearLocator,
+        SubsetLocator,
+        TransformedLocator,
+    )
+    from neurospatial.geometry._polygon import ClippedLocator
+    from neurospatial.layout._labels import LayoutType, canonical_label
+
+    if polar:
+        return LayoutType.POLAR.value
+    kind = binning.kind
+    while kind.endswith(_TRANSFORMED):
+        kind = kind.removesuffix(_TRANSFORMED)
+    if kind not in ("subset", "PolygonCells"):
+        return canonical_label(kind)
+    locator = binning.locator
+    while isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
+        locator = locator.base
+    if binning.linearization is not None:
+        return LayoutType.GRAPH.value
+    for lookup, label in (
+        (HexLocator, LayoutType.HEXAGONAL),
+        (MeshLocator, LayoutType.TRIANGULAR_MESH),
+        (CombinedLocator, LayoutType.COMBINED),
+        # A grid subset was always labelled "MaskedGrid".
+        (RectilinearLocator, LayoutType.MASKED_GRID),
     ):
-        raise ValueError("derivations must be a list of derivation names")
-    return tuple(derivations)
+        if isinstance(locator, lookup):
+            return label.value
+    return kind
+
+
+def _saved_history(
+    metadata: dict[str, Any],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Return the saved build choices and derivation history.
+
+    Files without a ``"derivations"`` record kept the input data among the
+    layout parameters and marked derivations there: ``"source"`` named a
+    subset or clip and ``"transformed": True`` an ``apply_transform``, with
+    one ``"_transformed"`` suffix on the layout label for each, and a
+    ``"combined"`` label a ``combine``. Input data is
+    dropped (the bins are stored directly), and the markers become the
+    derivation history.
+
+    Parameters
+    ----------
+    metadata : dict
+        The saved environment metadata.
+
+    Returns
+    -------
+    build_params : dict of str to object
+        Scalar build choices.
+    derivations : tuple of str
+        Derivation names, oldest first.
+
+    Raises
+    ------
+    ValueError
+        If ``layout_parameters`` is not a dictionary or ``derivations`` is not
+        a list of names.
+    """
+    from neurospatial.layout.base import build_choices
+
+    params = metadata["layout_parameters"]
+    if not isinstance(params, dict):
+        raise ValueError("layout_parameters must be a dictionary of build choices")
+    choices: dict[str, Any] = {}
+    for key, value in params.items():
+        with contextlib.suppress(TypeError):
+            choices.update(build_choices({key: value}, owner="layout_parameters"))
+    if "derivations" in metadata:
+        derivations = metadata["derivations"]
+        if not isinstance(derivations, list) or not all(
+            isinstance(step, str) for step in derivations
+        ):
+            raise ValueError("derivations must be a list of derivation names")
+        return choices, tuple(derivations)
+    kind = str(metadata.get("binning", {}).get("kind", ""))
+    history = ["combine"] if kind == "combined" else []
+    if choices.get("source") in ("subset", "clip"):
+        history.append(choices.pop("source"))
+        choices.pop("original_n_bins", None)
+    if choices.pop("transformed", None) is True:
+        n_transforms = 0
+        while kind.endswith(_TRANSFORMED):
+            kind = kind.removesuffix(_TRANSFORMED)
+            n_transforms += 1
+        history.extend(["apply_transform"] * max(n_transforms, 1))
+    return choices, tuple(history)
 
 
 def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
