@@ -173,9 +173,7 @@ class TestPublishedGeometryIsReadOnly:
         assert env._geometry is geometry
         np.testing.assert_array_equal(env.boundary_bins, boundary)
         np.testing.assert_array_equal(
-            find_boundary_nodes(
-                env.connectivity, env.grid_shape, env.active_mask, env.layout_type
-            ),
+            find_boundary_nodes(env.connectivity, env.grid_shape, env.active_mask),
             boundary,
         )
 

@@ -272,7 +272,6 @@ def _find_grid_boundary_nodes(
 
 
 def _compute_degree_threshold(
-    layout_kind: str | None,
     median_degree: float,
     max_degree: float,
     grid_shape: tuple[int, ...] | None,
@@ -281,8 +280,6 @@ def _compute_degree_threshold(
 
     Parameters
     ----------
-    layout_kind : str or None
-        Type of layout (e.g., "Hexagonal", "Graph").
     median_degree : float
         Median degree of all nodes.
     max_degree : float
@@ -296,13 +293,7 @@ def _compute_degree_threshold(
         Degree threshold below which nodes are considered boundary.
 
     """
-    if layout_kind == "Hexagonal" and median_degree > 5:
-        return 5.5  # Hexagonal grids: bins with < 6 neighbors
-
-    if layout_kind == "Graph":
-        return 1.5 if max_degree >= 2 else max_degree
-
-    # 1D grids use the same logic as Graph layouts
+    # 1D grids: chain ends
     if grid_shape is not None and len(grid_shape) == 1:
         return 1.5 if max_degree >= 2 else max_degree
 
@@ -320,7 +311,6 @@ def _compute_degree_threshold(
 
 def _find_degree_based_boundary_nodes(
     graph: nx.Graph,
-    layout_kind: str | None,
     grid_shape: tuple[int, ...] | None,
 ) -> list[int]:
     """Find boundary nodes using degree-based heuristics.
@@ -329,8 +319,6 @@ def _find_degree_based_boundary_nodes(
     ----------
     graph : nx.Graph
         Connectivity graph.
-    layout_kind : str or None
-        Type of layout for layout-specific thresholds.
     grid_shape : tuple[int, ...] or None
         Shape of grid if applicable.
 
@@ -348,9 +336,7 @@ def _find_degree_based_boundary_nodes(
     median_degree = np.median(all_degree_values)
     max_degree = np.max(all_degree_values)
 
-    # Compute threshold based on layout type
     threshold = _compute_degree_threshold(
-        layout_kind,
         median_degree,
         max_degree,
         grid_shape,
@@ -379,7 +365,6 @@ def find_boundary_nodes(
     graph: nx.Graph,
     grid_shape: tuple[int, ...] | None = None,
     active_mask: NDArray[np.bool_] | None = None,
-    layout_kind: str | None = None,
     periodic_axes: tuple[int, ...] = (),
 ) -> NDArray[np.int_]:
     """Identify boundary nodes in a connectivity graph G.
@@ -389,9 +374,8 @@ def find_boundary_nodes(
          on the edge of the active region: at least one of its orthogonal N-D
          neighbors is out of bounds or inactive.
       2) Otherwise, its degree is below a threshold set from the node degrees:
-         - Hexagonal (layout_kind=="Hexagonal") with median degree > 5: 5.5.
-         - Graph layouts (layout_kind=="Graph") and 1-D grids: 1.5 when the
-           maximum degree is at least 2, else the maximum degree.
+         - 1-D grids: 1.5 when the maximum degree is at least 2, else the
+           maximum degree.
          - Other grids with median degree > 2*N - 1: 2*N - 0.5.
          - Otherwise: the median degree.
       3) If rule 2 finds no node, the layout has no grid_shape and the degrees
@@ -407,9 +391,6 @@ def find_boundary_nodes(
         active_mask is provided.
     active_mask : np.ndarray, optional
         An N-D boolean mask of shape=grid_shape. True=active bin.
-    layout_kind : str, optional
-        A string identifier (e.g. "RegularGrid", "Hexagonal", "Graph").
-        Used for special heuristics (e.g. hexagon degrees).
     periodic_axes : tuple of int, default=()
         Grid axes that wrap around, such as a circular angular axis; their
         first and last cells are neighbors. Used only by the grid method.
@@ -442,10 +423,6 @@ def find_boundary_nodes(
             graph, grid_shape, active_mask, periodic_axes
         )
     else:
-        boundary_nodes = _find_degree_based_boundary_nodes(
-            graph,
-            layout_kind,
-            grid_shape,
-        )
+        boundary_nodes = _find_degree_based_boundary_nodes(graph, grid_shape)
 
     return np.array(sorted(set(boundary_nodes)), dtype=int)
