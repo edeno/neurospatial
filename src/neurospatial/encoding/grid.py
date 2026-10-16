@@ -390,10 +390,6 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     method : {'fft', 'graph'}
         'fft' if environment is a regular 2D grid, 'graph' otherwise.
     """
-    # Check if environment has grid_shape attribute (regular grid)
-    if not hasattr(env, "grid_shape"):
-        return "graph"
-
     grid_shape = env.grid_shape
 
     # grid_shape can be None or tuple
@@ -402,13 +398,12 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
 
     # Check if grid is reasonably regular (not too sparse)
     # If active_mask exists, check that most bins are active
-    if hasattr(env, "active_mask"):
-        active_mask = env.active_mask
-        if active_mask is not None:
-            # If less than 50% of bins are active, treat as irregular
-            fill_fraction = np.sum(active_mask) / active_mask.size
-            if fill_fraction < 0.5:
-                return "graph"
+    active_mask = env.active_mask
+    if active_mask is not None:
+        # If less than 50% of bins are active, treat as irregular
+        fill_fraction = np.sum(active_mask) / active_mask.size
+        if fill_fraction < 0.5:
+            return "graph"
 
     return "fft"
 
@@ -437,13 +432,6 @@ def _spatial_autocorrelation_fft(
     ValueError
         If environment is not a regular 2D grid.
     """
-    # Validate environment has grid structure
-    if not hasattr(env, "grid_shape"):
-        raise ValueError(
-            "FFT method requires environment with grid_shape attribute. "
-            "Use spatial_autocorrelation_radial for irregular topologies."
-        )
-
     grid_shape = env.grid_shape
 
     if grid_shape is None:
@@ -463,14 +451,9 @@ def _spatial_autocorrelation_fft(
 
     # Fill in values from firing_rate
     # Need to map flat bin indices to grid indices
-    if hasattr(env, "active_mask"):
-        active_mask = env.active_mask
-        if active_mask is not None:
-            rate_map_2d[active_mask] = firing_rate
-        else:
-            # Reshape flat firing rate to 2D grid
-            reshaped = firing_rate.reshape(grid_shape)
-            rate_map_2d[:, :] = reshaped
+    active_mask = env.active_mask
+    if active_mask is not None:
+        rate_map_2d[active_mask] = firing_rate
     else:
         # Reshape flat firing rate to 2D grid
         reshaped = firing_rate.reshape(grid_shape)

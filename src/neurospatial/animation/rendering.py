@@ -560,17 +560,13 @@ def field_to_rgb_for_napari(
     # For grid-compatible 2D layouts, reshape to 2D image
     # Only rectilinear grids rasterize; also require a 2-D grid_shape.
     is_grid = binning.rectilinear is not None
-    has_2d_grid = (
-        hasattr(env, "grid_shape")
-        and env.grid_shape is not None
-        and len(env.grid_shape) == 2
-    )
+    has_2d_grid = env.grid_shape is not None and len(env.grid_shape) == 2
     if is_grid and has_2d_grid:
         # Determine which bins are active
         grid_shape = env.grid_shape
         assert grid_shape is not None  # for mypy
         rgb_shape = (grid_shape[0], grid_shape[1], 3)
-        if hasattr(env, "active_mask") and env.active_mask is not None:
+        if env.active_mask is not None:
             # Create full grid RGB
             full_rgb = np.zeros(rgb_shape, dtype=np.uint8)
 

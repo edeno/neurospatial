@@ -3160,8 +3160,7 @@ def render_napari(
     # Scale is (time, y, x) for shape (time, height, width, channels)
     layer_scale: tuple[float, float, float] | None = None
     if (
-        hasattr(env, "grid_shape")
-        and env.grid_shape is not None
+        env.grid_shape is not None
         and len(env.grid_shape) == 2
         and env.dimension_ranges is not None
     ):
@@ -3493,8 +3492,7 @@ def _render_multi_field_napari(
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     layer_scale: tuple[float, float, float] | None = None
     if (
-        hasattr(env, "grid_shape")
-        and env.grid_shape is not None
+        env.grid_shape is not None
         and len(env.grid_shape) == 2
         and env.dimension_ranges is not None
     ):
