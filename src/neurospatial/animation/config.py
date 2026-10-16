@@ -1,14 +1,19 @@
-"""Scale bar and visualization configuration utilities.
+"""Napari scale bars, and the shared matplotlib scale-bar helpers for animation.
+
+This module configures napari's built-in scale bar
+(:func:`configure_napari_scale_bar`) so it keeps the environment's units. The
+matplotlib scale bar and its "nice" 1-2-5 length rule live in
+``neurospatial.layout._scale_bar``, below the environment, so that
+``Environment.plot`` can draw them; this module re-exports
+``ScaleBarConfig``, ``add_scale_bar_to_axes``, ``compute_nice_length`` and
+``format_scale_label`` for the animation backends.
 
 Imports
 -------
-Functions and classes can be imported from either location:
+``ScaleBarConfig`` can be imported from either location:
 
 >>> from neurospatial.animation.config import ScaleBarConfig  # Direct
 >>> from neurospatial.animation import ScaleBarConfig  # Via animation package
-
-This module provides scale bar functionality for matplotlib and napari visualizations,
-including automatic "nice" length calculation using the 1-2-5 rule.
 
 Note: This module provides **visualization scale bars** (showing physical scale on plots).
 This is distinct from the existing **calibration scale bar** feature

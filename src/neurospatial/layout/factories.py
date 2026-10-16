@@ -49,7 +49,11 @@ class LayoutType(str, Enum):
 
     Notes
     -----
-    String values are also accepted for backward compatibility:
+    ``create_layout`` and the ``layout=`` option of the sample factories also
+    accept a layout name as a string. The match ignores case and any
+    character that is not a letter or digit, so ``"RegularGrid"``,
+    ``"regular_grid"`` and ``"regular-grid"`` all name ``REGULAR_GRID``.
+    ``list_available_layouts()`` returns the accepted names.
 
     >>> layout = create_layout("regular_grid", bin_size=2.0)  # doctest: +SKIP
     """
@@ -201,7 +205,8 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
     ...     LayoutType.REGULAR_GRID, bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]
     ... )  # doctest: +SKIP
 
-    Using strings (backward compatible):
+    Using a layout name, matched ignoring case and non-alphanumeric
+    characters:
 
     >>> layout = create_layout(
     ...     "regular_grid", bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]

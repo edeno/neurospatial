@@ -90,9 +90,10 @@ class LayoutEngine(Protocol):
     of their connectivity.
 
     A built engine publishes its geometry through ``binning()``: a
-    ``Binning`` holding owned bins in connectivity edge order, point lookup,
-    finite-volume faces and the optional grid, track, shape and outline
-    components, all derived from the engine's own state. Environments are
+    ``Binning`` holding owned bins in connectivity node order, neighbor pairs
+    in connectivity edge order, point lookup, finite-volume faces and the
+    optional grid, track, shape and outline components, all derived from the
+    engine's own state. Environments are
     constructed from that record; diffusion, gradients and divergence use its
     faces. Custom engines implement the same method.
 

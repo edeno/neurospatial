@@ -40,7 +40,7 @@ def assemble_binning(
     shapes: HexagonShapes | TriangleShapes | None = None,
     outline: Outline | None = None,
 ) -> Binning:
-    """Snapshot bins in connectivity edge order with lazy native faces.
+    """Snapshot bins in graph node order and pairs in edge order, faces lazily.
 
     Every layout engine's ``binning()`` passes its own state here, so all
     engines share one rule for neighbor-pair order, bin measures and face
