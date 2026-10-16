@@ -704,15 +704,15 @@ class TestLinearTimeAllocation:
 class TestRayGridIntersection:
     """Tests for ray-grid intersection edge cases.
 
-    Tests numerical stability and edge cases in the _compute_ray_grid_intersections
-    and related helper methods. These are internal methods but important for
-    linear time allocation correctness.
+    Tests numerical stability and edge cases of the ray-grid traversal in
+    ``neurospatial.ops._linear_allocation``, which linear time allocation uses
+    on rectangular grids.
     """
 
     def test_ray_grid_zero_distance_movement(self, grid_env_from_samples):
         """Test ray-grid intersection with zero movement.
 
-        Tests the EPSILON threshold for detecting zero-distance rays.
+        Tests the RAY_EPSILON threshold for detecting zero-distance rays.
         When start == end, should allocate all time to starting bin.
         """
         # Use same position twice (zero movement)
@@ -731,7 +731,7 @@ class TestRayGridIntersection:
     def test_ray_grid_parallel_to_axis(self, grid_env_from_samples):
         """Test ray-grid intersection with movement parallel to grid axis.
 
-        Tests the EPSILON threshold for ray direction components parallel
+        Tests the RAY_EPSILON threshold for ray direction components parallel
         to grid edges (prevents division by zero).
         """
         # Create movement strictly along one axis
@@ -761,7 +761,7 @@ class TestRayGridIntersection:
 
         Tests the full ray-grid intersection algorithm by creating a path
         that crosses multiple grid cells diagonally. This exercises the core
-        algorithm logic (lines 1155-1216 in trajectory.py) including:
+        algorithm logic including:
         - Computing grid line intersections
         - Allocating time proportionally to segment lengths
         - Handling multiple bin crossings

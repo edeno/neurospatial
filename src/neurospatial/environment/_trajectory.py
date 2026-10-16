@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from operator import itemgetter
 from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
@@ -41,18 +40,12 @@ from neurospatial.environment._polygon_trajectory import (
     uses_polygon_allocation,
 )
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._capabilities import require_rectilinear
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.ops._linear_allocation import linear_grid_occupancy, ray_grid_pieces
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
-
-
-# Numerical stability constants
-# Epsilon threshold for detecting near-zero values in ray-grid intersection.
-# Used to prevent division by zero when ray direction components are parallel
-# to grid edges. Values below this threshold are treated as exactly zero.
-EPSILON = 1e-12
 
 
 @dataclass(frozen=True)
@@ -227,17 +220,16 @@ def _occupancy(
                 frame = binning.grid_frame
                 assert frame is not None
                 _, source_positions = _source_grid(frame, positions)
-                for sample in np.flatnonzero(valid_mask):
-                    normalizers[sample] = sum(
-                        fraction
-                        for _, fraction in _compute_ray_grid_intersections(
-                            source_positions[sample],
-                            source_positions[sample + 1],
-                            frame.source.edges,
-                            frame.source.shape,
-                            1.0,
-                        )
-                    )
+                samples = np.flatnonzero(valid_mask)
+                interval, _, fraction = ray_grid_pieces(
+                    source_positions[samples],
+                    source_positions[samples + 1],
+                    frame.source.edges,
+                    frame.source.shape,
+                    np.ones(len(samples)),
+                )
+                normalizers[samples] = 0.0
+                np.add.at(normalizers, samples[interval], fraction)
             for piece in retained_linear_intervals(
                 binning, arena, times, positions, valid_mask
             ):
@@ -251,8 +243,14 @@ def _occupancy(
                 )
         else:
             assert grid is not None
-            occupancy = _allocate_time_linear(
-                n_bins, grid, positions, dt, valid_mask, bin_indices, return_seconds
+            occupancy = linear_grid_occupancy(
+                n_bins,
+                grid,
+                positions,
+                dt,
+                valid_mask,
+                bin_indices,
+                return_seconds=return_seconds,
             )
 
     # Apply kernel smoothing if requested
@@ -790,258 +788,3 @@ def _diffusion_transitions(
         kernel = scipy.sparse.csr_matrix(kernel)
 
     return kernel
-
-
-def _allocate_time_linear(
-    n_bins: int,
-    grid: RectilinearGrid,
-    positions: NDArray[np.float64],
-    dt: NDArray[np.float64],
-    valid_mask: NDArray[np.bool_],
-    bin_indices: NDArray[np.intp],
-    return_seconds: bool,
-) -> NDArray[np.float64]:
-    """Allocate time intervals linearly across traversed bins (helper for occupancy).
-
-    This method implements ray-grid intersection to split each time interval
-    proportionally across all bins crossed by the straight-line path between
-    consecutive position samples.
-
-    Parameters
-    ----------
-    grid : RectilinearGrid
-        Per-axis cell edges, full-grid shape and active mask.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position samples.
-    dt : NDArray[np.float64], shape (n_samples-1,)
-        Time intervals between consecutive samples.
-    valid_mask : NDArray[np.bool_], shape (n_samples-1,)
-        Boolean mask indicating which intervals are valid (pass filtering).
-    bin_indices : NDArray[np.intp], shape (n_samples,)
-        Bin indices for each position (-1 if outside environment).
-    return_seconds : bool
-        If True, return time in seconds. If False, return sample counts.
-
-    Returns
-    -------
-    occupancy : NDArray[np.float64], shape (n_bins,)
-        If return_seconds=True: Time in seconds allocated to each bin.
-        If return_seconds=False: Count allocated to each bin (proportional).
-
-    """
-    grid_edges = grid.edges
-    grid_shape = grid.shape
-
-    # Initialize occupancy array (indexed by ACTIVE-bin id, length n_bins)
-    occupancy = np.zeros(n_bins, dtype=np.float64)
-
-    # The ray-intersection helpers below (_position_to_flat_index /
-    # _compute_ray_grid_intersections) return FULL-GRID row-major flat
-    # indices, but `occupancy` is indexed by active-bin id. On a masked
-    # grid (the common from_samples case) these differ, so we must
-    # translate every full-grid index to its active-bin id before
-    # accumulating. Build the inverse map once (same idiom as
-    # layout/helpers/regular_grid.py). For inactive bins the map holds -1.
-    active_mask_flat = grid.active_mask.ravel()
-    full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
-    active_indices = np.flatnonzero(active_mask_flat)
-    full_to_active[active_indices] = np.arange(active_indices.size, dtype=np.intp)
-
-    def _to_active(full_idx: int) -> int:
-        """Translate a full-grid flat index to active-bin id (-1 if inactive)."""
-        if 0 <= full_idx < full_to_active.size:
-            return int(full_to_active[full_idx])
-        return -1
-
-    # Process each valid interval
-    for i in np.where(valid_mask)[0]:
-        start_pos = positions[i]
-        end_pos = positions[i + 1]
-        interval_time = dt[i]
-
-        # Choose weight based on return_seconds parameter
-        weight = interval_time if return_seconds else 1.0
-
-        # Get starting and ending bin indices (already active-bin ids,
-        # from bin_at in occupancy()).
-        start_bin = bin_indices[i]
-        end_bin = bin_indices[i + 1]
-
-        # If both points are in same bin, simple allocation
-        if start_bin == end_bin and start_bin >= 0:
-            occupancy[start_bin] += weight
-            continue
-
-        # Compute ray-grid intersections. These return FULL-GRID indices.
-        bin_times = _compute_ray_grid_intersections(
-            start_pos, end_pos, grid_edges, grid_shape, interval_time
-        )
-
-        # Translate full-grid indices to active-bin ids and accumulate.
-        if return_seconds:
-            for full_idx, time_in_bin in bin_times:
-                active_idx = _to_active(full_idx)
-                if active_idx >= 0:
-                    occupancy[active_idx] += time_in_bin
-        else:
-            # Convert time proportions to count proportions (sum to 1.0).
-            # Mass that falls on inactive bins is dropped, matching the
-            # 'start' branch's behaviour of excluding outside/inactive
-            # samples, so the two allocation modes agree bin-for-bin.
-            total_allocated = sum(time for _, time in bin_times)
-            if total_allocated > 0:
-                for full_idx, time_in_bin in bin_times:
-                    active_idx = _to_active(full_idx)
-                    if active_idx >= 0:
-                        occupancy[active_idx] += (
-                            time_in_bin / total_allocated
-                        ) * weight
-
-    return occupancy
-
-
-def _compute_ray_grid_intersections(
-    start_pos: NDArray[np.float64],
-    end_pos: NDArray[np.float64],
-    grid_edges: Sequence[NDArray[np.float64]],
-    grid_shape: tuple[int, ...],
-    total_time: float,
-) -> list[tuple[int, float]]:
-    """Compute time spent in each bin along a ray (helper for linear allocation).
-
-    Uses DDA-like algorithm to traverse grid and compute intersection distances.
-
-    Parameters
-    ----------
-    start_pos : NDArray[np.float64], shape (n_dims,)
-        Starting position.
-    end_pos : NDArray[np.float64], shape (n_dims,)
-        Ending position.
-    grid_edges : list[NDArray[np.float64]]
-        Grid edges per dimension.
-    grid_shape : tuple[int, ...]
-        Grid shape.
-    total_time : float
-        Total time interval to split across bins.
-
-    Returns
-    -------
-    bin_times : list[tuple[int, float]]
-        List of (bin_index, time_in_bin) pairs.
-
-    Notes
-    -----
-    Numerical Stability: This method uses an epsilon threshold (EPSILON = 1e-12)
-    to prevent division by zero. Ray direction components smaller than EPSILON
-    are treated as zero (parallel to grid edges), avoiding numerical instabilities
-    when trajectories are aligned with grid axes or have very small movements
-    in certain dimensions.
-
-    """
-    n_dims = len(grid_shape)
-
-    # Compute ray direction and total distance
-    ray_dir = end_pos - start_pos
-    total_distance = np.linalg.norm(ray_dir)
-
-    # Handle zero-distance case (no movement)
-    if total_distance < EPSILON:
-        # No movement - allocate all time to starting bin
-        start_bin_idx = _position_to_flat_index(start_pos, grid_edges, grid_shape)
-        if start_bin_idx >= 0:
-            return [(start_bin_idx, total_time)]
-        return []
-
-    # Normalize ray direction
-    ray_dir = ray_dir / total_distance
-
-    # Find all grid crossings along each dimension
-    crossings: list[tuple[float, int, int]] = []  # (t, dim, grid_index)
-
-    for dim in range(n_dims):
-        # Skip dimensions where ray is parallel to grid edges
-        # This prevents division by zero in parametric intersection calculation
-        if abs(ray_dir[dim]) < EPSILON:
-            # Ray parallel to this dimension - no crossings
-            continue
-
-        edges = grid_edges[dim]
-        # Find which edges the ray crosses
-        for edge_idx, edge_pos in enumerate(edges):
-            # Parametric intersection: start + t * ray_dir = edge_pos
-            t = (edge_pos - start_pos[dim]) / ray_dir[dim]
-            if 0 < t < total_distance:  # Exclude endpoints
-                crossings.append((t, dim, edge_idx))
-
-    # Sort crossings by distance along ray
-    crossings.sort(key=itemgetter(0))
-
-    # Add start and end points
-    segments = [0.0] + [t for t, _, _ in crossings] + [total_distance]
-
-    # Compute bin index and time for each segment
-    bin_times: list[tuple[int, float]] = []
-    for seg_idx in range(len(segments) - 1):
-        # Midpoint of segment (to determine which bin we're in)
-        t_mid = (segments[seg_idx] + segments[seg_idx + 1]) / 2
-        mid_pos = start_pos + t_mid * ray_dir
-
-        # Get bin index at midpoint
-        bin_idx = _position_to_flat_index(mid_pos, grid_edges, grid_shape)
-
-        if bin_idx >= 0:
-            # Compute time in this segment
-            seg_distance = segments[seg_idx + 1] - segments[seg_idx]
-            seg_time = total_time * (seg_distance / total_distance)
-            bin_times.append((bin_idx, seg_time))
-
-    return bin_times
-
-
-def _position_to_flat_index(
-    pos: NDArray[np.float64],
-    grid_edges: Sequence[NDArray[np.float64]],
-    grid_shape: tuple[int, ...],
-) -> int:
-    """Convert N-D position to flat bin index (helper for ray intersection).
-
-    Parameters
-    ----------
-    pos : NDArray[np.float64], shape (n_dims,)
-        Position coordinates.
-    grid_edges : list[NDArray[np.float64]]
-        Grid edges per dimension.
-    grid_shape : tuple[int, ...]
-        Grid shape.
-
-    Returns
-    -------
-    flat_index : int
-        Flat bin index, or -1 if position is outside grid bounds.
-
-    """
-    n_dims = len(grid_shape)
-    nd_index = []
-
-    for dim in range(n_dims):
-        edges = grid_edges[dim]
-        coord = pos[dim]
-
-        # Find which bin this coordinate falls into
-        # bins are [edges[i], edges[i+1])
-        bin_idx = np.searchsorted(edges, coord, side="right") - 1
-
-        # Check bounds
-        if bin_idx < 0 or bin_idx >= grid_shape[dim]:
-            return -1  # Outside grid
-
-        nd_index.append(bin_idx)
-
-    # Convert N-D index to flat index (row-major order)
-    flat_idx = 0
-    stride = 1
-    for dim in reversed(range(n_dims)):
-        flat_idx += nd_index[dim] * stride
-        stride *= grid_shape[dim]
-
-    return flat_idx

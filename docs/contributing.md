@@ -287,7 +287,9 @@ Subset selection lives in `environment/_subset.py`; both supported rebin calls
 live in `environment/_rebin.py`. Factor rebin preserves its historical grid
 partitioning rules, while `rebin(bin_size=...)` uses the saved binning
 specification and frame. Both publish through the same owned-data path. Shared
-time-support calculations live in `_intervals.py`, and physical wall-frame
+time-support calculations live in `_intervals.py`. Linear time allocation on
+rectangular grids (the vectorized ray-grid traversal) lives in
+`ops/_linear_allocation.py`. Physical wall-frame
 evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
 `ops/_boundaries.py` calculation with explicit geometry inputs.
 
