@@ -339,6 +339,7 @@ class GraphLayout(_KDTreeMixin):
             ),
             face_normals=False,
             linearization=track,
+            dimension_ranges=self.dimension_ranges,
         )
 
     def linear_point_to_bin_ind(

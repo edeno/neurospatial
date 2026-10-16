@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
@@ -25,8 +25,17 @@ def _environment(context):
     if context == "connectivity":
         layout = RegularGridLayout()
         layout.build(bin_size=1.0, dimension_ranges=[(0, 2), (0, 1)])
-        _annotate(layout.connectivity)
-        return publish_environment("annotated", layout)
+        built = publish_environment("annotated", layout)
+        graph = built.to_networkx()
+        _annotate(graph)
+        return publish_binning(
+            built._binning,
+            connectivity=graph,
+            dimension_ranges=built.dimension_ranges,
+            layout_type=built.layout_type,
+            category=built._provenance.category,
+            name="annotated",
+        )
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))

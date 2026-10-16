@@ -262,6 +262,7 @@ class TriangularMeshLayout:
             ),
             shapes=self.bin_shapes(),
             outline=self.outline(),
+            dimension_ranges=self.dimension_ranges,
         )
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:

@@ -46,14 +46,12 @@ def _grid():
 )
 def test_publication_detaches_source_geometry_and_metadata(restore):
     source = _grid()
-    source.connectivity.graph["nested"] = {"values": np.array([1.0, 2.0])}
     source._build_params_used["choice"] = 4.0
     expected = source.bin_centers.copy()
     env = restore(publish_environment(layout=source))
     source.bin_centers[:] = -99
     source.grid_edges[0][:] = -99
     source.active_mask[:] = False
-    source.connectivity.graph["nested"]["values"][:] = -99
     source._build_params_used["choice"] = -99.0
     for array in (env.bin_centers, env.bin_sizes, env.grid_edges[0], env.active_mask):
         assert not array.flags.writeable
@@ -68,7 +66,6 @@ def test_publication_detaches_source_geometry_and_metadata(restore):
     assert not hasattr(exported.faces, "layout")
     np.testing.assert_array_equal(env.bin_centers, expected)
     np.testing.assert_array_equal(env.bin_sizes, np.ones(9))
-    np.testing.assert_array_equal(env.connectivity.graph["nested"]["values"], [1, 2])
     assert env.layout_parameters["choice"] == 4.0
 
 

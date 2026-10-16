@@ -428,6 +428,13 @@ class Binning:
 
     ``face_normals`` holds physical directions in ``bins.pairs`` order. It is
     independent of solver availability: only ``faces`` grants that capability.
+
+    ``dimension_ranges`` is the ``(low, high)`` range of each coordinate axis
+    that the bins were built over, for example the data range a hexagonal
+    tiling covers. When it is None, an environment uses the extent of the
+    cells (the grid, outline or cell shapes), or no range for bins without
+    cells. An environment's binning carries the environment's
+    ``dimension_ranges``.
     """
 
     kind: str
@@ -442,3 +449,23 @@ class Binning:
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     grid_frame: FramedGrid | None = None
+    dimension_ranges: tuple[tuple[float, float], ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.dimension_ranges is None:
+            return
+        try:
+            ranges = tuple(
+                (float(low), float(high)) for low, high in self.dimension_ranges
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "Binning.dimension_ranges must be one (low, high) pair of numbers "
+                f"per coordinate axis, got {self.dimension_ranges!r}."
+            ) from error
+        if len(ranges) != self.bins.n_dims:
+            raise ValueError(
+                f"Binning.dimension_ranges has {len(ranges)} axes but the bins "
+                f"have {self.bins.n_dims}; give one (low, high) pair per axis."
+            )
+        object.__setattr__(self, "dimension_ranges", ranges)

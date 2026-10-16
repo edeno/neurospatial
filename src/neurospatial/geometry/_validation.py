@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -62,6 +63,48 @@ def _active_indices(
     return active[np.argsort(mapping[active])]
 
 
+def _first_mismatch(
+    values: list[Any], expected: NDArray[Any], name: Callable[[int], str]
+) -> None:
+    """Name the first value that differs from its row of ``expected``.
+
+    Equivalent to ``np.array_equal(values[i], expected[i])`` for every row,
+    compared at once when the values form a numeric array of the same shape.
+    """
+    if len(expected) == 0:
+        return
+    try:
+        array = np.asarray(values)
+    except (TypeError, ValueError):
+        array = None
+    if (
+        array is not None
+        and array.dtype.kind in "biufc"
+        and array.shape == expected.shape
+    ):
+        rows = (array == expected).reshape(len(expected), -1).all(axis=1)
+        bad = np.flatnonzero(~rows)
+        index = int(bad[0]) if bad.size else None
+    else:
+        index = next(
+            (
+                i
+                for i, value in enumerate(values)
+                if not np.array_equal(value, expected[i])
+            ),
+            None,
+        )
+    if index is not None:
+        raise ValueError(f"{name(index)} does not match the binning geometry.")
+
+
+def _pair_keys(pairs: NDArray[np.intp], n_bins: int) -> NDArray[np.int64]:
+    """One integer per unordered pair, the same for ``(u, v)`` and ``(v, u)``."""
+    low = np.minimum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
+    high = np.maximum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
+    return low * max(n_bins, 1) + high
+
+
 def _validate_graph(binning: Binning, graph: nx.Graph) -> None:
     """Check graph equivalence while keeping bin-pair order authoritative."""
     bins = binning.bins
@@ -77,18 +120,30 @@ def _validate_graph(binning: Binning, graph: nx.Graph) -> None:
         or set(nodes) != set(range(bins.n_bins))
     ):
         raise ValueError("connectivity nodes must be integer labels 0..n_bins-1.")
-    for node in range(bins.n_bins):
-        _equal(graph.nodes[node].get("pos"), bins.centers[node], f"node {node} pos")
-    expected = {frozenset((int(u), int(v))) for u, v in bins.pairs}
-    actual = {frozenset((int(u), int(v))) for u, v in graph.edges()}
-    if actual != expected:
+    _first_mismatch(
+        [graph.nodes[node].get("pos") for node in range(bins.n_bins)],
+        bins.centers,
+        lambda node: f"node {node} pos",
+    )
+    edges = list(graph.edges(data=True))
+    graph_keys = _pair_keys(
+        np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2),
+        bins.n_bins,
+    )
+    pair_keys = _pair_keys(bins.pairs, bins.n_bins)
+    graph_order, pair_order = np.argsort(graph_keys), np.argsort(pair_keys)
+    if len(graph_keys) != len(pair_keys) or not np.array_equal(
+        graph_keys[graph_order], pair_keys[pair_order]
+    ):
         raise ValueError("connectivity pairs do not match the binning geometry.")
-    for index, (u, v) in enumerate(bins.pairs):
-        _equal(
-            graph.edges[u, v].get("distance"),
-            bins.pair_distances[index],
-            f"edge ({u}, {v}) distance",
-        )
+    # Row i of the pairs is graph edge aligned[i].
+    aligned = np.empty(len(pair_keys), dtype=np.intp)
+    aligned[pair_order] = graph_order
+    _first_mismatch(
+        [edges[index][2].get("distance") for index in aligned.tolist()],
+        bins.pair_distances,
+        lambda index: f"edge ({bins.pairs[index][0]}, {bins.pairs[index][1]}) distance",
+    )
     if isinstance(binning.faces, KnownFaces):
         _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
         _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")

@@ -227,6 +227,7 @@ class _GridMixin:
             face_arrays=(self._axis_widths(),),
             rectilinear=self.rectilinear_grid(),
             grid_spec=self._grid_spec,
+            dimension_ranges=self.dimension_ranges,
         )
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:

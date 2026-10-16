@@ -95,7 +95,10 @@ class LayoutEngine(Protocol):
     optional grid, track, shape and outline components, all derived from the
     engine's own state. Environments are
     constructed from that record; diffusion, gradients and divergence use its
-    faces. Custom engines implement the same method.
+    faces. Custom engines implement the same method. An environment derives
+    its graph, grid index and ranges from the record and reads only two other,
+    optional members: ``layout_type`` and ``_build_params_used``. The other
+    members below describe the built-in engines.
 
     Attributes
     ----------

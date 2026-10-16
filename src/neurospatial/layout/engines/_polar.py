@@ -143,6 +143,7 @@ class _PolarGridLayout(MaskedGridLayout):
             circular=self.circular_angle,
             face_normals=False,
             rectilinear=self.rectilinear_grid(),
+            dimension_ranges=self.dimension_ranges,
         )
 
     def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:

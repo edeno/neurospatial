@@ -23,8 +23,9 @@ a set of **mandatory attributes** on that graph so that spatial queries
 
 - `'distance'`: Positive navigation path length; native grids use the distance
   between centers, while explicit bins can declare longer paths
-- `'vector'`: Displacement vector (as a tuple)
-- `'edge_id'`: Unique integer edge identifier
+- `'vector'`: Displacement vector (as a tuple), from the lower to the higher
+  bin ID
+- `'edge_id'`: The edge's row in `env.edge_pairs`
 - `'angle_2d'`: Angle in 2D (optional, present for 2D layouts)
 
 You can read these attributes directly off `env.connectivity`:
@@ -96,7 +97,10 @@ which returns a `Binning` built from the engine's own state: bins in the order
 of the connectivity graph's nodes, neighbor pairs in the order of its edges,
 point lookup, lazily computed faces and any grid, track, shape or outline
 records. The environment keeps that record, not the engine, so live lookup or
-track-conversion callbacks do not remain attached.
+track-conversion callbacks do not remain attached. It derives the
+connectivity graph, `grid_edges`, `grid_shape`, `active_mask` and
+`dimension_ranges` from the record, so `build(...)` and `binning()` are all
+an engine needs.
 External objects without `binning()` use registered adapters to supported
 built-in snapshots.
 

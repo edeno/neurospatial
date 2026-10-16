@@ -68,32 +68,26 @@ class TestPublishedValueOwnership:
             expected.get_differential_operator().toarray(),
         )
 
-    def test_invalid_layout_graph_leaves_environment_unchanged(self) -> None:
-        """Validation runs before any environment state changes."""
+    def test_engine_graph_attributes_do_not_reach_environment(self) -> None:
+        """The published graph is derived from the binning, not the engine's graph."""
         from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
-        env = Environment.from_grid_mask(
-            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
-        )
-        env.compute_kernel(1.0)
-        connectivity, geometry = env.connectivity, env._geometry
-        cache, n_cached = env._cache, len(env._cache)
-        broken = connectivity.copy()
-        for _, _, data in broken.edges(data=True):
-            del data["edge_id"]
         layout = MaskedGridLayout()
         layout.build(
             active_mask=np.ones((2, 2), dtype=bool),
             grid_edges=(np.arange(3.0),) * 2,
         )
-        layout.connectivity = broken
+        assert layout.connectivity is not None
+        for _, _, data in layout.connectivity.edges(data=True):
+            del data["edge_id"]
+            data["stale"] = True
 
-        with pytest.raises(ValueError, match="layout engine bug"):
-            publish_environment("invalid", layout, "MaskedGrid", {})
+        env = publish_environment("derived", layout, "MaskedGrid", {})
 
-        assert env.connectivity is connectivity
-        assert env._geometry is geometry
-        assert env._cache is cache and len(cache) == n_cached > 0
+        rows = {frozenset(map(int, pair)): i for i, pair in enumerate(env.edge_pairs)}
+        for u, v, data in env.connectivity.edges(data=True):
+            assert data["edge_id"] == rows[frozenset((u, v))]
+            assert "stale" not in data
 
 
 class TestPublishedGeometryIsReadOnly:

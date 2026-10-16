@@ -237,6 +237,7 @@ class HexagonalLayout:
             locator=self.locator(),
             faces="hex",
             shapes=self.bin_shapes(),
+            dimension_ranges=self.dimension_ranges,
         )
 
     @property

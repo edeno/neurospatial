@@ -67,16 +67,23 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Cartesian environments in those files still load.
 
 - Custom layout engines must implement `binning()`, which returns the
-  `Binning` the environment keeps: bins in the connectivity graph's node
-  order, neighbor pairs in its edge order, point lookup, the faces between
-  cells (or why they are missing), and any grid, track, shape and outline
-  records. The environment no longer calls
-  `point_to_bin_index` on an engine, so to change lookup or faces, change what
-  `binning()` returns. All built-in engines implement it, a subclass of a
-  built-in engine inherits a working one, and `LayoutEngine` lists the method.
-  Objects without `binning()` still need an installed snapshot adapter. The
-  private `neurospatial.layout._capabilities` module (`RectilinearGridProvider`)
-  is removed; read `layout.binning().rectilinear`.
+  `Binning` the environment keeps: the bins, their neighbor pairs, point
+  lookup, the faces between cells (or why they are missing), any grid, track,
+  shape and outline records and, when the cells do not show it, the
+  `dimension_ranges` the bins cover. An engine needs only `build(...)` and
+  `binning()`: the environment derives its connectivity graph, `grid_edges`,
+  `grid_shape`, `active_mask` and `dimension_ranges` from the `Binning` and
+  no longer reads an engine's `connectivity`, `dimension_ranges` or grid
+  attributes, so attributes an engine adds to its own graph do not reach
+  `env.connectivity`. It never calls `point_to_bin_index` on an engine either,
+  so to change lookup or faces, change what `binning()` returns. Two labels
+  are read when an engine has them: its `layout_type` category, and the
+  build arguments recorded with `neurospatial.layout.base.capture_build_params`
+  (`env.layout_parameters`). All built-in engines implement `binning()`, a
+  subclass of a built-in engine inherits a working one, and `LayoutEngine`
+  lists the method. Objects without `binning()` still need an installed
+  snapshot adapter. The private `neurospatial.layout._capabilities` module
+  (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
 
 - Graph, node and edge attributes of `env.connectivity` are stored as
   immutable values. A list attribute reads back as a tuple, a dict as a
@@ -212,8 +219,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   type annotations and `isinstance` checks.
 
 - `Environment.from_layout` accepts your own layout engine after its
-  `build(...)`, with no registration. Subclasses of built-in engines, which
+  `build(...)`, with no registration. The engine can be a plain class with
+  only `build(...)` and `binning()`. Subclasses of built-in engines, which
   used to be refused, now build environments normally.
+
+- `Binning` has a `dimension_ranges` field: the `(low, high)` range of each
+  axis the bins were built over, such as the range a hexagonal tiling covers.
+  `env.binning.dimension_ranges` equals `env.dimension_ranges`, and
+  `Environment.from_bins` uses the field when it is set, so
+  `Environment.from_bins(env.binning)` keeps the ranges. When it is `None`,
+  the range comes from the cells (grid, outline or cell shapes) as before.
 
 - `subset()` and `rebin()` accept `name=` like `clip()` and
   `apply_transform()`, and `neurospatial.ops.apply_transform_to_environment`
@@ -248,6 +263,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - A 200 × 200 grid mask cropped by an `arena=` builds about 2.7 times faster,
   because the bins are selected before the environment is built.
 
+- Building an environment checks its connectivity graph against its bins with
+  array operations instead of a Python loop over every bin and pair: for a
+  22,500-bin grid the check takes 0.08 s instead of 0.45 s.
+
 - `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
   rectangular grids splits every interval across the cells its straight path
   crosses at once, instead of one interval at a time: a 20,000-sample 3-D
@@ -255,6 +274,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- Track environments (`from_graph`, `linear_track`, `maze`) store each
+  connectivity edge's `vector` and `angle_2d` from the lower to the higher bin
+  ID, as every other layout does. They pointed the other way, so
+  `env.get_edge_attributes()` reported track vectors from target to source.
+  On a track with gaps between segments (`edge_spacing > 0`), each node's
+  `source_grid_flat_index` and `original_grid_nd_index` now name its cell of
+  the linear grid described by `env.grid_shape` and `env.active_mask`; they
+  used to give the bin's position among the active bins, which pointed at gap
+  cells after the first gap.
+
+- The `edge_id` of each connectivity edge of a polar environment is its row in
+  `env.edge_pairs`, as on other layouts. Edges across the angular seam used to
+  have IDs that did not match their rows.
 
 - `Environment.open_field(..., fill_holes=False)` works; it used to fail with
   a `TypeError` about multiple values for `fill_holes`.

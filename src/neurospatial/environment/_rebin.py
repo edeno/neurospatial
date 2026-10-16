@@ -518,7 +518,7 @@ def _rebin_factor(
         connect_diagonal_neighbors=connect_diagonal,
         grid_spec=binning.grid_spec,
     )
-    coarse, graph, ranges, _, category, _, index = built_layout_data(
+    coarse, graph, ranges, _, category, _ = built_layout_data(
         cast("LayoutEngine", layout)
     )
     derivation = _Derivation(
@@ -535,8 +535,7 @@ def _rebin_factor(
                 "connect_diagonal_neighbors": connect_diagonal,
             },
         ),
-        grid_index=index,
-        check_center_lookup=index is None,
+        check_center_lookup=False,
     )
 
     # Bins beyond the truncated extent are already reported above.

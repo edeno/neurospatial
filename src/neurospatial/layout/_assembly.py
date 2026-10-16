@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import networkx as nx
@@ -39,6 +40,7 @@ def assemble_binning(
     grid_spec: GridBinningSpec | None = None,
     shapes: HexagonShapes | TriangleShapes | None = None,
     outline: Outline | None = None,
+    dimension_ranges: Sequence[tuple[float, float]] | None = None,
 ) -> Binning:
     """Snapshot bins in graph node order and pairs in edge order, faces lazily.
 
@@ -77,6 +79,8 @@ def assemble_binning(
         such as polar sectors.
     rectilinear, linearization, grid_spec, shapes, outline : optional
         Structural components the engine supplies from its own state.
+    dimension_ranges : sequence of (float, float), optional
+        Range of each coordinate axis the engine built its bins over.
 
     Returns
     -------
@@ -109,4 +113,5 @@ def assemble_binning(
         face_normals=FaceNormals(normals) if normals is not None else None,
         shapes=shapes,
         outline=outline,
+        dimension_ranges=None if dimension_ranges is None else tuple(dimension_ranges),
     )

@@ -88,6 +88,26 @@ def cell_extent(
     return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
 
 
+def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
+    """Return the binning's own ``dimension_ranges``, else its cell extent.
+
+    Parameters
+    ----------
+    binning : Binning
+        Bins whose coordinate ranges to report.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        ``binning.dimension_ranges`` when the binning records it; otherwise
+        the extent of its cells (see :func:`cell_extent`), or None for bins
+        without cells.
+    """
+    if binning.dimension_ranges is not None:
+        return binning.dimension_ranges
+    return cell_extent(binning, shapeless="none")
+
+
 def prepare_bins(
     binning: object,
 ) -> tuple[Binning, nx.Graph, tuple[tuple[float, float], ...] | None, str]:
@@ -147,6 +167,6 @@ def prepare_bins(
     return (
         snapshot,
         graph,
-        cell_extent(snapshot, shapeless="none"),
+        binning_ranges(snapshot),
         _category(snapshot),
     )

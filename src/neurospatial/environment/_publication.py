@@ -575,7 +575,8 @@ def publish(
     connectivity : networkx.Graph
         Navigation graph over bin IDs ``0..n_bins-1``.
     dimension_ranges : sequence of (float, float) or None
-        Bounding range per coordinate axis.
+        Bounding range per coordinate axis, also recorded on the published
+        binning.
     provenance : _Provenance
         Layout label, category and build choices.
     metadata : _Metadata
@@ -605,6 +606,14 @@ def publish(
     if coordinate_kind not in ("cartesian", "polar"):
         raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
     binning = own_binning(binning)
+    # The published binning carries the environment's ranges, so the two
+    # never disagree after a derivation or a read-back.
+    binning = replace(
+        binning,
+        dimension_ranges=None
+        if dimension_ranges is None
+        else tuple((float(low), float(high)) for low, high in dimension_ranges),
+    )
     graph = connectivity
     _validation._validate_graph(binning, graph)
     _validation._validate_components(
@@ -666,9 +675,7 @@ def publish(
             binning=binning,
             bin_centers=binning.bins.centers,
             connectivity=graph,
-            dimension_ranges=None
-            if dimension_ranges is None
-            else tuple((float(low), float(high)) for low, high in dimension_ranges),
+            dimension_ranges=binning.dimension_ranges,
             grid_edges=index.edges,
             grid_shape=index.shape,
             active_mask=index.active_mask,
@@ -746,7 +753,8 @@ def publish_layout(
     Environment
         A new instance of ``cls``.
     """
-    binning, graph, ranges, tag, category, resolved, index = built_layout_data(layout)
+    binning, graph, ranges, tag, category, resolved = built_layout_data(layout)
+    selected = False
     polar = isinstance(coordinates, EgocentricPolarSystem)
     if within_arena and arena is not None and arena.domain_known and not polar:
         centers = binning.bins.centers
@@ -758,7 +766,7 @@ def publish_layout(
         )
         if not np.all(keep):
             binning, graph, ranges = select_bins(binning, graph, keep)
-            index = None
+            selected = True
     if polar and arena is None:
         assert isinstance(coordinates, EgocentricPolarSystem)
         arena = infer_arena(binning, polar=True, circular=coordinates.circular)
@@ -777,8 +785,7 @@ def publish_layout(
         coordinate_kind="polar" if polar else "cartesian",
         regions=regions,
         arena=arena,
-        grid_index=index,
-        check_center_lookup=index is None,
+        check_center_lookup=selected,
     )
 
 

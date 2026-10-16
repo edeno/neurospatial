@@ -220,11 +220,17 @@ If you wrote your own layout engine:
   never calls back into the engine. A subclass of a built-in engine inherits a
   working `binning()`; such subclasses used to be refused and now work
   normally.
-- The environment keeps only what `binning()` returns (plus `connectivity`,
-  `dimension_ranges` and the grid attributes). It never calls
-  `point_to_bin_index`, so to change lookup or faces, change what `binning()`
-  returns. A layout whose methods were replaced
-  on the instance is no longer refused.
+- The environment keeps only what `binning()` returns. It derives the
+  connectivity graph, `grid_edges`, `grid_shape`, `active_mask` and
+  `dimension_ranges` from the `Binning`, so an engine needs no other
+  attribute and attributes added to an engine's own graph are not kept. Set
+  `Binning(..., dimension_ranges=...)` when the cells do not show the range
+  the bins cover. It never calls `point_to_bin_index`, so to change lookup or
+  faces, change what `binning()` returns. A layout whose methods were
+  replaced on the instance is no longer refused.
+- An engine may also have a `layout_type` category string, and build
+  arguments recorded with `neurospatial.layout.base.capture_build_params`
+  become `env.layout_parameters`. Both are optional labels.
 - An external object that has no `binning()` method still needs an installed
   snapshot adapter (see the
   [interoperability guide](../user-guide/interoperability.md)).
@@ -249,6 +255,42 @@ layout = create_layout(
 )
 # Before: RectilinearGridProvider(layout)
 grid = layout.binning().rectilinear
+```
+
+An engine does not need to subclass anything. This one places bins at
+recorded points and finds the nearest one for each position:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+
+
+class RecordedPoints:
+    """Bins at recorded reward-port positions, joined in a ring."""
+
+    def build(self, *, points):
+        points = np.asarray(points, dtype=float)
+        ring = np.arange(len(points))
+        pairs = np.column_stack([ring, np.roll(ring, -1)])
+        lengths = np.linalg.norm(points[pairs[:, 1]] - points[pairs[:, 0]], axis=1)
+        self._binning = Binning(
+            "RecordedPoints",
+            SpatialBins.from_arrays(points, np.ones(len(points)), 2, pairs, lengths),
+            NearestBinLocator(points, max_distance=5.0),
+            MissingFaces("Recorded points have no cells."),
+            dimension_ranges=((0.0, 100.0), (0.0, 100.0)),
+        )
+
+    def binning(self):
+        return self._binning
+
+
+ports = RecordedPoints()
+ports.build(points=[[10.0, 10.0], [90.0, 10.0], [90.0, 90.0], [10.0, 90.0]])
+ports_env = Environment.from_layout(ports, units="cm")
+assert ports_env.bin_at([[11.0, 9.0], [50.0, 50.0]]).tolist() == [0, -1]
 ```
 
 ## Graph attributes are immutable values
