@@ -229,7 +229,10 @@ class TestPointsAreValidated:
             grid.reachable_from(points=grid.bin_centers[:2], radius=1)
 
     def test_two_point_queries_take_two(self, grid):
-        with pytest.raises(ValueError, match=r"takes two bins, a start and an end"):
+        with pytest.raises(
+            ValueError,
+            match=r"takes two bins, a start and an end; got 1[\s\S]*bins=\[start, end\]",
+        ):
             grid.path_between(points=grid.bin_centers[:1])
 
 
@@ -249,6 +252,13 @@ class TestRegionTarget:
         grid = grid.with_regions(regions)
         with pytest.raises(ValueError, match=r"covers no bins[\s\S]*Fix:"):
             grid.distance_to(region="far")
+
+    def test_region_object_is_refused_with_a_fix(self, grid):
+        from neurospatial.regions import Region
+
+        reward = Region("reward", "point", np.array([15.0, 15.0]))
+        with pytest.raises(TypeError, match=r"region name in region=[\s\S]*Fix:"):
+            grid.distance_to(region=reward)  # type: ignore[arg-type]
 
     def test_unknown_region_suggests_the_keyword(self, grid):
         with pytest.raises(RegionNotFoundError, match="region="):

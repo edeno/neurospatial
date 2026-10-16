@@ -22,6 +22,11 @@ if TYPE_CHECKING:
     from neurospatial.regions import Regions
 
 _COUNT_WORDS = {1: "one bin", 2: "two bins, a start and an end"}
+_COUNT_FIXES = {
+    1: "pass one bin, for example bins=3, or one point, for example points=[[x, y]]",
+    2: "pass two bins, a start and an end, as bins=[start, end], or two points, "
+    "one row each, as points=[[x0, y0], [x1, y1]]",
+}
 
 
 def coordinate_hint(
@@ -450,8 +455,7 @@ def resolve_targets(
             _format_error(
                 f"{operation} takes {_COUNT_WORDS[count]}; got {resolved.size}.",
                 why="Why: this query starts from a fixed number of bins.",
-                fix=f"pass {count} bin index(es) with bins=, or {count} point(s), "
-                "one row each, with points=",
+                fix=_COUNT_FIXES[count],
             )
         )
     return resolved
@@ -468,7 +472,13 @@ def _region_targets(
     """The bins a named region covers, refusing a region that covers none."""
     if regions is None or not isinstance(region, str):
         raise TypeError(
-            f"{operation} takes a region name in region=, got {type(region).__name__}."
+            _format_error(
+                f"{operation} takes a region name in region=, got "
+                f"{type(region).__name__}.",
+                why="Why: region= names an entry in env.regions.",
+                fix="pass the region's name, for example region='reward'; for a "
+                "Region object, add it with env.with_regions(...) first",
+            )
         )
     if region not in regions:
         raise RegionNotFoundError(
