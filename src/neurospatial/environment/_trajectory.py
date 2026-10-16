@@ -28,6 +28,7 @@ from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
     start_allocated_occupancy,
+    warn_excluded_intervals,
 )
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
@@ -188,6 +189,7 @@ def _occupancy(
     # geometric support, allowing outside-to-inside and re-entry segments.
     framed_nd = n_dims != 2 and binning.grid_frame is not None
     observation_only = polygon_allocation and not framed_nd
+    resolved_epochs = as_intervals(epochs, name="epochs")
     valid_mask = interval_valid_mask(
         times,
         positions,
@@ -195,7 +197,16 @@ def _occupancy(
         min_speed=min_speed,
         max_gap=max_gap,
         start_bin=None if observation_only else bin_indices,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=resolved_epochs,
+    )
+    warn_excluded_intervals(
+        times,
+        valid_mask,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        min_speed=min_speed,
+        start_bin_gate=not observation_only,
+        result="occupancy is zero in every bin",
     )
 
     # Initialize occupancy array
@@ -278,8 +289,14 @@ def _bin_sequence(
             f"Got positions.shape[1] = {positions.shape[1]}"
         )
 
-    mask = interval_valid_mask(
-        times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
+    resolved_epochs = as_intervals(epochs, name="epochs")
+    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
+    warn_excluded_intervals(
+        times,
+        mask,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        result="the bin sequence is empty",
     )
     sample_valid = np.zeros(times.size, dtype=bool)
     sample_valid[:-1] |= mask
@@ -595,8 +612,14 @@ def _empirical_transitions(
             max_gap=None,
             epochs=None,
         ).bins
-        mask = interval_valid_mask(
-            times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
+        resolved_epochs = as_intervals(epochs, name="epochs")
+        mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
+        warn_excluded_intervals(
+            times,
+            mask,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            result="the transition matrix is empty",
         )
 
     # Convert to numpy array and validate dtype

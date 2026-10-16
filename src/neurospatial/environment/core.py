@@ -1545,6 +1545,9 @@ class Environment(Generic[_C]):
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from occupancy and their spikes are not counted. ``None`` disables the
             gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -1712,6 +1715,9 @@ class Environment(Generic[_C]):
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -1805,6 +1811,9 @@ class Environment(Generic[_C]):
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -6244,6 +6253,9 @@ class Environment(Generic[_C]):
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely

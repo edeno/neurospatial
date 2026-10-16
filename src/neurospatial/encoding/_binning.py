@@ -35,6 +35,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
     start_allocated_occupancy,
+    warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops._polygon_allocation import (
@@ -48,7 +49,6 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 __all__ = [
-    "_emit_all_excluded_intervals_warning",
     "bin_spike_train",
     "bin_spike_trains",
     "compute_occupancy",
@@ -530,13 +530,14 @@ def count_frames_and_occupancy(
     times, frame_bins, n_bins = prepared.times, prepared.frame_bins, prepared.n_bins
     support = prepared.support
     mask = support.mask
-    _emit_all_excluded_intervals_warning(
+    warn_excluded_intervals(
+        times,
         mask,
         max_gap=support.max_gap,
-        min_speed=None,
         epochs=support.epochs,
         spike_window=support.spike_window,
-        suppress_hint="",
+        start_bin_gate=True,
+        result="the rate map is empty",
     )
     if len(times):
         all_spikes = (
@@ -681,12 +682,16 @@ def _resolve_spatial_time_support(
                     stacklevel=_external_stacklevel(),
                 )
             else:
-                _emit_all_excluded_intervals_warning(
+                warn_excluded_intervals(
+                    times,
                     support.mask,
                     max_gap=max_gap,
-                    min_speed=min_speed,
                     epochs=support.epochs,
                     spike_window=support.spike_window,
+                    min_speed=min_speed,
+                    start_bin_gate=True,
+                    result="the rate map is empty",
+                    suppress_hint=_WARN_ON_DROP_HINT,
                 )
         return support
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -701,12 +706,16 @@ def _resolve_spatial_time_support(
         spike_window=resolved_spike_window,
     )
     if warn_on_drop:
-        _emit_all_excluded_intervals_warning(
+        warn_excluded_intervals(
+            times,
             interval_mask,
             max_gap=max_gap,
-            min_speed=min_speed,
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
+            min_speed=min_speed,
+            start_bin_gate=True,
+            result="the rate map is empty",
+            suppress_hint=_WARN_ON_DROP_HINT,
         )
     return TimeSupport.from_mask(
         times,
@@ -714,87 +723,6 @@ def _resolve_spatial_time_support(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         max_gap=max_gap,
-    )
-
-
-def _emit_all_excluded_intervals_warning(
-    interval_mask: NDArray[np.bool_],
-    *,
-    max_gap: float | None,
-    min_speed: float | None,
-    epochs: NDArray[np.float64] | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-    suppress_hint: str = _WARN_ON_DROP_HINT,
-) -> None:
-    """Emit a UserWarning when the interval filter excludes ALL intervals.
-
-    The shared interval mask gates both spike counts and occupancy.
-    Warn once when all intervals are excluded, naming the active gap, speed
-    and time-window checks and the out-of-bounds-start rule. An empty mask
-    (fewer than two samples) emits nothing.
-
-    Parameters
-    ----------
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        Resolved validity from :func:`_spatial_interval_mask`. An empty mask
-        emits no warning.
-    max_gap : float or None
-        The active maximum-gap threshold (named in the message when set).
-    min_speed : float or None
-        The active speed threshold (named in the message when set).
-    epochs, spike_window : ndarray, shape (n_windows, 2), or None
-        Active normalized time windows, named in the message when supplied.
-    suppress_hint : str, optional
-        Closing sentence naming how to silence the warning; empty for callers
-        without a ``warn_on_drop`` parameter.
-    """
-    if interval_mask.size == 0:
-        return
-    if interval_mask.any():
-        return
-
-    # Name whichever gate(s) are active so the user knows what to check. The
-    # out-of-bounds-start rule is always implicitly active (it has no toggle),
-    # so it is always mentioned as a possibility.
-    causes: list[str] = []
-    if max_gap is not None:
-        causes.append(f"max_gap={max_gap}")
-    if min_speed is not None:
-        causes.append(f"min_speed={min_speed}")
-    if epochs is not None:
-        causes.append("epochs")
-    if spike_window is not None:
-        causes.append("spike_window")
-    if causes:
-        gate_part = (
-            f"active gate(s) {', '.join(causes)} (or all start samples out of bounds)"
-        )
-    else:
-        gate_part = "all start samples out of bounds"
-
-    fixes: list[str] = []
-    if max_gap is not None or min_speed is not None:
-        unit_targets = " / ".join(causes) if causes else "the gate thresholds"
-        fixes.append(
-            f"check units ({unit_targets} vs the trajectory's time/space units)"
-        )
-    if max_gap is not None:
-        fixes.append("pass max_gap=None to disable gap gating")
-    if epochs is not None or spike_window is not None:
-        fixes.append(
-            "check that epochs/spike_window overlap `times` (same clock, seconds)"
-        )
-    fix_part = ("; ".join(fixes) + ". ") if fixes else ""
-
-    warnings.warn(
-        (
-            f"Interval filtering excluded ALL trajectory intervals "
-            f"({gate_part}); the rate map is empty. "
-            f"{fix_part}"
-            f"{suppress_hint}"
-        ).rstrip(),
-        UserWarning,
-        stacklevel=_external_stacklevel(),
     )
 
 

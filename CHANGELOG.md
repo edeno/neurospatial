@@ -285,6 +285,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.occupancy`, `env.bin_sequence`, `env.bin_sequence_with_runs` and
+  `env.transitions(times=..., positions=...)` warn when the `max_gap` gate
+  and the other interval gates exclude every interval, and when the median
+  sampling interval is longer than `max_gap`, which usually means `times` are
+  not in seconds (milliseconds turn every frame into a recording gap). They
+  used to return an empty or mostly empty result silently. The same warning
+  comes from `compute_spatial_rate(s)` and the behavior analyses that share
+  the gate, which now also warn about a median interval longer than
+  `max_gap` when some intervals survive.
+
 - `env.smooth` and `env.diffuse` treat NaN bins as missing observations
   instead of zeros. They smooth the field with NaN read as 0 and the observed
   mask with the same operator, then divide, so holes are filled from their

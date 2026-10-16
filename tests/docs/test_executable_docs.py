@@ -68,7 +68,7 @@ positions = np.array(
     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     dtype=float,
 )
-times = np.arange(len(positions), dtype=float)
+times = np.arange(len(positions), dtype=float) / 30.0  # 30 Hz tracking
 env = Environment.from_samples(positions, bin_size=1.0)
 result = SimpleNamespace(environment=env, regions={})
 """,
