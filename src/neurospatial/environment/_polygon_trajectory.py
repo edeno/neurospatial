@@ -13,21 +13,33 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from neurospatial.geometry._arena import MaskArena
-from neurospatial.geometry._polygon import PolygonCells, materialize_cells
+from neurospatial.environment._lookup import locate
+from neurospatial.geometry._arena import (
+    Arena,
+    MaskArena,
+    UnknownArena,
+    _CombinedArena,
+    _TransformedArena,
+)
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
+from neurospatial.geometry._composition import composition_view
+from neurospatial.geometry._locators import RectilinearLocator
+from neurospatial.geometry._polygon import (
+    PolygonCells,
+    cells_from_locator,
+    materialize_cells,
+)
+from neurospatial.geometry._wall_frame import _wall_source_frame
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import TrajectoryBinningConsumer
     from neurospatial.geometry._grid_frame import FramedGrid
-    from neurospatial.geometry._locators import RectilinearLocator
 
 
 def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
-    from neurospatial.geometry._locators import RectilinearLocator
-
     grid = frame.source
     original = frame._project_to_planes(
         positions, grid.edges, operation="Linear allocation"
@@ -206,30 +218,25 @@ def _advance_wall_contact(
     return False, None
 
 
-def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
+def uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
     """Use exact planar cells, retaining the native allocator for matching N-D masks."""
-    if env._binning.grid_frame is not None:
+    if binning.grid_frame is not None:
         return True
-    if env.n_dims != 2:
-        from neurospatial.geometry._composition import composition_view
-
-        if composition_view(env._binning.locator) is not None:
-            from neurospatial.geometry._combine_geometry import _boxes
-
-            try:
-                _boxes(env._binning.locator)
-            except ValueError as error:
-                raise NotImplementedError(
-                    "Linear allocation needs exact component cells; use time_allocation='start'."
-                ) from error
-            return True
-    polygon_cells = isinstance(env._binning.shapes, PolygonCells)
-    planar_cells = env.n_dims == 2 and env._binning.bins.measure_dim == 2
-    arena = env.arena
+    n_dims = binning.bins.n_dims
+    if n_dims != 2 and composition_view(binning.locator) is not None:
+        try:
+            _boxes(binning.locator)
+        except ValueError as error:
+            raise NotImplementedError(
+                "Linear allocation needs exact component cells; use time_allocation='start'."
+            ) from error
+        return True
+    polygon_cells = isinstance(binning.shapes, PolygonCells)
+    planar_cells = n_dims == 2 and binning.bins.measure_dim == 2
     if not arena.domain_known:
         return polygon_cells or planar_cells
     if isinstance(arena, MaskArena) and not polygon_cells and not planar_cells:
-        grid = env._binning.rectilinear
+        grid = binning.rectilinear
         if (
             grid is not None
             and len(arena.edges) == len(grid.edges)
@@ -258,7 +265,8 @@ def uses_polygon_allocation(env: TrajectoryBinningConsumer) -> bool:
 
 
 def retained_linear_intervals(
-    env: TrajectoryBinningConsumer,
+    binning: Binning,
+    arena: Arena,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
@@ -267,8 +275,10 @@ def retained_linear_intervals(
 
     Parameters
     ----------
-    env : Environment
-        Cartesian environment publishing exact planar cells.
+    binning : Binning
+        Published Cartesian bins with exact planar cells.
+    arena : Arena
+        Continuous domain and walls of the same environment.
     times : ndarray, shape (n_samples,)
         Validated timestamps, used to check interval-mask length.
     positions : ndarray, shape (n_samples, 2)
@@ -282,7 +292,8 @@ def retained_linear_intervals(
     tuple of RetainedLinearInterval
         Positive parameter spans in sample order. Fractions refer to the full
         original interval; dropped support is never renormalized. Midpoint
-        lookup resolves shared-boundary ownership using ``env.bin_at``.
+        lookup resolves shared-boundary ownership with the environment's bin
+        lookup (``Environment.bin_at``).
 
     Raises
     ------
@@ -294,8 +305,8 @@ def retained_linear_intervals(
         filtered intervals break this continuity.
         Wall endpoint contact and collinear boundary motion remain permitted.
     """
-    if env.n_dims != 2:
-        return _retained_box_intervals(env, times, positions, valid_mask)
+    if binning.bins.n_dims != 2:
+        return _retained_box_intervals(binning, arena, positions, valid_mask)
 
     if positions.shape != (len(times), 2) or valid_mask.shape != (
         max(len(times) - 1, 0),
@@ -303,39 +314,35 @@ def retained_linear_intervals(
         raise ValueError(
             "polygon allocation needs (n_samples, 2) positions and one validity per interval"
         )
-    cells = materialize_cells(env._binning)
-    arena = env.arena
-    frame = env._binning.grid_frame
+    cells = materialize_cells(binning)
+    frame = binning.grid_frame
     source_locator = None
     domain = arena.polygonal_domain() if arena.domain_known else None
     walls = arena.walls
     if frame is not None:
-        from neurospatial.environment._arena import _wall_source_frame
-        from neurospatial.geometry._polygon import cells_from_locator
-
         source_locator, positions = _source_grid(frame, positions)
         cells = cells_from_locator(source_locator)
-        source = _wall_source_frame(
-            env._binning.locator, arena, env._binning.bins.centers
-        )
+        source = _wall_source_frame(binning.locator, arena, binning.bins.centers)
         if source is not None and all(
             shapely.equals(left, right)
             for left, right in zip(cells, source[0], strict=True)
         ):
             # Cells prove that the shared wall frame uses these source axes.
             # Retain exact stored walls/domain instead of undoing rounded world vertices.
-            arena = source[-1][-1].base
-            domain = arena.polygonal_domain() if arena.domain_known else None
-            walls = arena.walls
+            source_arena = source[-1][-1].base
+            domain = (
+                source_arena.polygonal_domain() if source_arena.domain_known else None
+            )
+            walls = source_arena.walls
         else:
             domain = (
                 None if domain is None else shapely.transform(domain, frame.to_source)
             )
             walls = tuple(shapely.transform(wall, frame.to_source) for wall in walls)
 
-    def locate(queries):
+    def owner_of(queries):
         if source_locator is None:
-            return env.bin_at(queries)
+            return locate(binning, arena, queries)
         owners = source_locator.locate(queries)
         if domain is not None:
             owners[~shapely.covers(domain, shapely.points(queries))] = -1
@@ -374,7 +381,7 @@ def retained_linear_intervals(
             continue
         delta = stop - start
         if np.all(delta == 0):
-            owner = int(locate(start[None, :])[0])
+            owner = int(owner_of(start[None, :])[0])
             if owner >= 0:
                 retained.append(RetainedLinearInterval(int(index), 0.0, 1.0, owner))
             continue
@@ -401,7 +408,7 @@ def retained_linear_intervals(
         fractions = np.unique(np.clip(breaks, 0.0, 1.0))
         midpoints = (fractions[:-1] + fractions[1:]) / 2
         queries = start + midpoints[:, None] * delta
-        owners = locate(queries)
+        owners = owner_of(queries)
         for left, right, owner in zip(
             fractions[:-1], fractions[1:], owners, strict=True
         ):
@@ -415,22 +422,15 @@ def retained_linear_intervals(
 
 
 def _retained_box_intervals(
-    env: TrajectoryBinningConsumer,
-    times: NDArray[np.float64],
+    binning: Binning,
+    arena: Arena,
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
 ) -> tuple[RetainedLinearInterval, ...]:
     """Partition N-D combined box trajectories at cell and domain planes."""
-    from neurospatial.geometry._arena import (
-        UnknownArena,
-        _CombinedArena,
-        _TransformedArena,
-    )
-    from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
-
-    frame = env._binning.grid_frame
+    frame = binning.grid_frame
     if frame is None:
-        boxes = _boxes(env._binning.locator)
+        boxes = _boxes(binning.locator)
     else:
         source_locator, positions = _source_grid(frame, positions)
         boxes = _boxes(source_locator)
@@ -453,13 +453,13 @@ def _retained_box_intervals(
             )
         return [piece.data for piece in pieces]
 
-    domains = domain_boxes(env.arena)
+    domains = domain_boxes(arena)
     boxes.extend(
         domains if frame is None else [frame.to_source(box) for box in domains]
     )
     normals, offsets = [], []
     for vertices in boxes:
-        dims = env.n_dims
+        dims = binning.bins.n_dims
         edges = np.column_stack(
             [vertices[1 << (dims - axis - 1)] - vertices[0] for axis in range(dims)]
         )
@@ -467,7 +467,9 @@ def _retained_box_intervals(
         normals.extend([*inverse, *inverse])
         origin = inverse @ vertices[0]
         offsets.extend([*origin, *(origin + 1)])
-    normal_array = np.asarray(normals, dtype=np.float64).reshape(-1, env.n_dims)
+    normal_array = np.asarray(normals, dtype=np.float64).reshape(
+        -1, binning.bins.n_dims
+    )
     offset_array = np.asarray(offsets, dtype=np.float64)
     intervals = []
     for sample in np.flatnonzero(valid_mask):
@@ -486,11 +488,11 @@ def _retained_box_intervals(
             stop - start
         )
         if frame is None:
-            bins = env.bin_at(midpoints)
+            bins = locate(binning, arena, midpoints)
         else:
             bins = source_locator.locate(midpoints)
-            if env.arena.domain_known:
-                bins[~env.arena.contains(frame.to_world(midpoints))] = -1
+            if arena.domain_known:
+                bins[~arena.contains(frame.to_world(midpoints))] = -1
         for left, right, index in zip(fractions[:-1], fractions[1:], bins, strict=True):
             if index >= 0 and right > left:
                 intervals.append(

@@ -12,13 +12,13 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._intervals import interval_valid_mask
 from neurospatial.encoding._binning import (
     bin_spike_train,
     bin_spike_trains,
     compute_occupancy,
 )
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
-from neurospatial.environment.trajectory import interval_valid_mask
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])

@@ -265,7 +265,8 @@ def test_retained_intervals_keep_original_fractional_clock():
 
     env = _one_cell_environment()
     intervals = retained_linear_intervals(
-        env,
+        env.binning,
+        env.arena,
         np.array([0.0, 4.0]),
         np.array([[1.0, 1.0], [5.0, 1.0]]),
         np.array([True]),

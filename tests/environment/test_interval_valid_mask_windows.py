@@ -43,7 +43,7 @@ def test_interval_valid_mask_gap_without_positions():
 
 
 def test_observed_runs(two_epoch_recording):
-    from neurospatial.environment.trajectory import observed_runs
+    from neurospatial._intervals import observed_runs
 
     times = two_epoch_recording.times
     assert observed_runs(times, max_gap=0.5, epochs=None) == [
@@ -57,7 +57,7 @@ def test_observed_runs(two_epoch_recording):
 
 
 def test_start_allocated_occupancy():
-    from neurospatial.environment.trajectory import start_allocated_occupancy
+    from neurospatial._intervals import start_allocated_occupancy
 
     bins = np.array([0, -1, 1, 0])
     dt = np.array([0.1, 10.0, 0.2])

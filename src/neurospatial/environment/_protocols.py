@@ -24,86 +24,14 @@ from numpy.typing import NDArray
 from neurospatial.geometry._coordinates import CellLengthConsumer as CellLengthConsumer
 
 if TYPE_CHECKING:
-    import pandas as pd
-
-    from neurospatial.environment._cache import AnalysisCache
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
     from neurospatial.geometry._coordinates import CoordinateSystem
-    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
         KernelMode,
-        MRFEigenbasisCache,
     )
     from neurospatial.regions import Region, Regions
-
-
-class CartesianLookupConsumer(Protocol):
-    """Cartesian lookup/trajectory operations exposed only after a guard."""
-
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Find bin indices for given points (-1 for points outside)."""
-        ...
-
-    def bin_sequence(
-        self,
-        times: NDArray[np.float64],
-        positions: NDArray[np.float64],
-        *,
-        dedup: bool = True,
-        outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
-        epochs: Any = None,
-    ) -> NDArray[np.int32]:
-        """Convert a trajectory to a sequence of bin indices."""
-        ...
-
-
-class TrajectoryBinningConsumer(Protocol):
-    """Point lookup, bin counts and layout for binning a trajectory."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def arena(self) -> Arena: ...
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def n_dims(self) -> int: ...
-
-    @property
-    def layout_type(self) -> str | None: ...
-
-    @property
-    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
-
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
-    def compute_kernel(
-        self, bandwidth: float, *, mode: KernelMode = "density", cache: bool = True
-    ) -> NDArray[np.float64]: ...
-
-
-class TransitionsConsumer(Protocol):
-    """Graph, kernel and access to Cartesian trajectory binning for transitions."""
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    def compute_kernel(
-        self, bandwidth: float, *, mode: KernelMode = "density", cache: bool = True
-    ) -> NDArray[np.float64]: ...
-
-    def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
-        """This environment typed as Cartesian, or raise naming ``operation``."""
-        ...
 
 
 class RebinConsumer(Protocol):
@@ -174,87 +102,6 @@ class SubsetConsumer(Protocol):
     def units(self) -> str | None: ...
 
 
-class InterpolationConsumer(Protocol):
-    """Bin geometry and cached point lookup for interpolating a scalar field."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def layout_type(self) -> str | None: ...
-
-
-class QueryConsumer(Protocol):
-    """Only the environment members read by queries operations."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
-        """This environment typed as Cartesian, or raise naming ``operation``."""
-        ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
-
-    @property
-    def n_dims(self) -> int:
-        """Number of spatial dimensions (1, 2, or 3)."""
-        ...
-
-    def region_membership(
-        self,
-        regions: Regions | None = None,
-        *,
-        include_boundary: bool = True,
-    ) -> NDArray[np.bool_]:
-        """Boolean membership mask for all regions, shape ``(n_bins, n_regions)``."""
-        ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-
-class RegionConsumer(Protocol):
-    """Only the environment members read by regions operations."""
-
-    def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
-        """This environment typed as Cartesian, or raise naming ``operation``."""
-        ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
-
-    @property
-    def n_dims(self) -> int:
-        """Number of spatial dimensions (1, 2, or 3)."""
-        ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-
 class VisualizationConsumer(Protocol):
     """Only the environment members read by visualization operations."""
 
@@ -307,90 +154,6 @@ class VisualizationConsumer(Protocol):
 
     @property
     def units(self) -> str | None: ...
-
-
-class MetricsConsumer(Protocol):
-    """Only the environment members read by metrics operations."""
-
-    @property
-    def _bin_attributes_cached(self) -> pd.DataFrame: ...
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def _boundary_bins_cached(self) -> NDArray[np.intp]: ...
-
-    @property
-    def _edge_attributes_cached(self) -> pd.DataFrame: ...
-
-    _is_linearized_track_env: bool
-
-    @property
-    def active_mask(self) -> NDArray[np.bool_] | None: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    @property
-    def grid_shape(self) -> tuple[int, ...] | None: ...
-
-
-class FieldConsumer(Protocol):
-    """Only the environment members read by fields operations."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache: ...
-
-    @property
-    def _diffusion_geometry(self) -> DiffusionGeometry: ...
-
-    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
-
-    @property
-    def coordinate_system(self) -> CoordinateSystem: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def _face_geometry(self) -> FaceGeometry: ...
-
-    _cache: AnalysisCache
-
-    @property
-    def _mrf_eigenbasis(self) -> MRFEigenbasisCache: ...
-
-    def _require_face_geometry(self, operation: str) -> FaceGeometry:
-        """Cached cell faces, or an error naming ``operation`` if unsupported."""
-        ...
-
-    def diffuse(
-        self,
-        # ``Any`` is load-bearing: on ``backend="jax"`` diffuse accepts (and
-        # returns) a JAX ``Array``, and jax is an optional dependency whose array
-        # type is not importable here -- so ``NDArray | jax.Array`` cannot be
-        # spelled. ``Any`` keeps the backend-polymorphic surface without breaking
-        # jax-absent type checks.
-        fields: Any,
-        bandwidth: float,
-        *,
-        mode: KernelMode = "density",
-        backend: Literal["numpy", "jax"] = "numpy",
-    ) -> NDArray[np.float64]:
-        """Matrix-free diffusion smoothing (no dense ``(n_bins, n_bins)`` kernel)."""
-        ...
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
 
 
 class AnimationConsumer(Protocol):
@@ -538,39 +301,3 @@ class ClipConsumer(Protocol):
 
     @property
     def units(self) -> str | None: ...
-
-
-class SummaryConsumer(Protocol):
-    """Published metadata and geometry read only for text and HTML summaries."""
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def layout_type(self) -> str: ...
-
-    @property
-    def n_dims(self) -> int: ...
-
-    @property
-    def n_bins(self) -> int: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
-
-    @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-    @property
-    def is_linearized_track(self) -> bool: ...
-
-    def info(self) -> str: ...

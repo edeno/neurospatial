@@ -1,44 +1,78 @@
-"""Private spatial field operations using narrow geometry consumers."""
+"""Private spatial field operations on owned geometry and its analysis cache.
+
+Cached analyses (cell faces, diffusion geometry, kernels and eigenbases) are
+read and stored through the environment's :class:`AnalysisCache`, so every
+function here takes the cache and the published :class:`Binning` explicitly.
+"""
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.interpolate import RegularGridInterpolator
 
 from neurospatial import _constants
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cache import (
     DIFFUSION_EIGENBASIS,
+    DIFFUSION_GEOMETRY,
     DIFFUSION_KERNELS,
+    FACE_GEOMETRY,
     GAUSSIAN_KERNELS,
     MRF_EIGENBASIS,
+    AnalysisCache,
 )
-from neurospatial.environment._protocols import (
-    FieldConsumer,
+from neurospatial.environment._lookup import locate, nearest_bin
+from neurospatial.environment._publication import (
+    _array_header,
+    _freeze_diffusion_geometry,
+    _immutable_array,
 )
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._composition import combined_diffusion
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
 )
 from neurospatial.geometry._grid_frame import require_grid_context
+from neurospatial.ops.diffusion import (
+    MRFBasis,
+    _ensure_global_modes,
+    _live_components,
+    _null_mode_indices,
+    _symmetric_conjugate,
+    _target_live_rank,
+    _validate_occupancy,
+    diffusion_apply,
+    heat_kernel_from_W,
+    select_live_basis,
+)
+from neurospatial.ops.smoothing import _gaussian_kernel
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.environment._protocols import InterpolationConsumer
-    from neurospatial.geometry._binning import Binning
-    from neurospatial.ops._types import KernelMode, MRFEigenbasisCache
-    from neurospatial.ops.diffusion import MRFBasis
+    from neurospatial.geometry._arena import Arena
+    from neurospatial.ops._types import (
+        DiffusionEigenbasisCache,
+        KernelMode,
+        MRFEigenbasisCache,
+    )
 
 
 def _interpolate(
-    env: InterpolationConsumer,
     field: NDArray[np.float64],
     points: NDArray[np.float64],
     *,
+    binning: Binning,
+    arena: Arena,
+    cache: AnalysisCache,
     mode: Literal["nearest", "linear"] = "nearest",
 ) -> NDArray[np.float64]:
     """Interpolate a bin-valued field at continuous query points."""
+    n_bins = binning.bins.n_bins
     # Input validation - field
     field = np.asarray(field, dtype=np.float64)
 
@@ -46,14 +80,14 @@ def _interpolate(
     if field.ndim != 1:
         raise ValueError(
             f"Field must be 1-D array (got {field.ndim}-D array). "
-            f"Expected shape (n_bins,) = ({env.n_bins},), got shape {field.shape}."
+            f"Expected shape (n_bins,) = ({n_bins},), got shape {field.shape}."
         )
 
     # Check field shape matches n_bins
-    if field.shape[0] != env.n_bins:
+    if field.shape[0] != n_bins:
         raise ValueError(
-            f"Field shape {field.shape} must match n_bins={env.n_bins}. "
-            f"Expected shape (n_bins,) = ({env.n_bins},), got ({field.shape[0]},)."
+            f"Field shape {field.shape} must match n_bins={n_bins}. "
+            f"Expected shape (n_bins,) = ({n_bins},), got ({field.shape[0]},)."
         )
 
     # Check for NaN/Inf values in field
@@ -82,7 +116,7 @@ def _interpolate(
         )
 
     # Check points dimension matches environment
-    n_dims = env.bin_centers.shape[1]
+    n_dims = binning.bins.n_dims
     if points.shape[1] != n_dims:
         raise ValueError(
             f"Points dimension {points.shape[1]} must match environment "
@@ -114,16 +148,17 @@ def _interpolate(
 
     # Dispatch based on mode
     if mode == "nearest":
-        values = _interpolate_nearest(env, field, points)
+        values = _interpolate_nearest(cache, binning, field, points)
     else:  # mode == "linear"
-        values = _interpolate_linear(env._binning, field, points)
-    owners = env._locate(points)
+        values = _interpolate_linear(binning, field, points)
+    owners = locate(binning, arena, points)
     values[owners < 0] = np.nan
     return values
 
 
 def _interpolate_nearest(
-    env: InterpolationConsumer,
+    cache: AnalysisCache,
+    binning: Binning,
     field: NDArray[np.float64],
     points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
@@ -142,19 +177,18 @@ def _interpolate_nearest(
         Interpolated values (NaN for points outside).
 
     """
-    from typing import cast
-
-    from neurospatial.ops.binning import map_points_to_bins
-
     # Map points to bins (-1 for outside points)
     # With return_dist=False, we get just the indices (not a tuple)
     bin_indices = cast(
         "NDArray[np.int64]",
-        map_points_to_bins(
-            cast("Environment", env),
+        nearest_bin(
+            cache,
+            binning,
             points,
             tie_break="lowest_index",
             return_dist=False,
+            max_distance=None,
+            max_distance_factor=None,
         ),
     )
 
@@ -205,14 +239,6 @@ def _interpolate_linear(
         "interpolate(mode='linear')",
         fix="use mode='nearest', which works on every layout",
     )
-
-    # Import scipy
-    try:
-        from scipy.interpolate import RegularGridInterpolator
-    except ImportError as e:
-        raise ImportError(
-            "Linear interpolation requires scipy. Install with: pip install scipy"
-        ) from e
 
     grid_shape = grid.shape
     grid_edges = grid.edges
@@ -272,16 +298,67 @@ def _interpolate_linear(
     return result
 
 
+def face_geometry(cache: AnalysisCache, binning: Binning) -> FaceGeometry:
+    """Validated cell faces, built once per published geometry."""
+    return cache.get(FACE_GEOMETRY, binning.faces.build)
+
+
+def require_face_geometry(
+    cache: AnalysisCache, binning: Binning, operation: str
+) -> FaceGeometry:
+    """Cached cell faces, or an actionable error naming ``operation``."""
+    if not binning.faces.available:
+        raise binning.faces.missing_error(operation)
+    return face_geometry(cache, binning)
+
+
+def _build_diffusion_geometry(
+    cache: AnalysisCache, binning: Binning
+) -> DiffusionGeometry:
+    """Conductances and cell measures from combined components or cell faces."""
+    combined = combined_diffusion(binning)
+    if combined is not None:
+        return _freeze_diffusion_geometry(combined)
+    return _freeze_diffusion_geometry(
+        DiffusionGeometry.from_faces(require_face_geometry(cache, binning, "smoothing"))
+    )
+
+
+def diffusion_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeometry:
+    """Cached diffusion geometry ``(W, volumes, n_components, labels)``."""
+    return cache.get(
+        DIFFUSION_GEOMETRY, lambda: _build_diffusion_geometry(cache, binning)
+    )
+
+
+def diffusion_eigenbasis(cache: AnalysisCache) -> DiffusionEigenbasisCache:
+    """Growable truncated-eigenbasis holder for :func:`diffuse`, empty at first."""
+    return cache.get(DIFFUSION_EIGENBASIS, lambda: {})
+
+
+def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> MRFEigenbasisCache:
+    """Growable global eigenbasis holder for the MRF penalty basis."""
+
+    def build() -> MRFEigenbasisCache:
+        return {
+            "Q": np.zeros((n_bins, 0)),
+            "Lam": np.zeros(0),
+            "mode_comp": np.zeros(0, dtype=np.intp),
+            "G": 0,
+        }
+
+    return cache.get(MRF_EIGENBASIS, build)
+
+
 def _compute_kernel(
-    env: FieldConsumer,
+    cache: AnalysisCache,
+    binning: Binning,
     bandwidth: float,
     *,
     mode: KernelMode = "density",
-    cache: bool = True,
+    use_cache: bool = True,
 ) -> NDArray[np.float64]:
-    """Implement Environment.compute_kernel using explicit fields inputs."""
-    from neurospatial.ops.diffusion import diffusion_kernel
-
+    """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode."""
     # Validate mode.
     valid_modes = {"transition", "density", "average"}
     if mode not in valid_modes:
@@ -294,38 +371,40 @@ def _compute_kernel(
 
     # The kernel uses the cached diffusion geometry, whose cell measures
     # (the layout's bin sizes) are the mass matrix M used by every mode.
-    if not cache:
-        return diffusion_kernel(env, bandwidth, mode=mode)
-    kernel = env._cache.get_recent(
-        DIFFUSION_KERNELS,
-        (bandwidth, mode),
-        lambda: diffusion_kernel(env, bandwidth, mode=mode),
-    )
+    def build() -> NDArray[np.float64]:
+        geometry = diffusion_geometry(cache, binning)
+        return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
+
+    if not use_cache:
+        return build()
+    kernel = cache.get_recent(DIFFUSION_KERNELS, (bandwidth, mode), build)
     return cast("NDArray[np.float64]", kernel.copy())
 
 
 def _smooth(
-    env: FieldConsumer,
+    cache: AnalysisCache,
+    binning: Binning,
     field: NDArray[np.float64],
     bandwidth: float,
     *,
     mode: KernelMode = "average",
 ) -> NDArray[np.float64]:
-    """Implement Environment.smooth using explicit fields inputs."""
+    """Validate one bin-valued field and smooth it matrix-free."""
+    n_bins = binning.bins.n_bins
     field = np.asarray(field, dtype=np.float64)
 
     # Check field dimensionality
     if field.ndim != 1:
         raise ValueError(
             f"Field must be 1-D array (got {field.ndim}-D array). "
-            f"Expected shape (n_bins,) = ({env.n_bins},), got shape {field.shape}."
+            f"Expected shape (n_bins,) = ({n_bins},), got shape {field.shape}."
         )
 
     # Check field shape matches n_bins
-    if field.shape[0] != env.n_bins:
+    if field.shape[0] != n_bins:
         raise ValueError(
-            f"Field shape {field.shape} must match n_bins={env.n_bins}. "
-            f"Expected shape (n_bins,) = ({env.n_bins},), got ({field.shape[0]},)."
+            f"Field shape {field.shape} must match n_bins={n_bins}. "
+            f"Expected shape (n_bins,) = ({n_bins},), got ({field.shape[0]},)."
         )
 
     # Check for NaN/Inf values
@@ -360,25 +439,23 @@ def _smooth(
             "volume-unbiased averaging of an intensive field."
         )
 
-    # Apply the diffusion smoothing via the matrix-free apply-path
-    # (env.diffuse). This is a PURE LINEAR operator -- no clip / renorm --
-    # so smoothing a SIGNED field is preserved. It reproduces the dense
-    # kernel to within the truncation tolerance (see the "Approximation"
-    # note below); positivity, where needed, is the caller's job.
-    return env.diffuse(field, bandwidth, mode=mode)
+    # Apply the diffusion smoothing via the matrix-free apply-path. This is a
+    # PURE LINEAR operator -- no clip / renorm -- so smoothing a SIGNED field
+    # is preserved. It reproduces the dense kernel to within the truncation
+    # tolerance; positivity, where needed, is the caller's job.
+    return _diffuse(cache, binning, field, bandwidth, mode=mode)
 
 
 def _diffuse(
-    env: FieldConsumer,
+    cache: AnalysisCache,
+    binning: Binning,
     fields: Any,
     bandwidth: float,
     *,
     mode: KernelMode = "density",
     backend: Literal["numpy", "jax"] = "numpy",
 ) -> NDArray[np.float64]:
-    """Implement Environment.diffuse using explicit fields inputs."""
-    from neurospatial.ops.diffusion import diffusion_apply
-
+    """Validate a field batch and apply the cached truncated heat operator."""
     if mode not in ("transition", "density", "average"):
         raise ValueError(
             f"mode must be one of {{'transition', 'density', 'average'}} "
@@ -403,18 +480,19 @@ def _diffuse(
             f"{ndim}-D array."
         )
     shape = np.shape(fields)
-    if shape[0] != env.n_bins:
+    n_bins = binning.bins.n_bins
+    if shape[0] != n_bins:
         raise ValueError(
-            f"fields leading dimension {shape[0]} must match n_bins={env.n_bins}."
+            f"fields leading dimension {shape[0]} must match n_bins={n_bins}."
         )
     was_1d = ndim == 1
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
-    W, volumes, n_components, _labels = env._diffusion_geometry
+    W, volumes, n_components, _labels = diffusion_geometry(cache, binning)
     # The eigenbasis grows in place while it is applied.
-    with env._cache.exclusive(DIFFUSION_EIGENBASIS):
+    with cache.exclusive(DIFFUSION_EIGENBASIS):
         result = diffusion_apply(
-            env._diffusion_eigenbasis,
+            diffusion_eigenbasis(cache),
             W,
             volumes,
             n_components,
@@ -428,61 +506,20 @@ def _diffuse(
     return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
 
 
-def _face_geometry(env: FieldConsumer) -> FaceGeometry:
-    """Implement Environment._face_geometry using explicit fields inputs."""
-    return env._binning.faces.build()
-
-
-def _require_face_geometry(env: FieldConsumer, operation: str) -> FaceGeometry:
-    """Implement Environment._require_face_geometry using explicit fields inputs."""
-    if not env._binning.faces.available:
-        raise env._binning.faces.missing_error(operation)
-    return env._face_geometry
-
-
-def _diffusion_geometry(env: FieldConsumer) -> DiffusionGeometry:
-    """Implement Environment._diffusion_geometry using explicit fields inputs."""
-    from neurospatial.environment._publication import _freeze_diffusion_geometry
-    from neurospatial.geometry._composition import combined_diffusion
-
-    combined = combined_diffusion(env._binning)
-    if combined is not None:
-        return _freeze_diffusion_geometry(combined)
-    return _freeze_diffusion_geometry(
-        DiffusionGeometry.from_faces(env._require_face_geometry("smoothing"))
-    )
-
-
-def _mrf_eigenbasis(n_bins: int) -> MRFEigenbasisCache:
-    """Empty MRF eigenbasis holder for ``n_bins`` bins, grown on demand."""
-    return {
-        "Q": np.zeros((n_bins, 0)),
-        "Lam": np.zeros(0),
-        "mode_comp": np.zeros(0, dtype=np.intp),
-        "G": 0,
-    }
-
-
 def _mrf_basis(
-    env: FieldConsumer, occupancy: NDArray[np.float64], *, rank: int | None
+    cache: AnalysisCache,
+    binning: Binning,
+    occupancy: NDArray[np.float64],
+    *,
+    rank: int | None,
 ) -> MRFBasis:
-    """Implement Environment.get_mrf_basis using explicit fields inputs."""
-    from neurospatial.ops.diffusion import (
-        _ensure_global_modes,
-        _live_components,
-        _null_mode_indices,
-        _symmetric_conjugate,
-        _target_live_rank,
-        _validate_occupancy,
-        select_live_basis,
-    )
-
+    """Reduced-rank MRF smoothness basis covering the occupied support."""
     _validate_occupancy(occupancy)  # fail fast, before the eigensolve
-    _W, volumes, n_components, labels = env._diffusion_geometry
+    _W, volumes, n_components, labels = diffusion_geometry(cache, binning)
     S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
     # The eigenbasis grows in place until it covers the occupied support.
-    with env._cache.exclusive(MRF_EIGENBASIS):
-        holder = env._mrf_eigenbasis
+    with cache.exclusive(MRF_EIGENBASIS):
+        holder = mrf_eigenbasis(cache, binning.bins.n_bins)
         live = _live_components(labels, occupancy)
         n_live_components = int(live.size)
         r_eff = _target_live_rank(labels, occupancy, rank)
@@ -509,20 +546,17 @@ def _mrf_basis(
 
 
 def _compute_gaussian_kernel(
-    env: FieldConsumer, bandwidth: float
+    cache: AnalysisCache,
+    bin_centers: NDArray[np.float64],
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    bandwidth: float,
 ) -> NDArray[np.float64]:
     """Build/cache Gaussian weights privately and export an immutable header."""
-    import warnings
-
-    from neurospatial._stacklevel import _external_stacklevel
-    from neurospatial.environment._publication import _array_header, _immutable_array
-    from neurospatial.ops.smoothing import _gaussian_kernel
-
     if not np.isfinite(bandwidth) or bandwidth <= 0:
         raise ValueError(f"bandwidth must be finite and positive (got {bandwidth}).")
 
     def build() -> NDArray[np.float64]:
-        n_bins = env.bin_centers.shape[0]
+        n_bins = bin_centers.shape[0]
         # Warn (never raise) for large environments. The dense weight matrix
         # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
         # estimate that and proceed. Mirrors the diffusion-kernel warning and
@@ -540,10 +574,6 @@ def _compute_gaussian_kernel(
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        return _immutable_array(
-            _gaussian_kernel(env.bin_centers, env.coordinate_system, bandwidth)
-        )
+        return _immutable_array(_gaussian_kernel(bin_centers, coordinates, bandwidth))
 
-    return _array_header(
-        env._cache.get_recent(GAUSSIAN_KERNELS, float(bandwidth), build)
-    )
+    return _array_header(cache.get_recent(GAUSSIAN_KERNELS, float(bandwidth), build))

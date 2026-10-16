@@ -1,7 +1,17 @@
-"""Trajectory algorithms using narrow consumers and explicit sampled data.
+"""Trajectory algorithms on owned geometry and explicit sampled data.
 
 Includes time allocation, occupancy, run extraction and transition matrices.
-Environment exposes thin entry points; Cartesian coordinate operations are guarded."""
+Environment exposes thin entry points; Cartesian coordinate operations are guarded.
+
+Index-dtype convention: point/region *index* arrays (``bin_at``,
+``bins_in_region``, ``boundary_bins``, ``point_to_bin_index``) are ``np.intp``
+-- pointer-sized (64-bit on every platform, including Windows where ``np.int_``
+is 32-bit) and the dtype NumPy fancy-indexing returns. Trajectory *sequence*
+arrays (``bin_sequence``, ``BinSequenceWithRuns.bins``) stay compact
+``np.int32`` on purpose, and the ``run_starts`` / ``run_lengths`` offsets are
+``np.int64``. The split is intentional -- portability for indices, memory for
+long sequences -- so do not collapse them to one dtype.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
+import scipy.sparse
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
@@ -19,22 +30,22 @@ from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
 )
-from neurospatial._intervals import (
-    observed_interval_mask as observed_interval_mask,
-)
-from neurospatial._intervals import (
-    observed_runs as observed_runs,
-)
 from neurospatial._validation import validate_times_positions
+from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._lookup import locate
+from neurospatial.environment._polygon_trajectory import (
+    _source_grid,
+    retained_linear_intervals,
+    uses_polygon_allocation,
+)
+from neurospatial.environment.cartesian import require_cartesian
+from neurospatial.environment.fields import _compute_kernel
+from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 if TYPE_CHECKING:
-    import scipy.sparse
-
-    from neurospatial.environment._protocols import (
-        TrajectoryBinningConsumer,
-        TransitionsConsumer,
-    )
+    from neurospatial.geometry._arena import Arena
 
 
 # Numerical stability constants
@@ -82,10 +93,13 @@ class BinSequenceWithRuns:
 
 
 def _occupancy(
-    env: TrajectoryBinningConsumer,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    binning: Binning,
+    arena: Arena,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -95,6 +109,7 @@ def _occupancy(
     return_seconds: bool = True,
 ) -> NDArray[np.float64]:
     """Compute occupancy from sampled positions."""
+    n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
     times, positions = validate_times_positions(
         times, positions, call="Environment.occupancy"
     )
@@ -105,8 +120,8 @@ def _occupancy(
         )
 
     # Validate positions dimensionality
-    if env.dimension_ranges is not None:
-        expected_dims = len(env.dimension_ranges)
+    if dimension_ranges is not None:
+        expected_dims = len(dimension_ranges)
         if positions.shape[1] != expected_dims:
             raise ValueError(
                 f"positions must have {expected_dims} dimensions to match environment. "
@@ -140,23 +155,21 @@ def _occupancy(
     polygon_allocation = False
     grid = None
     if time_allocation == "linear":
-        from neurospatial.environment._polygon_trajectory import uses_polygon_allocation
-
-        polygon_allocation = uses_polygon_allocation(env)
+        polygon_allocation = uses_polygon_allocation(binning, arena)
         if not polygon_allocation:
             grid = require_rectilinear(
-                env._binning,
+                binning,
                 "occupancy(time_allocation='linear')",
                 fix="use time_allocation='start', which works on every layout",
             )
 
     # Handle empty arrays
     if len(times) == 0:
-        return np.zeros(env.n_bins, dtype=np.float64)
+        return np.zeros(n_bins, dtype=np.float64)
 
     # Handle single sample (no intervals to accumulate)
     if len(times) == 1:
-        return np.zeros(env.n_bins, dtype=np.float64)
+        return np.zeros(n_bins, dtype=np.float64)
 
     # Map positions to bin indices using the layout's geometric
     # containment, which matches Environment.bin_sequence and returns
@@ -167,20 +180,12 @@ def _occupancy(
     # bind to the nearest edge bin, so a tracking-error overshoot
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
-    bin_indices = env.bin_at(positions)
-    if (
-        time_allocation == "linear"
-        and env.n_dims != 2
-        and env._binning.grid_frame is not None
-    ):
-        from neurospatial.environment._polygon_trajectory import _source_grid
-
-        source_locator, source_positions = _source_grid(
-            env._binning.grid_frame, positions
-        )
+    bin_indices = locate(binning, arena, positions)
+    if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
+        source_locator, source_positions = _source_grid(binning.grid_frame, positions)
         bin_indices = source_locator.locate(source_positions)
-        if env.arena.domain_known:
-            bin_indices[~env.arena.contains(positions)] = -1
+        if arena.domain_known:
+            bin_indices[~arena.contains(positions)] = -1
 
     # Compute time intervals
     dt = np.diff(times)
@@ -188,12 +193,11 @@ def _occupancy(
     # Default start allocation shares every interval gate with spike binning.
     # Polygon linear allocation keeps observation validity separate from
     # geometric support, allowing outside-to-inside and re-entry segments.
-    framed_nd = env.n_dims != 2 and env._binning.grid_frame is not None
+    framed_nd = n_dims != 2 and binning.grid_frame is not None
     observation_only = polygon_allocation and not framed_nd
     valid_mask = interval_valid_mask(
         times,
         positions,
-        None if observation_only else env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
@@ -202,7 +206,7 @@ def _occupancy(
     )
 
     # Initialize occupancy array
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    occupancy = np.zeros(n_bins, dtype=np.float64)
 
     # Dispatch to appropriate time allocation method
     if time_allocation == "start":
@@ -210,24 +214,18 @@ def _occupancy(
             bin_indices,
             dt,
             valid_mask,
-            env.n_bins,
+            n_bins,
             return_seconds=return_seconds,
         )
 
     elif time_allocation == "linear":
         if polygon_allocation:
-            from neurospatial.environment._polygon_trajectory import (
-                retained_linear_intervals,
-            )
-
             normalizers = np.ones(len(dt))
             if framed_nd and not return_seconds:
                 # Preserve the native N-D count convention: normalize over
                 # the full grid extent before dropping inactive cells.
-                frame = env._binning.grid_frame
+                frame = binning.grid_frame
                 assert frame is not None
-                from neurospatial.environment._polygon_trajectory import _source_grid
-
                 _, source_positions = _source_grid(frame, positions)
                 for sample in np.flatnonzero(valid_mask):
                     normalizers[sample] = sum(
@@ -240,7 +238,9 @@ def _occupancy(
                             1.0,
                         )
                     )
-            for piece in retained_linear_intervals(env, times, positions, valid_mask):
+            for piece in retained_linear_intervals(
+                binning, arena, times, positions, valid_mask
+            ):
                 weight = dt[piece.sample_index] if return_seconds else 1.0
                 if normalizers[piece.sample_index] <= 0:
                     continue
@@ -252,24 +252,27 @@ def _occupancy(
         else:
             assert grid is not None
             occupancy = _allocate_time_linear(
-                env, grid, positions, dt, valid_mask, bin_indices, return_seconds
+                n_bins, grid, positions, dt, valid_mask, bin_indices, return_seconds
             )
 
     # Apply kernel smoothing if requested
     if bandwidth is not None:
         # Use mode='transition' for occupancy (counts), not 'density'
         # This ensures mass conservation: kernel columns sum to 1
-        kernel = env.compute_kernel(bandwidth=bandwidth, mode="transition", cache=True)
+        kernel = _compute_kernel(
+            cache, binning, bandwidth, mode="transition", use_cache=True
+        )
         occupancy = kernel @ occupancy
 
     return occupancy
 
 
 def _bin_sequence(
-    env: TrajectoryBinningConsumer,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    binning: Binning,
+    arena: Arena,
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
@@ -290,7 +293,7 @@ def _bin_sequence(
         )
 
     # Validate dimensions match environment
-    n_dims = env.n_dims
+    n_dims = binning.bins.n_dims
     if positions.shape[1] != n_dims:
         raise ValueError(
             f"positions must have {n_dims} dimensions to match environment. "
@@ -317,7 +320,7 @@ def _bin_sequence(
 
     # Map positions to bin indices
     # Use bin_at which returns -1 for points outside environment
-    bin_indices = env.bin_at(positions).astype(np.int32)  # Ensure int32 dtype
+    bin_indices = locate(binning, arena, positions).astype(np.int32)
 
     # Samples belong to a recording only if they touch a valid interval.
     if outside_value is None:
@@ -396,9 +399,13 @@ def _bin_sequence(
 
 
 def _transitions(
-    env: TransitionsConsumer,
     bins: NDArray[np.int32] | None = None,
     *,
+    graph: nx.Graph,
+    binning: Binning,
+    arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    cache: AnalysisCache,
     times: NDArray[np.float64] | None = None,
     positions: NDArray[np.float64] | None = None,
     # Empirical parameters
@@ -447,14 +454,16 @@ def _transitions(
 
         # Dispatch to model-based method
         if method == "random_walk":
-            return _random_walk_transitions(env, normalize=normalize)
+            return _random_walk_transitions(graph, normalize=normalize)
         elif method == "diffusion":
             if bandwidth is None:
                 raise ValueError(
                     "method='diffusion' requires 'bandwidth' parameter. "
                     "Provide bandwidth in physical units (sigma)."
                 )
-            return _diffusion_transitions(env, bandwidth=bandwidth, normalize=normalize)
+            return _diffusion_transitions(
+                cache, binning, bandwidth=bandwidth, normalize=normalize
+            )
         else:
             raise ValueError(
                 f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."
@@ -462,8 +471,11 @@ def _transitions(
     else:
         # EMPIRICAL MODE
         return _empirical_transitions(
-            env,
             bins=bins,
+            graph=graph,
+            binning=binning,
+            arena=arena,
+            coordinates=coordinates,
             times=times,
             positions=positions,
             lag=lag,
@@ -475,9 +487,12 @@ def _transitions(
 
 
 def _empirical_transitions(
-    env: TransitionsConsumer,
     bins: NDArray[np.int32] | None = None,
     *,
+    graph: nx.Graph,
+    binning: Binning,
+    arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     times: NDArray[np.float64] | None = None,
     positions: NDArray[np.float64] | None = None,
     lag: int = 1,
@@ -565,8 +580,7 @@ def _empirical_transitions(
     >>> T_2step = env.transitions(bins=bin_sequence, lag=2)  # doctest: +SKIP
 
     """
-    import scipy.sparse
-
+    n_bins = binning.bins.n_bins
     # Validation: Ensure exactly one input method is used
     bins_provided = bins is not None
     trajectory_provided = times is not None or positions is not None
@@ -589,16 +603,18 @@ def _empirical_transitions(
             )
 
         # Compute bin sequence from trajectory
-        bins = env._require_cartesian(
-            "transitions() from times and positions"
-        ).bin_sequence(
+        require_cartesian(coordinates, "transitions() from times and positions")
+        bins = _bin_sequence(
             times,
             positions,
+            binning=binning,
+            arena=arena,
             dedup=False,
             outside_value=-1,
+            gap_splits_runs=False,
             max_gap=None,
             epochs=None,
-        )
+        ).bins
         mask = interval_valid_mask(
             times, max_gap=max_gap, epochs=as_intervals(epochs, name="epochs")
         )
@@ -619,16 +635,16 @@ def _empirical_transitions(
     # Handle empty or single-element sequences
     if len(bins) == 0 or len(bins) <= lag:
         # Return empty sparse matrix
-        return scipy.sparse.csr_matrix((env.n_bins, env.n_bins), dtype=float)
+        return scipy.sparse.csr_matrix((n_bins, n_bins), dtype=float)
 
     # Validate bin indices (must be in [0, n_bins))
     # Note: -1 is used for outside values, which is invalid for transitions
-    if np.any(bins < 0) or np.any(bins >= env.n_bins):
-        invalid_mask = (bins < 0) | (bins >= env.n_bins)
+    if np.any(bins < 0) or np.any(bins >= n_bins):
+        invalid_mask = (bins < 0) | (bins >= n_bins)
         invalid_indices = np.where(invalid_mask)[0]
         invalid_values = bins[invalid_mask]
         raise ValueError(
-            f"Invalid bin indices found outside range [0, {env.n_bins}). "
+            f"Invalid bin indices found outside range [0, {n_bins}). "
             f"Found {len(invalid_indices)} invalid values at indices "
             f"{invalid_indices[:5].tolist()}{'...' if len(invalid_indices) > 5 else ''}: "
             f"{invalid_values[:5].tolist()}{'...' if len(invalid_values) > 5 else ''}. "
@@ -647,12 +663,12 @@ def _empirical_transitions(
     if not allow_teleports:
         # Build adjacency set from connectivity graph
         adjacency_set = set()
-        for u, v in env.connectivity.edges():
+        for u, v in graph.edges():
             adjacency_set.add((u, v))
             adjacency_set.add((v, u))  # Undirected graph
 
         # Also include env-transitions (always adjacent)
-        for node in env.connectivity.nodes():
+        for node in graph.nodes():
             adjacency_set.add((node, node))
 
         # Filter transitions to only adjacent pairs
@@ -674,7 +690,7 @@ def _empirical_transitions(
     # Build sparse matrix in COO format
     transition_matrix = scipy.sparse.coo_matrix(
         (transition_counts, (source_bins, target_bins)),
-        shape=(env.n_bins, env.n_bins),
+        shape=(n_bins, n_bins),
         dtype=float,
     )
 
@@ -694,7 +710,7 @@ def _empirical_transitions(
 
         # Create diagonal matrix for normalization
         # Use reciprocal of row sums for nonzero rows, 0 otherwise
-        inv_row_sums = np.zeros(env.n_bins)
+        inv_row_sums = np.zeros(n_bins)
         inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
 
         # Normalize: T_normalized = diag(1/row_sums) @ T
@@ -705,7 +721,7 @@ def _empirical_transitions(
 
 
 def _random_walk_transitions(
-    env: TransitionsConsumer,
+    graph: nx.Graph,
     *,
     normalize: bool = True,
 ) -> scipy.sparse.csr_matrix:
@@ -714,10 +730,9 @@ def _random_walk_transitions(
     Internal helper for transitions(method='random_walk'). Creates a
     transition matrix where each bin transitions uniformly to its neighbors.
     """
-    import scipy.sparse
-
+    n_bins = graph.number_of_nodes()
     # Get adjacency matrix from connectivity graph
-    adjacency = nx.adjacency_matrix(env.connectivity, nodelist=range(env.n_bins))
+    adjacency = nx.adjacency_matrix(graph, nodelist=range(n_bins))
 
     # Convert to float and ensure CSR format
     transition_matrix = adjacency.astype(float).tocsr()
@@ -728,7 +743,7 @@ def _random_walk_transitions(
 
         # Avoid division by zero for isolated nodes
         nonzero_rows = row_sums > 0
-        inv_row_sums = np.zeros(env.n_bins)
+        inv_row_sums = np.zeros(n_bins)
         inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
 
         # Normalize
@@ -739,7 +754,8 @@ def _random_walk_transitions(
 
 
 def _diffusion_transitions(
-    env: TransitionsConsumer,
+    cache: AnalysisCache,
+    binning: Binning,
     bandwidth: float,
     *,
     normalize: bool = True,
@@ -756,8 +772,6 @@ def _diffusion_transitions(
     non-uniform mass matrix ``M`` (polar, mesh) ``Hᵀ != H``, so this must
     transpose rather than assume symmetry.
     """
-    import scipy.sparse
-
     if not normalize:
         raise ValueError(
             "method='diffusion' does not support normalize=False. "
@@ -767,7 +781,9 @@ def _diffusion_transitions(
 
     # compute_kernel(mode="transition") is Hᵀ (column-stochastic); the
     # row-stochastic transition matrix H is its transpose.
-    kernel = env.compute_kernel(bandwidth=bandwidth, mode="transition").T
+    kernel = _compute_kernel(
+        cache, binning, bandwidth, mode="transition", use_cache=True
+    ).T
 
     # Convert to sparse if needed
     if not scipy.sparse.issparse(kernel):
@@ -777,7 +793,7 @@ def _diffusion_transitions(
 
 
 def _allocate_time_linear(
-    env: TrajectoryBinningConsumer,
+    n_bins: int,
     grid: RectilinearGrid,
     positions: NDArray[np.float64],
     dt: NDArray[np.float64],
@@ -816,8 +832,8 @@ def _allocate_time_linear(
     grid_edges = grid.edges
     grid_shape = grid.shape
 
-    # Initialize occupancy array (indexed by ACTIVE-bin id, length env.n_bins)
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    # Initialize occupancy array (indexed by ACTIVE-bin id, length n_bins)
+    occupancy = np.zeros(n_bins, dtype=np.float64)
 
     # The ray-intersection helpers below (_position_to_flat_index /
     # _compute_ray_grid_intersections) return FULL-GRID row-major flat

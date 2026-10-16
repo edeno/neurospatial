@@ -1144,12 +1144,12 @@ class TestBinSpikeTrainWithStatsSharedMask:
         "min_speed,expected_count", [(None, 2), (5.0, 2), (50.0, 0)]
     )
     def test_kernel_matches_public_binner(self, min_speed, expected_count):
+        from neurospatial._intervals import interval_valid_mask
         from neurospatial.encoding._binning import (
             _bin_spike_train_with_stats,
             bin_spike_train,
             resolve_speed,
         )
-        from neurospatial.environment.trajectory import interval_valid_mask
 
         env = Environment.from_samples(
             np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0

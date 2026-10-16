@@ -61,14 +61,14 @@ def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypa
     from neurospatial.environment import fields
 
     env = _grid()
-    build = fields._diffusion_geometry
+    build = fields._build_diffusion_geometry
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(fields, "_diffusion_geometry", counted)
+    monkeypatch.setattr(fields, "_build_diffusion_geometry", counted)
     first = env.get_diffusion_geometry()
     second = env.get_diffusion_geometry()
     assert isinstance(first, DiffusionGeometry)
@@ -108,17 +108,17 @@ def test_diffusion_components_follow_conductance_instead_of_navigation():
 
 
 def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
-    from neurospatial.ops import smoothing
+    from neurospatial.environment import fields
 
     env = _grid()
-    build = smoothing._gaussian_kernel
+    build = fields._gaussian_kernel
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(smoothing, "_gaussian_kernel", counted)
+    monkeypatch.setattr(fields, "_gaussian_kernel", counted)
     first = env.compute_gaussian_kernel(1.0)
     expected = first.copy()
     second = env.compute_gaussian_kernel(1.0)

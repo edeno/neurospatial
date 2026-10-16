@@ -30,17 +30,14 @@ from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
     BOUNDARY_BINS,
     DIFFERENTIAL_OPERATOR,
-    DIFFUSION_EIGENBASIS,
-    DIFFUSION_GEOMETRY,
     DIVERGENCE_OPERATOR,
     EDGE_ATTRIBUTES,
-    FACE_GEOMETRY,
-    MRF_EIGENBASIS,
     AnalysisCache,
 )
 from neurospatial.environment._lookup import locate, nearest_bin
 from neurospatial.environment._publication import (
     UNSET,
+    _diffusion_geometry_header,
     _freeze_geometry_arrays,
     _GeometryView,
     _Metadata,
@@ -55,7 +52,19 @@ from neurospatial.environment.cartesian import (
     CARTESIAN_OPERATIONS,
     require_cartesian,
 )
-from neurospatial.environment.fields import _interpolate
+from neurospatial.environment.fields import (
+    _compute_gaussian_kernel,
+    _compute_kernel,
+    _diffuse,
+    _interpolate,
+    _mrf_basis,
+    _smooth,
+    diffusion_eigenbasis,
+    diffusion_geometry,
+    face_geometry,
+    mrf_eigenbasis,
+    require_face_geometry,
+)
 from neurospatial.environment.metrics import (
     _bin_attributes,
     _cartesian_boundary_bins,
@@ -81,6 +90,7 @@ from neurospatial.environment.trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
     _occupancy,
+    _transitions,
 )
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import (
@@ -94,6 +104,7 @@ from neurospatial.ops.calculus import (
     _compute_differential_operator,
     _compute_divergence_operator,
 )
+from neurospatial.ops.diffusion import _diffusion_apply_rtol
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -107,7 +118,6 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._protocols import CartesianLookupConsumer
     from neurospatial.environment.factories import PolygonType
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
@@ -793,7 +803,9 @@ class Environment(Generic[_C]):
     @property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
         def build() -> sparse.csc_matrix:
-            faces = self._require_face_geometry("gradient/divergence")
+            faces = require_face_geometry(
+                self._cache, self._binning, "gradient/divergence"
+            )
             return _compute_differential_operator(faces, self.n_bins)
 
         return self._cache.get(DIFFERENTIAL_OPERATOR, build)
@@ -801,7 +813,9 @@ class Environment(Generic[_C]):
     @property
     def _divergence_operator_cached(self) -> sparse.csc_matrix:
         def build() -> sparse.csc_matrix:
-            faces = self._require_face_geometry("gradient/divergence")
+            faces = require_face_geometry(
+                self._cache, self._binning, "gradient/divergence"
+            )
             return _compute_divergence_operator(
                 faces, self._differential_operator_cached
             )
@@ -871,10 +885,9 @@ class Environment(Generic[_C]):
         """
         return copy_module.copy(self._coordinate_system)
 
-    def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
+    def _require_cartesian(self, operation: str) -> None:
         """Refuse Cartesian coordinate math for polar radius/angle bins."""
         require_cartesian(self._coordinate_system, operation)
-        return cast("CartesianLookupConsumer", self)
 
     # Runtime capability filtering must not make unknown attributes appear as
     # Any to type checkers, which would also admit missing protocol members.
@@ -1599,9 +1612,12 @@ class Environment(Generic[_C]):
         """
         self._require_cartesian("occupancy()")
         return _occupancy(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
+            dimension_ranges=self.dimension_ranges,
+            cache=self._cache,
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
@@ -1693,9 +1709,10 @@ class Environment(Generic[_C]):
         """
         self._require_cartesian("bin_sequence()")
         result = _bin_sequence(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
@@ -1772,9 +1789,10 @@ class Environment(Generic[_C]):
         """
         self._require_cartesian("bin_sequence_with_runs()")
         return _bin_sequence(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
@@ -1876,7 +1894,14 @@ class Environment(Generic[_C]):
 
         """
         self._require_cartesian("interpolate()")
-        return _interpolate(self, field, points, mode=mode)
+        return _interpolate(
+            field,
+            points,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
+            mode=mode,
+        )
 
     def rebin(
         self: Environment[CartesianSystem],
@@ -5664,9 +5689,9 @@ class Environment(Generic[_C]):
         >>> smoothed_field = kernel @ field  # doctest: +SKIP
 
         """
-        from neurospatial.environment.fields import _compute_kernel
-
-        return _compute_kernel(self, bandwidth, mode=mode, cache=cache)
+        return _compute_kernel(
+            self._cache, self._binning, bandwidth, mode=mode, use_cache=cache
+        )
 
     def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
         """Return Gaussian weights between bin centers, ignoring walls.
@@ -5694,9 +5719,9 @@ class Environment(Generic[_C]):
         without copying the matrix. Use .copy() for an editable matrix.
         clear_cache() releases the cached weights.
         """
-        from neurospatial.environment.fields import _compute_gaussian_kernel
-
-        return _compute_gaussian_kernel(self, bandwidth)
+        return _compute_gaussian_kernel(
+            self._cache, self.bin_centers, self._coordinate_system, bandwidth
+        )
 
     def get_diffusion_geometry(self) -> DiffusionGeometry:
         """Return read-only conductances, cell measures and diffusion components.
@@ -5721,8 +5746,6 @@ class Environment(Generic[_C]):
         NotImplementedError
             If the stored binning cannot supply numerical diffusion geometry.
         """
-        from neurospatial.environment._publication import _diffusion_geometry_header
-
         return _diffusion_geometry_header(self._diffusion_geometry)
 
     def diffusion_accuracy(self, bandwidth: float) -> float:
@@ -5741,8 +5764,6 @@ class Environment(Generic[_C]):
             the more conservative truncation tolerance. This query does not
             build an eigenbasis.
         """
-        from neurospatial.ops.diffusion import _diffusion_apply_rtol
-
         return _diffusion_apply_rtol(self._diffusion_eigenbasis, self.n_bins, bandwidth)
 
     def smooth(
@@ -5882,10 +5903,7 @@ class Environment(Generic[_C]):
         ... )  # doctest: +SKIP
 
         """
-        # Input validation
-        from neurospatial.environment.fields import _smooth
-
-        return _smooth(self, field, bandwidth, mode=mode)
+        return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
 
     def diffuse(
         self,
@@ -5970,38 +5988,19 @@ class Environment(Generic[_C]):
         basis (applied then dropped, never cached) with the same large-matrix
         ``UserWarning`` as :meth:`compute_kernel`.
         """
-        from neurospatial.environment.fields import _diffuse
-
-        return _diffuse(self, fields, bandwidth, mode=mode, backend=backend)
+        return _diffuse(
+            self._cache, self._binning, fields, bandwidth, mode=mode, backend=backend
+        )
 
     @property
     def _face_geometry(self) -> FaceGeometry:
         """Validated cell faces, cached for this immutable geometry.
 
         Shared by the diffusion snapshot and the gradient and divergence
-        operators. Read it through :meth:`_require_face_geometry`, which names
-        the analysis when the layout has no cell faces.
+        operators, which read it through ``require_face_geometry`` so a layout
+        without cell faces fails with an error naming the analysis.
         """
-        from neurospatial.environment.fields import _face_geometry
-
-        return self._cache.get(FACE_GEOMETRY, lambda: _face_geometry(self))
-
-    def _require_face_geometry(self, operation: str) -> FaceGeometry:
-        """Cached cell faces, or an actionable error naming ``operation``.
-
-        Parameters
-        ----------
-        operation : str
-            Analysis named in the error when the layout has no cell faces.
-
-        Returns
-        -------
-        FaceGeometry
-            Validated faces and cell measures in authoritative bin-pair order.
-        """
-        from neurospatial.environment.fields import _require_face_geometry
-
-        return _require_face_geometry(self, operation)
+        return face_geometry(self._cache, self._binning)
 
     @property
     def _diffusion_geometry(self) -> DiffusionGeometry:
@@ -6010,9 +6009,7 @@ class Environment(Generic[_C]):
         Shared by dense kernels, :meth:`diffuse`, smoothness bases, and the
         W-component support gates.
         """
-        from neurospatial.environment.fields import _diffusion_geometry
-
-        return self._cache.get(DIFFUSION_GEOMETRY, lambda: _diffusion_geometry(self))
+        return diffusion_geometry(self._cache, self._binning)
 
     @property
     def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
@@ -6024,11 +6021,7 @@ class Environment(Generic[_C]):
         It holds a single basis strictly below ``dense_fraction·n`` — never a
         persistent ``(n, n)``.
         """
-
-        def build() -> DiffusionEigenbasisCache:
-            return {}
-
-        return self._cache.get(DIFFUSION_EIGENBASIS, build)
+        return diffusion_eigenbasis(self._cache)
 
     @property
     def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
@@ -6043,9 +6036,7 @@ class Environment(Generic[_C]):
         (dense solves stay call-local). Distinct from
         :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
         """
-        from neurospatial.environment.fields import _mrf_eigenbasis
-
-        return self._cache.get(MRF_EIGENBASIS, lambda: _mrf_eigenbasis(self.n_bins))
+        return mrf_eigenbasis(self._cache, self.n_bins)
 
     def get_mrf_basis(
         self,
@@ -6081,9 +6072,7 @@ class Environment(Generic[_C]):
         contribute no basis rows; every occupied component has one unpenalized
         constant mode, followed by modes with positive smoothness penalties.
         """
-        from neurospatial.environment.fields import _mrf_basis
-
-        return _mrf_basis(self, occupancy, rank=rank)
+        return _mrf_basis(self._cache, self._binning, occupancy, rank=rank)
 
     def transitions(
         self,
@@ -6220,11 +6209,13 @@ class Environment(Generic[_C]):
         >>> diff = (T_empirical - T_diffusion).toarray()  # doctest: +SKIP
 
         """
-        from neurospatial.environment.trajectory import _transitions
-
         return _transitions(
-            self,
             bins,
+            graph=self.connectivity,
+            binning=self._binning,
+            arena=self._arena,
+            coordinates=self._coordinate_system,
+            cache=self._cache,
             times=times,
             positions=positions,
             lag=lag,

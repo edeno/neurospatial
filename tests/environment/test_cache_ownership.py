@@ -47,16 +47,16 @@ def test_kernel_exports_do_not_change_later_kernels(env, restoration, mode, cach
 
 def test_kernel_exports_reuse_computation(env, monkeypatch):
     """Detached exports retain the cache's expensive-computation benefit."""
-    from neurospatial.ops import diffusion
+    from neurospatial.environment import fields
 
-    original = diffusion.diffusion_kernel
+    original = fields.heat_kernel_from_W
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(diffusion, "diffusion_kernel", counted)
+    monkeypatch.setattr(fields, "heat_kernel_from_W", counted)
     first = env.compute_kernel(0.5)
     second = env.compute_kernel(0.5)
     assert len(calls) == 1

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Regions
+from neurospatial._intervals import observed_interval_mask
 from neurospatial.behavior import Trial
 from neurospatial.behavior.decisions import (
     compute_pre_decision_metrics,
@@ -27,7 +28,6 @@ from neurospatial.behavior.vte import (
     compute_vte_trial,
     head_sweep_from_positions,
 )
-from neurospatial.environment.trajectory import observed_interval_mask
 
 
 def test_interval_velocity_has_physical_units_and_masks_gap():

@@ -121,10 +121,11 @@ def prepare_linear_spatial_intervals(
     NotImplementedError
         If the environment cannot publish exact planar cell and Arena support.
     """
+    binning, arena = env.binning, env.arena
     if (
         env.n_dims != 2
-        or env.binning.bins.measure_dim != 2
-        or env.arena.coordinate_kind != "cartesian"
+        or binning.bins.measure_dim != 2
+        or arena.coordinate_kind != "cartesian"
     ):
         raise NotImplementedError(
             "time_allocation='linear' spatial encoding requires exact planar "
@@ -135,7 +136,7 @@ def prepare_linear_spatial_intervals(
     if positions.shape != (len(times), 2):
         raise ValueError("linear spatial encoding needs (n_samples, 2) positions.")
     # This checks known nonmaterializable Arena support before any cell work.
-    uses_polygon_allocation(env)
+    uses_polygon_allocation(binning, arena)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -154,7 +155,7 @@ def prepare_linear_spatial_intervals(
             )
     finite = np.all(np.isfinite(positions), axis=1)
     mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
-    pieces = retained_linear_intervals(env, times, positions, mask)
+    pieces = retained_linear_intervals(binning, arena, times, positions, mask)
     occupancy = np.zeros(env.n_bins, dtype=np.float64)
     runs: list[list[float]] = []
     for piece in pieces:

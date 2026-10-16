@@ -87,17 +87,17 @@ class TestComputeKernel:
 
     def test_compute_kernel_caching_enabled(self, small_2d_env, monkeypatch):
         """Test that kernel caching works when enabled."""
-        from neurospatial.ops import diffusion
+        from neurospatial.environment import fields
 
         env = pickle.loads(pickle.dumps(small_2d_env))  # own empty cache
         calls = []
-        original = diffusion.diffusion_kernel
+        original = fields.heat_kernel_from_W
 
         def counted(*args, **kwargs):
             calls.append(1)
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(diffusion, "diffusion_kernel", counted)
+        monkeypatch.setattr(fields, "heat_kernel_from_W", counted)
         kernel1 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
         kernel2 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
 
