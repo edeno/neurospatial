@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     )
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
+    from neurospatial.ops.binning import TieBreakStrategy
     from neurospatial.regions import Regions
 
 
@@ -167,6 +168,18 @@ class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Prot
 
     @property
     def binning(self) -> Binning: ...
+
+
+class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):
+    """Cartesian bins whose field is pulled back by nearest bin center.
+
+    ``nearest_bin`` is read once at the public boundary of ``resample_field``:
+    the source environment caches the KD-tree it searches.
+    """
+
+    def nearest_bin(
+        self, points: NDArray[np.float64], *, tie_break: TieBreakStrategy = ...
+    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
 
 
 class ResampleTargetConsumer(

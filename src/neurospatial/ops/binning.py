@@ -28,8 +28,8 @@ if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
     from neurospatial.ops._protocols import (
         BinSpacingConsumer,
-        CartesianBinsConsumer,
         RegionMaskConsumer,
+        ResampleSourceConsumer,
         ResampleTargetConsumer,
     )
     from neurospatial.regions import Region, Regions
@@ -401,7 +401,7 @@ def _regions_mask(
 
 def resample_field(
     field: NDArray[np.float64],
-    src_env: CartesianBinsConsumer,
+    src_env: ResampleSourceConsumer,
     dst_env: ResampleTargetConsumer,
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
@@ -596,7 +596,17 @@ def resample_field(
             f"destination has {dst_centers.shape[1]}D."
         )
 
-    resampled, outside_source = _pull_back_nearest(field, src_centers, dst_centers)
+    # The source's nearest-center lookup is read here, at the public boundary:
+    # the source environment caches its KD-tree, so repeated resampling from it
+    # does not rebuild the tree.
+    resampled, outside_source = _pull_back_nearest(
+        field,
+        dst_centers,
+        lambda points: cast(
+            "NDArray[np.int64]",
+            src_env.nearest_bin(points, tie_break=TieBreakStrategy.LOWEST_INDEX),
+        ),
+    )
     if method == "nearest":
         return resampled
     assert bandwidth is not None  # Already validated above
@@ -615,8 +625,8 @@ def resample_field(
 
 def _pull_back_nearest(
     field: NDArray[np.float64],
-    src_centers: NDArray[np.float64],
     dst_centers: NDArray[np.float64],
+    nearest_source_bin: Callable[[NDArray[np.float64]], NDArray[np.int64]],
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
     """Give each destination bin the value of its nearest source bin center.
 
@@ -624,10 +634,11 @@ def _pull_back_nearest(
     ----------
     field : ndarray of float64, shape (n_src_bins,)
         Values on the source bins.
-    src_centers : ndarray of float64, shape (n_src_bins, n_dims)
-        Source bin centers.
     dst_centers : ndarray of float64, shape (n_dst_bins, n_dims)
-        Destination bin centers, in the same coordinates.
+        Destination bin centers, in the source's coordinates.
+    nearest_source_bin : callable
+        Maps points of shape ``(n_points, n_dims)`` to the nearest source bin,
+        ``-1`` for a point too far from every source center.
 
     Returns
     -------
@@ -638,15 +649,7 @@ def _pull_back_nearest(
         Destination bins that the nearest-center lookup rejects as outside the
         source.
     """
-    dst_to_src_indices = cast(
-        "NDArray[np.int64]",
-        _nearest_bin_query(
-            src_centers,
-            cKDTree(src_centers),
-            dst_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-        ),
-    )
+    dst_to_src_indices = nearest_source_bin(dst_centers)
     # The lookup returns -1 for destination bin centers that fall outside the
     # source environment. Naive ``field[dst_to_src_indices]`` would silently
     # resolve -1 to ``field[-1]`` (Python negative indexing). Gather safely with
