@@ -265,10 +265,12 @@ casts to a broad host interface. `ops._types` describes the diffusion and
 MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
 libraries at runtime. The dense-operation warning threshold is
 `neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
-Gaussian smoothing without an import back into the smoothing adapter. Every ops function that takes an environment names it by such a protocol;
-ops never imports `Environment`, even for type checking. CI type-checks both
-coordinate variants of the common Environment against these consumer protocols
-in `tests/typing/finite_volume_consumers.py` and `tests/typing/ops_consumers.py`.
+Gaussian smoothing without an import back into the smoothing adapter.
+Every ops function that takes an environment names it by such a protocol; ops
+never imports `Environment`, even for type checking. CI type-checks both
+coordinate variants of the common Environment against these consumer
+protocols in `tests/typing/finite_volume_consumers.py` and
+`tests/typing/ops_consumers.py`.
 
 ### Owned geometry and builder boundaries
 
@@ -375,7 +377,8 @@ native grid navigation, allowing physical walls to remove connections. It
 refuses custom path lengths or topology that cell geometry cannot reconstruct,
 and retains truncation warnings and complete-face wall constraints.
 Both rebin modes live in `environment/_rebin.py`; selection of existing bins
-lives in `geometry/_derive.py:select_bins`. Rebin construction policies remain distinct:
+lives in `geometry/_derive.py:select_bins`. Rebin construction policies remain
+distinct:
 factor mode retains native lazy faces and its recorded grid parameters, while
 resolution mode prepares faces for the retained affine frame. Both use the
 same atomic `publish` function for owned data, walls and
