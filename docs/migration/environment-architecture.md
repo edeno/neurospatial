@@ -91,6 +91,13 @@ if env.coordinate_kind == "polar":
 A polar environment saved with an earlier version loads unchanged and keeps
 the layout name stored in its file.
 
+Whether the angle wraps around at ±π is read only from the environment's
+`EgocentricSurround` arena. Files from before arenas were saved
+(`Environment-v2` files and NWB environment schema 2.0) do not have one, so a
+polar environment stored in them can no longer be read. Load it with the
+version that wrote it and save it again, or rebuild it with
+`Environment.from_polar_egocentric(..., circular_angle=...)`.
+
 ## Custom layout engines supply `binning()`
 
 Each layout engine now hands its geometry to the environment through one

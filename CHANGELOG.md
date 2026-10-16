@@ -63,6 +63,12 @@
   `binning()` still need an installed snapshot adapter. The private `neurospatial.layout._capabilities` module
   (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
 
+- A polar environment now takes the choice of whether its angle wraps around
+  only from its stored `EgocentricSurround` arena. Old files (`Environment-v2`
+  files and NWB environment schema 2.0) stored no arena, so a polar
+  environment in one of them is refused with a message to re-save it. Cartesian
+  environments in those files still load.
+
 ### Fixed
 
 - `Environment.rebin(factor)` on an environment without a stored grid

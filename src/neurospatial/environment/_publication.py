@@ -23,11 +23,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._coordinates import (
-    CartesianSystem,
-    EgocentricPolarSystem,
-    polar_circularity,
-)
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -476,22 +472,21 @@ def publish(
         _validate_clip_mapping(binning)
     polar = coordinate_kind == "polar"
     index = grid_index if grid_index is not None else compute_grid_index(binning)
-    coordinates = (
-        EgocentricPolarSystem(
-            arena.circular
-            if isinstance(arena, EgocentricSurround)
-            else polar_circularity(index.shape, graph, provenance.build_params)
-        )
-        if polar
-        else CartesianSystem()
-    )
-    if arena is None:
-        arena = infer_arena(
-            binning,
-            polar=polar,
-            circular=isinstance(coordinates, EgocentricPolarSystem)
-            and coordinates.circular,
-        )
+    coordinates: CartesianSystem | EgocentricPolarSystem
+    if polar:
+        if not isinstance(arena, EgocentricSurround):
+            raise ValueError(
+                _format_error(
+                    "A polar environment needs an EgocentricSurround arena, which declares whether the angle wraps around.",
+                    why="Why: the angular seam decides which bins are neighbors and how distances are measured, and nothing else records it.",
+                    fix="build the environment with Environment.from_polar_egocentric, or re-save an older record with this version",
+                )
+            )
+        coordinates = EgocentricPolarSystem(arena.circular)
+    else:
+        coordinates = CartesianSystem()
+        if arena is None:
+            arena = infer_arena(binning, polar=False)
     arena = own_arena(arena)
     validate_arena(arena, binning, polar=polar)
     binning, graph = apply_walls(binning, graph, arena)

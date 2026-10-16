@@ -104,13 +104,18 @@ def _make_legacy(metadata, arrays):
             arrays.pop(name)
 
 
-def test_v2_always_restores_unknown_arena(
+def test_v2_restores_unknown_arena_or_refuses_polar(
     built_environment, corrupted_environment_round_trip, request
 ):
     from neurospatial.arena import UnknownArena
 
     request.getfixturevalue("forbid_layout_builds")
     original = built_environment
+    if original.coordinate_kind == "polar":
+        # Without a stored arena, nothing declares whether the angle wraps.
+        with pytest.raises(ValueError, match="EgocentricSurround"):
+            corrupted_environment_round_trip(_make_legacy)
+        return
     loaded = corrupted_environment_round_trip(_make_legacy)
     assert isinstance(loaded.arena, UnknownArena)
     assert loaded.arena.domain_known is False

@@ -36,6 +36,7 @@ def _facade(env, *, binning=None, connectivity=None):
         build_params=env.layout_parameters,
         is_linearized_track=env.is_linearized_track,
         coordinate_kind="polar" if env._is_polar else "cartesian",
+        arena=env.arena if env._is_polar else None,
     )
 
 

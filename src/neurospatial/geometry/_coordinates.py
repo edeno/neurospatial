@@ -6,11 +6,10 @@ ask it for coordinate math, length scales and plot labels.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -118,9 +117,9 @@ class EgocentricPolarSystem:
         # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
         # and +pi are genuinely far apart, so wrapping would leak smoothing
         # across a boundary the caller deliberately left open; use the raw
-        # angular difference instead. Circularity is derived from the
-        # connectivity graph (presence of seam edges), so it stays consistent
-        # with the graph and survives serialization. The diffusion_kde path is
+        # angular difference instead. Circularity comes from the environment's
+        # EgocentricSurround arena, which the layout's seam edges agree with
+        # and which survives serialization. The diffusion_kde path is
         # unaffected: it smooths over the environment graph directly.
         if self.circular:
             d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
@@ -146,48 +145,6 @@ class EgocentricPolarSystem:
         """Distance and angle axis labels, with length units and radians."""
         suffix = f" ({units})" if units else ""
         return f"Distance{suffix}", "Angle (rad)"
-
-
-def polar_circularity(
-    grid_shape: tuple[int, ...] | None,
-    connectivity: nx.Graph,
-    parameters: Mapping[str, object],
-) -> bool:
-    """Normalize legacy circularity once: saved small grids, otherwise graph seams.
-
-    Used only when a legacy record has no owned polar arena declaration.
-    Current environments take circularity from their EgocentricSurround.
-    """
-    if grid_shape is not None and grid_shape[1] <= 2:
-        return bool(parameters.get("circular_angle", False))
-
-    if connectivity.number_of_edges() == 0:
-        return False
-
-    # Collect per-edge (Δr, |Δθ|) using node "pos" attributes
-    # (pos[0]=distance, pos[1]=angle). Same-ring edges have Δr ~ 0.
-    same_ring_dtheta: list[float] = []
-    min_step = np.inf
-    for u, v in connectivity.edges():
-        pos_u = connectivity.nodes[u]["pos"]
-        pos_v = connectivity.nodes[v]["pos"]
-        d_r = abs(float(pos_v[0]) - float(pos_u[0]))
-        d_theta = abs(float(pos_v[1]) - float(pos_u[1]))
-        if d_theta > 0:
-            min_step = min(min_step, d_theta)
-        # Same-ring edge: distance unchanged (radial component ~ 0).
-        if d_r <= 1e-9 and d_theta > 0:
-            same_ring_dtheta.append(d_theta)
-
-    if not np.isfinite(min_step) or not same_ring_dtheta:
-        return False
-
-    # A seam edge spans many regular steps; a regular angular edge spans
-    # one. Use a threshold of 1.5x the smallest step: seam edges (which
-    # span (n_angle - 1) steps for n_angle >= 3) clear it comfortably,
-    # while regular angular edges do not.
-    threshold = 1.5 * min_step
-    return any(dt > threshold for dt in same_ring_dtheta)
 
 
 _POLAR_COORDINATES = (

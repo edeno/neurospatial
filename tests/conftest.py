@@ -1100,6 +1100,7 @@ def environment_round_trip(built_environment, request, tmp_path):
         build_params=original.layout_parameters,
         is_linearized_track=original.is_linearized_track,
         coordinate_kind=original.arena.coordinate_kind,
+        arena=original.arena,
     )
     original = publish_environment(
         original.name,
