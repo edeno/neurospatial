@@ -565,11 +565,15 @@ def _diffuse(
             )
         )
     else:
-        # Every field goes through one plain apply of the original shape, so
-        # NaN-free columns stay identical; holed ones are averaged over their
-        # observed bins with a second apply.
-        result = apply(np.where(missing, 0.0, fields_2d))
+        # Holed fields are averaged over their observed bins. NaN-free fields
+        # in the same batch go through one plain apply of the original shape,
+        # so they stay identical; that apply is skipped when every field has
+        # holes, since its holed columns would be overwritten.
         holed = np.flatnonzero(missing.any(axis=0))
+        if holed.size == fields_2d.shape[1]:
+            result = np.empty_like(fields_2d)
+        else:
+            result = apply(np.where(missing, 0.0, fields_2d))
         result[:, holed] = masked_diffusion_average(
             apply,
             fields_2d[:, holed],
