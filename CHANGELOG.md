@@ -316,6 +316,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   same, with one difference: `map_points_to_bins` refused polar environments,
   and `env.nearest_bin` accepts them.
 
+- `neurospatial.layout.validation.validate_environment` is removed. Every
+  environment is checked when it is built, so a built environment always
+  passes it. Set units and frame when you build the environment, for example
+  `Environment.from_samples(positions, bin_size=2.0, units="cm", frame="room")`,
+  or later with `env.with_metadata(units=..., frame=...)`.
+
 ### Changed
 
 - `env.plot()` names the axes of a 2-D environment by what the coordinates

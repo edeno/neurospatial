@@ -899,3 +899,17 @@ assert np.allclose(shifted.bin_centers, env.bin_centers + [10.0, 0.0])
 
 `map_points_to_bins` refused polar environments; `env.nearest_bin` accepts
 them and compares the stored distance and angle columns directly.
+
+## `validate_environment` is removed
+
+`neurospatial.layout.validation.validate_environment(env)` re-checked what
+every factory already checks when it builds an environment, so it always
+passed. Remove the call. Its `strict=True` mode warned when `units` or `frame`
+were missing; declare them when you build the environment instead.
+
+<!-- docs-test: run -->
+```python
+# Before: validate_environment(env)  # warned: no frame
+labelled = env.with_metadata(frame="room")
+assert (labelled.units, labelled.frame) == ("cm", "room")
+```
