@@ -2,6 +2,8 @@
 
 import copy
 import pickle
+import re
+import warnings
 from dataclasses import replace
 
 import numpy as np
@@ -32,6 +34,29 @@ def test_rebin_new_resolution_restores_arena_after_analysis_crop():
     np.testing.assert_array_equal(
         coarse.rebin(bin_size=1).bin_centers, grid().bin_centers
     )
+
+
+def test_rebin_reports_original_area_left_without_a_new_bin():
+    # 4-unit cells over a 6-unit arena: only the cell centered at (2, 2) lies
+    # strictly inside, so 20 of the 36 original bins lose their bin.
+    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    with pytest.warns(UserWarning, match="without a new bin") as record:
+        coarse = env.rebin(bin_size=4.0)
+    lost = coarse.bin_at(env.bin_centers) < 0
+    assert np.count_nonzero(lost) == 20
+    (message,) = [str(item.message) for item in record]
+    assert re.search(r"20 of 36 original bins \(55\.6% of their area\)", message)
+    assert "divisor" in message and "-1" in message
+
+
+@pytest.mark.parametrize("size", [1.0, 2.0, 3.0, 0.5])
+def test_rebin_covering_the_arena_does_not_warn(size):
+    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        coarse = env.rebin(bin_size=size)
+    assert np.all(coarse.bin_at(env.bin_centers) >= 0)
+    assert coarse.bin_sizes.sum() == pytest.approx(36.0)
 
 
 @pytest.mark.parametrize(

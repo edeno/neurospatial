@@ -631,8 +631,11 @@ assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
 ```
 
 Whole-bin selection keeps centers inside the arena; it does not promise complete
-coverage or exact clipped areas. Physical walls must still follow complete new
-cell faces. Use `clip()` separately, or a finer grid, where needed. Re-binning
+coverage or exact clipped areas. When original bins are left without a new bin,
+`rebin` warns with their count and share of the area, because positions there
+map to `-1` and drop out of occupancy and spike totals. Physical walls must
+still follow complete new cell faces. Use `clip()` separately, or a finer grid,
+where needed. Re-binning
 creates new bin IDs and does not copy rates, counts or fitted models.
 
 New rectangular environments store an owned `GridBinningSpec` independently of

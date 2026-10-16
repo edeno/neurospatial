@@ -77,6 +77,38 @@ def _arena_bounds(arena: Arena) -> NDArray[np.float64]:
     )
 
 
+def _warn_unbinned(env: RebinConsumer, lost: NDArray[np.bool_], remedy: str) -> None:
+    """Warn that original bins have no new bin, with their count and share.
+
+    Parameters
+    ----------
+    lost : ndarray of bool, shape (n_bins,)
+        Original bins whose centers map to no bin after rebinning.
+    remedy : str
+        Mode-specific advice for covering the lost bins.
+    """
+    if not np.any(lost):
+        return
+    sizes = env._binning.bins.sizes
+    n_dims = env.bin_centers.shape[1]
+    measure = {1: "length", 2: "area"}.get(n_dims, "volume")
+    if env.arena.polygonal_domain() is not None:
+        remedy += (
+            " For exact cells along the arena boundary, build a grid that "
+            "covers the arena at the new size and clip it: "
+            "Environment.from_bins(grid.clip(polygon).binning, arena=env.arena)."
+        )
+    warnings.warn(
+        f"Rebinning leaves {np.count_nonzero(lost)} of {len(lost)} original bins "
+        f"({sizes[lost].sum() / sizes.sum():.1%} of their {measure}) without a "
+        "new bin, because new bins are kept only where their centers lie in the "
+        "arena. Positions in those bins map to -1, so their time and spikes drop "
+        f"out of totals on the new bins. {remedy}",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _rebin_resolution(
     env: RebinConsumer, bin_size: float | tuple[float, ...]
 ) -> Environment:
@@ -181,7 +213,7 @@ def _rebin_resolution(
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
     snapshot, graph, ranges, category = prepare_bins(binning)
-    return Environment._from_binning(
+    rebinned = Environment._from_binning(
         snapshot,
         connectivity=graph,
         dimension_ranges=ranges,
@@ -195,6 +227,13 @@ def _rebin_resolution(
         regions=env.regions,
         arena=env.arena,
     )
+    _warn_unbinned(
+        env,
+        rebinned.bin_at(env.bin_centers) < 0,
+        "Use a smaller bin_size, or one that puts cell edges on the arena "
+        "boundary, such as a divisor of a rectangular arena's side lengths.",
+    )
+    return rebinned
 
 
 def _require_native_grid_navigation(
@@ -474,4 +513,13 @@ def _rebin_factor(
         frame=env.frame,
     )
 
+    # Bins beyond the truncated extent are already reported above.
+    within = np.all(
+        env.bin_centers < np.array([edges[-1] for edges in coarse_edges]), axis=1
+    )
+    _warn_unbinned(
+        env,
+        within & (coarse_env.bin_at(env.bin_centers) < 0),
+        "Use a smaller factor.",
+    )
     return coarse_env

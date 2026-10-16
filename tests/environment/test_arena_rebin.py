@@ -1,11 +1,13 @@
 """Coarsening retains continuous domains and representable physical walls."""
 
 import copy
+import re
+import warnings
 
 import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena, UnknownArena, encode_arena
@@ -111,7 +113,9 @@ def test_factor_two_rebin_merges_every_fine_bin_beside_a_domain_corner(kind):
     # The coarse cell around the missing corner is centered on the arena
     # boundary. It still holds active fine bins, so it must be retained.
     fine = _corner_missing_environment(kind)
-    coarse = fine.rebin(2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # nothing is lost, so nothing to report
+        coarse = fine.rebin(2)
     assert coarse.n_bins == 2**fine.n_dims
     assert np.all(coarse.bin_at(fine.bin_centers) >= 0)
 
@@ -130,6 +134,59 @@ def test_factor_two_rebin_merges_every_fine_bin_beside_a_domain_corner(kind):
     fine_time = np.bincount(fine_bins[fine_bins >= 0], minlength=fine.n_bins) * dt
     coarse_time = np.bincount(coarse_bins, minlength=coarse.n_bins) * dt
     assert coarse_time.sum() == pytest.approx(fine_time.sum())
+
+
+def _reported_loss(record):
+    """Return the bin count and percentage quoted by the coverage warning."""
+    (message,) = [
+        str(item.message) for item in record if "without a new bin" in str(item.message)
+    ]
+    count, total, percent = re.search(
+        r"(\d+) of (\d+) original bins \((\d+\.\d)%", message
+    ).groups()
+    return int(count), int(total), float(percent), message
+
+
+def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
+    # Perimeter coarse cells of a circle have centers outside it, so some
+    # recorded fine bins have no coarse cell. The warning quantifies the loss.
+    circle = Point(0, 0).buffer(10.0, quad_segs=64)
+    fine = Environment.from_polygon(circle, 1.0)
+    with pytest.warns(UserWarning, match="without a new bin") as record:
+        coarse = fine.rebin(2)
+    lost = coarse.bin_at(fine.bin_centers) < 0
+    assert lost.any()
+    count, total, percent, message = _reported_loss(record)
+    assert (count, total) == (np.count_nonzero(lost), fine.n_bins)
+    assert percent == pytest.approx(
+        100 * fine.bin_sizes[lost].sum() / fine.bin_sizes.sum(), abs=0.05
+    )
+    assert "-1" in message and "clip" in message
+
+    # The suggested route covers the whole arena: no fine bin is lost and
+    # the exact cells add up to the arena's area.
+    covering = Environment.from_polygon(box(*circle.bounds), 2.0)
+    exact = Environment.from_bins(covering.clip(circle).binning, arena=fine.arena)
+    assert np.all(exact.bin_at(fine.bin_centers) >= 0)
+    assert exact.bin_sizes.sum() == pytest.approx(circle.area)
+
+
+def test_factor_rebin_reports_truncation_and_coverage_separately():
+    # Truncation drops the last row and column with its own warning; the
+    # coverage warning counts only bins inside the truncated coarse extent.
+    mask = np.ones((5, 5), dtype=bool)
+    mask[0, 0] = mask[0, 1] = mask[1, 0] = False
+    fine = Environment.from_grid_mask(
+        mask, (np.arange(6.0),) * 2, connect_diagonal_neighbors=False
+    )
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        coarse = fine.rebin(3)
+    assert any("truncated" in str(item.message) for item in record)
+    # Coarse cell [0, 3]^2 has center (1.5, 1.5) in the mask; nothing inside the
+    # 3-by-3 extent is lost, so no coverage warning is issued.
+    assert coarse.n_bins == 1
+    assert not any("without a new bin" in str(item.message) for item in record)
 
 
 def test_rebin_preserves_unknown_arena_without_inventing_a_domain():

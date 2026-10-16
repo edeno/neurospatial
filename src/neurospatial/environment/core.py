@@ -2276,7 +2276,9 @@ class Environment(Generic[_C]):
         ``bin_size``, keep new cells whose centers lie strictly inside a
         polygonal arena, or are contained by another known arena. Unknown
         domains retain the full coarse grid. Rebinning preserves the arena
-        rather than filling its holes.
+        rather than filling its holes. When original bins (inside the
+        truncated extent) are left without a new bin, a ``UserWarning`` gives
+        their count and share of the area, since positions in them map to -1.
 
         **Metadata preservation**: The arena, units, frame and named regions
         are preserved. Region coordinates and metadata remain intact even when

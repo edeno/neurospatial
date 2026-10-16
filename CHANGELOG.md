@@ -31,6 +31,12 @@
   corner), and positions in them mapped to `-1`. A factor of 2 now merges every
   fine bin of a grid mask inside the (possibly truncated) coarse extent.
 
+- Both `rebin` modes warn when original bins are left without a new bin,
+  naming their count, their share of the area and how to cover them. Positions
+  in those bins map to `-1`, so their time and spikes silently dropped out of
+  totals: about 2.5% of a circular arena's fine bins at `factor=2`, and 56% of
+  a 6-by-6 arena at `bin_size=4`.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam
