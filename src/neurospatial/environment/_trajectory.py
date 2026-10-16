@@ -1,7 +1,8 @@
-"""Trajectory algorithms on owned geometry and explicit sampled data.
+"""Trajectory adapters on owned geometry and explicit sampled data.
 
-Includes time allocation, occupancy, run extraction and transition matrices.
-Environment exposes thin entry points; Cartesian coordinate operations are guarded.
+Includes time allocation, occupancy, run extraction and the inputs of the
+transition estimators in :mod:`neurospatial.ops._transitions`. Environment
+exposes thin entry points; Cartesian coordinate operations are guarded.
 
 Index-dtype convention: point/region *index* arrays (``bin_at``,
 ``bins_in_region``, ``boundary_bins``, ``nearest_bin``) are ``np.intp``
@@ -46,6 +47,11 @@ from neurospatial.ops._polygon_allocation import (
     polygon_linear_occupancy,
     source_grid,
     uses_polygon_allocation,
+)
+from neurospatial.ops._transitions import (
+    count_transitions,
+    diffusion_transitions,
+    random_walk_transitions,
 )
 
 if TYPE_CHECKING:
@@ -463,7 +469,7 @@ def _transitions(
 
         # Dispatch to model-based method
         if method == "random_walk":
-            return _random_walk_transitions(graph, normalize=normalize)
+            return random_walk_transitions(graph, normalize=normalize)
         elif method == "diffusion":
             if bandwidth is None:
                 raise ValueError(
@@ -693,98 +699,13 @@ def _empirical_transitions(
         pair_ok &= (source_bins >= 0) & (target_bins >= 0)
         source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
 
-    # Filter non-adjacent transitions if requested
-    if not allow_teleports:
-        # Build adjacency set from connectivity graph
-        adjacency_set = set()
-        for u, v in graph.edges():
-            adjacency_set.add((u, v))
-            adjacency_set.add((v, u))  # Undirected graph
-
-        # Also include env-transitions (always adjacent)
-        for node in graph.nodes():
-            adjacency_set.add((node, node))
-
-        # Filter transitions to only adjacent pairs
-        is_adjacent = np.array(
-            [
-                (src, tgt) in adjacency_set
-                for src, tgt in zip(source_bins, target_bins, strict=True)
-            ],
-            dtype=bool,
-        )
-
-        source_bins = source_bins[is_adjacent]
-        target_bins = target_bins[is_adjacent]
-
-    # Count transitions using sparse COO format
-    # Use np.ones to count occurrences
-    transition_counts = np.ones(len(source_bins), dtype=float)
-
-    # Build sparse matrix in COO format
-    transition_matrix = scipy.sparse.coo_matrix(
-        (transition_counts, (source_bins, target_bins)),
-        shape=(n_bins, n_bins),
-        dtype=float,
+    return count_transitions(
+        source_bins,
+        target_bins,
+        n_bins,
+        graph=None if allow_teleports else graph,
+        normalize=normalize,
     )
-
-    # Convert to CSR for efficient row operations
-    transition_matrix = transition_matrix.tocsr()
-
-    # Sum duplicate entries (multiple transitions between same bins)
-    transition_matrix.sum_duplicates()
-
-    # Normalize rows if requested
-    if normalize:
-        # Get row sums
-        row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
-
-        # Avoid division by zero: only normalize rows with transitions
-        nonzero_rows = row_sums > 0
-
-        # Create diagonal matrix for normalization
-        # Use reciprocal of row sums for nonzero rows, 0 otherwise
-        inv_row_sums = np.zeros(n_bins)
-        inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
-
-        # Normalize: T_normalized = diag(1/row_sums) @ T
-        normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
-        transition_matrix = normalizer @ transition_matrix
-
-    return transition_matrix
-
-
-def _random_walk_transitions(
-    graph: nx.Graph,
-    *,
-    normalize: bool = True,
-) -> scipy.sparse.csr_matrix:
-    """Compute uniform random walk transition matrix from graph structure.
-
-    Internal helper for transitions(method='random_walk'). Creates a
-    transition matrix where each bin transitions uniformly to its neighbors.
-    """
-    n_bins = graph.number_of_nodes()
-    # Get adjacency matrix from connectivity graph
-    adjacency = nx.adjacency_matrix(graph, nodelist=range(n_bins))
-
-    # Convert to float and ensure CSR format
-    transition_matrix = adjacency.astype(float).tocsr()
-
-    if normalize:
-        # Normalize rows: T[i,j] = 1/degree(i) if j is neighbor of i
-        row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
-
-        # Avoid division by zero for isolated nodes
-        nonzero_rows = row_sums > 0
-        inv_row_sums = np.zeros(n_bins)
-        inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
-
-        # Normalize
-        normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
-        transition_matrix = normalizer @ transition_matrix
-
-    return transition_matrix
 
 
 def _diffusion_transitions(
@@ -794,18 +715,7 @@ def _diffusion_transitions(
     *,
     normalize: bool = True,
 ) -> scipy.sparse.csr_matrix:
-    """Compute diffusion-based transition matrix using heat kernel.
-
-    Internal helper for transitions(method='diffusion'). Uses the heat
-    kernel to model continuous-time diffusion on the graph.
-
-    Returns the **row-stochastic** heat operator ``H`` (``sum_j T[i, j] = 1``,
-    ``T[i, j] = P(next=j | current=i)``). ``compute_kernel(mode="transition")``
-    returns the mass-conserving smoothing kernel ``Hᵀ`` (column-stochastic),
-    so the row-stochastic transition matrix is its transpose. On a
-    non-uniform mass matrix ``M`` (polar, mesh) ``Hᵀ != H``, so this must
-    transpose rather than assume symmetry.
-    """
+    """Return the heat-diffusion transitions from the cached heat kernel."""
     if not normalize:
         raise ValueError(
             "method='diffusion' does not support normalize=False. "
@@ -813,14 +723,6 @@ def _diffusion_transitions(
             "Set normalize=True or use method='random_walk'."
         )
 
-    # compute_kernel(mode="transition") is Hᵀ (column-stochastic); the
-    # row-stochastic transition matrix H is its transpose.
-    kernel = _compute_kernel(
-        cache, binning, bandwidth, mode="transition", use_cache=True
-    ).T
-
-    # Convert to sparse if needed
-    if not scipy.sparse.issparse(kernel):
-        kernel = scipy.sparse.csr_matrix(kernel)
-
-    return kernel
+    return diffusion_transitions(
+        _compute_kernel(cache, binning, bandwidth, mode="transition", use_cache=True)
+    )
