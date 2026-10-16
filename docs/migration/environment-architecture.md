@@ -110,8 +110,9 @@ Calling `clear_cache()` on one of them clears it for all of them. To get an
 environment with its own empty cache, derive one (`subset`, `clip`, `rebin`,
 `apply_transform`, `combine`) or load one from a file, dict, NWB or pickle.
 
-**Threads.** Each cached analysis is computed once, even when several threads
-ask for it at the same time.
+**Threads.** Threads can share one environment: each cached analysis is
+computed once even when several threads ask for it at the same time, and
+smoothing calls take turns while they grow the shared eigenbasis.
 
 ## Polar environments report their own layout type
 

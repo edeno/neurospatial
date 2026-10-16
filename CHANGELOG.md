@@ -54,7 +54,8 @@
   Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
   `combine`) and environments loaded from files, dicts, NWB or pickles start
   with their own empty cache. Each cached analysis is computed once even when
-  several threads request it at the same time.
+  several threads request it at the same time, and smoothing calls on one
+  environment take turns while they grow the shared eigenbasis.
 
 - `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
   instead of `AttributeError` when the environment is not a linearized track.

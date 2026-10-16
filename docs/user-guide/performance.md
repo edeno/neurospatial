@@ -320,41 +320,23 @@ refined_result = analyze(refined_env)
 
 ## Thread Safety
 
-**Important**: neurospatial caches are **not thread-safe**.
-
-**Single-threaded (safe)**:
-
-```python
-for i in range(100):
-    result = env.smooth(field, bandwidth=10.0)  # Uses cache safely
-```
-
-**Multi-threaded (unsafe)**:
+Threads can share one environment. Each cached analysis is computed once,
+even when several threads ask for it at the same time; the other threads wait
+and then use the same result. Smoothing with `env.smooth` or `env.diffuse` and
+building an MRF basis take turns while they grow the shared eigenbasis, so
+every thread gets the same answer as a single-threaded run.
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
 
-# DON'T DO THIS - cache corruption possible
 with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(env.smooth, field, bandwidth=10.0) for _ in range(100)]
+    futures = [executor.submit(env.smooth, field, bandwidth=10.0) for field in fields]
 ```
 
-**Multi-threaded (safe)**:
-
-```python
-# Option 1: One environment per thread
-with ThreadPoolExecutor() as executor:
-    envs = [copy.deepcopy(env) for _ in range(n_threads)]
-    futures = [executor.submit(process, envs[i], field) for i in range(n_threads)]
-
-# Option 2: Disable caching in parallel context
-def process_field(field):
-    kernel = env.compute_kernel(bandwidth=10.0, cache=False)
-    return kernel @ field
-
-with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(process_field, field) for field in fields]
-```
+Because of these turns, smoothing calls on one environment do not run in
+parallel. To spread smoothing over CPU cores, pass the environment to worker
+processes (for example with `multiprocessing`); each process unpickles its own
+copy with an empty cache.
 
 ---
 

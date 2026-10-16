@@ -8,7 +8,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import _constants
-from neurospatial.environment._cache import DIFFUSION_KERNELS, GAUSSIAN_KERNELS
+from neurospatial.environment._cache import (
+    DIFFUSION_EIGENBASIS,
+    DIFFUSION_KERNELS,
+    GAUSSIAN_KERNELS,
+    MRF_EIGENBASIS,
+)
 from neurospatial.environment._protocols import (
     FieldConsumer,
 )
@@ -406,16 +411,18 @@ def _diffuse(
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
     W, volumes, n_components, _labels = env._diffusion_geometry
-    result = diffusion_apply(
-        env._diffusion_eigenbasis,
-        W,
-        volumes,
-        n_components,
-        fields_2d,
-        float(bandwidth),
-        mode,
-        backend=backend,
-    )
+    # The eigenbasis grows in place while it is applied.
+    with env._cache.exclusive(DIFFUSION_EIGENBASIS):
+        result = diffusion_apply(
+            env._diffusion_eigenbasis,
+            W,
+            volumes,
+            n_components,
+            fields_2d,
+            float(bandwidth),
+            mode,
+            backend=backend,
+        )
     # numpy backend -> ndarray; jax backend -> jax.Array (documented above).
     # The NDArray annotation is the numpy-path type; cast covers both.
     return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
@@ -473,29 +480,31 @@ def _mrf_basis(
     _validate_occupancy(occupancy)  # fail fast, before the eigensolve
     _W, volumes, n_components, labels = env._diffusion_geometry
     S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
-    holder = env._mrf_eigenbasis
-    live = _live_components(labels, occupancy)
-    n_live_components = int(live.size)
-    r_eff = _target_live_rank(labels, occupancy, rank)
-    n_fill = r_eff - n_live_components
-    # ``_symmetric_eigenbasis`` raises on rank < n_components (total geometry
-    # components), but ``r_eff`` counts only LIVE components -- so 1 live +
-    # several dead would start ``G`` too small and raise on the first solve.
-    # Floor ``G`` at ``n_components`` to keep the first solve legal.
-    G = max(holder["G"], r_eff, n_components)
-    while True:  # grow until every live null is present AND enough fills
-        Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)
-        # Verify the structural null the selector requires is actually present
-        # for every live component (its numerical null can sort AFTER one of
-        # its positive modes when both are near machine-epsilon), and count
-        # the non-null fill-eligible live modes -- using the same overlap
-        # criterion select_live_basis uses, so the two never disagree.
-        is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live)
-        n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
-        covered = missing.size == 0
-        if (covered and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
-            break
-        G = min(2 * Q.shape[1], S.shape[0])  # double, capped at full rank
+    # The eigenbasis grows in place until it covers the occupied support.
+    with env._cache.exclusive(MRF_EIGENBASIS):
+        holder = env._mrf_eigenbasis
+        live = _live_components(labels, occupancy)
+        n_live_components = int(live.size)
+        r_eff = _target_live_rank(labels, occupancy, rank)
+        n_fill = r_eff - n_live_components
+        # ``_symmetric_eigenbasis`` raises on rank < n_components (total geometry
+        # components), but ``r_eff`` counts only LIVE components -- so 1 live +
+        # several dead would start ``G`` too small and raise on the first solve.
+        # Floor ``G`` at ``n_components`` to keep the first solve legal.
+        G = max(holder["G"], r_eff, n_components)
+        while True:  # grow until every live null is present AND enough fills
+            Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)
+            # Verify the structural null the selector requires is actually present
+            # for every live component (its numerical null can sort AFTER one of
+            # its positive modes when both are near machine-epsilon), and count
+            # the non-null fill-eligible live modes -- using the same overlap
+            # criterion select_live_basis uses, so the two never disagree.
+            is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live)
+            n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
+            covered = missing.size == 0
+            if (covered and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
+                break
+            G = min(2 * Q.shape[1], S.shape[0])  # double, capped at full rank
     return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
 
 

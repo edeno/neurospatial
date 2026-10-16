@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Hashable
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from neurospatial import _constants
@@ -163,6 +164,26 @@ class AnalysisCache:
                 value = build()
                 lru_put(family, item, value, limit=key.limit)
             return cast("_T", value)
+
+    def exclusive(self, key: CacheKey[Any]) -> AbstractContextManager[object]:
+        """Let one thread at a time use a value that grows in place.
+
+        Eigenbasis holders gain modes while they are used. Read and grow such
+        a value inside ``with cache.exclusive(key):`` so a concurrent caller
+        never sees it half updated. The same thread may request ``key`` again
+        inside the block.
+
+        Parameters
+        ----------
+        key : CacheKey
+            Value to reserve.
+
+        Returns
+        -------
+        context manager
+            Holds the key's lock for the duration of the ``with`` block.
+        """
+        return self._lock(key)
 
     def clear(self) -> None:
         """Drop every cached value; later requests compute them again."""

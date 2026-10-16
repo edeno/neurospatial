@@ -263,3 +263,44 @@ def test_cache_pickles_and_copies_empty():
         assert len(restored) == 0
         assert restored.get(key, lambda: [4]) == [4]
     assert cache.get(key, _refuse_build) == [1, 2, 3]
+
+
+def test_concurrent_smoothing_solves_the_eigenbasis_once(env, monkeypatch):
+    """Threads smoothing at one bandwidth share one eigensolve and one answer."""
+    from neurospatial.ops import diffusion
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        diffusion,
+        "_adaptive_symmetric_basis",
+        _slow_counted(diffusion._adaptive_symmetric_basis, calls),
+    )
+    field = np.linspace(0.0, 1.0, env.n_bins)
+    expected = pickle.loads(pickle.dumps(env)).smooth(field, 4.0)
+    calls.clear()
+
+    results = _run_concurrently(lambda: env.smooth(field, 4.0))
+
+    assert len(calls) == 1
+    assert "basis" in env._diffusion_eigenbasis
+    for result in results:
+        np.testing.assert_array_equal(result, expected)
+
+
+def test_concurrent_mrf_bases_solve_the_eigenbasis_once(env, monkeypatch):
+    """Threads requesting one MRF basis share one global eigensolve."""
+    from neurospatial.ops import diffusion
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        diffusion,
+        "_symmetric_eigenbasis",
+        _slow_counted(diffusion._symmetric_eigenbasis, calls),
+    )
+    occupancy = np.ones(env.n_bins)
+
+    results = _run_concurrently(lambda: env.get_mrf_basis(occupancy, rank=20))
+
+    assert len(calls) == 1
+    for result in results:
+        np.testing.assert_array_equal(result.B, results[0].B)
