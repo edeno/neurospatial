@@ -35,10 +35,10 @@ from neurospatial.environment._cache import (
     DIVERGENCE_OPERATOR,
     EDGE_ATTRIBUTES,
     FACE_GEOMETRY,
-    KDTREE,
     MRF_EIGENBASIS,
     AnalysisCache,
 )
+from neurospatial.environment._lookup import locate, nearest_bin
 from neurospatial.environment._publication import (
     UNSET,
     _freeze_geometry_arrays,
@@ -50,13 +50,32 @@ from neurospatial.environment._publication import (
     _Unset,
 )
 from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
+from neurospatial.environment._summary import _info, _repr, _repr_html
 from neurospatial.environment.cartesian import (
-    CARTESIAN_GRID_OPERATIONS,
     CARTESIAN_OPERATIONS,
+    require_cartesian,
 )
 from neurospatial.environment.fields import _interpolate
 from neurospatial.environment.metrics import (
+    _bin_attributes,
     _cartesian_boundary_bins,
+    _copy_attributes,
+    _edge_attributes,
+    _get_bridge_attributes,
+)
+from neurospatial.environment.queries import (
+    _bin_center_of,
+    _components,
+    _distance_to,
+    _path_between,
+    _reachable_from,
+    _rings,
+    resolve_bin,
+)
+from neurospatial.environment.regions import (
+    _bins_in_region,
+    _region_mask,
+    _region_membership,
 )
 from neurospatial.environment.trajectory import (
     BinSequenceWithRuns,
@@ -296,23 +315,26 @@ class Environment(Generic[_C]):
 
         return editable_graph(self.connectivity)
 
-    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Apply known arena containment before assigning active bins."""
+    @property
+    def _arena(self) -> Arena:
+        """The published arena, shared rather than copied for internal reads."""
         arena = self._geometry.arena
         assert arena is not None
-        if not arena.domain_known:
-            return self._binning.locator.locate(positions).astype(np.intp, copy=False)
-        positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
-        if positions.ndim != 2 or positions.shape[1] != self.n_dims:
-            raise ValueError(
-                f"Dimensionality mismatch: expected positions with shape "
-                f"(n_positions, {self.n_dims}), got {positions.shape}."
-            )
-        inside = arena.contains(positions)
-        indices = np.full(len(positions), -1, dtype=np.intp)
-        if np.any(inside):
-            indices[inside] = self._binning.locator.locate(positions[inside])
-        return indices
+        return arena
+
+    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Apply known arena containment before assigning active bins."""
+        return locate(self._binning, self._arena, positions)
+
+    def _bin_index(self, point_or_index: int | ArrayLike, operation: str) -> int:
+        """Resolve a bin index or a coordinate point to one active-bin index."""
+        return resolve_bin(
+            point_or_index,
+            binning=self._binning,
+            arena=self._arena,
+            coordinates=self._coordinate_system,
+            operation=operation,
+        )
 
     _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
         {"cm", "m", "mm", "px", "pixels"}
@@ -451,9 +473,13 @@ class Environment(Generic[_C]):
         "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        from neurospatial.environment._summary import _repr
-
-        return _repr(self)
+        return _repr(
+            class_name=type(self).__name__,
+            name=self.name,
+            n_dims=self.n_dims,
+            n_bins=self.n_bins,
+            layout_type=self.layout_type,
+        )
 
     def __str__(self) -> str:
         """Human-readable summary, equivalent to :meth:`info`.
@@ -463,9 +489,7 @@ class Environment(Generic[_C]):
         ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
         interactive debugging and logs.
         """
-        from neurospatial.environment._summary import _str
-
-        return _str(self)
+        return self.info()
 
     def _repr_html_(self) -> str:
         """Generate rich HTML representation for Jupyter notebooks.
@@ -510,9 +534,15 @@ class Environment(Generic[_C]):
         This will display a formatted table with environment details.
 
         """
-        from neurospatial.environment._summary import _repr_html
-
-        return _repr_html(self)
+        return _repr_html(
+            name=self.name,
+            layout_type=self.layout_type,
+            n_dims=self.n_dims,
+            n_bins=self.n_bins,
+            dimension_ranges=self.dimension_ranges,
+            n_regions=len(self.regions),
+            is_linearized_track=self.is_linearized_track,
+        )
 
     def info(self) -> str:
         """Return a detailed multi-line diagnostic summary of the environment.
@@ -575,9 +605,16 @@ class Environment(Generic[_C]):
         Regions: 0
 
         """
-        from neurospatial.environment._summary import _info
-
-        return _info(self)
+        return _info(
+            name=self.name,
+            layout_type=self.layout_type,
+            n_dims=self.n_dims,
+            bin_sizes=self._binning.bins.sizes,
+            dimension_ranges=self.dimension_ranges,
+            grid_edges=self.grid_edges,
+            region_names=list(self.regions),
+            is_linearized_track=self.is_linearized_track,
+        )
 
     @property
     def is_linearized_track(self) -> bool:
@@ -836,18 +873,7 @@ class Environment(Generic[_C]):
 
     def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
         """Refuse Cartesian coordinate math for polar radius/angle bins."""
-        if self._is_polar:
-            from neurospatial._exceptions import CartesianOnlyError
-            from neurospatial.environment.polar import _POLAR_EXPLANATION
-
-            raise CartesianOnlyError(
-                type(self).__name__,
-                operation,
-                reason="Cartesian-grid operation"
-                if operation.partition("(")[0] in CARTESIAN_GRID_OPERATIONS
-                else "Cartesian-coordinate operation",
-                explanation=_POLAR_EXPLANATION,
-            )
+        require_cartesian(self._coordinate_system, operation)
         return cast("CartesianLookupConsumer", self)
 
     # Runtime capability filtering must not make unknown attributes appear as
@@ -857,20 +883,8 @@ class Environment(Generic[_C]):
         def __getattribute__(self, name: str) -> Any:
             if name in CARTESIAN_OPERATIONS:
                 geometry = object.__getattribute__(self, "__dict__").get("_geometry")
-                if geometry is not None and isinstance(
-                    geometry.coordinates, EgocentricPolarSystem
-                ):
-                    from neurospatial._exceptions import CartesianOnlyError
-                    from neurospatial.environment.polar import _POLAR_EXPLANATION
-
-                    raise CartesianOnlyError(
-                        type(self).__name__,
-                        f"{name}()",
-                        reason="Cartesian-grid operation"
-                        if name in CARTESIAN_GRID_OPERATIONS
-                        else "Cartesian-coordinate operation",
-                        explanation=_POLAR_EXPLANATION,
-                    )
+                if geometry is not None:
+                    require_cartesian(geometry.coordinates, f"{name}()")
             return super().__getattribute__(name)
 
     @property
@@ -883,7 +897,9 @@ class Environment(Generic[_C]):
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
         def build() -> NDArray[np.intp]:
             if not self._is_polar:
-                return _cartesian_boundary_bins(self)
+                return _cartesian_boundary_bins(
+                    self._binning, self.connectivity, self.grid_shape, self.active_mask
+                )
             from neurospatial.layout.helpers.utils import find_boundary_nodes
 
             return find_boundary_nodes(
@@ -1009,8 +1025,6 @@ class Environment(Generic[_C]):
         Conductance units are length ** (measure_dim - 2).
         """
         self._require_cartesian("get_bridge_attributes()")
-        from neurospatial.environment.metrics import _get_bridge_attributes
-
         return _get_bridge_attributes(self._binning)
 
     def bin_at(
@@ -1128,22 +1142,11 @@ class Environment(Generic[_C]):
         with mixed coordinate units. That preserves map_points_to_bins()
         behavior and is neither physical polar distance nor containment.
         """
-        from scipy.spatial import cKDTree
-
-        from neurospatial.ops.binning import (
-            _nearest_bin_query,
-            _validate_nearest_options,
-        )
-
-        resolved = _validate_nearest_options(
-            tie_break, max_distance, max_distance_factor
-        )
-        centers = self._binning.bins.centers
-        return _nearest_bin_query(
-            centers,
-            self._cache.get(KDTREE, lambda: cKDTree(centers)),
+        return nearest_bin(
+            self._cache,
+            self._binning,
             points,
-            tie_break=resolved,
+            tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
             max_distance_factor=max_distance_factor,
@@ -3643,9 +3646,7 @@ class Environment(Generic[_C]):
         (3, 2)
 
         """
-        from neurospatial.environment.queries import _bin_center_of
-
-        return _bin_center_of(self, bin_indices)
+        return _bin_center_of(self.bin_centers, bin_indices)
 
     def neighbors(self, bin_index: int | ArrayLike) -> list[int]:
         """Find indices of neighboring active bins for a bin or point.
@@ -3685,9 +3686,9 @@ class Environment(Generic[_C]):
         3
 
         """
-        from neurospatial.environment.queries import _neighbors
-
-        return _neighbors(self, bin_index)
+        return list(
+            self.connectivity.neighbors(self._bin_index(bin_index, "neighbors()"))
+        )
 
     @property
     def bin_sizes(self) -> NDArray[np.float64]:
@@ -3723,9 +3724,9 @@ class Environment(Generic[_C]):
         True
 
         """
-        from neurospatial.environment.queries import _bin_sizes
-
-        return _bin_sizes(self)
+        sizes: NDArray[np.float64] = self._binning.bins.sizes.copy()
+        sizes.setflags(write=False)
+        return sizes
 
     def path_between(
         self,
@@ -3775,9 +3776,11 @@ class Environment(Generic[_C]):
         True
 
         """
-        from neurospatial.environment.queries import _path_between
-
-        return _path_between(self, source_active_bin_idx, target_active_bin_idx)
+        return _path_between(
+            self.connectivity,
+            self._bin_index(source_active_bin_idx, "path_between()"),
+            self._bin_index(target_active_bin_idx, "path_between()"),
+        )
 
     def distance_to(
         self,
@@ -3875,10 +3878,14 @@ class Environment(Generic[_C]):
         0.0  # doctest: +SKIP
 
         """
-        # Validate metric
-        from neurospatial.environment.queries import _distance_to
-
-        return _distance_to(self, targets, metric=metric)
+        return _distance_to(
+            targets,
+            metric=metric,
+            bin_centers=self.bin_centers,
+            graph=self.connectivity,
+            regions=self.regions,
+            coordinates=self._coordinate_system,
+        )
 
     def reachable_from(
         self,
@@ -3967,10 +3974,12 @@ class Environment(Generic[_C]):
         Component size: 1000 bins  # doctest: +SKIP
 
         """
-        # Resolve a bin index or a coordinate point to an active-bin index.
-        from neurospatial.environment.queries import _reachable_from
-
-        return _reachable_from(self, source_bin, radius=radius, metric=metric)
+        return _reachable_from(
+            self.connectivity,
+            self._bin_index(source_bin, "reachable_from()"),
+            radius=radius,
+            metric=metric,
+        )
 
     def components(
         self,
@@ -4025,10 +4034,7 @@ class Environment(Generic[_C]):
         Largest component: 150 of 200 bins  # doctest: +SKIP
 
         """
-        # Find connected components using NetworkX
-        from neurospatial.environment.queries import _components
-
-        return _components(self, largest_only=largest_only)
+        return _components(self.connectivity, largest_only=largest_only)
 
     def rings(
         self,
@@ -4114,10 +4120,7 @@ class Environment(Generic[_C]):
         True  # doctest: +SKIP
 
         """
-        # Type validation for center_bin
-        from neurospatial.environment.queries import _rings
-
-        return _rings(self, center_bin, hops=hops)
+        return _rings(self.connectivity, center_bin, hops=hops)
 
     def to_file(self, path: str | Path, *, overwrite: bool = False) -> None:
         """Save Environment-v3 binning and Arena data to JSON and NPZ files.
@@ -4441,9 +4444,12 @@ class Environment(Generic[_C]):
         neurospatial.regions.Region : Region data structure
 
         """
-        from neurospatial.environment.regions import _bins_in_region
-
-        return _bins_in_region(self, region_name)
+        return _bins_in_region(
+            self.regions[region_name],
+            binning=self._binning,
+            arena=self._arena,
+            coordinates=self._coordinate_system,
+        )
 
     def region_membership(
         self,
@@ -4553,10 +4559,11 @@ class Environment(Generic[_C]):
         True  # doctest: +SKIP
 
         """
-        # Import here to avoid circular dependency
-        from neurospatial.environment.regions import _region_membership
-
-        return _region_membership(self, regions, include_boundary=include_boundary)
+        return _region_membership(
+            self.bin_centers,
+            self.regions if regions is None else regions,
+            include_boundary=include_boundary,
+        )
 
     def region_mask(
         self,
@@ -4699,10 +4706,14 @@ class Environment(Generic[_C]):
         them so ``env.region_mask("goal")`` matches what users mean
         when they write that.
         """
-        # Import here to avoid circular dependency
-        from neurospatial.environment.regions import _region_mask
-
-        return _region_mask(self, regions, include_boundary=include_boundary)
+        return _region_mask(
+            regions,
+            named_regions=self.regions,
+            binning=self._binning,
+            arena=self._arena,
+            coordinates=self._coordinate_system,
+            include_boundary=include_boundary,
+        )
 
     def plot(
         self,
@@ -5385,9 +5396,8 @@ class Environment(Generic[_C]):
         Found 6 boundary bins
 
         """
-        from neurospatial.environment.metrics import _boundary_bins
-
-        return _boundary_bins(self)
+        boundary: NDArray[np.intp] = self._boundary_bins_cached.copy()
+        return boundary
 
     @property
     def linearization_properties(
@@ -5440,9 +5450,7 @@ class Environment(Generic[_C]):
         True
 
         """
-        from neurospatial.environment.metrics import _linearization_properties
-
-        return _linearization_properties(self)
+        return {"is_linearized_track": self._is_linearized_track_env}
 
     def get_bin_attributes(self) -> pd.DataFrame:
         """
@@ -5488,15 +5496,13 @@ class Environment(Generic[_C]):
         (30, 4)
 
         """
-        from neurospatial.environment.metrics import _get_bin_attributes
-
-        return _get_bin_attributes(self)
+        return _copy_attributes(self._bin_attributes_cached)
 
     @property
     def _bin_attributes_cached(self) -> pd.DataFrame:
-        from neurospatial.environment.metrics import _bin_attributes_cached
-
-        return self._cache.get(BIN_ATTRIBUTES, lambda: _bin_attributes_cached(self))
+        return self._cache.get(
+            BIN_ATTRIBUTES, lambda: _bin_attributes(self.connectivity)
+        )
 
     def get_edge_attributes(self) -> pd.DataFrame:
         """
@@ -5546,15 +5552,14 @@ class Environment(Generic[_C]):
         (100, 6)
 
         """
-        from neurospatial.environment.metrics import _get_edge_attributes
-
-        return _get_edge_attributes(self)
+        return _copy_attributes(self._edge_attributes_cached)
 
     @property
     def _edge_attributes_cached(self) -> pd.DataFrame:
-        from neurospatial.environment.metrics import _edge_attributes_cached
-
-        return self._cache.get(EDGE_ATTRIBUTES, lambda: _edge_attributes_cached(self))
+        return self._cache.get(
+            EDGE_ATTRIBUTES,
+            lambda: _edge_attributes(self.connectivity, self._binning),
+        )
 
     def compute_kernel(
         self,

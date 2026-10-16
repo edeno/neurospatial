@@ -6,22 +6,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from neurospatial.geometry._coordinates import (
-    _POLAR_COORDINATES,
-    EgocentricPolarSystem,
-)
+from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
     from neurospatial.layout.base import LayoutEngine
-
-_POLAR_EXPLANATION = (
-    f"{_POLAR_COORDINATES} Use connectivity-graph operations instead (neighbors, "
-    "path_between, reachable_from, smooth, or distance_to(metric='geodesic')), "
-    "or build an allocentric Cartesian env via Environment.from_samples / "
-    "from_polygon / from_grid_mask."
-)
 
 
 def _bin_count(span: float, bin_size: float) -> int:

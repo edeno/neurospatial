@@ -199,12 +199,10 @@ def _slow_counted(function, calls):
 
 
 def test_concurrent_first_kdtree_lookup_builds_one_tree(env, monkeypatch):
-    import scipy.spatial
+    from neurospatial.environment import _lookup
 
     calls: list[int] = []
-    monkeypatch.setattr(
-        scipy.spatial, "cKDTree", _slow_counted(scipy.spatial.cKDTree, calls)
-    )
+    monkeypatch.setattr(_lookup, "cKDTree", _slow_counted(_lookup.cKDTree, calls))
     points = env.bin_centers + 0.1
 
     results = _run_concurrently(lambda: env.nearest_bin(points))
@@ -332,9 +330,7 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
     env, monkeypatch
 ):
     """Relabelled copies share locks as well as values: one build in total."""
-    import scipy.spatial
-
-    from neurospatial.environment import fields
+    from neurospatial.environment import _lookup, fields
     from neurospatial.ops import diffusion
 
     field = np.linspace(0.0, 1.0, env.n_bins)
@@ -356,9 +352,7 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
         "_adaptive_symmetric_basis",
         _counted(diffusion._adaptive_symmetric_basis, eigensolve_calls),
     )
-    monkeypatch.setattr(
-        scipy.spatial, "cKDTree", _counted(scipy.spatial.cKDTree, tree_calls)
-    )
+    monkeypatch.setattr(_lookup, "cKDTree", _counted(_lookup.cKDTree, tree_calls))
     renamed = env.with_metadata(name="renamed")
     relabelled = env.with_regions(Regions())
 

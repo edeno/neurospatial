@@ -12,6 +12,7 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
+import warnings
 from enum import Enum
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -19,10 +20,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+from neurospatial._stacklevel import _external_stacklevel
+
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.geometry._coordinates import CartesianSystem
     from neurospatial.ops._protocols import NearestBinConsumer
+    from neurospatial.regions import Regions
 
 
 class TieBreakStrategy(Enum):
@@ -592,18 +596,51 @@ def regions_to_mask(
     if len(regions_obj) == 0:
         return np.zeros(env.n_bins, dtype=bool)
 
-    # Get bin centers
-    bin_centers = env.bin_centers
+    return polygon_regions_mask(
+        env.bin_centers, regions_obj, include_boundary=include_boundary
+    )
 
-    # Initialize mask (union across all regions)
-    mask = np.zeros(env.n_bins, dtype=bool)
 
-    # Import shapely functions for vectorized operations
+def polygon_regions_mask(
+    bin_centers: NDArray[np.float64],
+    regions: Regions,
+    *,
+    include_boundary: bool,
+) -> NDArray[np.bool_]:
+    """Union of the bin centers covered by each polygon region.
+
+    Parameters
+    ----------
+    bin_centers : ndarray of float64, shape (n_bins, n_dims)
+        Bin centers to test; polygon regions need ``n_dims == 2``.
+    regions : Regions
+        Regions to union. Point regions have no area, select no bins and warn.
+    include_boundary : bool
+        Count centers on a polygon boundary as inside.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_bins,)
+        True for bins inside any polygon region.
+
+    Raises
+    ------
+    TypeError
+        If ``include_boundary`` is not a bool.
+    NotImplementedError
+        If a polygon region is tested against bin centers that are not 2-D.
+    """
     from shapely import contains, covers
     from shapely import points as shapely_points
 
+    if not isinstance(include_boundary, bool):
+        raise TypeError(
+            f"include_boundary must be a bool, got {type(include_boundary).__name__}"
+        )
+    mask = np.zeros(len(bin_centers), dtype=bool)
+
     # Check if we have any polygon regions (to avoid unnecessary computation)
-    has_polygon_regions = any(r.kind == "polygon" for r in regions_obj.values())
+    has_polygon_regions = any(r.kind == "polygon" for r in regions.values())
 
     # Pre-compute shapely Points array once for all polygon regions
     points = None
@@ -618,11 +655,9 @@ def regions_to_mask(
         points = shapely_points(bin_centers[:, 0], bin_centers[:, 1])
 
     # Iterate over regions and update mask
-    for region in regions_obj.values():
+    for region in regions.values():
         # Point regions have no area, skip them with warning
         if region.kind == "point":
-            import warnings
-
             warnings.warn(
                 f"Region '{region.name}' is a point region and has no area. "
                 f"Point regions always return empty masks (no bins selected). "
@@ -631,7 +666,7 @@ def regions_to_mask(
                 "new_name='point_area') and env = env.with_regions(regions) "
                 "to select nearby bins with a polygon.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
             continue
 

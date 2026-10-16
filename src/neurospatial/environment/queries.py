@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
 import numpy as np
@@ -16,11 +16,25 @@ from neurospatial._exceptions import (
     _format_error,
 )
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._protocols import QueryConsumer
+from neurospatial.environment._lookup import locate
+from neurospatial.environment.cartesian import require_cartesian
+from neurospatial.environment.regions import _region_membership
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.ops.distance import distance_field
+from neurospatial.regions import Regions
+
+if TYPE_CHECKING:
+    from neurospatial.geometry._arena import Arena
 
 
-def _resolve_point_or_index(
-    env: QueryConsumer, point_or_index: int | ArrayLike, *, operation: str
+def resolve_bin(
+    point_or_index: int | ArrayLike,
+    *,
+    binning: Binning,
+    arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    operation: str,
 ) -> int:
     """Resolve a coordinate point OR a bin index to an active-bin index.
 
@@ -37,25 +51,23 @@ def _resolve_point_or_index(
     ValueError
         If a coordinate point falls outside every active bin.
     """
+    n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
     if isinstance(point_or_index, (int, np.integer)):
         idx = int(point_or_index)
-        if not 0 <= idx < env.n_bins:
-            raise BinIndexOutOfRangeError(idx, n_bins=env.n_bins)
+        if not 0 <= idx < n_bins:
+            raise BinIndexOutOfRangeError(idx, n_bins=n_bins)
         return idx
     point = np.asarray(point_or_index, dtype=float)
-    if point.shape == (1,) and env.n_dims > 1:
+    if point.shape == (1,) and n_dims > 1:
         raise ValueError(
             _format_error(
-                f"Got a length-1 array with shape {point.shape} in a {env.n_dims}-D environment. bin_at returns an array, even for one point.",
+                f"Got a length-1 array with shape {point.shape} in a {n_dims}-D environment. bin_at returns an array, even for one point.",
                 why="Why: this array is neither a scalar bin index nor a complete coordinate point.",
-                fix=f"unwrap the bin_at result with env.neighbors(int(bin_idx[0])), or pass a complete coordinate point of shape ({env.n_dims},)",
+                fix=f"unwrap the bin_at result with env.neighbors(int(bin_idx[0])), or pass a complete coordinate point of shape ({n_dims},)",
             )
         )
-    resolved = np.asarray(
-        env._require_cartesian(f"{operation} from a coordinate point").bin_at(
-            np.atleast_2d(point)
-        )
-    ).reshape(-1)
+    require_cartesian(coordinates, f"{operation} from a coordinate point")
+    resolved = np.asarray(locate(binning, arena, np.atleast_2d(point))).reshape(-1)
     if resolved.size != 1:
         raise ValueError(
             _format_error(
@@ -77,46 +89,20 @@ def _resolve_point_or_index(
 
 
 def _bin_center_of(
-    env: QueryConsumer, bin_indices: int | Sequence[int] | NDArray[np.int_]
+    bin_centers: NDArray[np.float64],
+    bin_indices: int | Sequence[int] | NDArray[np.int_],
 ) -> NDArray[np.float64]:
-    """Implement Environment.bin_center_of using explicit queries inputs."""
+    """Return the centers of validated active-bin indices."""
     indices = np.asarray(bin_indices, dtype=int)
-    out_of_range = (indices < 0) | (indices >= env.n_bins)
+    n_bins = len(bin_centers)
+    out_of_range = (indices < 0) | (indices >= n_bins)
     if np.any(out_of_range):
-        raise BinIndexOutOfRangeError(
-            int(indices[out_of_range].flat[0]), n_bins=env.n_bins
-        )
-    return np.asarray(env.bin_centers[indices], dtype=np.float64)
+        raise BinIndexOutOfRangeError(int(indices[out_of_range].flat[0]), n_bins=n_bins)
+    return np.asarray(bin_centers[indices], dtype=np.float64)
 
 
-def _neighbors(env: QueryConsumer, bin_index: int | ArrayLike) -> list[int]:
-    """Implement Environment.neighbors using explicit queries inputs."""
-    bin_index = _resolve_point_or_index(env, bin_index, operation="neighbors()")
-    return list(env.connectivity.neighbors(bin_index))
-
-
-def _bin_sizes(env: QueryConsumer) -> NDArray[np.float64]:
-    """Implement Environment.bin_sizes using explicit queries inputs."""
-    sizes: NDArray[np.float64] = env._binning.bins.sizes.copy()
-    sizes.setflags(write=False)
-    return sizes
-
-
-def _path_between(
-    env: QueryConsumer,
-    source_active_bin_idx: int | ArrayLike,
-    target_active_bin_idx: int | ArrayLike,
-) -> list[int]:
-    """Implement Environment.path_between using explicit queries inputs."""
-    graph = env.connectivity
-
-    source_idx = _resolve_point_or_index(
-        env, source_active_bin_idx, operation="path_between()"
-    )
-    target_idx = _resolve_point_or_index(
-        env, target_active_bin_idx, operation="path_between()"
-    )
-
+def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int]:
+    """Shortest distance-weighted path between two resolved active bins."""
     if source_idx == target_idx:
         return [source_idx]
 
@@ -144,26 +130,30 @@ def _path_between(
 
 
 def _distance_to(
-    env: QueryConsumer,
     targets: Sequence[int] | str,
     *,
-    metric: Literal["euclidean", "geodesic"] = "geodesic",
+    metric: Literal["euclidean", "geodesic"],
+    bin_centers: NDArray[np.float64],
+    graph: nx.Graph,
+    regions: Regions,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
 ) -> NDArray[np.float64]:
-    """Implement Environment.distance_to using explicit queries inputs."""
+    """Distance from every bin to the nearest target bin or region bin."""
+    n_bins = len(bin_centers)
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
     # Handle region name targets
     if isinstance(targets, str):
         region_name = targets
-        if region_name not in env.regions:
+        if region_name not in regions:
             raise RegionNotFoundError(
-                region_name, available=list(env.regions.keys()), argument="targets"
+                region_name, available=list(regions.keys()), argument="targets"
             )
 
         # Get bins in region via membership
-        membership = env.region_membership()
-        region_idx = list(env.regions.keys()).index(region_name)
+        membership = _region_membership(bin_centers, regions)
+        region_idx = list(regions.keys()).index(region_name)
         targets = np.where(membership[:, region_idx])[0].tolist()
 
         if len(targets) == 0:
@@ -190,22 +180,22 @@ def _distance_to(
         )
 
     # Validate target indices in range
-    if np.any(target_array < 0) or np.any(target_array >= env.n_bins):
-        invalid = target_array[(target_array < 0) | (target_array >= env.n_bins)]
+    if np.any(target_array < 0) or np.any(target_array >= n_bins):
+        invalid = target_array[(target_array < 0) | (target_array >= n_bins)]
         raise ValueError(
-            f"Target bin indices must be in range [0, {env.n_bins}), "
+            f"Target bin indices must be in range [0, {n_bins}), "
             f"got invalid indices: {invalid.tolist()}"
         )
 
     # Compute distances based on metric
     if metric == "euclidean":
-        env._require_cartesian("distance_to(metric='euclidean')")
+        require_cartesian(coordinates, "distance_to(metric='euclidean')")
         # Euclidean distance: straight-line distance to nearest target
         # Vectorized implementation using broadcasting for performance
-        target_positions = env.bin_centers[target_array]  # (n_targets, n_dims)
+        target_positions = bin_centers[target_array]  # (n_targets, n_dims)
 
         # Broadcasting: (n_bins, 1, n_dims) - (1, n_targets, n_dims) -> (n_bins, n_targets)
-        diffs = env.bin_centers[:, np.newaxis, :] - target_positions[np.newaxis, :, :]
+        diffs = bin_centers[:, np.newaxis, :] - target_positions[np.newaxis, :, :]
         dists_to_targets = np.linalg.norm(diffs, axis=2)  # (n_bins, n_targets)
         distances_result: NDArray[np.float64] = np.min(
             dists_to_targets, axis=1
@@ -213,10 +203,8 @@ def _distance_to(
 
     else:  # metric == "geodesic"
         # Geodesic distance: graph-based shortest path
-        from neurospatial.ops.distance import distance_field
-
         distances_result = np.asarray(
-            distance_field(env.connectivity, sources=target_array.tolist()),
+            distance_field(graph, sources=target_array.tolist()),
             dtype=np.float64,
         )
 
@@ -224,15 +212,13 @@ def _distance_to(
 
 
 def _reachable_from(
-    env: QueryConsumer,
-    source_bin: int | ArrayLike,
+    graph: nx.Graph,
+    source_bin: int,
     *,
-    radius: int | float | None = None,
-    metric: Literal["hops", "geodesic"] = "hops",
+    radius: int | float | None,
+    metric: Literal["hops", "geodesic"],
 ) -> NDArray[np.bool_]:
-    """Implement Environment.reachable_from using explicit queries inputs."""
-    source_bin = _resolve_point_or_index(env, source_bin, operation="reachable_from()")
-
+    """Bins reachable from a resolved active bin, optionally within a radius."""
     if radius is not None and radius < 0:
         raise ValueError(f"radius must be non-negative or None. Got radius={radius}")
 
@@ -240,14 +226,14 @@ def _reachable_from(
         raise ValueError(f"metric must be 'hops' or 'geodesic'. Got metric='{metric}'")
 
     # Initialize result mask
-    reachable = np.zeros(env.n_bins, dtype=bool)
+    reachable = np.zeros(graph.number_of_nodes(), dtype=bool)
 
     # Case 1: No radius limit - find entire connected component
     if radius is None:
         # Directly fetch the component containing source_bin instead of
         # scanning every component in Python.
         try:
-            component_nodes = nx.node_connected_component(env.connectivity, source_bin)
+            component_nodes = nx.node_connected_component(graph, source_bin)
         except KeyError:
             # source_bin is isolated / not in the graph: only itself.
             reachable[source_bin] = True
@@ -260,7 +246,7 @@ def _reachable_from(
         # Breadth-first search to specified depth
         # Use NetworkX's single_source_shortest_path_length with cutoff
         distances = nx.single_source_shortest_path_length(
-            env.connectivity, source_bin, cutoff=int(radius)
+            graph, source_bin, cutoff=int(radius)
         )
         # Mark all nodes within radius as reachable
         for node in distances:
@@ -271,7 +257,7 @@ def _reachable_from(
         # Use NetworkX's single_source_dijkstra_path_length
         try:
             distances = nx.single_source_dijkstra_path_length(
-                env.connectivity, source_bin, cutoff=radius, weight="distance"
+                graph, source_bin, cutoff=radius, weight="distance"
             )
             # Mark all nodes within radius as reachable
             for node in distances:
@@ -283,11 +269,9 @@ def _reachable_from(
     return reachable
 
 
-def _components(
-    env: QueryConsumer, *, largest_only: bool = False
-) -> list[NDArray[np.int32]]:
-    """Implement Environment.components using explicit queries inputs."""
-    component_sets = nx.connected_components(env.connectivity)
+def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.int32]]:
+    """Connected components of the graph as sorted bin arrays, largest first."""
+    component_sets = nx.connected_components(graph)
 
     # Convert sets to arrays and sort by size (largest first)
     components = [np.asarray(sorted(comp), dtype=np.int32) for comp in component_sets]
@@ -300,20 +284,17 @@ def _components(
     return components
 
 
-def _rings(
-    env: QueryConsumer, center_bin: int, *, hops: int
-) -> list[NDArray[np.int32]]:
-    """Implement Environment.rings using explicit queries inputs."""
+def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.int32]]:
+    """Bins grouped by hop distance from ``center_bin``, up to ``hops``."""
+    n_bins = graph.number_of_nodes()
     if not isinstance(center_bin, (int, np.integer)):
         raise TypeError(
             f"center_bin must be an integer, got {type(center_bin).__name__}"
         )
 
     # Range validation for center_bin
-    if center_bin < 0 or center_bin >= env.n_bins:
-        raise ValueError(
-            f"center_bin must be in range [0, {env.n_bins}), got {center_bin}"
-        )
+    if center_bin < 0 or center_bin >= n_bins:
+        raise ValueError(f"center_bin must be in range [0, {n_bins}), got {center_bin}")
 
     # Type validation for hops
     if not isinstance(hops, (int, np.integer)):
@@ -327,7 +308,7 @@ def _rings(
     try:
         # nx.single_source_shortest_path_length returns dict: {node: distance}
         distances = nx.single_source_shortest_path_length(
-            env.connectivity, center_bin, cutoff=hops
+            graph, center_bin, cutoff=hops
         )
     except nx.NetworkXError:
         # If center_bin has no edges (isolated), only ring 0 exists

@@ -14,7 +14,7 @@ def test_nearest_queries_reuse_one_tree_until_the_cache_is_cleared():
         np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
     )
     points = np.array([[0.5, 0.5], [1.0, 1.0], [100.0, 100.0]])
-    with patch("scipy.spatial.cKDTree", wraps=cKDTree) as build:
+    with patch("neurospatial.environment._lookup.cKDTree", wraps=cKDTree) as build:
         expected = env.nearest_bin(points, return_dist=True)
         actual = map_points_to_bins(env, points, return_dist=True)
         for left, right in zip(actual, expected, strict=True):

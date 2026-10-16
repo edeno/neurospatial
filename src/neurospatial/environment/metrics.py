@@ -1,16 +1,16 @@
-"""Private environment metrics using owned geometry and narrow consumers."""
+"""Private environment metrics computed from owned geometry components."""
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial.environment._protocols import MetricsConsumer
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._locators import (
     HexLocator,
@@ -47,13 +47,17 @@ def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _cartesian_boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
+def _cartesian_boundary_bins(
+    binning: Binning,
+    graph: nx.Graph,
+    grid_shape: tuple[int, ...] | None,
+    active_mask: NDArray[np.bool_] | None,
+) -> NDArray[np.intp]:
     """Boundary IDs from retained logical indexing, including transformed subsets."""
-    shapes = env._binning.shapes
+    shapes = binning.shapes
     if isinstance(shapes, PolygonCells):
         return _boundary_cell_indices(shapes.polygons)
-    grid_shape, active_mask = env.grid_shape, env.active_mask
-    locator = env._binning.locator
+    locator = binning.locator
     selections = []
     while isinstance(locator, (SubsetLocator, TransformedLocator)):
         if isinstance(locator, SubsetLocator):
@@ -78,33 +82,17 @@ def _cartesian_boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
             mapping[inside] = selection[mapping[inside]]
         active_mask = (mapping >= 0).reshape(grid_shape)
     return find_boundary_nodes(
-        graph=env.connectivity,
+        graph=graph,
         grid_shape=grid_shape,
         active_mask=active_mask,
     ).astype(np.intp, copy=False)
 
 
-def _boundary_bins(env: MetricsConsumer) -> NDArray[np.intp]:
-    """Implement Environment.boundary_bins using explicit metrics inputs."""
-    cached = env._boundary_bins_cached
-    return cast("NDArray[np.intp]", cached.copy())
-
-
-def _linearization_properties(env: MetricsConsumer) -> dict[str, Any]:
-    """Implement Environment.linearization_properties using explicit metrics inputs."""
-    return {"is_linearized_track": env._is_linearized_track_env}
-
-
-def _get_bin_attributes(env: MetricsConsumer) -> pd.DataFrame:
-    """Implement Environment.get_bin_attributes using explicit metrics inputs."""
-    return _copy_attributes(env._bin_attributes_cached)
-
-
-def _bin_attributes_cached(env: MetricsConsumer) -> pd.DataFrame:
-    """Implement Environment._bin_attributes_cached using explicit metrics inputs."""
+def _bin_attributes(graph: nx.Graph) -> pd.DataFrame:
+    """Node attributes of the graph, one row per bin, positions split by axis."""
     node_attrs = []
-    for node_id in env.connectivity.nodes():
-        attrs = env.connectivity.nodes[node_id].copy()
+    for node_id in graph.nodes():
+        attrs = graph.nodes[node_id].copy()
         attrs["node_id"] = node_id
         node_attrs.append(attrs)
 
@@ -120,21 +108,16 @@ def _bin_attributes_cached(env: MetricsConsumer) -> pd.DataFrame:
     return df.set_index("node_id")
 
 
-def _get_edge_attributes(env: MetricsConsumer) -> pd.DataFrame:
-    """Implement Environment.get_edge_attributes using explicit metrics inputs."""
-    return _copy_attributes(env._edge_attributes_cached)
-
-
-def _edge_attributes_cached(env: MetricsConsumer) -> pd.DataFrame:
-    """Implement Environment._edge_attributes_cached using explicit metrics inputs."""
+def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
+    """Edge attributes in bin-pair order, vectors oriented from source to target."""
     edge_attrs = []
-    centers = env.bin_centers
+    centers = binning.bins.centers
     graph_orientation = {
         frozenset((source, target)): (source, target)
-        for source, target in env.connectivity.edges()
+        for source, target in graph.edges()
     }
-    for source, target in env._binning.bins.pairs:
-        attrs = env.connectivity.edges[source, target].copy()
+    for source, target in binning.bins.pairs:
+        attrs = graph.edges[source, target].copy()
         if graph_orientation[frozenset((source, target))] != (source, target):
             # Undirected graph insertion order does not establish the
             # orientation of retained attributes. Derive it from the pair

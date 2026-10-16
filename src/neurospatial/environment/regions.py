@@ -8,42 +8,53 @@ container.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely import contains, covers
+from shapely import points as shapely_points
 
-from neurospatial.environment._protocols import RegionConsumer
+from neurospatial.environment._lookup import locate
+from neurospatial.environment.cartesian import require_cartesian
+from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.ops.binning import polygon_regions_mask
 from neurospatial.regions import Region, Regions
 
+if TYPE_CHECKING:
+    from neurospatial.geometry._arena import Arena
 
-def _bins_in_region(env: RegionConsumer, region_name: str) -> NDArray[np.intp]:
-    """Implement Environment.bins_in_region using explicit regions inputs."""
-    region = env.regions[region_name]
 
+def _bins_in_region(
+    region: Region,
+    *,
+    binning: Binning,
+    arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+) -> NDArray[np.intp]:
+    """Active bins that contain a point region or lie inside a polygon region."""
+    n_dims = binning.bins.n_dims
     if region.kind == "point":
         point_nd = np.asarray(region.data).reshape(1, -1)
-        if point_nd.shape[1] != env.n_dims:
+        if point_nd.shape[1] != n_dims:
             raise ValueError(
                 f"Region point dimension {point_nd.shape[1]} "
-                f"does not match environment dimension {env.n_dims}.",
+                f"does not match environment dimension {n_dims}.",
             )
-        bin_idx = env._require_cartesian("bins_in_region() for a point region").bin_at(
-            point_nd
-        )
+        require_cartesian(coordinates, "bins_in_region() for a point region")
+        bin_idx = locate(binning, arena, point_nd)
         return np.asarray(bin_idx[bin_idx != -1], dtype=np.intp)
 
     if region.kind == "polygon":
-        if env.n_dims != 2:  # pragma: no cover
+        if n_dims != 2:  # pragma: no cover
             raise ValueError(
                 "Polygon regions are only supported for 2D environments.",
             )
 
-        polygon = region.data
-        contained_mask = shapely.contains_xy(
-            polygon,
-            env.bin_centers[:, 0],
-            env.bin_centers[:, 1],
-        )
+        centers = binning.bins.centers
+        contained_mask = shapely.contains_xy(region.data, centers[:, 0], centers[:, 1])
 
         return np.flatnonzero(contained_mask)
 
@@ -52,18 +63,14 @@ def _bins_in_region(env: RegionConsumer, region_name: str) -> NDArray[np.intp]:
 
 
 def _region_membership(
-    env: RegionConsumer,
-    regions: Regions | None = None,
+    bin_centers: NDArray[np.float64],
+    regions: Regions,
     *,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
-    """Implement Environment.region_membership using explicit regions inputs."""
-    from neurospatial.regions import Regions
-
+    """Boolean membership of every bin center in every region, ``(n_bins, n_regions)``."""
     # Input validation
-    if regions is None:
-        regions = env.regions
-    elif not isinstance(regions, Regions):
+    if not isinstance(regions, Regions):
         raise TypeError(
             f"regions must be a Regions instance or None, got {type(regions).__name__}"
         )
@@ -73,20 +80,15 @@ def _region_membership(
             f"include_boundary must be a bool, got {type(include_boundary).__name__}"
         )
 
+    n_bins = len(bin_centers)
+
     # Handle empty regions case
     if len(regions) == 0:
-        return np.zeros((env.n_bins, 0), dtype=bool)
-
-    # Get bin centers as points
-    bin_centers = env.bin_centers  # shape (n_bins, n_dims)
+        return np.zeros((n_bins, 0), dtype=bool)
 
     # Initialize membership array
     n_regions = len(regions)
-    membership = np.zeros((env.n_bins, n_regions), dtype=bool)
-
-    # Import shapely functions for vectorized operations
-    from shapely import contains, covers
-    from shapely import points as shapely_points
+    membership = np.zeros((n_bins, n_regions), dtype=bool)
 
     # Check if any polygon regions exist and validate dimensionality
     has_polygon_regions = any(r.kind == "polygon" for r in regions.values())
@@ -124,29 +126,25 @@ def _region_membership(
 
 
 def _region_mask(
-    env: RegionConsumer,
     regions: str | list[str] | Region | Regions,
     *,
+    named_regions: Regions,
+    binning: Binning,
+    arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
-    """Implement Environment.region_mask using explicit regions inputs."""
-    from typing import cast
-
-    from neurospatial.environment.core import Environment
-    from neurospatial.ops.binning import regions_to_mask
-    from neurospatial.regions import Region as _Region
-    from neurospatial.regions import Regions as _Regions
-
+    """Union mask of the bins selected by regions or names in ``named_regions``."""
     # Resolve `regions` into the list of Region objects we'll union over.
-    # Strings (single or list) refer to entries in self.regions.
-    resolved: list[_Region]
+    # Strings (single or list) refer to entries in the environment's regions.
+    resolved: list[Region]
     if isinstance(regions, str):
-        resolved = [env.regions[regions]]
+        resolved = [named_regions[regions]]
     elif isinstance(regions, list):
-        resolved = [env.regions[r] if isinstance(r, str) else r for r in regions]
-    elif isinstance(regions, _Region):
+        resolved = [named_regions[r] if isinstance(r, str) else r for r in regions]
+    elif isinstance(regions, Region):
         resolved = [regions]
-    elif isinstance(regions, _Regions):
+    elif isinstance(regions, Regions):
         resolved = list(regions.values())
     else:
         raise TypeError(
@@ -154,16 +152,16 @@ def _region_mask(
             f"got {type(regions).__name__}."
         )
 
-    mask = np.zeros(env.bin_centers.shape[0], dtype=bool)
+    centers = binning.bins.centers
+    mask = np.zeros(centers.shape[0], dtype=bool)
 
-    # Point regions: use bin_at (the free-function regions_to_mask
+    # Point regions: use bin lookup (the polygon containment predicate
     # would return empty because points have no area).
-    polygon_regions = _Regions()
+    polygon_regions = Regions()
     for region in resolved:
         if region.kind == "point":
-            bin_idx = env._require_cartesian("region_mask() for a point region").bin_at(
-                np.asarray(region.data).reshape(1, -1)
-            )
+            require_cartesian(coordinates, "region_mask() for a point region")
+            bin_idx = locate(binning, arena, np.asarray(region.data).reshape(1, -1))
             if bin_idx[0] != -1:
                 mask[bin_idx[0]] = True
         else:
@@ -172,11 +170,8 @@ def _region_mask(
     # Polygon (and other area-bearing) regions: delegate to the
     # canonical containment predicate.
     if len(polygon_regions) > 0:
-        poly_mask = regions_to_mask(
-            cast("Environment", env),
-            polygon_regions,
-            include_boundary=include_boundary,
+        mask |= polygon_regions_mask(
+            centers, polygon_regions, include_boundary=include_boundary
         )
-        mask |= poly_mask
 
     return mask
