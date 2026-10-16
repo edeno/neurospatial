@@ -244,10 +244,11 @@
 
 ### Fixed
 
-- `Environment.from_nwb` reports "pynwb is required" only when pynwb is not
-  installed. Any other `ImportError` while loading the NWB reader, such as a
-  broken dependency, now reaches you unchanged instead of being reported as a
-  missing pynwb.
+- NWB reading and writing (`Environment.from_nwb`, `env.to_nwb` and the
+  `neurospatial.io.nwb` functions) report "pynwb is required" only when pynwb
+  itself is not installed. Any other import failure, such as a missing or
+  broken pynwb dependency like `hdmf`, now reaches you unchanged with the name
+  of the module that failed, instead of being reported as a missing pynwb.
 
 - `Environment.rebin(factor)` on an environment without a stored grid
   specification (for example one built with `Environment.from_bins` without

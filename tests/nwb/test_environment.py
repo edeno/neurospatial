@@ -2046,6 +2046,35 @@ class TestEnvironmentFromNwb:
             Environment.from_nwb(empty_nwb, name="spatial_environment")
         assert "pynwb is required" not in str(caught.value)
 
+    @pytest.mark.parametrize("direction", ["from_nwb", "to_nwb"])
+    def test_broken_pynwb_dependency_is_not_reported_as_missing_pynwb(
+        self, direction, empty_nwb, sample_environment, monkeypatch
+    ):
+        import sys
+
+        from neurospatial import Environment
+
+        # pynwb is installed but one of its dependencies cannot be imported.
+        for module in [m for m in sys.modules if m.split(".")[0] == "pynwb"]:
+            monkeypatch.delitem(sys.modules, module)
+        monkeypatch.setitem(sys.modules, "hdmf", None)
+        with pytest.raises(ModuleNotFoundError) as caught:
+            if direction == "from_nwb":
+                Environment.from_nwb(empty_nwb)
+            else:
+                sample_environment.to_nwb(empty_nwb)
+        assert caught.value.name == "hdmf"
+        assert "pynwb is required" not in str(caught.value)
+
+    def test_to_nwb_reports_missing_pynwb(
+        self, empty_nwb, sample_environment, monkeypatch
+    ):
+        import sys
+
+        monkeypatch.setitem(sys.modules, "pynwb", None)
+        with pytest.raises(ImportError, match="pynwb is required"):
+            sample_environment.to_nwb(empty_nwb)
+
 
 class TestEnvironmentToNwb:
     """Tests for Environment.to_nwb() method."""

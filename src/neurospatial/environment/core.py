@@ -4442,12 +4442,7 @@ class Environment(Generic[_C]):
         ...     loaded_env = Environment.from_nwb(nwbfile, name="linear_track")
 
         """
-        try:
-            from neurospatial.io.nwb import write_environment
-        except ImportError as e:
-            raise ImportError(
-                "pynwb is required for NWB integration. Install with: pip install pynwb"
-            ) from e
+        from neurospatial.io.nwb import write_environment
 
         write_environment(nwbfile, self, name=name, overwrite=overwrite)
 

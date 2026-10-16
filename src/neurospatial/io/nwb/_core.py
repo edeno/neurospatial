@@ -76,13 +76,16 @@ def _require_pynwb() -> Any:
     Raises
     ------
     ImportError
-        If pynwb is not installed.
+        If pynwb is not installed. Any other import failure, such as a
+        missing or broken pynwb dependency, propagates unchanged.
     """
     try:
         import pynwb
 
         return pynwb
-    except ImportError as e:
+    except ModuleNotFoundError as e:
+        if e.name != "pynwb":
+            raise
         raise ImportError(
             "pynwb is required for NWB integration. "
             "Install with: pip install neurospatial[nwb]"
