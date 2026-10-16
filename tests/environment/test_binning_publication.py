@@ -15,7 +15,6 @@ from environment_helpers import (
     built_from,
     face_graph,
     native_layout,
-    publish_binning,
     publish_environment,
 )
 
@@ -309,24 +308,6 @@ def test_faces_reject_changed_pair_order() -> None:
     by_pair = {frozenset(pair): i for i, pair in enumerate(expected.edges)}
     for i, pair in enumerate(faces.edges):
         assert faces.A[i] == expected.A[by_pair[frozenset(pair)]]
-
-
-def test_publication_rejects_graph_nodes_without_bins():
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
-    )
-    graph = env.connectivity.copy()
-    graph.add_node(4, pos=(10.0, 10.0))
-    with pytest.raises(ValueError, match=r"nodes|bins"):
-        publish_binning(
-            env._binning,
-            connectivity=graph,
-            dimension_ranges=env.dimension_ranges,
-            layout_type=env.layout_type,
-            category=env._provenance.category,
-            build_params={},
-            is_linearized_track=False,
-        )
 
 
 @pytest.mark.nwb

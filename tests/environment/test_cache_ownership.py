@@ -8,7 +8,6 @@ import pickle
 import numpy as np
 import pandas as pd
 import pytest
-from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.ops.calculus import divergence, gradient
@@ -84,35 +83,10 @@ def test_sparse_operator_exports_cannot_change_calculus(env, method, mutation):
     np.testing.assert_array_equal(divergence(env, edge_field), expected_divergence)
 
 
-@pytest.fixture
-def attributed_env(env):
-    """Retain custom nested graph attributes through normal publication."""
-    graph = env.connectivity.copy()
-    graph.nodes[0]["details"] = {
-        "nested": {"name": "original"},
-        "samples": np.array([1.0, 2.0]),
-    }
-    first_edge = next(iter(graph.edges))
-    graph.edges[first_edge]["details"] = {
-        "nested": {"name": "original"},
-        "samples": np.array([1.0, 2.0]),
-    }
-    layout = publish_binning(
-        env._binning,
-        connectivity=graph,
-        dimension_ranges=env.dimension_ranges,
-        layout_type="RegularGrid",
-        category="grid",
-        build_params={},
-        is_linearized_track=False,
-    )
-    return publish_environment("attributes", layout, "RegularGrid", {})
-
-
 @pytest.mark.parametrize("restoration", ["fresh", "deepcopy", "pickle"])
 @pytest.mark.parametrize("method", ["get_bin_attributes", "get_edge_attributes"])
-def test_attribute_exports_own_numeric_buffers(attributed_env, restoration, method):
-    env = attributed_env
+def test_attribute_exports_own_numeric_buffers(env, restoration, method):
+    env = env
     expected = getattr(env, method)().copy(deep=True)
     env = _restore(env, restoration)
     exported = getattr(env, method)()
@@ -125,35 +99,13 @@ def test_attribute_exports_own_numeric_buffers(attributed_env, restoration, meth
 
 @pytest.mark.parametrize("method", ["get_bin_attributes", "get_edge_attributes"])
 @pytest.mark.parametrize("axis", ["index", "columns"])
-def test_attribute_exports_own_axis_buffers(attributed_env, method, axis):
-    expected = getattr(getattr(attributed_env, method)(), axis).tolist()
-    exported = getattr(attributed_env, method)()
+def test_attribute_exports_own_axis_buffers(env, method, axis):
+    expected = getattr(getattr(env, method)(), axis).tolist()
+    exported = getattr(env, method)()
     labels = getattr(exported, axis).to_numpy(copy=False)
     labels[0] = 99 if axis == "index" else "caller_column"
 
-    assert getattr(getattr(attributed_env, method)(), axis).tolist() == expected
-
-
-@pytest.mark.parametrize("restoration", ["fresh", "deepcopy", "pickle"])
-@pytest.mark.parametrize("method", ["get_bin_attributes", "get_edge_attributes"])
-def test_attribute_exports_own_nested_objects(attributed_env, restoration, method):
-    env = attributed_env
-    getattr(env, method)()
-    env = _restore(env, restoration)
-    details = getattr(env, method)().iloc[0]["details"]
-    details["nested"]["name"] = "caller edit"
-    details["samples"][0] = -99.0
-
-    fresh = getattr(env, method)().iloc[0]["details"]
-    assert fresh["nested"]["name"] == "original"
-    np.testing.assert_array_equal(fresh["samples"], [1.0, 2.0])
-    source = (
-        env.connectivity.nodes[0]
-        if method == "get_bin_attributes"
-        else env.connectivity.edges[next(iter(env.connectivity.edges))]
-    )["details"]
-    assert source["nested"]["name"] == "original"
-    np.testing.assert_array_equal(source["samples"], [1.0, 2.0])
+    assert getattr(getattr(env, method)(), axis).tolist() == expected
 
 
 @pytest.mark.parametrize("restoration", ["fresh", "deepcopy", "pickle"])

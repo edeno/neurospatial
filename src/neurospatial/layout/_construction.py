@@ -5,26 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import networkx as nx
-
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._explicit import _category, binning_ranges
-from neurospatial.geometry._graph import _graph_from_binning
+from neurospatial.geometry._explicit import _category
 from neurospatial.layout.base import LayoutEngine
 
 
 def built_layout_data(
     layout: LayoutEngine,
-) -> tuple[
-    Binning,
-    nx.Graph,
-    tuple[tuple[float, float], ...] | None,
-    str,
-    str,
-    Mapping[str, Any],
-]:
-    """Take a built layout's binning once and derive everything else from it.
+) -> tuple[Binning, str, str, Mapping[str, Any]]:
+    """Take a built layout's binning once, with its descriptive labels.
 
     A layout engine supplies its geometry through ``binning()`` alone. The
     navigation graph, plotting ranges and grid index all follow from that
@@ -45,8 +35,7 @@ def built_layout_data(
     Returns
     -------
     tuple
-        The binning, navigation graph, plotting ranges, layout type tag,
-        layout category and build parameters.
+        The binning, layout type tag, layout category and build choices.
 
     Raises
     ------
@@ -60,10 +49,8 @@ def built_layout_data(
         from neurospatial.geometry._adapters import _snapshot_provider
         from neurospatial.geometry._explicit import prepare_bins
 
-        binning, graph, ranges, category = prepare_bins(
-            _snapshot_provider(layout, "binning")
-        )
-        return binning, graph, ranges, binning.kind, category, {}
+        binning, category = prepare_bins(_snapshot_provider(layout, "binning"))
+        return binning, binning.kind, category, {}
     binning = produce()
     if type(binning) is not Binning:
         raise TypeError(
@@ -84,8 +71,6 @@ def built_layout_data(
     params = getattr(layout, "_build_params_used", None)
     return (
         binning,
-        _graph_from_binning(binning),
-        binning_ranges(binning),
         binning.kind,
         label if isinstance(label, str) else _category(binning),
         params if isinstance(params, Mapping) else {},

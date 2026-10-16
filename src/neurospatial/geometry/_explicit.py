@@ -6,7 +6,6 @@ import copy
 from dataclasses import replace
 from typing import Literal
 
-import networkx as nx
 import numpy as np
 
 from neurospatial.geometry._binning import (
@@ -16,7 +15,6 @@ from neurospatial.geometry._binning import (
     SpatialBins,
 )
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
-from neurospatial.geometry._graph import _graph_from_binning
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon import PolygonCells
 
@@ -108,9 +106,7 @@ def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
     return cell_extent(binning, shapeless="none")
 
 
-def prepare_bins(
-    binning: object,
-) -> tuple[Binning, nx.Graph, tuple[tuple[float, float], ...] | None, str]:
+def prepare_bins(binning: object) -> tuple[Binning, str]:
     """Own and validate explicit Cartesian bins, with no layout builder.
 
     Parameters
@@ -121,9 +117,10 @@ def prepare_bins(
 
     Returns
     -------
-    tuple
-        Validated data and a synthesized navigation graph. Graph iteration
-        order can differ from the retained pair order.
+    binning : Binning
+        Validated, independently owned bins.
+    category : str
+        Layout category inferred from the bins.
 
     Raises
     ------
@@ -163,10 +160,4 @@ def prepare_bins(
         else snapshot.faces
     )
     snapshot = replace(snapshot, bins=bins, faces=faces)
-    graph = _graph_from_binning(snapshot)
-    return (
-        snapshot,
-        graph,
-        binning_ranges(snapshot),
-        _category(snapshot),
-    )
+    return snapshot, _category(snapshot)

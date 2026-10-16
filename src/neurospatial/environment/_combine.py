@@ -254,13 +254,11 @@ def _combine(
 
     normals = combined_normals(locator) if not len(pairs) else None
 
-    snapshot, graph, ranges, category = prepare_bins(
+    snapshot, category = prepare_bins(
         Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals)
     )
     return _Derivation(
         snapshot,
-        graph,
-        ranges,
         _Provenance(snapshot.kind, category, {}),
         regions=regions,
         arena=_CombinedArena(arenas),

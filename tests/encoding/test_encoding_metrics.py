@@ -1395,9 +1395,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         graph = env.connectivity.copy()
         for _, _, data in graph.edges(data=True):
             data["distance"] = -1.0
-        monkeypatch.setattr(
-            env, "_geometry", replace(env._geometry, connectivity=graph)
-        )
+        monkeypatch.setattr(env, "_geometry", replace(env._geometry, graph=graph))
 
         firing_rate = np.zeros(env.n_bins)
         firing_rate[0] = 10.0
@@ -1421,9 +1419,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         graph = env.connectivity.copy()
         for _, _, data in graph.edges(data=True):
             data["distance"] = -1.0
-        monkeypatch.setattr(
-            env, "_geometry", replace(env._geometry, connectivity=graph)
-        )
+        monkeypatch.setattr(env, "_geometry", replace(env._geometry, graph=graph))
 
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 0] = 10.0

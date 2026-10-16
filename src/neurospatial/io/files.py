@@ -24,6 +24,7 @@ import contextlib
 import json
 import zlib
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -448,10 +449,19 @@ def _restore_environment(
         declared_metadata,
         publish,
     )
-    from neurospatial.geometry._arena import Arena, UnknownArena, decode_arena
+    from neurospatial.geometry._arena import (
+        Arena,
+        EgocentricSurround,
+        UnknownArena,
+        decode_arena,
+    )
     from neurospatial.geometry._binning import Binning, TrackLinearization
-    from neurospatial.geometry._codecs import decode, graph_from_node_link
+    from neurospatial.geometry._codecs import decode
     from neurospatial.geometry._context import grid_index
+    from neurospatial.geometry._coordinates import (
+        CartesianSystem,
+        EgocentricPolarSystem,
+    )
     from neurospatial.geometry._locators import HexLocator, MeshLocator
     from neurospatial.regions import Region, Regions
 
@@ -507,7 +517,12 @@ def _restore_environment(
         if not isinstance(params, dict):
             raise ValueError("layout_parameters must be a dictionary of build choices")
         ranges = metadata.get("dimension_ranges")
-        graph = graph_from_node_link(metadata["graph"])
+        if ranges is not None:
+            binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
+        if metadata["is_linearized_track"] != (binning.linearization is not None):
+            raise ValueError("stored is_linearized_track differs from the binning")
+        # The stored graph is written for other tools; the environment
+        # rebuilds its graph from the binning.
         context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
@@ -535,11 +550,16 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
+        coordinates: CartesianSystem | EgocentricPolarSystem = CartesianSystem()
+        if coordinate_kind == "polar":
+            # The arena records whether the angle wraps; publish refuses a
+            # polar record whose arena is not an EgocentricSurround.
+            circular = not isinstance(arena, EgocentricSurround) or arena.circular
+            coordinates = EgocentricPolarSystem(circular)
         env = publish(
             Environment,
             binning,
-            connectivity=graph,
-            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
+            coordinates=coordinates,
             provenance=_Provenance(
                 metadata["layout_type"], metadata["layout_category"], params
             ),
@@ -549,10 +569,7 @@ def _restore_environment(
                 units=metadata.get("units"),
                 frame=metadata.get("frame"),
             ),
-            is_linearized_track=metadata["is_linearized_track"],
-            coordinate_kind=coordinate_kind,
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
-            restored_from=source,
             arena=arena,
         )
         return env

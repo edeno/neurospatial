@@ -52,12 +52,10 @@ def _face_environment(scale=1.0):
     binning = Binning("Faces", bins, NearestBinLocator(bins.centers), KnownFaces(faces))
     owned = publish_binning(
         binning,
-        connectivity=graph,
         dimension_ranges=layout.dimension_ranges,
         layout_type="Faces",
         category="Graph",
         build_params={},
-        is_linearized_track=False,
     )
     return publish_environment(layout=owned, layout_type_used="Faces")
 
@@ -315,23 +313,18 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     calls = []
 
     def counting_setup(cls, binning, **kwargs):
-        calls.append(kwargs.get("restored_from"))
+        calls.append(cls)
         return setup(cls, binning, **kwargs)
 
     monkeypatch.setattr(_publication, "publish", counting_setup)
     from neurospatial.geometry import _validation
 
-    with (
-        patch.object(
-            _validation, "_validate_graph", wraps=_validation._validate_graph
-        ) as graph_check,
-        patch.object(
-            _validation, "_validate_components", wraps=_validation._validate_components
-        ) as component_check,
-    ):
+    with patch.object(
+        _validation, "_validate_components", wraps=_validation._validate_components
+    ) as component_check:
         restored = _round_trip(original, how, tmp_path)
-    assert graph_check.call_count == component_check.call_count == 1
-    assert len(calls) == 1 and calls[0] is not None
+    assert component_check.call_count == 1
+    assert len(calls) == 1
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
 
 
@@ -415,15 +408,17 @@ def test_non_finite_saved_centers_are_rejected():
     assert "\nFix:" in str(exc.value)
 
 
-def test_invalid_saved_graph_names_the_saved_data():
-    """A malformed saved graph is reported against the data, not the library."""
-    data = to_dict(_four_connected_grid())
+def test_saved_graph_is_rebuilt_from_the_binning():
+    """The stored graph is for other tools; reading rebuilds it from the bins."""
+    original = _four_connected_grid()
+    data = to_dict(original)
     for link in data["graph"]["links"]:
         link.pop("edge_id")
-    with pytest.raises(ValueError, match="environment dictionary is invalid") as exc:
-        from_dict(data)
-    assert "layout engine bug" not in str(exc.value)
-    assert "\nFix:" in str(exc.value)
+        link["distance"] = -1.0
+    restored = from_dict(data)
+    assert list(restored.connectivity.edges(data=True)) == list(
+        original.connectivity.edges(data=True)
+    )
 
 
 def test_native_faces_remain_independent_of_later_builder_graph_changes():

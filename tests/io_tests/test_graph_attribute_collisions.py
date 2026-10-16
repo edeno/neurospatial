@@ -1,14 +1,12 @@
-"""Node-link storage separates graph identity fields from user attributes."""
+"""Node-link storage separates track-graph identity fields from user attributes."""
 
 from datetime import datetime, timezone
 
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 
 def _annotate(graph):
@@ -21,21 +19,7 @@ def _annotate(graph):
     graph.edges[edge]["id"] = "measured-edge-id"
 
 
-def _environment(context):
-    if context == "connectivity":
-        layout = RegularGridLayout()
-        layout.build(bin_size=1.0, dimension_ranges=[(0, 2), (0, 1)])
-        built = publish_environment("annotated", layout)
-        graph = built.to_networkx()
-        _annotate(graph)
-        return publish_binning(
-            built._binning,
-            connectivity=graph,
-            dimension_ranges=built.dimension_ranges,
-            layout_type=built.layout_type,
-            category=built._provenance.category,
-            name="annotated",
-        )
+def _environment():
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
@@ -46,12 +30,9 @@ def _environment(context):
     )
 
 
-@pytest.mark.parametrize("context", ["connectivity", "track"])
 @pytest.mark.parametrize("storage", ["dict", "file", "nwb"])
-def test_reserved_user_attributes_survive_environment_storage(
-    tmp_path, context, storage
-):
-    env = _environment(context)
+def test_reserved_user_attributes_survive_environment_storage(tmp_path, storage):
+    env = _environment()
     if storage == "dict":
         restored = Environment.from_dict(env.to_dict())
     elif storage == "file":
@@ -70,12 +51,7 @@ def test_reserved_user_attributes_survive_environment_storage(
         with pynwb.NWBHDF5IO(str(tmp_path / "graph.nwb"), "r") as io:
             restored = read_environment(io.read())
 
-    if context == "connectivity":
-        pairs = [(env.connectivity, restored.connectivity)]
-    else:
-        pairs = [
-            (env._binning.linearization.graph, restored._binning.linearization.graph)
-        ]
+    pairs = [(env._binning.linearization.graph, restored._binning.linearization.graph)]
     for source, loaded in pairs:
         assert list(loaded) == list(source)
         assert list(loaded.edges) == list(source.edges)

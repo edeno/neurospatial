@@ -87,13 +87,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   snapshot adapter. The private `neurospatial.layout._capabilities` module
   (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
 
-- Graph, node and edge attributes of `env.connectivity` are stored as
-  immutable values. A list attribute reads back as a tuple, a dict as a
-  read-only mapping, a set as a frozenset and a numeric array as a read-only
-  array, at every nesting level. This includes `env.connectivity.graph`, which
-  used to return a fresh editable copy on each read. `env.to_networkx()` and
-  `env.connectivity.copy()` still return independent graphs whose attributes
-  are editable lists, dicts, sets and writable arrays.
+- `env.connectivity` is rebuilt from the bins every time an environment is
+  built, derived or read back, so it holds only the standard node and edge
+  attributes, as numbers and tuples, and `env.connectivity.graph` is an empty
+  read-only mapping. Reading an attribute returns the stored value without a
+  copy; editing any of them is refused. `env.to_networkx()` and
+  `env.connectivity.copy()` return independent, editable graphs. A file, dict
+  or NWB record still stores the graph for other tools, but loading rebuilds
+  it from the bins: attributes added to a saved graph are not read back.
 
 - Derived environments keep the labels of the environment they came from.
   `subset()` and `clip()` keep the named regions (they used to drop them), and
@@ -343,6 +344,18 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   saved environment whose `layout_parameters` hold anything other than such
   choices is refused when it is read.
 
+- Assigning or deleting any public attribute of an `Environment` raises an
+  `AttributeError` that says what to call instead, including names the class
+  does not define: `env.session_id = "s1"` used to attach a value silently.
+  Keep your own labels next to the environment, for example in a dict keyed by
+  `env.name`.
+
+- Every layout, including a custom engine, now has each bin center located by
+  its own lookup when the environment is built, as `from_bins`, `subset` and
+  the readers already did. A custom engine whose locator does not place a bin
+  center in that bin is refused with a `ValueError` instead of producing an
+  environment whose `bin_at(env.bin_centers)` disagrees with the bin IDs.
+
 ### Changed
 
 - `env.plot()` names the axes of a 2-D environment by what the coordinates
@@ -513,6 +526,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- In an arena with walls, each edge's `edge_id` in `env.connectivity` is its
+  row in `env.edge_pairs` again. Walls remove pairs, and the remaining edges
+  kept their numbering from before the removal, so `edge_id` pointed at the
+  wrong pair, or past the end of `env.edge_pairs`.
+
+- A combined environment read back from a file, dict or NWB record, or moved
+  with `apply_transform`, lists each bin's neighbors in the same order as the
+  original. The order used to change, which could change which of two equally
+  short paths `path_between` returned.
 
 - A position sample with a NaN coordinate is a missing sample in every
   per-sample query. `env.nearest_bin` gives it bin

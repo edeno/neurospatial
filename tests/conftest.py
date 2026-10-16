@@ -1094,21 +1094,13 @@ def environment_round_trip(built_environment, request, tmp_path):
     region_builder = Regions(original.regions.values())
     region_builder.add("goal", point=tuple(original.bin_centers[0]))
     original = original.with_regions(region_builder)
-    # Graph metadata is scientifically relevant and must survive beyond topology.
-    graph = original.connectivity.copy()
-    graph.graph["recording"] = "session-a"
-    graph.nodes[0]["label"] = "start"
-    first_edge = next(iter(graph.edges))
-    graph.edges[first_edge]["annotation"] = ["measured", 7]
     layout = publish_binning(
         original._binning,
-        connectivity=graph,
         dimension_ranges=original.dimension_ranges,
         layout_type=original.layout_type,
         category=original._provenance.category,
         build_params=original.layout_parameters,
-        is_linearized_track=original.is_linearized_track,
-        coordinate_kind=original.arena.coordinate_kind,
+        coordinates=original._geometry.coordinates,
         arena=original.arena,
     )
     original = publish_environment(

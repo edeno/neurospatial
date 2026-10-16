@@ -129,7 +129,10 @@ itself for `from_bins` and the file, dict and NWB readers, which decode stored
 geometry without replaying build parameters.
 
 A published environment never changes. The graph is frozen, geometry arrays
-are read-only, and equality is by identity, so cached analyses and
+are read-only (handed out as `.view()`s of arrays marked with
+`setflags(write=False)`; geometry records restore the flag after unpickling
+through `geometry._arrays.ReadOnlyState`), public attributes cannot be
+assigned, and equality is by identity, so cached analyses and
 `copy.copy`/`copy.deepcopy` (which return the same object) are always valid.
 `env.to_networkx()` returns an editable copy. `with_metadata` and
 `with_regions` return a new object over the same geometry and cache.
@@ -338,8 +341,10 @@ a subset allows the certified remainder. Gradient/divergence keep the existing
 physical-face contract and refuse combinations with nonphysical bridges.
 
 Publication validates geometry once, so readers only validate the storage
-format. Center lookup is checked on a detached locator so publication does not
-warm the saved value's lookup cache. Validated embedded tracks may revisit
+format; a reader rebuilds the graph from the binning instead of reading the
+stored one. Every publication checks that each bin center locates its own
+bin, on a detached locator so publication does not warm the saved value's
+lookup cache. Validated embedded tracks may revisit
 identical spatial centers; center lookup must still choose a bin at that same
 coordinate. Other bins keep strict center identity checks.
 
@@ -352,8 +357,10 @@ the topology of new records, but retain their previous limitation of dropping
 these reserved user attributes; use a current reader to recover them.
 
 Subsets select whole bins and restrict ordered faces, locators and components.
-They keep the parent's graph metadata and edge order rather than rebuilding
-them from geometry. Translations and similarities preserve finite-volume geometry;
+Like every derivation, they hand publication only the derived binning;
+publication rebuilds the navigation graph, grid index and ranges from it,
+so a subset's graph follows its kept pairs and keeps the parent's bin IDs in
+`source_grid_flat_index`. Translations and similarities preserve finite-volume geometry;
 diagonal grid scaling retains axis-aligned faces. Other affine maps retain
 inverse lookup and cell measures, with a `MissingFaces` reason where right
 angles are lost; tracks refuse non-similarities. Triangle drawing vertices

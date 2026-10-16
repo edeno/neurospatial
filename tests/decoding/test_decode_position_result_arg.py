@@ -76,12 +76,10 @@ def test_rate_result_rejects_different_environment(
         )
         layout = publish_binning(
             binning,
-            connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
             layout_type="UnequalCells",
             category="graph",
             build_params={},
-            is_linearized_track=False,
         )
         env = publish_environment(
             layout=layout,

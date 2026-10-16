@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from shapely.affinity import affine_transform
@@ -176,49 +176,27 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     )
 
 
-def select_bins(
-    binning: Binning, connectivity: nx.Graph, mask: NDArray[np.bool_]
-) -> tuple[Binning, nx.Graph, tuple[tuple[float, float], ...] | None]:
-    """Keep the selected bins of a binning, with their graph and bounds.
+def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
+    """Keep the selected bins of a binning, with the bounds of what is kept.
 
     Parameters
     ----------
     binning : Binning
         Bins to select from.
-    connectivity : networkx.Graph
-        Navigation graph over the bins of ``binning``; it is not modified.
     mask : ndarray of bool, shape (n_bins,)
         Bins to keep.
 
     Returns
     -------
-    binning : Binning
+    Binning
         The kept bins, renumbered ``0..n_kept-1`` in their original order.
-    graph : networkx.Graph
-        Induced graph, in the parent's node and edge order, with each
-        ``edge_id`` renumbered to its row in the kept pairs.
-    dimension_ranges : tuple of (float, float)
-        Extent of the kept cells, with no margin (see
-        :func:`neurospatial.geometry._explicit.cell_extent`): the grid extent
-        for grids, and the kept bin centers' bounds for bins without shapes.
+        Its ``dimension_ranges`` is the extent of the kept cells, with no
+        margin (see :func:`neurospatial.geometry._explicit.cell_extent`): the
+        grid extent for grids, and the kept bin centers' bounds for bins
+        without shapes.
     """
     binning = subset_binning(binning, mask)
-    selected = np.flatnonzero(mask)
-    child_of = {int(old): new for new, old in enumerate(selected)}
-    graph = nx.Graph()
-    graph.graph.update(connectivity.graph)
-    # Retain the parent's node iteration order as well as edge order and
-    # orientation; edge fields index that order even on loaded graphs.
-    for old, data in connectivity.nodes(data=True):
-        if old in child_of:
-            graph.add_node(child_of[old], **data)
-    for index, (u, v) in enumerate(binning.bins.pairs):
-        old_u, old_v = selected[u], selected[v]
-        data = dict(connectivity.edges[old_u, old_v])
-        data["edge_id"] = index
-        graph.add_edge(int(u), int(v), **data)
-    ranges = cell_extent(binning, shapeless="centers")
-    return binning, graph, ranges
+    return replace(binning, dimension_ranges=cell_extent(binning, shapeless="centers"))
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:

@@ -28,7 +28,11 @@ def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] |
     if isinstance(locator, (TransformedLocator, SubsetLocator)):
         source = _source_grid(locator.base)
         if source is None:
-            return None
+            if not isinstance(locator, SubsetLocator):
+                return None
+            # A subset of bins without logical cells keeps its parent's bin IDs.
+            n_parent = len(locator.parent_to_child)
+            source = (n_parent,), np.arange(n_parent, dtype=np.intp)
         shape, indices = source
         if isinstance(locator, SubsetLocator):
             selected = np.flatnonzero(locator.parent_to_child >= 0)
@@ -184,11 +188,14 @@ def _graph_from_binning(binning: Binning) -> nx.Graph:
                 zip(low.tolist(), high.tolist(), distances, vector_rows, strict=True)
             )
         )
+    # Track bins are indexed by their linear cells; other bins by the logical
+    # cells their locator records.
     track = binning.linearization
-    source = _source_grid(binning.locator)
-    if source is None and isinstance(track, TrackLinearization):
-        mask = track.active_mask
-        source = mask.shape, np.flatnonzero(mask)
+    source = (
+        (track.active_mask.shape, np.flatnonzero(track.active_mask))
+        if isinstance(track, TrackLinearization)
+        else _source_grid(binning.locator)
+    )
     if source is not None:
         shape, indices = source
         nd_indices = np.column_stack(np.unravel_index(indices, shape)).tolist()

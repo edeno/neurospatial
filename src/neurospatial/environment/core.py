@@ -13,9 +13,7 @@ from typing import (
     ClassVar,
     Generic,
     Literal,
-    NoReturn,
     TypeVar,
-    cast,
 )
 
 import networkx as nx
@@ -76,11 +74,8 @@ from neurospatial.environment._metrics import (
 from neurospatial.environment._polar import _create_polar_environment
 from neurospatial.environment._publication import (
     UNSET,
-    _diffusion_geometry_header,
-    _freeze_geometry_arrays,
-    _GeometryView,
+    _diffusion_geometry_view,
     _Metadata,
-    _MetadataView,
     _Provenance,
     _PublishedGeometry,
     _Unset,
@@ -168,6 +163,35 @@ else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
 
 
+_METADATA_FIELDS = frozenset({"name", "units", "frame"})
+
+
+def _read_only(name: str) -> AttributeError:
+    """The error for assigning or deleting a public Environment attribute."""
+    if name in _METADATA_FIELDS:
+        return AttributeError(
+            f"Environment.{name} is read-only; use env.with_metadata({name}=...)."
+        )
+    if name == "regions":
+        return AttributeError(
+            "Environment.regions is read-only; use env.with_regions(regions)."
+        )
+    return AttributeError(
+        _format_error(
+            f"Environment.{name} is read-only.",
+            why=(
+                "Why: cached kernels, operators and lookups belong to the "
+                "geometry the environment was built with, so replacing part "
+                "of it would leave them stale."
+            ),
+            fix=(
+                "build a new environment instead, e.g. with a factory, "
+                "subset, rebin or apply_transform"
+            ),
+        )
+    )
+
+
 def _polar_bins_example(rows: str) -> str:
     """Code giving the bin of each polar row, with -1 for rows outside the ranges."""
     return (
@@ -236,52 +260,81 @@ class Environment(Generic[_C]):
     _metadata: _Metadata
     _regions: Regions
     _provenance: _Provenance
+    _geometry: _PublishedGeometry[_C]
+    _cache: AnalysisCache
 
-    name = _MetadataView[str]()
+    def __setattr__(self, name: str, value: object) -> None:
+        """Refuse public attribute assignment: an environment never changes."""
+        if not name.startswith("_"):
+            raise _read_only(name)
+        object.__setattr__(self, name, value)
 
-    _geometry: _PublishedGeometry
+    def __delattr__(self, name: str) -> None:
+        """Refuse public attribute deletion: an environment never changes."""
+        if not name.startswith("_"):
+            raise _read_only(name)
+        object.__delattr__(self, name)
 
-    bin_centers = _GeometryView[NDArray[np.float64]]()
+    @property
+    def name(self) -> str:
+        """Environment name; change it with ``env.with_metadata(name=...)``."""
+        return self._metadata.name
 
-    connectivity = _GeometryView[nx.Graph]()
+    @property
+    def units(self) -> str | None:
+        """Length units of the coordinates, such as ``"cm"``, or None."""
+        return self._metadata.units
 
-    dimension_ranges = _GeometryView["Sequence[tuple[float, float]] | None"]()
+    @property
+    def frame(self) -> str | None:
+        """Coordinate frame label, such as ``"room"``, or None."""
+        return self._metadata.frame
 
-    grid_edges = _GeometryView["tuple[NDArray[np.float64], ...] | None"]()
+    @property
+    def bin_centers(self) -> NDArray[np.float64]:
+        """Bin centers, shape ``(n_bins, n_dims)``, as a read-only array."""
+        centers: NDArray[np.float64] = self._binning.bins.centers.view()
+        return centers
 
-    grid_shape = _GeometryView["tuple[int, ...] | None"]()
+    @property
+    def connectivity(self) -> nx.Graph:
+        """Frozen navigation graph over bin IDs; ``to_networkx()`` copies it."""
+        return self._geometry.graph
 
-    active_mask = _GeometryView["NDArray[np.bool_] | None"]()
+    @property
+    def dimension_ranges(self) -> tuple[tuple[float, float], ...] | None:
+        """``(low, high)`` per coordinate axis covered by the bins, or None.
+
+        None only for bins without cells or declared ranges, such as
+        explicit point bins.
+        """
+        return self._binning.dimension_ranges
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...]:
+        """Cell edges per axis of the full grid; empty for bins without a grid."""
+        return tuple(edge.view() for edge in self._geometry.grid.edges)
+
+    @property
+    def grid_shape(self) -> tuple[int, ...]:
+        """Shape of the full logical grid, inactive cells included."""
+        return self._geometry.grid.shape
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_]:
+        """Read-only mask of the active cells of the full grid, shape ``grid_shape``."""
+        mask: NDArray[np.bool_] = self._geometry.grid.active_mask.view()
+        return mask
 
     @property
     def regions(self) -> Regions:
         """Owned immutable named regions; edit a standalone Regions builder."""
         return self._regions
 
-    @regions.setter
-    def regions(self, value: Regions) -> NoReturn:
-        raise AttributeError(
-            "Environment.regions is read-only; use env.with_regions(regions)."
-        )
-
-    @regions.deleter
-    def regions(self) -> NoReturn:
-        raise AttributeError(
-            "Environment.regions is read-only; use env.with_regions(regions)."
-        )
-
-    units = _MetadataView[str | None]()
-
-    frame = _MetadataView[str | None]()
-
     @property
     def _is_polar(self) -> bool:
         """Coordinate kind from the owned per-instance descriptor."""
         return isinstance(self._geometry.coordinates, EgocentricPolarSystem)
-
-    _is_linearized_track_env: bool
-
-    _cache: AnalysisCache
 
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
@@ -294,27 +347,19 @@ class Environment(Generic[_C]):
         )
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore owned state; the analysis cache unpickles empty."""
+        """Restore owned state; the analysis cache unpickles empty.
+
+        The geometry records mark their arrays read-only again as they are
+        unpickled.
+        """
         self.__dict__.update(state)
-
-        assert self._geometry.arena is not None
-        self._geometry = replace(
-            self._geometry,
-            arena=own_arena(self._geometry.arena),
-        )
+        self._geometry = replace(self._geometry, arena=own_arena(self._geometry.arena))
         self._regions = self._validate_regions(self._regions)
-        self._freeze_geometry_arrays()
-
-    def _freeze_geometry_arrays(self) -> None:
-        """Own immutable buffers; public descriptors expose separate array headers."""
-        self._geometry = _freeze_geometry_arrays(self._geometry)
 
     @property
     def _binning(self) -> Binning:
         """The binning snapshot published with the current geometry."""
-        binning = self._geometry.binning
-        assert binning is not None
-        return binning
+        return self._geometry.binning
 
     @property
     def binning(self) -> Binning:
@@ -343,24 +388,21 @@ class Environment(Generic[_C]):
     @property
     def arena(self) -> Arena:
         """Continuous domain, distinguished from the active analysis bins."""
-        arena = self._geometry.arena
-        assert arena is not None
-        return copy_module.deepcopy(arena)
+        return copy_module.deepcopy(self._geometry.arena)
 
     @property
     def clip_mapping(self) -> ClipMapping | None:
         """Most recent clip's source-bin mapping, or None before clipping."""
-        return copy_module.deepcopy(self._geometry.clip_mapping)
+        return copy_module.deepcopy(self._binning.clip_mapping)
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:
         """Oriented neighbor pairs in gradient and flux order, shape (n_edges, 2).
 
         This order preserves explicit bin input, and can differ from NetworkX
-        edge iteration. The returned array is independent and read-only.
+        edge iteration. The returned array is read-only.
         """
-        pairs: NDArray[np.intp] = self._binning.bins.pairs.copy()
-        pairs.setflags(write=False)
+        pairs: NDArray[np.intp] = self._binning.bins.pairs.view()
         return pairs
 
     def to_networkx(self) -> nx.Graph:
@@ -384,9 +426,7 @@ class Environment(Generic[_C]):
     @property
     def _arena(self) -> Arena:
         """The published arena, shared rather than copied for internal reads."""
-        arena = self._geometry.arena
-        assert arena is not None
-        return arena
+        return self._geometry.arena
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
@@ -495,7 +535,7 @@ class Environment(Generic[_C]):
     def _validate_regions(self, regions: Regions) -> Regions:
         if not isinstance(regions, Regions):
             raise TypeError("regions must be a Regions instance.")
-        n_dims = self._geometry.bin_centers.shape[1]
+        n_dims = self._binning.bins.n_dims
         if any(region.n_dims != n_dims for region in regions.values()):
             raise ValueError("Region coordinate dimensions must match the environment.")
         return regions._snapshot()
@@ -707,7 +747,7 @@ class Environment(Generic[_C]):
             This is determined by `self.layout.is_linearized_track`.
 
         """
-        return self._is_linearized_track_env
+        return self._binning.linearization is not None
 
     @property
     def n_dims(self) -> int:
@@ -725,7 +765,7 @@ class Environment(Generic[_C]):
             If `bin_centers` is not available.
 
         """
-        return int(self.bin_centers.shape[1])
+        return self._binning.bins.n_dims
 
     @property
     def layout_parameters(self) -> dict[str, Any]:
@@ -770,7 +810,7 @@ class Environment(Generic[_C]):
             The number of active bins.
 
         """
-        return int(self._geometry.bin_centers.shape[0])
+        return self._binning.bins.n_bins
 
     def get_differential_operator(self) -> sparse.csc_matrix:
         """Compute and cache the inverse-distance edge differential operator.
@@ -941,7 +981,7 @@ class Environment(Generic[_C]):
     @property
     def _coordinate_system(self) -> _C:
         """Owned coordinate semantics, inferred from the construction factory."""
-        return cast("_C", self._geometry.coordinates)
+        return self._geometry.coordinates
 
     @property
     def coordinate_system(self) -> _C:
@@ -1412,7 +1452,7 @@ class Environment(Generic[_C]):
         Linear position: 5.0
 
         """
-        if not self._is_linearized_track_env:
+        if not self._binning.linearization is not None:
             msg = (
                 "to_linear() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
@@ -1493,7 +1533,7 @@ class Environment(Generic[_C]):
         2D position: [5. 0.]
 
         """
-        if not self._is_linearized_track_env:
+        if not self._binning.linearization is not None:
             msg = (
                 "linear_to_nd() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
@@ -2271,7 +2311,6 @@ class Environment(Generic[_C]):
         derivation = _subset(
             self._binning,
             self._arena,
-            self.connectivity,
             self.regions,
             mask=mask,
             region_names=region_names,
@@ -2532,12 +2571,9 @@ class Environment(Generic[_C]):
         derivation = _apply_transform(
             transform,
             binning=self._binning,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
             provenance=self._provenance,
             regions=self.regions,
             arena=self._arena,
-            clip_mapping=self._geometry.clip_mapping,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
 
@@ -5622,7 +5658,7 @@ class Environment(Generic[_C]):
         True
 
         """
-        return {"is_linearized_track": self._is_linearized_track_env}
+        return {"is_linearized_track": self._binning.linearization is not None}
 
     def get_bin_attributes(self) -> pd.DataFrame:
         """
@@ -5893,7 +5929,7 @@ class Environment(Generic[_C]):
         NotImplementedError
             If the stored binning cannot supply numerical diffusion geometry.
         """
-        return _diffusion_geometry_header(self._diffusion_geometry)
+        return _diffusion_geometry_view(self._diffusion_geometry)
 
     def diffusion_accuracy(self, bandwidth: float) -> float:
         """Return the relative numerical noise floor of diffuse() at a bandwidth.

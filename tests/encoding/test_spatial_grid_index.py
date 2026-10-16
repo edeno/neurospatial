@@ -34,12 +34,10 @@ def test_legacy_grid_segmentation_follows_graph_despite_provenance():
     bins = replace(original._binning, grid_spec=None)
     legacy = publish_binning(
         bins,
-        connectivity=original.connectivity,
         dimension_ranges=original.dimension_ranges,
         layout_type="MaskedGrid",
         category="grid",
         build_params={"connect_diagonal_neighbors": True},
-        is_linearized_track=False,
     )
     env = publish_environment(layout=legacy, layout_type_used="MaskedGrid")
     # A detached provenance export cannot change the retained graph.

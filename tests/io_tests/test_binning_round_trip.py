@@ -308,12 +308,10 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
     parameters = {"edge_spacing": 0.0, "bin_size": 1.0}
     facade = publish_binning(
         binning,
-        connectivity=native.connectivity,
         dimension_ranges=native.dimension_ranges,
         layout_type="Graph",
         category=native._provenance.category,
         build_params=parameters,
-        is_linearized_track=True,
     )
     original = publish_environment(layout=facade, layout_type_used="Graph")
     if transport == "dict":

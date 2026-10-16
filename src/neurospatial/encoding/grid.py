@@ -392,18 +392,14 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     """
     grid_shape = env.grid_shape
 
-    # grid_shape can be None or tuple
-    if grid_shape is None or len(grid_shape) != 2:
+    if len(grid_shape) != 2:
         return "graph"
 
-    # Check if grid is reasonably regular (not too sparse)
-    # If active_mask exists, check that most bins are active
+    # Check if grid is reasonably regular (not too sparse): if less than 50%
+    # of bins are active, treat it as irregular.
     active_mask = env.active_mask
-    if active_mask is not None:
-        # If less than 50% of bins are active, treat as irregular
-        fill_fraction = np.sum(active_mask) / active_mask.size
-        if fill_fraction < 0.5:
-            return "graph"
+    if np.sum(active_mask) / active_mask.size < 0.5:
+        return "graph"
 
     return "fft"
 
@@ -451,13 +447,7 @@ def _spatial_autocorrelation_fft(
 
     # Fill in values from firing_rate
     # Need to map flat bin indices to grid indices
-    active_mask = env.active_mask
-    if active_mask is not None:
-        rate_map_2d[active_mask] = firing_rate
-    else:
-        # Reshape flat firing rate to 2D grid
-        reshaped = firing_rate.reshape(grid_shape)
-        rate_map_2d[:, :] = reshaped
+    rate_map_2d[env.active_mask] = firing_rate
 
     # Missing bins contribute no centered signal, including inactive grid cells.
     valid_mask = np.isfinite(rate_map_2d)

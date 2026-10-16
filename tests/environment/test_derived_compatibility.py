@@ -20,12 +20,10 @@ from neurospatial.ops.transforms import Affine2D
 def _owned_layout(parent, tag):
     return publish_binning(
         parent._binning,
-        connectivity=parent.connectivity,
         dimension_ranges=parent.dimension_ranges,
         layout_type=tag,
         category=parent._provenance.category,
         build_params={},
-        is_linearized_track=parent.is_linearized_track,
     )
 
 

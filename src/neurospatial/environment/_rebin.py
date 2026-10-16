@@ -293,10 +293,8 @@ def _rebin_resolution(
     grid = replace(grid, grid_spec=spec)
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
-    snapshot, graph, ranges, category = prepare_bins(grid)
-    return _Derivation(
-        snapshot, graph, ranges, _Provenance(snapshot.kind, category, {})
-    ), RebinCheck(
+    snapshot, category = prepare_bins(grid)
+    return _Derivation(snapshot, _Provenance(snapshot.kind, category, {})), RebinCheck(
         None,
         "Use a smaller bin_size, or one that puts cell edges on the arena "
         "boundary, such as a divisor of a rectangular arena's side lengths.",
@@ -362,7 +360,7 @@ def _require_native_grid_navigation(
         ),
         face_normals=None,
     )
-    candidate, _ = apply_walls(candidate, graph, arena)
+    candidate = apply_walls(candidate, arena)
     expected_pairs = {frozenset(pair) for pair in candidate.bins.pairs}
     if expected_pairs != {frozenset(pair) for pair in bins.pairs}:
         raise NotImplementedError(message)
@@ -518,13 +516,9 @@ def _rebin_factor(
         connect_diagonal_neighbors=connect_diagonal,
         grid_spec=binning.grid_spec,
     )
-    coarse, graph, ranges, _, category, _ = built_layout_data(
-        cast("LayoutEngine", layout)
-    )
+    coarse, _, category, _ = built_layout_data(cast("LayoutEngine", layout))
     derivation = _Derivation(
         coarse,
-        graph,
-        ranges,
         _Provenance(
             "RegularGrid",
             category,
@@ -535,7 +529,6 @@ def _rebin_factor(
                 "connect_diagonal_neighbors": connect_diagonal,
             },
         ),
-        check_center_lookup=False,
     )
 
     # Bins beyond the truncated extent are already reported above.

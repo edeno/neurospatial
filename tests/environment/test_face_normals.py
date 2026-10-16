@@ -345,12 +345,10 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
     assert env._binning.face_normals is not None
     bridge = publish_binning(
         env._binning,
-        connectivity=env.to_networkx(),
         dimension_ranges=env.dimension_ranges,
         layout_type=env.layout_type,
         category=env._provenance.category,
         build_params=env.layout_parameters,
-        is_linearized_track=False,
     )
     assert bridge._binning.face_normals is not None
 
@@ -420,11 +418,9 @@ def test_polar_records_refuse_cartesian_normal_components(built_environment):
     with pytest.raises(ValueError, match="Cartesian"):
         publish_binning(
             replace(env._binning, face_normals=FaceNormals(normals)),
-            connectivity=env.to_networkx(),
             dimension_ranges=env.dimension_ranges,
             layout_type=env.layout_type,
             category=env._provenance.category,
             build_params=env.layout_parameters,
-            is_linearized_track=False,
-            coordinate_kind="polar",
+            coordinates=env._geometry.coordinates,
         )

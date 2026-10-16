@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
@@ -9,7 +11,6 @@ from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import bridge_values
-from neurospatial.geometry._graph import _graph_from_binning
 from neurospatial.geometry._polygon import PolygonCells, clip_binning
 
 
@@ -38,22 +39,18 @@ def _clip(
         domain=domain,
         walls=arena.walls,
     )
-    graph = _graph_from_binning(clipped)
     shapes = clipped.shapes
     assert isinstance(shapes, PolygonCells)
     bounds = np.array([cell.bounds for cell in shapes.polygons])
-    ranges = [
+    ranges = tuple(
         (float(bounds[:, axis].min()), float(bounds[:, axis + 2].max()))
         for axis in range(2)
-    ]
+    )
     return _Derivation(
-        clipped,
-        graph,
-        ranges,
+        replace(clipped, clip_mapping=mapping, dimension_ranges=ranges),
         _Provenance(
             "PolygonCells",
             "polygon",
             {"source": "clip", "original_n_bins": binning.bins.n_bins},
         ),
-        clip_mapping=mapping,
     )

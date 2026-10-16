@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
-import networkx as nx
 import numpy as np
 import pytest
 from shapely.affinity import translate
@@ -26,7 +25,7 @@ from neurospatial.geometry._polygon import (
     _representative,
     certify_faces,
 )
-from neurospatial.geometry._validation import _validate_components, _validate_graph
+from neurospatial.geometry._validation import _validate_components
 
 
 def _binning(polygons, *, pairs=(), known=False):
@@ -58,14 +57,6 @@ def _binning(polygons, *, pairs=(), known=False):
 
 
 def _publish(binning):
-    graph = nx.Graph()
-    for index, center in enumerate(binning.bins.centers):
-        graph.add_node(index, pos=center)
-    for (u, v), distance in zip(
-        binning.bins.pairs, binning.bins.pair_distances, strict=True
-    ):
-        graph.add_edge(int(u), int(v), distance=distance)
-    _validate_graph(binning, graph)
     _validate_components(binning, False, "cartesian")
 
 

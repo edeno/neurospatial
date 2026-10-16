@@ -7,12 +7,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._locators import HexLocator, MeshLocator
 
 
 @dataclass(frozen=True, eq=False)
-class GridIndex:
+class GridIndex(ReadOnlyState):
     """Logical grid indexing; hexagon indices do not assert rectangular cells."""
 
     edges: tuple[NDArray[np.float64], ...]

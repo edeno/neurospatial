@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import networkx as nx
 import numpy as np
 import shapely
 import shapely.geometry.base
@@ -146,7 +145,6 @@ def _subset_mask(
 def _subset(
     binning: Binning,
     arena: Arena,
-    connectivity: nx.Graph,
     regions: Regions,
     *,
     mask: NDArray[np.bool_] | None = None,
@@ -155,7 +153,7 @@ def _subset(
     include_boundary: bool = True,
     invert: bool = False,
 ) -> _Derivation:
-    """Derive selected bins and their graph and bounds."""
+    """Derive the selected bins, with the bounds of what is kept."""
     mask = _subset_mask(
         binning,
         arena,
@@ -166,13 +164,11 @@ def _subset(
         include_boundary=include_boundary,
         invert=invert,
     )
-    selected, graph, ranges = select_bins(binning, connectivity, mask)
+    selected = select_bins(binning, mask)
     params = {"source": "subset", "original_n_bins": binning.bins.n_bins}
     grid = selected.rectilinear is not None
     return _Derivation(
         selected,
-        graph,
-        ranges,
         _Provenance(
             "MaskedGrid" if grid else "subset", "mask" if grid else "subset", params
         ),

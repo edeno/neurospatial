@@ -26,11 +26,7 @@ from neurospatial.environment._cache import (
     AnalysisCache,
 )
 from neurospatial.environment._lookup import nearest_bin
-from neurospatial.environment._publication import (
-    _array_header,
-    _freeze_diffusion_geometry,
-    _immutable_array,
-)
+from neurospatial.environment._publication import _freeze_diffusion_geometry
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import combined_diffusion
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
@@ -670,6 +666,11 @@ def _compute_gaussian_kernel(
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        return _immutable_array(_gaussian_kernel(bin_centers, coordinates, bandwidth))
+        kernel = _gaussian_kernel(bin_centers, coordinates, bandwidth)
+        kernel.setflags(write=False)
+        return kernel
 
-    return _array_header(cache.get_recent(GAUSSIAN_KERNELS, float(bandwidth), build))
+    kernel: NDArray[np.float64] = cache.get_recent(
+        GAUSSIAN_KERNELS, float(bandwidth), build
+    ).view()
+    return kernel

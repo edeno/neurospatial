@@ -18,6 +18,7 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Provenance, declared_metadata
 from neurospatial.geometry._arena import OpenArena, TrackArena
+from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._ownership import own_arena
 from neurospatial.layout.factories import (
@@ -192,17 +193,15 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
-    snapshot, graph, ranges, category = prepare_bins(binning)
+    snapshot, category = prepare_bins(binning)
     if arena is None and snapshot.outline is not None:
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
     result = _publication.publish(
         cls,
         snapshot,
-        connectivity=graph,
-        dimension_ranges=ranges,
+        coordinates=CartesianSystem(),
         provenance=_Provenance(snapshot.kind, category, {}),
         metadata=declared_metadata(cls, name=name, units=units, frame=frame),
-        is_linearized_track=snapshot.linearization is not None,
         regions=regions,
         arena=arena,
     )

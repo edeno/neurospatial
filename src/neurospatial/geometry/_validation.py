@@ -9,7 +9,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
 
-import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
@@ -103,50 +102,6 @@ def _pair_keys(pairs: NDArray[np.intp], n_bins: int) -> NDArray[np.int64]:
     low = np.minimum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
     high = np.maximum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
     return low * max(n_bins, 1) + high
-
-
-def _validate_graph(binning: Binning, graph: nx.Graph) -> None:
-    """Check graph equivalence while keeping bin-pair order authoritative."""
-    bins = binning.bins
-    nodes = list(graph.nodes)
-    if (
-        graph.is_directed()
-        or graph.is_multigraph()
-        or not all(
-            isinstance(node, (int, np.integer))
-            and not isinstance(node, (bool, np.bool_))
-            for node in nodes
-        )
-        or set(nodes) != set(range(bins.n_bins))
-    ):
-        raise ValueError("connectivity nodes must be integer labels 0..n_bins-1.")
-    _first_mismatch(
-        [graph.nodes[node].get("pos") for node in range(bins.n_bins)],
-        bins.centers,
-        lambda node: f"node {node} pos",
-    )
-    edges = list(graph.edges(data=True))
-    graph_keys = _pair_keys(
-        np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2),
-        bins.n_bins,
-    )
-    pair_keys = _pair_keys(bins.pairs, bins.n_bins)
-    graph_order, pair_order = np.argsort(graph_keys), np.argsort(pair_keys)
-    if len(graph_keys) != len(pair_keys) or not np.array_equal(
-        graph_keys[graph_order], pair_keys[pair_order]
-    ):
-        raise ValueError("connectivity pairs do not match the binning geometry.")
-    # Row i of the pairs is graph edge aligned[i].
-    aligned = np.empty(len(pair_keys), dtype=np.intp)
-    aligned[pair_order] = graph_order
-    _first_mismatch(
-        [edges[index][2].get("distance") for index in aligned.tolist()],
-        bins.pair_distances,
-        lambda index: f"edge ({bins.pairs[index][0]}, {bins.pairs[index][1]}) distance",
-    )
-    if isinstance(binning.faces, KnownFaces):
-        _equal(binning.faces.faces.edges, bins.pairs, "faces.edges")
-        _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
 
 
 def _gap(points: NDArray[np.float64]) -> float:
@@ -1002,8 +957,6 @@ def _validate_components(
     binning: Binning,
     is_track: bool,
     coordinate_kind: Literal["cartesian", "polar"],
-    *,
-    check_center_lookup: bool = True,
 ) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     bins, locator = binning.bins, binning.locator
@@ -1443,20 +1396,19 @@ def _validate_components(
         )
         if bins.measure_dim != 1:
             raise ValueError("linearization bins.measure_dim must be 1.")
-    if check_center_lookup:
-        located = copy.deepcopy(locator).locate(bins.centers)
-        if track is not None:
-            # An embedded track can revisit an identical spatial point at a
-            # different linear coordinate. Nearest-point lookup may choose either
-            # coincident bin; the validated track component owns path identity.
-            if located.shape != (bins.n_bins,) or np.any(
-                (located < 0) | (located >= bins.n_bins)
-            ):
-                raise ValueError("Track locator does not locate its bin centers.")
-            _equal(
-                bins.centers[located],
-                bins.centers,
-                "track locator bin-center coordinates",
-            )
-        else:
-            _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
+    located = copy.deepcopy(locator).locate(bins.centers)
+    if track is not None:
+        # An embedded track can revisit an identical spatial point at a
+        # different linear coordinate. Nearest-point lookup may choose either
+        # coincident bin; the validated track component owns path identity.
+        if located.shape != (bins.n_bins,) or np.any(
+            (located < 0) | (located >= bins.n_bins)
+        ):
+            raise ValueError("Track locator does not locate its bin centers.")
+        _equal(
+            bins.centers[located],
+            bins.centers,
+            "track locator bin-center coordinates",
+        )
+    else:
+        _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")

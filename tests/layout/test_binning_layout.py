@@ -7,7 +7,7 @@ from dataclasses import replace
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning, publish_environment
+from environment_helpers import publish_binning
 
 from neurospatial import Environment
 from neurospatial.environment._fields import face_geometry
@@ -24,19 +24,17 @@ from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import HexLocator, MeshLocator, RectilinearLocator
 
 
-def _facade(env, *, binning=None, connectivity=None):
+def _facade(env, *, binning=None):
     source = env._binning if binning is None else binning
     if not isinstance(source.faces, (KnownFaces, MissingFaces)):
         source = replace(source, faces=KnownFaces(source.faces.build()))
     return publish_binning(
         source,
-        connectivity=env.connectivity if connectivity is None else connectivity,
         dimension_ranges=env.dimension_ranges,
         layout_type=source.kind,
         category=env._provenance.category,
         build_params=env.layout_parameters,
-        is_linearized_track=env.is_linearized_track,
-        coordinate_kind="polar" if env._is_polar else "cartesian",
+        coordinates=env._geometry.coordinates,
         arena=env.arena if env._is_polar else None,
     )
 
@@ -93,9 +91,6 @@ def grid_env():
 @pytest.mark.parametrize(
     "mismatch",
     [
-        "node_labels",
-        "node_position",
-        "distance",
         "face_edges",
         "face_volumes",
         "active_count",
@@ -108,18 +103,7 @@ def grid_env():
 def test_facade_rejects_inconsistent_data(grid_env, mismatch):
     env = grid_env
     binning = env._binning
-    graph = env.connectivity.copy()
-    pattern = ""
-    if mismatch == "node_labels":
-        graph = nx.relabel_nodes(graph, {0: env.n_bins})
-        pattern = "nodes|labels"
-    elif mismatch == "node_position":
-        graph.nodes[0]["pos"] = (0.51, 0.5)
-        pattern = "pos|centers"
-    elif mismatch == "distance":
-        graph.edges[next(iter(graph.edges))]["distance"] += 0.01
-        pattern = "distance"
-    elif mismatch.startswith("face_"):
+    if mismatch.startswith("face_"):
         faces = binning.faces.build()
         if mismatch == "face_edges":
             faces = faces._replace(edges=faces.edges[::-1])
@@ -156,65 +140,7 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
         binning = replace(binning, locator=replace(binning.locator, edges=tuple(edges)))
         pattern = "edges|centers|geometry"
     with pytest.raises(ValueError, match=pattern):
-        _facade(env, binning=binning, connectivity=graph)
-
-
-@pytest.mark.parametrize("graph_order", ["pair_order", "pair_orientation"])
-def test_graph_iteration_order_preserves_authoritative_pairs_and_weights(
-    grid_env, graph_order
-):
-    """Graph iteration cannot change bin IDs or ordered gradient/flux values."""
-    from neurospatial.ops.calculus import divergence, gradient
-
-    env = grid_env
-    graph = nx.Graph()
-    nodes = list(env.connectivity.nodes(data=True))
-    graph.add_nodes_from(nodes[::-1] if graph_order == "pair_orientation" else nodes)
-    graph.add_edges_from(list(env.connectivity.edges(data=True))[::-1])
-    assert list(graph.edges) != list(env.connectivity.edges)
-    facade = _facade(env, connectivity=graph)
-    bins = facade._binning.bins
-    np.testing.assert_array_equal(bins.centers, env.bin_centers)
-    np.testing.assert_array_equal(bins.pairs, env.edge_pairs)
-    np.testing.assert_array_equal(bins.pair_distances, env._binning.bins.pair_distances)
-    for (u, v), distance in zip(bins.pairs, bins.pair_distances, strict=True):
-        assert facade.connectivity.edges[u, v]["distance"] == distance
-    for actual, expected in zip(
-        facade._binning.faces.build(),
-        face_geometry(env._cache, env._binning),
-        strict=True,
-    ):
-        np.testing.assert_array_equal(actual, expected)
-
-    published = publish_environment(layout=facade, layout_type_used=facade.layout_type)
-    np.testing.assert_array_equal(
-        published.bin_at(env.bin_centers), np.arange(env.n_bins)
-    )
-    np.testing.assert_array_equal(published.edge_pairs, env.edge_pairs)
-    attributes = published.get_edge_attributes()
-    np.testing.assert_array_equal(
-        attributes[["source", "target"]].to_numpy(), published.edge_pairs
-    )
-    vectors = (
-        published.bin_centers[published.edge_pairs[:, 1]]
-        - published.bin_centers[published.edge_pairs[:, 0]]
-    )
-    np.testing.assert_array_equal(np.asarray(attributes["vector"].tolist()), vectors)
-    np.testing.assert_array_equal(
-        attributes[["vector_dim0", "vector_dim1"]].to_numpy(), vectors
-    )
-    np.testing.assert_array_equal(attributes["distance"], bins.pair_distances)
-    np.testing.assert_array_equal(
-        attributes["angle_2d"], np.arctan2(vectors[:, 1], vectors[:, 0])
-    )
-    field = np.arange(env.n_bins, dtype=float) ** 2
-    flux = np.arange(len(env.edge_pairs), dtype=float) + 0.5
-    np.testing.assert_array_equal(gradient(published, field), gradient(env, field))
-    np.testing.assert_array_equal(divergence(published, flux), divergence(env, flux))
-    np.testing.assert_allclose(
-        published.compute_kernel(1.0, mode="average"),
-        env.compute_kernel(1.0, mode="average"),
-    )
+        _facade(env, binning=binning)
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
@@ -300,8 +226,6 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
         sizes=original.bins.sizes[permutation],
         pairs=inverse[original.bins.pairs],
     )
-    graph = nx.relabel_nodes(env.connectivity, dict(enumerate(inverse)), copy=True)
-    np.testing.assert_array_equal(np.asarray(list(graph.edges)), bins.pairs)
     mapping_name = (
         "flat_to_active" if original.kind == "Hexagonal" else "simplex_to_active"
     )
@@ -319,7 +243,7 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
         faces._replace(edges=inverse[faces.edges], volumes=faces.volumes[permutation])
     )
     binning = replace(original, bins=bins, locator=locator, shapes=shapes, faces=faces)
-    facade = _facade(env, binning=binning, connectivity=graph)
+    facade = _facade(env, binning=binning)
     np.testing.assert_array_equal(
         facade._binning.locator.locate(bins.centers), np.arange(env.n_bins)
     )
@@ -365,12 +289,10 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
         publish_binning(
             binning,
-            connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
             layout_type=original.kind,
             category=env._provenance.category,
             build_params=env.layout_parameters,
-            is_linearized_track=False,
         )
 
 
@@ -419,12 +341,10 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
     def construct():
         return publish_binning(
             binning,
-            connectivity=graph,
             dimension_ranges=[(0.0, 3.0), (0.0, 1.0)],
             layout_type="MaskedGrid",
             category="mask",
             build_params={},
-            is_linearized_track=False,
         )
 
     if corrupt:

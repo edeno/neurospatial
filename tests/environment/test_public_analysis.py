@@ -83,8 +83,8 @@ def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypa
     ):
         assert exported is not other
         assert np.shares_memory(exported, other)
-        with pytest.raises(ValueError):
-            exported.setflags(write=True)
+        with pytest.raises(ValueError, match="read-only"):
+            exported[...] = 0
     first.W.data = np.zeros_like(first.W.data)
     first.W.indices = np.zeros_like(first.W.indices)
     first.W.indptr = np.zeros_like(first.W.indptr)

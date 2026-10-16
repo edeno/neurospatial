@@ -8,63 +8,35 @@ import pickle
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_binning
 
 from neurospatial import Environment
 
 
-def _annotated_environment():
-    """A grid whose graph carries list, dict and array attributes."""
-    source = Environment.from_grid_mask(
+@pytest.fixture(params=["fresh", "deepcopy", "pickle"])
+def published(request):
+    env = Environment.from_grid_mask(
         np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
     )
-    graph = source.to_networkx()
-    graph.nodes[0]["tags"] = ["start", 1]
-    graph.nodes[0]["details"] = {"nested": {"name": "original"}}
-    graph.nodes[0]["samples"] = np.array([1.0, 2.0])
-    edge = next(iter(graph.edges))
-    graph.edges[edge]["notes"] = ["measured"]
-    env = publish_binning(
-        source._binning,
-        connectivity=graph,
-        dimension_ranges=source.dimension_ranges,
-        layout_type="MaskedGrid",
-        category="mask",
-    )
-    return env, graph, edge
-
-
-@pytest.fixture(params=["fresh", "deepcopy", "pickle"])
-def annotated(request):
-    env, graph, edge = _annotated_environment()
     if request.param == "deepcopy":
         env = copy.deepcopy(env)
     elif request.param == "pickle":
         env = pickle.loads(pickle.dumps(env))
-    return env, graph, edge
+    return env
 
 
-def test_attribute_reads_return_the_stored_immutable_values(annotated):
-    env, _, edge = annotated
-    node = env.connectivity.nodes[0]
+def test_attribute_reads_return_the_stored_immutable_values(published):
+    node = published.connectivity.nodes[0]
     # Reads do not copy: the same stored object comes back each time.
-    assert node["pos"] is env.connectivity.nodes[0]["pos"]
-    assert node["tags"] is env.connectivity.nodes[0]["tags"]
-    assert node["tags"] == ("start", 1)
-    assert env.connectivity.edges[edge]["notes"] == ("measured",)
-    assert node["details"]["nested"]["name"] == "original"
-    with pytest.raises(TypeError, match="read-only"):
-        node["details"]["nested"]["name"] = "changed"
-    samples = node["samples"]
-    np.testing.assert_array_equal(samples, [1.0, 2.0])
-    assert not samples.flags.writeable
-    with pytest.raises(ValueError):
-        samples.setflags(write=True)
+    assert node["pos"] is published.connectivity.nodes[0]["pos"]
+    assert node["pos"] == tuple(published.bin_centers[0])
+    assert isinstance(node["original_grid_nd_index"], tuple)
+    for _, _, data in published.connectivity.edges(data=True):
+        assert isinstance(data["vector"], tuple)
 
 
-def test_every_edit_of_the_published_graph_is_refused(annotated):
-    env, _, edge = annotated
-    graph = env.connectivity
+def test_every_edit_of_the_published_graph_is_refused(published):
+    graph = published.connectivity
+    edge = next(iter(graph.edges))
     with pytest.raises(TypeError, match="read-only"):
         graph.nodes[0]["pos"] = (9.0, 9.0)
     with pytest.raises(TypeError, match="read-only"):
@@ -80,43 +52,35 @@ def test_every_edit_of_the_published_graph_is_refused(annotated):
     assert graph._adj[u][v] is graph._adj[v][u]
 
 
-def test_publication_leaves_the_supplied_graph_editable():
-    env, graph, edge = _annotated_environment()
-    graph.nodes[0]["tags"].append("caller")
-    graph.edges[edge]["distance"] = 99.0
-    graph.add_edge(0, 8)
-    assert env.connectivity.nodes[0]["tags"] == ("start", 1)
-    assert env.connectivity.edges[edge]["distance"] != 99.0
-    assert not env.connectivity.has_edge(0, 8)
-
-
-def test_to_networkx_returns_an_independent_editable_graph(annotated):
-    env, _, edge = annotated
-    exported = env.to_networkx()
+def test_to_networkx_returns_an_independent_editable_graph(published):
+    exported = published.to_networkx()
+    edge = next(iter(exported.edges))
     assert type(exported) is nx.Graph
-    assert list(exported.nodes) == list(env.connectivity.nodes)
-    assert list(exported.edges) == list(env.connectivity.edges)
-    node = exported.nodes[0]
-    # Stored types come back as editable values at every level.
-    assert node["tags"] == ["start", 1]
-    assert isinstance(node["pos"], tuple)
-    node["tags"].append("caller")
-    node["details"]["nested"]["name"] = "changed"
-    node["samples"][0] = -99.0
-    exported.edges[edge]["notes"].append("caller")
+    assert list(exported.nodes) == list(published.connectivity.nodes)
+    assert list(exported.edges) == list(published.connectivity.edges)
+    assert isinstance(exported.nodes[0]["pos"], tuple)
+    exported.nodes[0]["pos"] = (-99.0, -99.0)
     exported.edges[edge]["distance"] = 99.0
     exported.add_edge(0, 8)
-    published = env.connectivity
-    assert published.nodes[0]["tags"] == ("start", 1)
-    assert published.nodes[0]["details"]["nested"]["name"] == "original"
-    np.testing.assert_array_equal(published.nodes[0]["samples"], [1.0, 2.0])
-    assert published.edges[edge]["notes"] == ("measured",)
-    assert published.edges[edge]["distance"] != 99.0
-    assert not published.has_edge(0, 8)
+    graph = published.connectivity
+    assert graph.nodes[0]["pos"] == tuple(published.bin_centers[0])
+    assert graph.edges[edge]["distance"] != 99.0
+    assert not graph.has_edge(0, 8)
 
 
-def test_shortest_paths_match_center_distances(annotated):
-    env, _, _ = annotated
+def test_graph_follows_the_binning(published):
+    """Nodes are bins and edges are neighbor pairs with their distances."""
+    graph = published.connectivity
+    assert list(graph.nodes) == list(range(published.n_bins))
+    pairs = {frozenset(map(int, pair)) for pair in published.edge_pairs}
+    assert {frozenset(edge) for edge in graph.edges} == pairs
+    distances = published._binning.bins.pair_distances
+    for row, (u, v) in enumerate(published.edge_pairs):
+        assert graph.edges[int(u), int(v)]["distance"] == distances[row]
+
+
+def test_shortest_paths_match_center_distances(published):
+    env = published
     # Independent oracle: straight-line grid distances between bin centers.
     centers = env.bin_centers
     oracle = nx.Graph()
@@ -190,3 +154,40 @@ def test_polar_edge_ids_number_pair_rows_across_the_seam(circular):
     )
     _edge_ids_are_pair_rows(env)
     _edge_ids_are_pair_rows(Environment.from_dict(env.to_dict()))
+
+
+def test_wall_removed_pairs_renumber_edge_ids_by_kept_pair_row():
+    """Walls drop pairs; each remaining edge_id is its row in env.edge_pairs."""
+    from shapely.geometry import LineString, box
+
+    from neurospatial.arena import OpenArena
+
+    open_env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
+    walled = Environment.from_polygon(
+        box(0, 0, 10, 10),
+        bin_size=1.0,
+        arena=OpenArena(box(0, 0, 10, 10), walls=(LineString([(5, 0), (5, 8)]),)),
+    )
+    assert walled.edge_pairs.shape[0] < open_env.edge_pairs.shape[0]
+    _edge_ids_are_pair_rows(walled)
+    _edge_ids_are_pair_rows(Environment.from_dict(walled.to_dict()))
+
+
+def test_combined_environment_graph_order_survives_a_round_trip():
+    """A read-back combined environment iterates neighbors in the same order."""
+    from shapely.geometry import box
+
+    first = Environment.from_polygon(box(0, 0, 10, 10), bin_size=2.0)
+    second = Environment.from_polygon(box(12, 0, 22, 10), bin_size=2.0)
+    combined = Environment.combine({"a": first, "b": second})
+    restored = Environment.from_dict(combined.to_dict())
+
+    def neighbors(env):
+        return [list(env.connectivity.neighbors(node)) for node in env.connectivity]
+
+    assert neighbors(restored) == neighbors(combined)
+    # Equally short paths are broken by neighbor order, so they agree too.
+    for target in range(0, combined.n_bins, 3):
+        assert list(restored.path_between(bins=[0, target])) == list(
+            combined.path_between(bins=[0, target])
+        )

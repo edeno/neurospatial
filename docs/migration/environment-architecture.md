@@ -241,6 +241,9 @@ If you wrote your own layout engine:
   any other argument that is not a scalar or a flat sequence of scalars
   raises a `TypeError` when the engine is built, instead of being dropped
   silently.
+- Each bin center must be found in its own bin by the binning's locator; the
+  environment checks this for every engine when it is built and refuses a
+  binning that fails it.
 - An external object that has no `binning()` method still needs an installed
   snapshot adapter (see the
   [interoperability guide](../user-guide/interoperability.md)).
@@ -303,27 +306,26 @@ ports_env = Environment.from_layout(ports, units="cm")
 assert ports_env.bin_at([[11.0, 9.0], [50.0, 50.0]]).tolist() == [0, -1]
 ```
 
-## Graph attributes are immutable values
+## The connectivity graph is rebuilt from the bins
 
-`env.connectivity` was already read-only. Its graph, node and edge attribute
-values (including `env.connectivity.graph`) are now stored as immutable
-values, so reading them no longer makes a copy:
-
-| Attribute value you stored | What you read from `env.connectivity` |
-| --- | --- |
-| list, e.g. `["measured", 7]` | tuple, `("measured", 7)` |
-| dict | read-only mapping |
-| set | frozenset |
-| NumPy array | read-only array |
-
-`env.to_networkx()` returns an independent graph with the original types
-(lists, dicts, sets and writable arrays), so edit attributes there:
+`env.connectivity` was already read-only. It is now rebuilt from the bins
+whenever an environment is built, derived (`subset`, `clip`, `rebin`,
+`apply_transform`, `combine`) or loaded, so every environment carries the
+same standard attributes: `pos`, `source_grid_flat_index` and
+`original_grid_nd_index` on nodes; `distance`, `vector`, `edge_id` and, in
+2-D, `angle_2d` on edges; `pos_1D` and `source_edge_id` on tracks. The
+values are numbers and tuples, read without a copy. A saved file keeps its
+graph for other tools, but loading does not read it back, so attributes
+added to a saved graph are dropped. Keep per-bin labels in your own arrays
+indexed by bin ID, or annotate an editable copy:
 
 <!-- docs-test: run -->
 ```python
 # Before: env.connectivity.nodes[0]["label"] = "start"  (refused)
 graph = env.to_networkx()
 graph.nodes[0]["label"] = "start"
+labels = np.full(env.n_bins, "", dtype=object)  # or an array indexed by bin
+labels[0] = "start"
 ```
 
 ## Derived environments keep their labels
@@ -948,3 +950,16 @@ assert is_grid and bins.min() >= 0
 For an environment, `env.bin_at(positions)` locates points and
 `env.binning.rectilinear is not None` tells you whether the bins form a
 rectangular grid.
+
+## An environment's public attributes cannot be set
+
+Assigning any public attribute of an `Environment`, even one the class does
+not define, raises an `AttributeError`; it used to attach the value silently.
+Keep your own session labels beside the environment:
+
+<!-- docs-test: run -->
+```python
+# Before: env.session_id = "s1"
+sessions = {env.name: {"session_id": "s1"}}
+labelled = env.with_metadata(name="s1")  # or set the environment's own name
+```

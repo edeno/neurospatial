@@ -678,31 +678,34 @@ def test_public_contract_kit_accepts_an_adapter_published_environment(_registry)
 
 
 @pytest.mark.parametrize("adapted", [True, False])
-def test_from_layout_checks_center_lookup_of_adapted_objects(
+def test_from_layout_checks_center_lookup_of_every_layout(
     _registry, monkeypatch, adapted
 ):
-    """An adapted object gets the from_bins center check; a built engine does not."""
-    from neurospatial.geometry import _validation
+    """Built engines and adapted objects both have each bin center located."""
+    from neurospatial.geometry._locators import RectilinearLocator
 
-    checks = []
-    validate = _validation._validate_components
-
-    def recording(*args, **kwargs):
-        checks.append(kwargs["check_center_lookup"])
-        return validate(*args, **kwargs)
-
-    monkeypatch.setattr(_validation, "_validate_components", recording)
     layout = create_layout(
         "MaskedGrid",
         active_mask=np.ones((2, 2), dtype=bool),
         grid_edges=(np.arange(3.0),) * 2,
     )
+    centers = layout.bin_centers.copy()
     if adapted:
         _registry.append(
             _EntryPoint("binning", _data_adapter(_ExternalBinning, "binning"))
         )
         layout = _ExternalBinning(_explicit_binning(Environment.from_layout(layout)))
-    checks.clear()
+    located = []
+    locate = RectilinearLocator.locate
+
+    def recording(self, points):
+        result = locate(self, points)
+        if np.array_equal(points, centers):
+            located.append(result)
+        return result
+
+    monkeypatch.setattr(RectilinearLocator, "locate", recording)
     env = Environment.from_layout(layout)
-    assert checks == [adapted]
+    assert located
+    np.testing.assert_array_equal(located[0], np.arange(4))
     np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(4))

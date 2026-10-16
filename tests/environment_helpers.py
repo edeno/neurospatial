@@ -3,6 +3,7 @@
 import copy
 import inspect
 import weakref
+from dataclasses import replace
 from unittest import mock
 
 import networkx as nx
@@ -11,34 +12,36 @@ import numpy as np
 from neurospatial import Environment
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
+from neurospatial.geometry._coordinates import CartesianSystem
 
 
 def publish_binning(
     binning,
     *,
-    connectivity,
-    dimension_ranges,
     layout_type,
     category,
+    dimension_ranges=None,
     build_params=None,
-    is_linearized_track=None,
+    coordinates=None,
     name="",
     units=None,
     frame=None,
     cls=Environment,
     **kwargs,
 ):
-    """Publish an explicit binning and graph, as factories and readers do."""
+    """Publish an explicit binning, as factories and readers do.
+
+    ``dimension_ranges``, when given, replaces the binning's own ranges.
+    ``coordinates`` defaults to Cartesian.
+    """
+    if dimension_ranges is not None:
+        binning = replace(binning, dimension_ranges=tuple(dimension_ranges))
     return _publication.publish(
         cls,
         binning,
-        connectivity=connectivity,
-        dimension_ranges=dimension_ranges,
+        coordinates=CartesianSystem() if coordinates is None else coordinates,
         provenance=_Provenance(layout_type, category, dict(build_params or {})),
         metadata=_Metadata(name, units, frame),
-        is_linearized_track=binning.linearization is not None
-        if is_linearized_track is None
-        else is_linearized_track,
         **kwargs,
     )
 
@@ -63,15 +66,12 @@ def publish_environment(
     if isinstance(layout, Environment):
         return publish_binning(
             layout._binning,
-            connectivity=layout.connectivity,
-            dimension_ranges=layout.dimension_ranges,
             layout_type=layout_type_used or layout.layout_type,
             category=layout._provenance.category,
             build_params=layout.layout_parameters
             if layout_params_used is None
             else layout_params_used,
-            is_linearized_track=layout.is_linearized_track,
-            coordinate_kind=layout.coordinate_kind,
+            coordinates=layout._geometry.coordinates,
             name=name,
             units=units,
             frame=frame,

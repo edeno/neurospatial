@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-import networkx as nx
 import numpy as np
 from shapely.geometry import LineString
 from shapely.ops import unary_union
@@ -120,10 +119,7 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
             ):
                 validate_arena(child_arena, child, polar=False)
                 if child_arena.walls:
-                    graph = nx.Graph()
-                    graph.add_nodes_from(range(child.bins.n_bins))
-                    graph.add_edges_from((int(u), int(v)) for u, v in child.bins.pairs)
-                    checked, _graph = apply_walls(child, graph, child_arena)
+                    checked = apply_walls(child, child_arena)
                     if not np.array_equal(checked.bins.pairs, child.bins.pairs):
                         raise ValueError(
                             "Component connectivity crosses its declared physical walls."
@@ -184,17 +180,15 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
                     )
 
 
-def apply_walls(
-    binning: Binning, graph: nx.Graph, arena: Arena
-) -> tuple[Binning, nx.Graph]:
+def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Remove complete blocked cell interfaces from paths and finite-volume faces."""
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
         # its independently rounded global polygons loses the native source frame.
         # New bridge crossings are checked when constructing/validating the root.
-        return binning, graph
+        return binning
     if not arena.walls:
-        return binning, graph
+        return binning
 
     wall_frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
     if wall_frame is None:
@@ -243,7 +237,7 @@ def apply_walls(
                     )
             keep[index] = contact.intersection(walls).is_empty and not crosses
     if np.all(keep):
-        return binning, graph
+        return binning
     bins = binning.bins
     updated = SpatialBins(
         bins.centers,
@@ -260,14 +254,9 @@ def apply_walls(
                 updated.pairs, source.A[keep], source.distance[keep], updated.sizes
             )
         )
-    result_graph = graph.copy()
-    result_graph.remove_edges_from(bins.pairs[~keep])
-
     normals = (
         FaceNormals(binning.face_normals.values[keep])
         if binning.face_normals is not None
         else None
     )
-    return replace(
-        binning, bins=updated, faces=faces, face_normals=normals
-    ), result_graph
+    return replace(binning, bins=updated, faces=faces, face_normals=normals)

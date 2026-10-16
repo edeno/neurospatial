@@ -168,12 +168,10 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
     )
     layout = publish_binning(
         binning,
-        connectivity=source.connectivity,
         dimension_ranges=source.dimension_ranges,
         layout_type="PolygonCells",
         category="polygon",
         build_params={},
-        is_linearized_track=False,
     )
     target = publish_environment(
         "alternate", layout, "PolygonCells", {}, arena=source.arena
@@ -361,12 +359,10 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
         )
     layout = publish_binning(
         built_environment._binning,
-        connectivity=built_environment.connectivity,
         dimension_ranges=built_environment.dimension_ranges,
         layout_type="CustomHex",
         category="custom",
         build_params={},
-        is_linearized_track=False,
     )
     env = publish_environment("custom", layout, "CustomHex", {})
     assert env.arena.domain_known
