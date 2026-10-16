@@ -1,6 +1,6 @@
 """Comprehensive tests for Environment field operations (_fields.py module).
 
-This module tests the field operations mixin for Environment, covering:
+This module tests the Environment field methods, covering:
 - compute_kernel() method (diffusion kernel computation)
 - smooth() method (field smoothing with various modes)
 - interpolate() method (nearest and linear interpolation)

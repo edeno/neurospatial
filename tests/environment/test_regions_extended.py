@@ -1,7 +1,7 @@
 """
-Comprehensive tests for Environment region operations (regions.py module).
+Comprehensive tests for Environment region operations (_regions.py module).
 
-This module tests the region operations mixin for Environment, covering:
+This module tests the Environment region methods, covering:
 - bins_in_region() method
 - region_mask() method
 - Region addition with various geometries
@@ -17,7 +17,7 @@ TEST_PLAN2.md : Section 2.2 - Region Operations Tests
 
 Notes
 -----
-This test file focuses on the Environment mixin
+This test file focuses on the Environment region methods
 (src/neurospatial/environment/_regions.py), not the core regions module
 (src/neurospatial/regions/), which has separate test files.
 """
