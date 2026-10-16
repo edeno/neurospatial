@@ -36,8 +36,10 @@ from neurospatial.environment._cache import (
     AnalysisCache,
 )
 from neurospatial.environment._cartesian import (
-    CARTESIAN_OPERATIONS,
-    require_cartesian,
+    GRID_REASON,
+    cartesian_only,
+    cartesian_only_error,
+    cartesian_only_members,
 )
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
@@ -913,19 +915,20 @@ class Environment(Generic[_C]):
         """
         return copy_module.copy(self._coordinate_system)
 
-    def _require_cartesian(self, operation: str) -> None:
-        """Refuse Cartesian coordinate math for polar radius/angle bins."""
-        require_cartesian(self._coordinate_system, operation)
-
     # Runtime capability filtering must not make unknown attributes appear as
     # Any to type checkers, which would also admit missing protocol members.
     if not TYPE_CHECKING:
 
         def __getattribute__(self, name: str) -> Any:
-            if name in CARTESIAN_OPERATIONS:
+            # Polar instances refuse @cartesian_only members, so hasattr is False.
+            if name in _CARTESIAN_ONLY:
                 geometry = object.__getattribute__(self, "__dict__").get("_geometry")
-                if geometry is not None:
-                    require_cartesian(geometry.coordinates, f"{name}()")
+                if geometry is not None and isinstance(
+                    geometry.coordinates, EgocentricPolarSystem
+                ):
+                    raise cartesian_only_error(
+                        type(self).__name__, f"{name}()", _CARTESIAN_ONLY[name]
+                    )
             return super().__getattribute__(name)
 
     @property
@@ -1031,13 +1034,13 @@ class Environment(Generic[_C]):
         )
 
     @property
+    @cartesian_only
     def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
-        self._require_cartesian("component_keys()")
-
         return _component_keys(self._binning)
 
     @property
+    @cartesian_only
     def bin_sources(
         self: Environment[CartesianSystem],
     ) -> tuple[tuple[str, int], ...] | None:
@@ -1045,10 +1048,9 @@ class Environment(Generic[_C]):
 
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
-        self._require_cartesian("bin_sources()")
-
         return _bin_sources(self._binning)
 
+    @cartesian_only
     def get_bridge_attributes(self: Environment[CartesianSystem]) -> pd.DataFrame:
         """Return an independent table of retained automatic navigation bridges.
 
@@ -1056,9 +1058,9 @@ class Environment(Generic[_C]):
         and geometric conductance. Native environments return an empty table.
         Conductance units are length ** (measure_dim - 2).
         """
-        self._require_cartesian("get_bridge_attributes()")
         return _get_bridge_attributes(self._binning)
 
+    @cartesian_only
     def bin_at(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.intp]:
@@ -1122,7 +1124,6 @@ class Environment(Generic[_C]):
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        self._require_cartesian("bin_at()")
         return self._locate(points_nd)
 
     def nearest_bin(
@@ -1184,6 +1185,7 @@ class Environment(Generic[_C]):
             max_distance_factor=max_distance_factor,
         )
 
+    @cartesian_only
     def contains(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
@@ -1225,7 +1227,6 @@ class Environment(Generic[_C]):
         [ True False]  # First point in environment, second outside
 
         """
-        self._require_cartesian("contains()")
         if self.is_linearized_track and not self.arena.domain_known:
             raise NotImplementedError(
                 _format_error(
@@ -1237,6 +1238,7 @@ class Environment(Generic[_C]):
         indices = self._locate(points_nd)
         return np.asarray(indices != -1, dtype=np.bool_)
 
+    @cartesian_only
     def distance_between(
         self: Environment[CartesianSystem],
         point1: NDArray[np.float64],
@@ -1281,7 +1283,6 @@ class Environment(Generic[_C]):
         True
 
         """
-        self._require_cartesian("distance_between()")
         source_bin = self.bin_at(np.atleast_2d(point1))[0]
         target_bin = self.bin_at(np.atleast_2d(point2))[0]
 
@@ -1304,6 +1305,7 @@ class Environment(Generic[_C]):
             self.connectivity, source_bin, target_bin, weight=edge_weight
         )
 
+    @cartesian_only(grid=True)
     def to_linear(
         self: Environment[CartesianSystem],
         nd_position: NDArray[np.float64],
@@ -1368,7 +1370,6 @@ class Environment(Generic[_C]):
         Linear position: 5.0
 
         """
-        self._require_cartesian("to_linear()")
         if not self._is_linearized_track_env:
             msg = (
                 "to_linear() is only available for 1D environments (GraphLayout). "
@@ -1382,6 +1383,7 @@ class Environment(Generic[_C]):
         assert linearization is not None
         return linearization.to_linear(nd_position)
 
+    @cartesian_only(grid=True)
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],
@@ -1444,7 +1446,6 @@ class Environment(Generic[_C]):
         2D position: [5. 0.]
 
         """
-        self._require_cartesian("linear_to_nd()")
         if not self._is_linearized_track_env:
             msg = (
                 "linear_to_nd() is only available for 1D environments (GraphLayout). "
@@ -1458,6 +1459,7 @@ class Environment(Generic[_C]):
         assert linearization is not None
         return linearization.linear_to_nd(linear_position)
 
+    @cartesian_only
     def occupancy(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1608,7 +1610,6 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        self._require_cartesian("occupancy()")
         return _occupancy(
             times,
             positions,
@@ -1625,6 +1626,7 @@ class Environment(Generic[_C]):
             return_seconds=return_seconds,
         )
 
+    @cartesian_only
     def bin_sequence(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1705,7 +1707,6 @@ class Environment(Generic[_C]):
         ... )  # doctest: +SKIP
 
         """
-        self._require_cartesian("bin_sequence()")
         result = _bin_sequence(
             times,
             positions,
@@ -1719,6 +1720,7 @@ class Environment(Generic[_C]):
         )
         return result.bins
 
+    @cartesian_only
     def bin_sequence_with_runs(
         self: Environment[CartesianSystem],
         times: NDArray[np.float64],
@@ -1785,7 +1787,6 @@ class Environment(Generic[_C]):
         >>> # times[result.run_starts[i] + result.run_lengths[i] - 1]
         >>> #   - times[result.run_starts[i]]
         """
-        self._require_cartesian("bin_sequence_with_runs()")
         return _bin_sequence(
             times,
             positions,
@@ -1798,6 +1799,7 @@ class Environment(Generic[_C]):
             epochs=epochs,
         )
 
+    @cartesian_only
     def interpolate(
         self: Environment[CartesianSystem],
         field: NDArray[np.float64],
@@ -1891,7 +1893,6 @@ class Environment(Generic[_C]):
         ... )  # doctest: +SKIP
 
         """
-        self._require_cartesian("interpolate()")
         return _interpolate(
             field,
             points,
@@ -1901,6 +1902,7 @@ class Environment(Generic[_C]):
             mode=mode,
         )
 
+    @cartesian_only(grid=True)
     def rebin(
         self: Environment[CartesianSystem],
         factor: int | tuple[int, ...] | None = None,
@@ -2047,7 +2049,6 @@ class Environment(Generic[_C]):
         True
 
         """
-        self._require_cartesian("rebin()")
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
 
@@ -2062,6 +2063,7 @@ class Environment(Generic[_C]):
         warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
 
+    @cartesian_only(grid=True)
     def subset(
         self: Environment[CartesianSystem],
         *,
@@ -2153,7 +2155,6 @@ class Environment(Generic[_C]):
         ... )  # doctest: +SKIP
 
         """
-        self._require_cartesian("subset()")
         derivation = _subset(
             self._binning,
             self.connectivity,
@@ -2165,6 +2166,7 @@ class Environment(Generic[_C]):
         )
         return publish_derived(self, derivation, name=name)
 
+    @cartesian_only
     def clip(
         self: Environment[CartesianSystem],
         polygon: shapely.Polygon | shapely.MultiPolygon,
@@ -2197,11 +2199,11 @@ class Environment(Generic[_C]):
             positive-area intersection. Track, polar and 3-D cells are not
             Cartesian planar area cells.
         """
-        self._require_cartesian("clip()")
         return publish_derived(
             self, _clip(self._binning, self._arena, polygon), name=name
         )
 
+    @cartesian_only
     def apply_transform(
         self: Environment[CartesianSystem],
         transform: AffineND | Affine2D,
@@ -2399,7 +2401,6 @@ class Environment(Generic[_C]):
         True
 
         """
-        self._require_cartesian("apply_transform()")
         derivation = _apply_transform(
             transform,
             binning=self._binning,
@@ -6218,3 +6219,12 @@ class Environment(Generic[_C]):
             max_gap=max_gap,
             epochs=epochs,
         )
+
+
+# Each Cartesian-only member and its refusal reason, collected from the
+# @cartesian_only decorators; the derived sets name the same members.
+_CARTESIAN_ONLY = cartesian_only_members(Environment)
+CARTESIAN_OPERATIONS: frozenset[str] = frozenset(_CARTESIAN_ONLY)
+CARTESIAN_GRID_OPERATIONS: frozenset[str] = frozenset(
+    name for name, reason in _CARTESIAN_ONLY.items() if reason == GRID_REASON
+)

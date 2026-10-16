@@ -350,13 +350,22 @@ row IDs. Derivations such as subsets retain their existing graph metadata and
 edge ordering rather than rebuilding those annotations from geometry alone.
 
 There is one public runtime `Environment` class. Factories infer its static
-Cartesian or egocentric-polar coordinate type. Cartesian-only entry points use
-restricted `self` annotations and a runtime `_require_cartesian` guard, including
-unbound calls. `CARTESIAN_OPERATIONS` controls polar attribute availability;
-`test_every_public_member_is_classified_for_polar` checks that capability table.
-The attribute-filtering hook exists only at runtime: type checkers must still
-reject missing attributes. Negative static
-contracts in `tests/typing` guard these failures with checked ignore comments.
+Cartesian or egocentric-polar coordinate type. To make a member Cartesian-only,
+annotate `self` as `Environment[CartesianSystem]` for type checkers and
+decorate it with `@cartesian_only` from `environment/_cartesian.py`, or
+`@cartesian_only(grid=True)` when it needs a Cartesian grid. For a property,
+put the decorator below `@property`. The decorator is the only record of the
+capability. It refuses unbound calls such as `Environment.bin_at(polar_env,
+points)`, and `CARTESIAN_OPERATIONS` and `CARTESIAN_GRID_OPERATIONS` in
+`environment/core.py` are derived from it. On polar instances,
+`Environment.__getattribute__` refuses the decorated members, so `hasattr` is
+False. A method that refuses only one mode on polar bins calls
+`require_cartesian(coordinates, "...")` for that mode.
+`test_every_public_member_is_classified_for_polar` checks that every other
+public member has a reviewed polar meaning. The attribute-filtering hook exists
+only at runtime: type checkers must still reject missing attributes. Negative
+static contracts in `tests/typing` guard these failures with checked ignore
+comments.
 Shared code asks the owned coordinate descriptor about lengths, axes and
 circularity, or uses public `coordinate_kind` for metadata. Do not discriminate
 using environment classes or descriptive layout labels.

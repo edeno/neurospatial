@@ -11,7 +11,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial._exceptions import CartesianOnlyError
-from neurospatial.environment._cartesian import CARTESIAN_OPERATIONS
+from neurospatial.environment.core import CARTESIAN_OPERATIONS
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 

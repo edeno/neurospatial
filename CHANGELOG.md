@@ -160,6 +160,14 @@
 
 ### Changed
 
+- A `CartesianOnlyError` from a Cartesian-only method or property, such as
+  `bin_at`, `contains` or `occupancy`, names the class of the environment that
+  refused the call. On a subclass of `Environment`, `polar_env.bin_at(points)`
+  reports
+  `MyEnvironment.bin_at() is not available ...`, for the bound call and for
+  `Environment.bin_at(polar_env, points)` alike. Messages from `Environment`
+  itself are unchanged.
+
 - `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
   rectangular grids splits every interval across the cells its straight path
   crosses at once, instead of one interval at a time: a 20,000-sample 3-D
