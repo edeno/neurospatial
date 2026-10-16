@@ -416,6 +416,14 @@ def _plot(
     )
     # layout.plot() always returns an Axes object, never None
     assert ax is not None
+    if binning.bins.n_dims == 2:
+        # Name the axes by what the coordinates mean, as plot_field does:
+        # (distance, angle) on a polar environment is not (x, y).
+        xlabel, ylabel = labels.coordinates.axis_labels(labels.units)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        if not labels.coordinates.equal_aspect:
+            ax.set_aspect("auto")
 
     if show_regions:
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}

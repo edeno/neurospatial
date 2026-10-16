@@ -318,6 +318,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.plot()` names the axes of a 2-D environment by what the coordinates
+  mean, as `env.plot_field()` does: "X Position (cm)" and "Y Position (cm)"
+  on a Cartesian environment, and "Distance (cm)" and "Angle (rad)" with a
+  free aspect ratio on a polar one. It used to label every environment
+  "Dimension 0" and "Dimension 1" (or "X coordinate" and "Y coordinate").
+
 - On an egocentric polar environment, `env.component_keys`, `env.bin_sources`
   and `env.get_bridge_attributes()` give the answers of any environment that
   was not combined: an empty tuple, `None` and an empty table. They used to

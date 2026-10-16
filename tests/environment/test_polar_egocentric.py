@@ -1527,3 +1527,38 @@ def test_combine_refuses_polar_components_with_the_shared_error():
     )
     with pytest.raises(TypeError, match="takes Environment values"):
         Environment.combine({"room": room, "other": object()})
+
+
+@pytest.mark.parametrize(
+    ("coordinate_kind", "labels", "aspect"),
+    [
+        ("polar", ("Distance (cm)", "Angle (rad)"), "auto"),
+        ("cartesian", ("X Position (cm)", "Y Position (cm)"), 1.0),
+    ],
+)
+def test_layout_plot_names_axes_by_coordinate_meaning(coordinate_kind, labels, aspect):
+    """env.plot() labels and scales the axes as plot_field does."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    if coordinate_kind == "polar":
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+            units="cm",
+        )
+    else:
+        env = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 50, (500, 2)), bin_size=5.0, units="cm"
+        )
+    fig, ax = plt.subplots()
+    try:
+        env.plot(ax=ax)
+        assert (ax.get_xlabel(), ax.get_ylabel()) == labels
+        assert ax.get_aspect() == aspect
+    finally:
+        plt.close(fig)
