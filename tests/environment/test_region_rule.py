@@ -158,6 +158,32 @@ def test_subset_by_polygon_matches_the_polygon_region(env_with_regions):
     )
 
 
+@pytest.mark.parametrize("include_boundary", [True, False])
+def test_subset_follows_include_boundary(include_boundary):
+    """subset(region_names=) and subset(polygon=) use the rule's boundary choice."""
+    edges = np.arange(0.0, 11.0, 2.0)  # centers 1, 3, 5, 7, 9
+    env = Environment.from_grid_mask(np.ones((5, 5), dtype=bool), (edges, edges))
+    zone = box(3.0, 3.0, 7.0, 7.0)  # edges through the centers at 3 and 7
+    regions = Regions()
+    regions.add("zone", polygon=zone)
+    env = env.with_regions(regions)
+    expected = env.bin_centers[
+        env.bins_in_region("zone", include_boundary=include_boundary)
+    ]
+    for sub in (
+        env.subset(region_names=["zone"], include_boundary=include_boundary),
+        env.subset(polygon=zone, include_boundary=include_boundary),
+    ):
+        np.testing.assert_array_equal(sub.bin_centers, expected)
+    assert len(expected) == (9 if include_boundary else 1)
+
+
+def test_subset_refuses_include_boundary_with_a_mask():
+    env = _LAYOUTS["grid"]()
+    with pytest.raises(ValueError, match=r"include_boundary= with mask=[\s\S]*Fix:"):
+        env.subset(mask=np.ones(env.n_bins, dtype=bool), include_boundary=False)
+
+
 def test_polygon_region_in_a_1d_environment_raises_with_fix():
     env = Environment.from_samples(np.linspace(0, 20, 50)[:, None], bin_size=2.0)
     zone = Region("zone", "polygon", box(0, 0, 5, 5))

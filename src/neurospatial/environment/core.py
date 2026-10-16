@@ -2090,6 +2090,7 @@ class Environment(Generic[_C]):
         mask: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
+        include_boundary: bool = True,
         invert: bool = False,
         name: str | None = None,
     ) -> Environment[CartesianSystem]:
@@ -2114,6 +2115,12 @@ class Environment(Generic[_C]):
         polygon : shapely.Polygon, optional
             Keep bins whose centers lie inside this polygon or on its edge.
             Only works for 2D environments.
+        include_boundary : bool, default=True
+            For ``region_names=`` polygons and ``polygon=``, keep a bin whose
+            center lies exactly on the polygon's edge; with False keep only
+            centers strictly inside. This is the rule of
+            :meth:`bins_in_region`. Point regions ignore it, and it cannot be
+            changed with ``mask=``, which already lists the bins to keep.
         invert : bool, default=False
             If True, invert the selection mask (select complement).
         name : str, optional
@@ -2184,6 +2191,7 @@ class Environment(Generic[_C]):
             mask=mask,
             region_names=region_names,
             polygon=polygon,
+            include_boundary=include_boundary,
             invert=invert,
         )
         return publish_derived(self, derivation, name=name)

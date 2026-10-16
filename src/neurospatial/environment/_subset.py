@@ -30,11 +30,16 @@ def _subset_mask(
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
+    include_boundary: bool = True,
     invert: bool = False,
 ) -> NDArray[np.bool_]:
     """Validate a spatial selection and build its active-bin mask."""
     n_bins = binning.bins.n_bins
     # --- Input Validation ---
+    if not isinstance(include_boundary, bool):
+        raise TypeError(
+            f"include_boundary must be a bool, got {type(include_boundary).__name__}."
+        )
 
     # Exactly one selection parameter must be provided
     n_params = sum([mask is not None, region_names is not None, polygon is not None])
@@ -66,6 +71,16 @@ def _subset_mask(
             raise ValueError(
                 f"mask must have shape (n_bins,) = ({n_bins},), got shape {mask.shape}"
             )
+        if not include_boundary:
+            raise ValueError(
+                _format_error(
+                    "subset() got include_boundary= with mask=.",
+                    why="Why: include_boundary decides polygon edges for "
+                    "region_names= and polygon=; a mask already lists the bins.",
+                    fix="drop include_boundary=, or build the mask with "
+                    "env.region_mask(..., include_boundary=False)",
+                )
+            )
 
     elif region_names is not None:
         # Validate region_names parameter
@@ -88,7 +103,12 @@ def _subset_mask(
 
         mask = np.zeros(n_bins, dtype=bool)
         for name in region_names:
-            mask |= region_bin_mask(regions[name], binning=binning, arena=arena)
+            mask |= region_bin_mask(
+                regions[name],
+                binning=binning,
+                arena=arena,
+                include_boundary=include_boundary,
+            )
 
     elif polygon is not None:
         # Validate polygon parameter
@@ -99,7 +119,9 @@ def _subset_mask(
                     f"polygon must be a Shapely geometry object, got {type(polygon)}"
                 )
 
-            mask = polygon_bin_mask(polygon, binning.bins.centers)
+            mask = polygon_bin_mask(
+                polygon, binning.bins.centers, include_boundary=include_boundary
+            )
 
         except (AttributeError, TypeError, ValueError) as e:
             raise ValueError(f"Invalid polygon: {e}") from e
@@ -130,6 +152,7 @@ def _subset(
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
+    include_boundary: bool = True,
     invert: bool = False,
 ) -> _Derivation:
     """Derive selected bins and their graph and bounds."""
@@ -140,6 +163,7 @@ def _subset(
         mask=mask,
         region_names=region_names,
         polygon=polygon,
+        include_boundary=include_boundary,
         invert=invert,
     )
     selected, graph, ranges = select_bins(binning, connectivity, mask)

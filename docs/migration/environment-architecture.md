@@ -659,7 +659,8 @@ decision-region entry times (`decision_region_entry_time`,
 `compute_decision_analysis`, `compute_vte_session`), the goal bins and
 decision boundary of `compute_decision_analysis`, `trials_to_region_arrays`
 and `distance_to_boundary(region_name=...)`. To keep only the interior, pass
-`include_boundary=False`:
+`include_boundary=False` to `bins_in_region`, `region_mask`,
+`region_membership` or `subset`:
 
 <!-- docs-test: run -->
 ```python

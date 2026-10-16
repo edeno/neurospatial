@@ -197,8 +197,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   - `bins_in_region()`, `subset(region_names=...)` and `subset(polygon=...)`
     left out bins whose centers lie exactly on a polygon's edge, while
     `region_mask` included them. All of them now include those bins.
-    `bins_in_region` takes `include_boundary=False` for the old interior-only
-    selection. Analyses built on `bins_in_region` can change when a polygon
+    `bins_in_region` and `subset` take `include_boundary=False` for the old
+    interior-only selection (`subset` refuses it together with `mask=`).
+    Analyses built on `bins_in_region` can change when a polygon
     edge passes through bin centers: the decision-region entry time in
     `decision_region_entry_time`, `compute_decision_analysis` and
     `compute_vte_session`, the goal bins and decision boundary of
