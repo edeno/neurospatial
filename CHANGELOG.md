@@ -215,6 +215,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   - On egocentric polar environments a point region is read in the same
     (distance, angle) coordinates as `bin_centers`; `bins_in_region` and
     `region_mask` used to refuse point regions there.
+  - A polygon region on an environment whose bins are not 2-D raises
+    `ValueError` with a fix in `region_membership` and `regions_to_mask`; it
+    used to raise `NotImplementedError`.
 
 - Graph and distance queries take their target by keyword: `bins=` for bin
   indices, `points=` for coordinates and, for `distance_to`, `region=` for a
@@ -237,7 +240,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `TypeError` and point to `points=`; `env.bin_center_of` refuses them too and
   points to `env.bin_at` (`env.nearest_bin` on polar environments, where
   `bin_at` is not available). `BinIndexOutOfRangeError` names the same
-  polar lookup on polar environments. `points=` has shape `(n_points, n_dims)`, one row per
+  polar lookup on polar environments. `bin_center_of` also refuses a 2-D
+  array of indices, for which it used to return an array of shape
+  `(a, b, n_dims)`; pass a 1-D array. `points=` has shape `(n_points, n_dims)`, one row per
   point, in the same coordinates as `bin_centers` (distance and angle on a
   polar environment). Points with NaN or inf coordinates, or outside the
   environment, raise `ValueError` that names the first such row.
@@ -267,7 +272,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   metric="geodesic")` measures with `env.distance_between`: a start outside
   the environment used to return the distance from the last bin without a
   warning, and a goal outside raised an unrelated graph error; both now raise
-  `ValueError` naming the point.
+  `ValueError` naming the point. So `compute_path_efficiency` and
+  `subgoal_efficiency` with `metric="geodesic"` raise that `ValueError` when
+  the trajectory starts outside the environment. `geodesic_voronoi_labels`
+  and `distance_to_decision_boundary` raise `ValueError` for an empty goal
+  list; `distance_to_decision_boundary` used to return `inf` for every sample.
 
 - `Environment.subset(bins=mask)` is now `env.subset(mask=mask)`, so `bins=`
   means integer bin indices everywhere. `mask=` is still a boolean array with

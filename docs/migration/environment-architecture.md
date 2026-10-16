@@ -744,6 +744,20 @@ What the old guesses did, and what happens now:
 | `distance_to_region(position_bins, env, target_bins=50.7)` | distance to bin 50 | `TypeError`; pass a bin index, for example `int(env.bin_at(goal)[0])` |
 | `shortest_path_length(env, start_outside, goal)` | distance from the last bin | `ValueError` naming the point outside |
 
+Other refusals that used to give a number or a different error:
+
+- `env.bin_center_of` takes a 1-D array of bin indices; a 2-D index array
+  raises instead of returning an array of shape `(a, b, n_dims)`.
+- A polygon region on an environment whose bins are not 2-D raises
+  `ValueError` (it was `NotImplementedError`) in `region_membership` and
+  `regions_to_mask`.
+- `compute_path_efficiency` and `subgoal_efficiency` with
+  `metric="geodesic"` raise `ValueError` when the trajectory starts outside
+  the environment, instead of measuring from the last bin.
+- `geodesic_voronoi_labels` and `distance_to_decision_boundary` raise
+  `ValueError` for an empty goal list; `distance_to_decision_boundary` used to
+  return `inf`.
+
 `points=` always has shape `(n_points, n_dims)`: wrap one point as
 `[[x, y]]`. Points with NaN coordinates or outside the environment raise a
 `ValueError` that names the first such row, instead of mapping to `-1`. Queries
