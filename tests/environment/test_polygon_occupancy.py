@@ -261,7 +261,7 @@ def test_polygon_nonfinite_observation_drops_both_adjacent_intervals():
 
 
 def test_retained_intervals_keep_original_fractional_clock():
-    from neurospatial.environment._polygon_trajectory import retained_linear_intervals
+    from neurospatial.ops._polygon_allocation import retained_linear_intervals
 
     env = _one_cell_environment()
     intervals = retained_linear_intervals(

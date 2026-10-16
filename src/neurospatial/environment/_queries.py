@@ -17,10 +17,10 @@ from neurospatial._exceptions import (
 )
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cartesian import require_cartesian
-from neurospatial.environment._lookup import locate
 from neurospatial.environment._regions import _region_membership
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._lookup import locate
 from neurospatial.ops.distance import distance_field
 from neurospatial.regions import Regions
 

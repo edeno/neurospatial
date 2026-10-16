@@ -33,16 +33,16 @@ from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._cartesian import require_cartesian
 from neurospatial.environment._fields import _compute_kernel
-from neurospatial.environment._lookup import locate
-from neurospatial.environment._polygon_trajectory import (
-    _source_grid,
-    retained_linear_intervals,
-    uses_polygon_allocation,
-)
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._capabilities import require_rectilinear
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._lookup import locate
 from neurospatial.ops._linear_allocation import linear_grid_occupancy, ray_grid_pieces
+from neurospatial.ops._polygon_allocation import (
+    retained_linear_intervals,
+    source_grid,
+    uses_polygon_allocation,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
@@ -175,7 +175,7 @@ def _occupancy(
     # correctly flagged the same sample as -1.
     bin_indices = locate(binning, arena, positions)
     if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
-        source_locator, source_positions = _source_grid(binning.grid_frame, positions)
+        source_locator, source_positions = source_grid(binning.grid_frame, positions)
         bin_indices = source_locator.locate(source_positions)
         if arena.domain_known:
             bin_indices[~arena.contains(positions)] = -1
@@ -219,7 +219,7 @@ def _occupancy(
                 # the full grid extent before dropping inactive cells.
                 frame = binning.grid_frame
                 assert frame is not None
-                _, source_positions = _source_grid(frame, positions)
+                _, source_positions = source_grid(frame, positions)
                 samples = np.flatnonzero(valid_mask)
                 interval, _, fraction = ray_grid_pieces(
                     source_positions[samples],

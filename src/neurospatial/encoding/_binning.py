@@ -37,9 +37,10 @@ from neurospatial._intervals import (
     start_allocated_occupancy,
 )
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._polygon_trajectory import (
+from neurospatial.ops._polygon_allocation import (
     RetainedLinearInterval,
     retained_linear_intervals,
+    source_grid,
     uses_polygon_allocation,
 )
 
@@ -415,11 +416,9 @@ def _bin_spike_train_with_stats(
 
     grid_frame = env.binning.grid_frame if linear_intervals is not None else None
     if grid_frame is not None:
-        from neurospatial.environment._polygon_trajectory import _source_grid
-
         # Use the same retained source planes and half-open ownership as
         # fractional dwell allocation, including paths along a hole edge.
-        locator, source_positions = _source_grid(grid_frame, spike_positions)
+        locator, source_positions = source_grid(grid_frame, spike_positions)
         spike_bins = locator.locate(source_positions)
         if env.arena.domain_known:
             spike_bins[~env.arena.contains(spike_positions)] = -1

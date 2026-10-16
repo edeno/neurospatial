@@ -67,7 +67,7 @@ from neurospatial.environment._fields import (
     mrf_eigenbasis,
     require_face_geometry,
 )
-from neurospatial.environment._lookup import locate, nearest_bin
+from neurospatial.environment._lookup import nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
     _cartesian_boundary_bins,
@@ -128,6 +128,7 @@ from neurospatial.geometry._coordinates import (
     CartesianSystem,
     EgocentricPolarSystem,
 )
+from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.layout.factories import LayoutType
 from neurospatial.layout.helpers.utils import find_boundary_nodes

@@ -24,7 +24,7 @@ from neurospatial.environment._cache import (
     MRF_EIGENBASIS,
     AnalysisCache,
 )
-from neurospatial.environment._lookup import locate, nearest_bin
+from neurospatial.environment._lookup import nearest_bin
 from neurospatial.environment._publication import (
     _array_header,
     _freeze_diffusion_geometry,
@@ -38,6 +38,7 @@ from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
 from neurospatial.geometry._grid_frame import require_grid_context
+from neurospatial.geometry._lookup import locate
 from neurospatial.ops.diffusion import (
     MRFBasis,
     _ensure_global_modes,

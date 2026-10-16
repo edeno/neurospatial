@@ -13,7 +13,6 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from neurospatial.environment._lookup import locate
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -25,6 +24,7 @@ from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
 from neurospatial.geometry._composition import composition_view
 from neurospatial.geometry._locators import RectilinearLocator
+from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._polygon import (
     PolygonCells,
     cells_from_locator,
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._grid_frame import FramedGrid
 
 
-def _source_grid(
+def source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
@@ -320,7 +320,7 @@ def retained_linear_intervals(
     domain = arena.polygonal_domain() if arena.domain_known else None
     walls = arena.walls
     if frame is not None:
-        source_locator, positions = _source_grid(frame, positions)
+        source_locator, positions = source_grid(frame, positions)
         cells = cells_from_locator(source_locator)
         source = _wall_source_frame(binning.locator, arena, binning.bins.centers)
         if source is not None and all(
@@ -432,7 +432,7 @@ def _retained_box_intervals(
     if frame is None:
         boxes = _boxes(binning.locator)
     else:
-        source_locator, positions = _source_grid(frame, positions)
+        source_locator, positions = source_grid(frame, positions)
         boxes = _boxes(source_locator)
 
     def domain_boxes(arena):
