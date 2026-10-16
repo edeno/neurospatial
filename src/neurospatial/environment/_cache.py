@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Hashable
-from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from neurospatial import _constants
@@ -24,13 +23,11 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops.diffusion import DiffusionEigenbasis, MRFEigenbasis
 
 _T = TypeVar("_T")
+_R = TypeVar("_R")
 _K = TypeVar("_K", bound=Hashable)
 
 
@@ -84,6 +81,10 @@ class AnalysisCache:
     Keys depend on each other without cycles, so threads cannot wait on each
     other in a loop. The locks are re-entrant, so a computation that asks for
     its own key fails with ``RecursionError`` instead of hanging.
+
+    Values are never edited after they are stored. A value that grows, such
+    as an eigenbasis that gains modes, is an immutable record replaced whole
+    by :meth:`update`, so a reader always sees a complete value.
 
     Pickling and copying a cache produce a new empty cache: computed values
     and locks are never serialized.
@@ -165,25 +166,41 @@ class AnalysisCache:
                 lru_put(family, item, value, limit=key.limit)
             return cast("_T", value)
 
-    def exclusive(self, key: CacheKey[Any]) -> AbstractContextManager[object]:
-        """Let one thread at a time use a value that grows in place.
+    def update(
+        self,
+        key: CacheKey[_T],
+        initial: Callable[[], _T],
+        step: Callable[[_T], tuple[_T, _R]],
+    ) -> _R:
+        """Replace the value of ``key`` with the one ``step`` returns.
 
-        Eigenbasis holders gain modes while they are used. Read and grow such
-        a value inside ``with cache.exclusive(key):`` so a concurrent caller
-        never sees it half updated. The same thread may request ``key`` again
-        inside the block.
+        ``step`` receives the current value (``initial()`` on first use) and
+        returns the value to store, often the same object, and a result for
+        the caller. It runs while holding the key's lock, so concurrent
+        updates of one key run one at a time and each sees the value the
+        previous one stored: work that ``step`` records, such as an
+        eigensolve, is done once.
 
         Parameters
         ----------
         key : CacheKey
-            Value to reserve.
+            Value to advance.
+        initial : callable
+            Builds the starting value when ``key`` holds none.
+        step : callable
+            Maps the current value to ``(new_value, result)``. It must not
+            modify the current value.
 
         Returns
         -------
-        context manager
-            Holds the key's lock for the duration of the ``with`` block.
+        object
+            The result ``step`` returned.
         """
-        return self._lock(key)
+        with self._lock(key):
+            current = self._values.get(key, _MISSING)
+            value, result = step(initial() if current is _MISSING else current)
+            self._values[key] = value
+            return result
 
     def clear(self) -> None:
         """Drop every cached value; later requests compute them again."""
@@ -204,10 +221,8 @@ _MISSING = object()
 KDTREE: CacheKey[cKDTree] = CacheKey("kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")
 DIFFUSION_GEOMETRY: CacheKey[DiffusionGeometry] = CacheKey("diffusion_geometry")
-DIFFUSION_EIGENBASIS: CacheKey[DiffusionEigenbasisCache] = CacheKey(
-    "diffusion_eigenbasis"
-)
-MRF_EIGENBASIS: CacheKey[MRFEigenbasisCache] = CacheKey("mrf_eigenbasis")
+DIFFUSION_EIGENBASIS: CacheKey[DiffusionEigenbasis] = CacheKey("diffusion_eigenbasis")
+MRF_EIGENBASIS: CacheKey[MRFEigenbasis] = CacheKey("mrf_eigenbasis")
 DIFFERENTIAL_OPERATOR: CacheKey[sparse.csc_matrix] = CacheKey("differential_operator")
 DIVERGENCE_OPERATOR: CacheKey[sparse.csc_matrix] = CacheKey("divergence_operator")
 BOUNDARY_BINS: CacheKey[NDArray[Any]] = CacheKey("boundary_bins")

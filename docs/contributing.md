@@ -191,9 +191,12 @@ read with `cache.get(key, build)`. Do not use `cached_property` for analysis
 values: one cache means `clear_cache()` empties everything, the relabelling
 methods can share it with their parent, and derivations, readers and
 unpickled environments can start with a fresh one. Each key has its own
-re-entrant lock so concurrent first requests compute a value once; a value
-that grows in place, such as an eigenbasis, is read and grown inside
-`with cache.exclusive(key):`.
+re-entrant lock so concurrent first requests compute a value once. Cached
+values are never edited. A value that grows, such as an eigenbasis that gains
+modes, is an immutable record: `cache.update(key, initial, step)` passes the
+current record to `step`, which returns its replacement and a result, under
+the key's lock, so the growth happens once and readers never see a partial
+record.
 
 #### Cartesian-only members
 

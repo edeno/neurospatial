@@ -34,6 +34,9 @@ Public entry points are ``Environment.compute_kernel`` / ``Environment.smooth``;
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
@@ -50,11 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from neurospatial.ops._protocols import DiffusionGeometryConsumer
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.ops._types import KernelMode
 
 # Public entry points. The eigenbasis/apply-path functions below
 # (apply_heat_operator, diffusion_apply, heat_kernel_rank,
@@ -121,6 +120,83 @@ class MRFBasis(NamedTuple):
     d: NDArray[np.float64]
     live_bins: NDArray[np.intp]
     n_live_components: int
+
+
+def _frozen(array: NDArray[Any]) -> NDArray[Any]:
+    """Mark a freshly computed array read-only before a holder keeps it."""
+    array.setflags(write=False)
+    return array
+
+
+@dataclass(frozen=True, eq=False)
+class DiffusionEigenbasis:
+    """Truncated heat-kernel eigenbasis of one geometry, replaced as it grows.
+
+    A holder is never edited. Resolving a new bandwidth returns a new holder,
+    which the analysis cache stores in place of the old one under its lock,
+    so a reader always sees a complete holder.
+
+    Attributes
+    ----------
+    basis : tuple of ndarray or None
+        ``(Q, Lam)``: read-only eigenvectors, shape ``(n_bins, rank)``, and
+        ascending eigenvalues, shape ``(rank,)``. The largest truncated basis
+        requested so far, always below ``dense_fraction * n_bins`` modes;
+        None before the first truncated solve.
+    resolved : mapping of (float, float) to int or "dense"
+        Rank resolved for each ``(sigma, tol)``; ``"dense"`` marks a bandwidth
+        that needs a transient full basis, which is never kept.
+    """
+
+    basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
+    resolved: Mapping[tuple[float, float], int | Literal["dense"]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def with_rank(
+        self,
+        key: tuple[float, float],
+        rank: int | Literal["dense"],
+        basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+    ) -> DiffusionEigenbasis:
+        """Return a holder that also records ``rank`` for ``key``."""
+        return DiffusionEigenbasis(
+            self.basis if basis is None else basis,
+            MappingProxyType({**self.resolved, key: rank}),
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class MRFEigenbasis:
+    """Global eigenmodes of one geometry for the MRF basis, replaced as it grows.
+
+    Attributes
+    ----------
+    Q : ndarray, shape (n_bins, G)
+        Read-only component-local eigenvectors, ascending eigenvalue.
+    Lam : ndarray, shape (G,)
+        Read-only eigenvalues.
+    mode_comp : ndarray of intp, shape (G,)
+        Read-only source W-component of each mode.
+    G : int
+        Number of modes held; 0 before the first solve. Dense solves are
+        call-local and never stored.
+    """
+
+    Q: NDArray[np.float64]
+    Lam: NDArray[np.float64]
+    mode_comp: NDArray[np.intp]
+    G: int
+
+    @classmethod
+    def empty(cls, n_bins: int) -> MRFEigenbasis:
+        """Return a holder with no modes for ``n_bins`` bins."""
+        return cls(
+            _frozen(np.zeros((n_bins, 0))),
+            _frozen(np.zeros(0)),
+            _frozen(np.zeros(0, dtype=np.intp)),
+            0,
+        )
 
 
 # Tiny floor for masked/support-gated denominators in the consumers (the raw
@@ -456,27 +532,29 @@ def _symmetric_eigenbasis(
 
 # ---------------------------------------------------------------------------
 # MRF penalty-basis resolver. Reuses the symmetric eigensolver above
-# without modifying it. A cached GLOBAL resolver (``_ensure_global_modes`` +
-# ``Environment._mrf_eigenbasis``) owns the eigensolve and grows on demand; a
+# without modifying it. A cached GLOBAL resolver (``_ensure_global_modes`` and
+# the environment's cached ``MRFEigenbasis``) owns the eigensolve and grows on demand; a
 # PURE selector (``select_live_basis``) consumes the cached modes and only masks
 # by occupancy. The split keeps the eigensolve behind the cache so a repeat call
 # at the same-or-smaller rank / same live support never re-solves *while it stays
 # in the sparse (persisted) regime* (a near-full-rank dense solve is transient).
 # ---------------------------------------------------------------------------
 def _ensure_global_modes(
-    holder: MRFEigenbasisCache,
+    holder: MRFEigenbasis,
     S: scipy.sparse.spmatrix,
     labels: NDArray[np.int_],
     needed_G: int,
     *,
     dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]:
-    """Return ``(Q, Lam, mode_comp)`` with at least ``needed_G`` global modes.
+) -> tuple[
+    MRFEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]
+]:
+    """Return the holder to keep and ``(Q, Lam, mode_comp)`` with ``needed_G`` modes.
 
     ``Q`` are the ``G`` globally-smallest modes of ``S = M^{-1/2}(D - W)M^{-1/2}``
-    and ``mode_comp`` each mode's **source W-component**. As a side effect, in
-    the truncated regime the ``holder`` is grown in place (never returned); it
-    grows only when it is short. Each eigenvector is component-local -- nonzero on
+    and ``mode_comp`` each mode's **source W-component**. In the truncated
+    regime a short ``holder`` is replaced by a new one holding the new modes;
+    ``holder`` itself is never changed. Each eigenvector is component-local -- nonzero on
     exactly one W-component, bit-exact 0 elsewhere (see
     :func:`_symmetric_eigenbasis`) -- so a mode's source component is the label of
     any nonzero row, recovering the mode -> component map WITHOUT touching the
@@ -484,14 +562,13 @@ def _ensure_global_modes(
 
     Past ``dense_fraction * n`` the resolved basis is an ``n x n`` matrix; the
     design forbids persisting it (it would pin GBs on the env), so a dense solve
-    is **call-local**: it is returned but the holder is left at its last sparse
-    ``G``.
+    is **call-local**: it is returned with the unchanged holder, which stays at
+    its last sparse ``G``.
 
     Parameters
     ----------
-    holder : dict
-        Mutable resolver cache ``{"Q", "Lam", "mode_comp", "G"}`` (owned by
-        ``Environment._mrf_eigenbasis``). Grown by replace in the sparse regime.
+    holder : MRFEigenbasis
+        The environment's cached modes (see ``environment._fields``).
     S : scipy.sparse.spmatrix, shape (n, n)
         Symmetric conjugate from :func:`_symmetric_conjugate`.
     labels : NDArray[np.int_], shape (n,)
@@ -503,16 +580,17 @@ def _ensure_global_modes(
 
     Returns
     -------
-    Q : NDArray[np.float64], shape (n, G)
-        Component-local eigenvectors as columns (ascending eigenvalue).
-    Lam : NDArray[np.float64], shape (G,)
-        Eigenvalues ascending, non-negative.
-    mode_comp : NDArray[np.intp], shape (G,)
-        Source W-component of each mode.
+    holder : MRFEigenbasis
+        The holder to keep: ``holder`` itself, or a grown replacement.
+    modes : tuple of ndarray
+        ``Q`` (shape ``(n, G)``, component-local eigenvectors as columns in
+        ascending eigenvalue order), ``Lam`` (shape ``(G,)``, ascending,
+        non-negative) and ``mode_comp`` (shape ``(G,)``, source W-component of
+        each mode).
     """
     n = S.shape[0]
-    if holder["G"] >= needed_G:  # cache hit -- no eigensolve
-        return holder["Q"], holder["Lam"], holder["mode_comp"]
+    if needed_G <= holder.G:  # cache hit -- no eigensolve
+        return holder, (holder.Q, holder.Lam, holder.mode_comp)
     G = min(needed_G, n)
     dense = dense_fraction * n <= G
     Lam, Q = _symmetric_eigenbasis(S, None if dense else G)
@@ -522,9 +600,10 @@ def _ensure_global_modes(
     # on that per-component solve -- a refactor to a single global eigsh would
     # leak cross-component entries and silently corrupt this map.
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
-    if not dense:  # persist truncated bases only (transient-dense policy)
-        holder.update({"Q": Q, "Lam": Lam, "mode_comp": mode_comp, "G": Q.shape[1]})
-    return Q, Lam, mode_comp
+    if dense:  # transient-dense policy: never persist an (n, n) basis
+        return holder, (Q, Lam, mode_comp)
+    grown = MRFEigenbasis(_frozen(Q), _frozen(Lam), _frozen(mode_comp), Q.shape[1])
+    return grown, (grown.Q, grown.Lam, grown.mode_comp)
 
 
 def _validate_occupancy(occupancy: NDArray[np.float64]) -> None:
@@ -928,60 +1007,54 @@ def _warn_large_dense_basis(n: int) -> None:
 
 
 def _resolve_basis(
-    holder: DiffusionEigenbasisCache,
+    holder: DiffusionEigenbasis,
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
     sigma: float,
     *,
-    tol: float,
-    dense_fraction: float,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return ``(Q, Lam)`` for ``sigma`` from the growable single-basis cache.
+    tol: float = _HEAT_KERNEL_RANK_TOL,
+    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
+) -> tuple[DiffusionEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64]]]:
+    """Return the holder to keep and ``(Q, Lam)`` for ``sigma``.
 
-    ``holder`` is a per-geometry mutable dict owned by the Environment's
-    analysis cache. ``clear_cache()`` drops it wholesale; derived environments
-    start with fresh caches. It holds ONE truncated basis -- the
-    max rank requested so far, strictly below ``dense_fraction * n`` -- grown by
-    **replace**, plus a memo of the resolved rank per ``(sigma, tol)`` so repeat
-    calls at a bandwidth (every neuron) skip the adaptive probe.
+    ``holder`` is the environment's cached :class:`DiffusionEigenbasis`; it is
+    never changed. It holds ONE truncated basis -- the max rank requested so
+    far, strictly below ``dense_fraction * n`` -- plus the resolved rank per
+    ``(sigma, tol)`` so repeat calls at a bandwidth (every neuron) skip the
+    adaptive probe. A request that needs more is answered with a replacement
+    holder, which the caller stores in place of ``holder``.
 
     A request whose rank would reach ``dense_fraction * n`` (a near-full-rank
     ``env.diffuse``) builds a **transient** dense basis -- applied then dropped,
     never stored -- so it can never grow the cache to ``(n, n)``.
     """
     n = int(volumes.shape[0])
-    # Memo of the resolved rank per (sigma, tol): an int rank, or the sentinel
-    # "dense" for a near-full-rank bandwidth (transient basis, never cached).
-    resolved: dict[tuple[float, float], int | Literal["dense"]] = holder.setdefault(
-        "resolved", {}
-    )
     key = (float(sigma), float(tol))
     t = sigma**2 / 2.0
 
     # Fast path: rank already resolved for this bandwidth.
-    if key in resolved:
-        r = resolved[key]
-        if isinstance(r, str):  # "dense": transient full basis, never cached
-            # No re-warn here: the large-matrix warning fired once when this
-            # bandwidth first resolved to "dense" (the probe path below).
-            return _transient_dense_basis(W, volumes)
-        Q, Lam = holder["basis"]
-        return Q[:, :r], Lam[:r]
+    r = holder.resolved.get(key)
+    if r == "dense":  # transient full basis, never cached
+        # No re-warn here: the large-matrix warning fired once when this
+        # bandwidth first resolved to "dense" (the probe path below).
+        return holder, _transient_dense_basis(W, volumes)
+    if isinstance(r, int):
+        assert holder.basis is not None  # an int rank is resolved on a basis
+        Q, Lam = holder.basis
+        return holder, (Q[:, :r], Lam[:r])
 
     # If the cached basis already brackets this bandwidth's cutoff (its largest
     # retained mode is negligible), slice it -- no new eigensolve.
-    cached = holder.get("basis")
-    if cached is not None:
-        Qc, Lamc = cached
+    if holder.basis is not None:
+        Qc, Lamc = holder.basis
         if float(np.exp(-t * Lamc[-1])) < tol:
             r = int(
                 min(
                     max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
                 )
             )
-            resolved[key] = r
-            return Qc[:, :r], Lamc[:r]
+            return holder.with_rank(key, r), (Qc[:, :r], Lamc[:r])
 
     # Otherwise probe (and possibly grow the single cached basis).
     S = _symmetric_conjugate(W, volumes)
@@ -989,20 +1062,20 @@ def _resolve_basis(
         S, sigma, tol=tol, dense_fraction=dense_fraction, n_components=n_components
     )
     if rank is None:
-        resolved[key] = "dense"
         _warn_large_dense_basis(n)
         vals_full, vecs_full = _symmetric_eigenbasis(S, rank=None)
-        return vecs_full, vals_full  # transient, NOT cached
+        # transient, NOT cached
+        return holder.with_rank(key, "dense"), (vecs_full, vals_full)
     assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
-    resolved[key] = rank
-    # The single cached basis grows by replace (it never shrinks), so a request
-    # needing more modes than are cached recomputes and replaces it.
-    cached_rank = holder["basis"][1].shape[0] if "basis" in holder else 0
+    # The single cached basis is replaced by a larger one (it never shrinks),
+    # so a request needing more modes than are cached recomputes it.
+    cached_rank = 0 if holder.basis is None else holder.basis[1].shape[0]
     if rank >= cached_rank:
-        holder["basis"] = (eigvecs, eigvals)
-        return eigvecs, eigvals
-    Qc, Lamc = holder["basis"]
-    return Qc[:, :rank], Lamc[:rank]
+        basis = (_frozen(eigvecs), _frozen(eigvals))
+        return holder.with_rank(key, rank, basis), basis
+    assert holder.basis is not None  # cached_rank > rank >= 0
+    Qc, Lamc = holder.basis
+    return holder.with_rank(key, rank), (Qc[:, :rank], Lamc[:rank])
 
 
 def _transient_dense_basis(
@@ -1021,36 +1094,29 @@ def _transient_dense_basis(
 
 
 def diffusion_apply(
-    holder: DiffusionEigenbasisCache,
-    W: scipy.sparse.spmatrix,
+    basis: tuple[NDArray[np.float64], NDArray[np.float64]],
     volumes: NDArray[np.float64],
-    n_components: int,
     fields: NDArray[np.float64],
     sigma: float,
     mode: KernelMode,
     *,
     backend: Literal["numpy", "jax"] = "numpy",
-    tol: float = _HEAT_KERNEL_RANK_TOL,
-    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
 ) -> Any:
     """Matrix-free application of the mode operator to a 2-D field batch.
 
-    Resolves ``(Q, Lam)`` from the growable cache (:func:`_resolve_basis`) and
-    applies the requested ``mode`` (:func:`_apply_modes`), never materializing an
-    ``(n, n)`` kernel. For ``backend="jax"`` the apply runs in ``jax.numpy`` (the
-    cached NumPy eigenbasis is cast to ``jnp``), so ``jit`` / ``grad`` / GPU still
-    work; the eigenbasis **build** stays NumPy (``scipy``).
+    Applies the requested ``mode`` (:func:`_apply_modes`) with a basis resolved
+    by :func:`_resolve_basis`, never materializing an ``(n, n)`` kernel. For
+    ``backend="jax"`` the apply runs in ``jax.numpy`` (the cached NumPy
+    eigenbasis is cast to ``jnp``), so ``jit`` / ``grad`` / GPU still work; the
+    eigenbasis **build** stays NumPy (``scipy``).
 
     Parameters
     ----------
-    holder : dict
-        The per-geometry eigenbasis cache (from the Environment).
-    W : scipy.sparse matrix, shape (n_bins, n_bins)
-        Finite-volume weight matrix (from the Environment geometry).
+    basis : tuple of ndarray
+        ``(Q, Lam)`` for ``sigma``: eigenvectors, shape ``(n_bins, rank)``,
+        and eigenvalues, shape ``(rank,)``.
     volumes : NDArray[np.float64], shape (n_bins,)
         Per-bin cell volumes ``M``.
-    n_components : int
-        Number of ``W``-connected components (rank floor for the null modes).
     fields : NDArray, shape (n_bins, n_fields)
         Field batch (must be 2-D; ``env.diffuse`` coerces a 1-D field).
     sigma : float
@@ -1059,8 +1125,6 @@ def diffusion_apply(
         Kernel orientation.
     backend : {"numpy", "jax"}, default="numpy"
         Where the apply runs.
-    tol, dense_fraction : float
-        Truncation controls (see :func:`_adaptive_symmetric_basis`).
 
     Returns
     -------
@@ -1068,15 +1132,7 @@ def diffusion_apply(
         ``numpy.ndarray`` for ``backend="numpy"``, ``jax.Array`` for
         ``backend="jax"``.
     """
-    Q, Lam = _resolve_basis(
-        holder,
-        W,
-        volumes,
-        n_components,
-        sigma,
-        tol=tol,
-        dense_fraction=dense_fraction,
-    )
+    Q, Lam = basis
     if backend == "jax":
         import jax.numpy as jnp
 
@@ -1099,10 +1155,10 @@ def diffusion_apply(
 
 
 def _diffusion_apply_rtol(
-    holder: DiffusionEigenbasisCache, n_bins: int, sigma: float
+    holder: DiffusionEigenbasis, n_bins: int, sigma: float
 ) -> float:
-    """Report a resolved apply rank without exposing the mutable holder."""
-    rank = holder.get("resolved", {}).get((float(sigma), _HEAT_KERNEL_RANK_TOL))
+    """Relative accuracy of an apply at ``sigma``, from its resolved rank."""
+    rank = holder.resolved.get((float(sigma), _HEAT_KERNEL_RANK_TOL))
     if rank == "dense" or (isinstance(rank, int) and rank >= n_bins):
         return _FULL_BASIS_APPLY_RTOL
     return _HEAT_KERNEL_RANK_TOL

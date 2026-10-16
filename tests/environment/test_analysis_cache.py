@@ -17,6 +17,7 @@ from neurospatial.environment._cache import (
     AnalysisCache,
     CacheKey,
 )
+from neurospatial.environment._fields import diffusion_eigenbasis
 from neurospatial.ops.transforms import translate
 
 N_THREADS = 4
@@ -62,17 +63,17 @@ def _populate(env: Environment) -> dict[str, np.ndarray]:
 )
 def test_metadata_copies_reuse_cached_analyses(env, relabel):
     expected = _populate(env)
-    eigenbasis = env._diffusion_eigenbasis["basis"]
+    eigenbasis = diffusion_eigenbasis(env._cache).basis
     kdtree = env._cache.get(KDTREE, _refuse_build)
 
     copy = relabel(env)
 
     assert copy._cache is env._cache
-    assert copy._diffusion_eigenbasis["basis"] is eigenbasis
+    assert diffusion_eigenbasis(copy._cache).basis is eigenbasis
     assert copy._cache.get(KDTREE, _refuse_build) is kdtree
     for name, value in _populate(copy).items():
         np.testing.assert_array_equal(value, expected[name], err_msg=name)
-    assert copy._diffusion_eigenbasis["basis"] is eigenbasis
+    assert diffusion_eigenbasis(copy._cache).basis is eigenbasis
 
 
 def test_analysis_on_a_copy_is_reused_by_its_source(env):
@@ -270,6 +271,21 @@ def test_cache_gives_concurrent_callers_one_value():
     assert all(result is results[0] for result in results)
 
 
+def test_cache_updates_run_one_at_a_time_on_the_latest_value():
+    """Concurrent updates of one key each see the value the previous one stored."""
+    cache = AnalysisCache()
+    key: CacheKey[int] = CacheKey("count")
+
+    def step(count: int) -> tuple[int, int]:
+        time.sleep(0.01)  # overlap the callers while one update runs
+        return count + 1, count
+
+    results = _run_concurrently(lambda: cache.update(key, lambda: 0, step))
+
+    assert sorted(results) == list(range(N_THREADS))
+    assert cache.get(key, _refuse_build) == N_THREADS
+
+
 def test_cache_pickles_and_copies_empty():
     import copy
 
@@ -301,7 +317,7 @@ def test_concurrent_smoothing_solves_the_eigenbasis_once(env, monkeypatch):
     results = _run_concurrently(lambda: env.smooth(field, 4.0))
 
     assert len(calls) == 1
-    assert "basis" in env._diffusion_eigenbasis
+    assert diffusion_eigenbasis(env._cache).basis is not None
     for result in results:
         np.testing.assert_array_equal(result, expected)
 

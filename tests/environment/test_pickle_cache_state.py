@@ -77,7 +77,9 @@ def test_computed_analyses_are_not_copied_or_pickled(method):
     env.get_edge_attributes()
     env.compute_gaussian_kernel(1.0)
     env.nearest_bin(env.bin_centers)
-    _ = env.boundary_bins, env._diffusion_eigenbasis, env._mrf_eigenbasis
+    _ = env.boundary_bins
+    env.diffuse(np.ones(env.n_bins), 1.0)
+    env.get_mrf_basis(np.ones(env.n_bins), rank=3)
     populated = len(env._cache)
     assert populated >= 10
 

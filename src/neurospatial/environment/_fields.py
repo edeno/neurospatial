@@ -43,10 +43,13 @@ from neurospatial.geometry._lookup import locate
 from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_RANK_TOL,
     _RESOLUTION_MARGIN,
+    DiffusionEigenbasis,
     MRFBasis,
+    MRFEigenbasis,
     _ensure_global_modes,
     _live_components,
     _null_mode_indices,
+    _resolve_basis,
     _symmetric_conjugate,
     _target_live_rank,
     _validate_occupancy,
@@ -59,11 +62,7 @@ from neurospatial.ops.smoothing import _gaussian_kernel
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.ops._types import KernelMode
 
 # Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed
 # support -- the share of its smoothing weight on observed bins -- is at most
@@ -360,23 +359,14 @@ def diffusion_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
     )
 
 
-def diffusion_eigenbasis(cache: AnalysisCache) -> DiffusionEigenbasisCache:
-    """Growable truncated-eigenbasis holder for :func:`diffuse`, empty at first."""
-    return cache.get(DIFFUSION_EIGENBASIS, lambda: {})
+def diffusion_eigenbasis(cache: AnalysisCache) -> DiffusionEigenbasis:
+    """The current truncated-eigenbasis holder for :func:`_diffuse`, empty at first."""
+    return cache.get(DIFFUSION_EIGENBASIS, DiffusionEigenbasis)
 
 
-def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> MRFEigenbasisCache:
-    """Growable global eigenbasis holder for the MRF penalty basis."""
-
-    def build() -> MRFEigenbasisCache:
-        return {
-            "Q": np.zeros((n_bins, 0)),
-            "Lam": np.zeros(0),
-            "mode_comp": np.zeros(0, dtype=np.intp),
-            "G": 0,
-        }
-
-    return cache.get(MRF_EIGENBASIS, build)
+def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> MRFEigenbasis:
+    """The current global eigenbasis holder for the MRF penalty basis."""
+    return cache.get(MRF_EIGENBASIS, lambda: MRFEigenbasis.empty(n_bins))
 
 
 def _compute_kernel(
@@ -513,20 +503,20 @@ def _diffuse(
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
     W, volumes, n_components, labels = diffusion_geometry(cache, binning)
+    # Resolving a new bandwidth replaces the cached holder under its lock;
+    # the apply itself runs on the resolved, read-only basis without it.
+    basis = cache.update(
+        DIFFUSION_EIGENBASIS,
+        DiffusionEigenbasis,
+        lambda holder: _resolve_basis(
+            holder, W, volumes, n_components, float(bandwidth)
+        ),
+    )
 
     def apply(columns: Any) -> Any:
-        # The eigenbasis grows in place while it is applied.
-        with cache.exclusive(DIFFUSION_EIGENBASIS):
-            return diffusion_apply(
-                diffusion_eigenbasis(cache),
-                W,
-                volumes,
-                n_components,
-                columns,
-                float(bandwidth),
-                mode,
-                backend=backend,
-            )
+        return diffusion_apply(
+            basis, volumes, columns, float(bandwidth), mode, backend=backend
+        )
 
     # NaN marks a missing bin. A NaN-free batch takes the plain linear apply
     # unchanged; a traced JAX input cannot be inspected, so it is not.
@@ -611,20 +601,26 @@ def _mrf_basis(
     _validate_occupancy(occupancy)  # fail fast, before the eigensolve
     _W, volumes, n_components, labels = diffusion_geometry(cache, binning)
     S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
-    # The eigenbasis grows in place until it covers the occupied support.
-    with cache.exclusive(MRF_EIGENBASIS):
-        holder = mrf_eigenbasis(cache, binning.bins.n_bins)
-        live = _live_components(labels, occupancy)
-        n_live_components = int(live.size)
-        r_eff = _target_live_rank(labels, occupancy, rank)
-        n_fill = r_eff - n_live_components
+    live = _live_components(labels, occupancy)
+    n_live_components = int(live.size)
+    r_eff = _target_live_rank(labels, occupancy, rank)
+    n_fill = r_eff - n_live_components
+
+    def grow(
+        holder: MRFEigenbasis,
+    ) -> tuple[
+        MRFEigenbasis,
+        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]],
+    ]:
+        """Grow the cached modes until they cover the occupied support."""
         # ``_symmetric_eigenbasis`` raises on rank < n_components (total geometry
         # components), but ``r_eff`` counts only LIVE components -- so 1 live +
         # several dead would start ``G`` too small and raise on the first solve.
         # Floor ``G`` at ``n_components`` to keep the first solve legal.
-        G = max(holder["G"], r_eff, n_components)
+        G = max(holder.G, r_eff, n_components)
         while True:  # grow until every live null is present AND enough fills
-            Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)
+            holder, modes = _ensure_global_modes(holder, S, labels, G)
+            Q, _, mode_comp = modes
             # Verify the structural null the selector requires is actually present
             # for every live component (its numerical null can sort AFTER one of
             # its positive modes when both are near machine-epsilon), and count
@@ -634,8 +630,14 @@ def _mrf_basis(
             n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
             covered = missing.size == 0
             if (covered and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
-                break
+                return holder, modes
             G = min(2 * Q.shape[1], S.shape[0])  # double, capped at full rank
+
+    # Growth replaces the cached modes under their lock, so concurrent
+    # requests share one eigensolve.
+    Q, Lam, mode_comp = cache.update(
+        MRF_EIGENBASIS, lambda: MRFEigenbasis.empty(binning.bins.n_bins), grow
+    )
     return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
 
 

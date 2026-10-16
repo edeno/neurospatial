@@ -65,7 +65,6 @@ from neurospatial.environment._fields import (
     diffusion_eigenbasis,
     diffusion_geometry,
     face_geometry,
-    mrf_eigenbasis,
     require_face_geometry,
 )
 from neurospatial.environment._lookup import nearest_bin
@@ -154,11 +153,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.layout._scale_bar import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.ops._types import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.ops.transforms import Affine2D, AffineND
 
@@ -5917,7 +5912,9 @@ class Environment(Generic[_C]):
             the more conservative truncation tolerance. This query does not
             build an eigenbasis.
         """
-        return _diffusion_apply_rtol(self._diffusion_eigenbasis, self.n_bins, bandwidth)
+        return _diffusion_apply_rtol(
+            diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
+        )
 
     def smooth(
         self,
@@ -6194,33 +6191,6 @@ class Environment(Generic[_C]):
         W-component support gates.
         """
         return diffusion_geometry(self._cache, self._binning)
-
-    @property
-    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
-        """Growable single-entry truncated-eigenbasis holder for :meth:`diffuse`.
-
-        A small mutable holder (the max-rank truncated basis, grown by
-        replace, plus a per-``(sigma, tol)`` resolved-rank memo) that
-        :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place.
-        It holds a single basis strictly below ``dense_fraction·n`` — never a
-        persistent ``(n, n)``.
-        """
-        return diffusion_eigenbasis(self._cache)
-
-    @property
-    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
-        """Growable global eigenbasis holder for the MRF penalty-basis resolver.
-
-        A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``
-        holding the ``G`` globally-smallest modes of the symmetric conjugate
-        ``S`` and each mode's source W-component, grown by replace by
-        :func:`neurospatial.ops.diffusion._ensure_global_modes`. Geometry-only
-        (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent).
-        Starts empty (``G == 0``) and never stores a dense ``(n, n)`` basis
-        (dense solves stay call-local). Distinct from
-        :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
-        """
-        return mrf_eigenbasis(self._cache, self.n_bins)
 
     def get_mrf_basis(
         self,

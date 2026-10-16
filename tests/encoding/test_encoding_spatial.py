@@ -5134,16 +5134,16 @@ class TestComputeSpatialRatesThroughputContract:
         per-neuron smoothing (one env.diffuse per neuron) would resolve the basis
         25 times, not once.
         """
-        import neurospatial.ops.diffusion as diffusion_mod
         from neurospatial.encoding.spatial import compute_spatial_rates
+        from neurospatial.environment import _fields
 
         def run(n_neurons: int) -> int:
             # Fresh env per call => cold eigenbasis cache => any resolve counted.
             env, times, positions, spikes = _make_batch_inputs(n_neurons)
             with patch.object(
-                diffusion_mod,
+                _fields,
                 "_resolve_basis",
-                wraps=diffusion_mod._resolve_basis,
+                wraps=_fields._resolve_basis,
             ) as resolve_spy:
                 compute_spatial_rates(
                     env,

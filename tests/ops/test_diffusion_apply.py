@@ -35,6 +35,7 @@ from diffusion_fixtures import (
     source_bin,
 )
 
+from neurospatial.environment._fields import diffusion_eigenbasis
 from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_DENSE_FRACTION,
     _HEAT_KERNEL_RANK_TOL,
@@ -520,14 +521,20 @@ def test_cache_grows_with_smaller_sigma():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    holder = env._diffusion_eigenbasis
     env.diffuse(fields["nonneg"], 10.0, mode="density")
-    rank_large_sigma = holder["basis"][1].shape[0]
+    large = diffusion_eigenbasis(env._cache)
+    rank_large_sigma = large.basis[1].shape[0]
     env.diffuse(fields["nonneg"], 8.0, mode="density")  # smaller sigma -> more modes
-    rank_small_sigma = holder["basis"][1].shape[0]
+    small = diffusion_eigenbasis(env._cache)
+    rank_small_sigma = small.basis[1].shape[0]
     assert rank_small_sigma > rank_large_sigma, "smaller sigma must grow the basis"
-    # A single basis (grown by replace), still equivalent to dense at the small sigma.
-    assert isinstance(holder["basis"], tuple)
+    # The holder is replaced, never edited: the earlier one keeps its basis.
+    assert small is not large
+    assert large.basis[1].shape[0] == rank_large_sigma
+    # A single read-only basis (grown by replace), still equivalent to dense at
+    # the small sigma.
+    assert isinstance(small.basis, tuple)
+    assert not any(array.flags.writeable for array in small.basis)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         dense = env.compute_kernel(8.0, mode="density", cache=False) @ fields["nonneg"]
@@ -541,24 +548,23 @@ def test_eigenbasis_single_basis_and_invalidated():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    holder = env._diffusion_eigenbasis
-
     env.diffuse(fields["nonneg"], 10.0, mode="density")
     env.diffuse(fields["nonneg"], 10.0, mode="average")  # same sigma, different mode
     env.diffuse(fields["nonneg"], 12.0, mode="transition")  # larger sigma -> slice
+    holder = diffusion_eigenbasis(env._cache)
     # Exactly one persistent basis -- a single (Q, Lam) tuple, not a
     # {rank -> basis} accumulating dict.
-    assert isinstance(holder["basis"], tuple) and len(holder["basis"]) == 2
-    basis_id = id(holder["basis"][0])
+    assert isinstance(holder.basis, tuple) and len(holder.basis) == 2
+    basis_id = id(holder.basis[0])
 
     # Explicit cache clearing drops the holder without changing geometry.
     geometry = env._geometry
     env.clear_cache()
     assert env._geometry is geometry
-    holder2 = env._diffusion_eigenbasis
-    assert holder2 == {} and id(holder2) != id(holder)
+    holder2 = diffusion_eigenbasis(env._cache)
+    assert holder2.basis is None and not holder2.resolved and holder2 is not holder
     env.diffuse(fields["nonneg"], 10.0, mode="density")
-    assert id(env._diffusion_eigenbasis["basis"][0]) != basis_id
+    assert id(diffusion_eigenbasis(env._cache).basis[0]) != basis_id
 
 
 def test_compute_kernel_does_not_poison_apply_cache():
@@ -567,18 +573,18 @@ def test_compute_kernel_does_not_poison_apply_cache():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    holder = env._diffusion_eigenbasis
     env.diffuse(fields["nonneg"], 10.0, mode="density")
-    basis_shape = holder["basis"][0].shape
+    holder = diffusion_eigenbasis(env._cache)
+    basis_shape = holder.basis[0].shape
     assert basis_shape[1] < env.n_bins  # truncated, not (n, n)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         env.compute_kernel(1.0, mode="density", cache=False)  # tiny sigma, dense expm
     # The apply cache is untouched by compute_kernel.
-    assert holder["basis"][0].shape == basis_shape
+    assert diffusion_eigenbasis(env._cache) is holder
     env.diffuse(fields["nonneg"], 10.0, mode="average")
-    assert holder["basis"][0].shape[1] < env.n_bins
+    assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
 def test_near_full_rank_diffuse_no_poison():
@@ -588,8 +594,6 @@ def test_near_full_rank_diffuse_no_poison():
     env, source_coord = _build_env("grid_2d")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    holder = env._diffusion_eigenbasis
-
     # Tiny sigma -> near-full rank -> transient dense (with the large-matrix note
     # suppressed on this small env, which is below the warn threshold anyway).
     with warnings.catch_warnings():
@@ -597,8 +601,9 @@ def test_near_full_rank_diffuse_no_poison():
         out = np.asarray(env.diffuse(fields["nonneg"], 0.8, mode="density"))
     assert np.all(np.isfinite(out))
     # The transient dense basis is NOT cached.
-    assert "basis" not in holder
-    assert holder["resolved"][(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
+    holder = diffusion_eigenbasis(env._cache)
+    assert holder.basis is None
+    assert holder.resolved[(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
 
     # A SECOND call at the same near-full-rank bandwidth takes the memoized
     # "dense" fast path (still transient, still not cached) and matches the first.
@@ -606,11 +611,11 @@ def test_near_full_rank_diffuse_no_poison():
         warnings.simplefilter("ignore")
         out2 = np.asarray(env.diffuse(fields["nonneg"], 0.8, mode="density"))
     np.testing.assert_allclose(out, out2, rtol=1e-10)
-    assert "basis" not in holder
+    assert diffusion_eigenbasis(env._cache).basis is None
 
     # A subsequent truncated call caches a bounded (< n) basis.
     env.diffuse(fields["nonneg"], 10.0, mode="density")
-    assert holder["basis"][0].shape[1] < env.n_bins
+    assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
 # ---------------------------------------------------------------------------

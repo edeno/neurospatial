@@ -229,19 +229,22 @@ def _holes(env: Environment) -> np.ndarray:
 
 @pytest.mark.parametrize("mode", _MODES)
 def test_smoothing_without_nan_is_the_plain_operator(any_env, mode):
-    from neurospatial.ops.diffusion import diffusion_apply
+    from neurospatial.ops.diffusion import (
+        DiffusionEigenbasis,
+        _resolve_basis,
+        diffusion_apply,
+    )
 
     field = np.sin(np.arange(any_env.n_bins) * 0.37)
     geometry = any_env.get_diffusion_geometry()
-    plain = diffusion_apply(
-        any_env._diffusion_eigenbasis,
+    _, basis = _resolve_basis(
+        DiffusionEigenbasis(),
         geometry.W,
         geometry.volumes,
         geometry.n_components,
-        field[:, None],
         3.0,
-        mode,
-    )[:, 0]
+    )
+    plain = diffusion_apply(basis, geometry.volumes, field[:, None], 3.0, mode)[:, 0]
     np.testing.assert_array_equal(any_env.smooth(field, 3.0, mode=mode), plain)
     np.testing.assert_array_equal(any_env.diffuse(field, 3.0, mode=mode), plain)
 

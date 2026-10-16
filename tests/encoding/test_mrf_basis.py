@@ -18,6 +18,7 @@ from neurospatial.ops import diffusion as diff
 from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
     MRFBasis,
+    MRFEigenbasis,
     _ensure_global_modes,
     _null_mode_mask,
     _symmetric_conjugate,
@@ -59,14 +60,13 @@ def _non_null_eigs_sorted(Lam, mode_comp, live_comp):
 
 
 def _fresh_holder(env):
-    """A pristine empty resolver holder (mirrors the cached-property initial)."""
-    n = env.n_bins
-    return {
-        "Q": np.zeros((n, 0)),
-        "Lam": np.zeros(0),
-        "mode_comp": np.zeros(0, dtype=np.intp),
-        "G": 0,
-    }
+    """A pristine empty resolver holder, as the analysis cache starts it."""
+    return MRFEigenbasis.empty(env.n_bins)
+
+
+def _cached_holder(env):
+    """The environment's current cached MRF eigenbasis holder."""
+    return _fields.mrf_eigenbasis(env._cache, env.n_bins)
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +220,8 @@ def test_fill_applies_inv_sqrt_volume(polar_env):
     n_live = basis.n_live_components
     n_fill = basis.B.shape[1] - n_live
     # Recompute the fill block from the resolver's own persisted eigenbasis.
-    holder = polar_env._mrf_eigenbasis
-    Q, _Lam, mode_comp = holder["Q"], holder["Lam"], holder["mode_comp"]
+    holder = _cached_holder(polar_env)
+    Q, mode_comp = holder.Q, holder.mode_comp
     live_comp = np.flatnonzero(
         np.bincount(labels, weights=occ, minlength=int(labels.max()) + 1) > 0.0
     )
@@ -397,8 +397,8 @@ def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
         if calls["n"] == 1:
             # First solve OMITS the null (column 0) -- the pathology.
             sel = slice(1, needed_G + 1)
-            return q_full[:, sel], lam_full[sel], mc_full[sel]
-        return q_full, lam_full, mc_full  # growth exposes the full basis
+            return holder, (q_full[:, sel], lam_full[sel], mc_full[sel])
+        return holder, (q_full, lam_full, mc_full)  # growth exposes the full basis
 
     monkeypatch.setattr(_fields, "_ensure_global_modes", fake_ensure)
 
@@ -493,7 +493,8 @@ def test_reuses_eigensolve(sparse_regime_env, monkeypatch):
     monkeypatch.setattr(diff, "_symmetric_eigenbasis", counting)
 
     env.get_mrf_basis(occ, rank=50)  # sparse regime -> persisted holder
-    g_after_first = env._mrf_eigenbasis["G"]
+    first = _cached_holder(env)
+    g_after_first = first.G
     assert g_after_first == 50
     first_calls = calls["n"]
     assert first_calls > 0
@@ -502,7 +503,7 @@ def test_reuses_eigensolve(sparse_regime_env, monkeypatch):
     env.get_mrf_basis(occ, rank=30)  # smaller rank -> still a cache hit
 
     assert calls["n"] == first_calls  # no additional eigensolve
-    assert env._mrf_eigenbasis["G"] == g_after_first  # holder G unchanged
+    assert _cached_holder(env) is first  # holder unchanged
 
 
 def test_holder_resets_on_clear_cache(sparse_regime_env):
@@ -511,13 +512,13 @@ def test_holder_resets_on_clear_cache(sparse_regime_env):
     env = sparse_regime_env
     occ = np.ones(env.n_bins)
     env.get_mrf_basis(occ, rank=50)
-    assert env._mrf_eigenbasis["G"] == 50  # grown
+    assert _cached_holder(env).G == 50  # grown
 
     env.clear_cache()
 
-    holder = env._mrf_eigenbasis
-    assert holder["G"] == 0  # freshly re-initialized to the empty state
-    assert holder["Q"].shape == (env.n_bins, 0)
+    holder = _cached_holder(env)
+    assert holder.G == 0  # freshly re-initialized to the empty state
+    assert holder.Q.shape == (env.n_bins, 0)
 
 
 def test_selector_is_pure(open_field_env, monkeypatch):
@@ -545,7 +546,8 @@ def test_mode_component_recovery(two_component_env):
     S = _symmetric_conjugate(volumes=volumes, W=_W)
     holder = _fresh_holder(two_component_env)
 
-    Q, _Lam, mode_comp = _ensure_global_modes(holder, S, labels, 6)
+    grown, (Q, _Lam, mode_comp) = _ensure_global_modes(holder, S, labels, 6)
+    assert holder.G == 0 and Q.shape[1] == grown.G  # replaced, never edited
 
     for m in range(Q.shape[1]):
         nonzero_labels = np.unique(labels[Q[:, m] != 0.0])
@@ -560,12 +562,12 @@ def test_dense_basis_not_persisted(open_field_env):
     occ = np.ones(env.n_bins)
     n = env.n_bins
 
-    holder = env._mrf_eigenbasis
-    assert holder["G"] == 0  # initial empty state
-    assert holder["Q"].shape == (n, 0)
+    holder = _cached_holder(env)
+    assert holder.G == 0  # initial empty state
+    assert holder.Q.shape == (n, 0)
 
     # rank=40 on a 64-bin env: G=40 >= 0.5*64=32 -> dense (transient).
     basis = env.get_mrf_basis(occ, rank=40)
 
     assert basis.B.shape == (n, 40)
-    assert env._mrf_eigenbasis["G"] == 0  # holder stayed at its sparse value
+    assert _cached_holder(env) is holder  # holder stayed at its sparse value

@@ -17,6 +17,7 @@ from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
+from neurospatial.environment._fields import diffusion_eigenbasis, mrf_eigenbasis
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
@@ -112,8 +113,8 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     env.diffuse(np.ones(3), 1.0)
     env.get_mrf_basis(np.ones(3), rank=3)
     old_geometry = env._diffusion_geometry
-    old_diffusion_cache = env._diffusion_eigenbasis
-    old_mrf_cache = env._mrf_eigenbasis
+    old_diffusion_cache = diffusion_eigenbasis(env._cache)
+    old_mrf_cache = mrf_eigenbasis(env._cache, env.n_bins)
 
     env.clear_cache()
     np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
@@ -124,8 +125,8 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
         replacement.diffuse(np.arange(3.0), 1.0, mode="average"), after @ np.arange(3.0)
     )
     assert env._diffusion_geometry is not old_geometry
-    assert env._diffusion_eigenbasis is not old_diffusion_cache
-    assert env._mrf_eigenbasis is not old_mrf_cache
+    assert diffusion_eigenbasis(env._cache) is not old_diffusion_cache
+    assert mrf_eigenbasis(env._cache, env.n_bins) is not old_mrf_cache
     np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
 
 
